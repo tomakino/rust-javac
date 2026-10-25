@@ -1908,14 +1908,10 @@ impl Types {
         capture: bool,
     ) -> bool {
         if ctx.typ(t).has_tag(TypeTag::ARRAY) && ctx.typ(s).has_tag(TypeTag::ARRAY) {
-            let t_elem = match &ctx.typ(t).kind {
-                TypeKindData::ArrayType { elemtype } => elemtype.expect("array element"),
-                _ => unreachable!(),
-            };
-            let s_elem = match &ctx.typ(s).kind {
-                TypeKindData::ArrayType { elemtype } => elemtype.expect("array element"),
-                _ => unreachable!(),
-            };
+            // Java: isSameType(elemtype(t), elemtype(s)) /
+            // isSubtypeUncheckedInternal(elemtype(t), elemtype(s), false, warn)
+            let t_elem = elemtype_of(ctx, syms, t);
+            let s_elem = elemtype_of(ctx, syms, s);
             if ctx.typ(t_elem).is_primitive() {
                 return self.is_same_type(ctx, syms, t_elem, s_elem);
             }
@@ -2318,6 +2314,11 @@ fn has_erased_supertypes(ctx: &CompilerContext, t: TypeId) -> bool {
 }
 
 /// Java: Type.getThrownTypes() (MethodType: thrown; other types: List.nil()).
+///
+/// TODO(Types/FunctionDescriptor batch): upstream call sites are Types.java
+/// 769/774/799 (FunctionDescriptor; not ported yet). Keep until that batch
+/// wires it; do not delete.
+#[allow(dead_code)]
 fn get_thrown_types(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::MethodType { thrown, .. } => thrown.clone(),
@@ -2424,6 +2425,11 @@ fn elemtype_of(ctx: &CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
 }
 
 /// Java: Types.cvarUpperBound(Type t)
+///
+/// TODO(Types/notSoftSubtype batch): upstream uses are Types.java:149-156 (def)
+/// and Types.notSoftSubtype (Types.java:2007-2010; not ported yet). Keep until
+/// that batch wires it; do not delete.
+#[allow(dead_code)]
 fn cvar_upper_bound(ctx: &CompilerContext, t: TypeId) -> TypeId {
     if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
         if ctx.typ(t).is_captured() {
@@ -2515,6 +2521,10 @@ fn new_method_type_2(
 }
 
 /// Java: new Type.TypeVar(tsym, bound, lower)
+///
+/// TODO(Types/newTypeVar batch): upstream constructor use (Types.newTypeVar)
+/// is not ported yet. Keep until that batch wires it; do not delete.
+#[allow(dead_code)]
 fn new_type_var_type(
     ctx: &mut CompilerContext,
     tsym: Option<SymbolId>,
@@ -2529,6 +2539,11 @@ fn new_type_var_type(
 }
 
 /// Java: new Type.CapturedType(name, owner, bound, lower, wildcard)
+///
+/// TODO(Types capture batch): upstream use is Types.capture (Types.java:4388-4470);
+/// the local capture() wildcard path is unimplemented. Keep until that batch
+/// wires it; do not delete.
+#[allow(dead_code)]
 fn new_captured_type(
     ctx: &mut CompilerContext,
     tsym: Option<SymbolId>,
@@ -2552,7 +2567,12 @@ fn type_equals_ignore_metadata(ctx: &CompilerContext, t: TypeId, s: TypeId) -> b
     Types::new().equals_ignore_metadata(ctx, t, s)
 }
 
-/// Java: Type.contains(elem) (ClassType.contains; used by memberType recursion).
+/// Java: Type.contains(elem) (Type class method; upstream use is in Attr and
+/// other not-yet-ported callers, not in Types.java).
+///
+/// TODO(Attr/Type.contains batch): not wired yet. Keep until that batch wires
+/// it; do not delete.
+#[allow(dead_code)]
 fn type_contains(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, elem: TypeId) -> bool {
     if type_equals_ignore_metadata(ctx, t, elem) {
         return true;
@@ -2876,4 +2896,100 @@ mod tests {
             &int_long
         ));
     }
+
+    #[test]
+    fn elemtype_of_unwraps_arrays_and_wildcards() {
+        let (mut ctx, symtab) = build();
+        let int_array = new_array_type(&mut ctx, symtab.int_type, Some(symtab.array_class));
+        assert_eq!(elemtype_of(&ctx, &symtab, int_array), symtab.int_type);
+        // Java: WildcardType.type is the (upper) bound; kind=EXTENDS.
+        let wildcard = new_wildcard_type(
+            &mut ctx,
+            Some(int_array),
+            BoundKind::EXTENDS,
+            None,
+            None,
+        );
+        assert_eq!(elemtype_of(&ctx, &symtab, wildcard), symtab.int_type);
+    }
+
+    #[test]
+    fn cvar_upper_bound_unwraps_captured_types() {
+        let (mut ctx, symtab) = build();
+        let captured = new_captured_type(&mut ctx, None, Some(symtab.string_type), None, None);
+        assert_eq!(cvar_upper_bound(&ctx, captured), symtab.string_type);
+        assert_eq!(cvar_upper_bound(&ctx, symtab.int_type), symtab.int_type);
+    }
+
+    #[test]
+    fn get_thrown_types_reads_the_method_thrown_list() {
+        let (mut ctx, symtab) = build();
+        let method =
+            new_method_type_2(&mut ctx, List::nil(), None, List::of(symtab.err_type), None);
+        assert_eq!(get_thrown_types(&ctx, method), List::of(symtab.err_type));
+        assert_eq!(get_thrown_types(&ctx, symtab.int_type), List::nil());
+    }
+
+    #[test]
+    fn type_var_and_captured_constructors_preserve_their_fields() {
+        let (mut ctx, symtab) = build();
+        let type_var = new_type_var_type(&mut ctx, None, Some(symtab.string_type), None);
+        match &ctx.typ(type_var).kind {
+            TypeKindData::TypeVar { bound, lower } => {
+                assert_eq!(*bound, Some(symtab.string_type));
+                assert_eq!(*lower, None);
+            }
+            _ => panic!("expected TypeVar"),
+        }
+        let wildcard = new_wildcard_type(&mut ctx, None, BoundKind::SUPER, None, None);
+        let captured = new_captured_type(
+            &mut ctx,
+            None,
+            Some(symtab.string_type),
+            None,
+            Some(wildcard),
+        );
+        match &ctx.typ(captured).kind {
+            TypeKindData::CapturedType {
+                bound,
+                lower,
+                wildcard: wc,
+            } => {
+                assert_eq!(*bound, Some(symtab.string_type));
+                assert_eq!(*lower, None);
+                assert_eq!(*wc, Some(wildcard));
+            }
+            _ => panic!("expected CapturedType"),
+        }
+    }
+
+    #[test]
+    fn type_contains_recognizes_parameterized_arguments() {
+        let (mut ctx, symtab) = build();
+        let list_tsym = ctx.typ(symtab.list_type).tsym.expect("list symbol");
+        let parameterized = class_type(
+            &mut ctx,
+            list_tsym,
+            &[symtab.string_type, symtab.int_type],
+        );
+        assert!(type_contains(
+            &mut ctx,
+            &symtab,
+            parameterized,
+            symtab.string_type
+        ));
+        assert!(!type_contains(
+            &mut ctx,
+            &symtab,
+            parameterized,
+            symtab.long_type
+        ));
+        assert!(type_contains(
+            &mut ctx,
+            &symtab,
+            parameterized,
+            parameterized
+        ));
+    }
+
 }
