@@ -1191,14 +1191,14 @@ fn is_relative_uri(value: &str) -> bool {
         return false;
     }
     // URI scheme detection: an absolute URI has 'scheme:' before any '/', '?', '#'.
+    // Java: URI.isAbsolute() == (scheme != null); the scheme is the prefix before
+    // the first ':', and the URI is relative when that prefix contains a path,
+    // query or fragment delimiter. This mirrors the upstream
+    // isRelativeUri(URI) check (`if (uri.isAbsolute()) return false;`).
     if let Some(colon) = value.find(':') {
         let rest = &value[..colon];
-        let no_slash = !rest.contains('/');
-        if no_slash && value[colon + 1..].find('/').is_none_or(|slash| slash >= 0) {
-            // Reject a scheme-like prefix (java.net.URI.isAbsolute).
-            if !value.starts_with("./") && !value.starts_with("../") {
-                return false;
-            }
+        if !rest.contains('/') && !rest.contains('?') && !rest.contains('#') {
+            return false;
         }
     }
     for segment in value.split('/') {
@@ -1220,7 +1220,7 @@ impl OptionChecker for JavacFileManager {
 
 #[cfg(test)]
 mod tests {
-    use super::JavacFileManager;
+    use super::{is_relative_uri, JavacFileManager};
     use crate::file::cache_fs_info::CacheFSInfo;
     use crate::util::context::Context;
     use crate::util::log::Log;
@@ -1467,4 +1467,22 @@ mod tests {
         manager.close().expect("close");
         std::fs::remove_dir_all(&dir).expect("cleanup");
     }
+
+    #[test]
+    fn is_relative_uri_matches_uri_semantics() {
+        // Java: JavacFileManager.isRelativeUri(URI) semantics.
+        assert!(!is_relative_uri(""));
+        assert!(!is_relative_uri("/abs"));
+        assert!(!is_relative_uri("./x"));
+        assert!(!is_relative_uri("../x"));
+        assert!(!is_relative_uri("C:/x"));
+        assert!(!is_relative_uri("a:b"));
+        assert!(!is_relative_uri("a:b/c"));
+        assert!(is_relative_uri("a/b"));
+        assert!(is_relative_uri("a/b:c"));
+        assert!(is_relative_uri("a?b:c"));
+        assert!(is_relative_uri("a#b:c"));
+        assert!(is_relative_uri("pkg/File.java"));
+    }
+
 }

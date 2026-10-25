@@ -9,10 +9,13 @@
 //!                                 to Rust file mapping and porting status)
 //!   cargo xtask gen-unicode     - regenerate the Unicode data tables from the
 //!                                 running JDK 17 (requires a JDK on PATH)
+//!   cargo xtask audit-porting   - method-level porting coverage audit
+//!                                 (PORTING_RULES §19; --strict fails on gaps)
 //!
 //! The tools read the upstream reference tree from reference/jdk17u (not part of
 //! the repository; see docs/PLAN.md).
 
+mod audit_porting;
 mod gen_resources;
 mod properties;
 
@@ -29,8 +32,9 @@ fn main() {
         "gen-resources" => gen_resources::generate_and_verify(),
         "gen-manifest" => gen_manifest(),
         "gen-unicode" => gen_unicode(),
+        "audit-porting" => audit_porting::run(&args[1..]),
         _ => {
-            eprintln!("usage: cargo xtask <gen-resources|gen-manifest|gen-unicode>");
+            eprintln!("usage: cargo xtask <gen-resources|gen-manifest|gen-unicode|audit-porting>");
             std::process::exit(2);
         }
     };
