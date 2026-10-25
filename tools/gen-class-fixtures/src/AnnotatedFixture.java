@@ -17,3 +17,17 @@ public class AnnotatedFixture {
     @MyAnno(2)
     void method(@MyAnno(3) int param) {}
 }
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE_USE)
+@interface MyTypeAnno {
+}
+
+class TypeAnnotated {
+    @MyTypeAnno String field;
+    java.util.List<@MyTypeAnno String> list;
+
+    @MyTypeAnno String method(@MyTypeAnno String parameter) {
+        return parameter;
+    }
+}

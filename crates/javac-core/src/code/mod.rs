@@ -14,6 +14,7 @@ pub mod source;
 pub mod symbol;
 pub mod symtab;
 pub mod target_type;
+pub mod type_annotation_position;
 pub mod type_;
 pub mod type_tag;
 pub mod types;

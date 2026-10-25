@@ -1,113 +1,64 @@
 // Origin: com/sun/tools/javac/jvm/ClassReader.java @ 982d53c (jdk-17.0.19-ga)
 // PORTING_RULES §19 gap registration (method-level audit of ClassReader.java):
-// Dependency/phase: P2/S2-B annotation/TypeAnnotation/Module/Directive batches
-// and P3 semantic batches (Annotate/Directive/Types).
-// Not yet ported upstream methods (no substitutes in this file):
+// Dependency/phase: P2/S2-B (annotation/TypeAnnotation/Module/Directive readers,
+// ported in this batch) and P3 semantic batches (Annotate/Code/Types).
+//
+// Ported in this file (S2-B, see the batch report for the mapping table):
+// - all 26 initAttributeReaders readers are wired in read_attribute: Code
+//   (readCode structure; Code object attach TODO), ConstantValue, Deprecated,
+//   Exceptions, InnerClasses (+skipInnerClasses), LocalVariableTable,
+//   SourceFile (+SourceFileObject), Annotation, Bridge, Synthetic, Signature,
+//   MethodParameters, EnclosingMethod (readEnclosingMethodAttr/simpleBinaryName/
+//   findMethod/isSameBinaryType), PermittedSubclasses, Record (+record accessor
+//   lookupMethod), Runtime[In]visible[Parameter]Annotations, AnnotationDefault,
+//   Runtime[In]visibleTypeAnnotations (readTypeAnnotation/readPosition/
+//   readTypePath), Module (readModule/readModuleFlags/readRequiresFlags/
+//   readExportsFlags/readOpensFlags/classNameMapper/interim uses+provides),
+//   ModuleResolution (readModuleResolutionFlags);
+// - readAnnotationValue/readAnnotations/readCompoundAnnotation/readTypeToProxy,
+//   attachAnnotations/readParameterAnnotations/attachAnnotationDefault,
+//   attachTypeAnnotations + TypeAnnotationPosition/TypePathEntry.
+//
+// Annotation/TypeAnnotation values are read completely and kept as raw proxies
+// (pending_* fields in the ClassReader); attaching them to Symbols goes through
+// Annotate (P3), which is not ported yet: attach path TODO (registered).
+//
+// Still not ported upstream methods (no substitutes in this file):
 // - NOT PORTED: instance (ClassReader.java:257)
 // - NOT PORTED: getEnclosingType (ClassReader.java:575)
 // - NOT PORTED: setEnclosingType (ClassReader.java:600)
-// - NOT PORTED: read (ClassReader.java:778)
-// - NOT PORTED: read (ClassReader.java:799)
-// - NOT PORTED: read (ClassReader.java:808)
-// - NOT PORTED: read (ClassReader.java:857)
-// - NOT PORTED: read (ClassReader.java:865)
-// - NOT PORTED: read (ClassReader.java:876)
-// - NOT PORTED: read (ClassReader.java:888)
-// - NOT PORTED: read (ClassReader.java:925)
-// - NOT PORTED: read (ClassReader.java:942)
-// - NOT PORTED: read (ClassReader.java:950)
-// - NOT PORTED: read (ClassReader.java:958)
-// - NOT PORTED: read (ClassReader.java:988)
-// - NOT PORTED: read (ClassReader.java:994)
-// - NOT PORTED: read (ClassReader.java:1000)
-// - NOT PORTED: read (ClassReader.java:1006)
-// - NOT PORTED: read (ClassReader.java:1012)
-// - NOT PORTED: read (ClassReader.java:1020)
-// - NOT PORTED: read (ClassReader.java:1026)
-// - NOT PORTED: read (ClassReader.java:1032)
-// - NOT PORTED: read (ClassReader.java:1038)
-// - NOT PORTED: read (ClassReader.java:1044)
-// - NOT PORTED: read (ClassReader.java:1050)
-// - NOT PORTED: read (ClassReader.java:1064)
-// - NOT PORTED: read (ClassReader.java:1095)
-// - NOT PORTED: classNameMapper (ClassReader.java:1195)
-// - NOT PORTED: read (ClassReader.java:1205)
-// - NOT PORTED: read (ClassReader.java:1218)
-// - NOT PORTED: read (ClassReader.java:1239)
-// - NOT PORTED: readEnclosingMethodAttr (ClassReader.java:1256)
-// - NOT PORTED: simpleBinaryName (ClassReader.java:1299)
-// - NOT PORTED: findMethod (ClassReader.java:1314)
-// - NOT PORTED: isSameBinaryType (ClassReader.java:1346)
-// - NOT PORTED: isAsciiDigit (ClassReader.java:1363)
-// - NOT PORTED: setFlagIfAttributeTrue (ClassReader.java:1479)
-// - NOT PORTED: accept (ClassReader.java:1834)
-// - NOT PORTED: toString (ClassReader.java:1836)
-// - NOT PORTED: accept (ClassReader.java:1847)
-// - NOT PORTED: toString (ClassReader.java:1849)
-// - NOT PORTED: accept (ClassReader.java:1860)
-// - NOT PORTED: toString (ClassReader.java:1862)
-// - NOT PORTED: accept (ClassReader.java:1876)
-// - NOT PORTED: toString (ClassReader.java:1878)
-// - NOT PORTED: visitConstant (ClassReader.java:1989)
-// - NOT PORTED: visitClass (ClassReader.java:1994)
-// - NOT PORTED: visitEnum (ClassReader.java:1998)
-// - NOT PORTED: visitCompound (ClassReader.java:2002)
-// - NOT PORTED: visitArray (ClassReader.java:2006)
-// - NOT PORTED: visitError (ClassReader.java:2010)
-// - NOT PORTED: visitEnumAttributeProxy (ClassReader.java:2014)
-// - NOT PORTED: visitClassAttributeProxy (ClassReader.java:2050)
-// - NOT PORTED: visitArrayAttributeProxy (ClassReader.java:2055)
-// - NOT PORTED: visitCompoundAnnotationProxy (ClassReader.java:2066)
-// - NOT PORTED: run (ClassReader.java:2099)
-// - NOT PORTED: toString (ClassReader.java:2113)
-// - NOT PORTED: run (ClassReader.java:2136)
-// - NOT PORTED: toString (ClassReader.java:2163)
-// - NOT PORTED: run (ClassReader.java:2189)
-// - NOT PORTED: addTypeAnnotationsToSymbol (ClassReader.java:2212)
-// - NOT PORTED: visitClassSymbol (ClassReader.java:2241)
-// - NOT PORTED: visitMethodSymbol (ClassReader.java:2259)
-// - NOT PORTED: visitVarSymbol (ClassReader.java:2293)
-// - NOT PORTED: visitSymbol (ClassReader.java:2299)
-// - NOT PORTED: rewriteTypeParameters (ClassReader.java:2303)
-// - NOT PORTED: addTypeAnnotations (ClassReader.java:2343)
-// - NOT PORTED: addTypeAnnotations (ClassReader.java:2347)
-// - NOT PORTED: typeParameterBound (ClassReader.java:2377)
-// - NOT PORTED: methodFormalParameter (ClassReader.java:2385)
-// - NOT PORTED: thrownType (ClassReader.java:2390)
-// - NOT PORTED: classExtends (ClassReader.java:2394)
-// - NOT PORTED: visitClassType (ClassReader.java:2419)
-// - NOT PORTED: rewriteTypeParams (ClassReader.java:2440)
-// - NOT PORTED: visitWildcardType (ClassReader.java:2449)
-// - NOT PORTED: visitArrayType (ClassReader.java:2462)
-// - NOT PORTED: visitType (ClassReader.java:2473)
-// - NOT PORTED: adjustMethodParams (ClassReader.java:2588)
-// - NOT PORTED: parameter (ClassReader.java:2707)
-// - NOT PORTED: lookupMethod (ClassReader.java:2871)
-// - NOT PORTED: equals (ClassReader.java:3146)
-// - NOT PORTED: hashCode (ClassReader.java:3154)
-// - NOT PORTED: complete (ClassReader.java:3173)
-// - NOT PORTED: getTag (ClassReader.java:3209)
-// - NOT PORTED: cloneWithMetadata (ClassReader.java:3214)
-// - NOT PORTED: resolve (ClassReader.java:3218)
-// - NOT PORTED: toString (ClassReader.java:3223)
-// - NOT PORTED: complete (ClassReader.java:3261)
-// Attribute readers registered in initAttributeReaders but not yet wired
-// (read_attribute skips them exactly like the upstream unknown-attribute path;
-// TODO items in read_attribute list the dependency batches):
-// - NOT PORTED reader: Code (S2-B batch)
-// - NOT PORTED reader: ConstantValue (S2-B batch)
-// - NOT PORTED reader: InnerClasses (S2-B batch)
-// - NOT PORTED reader: SourceFile (S2-B batch)
-// - NOT PORTED reader: EnclosingMethod (S2-B batch)
-// - NOT PORTED reader: AnnotationDefault (S2-B batch)
-// - NOT PORTED reader: RuntimeInvisibleAnnotations (S2-B batch)
-// - NOT PORTED reader: RuntimeVisibleAnnotations (S2-B batch)
-// - NOT PORTED reader: RuntimeInvisibleParameterAnnotations (S2-B batch)
-// - NOT PORTED reader: RuntimeVisibleParameterAnnotations (S2-B batch)
-// - NOT PORTED reader: RuntimeVisibleTypeAnnotations (S2-B batch)
-// - NOT PORTED reader: RuntimeInvisibleTypeAnnotations (S2-B batch)
-// - NOT PORTED reader: Module (S2-B batch)
-// - NOT PORTED reader: ModuleResolution (S2-B batch)
+// - NOT PORTED: setFlagIfAttributeTrue (ClassReader.java:1479) — Annotate batch
+// - NOT PORTED: ProxyType (ClassReader.java:1840-1895) — module annotation batch
+// - NOT PORTED: AttributeReader.accept/toString of proxy classes (1834-1878) — Annotate batch
+// - NOT PORTED: visitConstant/visitClass/visitEnum/visitCompound/visitArray/
+//   visitEnumAttributeProxy/visitClassAttributeProxy/visitArrayAttributeProxy/
+//   visitCompoundAnnotationProxy (1989-2075) — Annotate batch
+// - NOT PORTED: AnnotationCompleter/AnnotationDefaultCompleter/TypeAnnotationCompleter/
+//   CompleterDeproxy run/toString (2099-2189) — Annotate batch
+// - NOT PORTED: addTypeAnnotationsToSymbol/visitClassSymbol/visitMethodSymbol/
+//   visitVarSymbol/visitSymbol/rewriteTypeParameters/addTypeAnnotations/
+//   typeParameterBound/methodFormalParameter/thrownType/classExtends/visitClassType/
+//   rewriteTypeParams/visitWildcardType/visitArrayType/visitType (2212-2473) — Annotate batch
+// - NOT PORTED: adjustMethodParams (2588) — readMethod this$n stripping batch
+// - NOT PORTED: parameter (2707) — initParameterNames batch
+// - NOT PORTED: AnnotationTypeMetadata/CompleterDeproxy (annotation batch)
+// - NOT PORTED: UsesProvidesCompleter class (3173) — result-equivalent tail path
+//   implemented directly in readClassFile (registered structural adapter)
+// - NOT PORTED: ProxyType.getTag/cloneWithMetadata/resolve/toString (3209-3223)
+// - NOT PORTED: PackageInfoCompleter.complete (3261)
+// - NOT PORTED: SourceFileObject.equals/hashCode (3146/3154: value equality;
+//   the local object is an Rc identity holder, registered)
+//
+// Registered adapters (not 1:1, see the batch report):
+// - VarSymbol.data: Java Object -> Option<ConstValue> (ConstantValue reader);
+// - MethodParameters/AnnotationDefault/Annotate attachment: values read and
+//   kept in ClassReader pending_* fields (Symbol fields/Annotate not ported);
+// - ModuleSymbol uses/provides: UsesProvidesCompleter completion performed in
+//   readClassFile tail (same resulting directives, structural adapter);
+// - SourceFileObject: URI(null,name,null) -> URI::create(name); unsupported
+//   operations mirror the UnsupportedOperationException semantics.
+//
+// Attribute readers: 26/26 wired (no reader is skipped as unknown any more).
 // End of §19 gap registration.
 
 //! This class provides operations to read a classfile into an internal
@@ -243,6 +194,16 @@ pub struct ClassReader {
     interim_uses: List<Name>,
     /// Java: private List<InterimProvidesDirective> interimProvides = List.nil();
     interim_provides: List<(Name, List<Name>)>,
+    /// Pending annotations read from classfile attributes (upstream stores
+    /// CompoundAnnotationProxy lists and hands them to Annotate; the Annotate
+    /// batch is not ported yet, so the read values are kept here, registered).",
+    pending_annotations: Vec<(SymbolId, List<AnnotationValue>)>,
+    /// Pending Runtime[In]visibleParameterAnnotations values.",
+    pending_parameter_annotations: Vec<(SymbolId, Vec<List<AnnotationValue>>)>,
+    /// Pending AnnotationDefault values.",
+    pending_annotation_defaults: Vec<(SymbolId, AnnotationValue)>,
+    /// Pending Runtime[In]visibleTypeAnnotations values (TypeAnnotationProxy).
+    pending_type_annotations: Vec<(SymbolId, List<TypeAnnotationProxy>)>,
     /// Java: Type.noType (syms.noType). Symtab does not expose the singleton yet,
     /// so the ClassReader caches the NONE-tag type it uses for absent supertypes
     /// (registered representation adapter; tag-based comparisons are unchanged).
@@ -319,6 +280,10 @@ impl ClassReader {
             saw_method_parameters: false,
             interim_uses: List::nil(),
             interim_provides: List::nil(),
+            pending_annotations: Vec::new(),
+            pending_parameter_annotations: Vec::new(),
+            pending_annotation_defaults: Vec::new(),
+            pending_type_annotations: Vec::new(),
             no_type: None,
         };
         reader.init_attribute_readers();
@@ -1156,7 +1121,13 @@ impl ClassReader {
         // no metadata state exists locally, so the not-an-annotation-type value
         // has no representation (registered gap, not an approximation).
         if (ctx.sym(c).flags_field & crate::code::flags::ANNOTATION as i64) != 0 {
-            unimplemented!("TODO(P2/S3): AnnotationTypeMetadata for annotation types (annotation batch)");
+            // TODO(Annotate batch): c.setAnnotationTypeMetadata(new AnnotationTypeMetadata(
+            //     c, new CompleterDeproxy(c, target, repeatable))). AnnotationTypeMetadata
+            // and the annotate machinery are not ported yet; no metadata state is
+            // created (registered structural gap, no substitute).
+        } else {
+            // TODO(Annotate batch): c.setAnnotationTypeMetadata(
+            //     AnnotationTypeMetadata.notAnAnnotationType()). Same gap as above.
         }
 
         // Java: if (c == currentModule.module_info) {
@@ -1976,6 +1947,369 @@ impl ClassReader {
         }
         Ok(())
     }
+    // ------------------------------------------------------------------
+    // Annotation reading (ClassReader.java:1429-1490, 1955-2100)
+    // ------------------------------------------------------------------
+
+    /// Java: List<CompoundAnnotationProxy> readAnnotations()
+    fn read_annotations(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+    ) -> Result<List<AnnotationValue>, crate::code::symbol::CompletionFailure> {
+        let num_attributes = self.next_char();
+        let mut annotations = List::nil();
+        for _ in 0..num_attributes {
+            annotations = annotations.append(self.read_compound_annotation(ctx, syms)?);
+        }
+        Ok(annotations)
+    }
+
+    /// Java: Type readTypeOrClassSymbol(int i) / Type readTypeToProxy(int i)
+    fn read_type_to_proxy(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        index: i32,
+    ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
+        let module_info = self.current_module.and_then(|module| match &ctx.sym(module).kind_data {
+            crate::code::symbol::SymbolKind::ModuleSymbol { module_info, .. } => *module_info,
+            _ => None,
+        });
+        if module_info == self.current_owner {
+            // Java: return new ProxyType(i); — ProxyType is not ported yet (module
+            // annotation batch); registered TODO.
+            unimplemented!("TODO(S2-B/ProxyType): ClassReader.ProxyType for module-info annotations");
+        }
+        self.get_type(ctx, syms, index)
+    }
+
+    /// Java: CompoundAnnotationProxy readCompoundAnnotation()
+    fn read_compound_annotation(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+    ) -> Result<AnnotationValue, crate::code::symbol::CompletionFailure> {
+        let ty = {
+            let index = self.next_char() as i32;
+            self.read_type_to_proxy(ctx, syms, index)?
+        };
+        let num_fields = self.next_char();
+        let mut pairs: List<(Name, AnnotationValue)> = List::nil();
+        for _ in 0..num_fields {
+            let name_index = self.next_char() as i32;
+            let name = self.get_name(name_index)?;
+            let value = self.read_attribute_value(ctx, syms)?;
+            pairs = pairs.append((name, value));
+        }
+        Ok(AnnotationValue::Compound { ty, values: pairs })
+    }
+
+    /// Java: Attribute readAttributeValue() (ClassReader.java:1985-2045)
+    fn read_attribute_value(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+    ) -> Result<AnnotationValue, crate::code::symbol::CompletionFailure> {
+        use crate::code::attribute::ConstValue;
+        let tag = self.next_byte() as u8 as char;
+        match tag {
+            'B' => self.read_constant_annotation_value(ctx, syms.string_type, false),
+            'C' => self.read_constant_annotation_value(ctx, syms.char_type, false),
+            'D' => self.read_constant_annotation_value(ctx, syms.double_type, false),
+            'F' => self.read_constant_annotation_value(ctx, syms.float_type, false),
+            'I' => self.read_constant_annotation_value(ctx, syms.int_type, false),
+            'J' => self.read_constant_annotation_value(ctx, syms.long_type, false),
+            'S' => self.read_constant_annotation_value(ctx, syms.short_type, false),
+            'Z' => self.read_constant_annotation_value(ctx, syms.boolean_type, false),
+            's' => {
+                let index = self.next_char() as i32;
+                let name = self.get_name(index)?;
+                Ok(AnnotationValue::Constant {
+                    ty: syms.string_type,
+                    value: ConstValue::String(name.to_java_string()),
+                })
+            }
+            'e' => {
+                let enum_index = self.next_char() as i32;
+                let enum_type = self.read_type_to_proxy(ctx, syms, enum_index)?;
+                let name_index = self.next_char() as i32;
+                let enumerator = self.get_name(name_index)?;
+                Ok(AnnotationValue::Enum { enum_type, enumerator })
+            }
+            'c' => {
+                let class_index = self.next_char() as i32;
+                let class_type = self.read_type_to_proxy(ctx, syms, class_index)?;
+                Ok(AnnotationValue::Class { class_type })
+            }
+            '[' => {
+                let n = self.next_char();
+                let mut values = List::nil();
+                for _ in 0..n {
+                    values = values.append(self.read_attribute_value(ctx, syms)?);
+                }
+                Ok(AnnotationValue::Array { values })
+            }
+            '@' => self.read_compound_annotation(ctx, syms),
+            other => panic!("AssertionError: unknown annotation tag '{other}'"),
+        }
+    }
+
+    /// Helper for the primitive/constant reading branches of readAttributeValue
+    fn read_constant_annotation_value(
+        &mut self,
+        ctx: &mut CompilerContext,
+        ty: TypeId,
+        _string_fallback: bool,
+    ) -> Result<AnnotationValue, crate::code::symbol::CompletionFailure> {
+        use crate::code::attribute::ConstValue;
+        use crate::jvm::pool_reader::PoolValue;
+        let index = self.next_char() as i32;
+        let v = self.get_constant(index)?;
+        let value = match &v {
+            PoolValue::Integer(value) => ConstValue::Integer(*value),
+            PoolValue::Long(value) => ConstValue::Long(*value),
+            PoolValue::Float(value) => ConstValue::Float(*value),
+            PoolValue::Double(value) => ConstValue::Double(*value),
+            _ => panic!("unexpected constant pool value for annotation element"),
+        };
+        let _ = ctx;
+        Ok(AnnotationValue::Constant { ty, value })
+    }
+
+    /// Java: void attachAnnotations(Symbol sym)
+    ///
+    /// The annotation read path stores the raw proxies; attaching them to the
+    /// Symbol goes through Annotate (not ported yet), so the attach part and the
+    /// flag-only annotation handling (proprietary/profile/preview/deprecated/
+    /// repeatable/target/value-based) are registered as TODOs for the Annotate
+    /// batch. No substitute attachment is performed.
+    fn attach_annotations(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        let annotations = self.read_annotations(ctx, syms)?;
+        if annotations.is_empty() {
+            return Ok(());
+        }
+        // TODO(Annotate batch): flags-only annotation handling and
+        // annotate.normal(new AnnotationCompleter(sym, proxies));
+        self.pending_annotations.push((sym, annotations));
+        Ok(())
+    }
+
+    /// Java: void readParameterAnnotations(Symbol meth) (ClassReader.java:1466-1482)
+    fn read_parameter_annotations(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        let num_parameters = self.next_byte() as usize;
+        let mut annotations_by_parameter = Vec::with_capacity(num_parameters);
+        for _ in 0..num_parameters {
+            annotations_by_parameter.push(self.read_annotations(ctx, syms)?);
+        }
+        self.pending_parameter_annotations.push((sym, annotations_by_parameter));
+        Ok(())
+    }
+
+    /// Java: void attachAnnotationDefault(Symbol sym) (ClassReader.java:1487-1503)
+    fn attach_annotation_default(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        let value = self.read_attribute_value(ctx, syms)?;
+        // TODO(Annotate batch): meth.defaultValue = value; and
+        // annotate.normal(new AnnotationDefaultCompleter(meth, value));
+        self.pending_annotation_defaults.push((sym, value));
+        Ok(())
+    }
+    // ------------------------------------------------------------------
+    // Type annotation reading (ClassReader.java:1505-1690)
+    // ------------------------------------------------------------------
+
+    /// Java: void attachTypeAnnotations(Symbol sym) (ClassReader.java:1490-1505)
+    fn attach_type_annotations(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        let num_attributes = self.next_char();
+        if num_attributes == 0 {
+            return Ok(());
+        }
+        let mut proxies = List::nil();
+        for _ in 0..num_attributes {
+            proxies = proxies.append(self.read_type_annotation(ctx, syms)?);
+        }
+        // TODO(Annotate batch): attachTypeAnnotations(sym, proxies)
+        // (TypeAnnotationCompleter is not ported yet); the read proxies are kept.
+        self.pending_type_annotations.push((sym, proxies));
+        Ok(())
+    }
+
+    /// Java: TypeAnnotationProxy readTypeAnnotation()
+    fn read_type_annotation(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+    ) -> Result<TypeAnnotationProxy, crate::code::symbol::CompletionFailure> {
+        let position = self.read_position()?;
+        let compound = self.read_compound_annotation(ctx, syms)?;
+        Ok(TypeAnnotationProxy { compound, position })
+    }
+
+    /// Java: List<TypeAnnotationPosition.TypePathEntry> readTypePath()
+    fn read_type_path(&mut self) -> List<crate::code::type_annotation_position::TypePathEntry> {
+        let len = self.next_byte();
+        let mut loc: List<i32> = List::nil();
+        let bytes_per_entry = crate::code::type_annotation_position::TypePathEntry::BYTES_PER_ENTRY;
+        for _ in 0..len * bytes_per_entry {
+            loc = loc.append(self.next_byte());
+        }
+        crate::code::type_annotation_position::TypeAnnotationPosition::get_type_path_from_binary(loc)
+    }
+
+    /// Java: TypeAnnotationPosition readPosition() (ClassReader.java:1570-1780)
+    fn read_position(
+        &mut self,
+    ) -> Result<crate::code::type_annotation_position::TypeAnnotationPosition, crate::code::symbol::CompletionFailure> {
+        use crate::code::target_type::TargetType;
+        use crate::code::type_annotation_position::TypeAnnotationPosition as Pos;
+        let tag = self.next_byte();
+        if !TargetType::is_valid_target_type_value(tag) {
+            // The generated accessor currently has no parameters (registered P4
+            // diagnostic-contract deviation).
+            let key = Fragment::from(
+                crate::resources::compiler_properties::fragments::bad_type_annotation_value(),
+            );
+            return Err(self.bad_class_file(key).failure);
+        }
+        let target = TargetType::from_target_type_value(tag);
+        let position = match target {
+            TargetType::INSTANCEOF => {
+                let offset = self.next_char() as i32;
+                let mut position = Pos::instance_of(self.read_type_path(), -1);
+                position.offset = offset;
+                position
+            }
+            TargetType::NEW => {
+                let offset = self.next_char() as i32;
+                let mut position = Pos::new_obj(self.read_type_path(), -1);
+                position.offset = offset;
+                position
+            }
+            TargetType::CONSTRUCTOR_REFERENCE => {
+                let offset = self.next_char() as i32;
+                let mut position = Pos::constructor_ref(self.read_type_path(), -1);
+                position.offset = offset;
+                position
+            }
+            TargetType::METHOD_REFERENCE => {
+                let offset = self.next_char() as i32;
+                let mut position = Pos::method_ref(self.read_type_path(), -1);
+                position.offset = offset;
+                position
+            }
+            TargetType::LOCAL_VARIABLE | TargetType::RESOURCE_VARIABLE => {
+                let table_length = self.next_char();
+                let mut lvar_offset = Vec::with_capacity(table_length as usize);
+                let mut lvar_length = Vec::with_capacity(table_length as usize);
+                let mut lvar_index = Vec::with_capacity(table_length as usize);
+                for _ in 0..table_length {
+                    lvar_offset.push(self.next_char() as i32);
+                    lvar_length.push(self.next_char() as i32);
+                    lvar_index.push(self.next_char() as i32);
+                }
+                let mut position = if target == TargetType::LOCAL_VARIABLE {
+                    Pos::local_variable(self.read_type_path(), -1)
+                } else {
+                    Pos::resource_variable(self.read_type_path(), -1)
+                };
+                position.lvar_offset = Some(lvar_offset);
+                position.lvar_length = Some(lvar_length);
+                position.lvar_index = Some(lvar_index);
+                position
+            }
+            TargetType::EXCEPTION_PARAMETER => {
+                let exception_index = self.next_char() as i32;
+                let mut position = Pos::exception_parameter(self.read_type_path(), -1);
+                position.set_exception_index(exception_index);
+                position
+            }
+            TargetType::METHOD_RECEIVER => Pos::method_receiver(self.read_type_path(), -1),
+            TargetType::CLASS_TYPE_PARAMETER => {
+                let parameter_index = self.next_byte();
+                Pos::type_parameter(self.read_type_path(), parameter_index)
+            }
+            TargetType::METHOD_TYPE_PARAMETER => {
+                let parameter_index = self.next_byte();
+                Pos::method_type_parameter(self.read_type_path(), parameter_index)
+            }
+            TargetType::CLASS_TYPE_PARAMETER_BOUND => {
+                let parameter_index = self.next_byte();
+                let bound_index = self.next_byte();
+                Pos::type_parameter_bound(self.read_type_path(), parameter_index, bound_index)
+            }
+            TargetType::METHOD_TYPE_PARAMETER_BOUND => {
+                let parameter_index = self.next_byte();
+                let bound_index = self.next_byte();
+                Pos::method_type_parameter_bound(self.read_type_path(), parameter_index, bound_index)
+            }
+            TargetType::CLASS_EXTENDS => {
+                let type_index = self.next_char() as i32;
+                Pos::class_extends(self.read_type_path(), type_index, -1)
+            }
+            TargetType::THROWS => {
+                let type_index = self.next_char() as i32;
+                Pos::method_throws(self.read_type_path(), type_index, -1)
+            }
+            TargetType::METHOD_FORMAL_PARAMETER => {
+                let parameter_index = self.next_byte();
+                Pos::method_parameter(self.read_type_path(), parameter_index, -1)
+            }
+            TargetType::CAST => {
+                let offset = self.next_char() as i32;
+                let type_index = self.next_byte();
+                let mut position = Pos::type_cast(self.read_type_path(), type_index, -1);
+                position.offset = offset;
+                position
+            }
+            TargetType::CONSTRUCTOR_INVOCATION_TYPE_ARGUMENT
+            | TargetType::METHOD_INVOCATION_TYPE_ARGUMENT
+            | TargetType::CONSTRUCTOR_REFERENCE_TYPE_ARGUMENT
+            | TargetType::METHOD_REFERENCE_TYPE_ARGUMENT => {
+                let offset = self.next_char() as i32;
+                let type_index = self.next_byte();
+                let mut position = match target {
+                    TargetType::CONSTRUCTOR_INVOCATION_TYPE_ARGUMENT => {
+                        Pos::constructor_invocation_type_arg(self.read_type_path(), type_index, -1)
+                    }
+                    TargetType::METHOD_INVOCATION_TYPE_ARGUMENT => {
+                        Pos::method_invocation_type_arg(self.read_type_path(), type_index, -1)
+                    }
+                    TargetType::CONSTRUCTOR_REFERENCE_TYPE_ARGUMENT => {
+                        Pos::constructor_ref_type_arg(self.read_type_path(), type_index, -1)
+                    }
+                    _ => Pos::method_ref_type_arg(self.read_type_path(), type_index, -1),
+                };
+                position.offset = offset;
+                position
+            }
+            TargetType::METHOD_RETURN => Pos::method_return(self.read_type_path(), -1),
+            TargetType::FIELD => Pos::field(self.read_type_path(), -1),
+            TargetType::UNKNOWN => {
+                panic!("AssertionError: jvm.ClassReader: UNKNOWN target type should never occur!");
+            }
+        };
+        Ok(position)
+    }
     /// Java: void readAttrs(Symbol sym, AttributeKind kind)
     fn read_attrs(
         &mut self,
@@ -1992,6 +2326,20 @@ impl ClassReader {
                 Err(_) => self.names.empty.clone(),
             };
             let attr_len = self.next_int();
+            // Java: readClassFile catches ArrayIndexOutOfBoundsException and maps it
+            // to badClassFile("bad.class.file", c.flatname). The attribute length
+            // bound is validated explicitly here (the full next* bounds-error
+            // mapping is a registered TODO for the hardening batch).
+            let attr_end = (self.bp as i64) + (attr_len as i64);
+            if attr_len < 0 || attr_end > self.buf.elems.len() as i64 {
+                let class_name = ctx
+                    .sym(self.current_owner.expect("currentOwner"))
+                    .flat_name();
+                let key = Fragment::from(
+                    crate::resources::compiler_properties::fragments::bad_class_file(class_name),
+                );
+                return Err(self.bad_class_file(key).failure);
+            }
             let position = self
                 .attribute_readers
                 .iter()
@@ -2195,17 +2543,20 @@ impl ClassReader {
             AttributeReaderKind::SourceFile => {
                 self.read_source_file_attr(ctx, sym);
             }
-            AttributeReaderKind::AnnotationDefault
-            | AttributeReaderKind::RuntimeInvisibleAnnotations
-            | AttributeReaderKind::RuntimeVisibleAnnotations
-            | AttributeReaderKind::RuntimeInvisibleParameterAnnotations
-            | AttributeReaderKind::RuntimeVisibleParameterAnnotations
-            | AttributeReaderKind::RuntimeVisibleTypeAnnotations
+            AttributeReaderKind::AnnotationDefault => {
+                self.attach_annotation_default(ctx, syms, sym)?;
+            }
+            AttributeReaderKind::RuntimeInvisibleAnnotations
+            | AttributeReaderKind::RuntimeVisibleAnnotations => {
+                self.attach_annotations(ctx, syms, sym)?;
+            }
+            AttributeReaderKind::RuntimeInvisibleParameterAnnotations
+            | AttributeReaderKind::RuntimeVisibleParameterAnnotations => {
+                self.read_parameter_annotations(ctx, syms, sym)?;
+            }
+            AttributeReaderKind::RuntimeVisibleTypeAnnotations
             | AttributeReaderKind::RuntimeInvisibleTypeAnnotations => {
-                // TODO(S2-B next step): CompoundAnnotationProxy/TypeAnnotationPosition/
-                // Module Directive batches (registered in the §19 block); skipped
-                // exactly like the upstream unknown-attribute path until then.
-                self.bp += attr_len;
+                self.attach_type_annotations(ctx, syms, sym)?;
             }
         }
         Ok(())
@@ -2788,6 +3139,35 @@ pub(crate) enum AttributeReaderKind {
     ModuleResolution,
     Record,
     PermittedSubclasses,
+}
+
+/// Java: the ClassReader annotation proxy values (EnumAttributeProxy/
+/// ClassAttributeProxy/ArrayAttributeProxy/CompoundAnnotationProxy are
+/// Attribute subclasses upstream; the port keeps their raw read form until
+/// the Annotate batch attaches them).
+// The proxy fields are read from the classfile and only attached to Symbols by the
+// Annotate batch (not ported yet); they are kept as read values (registered).
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub(crate) enum AnnotationValue {
+    /// Java: Attribute.Constant (type + value)
+    Constant { ty: TypeId, value: crate::code::attribute::ConstValue },
+    /// Java: EnumAttributeProxy
+    Enum { enum_type: TypeId, enumerator: Name },
+    /// Java: ClassAttributeProxy
+    Class { class_type: TypeId },
+    /// Java: ArrayAttributeProxy
+    Array { values: List<AnnotationValue> },
+    /// Java: CompoundAnnotationProxy
+    Compound { ty: TypeId, values: List<(Name, AnnotationValue)> },
+}
+/// Java: TypeAnnotationProxy (read type annotation: compound value + position)
+// See AnnotationValue: the read proxy is kept until the Annotate batch.
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub(crate) struct TypeAnnotationProxy {
+    pub(crate) compound: AnnotationValue,
+    pub(crate) position: crate::code::type_annotation_position::TypeAnnotationPosition,
 }
 
 /// Java: an AttributeReader entry (name/version/kinds + the reader).
@@ -3826,6 +4206,425 @@ mod tests {
         }
     }
 
+    fn annotation_constant(value: &AnnotationValue) -> Option<&crate::code::attribute::ConstValue> {
+        match value {
+            AnnotationValue::Constant { value, .. } => Some(value),
+            _ => None,
+        }
+    }
+
+    fn compound_values(annotation: &AnnotationValue) -> List<(Name, AnnotationValue)> {
+        match annotation {
+            AnnotationValue::Compound { values, .. } => values.clone(),
+            other => panic!("compound annotation expected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fixture_annotation_values() {
+        // AnnotatedFixture.java: @MyAnno(value = 7, name = "n") on the class,
+        // @MyAnno(1) on the field, @MyAnno(2) on the method, @MyAnno(3) on the
+        // parameter; MyAnno declares default values (name/type/kind).
+        let mut context = Context::new();
+        let log = Log::instance(&mut context);
+        let names = Rc::new(Names::new(false));
+        let messages = crate::util::javac_messages::JavacMessages::instance(&mut context);
+        let factory = Rc::new(Factory::new(messages, "compiler"));
+        let dcfh = DeferredCompletionFailureHandler::instance();
+        let preview = Rc::new(Preview::new(false, false));
+        let profile = Profile::instance(&mut context);
+        let options = Options::instance(&mut context);
+        let source = Source::JDK17;
+        let mut reader = ClassReader::new(
+            log,
+            Rc::clone(&names),
+            factory,
+            dcfh,
+            preview,
+            profile,
+            &options,
+            source,
+        );
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let java_base = syms.java_base;
+        let class_name = names.from_string(&javac_strings::JavaString::from("AnnotatedFixture"));
+        let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
+        let file = Rc::new(ClassBytesFile {
+            name: javac_strings::JavaString::from("AnnotatedFixture.class"),
+            bytes: fixture_bytes("AnnotatedFixture.class"),
+        });
+        if let crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } =
+            &mut ctx.sym_mut(c).kind_data
+        {
+            *classfile = Some(file);
+        }
+        reader
+            .read_class_file(&mut ctx, &mut syms, c)
+            .expect("AnnotatedFixture readClassFile");
+        assert_eq!(reader.pending_annotations.len(), 3, "class/field/method annotations");
+        let class_annotation = &reader.pending_annotations[0].1;
+        assert_eq!(class_annotation.length(), 1, "one compound annotation");
+        let mut values = compound_values(class_annotation.head());
+        assert_eq!(values.length(), 2, "explicit elements only");
+        let mut found_value = None;
+        let mut found_name = None;
+        while values.non_empty() {
+            let (name, value) = values.head().clone();
+            let name = name.to_java_string().to_string();
+            if name == "value" {
+                found_value = annotation_constant(&value).cloned();
+            } else if name == "name" {
+                found_name = annotation_constant(&value).cloned();
+            }
+            values = values.tail();
+        }
+        assert_eq!(
+            found_value,
+            Some(crate::code::attribute::ConstValue::Integer(7))
+        );
+        assert_eq!(
+            found_name,
+            Some(crate::code::attribute::ConstValue::String(
+                javac_strings::JavaString::from("n")
+            ))
+        );
+        let field_annotation = &reader.pending_annotations[1].1;
+        let (_, field_value) = compound_values(field_annotation.head()).head().clone();
+        assert_eq!(
+            annotation_constant(&field_value),
+            Some(&crate::code::attribute::ConstValue::Integer(1))
+        );
+        let method_annotation = &reader.pending_annotations[2].1;
+        let (_, method_value) = compound_values(method_annotation.head()).head().clone();
+        assert_eq!(
+            annotation_constant(&method_value),
+            Some(&crate::code::attribute::ConstValue::Integer(2))
+        );
+        assert_eq!(reader.pending_parameter_annotations.len(), 1);
+        let parameter_annotations = &reader.pending_parameter_annotations[0].1;
+        assert_eq!(parameter_annotations.len(), 1);
+        let (_, parameter_annotation) = compound_values(parameter_annotations[0].head()).head().clone();
+        assert_eq!(
+            annotation_constant(&parameter_annotation),
+            Some(&crate::code::attribute::ConstValue::Integer(3))
+        );
+    }
+
+    #[test]
+    fn fixture_annotation_defaults() {
+        // MyAnno.class default values: name()="x", type()=Object.class,
+        // kind()=ElementType.TYPE (value() has no default).
+        let mut context = Context::new();
+        let log = Log::instance(&mut context);
+        let names = Rc::new(Names::new(false));
+        let messages = crate::util::javac_messages::JavacMessages::instance(&mut context);
+        let factory = Rc::new(Factory::new(messages, "compiler"));
+        let dcfh = DeferredCompletionFailureHandler::instance();
+        let preview = Rc::new(Preview::new(false, false));
+        let profile = Profile::instance(&mut context);
+        let options = Options::instance(&mut context);
+        let source = Source::JDK17;
+        let mut reader = ClassReader::new(
+            log,
+            Rc::clone(&names),
+            factory,
+            dcfh,
+            preview,
+            profile,
+            &options,
+            source,
+        );
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let java_base = syms.java_base;
+        let class_name = names.from_string(&javac_strings::JavaString::from("MyAnno"));
+        let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
+        let file = Rc::new(ClassBytesFile {
+            name: javac_strings::JavaString::from("MyAnno.class"),
+            bytes: fixture_bytes("MyAnno.class"),
+        });
+        if let crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } =
+            &mut ctx.sym_mut(c).kind_data
+        {
+            *classfile = Some(file);
+        }
+        reader
+            .read_class_file(&mut ctx, &mut syms, c)
+            .expect("MyAnno readClassFile");
+        let mut defaults: Vec<(String, AnnotationValue)> = Vec::new();
+        for (sym, value) in &reader.pending_annotation_defaults {
+            let name = ctx.sym(*sym).name.to_java_string().to_string();
+            defaults.push((name, value.clone()));
+        }
+        assert_eq!(defaults.len(), 3, "defaults: {defaults:?}");
+        for (name, value) in &defaults {
+            match name.as_str() {
+                "name" => {
+                    assert_eq!(
+                        annotation_constant(value),
+                        Some(&crate::code::attribute::ConstValue::String(
+                            javac_strings::JavaString::from("x")
+                        ))
+                    );
+                }
+                "type" => match value {
+                    AnnotationValue::Class { class_type } => {
+                        let tsym = ctx.typ(*class_type).tsym.expect("Object type symbol");
+                        assert_eq!(
+                            ctx.sym(tsym).flat_name().to_java_string().to_string(),
+                            "java.lang.Object"
+                        );
+                    }
+                    other => panic!("type default: {other:?}"),
+                },
+                "kind" => match value {
+                    AnnotationValue::Enum { enumerator, .. } => {
+                        assert_eq!(enumerator.to_java_string().to_string(), "TYPE");
+                    }
+                    other => panic!("kind default: {other:?}"),
+                },
+                other => panic!("unexpected default {other}"),
+            }
+        }
+    }
+
+    #[test]
+    fn fixture_type_annotations() {
+        // TypeAnnotated.class (javap -v RuntimeVisibleTypeAnnotations oracle):
+        //   field  -> FIELD
+        //   list   -> FIELD, location=[TYPE_ARGUMENT(0)]
+        //   method -> METHOD_RETURN, parameter -> METHOD_FORMAL_PARAMETER(0)
+        let mut context = Context::new();
+        let log = Log::instance(&mut context);
+        let names = Rc::new(Names::new(false));
+        let messages = crate::util::javac_messages::JavacMessages::instance(&mut context);
+        let factory = Rc::new(Factory::new(messages, "compiler"));
+        let dcfh = DeferredCompletionFailureHandler::instance();
+        let preview = Rc::new(Preview::new(false, false));
+        let profile = Profile::instance(&mut context);
+        let options = Options::instance(&mut context);
+        let source = Source::JDK17;
+        let mut reader = ClassReader::new(
+            log,
+            Rc::clone(&names),
+            factory,
+            dcfh,
+            preview,
+            profile,
+            &options,
+            source,
+        );
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let java_base = syms.java_base;
+        let class_name = names.from_string(&javac_strings::JavaString::from("TypeAnnotated"));
+        let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
+        let file = Rc::new(ClassBytesFile {
+            name: javac_strings::JavaString::from("TypeAnnotated.class"),
+            bytes: fixture_bytes("TypeAnnotated.class"),
+        });
+        if let crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } =
+            &mut ctx.sym_mut(c).kind_data
+        {
+            *classfile = Some(file);
+        }
+        reader
+            .read_class_file(&mut ctx, &mut syms, c)
+            .expect("TypeAnnotated readClassFile");
+        let mut targets: Vec<(String, Vec<String>)> = Vec::new();
+        for (_, proxies) in &reader.pending_type_annotations {
+            let mut list = proxies.clone();
+            while list.non_empty() {
+                let proxy = list.head();
+                let target = format!("{:?}", proxy.position.type_);
+                let mut location: Vec<String> = Vec::new();
+                let mut path = proxy.position.location.clone();
+                while path.non_empty() {
+                    location.push(format!("{}", path.head()));
+                    path = path.tail();
+                }
+                targets.push((target, location));
+                list = list.tail();
+            }
+        }
+        assert!(
+            targets.contains(&("FIELD".to_string(), Vec::new())),
+            "targets: {targets:?}"
+        );
+        assert!(
+            targets.contains(&(
+                "FIELD".to_string(),
+                vec!["TYPE_ARGUMENT(0)".to_string()],
+            )),
+            "targets: {targets:?}"
+        );
+        assert!(
+            targets.contains(&("METHOD_RETURN".to_string(), Vec::new())),
+            "targets: {targets:?}"
+        );
+        assert!(
+            targets.contains(&("METHOD_FORMAL_PARAMETER".to_string(), Vec::new())),
+            "targets: {targets:?}"
+        );
+        // The METHOD_FORMAL_PARAMETER position carries the parameter index.
+        let mut parameter_position = None;
+        for (_, proxies) in &reader.pending_type_annotations {
+            let mut list = proxies.clone();
+            while list.non_empty() {
+                let proxy = list.head();
+                if proxy.position.type_ == crate::code::target_type::TargetType::METHOD_FORMAL_PARAMETER {
+                    parameter_position = Some(proxy.position.parameter_index);
+                }
+                list = list.tail();
+            }
+        }
+        assert_eq!(parameter_position, Some(0));
+    }
+    /// Minimal classfile with one unknown attribute: magic, version 52, a
+    /// 5-entry constant pool, java/lang/Object super, no members, and one
+    /// attribute whose name is the Utf8 "Unknown".
+    fn minimal_class_with_attribute(attr_len: i32, content_len: i32) -> Vec<u8> {
+        let mut bytes: Vec<u8> = Vec::new();
+        bytes.extend_from_slice(&[0xCA, 0xFE, 0xBA, 0xBE]);
+        bytes.extend_from_slice(&0u16.to_be_bytes()); // minor
+        bytes.extend_from_slice(&52u16.to_be_bytes()); // major
+        bytes.extend_from_slice(&6u16.to_be_bytes()); // constant_pool_count
+        // #1 Utf8 "Demo"
+        bytes.push(1);
+        bytes.extend_from_slice(&4u16.to_be_bytes());
+        bytes.extend_from_slice(b"Demo");
+        // #2 Class #1
+        bytes.push(7);
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        // #3 Utf8 "java/lang/Object"
+        bytes.push(1);
+        bytes.extend_from_slice(&16u16.to_be_bytes());
+        bytes.extend_from_slice(b"java/lang/Object");
+        // #4 Class #3
+        bytes.push(7);
+        bytes.extend_from_slice(&3u16.to_be_bytes());
+        // #5 Utf8 "Unknown"
+        bytes.push(1);
+        bytes.extend_from_slice(&7u16.to_be_bytes());
+        bytes.extend_from_slice(b"Unknown");
+        bytes.extend_from_slice(&0x0021u16.to_be_bytes()); // access_flags
+        bytes.extend_from_slice(&2u16.to_be_bytes()); // this_class
+        bytes.extend_from_slice(&4u16.to_be_bytes()); // super_class
+        bytes.extend_from_slice(&0u16.to_be_bytes()); // interfaces_count
+        bytes.extend_from_slice(&0u16.to_be_bytes()); // fields_count
+        bytes.extend_from_slice(&0u16.to_be_bytes()); // methods_count
+        bytes.extend_from_slice(&1u16.to_be_bytes()); // attributes_count
+        bytes.extend_from_slice(&5u16.to_be_bytes()); // attribute_name_index
+        bytes.extend_from_slice(&(attr_len as u32).to_be_bytes()); // attribute_length is u4
+        for i in 0..content_len {
+            bytes.push((i % 251) as u8);
+        }
+        bytes
+    }
+
+    fn parse_bytes(binary_name: &str, bytes: Vec<u8>) -> Result<(), String> {
+        let mut context = Context::new();
+        let log = Log::instance(&mut context);
+        let names = Rc::new(Names::new(false));
+        let messages = crate::util::javac_messages::JavacMessages::instance(&mut context);
+        let factory = Rc::new(Factory::new(messages, "compiler"));
+        let dcfh = DeferredCompletionFailureHandler::instance();
+        let preview = Rc::new(Preview::new(false, false));
+        let profile = Profile::instance(&mut context);
+        let options = Options::instance(&mut context);
+        let source = Source::JDK17;
+        let mut reader = ClassReader::new(
+            log,
+            Rc::clone(&names),
+            factory,
+            dcfh,
+            preview,
+            profile,
+            &options,
+            source,
+        );
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let class_name = names.from_string(&javac_strings::JavaString::from(binary_name));
+        let java_base = syms.java_base;
+        let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
+        let file = Rc::new(ClassBytesFile {
+            name: javac_strings::JavaString::from("Demo.class"),
+            bytes,
+        });
+        if let crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } =
+            &mut ctx.sym_mut(c).kind_data
+        {
+            *classfile = Some(file);
+        }
+        reader
+            .read_class_file(&mut ctx, &mut syms, c)
+            .map_err(|failure| format!("{failure}"))
+    }
+
+    #[test]
+    fn unknown_attribute_is_skipped() {
+        let bytes = minimal_class_with_attribute(3, 3);
+        parse_bytes("Demo", bytes).expect("unknown attribute must be skipped");
+    }
+
+    #[test]
+    fn attribute_length_overflow_maps_to_bad_class_file() {
+        // attr_length points past the end of the buffer: the readClassFile
+        // ArrayIndexOutOfBoundsException mapping (bad.class.file) is applied.
+        let bytes = minimal_class_with_attribute(0x1FFFF, 3);
+        let error = parse_bytes("Demo", bytes).expect_err("overflowing attribute length");
+        assert!(
+            error.contains("bad class file") || error.contains("bad.class.file"),
+            "error: {error}"
+        );
+    }
+
+    #[test]
+    fn attribute_reader_version_and_allow_gates() {
+        // Version gate: the Record reader is version 58; a classfile with major
+        // version 51 must be rejected even when the source allows records.
+        let mut reader = reader();
+        let record_pos = reader
+            .attribute_readers
+            .iter()
+            .position(|def| def.name.to_java_string().to_string() == "Record")
+            .expect("Record reader");
+        reader.major_version = 51;
+        assert!(!reader.accepts(record_pos, AttributeKind::CLASS), "version gate");
+        reader.major_version = 58;
+        assert!(reader.accepts(record_pos, AttributeKind::CLASS), "version ok");
+        // allowRecords gate: Source JDK8 does not allow records.
+        let mut jdk8 = reader_with_source(Source::JDK8);
+        let record_pos_8 = jdk8
+            .attribute_readers
+            .iter()
+            .position(|def| def.name.to_java_string().to_string() == "Record")
+            .expect("Record reader");
+        jdk8.major_version = 58;
+        assert!(!jdk8.accepts(record_pos_8, AttributeKind::CLASS), "allowRecords");
+        // allowModules gate: Source JDK8 does not allow modules.
+        let mut jdk8_modules = reader_with_source(Source::JDK8);
+        let module_pos = jdk8_modules
+            .attribute_readers
+            .iter()
+            .position(|def| def.name.to_java_string().to_string() == "Module")
+            .expect("Module reader");
+        jdk8_modules.major_version = 53;
+        assert!(!jdk8_modules.accepts(module_pos, AttributeKind::CLASS), "allowModules");
+        // allowSealed gate: Source JDK8 does not allow sealed types.
+        let mut jdk8_sealed = reader_with_source(Source::JDK8);
+        let sealed_pos = jdk8_sealed
+            .attribute_readers
+            .iter()
+            .position(|def| def.name.to_java_string().to_string() == "PermittedSubclasses")
+            .expect("PermittedSubclasses reader");
+        jdk8_sealed.major_version = 61;
+        assert!(!jdk8_sealed.accepts(sealed_pos, AttributeKind::CLASS), "allowSealed");
+        // All 26 readers are registered.
+        assert_eq!(reader.attribute_readers.len(), 26);
+    }
     #[test]
     fn bad_magic_returns_bad_class_file_key() {
         let Some(mut bytes) = baseline_class_bytes("java.lang.Object") else {
@@ -3865,6 +4664,10 @@ mod tests {
     use crate::util::context::Context;
 
     fn reader() -> ClassReader {
+        reader_with_source(Source::JDK17)
+    }
+
+    fn reader_with_source(source: Source) -> ClassReader {
         let mut context = Context::new();
         let log = Log::instance(&mut context);
         let names = Rc::new(Names::new(false));
@@ -3874,7 +4677,7 @@ mod tests {
         let preview = Rc::new(Preview::new(false, false));
         let profile = Rc::new(Profile::values()[0]);
         let options = Options::instance(&mut context);
-        ClassReader::new(log, names, factory, dcfh, preview, profile, &options, Source::JDK17)
+        ClassReader::new(log, names, factory, dcfh, preview, profile, &options, source)
     }
 
     #[test]
