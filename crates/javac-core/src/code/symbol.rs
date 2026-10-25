@@ -1057,6 +1057,87 @@ impl Symbol {
     }
 }
 
+impl Symbol {
+    /// Java: public Symbol location()
+    pub fn location(&self) -> Option<SymbolId> {
+        let owner = self.owner?;
+        Some(owner)
+    }
+}
+// ----------------------------------------------------------------------
+// Java: Symbol owner-chain helpers (P3/Enter batch). The upstream methods use
+// the implicit `this`; the arena port takes the SymbolId and the context
+// (ADR 0001 explicit-context adapter).
+// ----------------------------------------------------------------------
+
+/// Java: public Symbol location()
+pub fn symbol_location(ctx: &CompilerContext, symbol: SymbolId) -> Option<SymbolId> {
+    let owner = ctx.sym(symbol).owner?;
+    // Java: owner.name == null is not representable (Name is never null here).
+    if ctx.sym(owner).name.is_empty()
+        && (ctx.sym(owner).flags_field & flags::BLOCK as i64) == 0
+        && ctx.sym(owner).kind != Kind::PCK
+        && ctx.sym(owner).kind != Kind::TYP
+    {
+        return None;
+    }
+    Some(owner)
+}
+
+/// Java: public ClassSymbol enclClass()
+pub fn symbol_encl_class(ctx: &CompilerContext, symbol: SymbolId) -> Option<SymbolId> {
+    let mut current = Some(symbol);
+    while let Some(c) = current {
+        let is_class = ctx.sym(c).kind == Kind::TYP
+            && ctx
+                .sym(c)
+                .ty
+                .map(|ty| ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::CLASS))
+                .unwrap_or(false);
+        if is_class {
+            return Some(c);
+        }
+        current = ctx.sym(c).owner;
+    }
+    None
+}
+
+/// Java: public PackageSymbol packge()
+pub fn symbol_packge(ctx: &CompilerContext, symbol: SymbolId) -> Option<SymbolId> {
+    let mut current = Some(symbol);
+    while let Some(c) = current {
+        if ctx.sym(c).kind == Kind::PCK {
+            return Some(c);
+        }
+        current = ctx.sym(c).owner;
+    }
+    None
+}
+
+/// Java: public boolean isDirectlyOrIndirectlyLocal()
+pub fn symbol_is_directly_or_indirectly_local(ctx: &CompilerContext, symbol: SymbolId) -> bool {
+    let Some(owner) = ctx.sym(symbol).owner else {
+        return false;
+    };
+    let owner_kind = ctx.sym(owner).kind;
+    if owner_kind == Kind::VAR || owner_kind == Kind::MTH {
+        return true;
+    }
+    if owner_kind == Kind::TYP {
+        return symbol_is_directly_or_indirectly_local(ctx, owner);
+    }
+    false
+}
+
+/// Java: MethodSymbol.isStaticOrInstanceInit()
+pub fn symbol_is_static_or_instance_init(ctx: &CompilerContext, symbol: SymbolId) -> bool {
+    matches!(
+        ctx.sym(symbol).get_kind(ctx),
+        javac_tools::lang::model::element::element_kind::ElementKind::STATIC_INIT
+            | javac_tools::lang::model::element::element_kind::ElementKind::INSTANCE_INIT
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

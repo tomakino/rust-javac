@@ -1,0 +1,21 @@
+SAMPLE Sample.java errors=0
+UNIT Sample.java package=p
+TYPE flatname=p.A name=A kind=CLASS nesting=TOP_LEVEL owner=PACKAGE:p modifiers=[]
+  TYPE flatname=p.A.B name=B kind=CLASS nesting=MEMBER owner=CLASS:p.A modifiers=[]
+    TYPE flatname=p.A.B.C name=C kind=CLASS nesting=MEMBER owner=CLASS:p.A.B modifiers=[]
+  TYPE flatname=p.A.I name=I kind=INTERFACE nesting=MEMBER owner=CLASS:p.A modifiers=[abstract,static]
+    TYPE flatname=p.A.I.Nested name=Nested kind=CLASS nesting=MEMBER owner=INTERFACE:p.A.I modifiers=[public,static]
+TYPE flatname=p.Top name=Top kind=INTERFACE nesting=TOP_LEVEL owner=PACKAGE:p modifiers=[abstract]
+SAMPLE Unnamed.java errors=0
+UNIT Unnamed.java package=
+TYPE flatname=U name=U kind=CLASS nesting=TOP_LEVEL owner=PACKAGE:unnamed package modifiers=[]
+  TYPE flatname=U.E name=E kind=ENUM nesting=MEMBER owner=CLASS:U modifiers=[final,static]
+SAMPLE PublicMismatch.java errors=1
+ERROR class Foo is public, should be declared in a file named Foo.java
+UNIT PublicMismatch.java package=
+TYPE flatname=Foo name=Foo kind=CLASS nesting=TOP_LEVEL owner=PACKAGE:unnamed package modifiers=[public]
+SAMPLE Duplicate.java errors=1
+ERROR duplicate class: d.D
+UNIT Duplicate.java package=d
+TYPE flatname=d.D name=D kind=CLASS nesting=TOP_LEVEL owner=PACKAGE:d modifiers=[]
+TYPE flatname=d.D name=D kind=CLASS nesting=TOP_LEVEL owner=PACKAGE:d modifiers=[public,static]

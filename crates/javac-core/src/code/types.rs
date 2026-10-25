@@ -2969,6 +2969,103 @@ impl Types {
         // ordering and has no observable classfile-read behavior).
     }
 }
+
+// ----------------------------------------------------------------------
+// Java: Types.createErrorType overloads (P3/Enter batch). The three Java
+// overloads get distinct Rust names (PORTING_RULES section 3).
+// ----------------------------------------------------------------------
+
+impl Types {
+    /// Java: public Type createErrorType(Type originalType)
+    pub fn create_error_type_original(
+        &self,
+        ctx: &mut CompilerContext,
+        original_type: Option<TypeId>,
+        syms: &crate::code::symtab::Symtab,
+    ) -> TypeId {
+        // Java: new ErrorType(originalType, syms.errSymbol)
+        let original = match original_type {
+            Some(original) => original,
+            None => self.no_type(ctx),
+        };
+        ctx.alloc_type(Type::new(
+            crate::code::type_tag::TypeTag::ERROR,
+            Some(syms.err_symbol),
+            TypeKindData::ErrorType {
+                outer_field: None,
+                typarams_field: None,
+                allparams_field: None,
+                supertype_field: None,
+                interfaces_field: None,
+                all_interfaces_field: None,
+                original_type: Some(original),
+            },
+        ))
+    }
+
+    /// Java: public Type createErrorType(ClassSymbol c, Type originalType)
+    pub fn create_error_type_class(
+        &self,
+        ctx: &mut CompilerContext,
+        class: crate::ids::SymbolId,
+        original_type: Option<TypeId>,
+    ) -> TypeId {
+        let no_type = self.no_type(ctx);
+        let error_type = ctx.alloc_type(Type::new(
+            crate::code::type_tag::TypeTag::ERROR,
+            Some(class),
+            TypeKindData::ErrorType {
+                outer_field: None,
+                typarams_field: None,
+                allparams_field: None,
+                supertype_field: None,
+                interfaces_field: None,
+                all_interfaces_field: None,
+                original_type: Some(original_type.unwrap_or(no_type)),
+            },
+        ));
+        ctx.sym_mut(class).ty = Some(error_type);
+        ctx.sym_mut(class).kind = crate::code::kinds::Kind::ERR;
+        let scope = ctx.scope_create_error(Some(class));
+        if let crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } =
+            &mut ctx.sym_mut(class).kind_data
+        {
+            *members_field = Some(scope);
+        }
+        error_type
+    }
+
+    /// Java: public Type createErrorType(Name name, TypeSymbol container,
+    /// Type originalType)
+    pub fn create_error_type(
+        &self,
+        ctx: &mut CompilerContext,
+        name: Name,
+        container: crate::ids::SymbolId,
+        original_type: Option<TypeId>,
+    ) -> TypeId {
+        let no_type = self.no_type(ctx);
+        let class = crate::code::symtab::new_class_symbol(
+            ctx,
+            (crate::code::flags::PUBLIC | crate::code::flags::STATIC) as i64
+                | crate::code::flags::ACYCLIC as i64,
+            name,
+            Some(container),
+            no_type,
+        );
+        self.create_error_type_class(ctx, class, original_type)
+    }
+
+    /// The shared Type.noType value (the arena has no global singleton; the
+    /// port allocates a JCNoType value like Symtab.noTypeId).
+    fn no_type(&self, ctx: &mut CompilerContext) -> TypeId {
+        ctx.alloc_type(Type::new(
+            crate::code::type_tag::TypeTag::NONE,
+            None,
+            TypeKindData::JCNoType,
+        ))
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -189,7 +189,7 @@ fn new_class_type(ctx: &mut CompilerContext, no_type: TypeId) -> TypeId {
 
 /// Java: new ClassSymbol(flags, name, owner) - the constructor that installs a
 /// fresh ClassType (new ClassType(Type.noType, null, null)) as the symbol type.
-fn new_class_symbol(
+pub(crate) fn new_class_symbol(
     ctx: &mut CompilerContext,
     flags_value: i64,
     name: Name,
@@ -577,7 +577,7 @@ pub(crate) fn new_error_type_for_class(ctx: &mut CompilerContext, tsym: SymbolId
     ))
 }
 
-fn no_type_id(ctx: &mut CompilerContext) -> TypeId {
+pub(crate) fn no_type_id(ctx: &mut CompilerContext) -> TypeId {
     ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType))
 }
 

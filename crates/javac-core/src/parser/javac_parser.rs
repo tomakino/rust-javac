@@ -6477,7 +6477,9 @@ impl JavacParser {
                 if self.allow_records && self.is_record_start() {
                     return EnumeratorEstimate::Member;
                 }
-                EnumeratorEstimate::Member
+                // Java: the IDENTIFIER case has no break and falls through to the
+                // MONKEYS_AT case -> UNKNOWN.
+                EnumeratorEstimate::Unknown
             }
             TokenKind::MONKEYS_AT | TokenKind::LT | TokenKind::UNDERSCORE => {
                 EnumeratorEstimate::Unknown

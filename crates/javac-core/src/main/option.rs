@@ -979,3 +979,33 @@ mod tests {
         assert!(std::error::Error::source(&exception).is_none());
     }
 }
+
+/// Java: public enum Option.PkgInfo (-Xpkginfo: values)
+#[allow(non_camel_case_types)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PkgInfo {
+    /// Always generate package-info.class for every package-info.java file.
+    ALWAYS,
+    /// Generate package-info.class if package-info.java contains annotations.
+    LEGACY,
+    /// Generate package-info.class iff there are annotations to be written.
+    NONEMPTY,
+}
+
+impl PkgInfo {
+    /// Java: public static PkgInfo get(Options options)
+    pub fn get(options: &crate::util::options::Options) -> PkgInfo {
+        // Java: String v = options.get(XPKGINFO); return (v == null ? PkgInfo.LEGACY
+        // : PkgInfo.valueOf(StringUtils.toUpperCase(v)));
+        let value = options.get("-Xpkginfo");
+        match value {
+            None => PkgInfo::LEGACY,
+            Some(value) => match value.to_uppercase().as_str() {
+                "ALWAYS" => PkgInfo::ALWAYS,
+                "LEGACY" => PkgInfo::LEGACY,
+                "NONEMPTY" => PkgInfo::NONEMPTY,
+                other => panic!("IllegalArgumentException: {other}"),
+            },
+        }
+    }
+}

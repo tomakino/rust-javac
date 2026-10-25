@@ -13,12 +13,12 @@
 - **P1(parser/AST)——已完成**:词法层 S6、TreeMaker、Types 最小前置、
   Doc 树族 S8、JavacParser S7a/S7b(完整语法 + doc comments);tree-oracle 37/37 PASS;
   DocCommentParser/LazyDocCommentTable/ReferenceParser 进行中(ctsym-porter)。
-- **P2(file/ClassReader)——进行中**:file 层 S3a/S3b 完成;
-  JavacFileManager 主体已落地(clippy 债务登记);PoolReader+ModuleNameReader 完成;ClassReader 下一批;
+- **P2(file/ClassReader)——已完成**:file 层 S3a/S3b 完成;
+  JavacFileManager 主体已落地;PoolReader+ModuleNameReader 完成;ClassReader 全量(属性表 26/26、注解/TypeAnnotation、
   已完成;ClassReader 待 code 服务)。
-- **P3(symbols/types)**:Symtab(1745 行)+ Types 最小完成;Types 批次 2(isSubtype/containsType/
+- **P3(symbols/types/语义)——进行中**:Symtab(1745 行)+ Types 最小完成;Types 批次 2(isSubtype/containsType/
   asSuper/memberType/subst)进行中;Types 全量与 Attr/Check/Flow/TransTypes/Lower/Gen 待 P3-P5。
-- **P4-P9**:待(诊断对象契约 P4 替换、模块系统、多版本、差分全量)。
+- **P4-P9**:待(Enter/MemberEnter/Annotate/Attr/Check/Flow/TransTypes/Lower/Gen/ClassWriter 等 P3 语义与 P4 代码生成;
 
 ## 已验证产物(测试数)
 
