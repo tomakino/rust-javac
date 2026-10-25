@@ -934,6 +934,46 @@ impl Symbol {
         }
     }
 }
+
+// ----------------------------------------------------------------------
+// Java: RecordComponent constructor + ClassSymbol.setRecordComponents
+// (Record attribute batch).
+// ----------------------------------------------------------------------
+impl Symbol {
+    /// Java: public RecordComponent(Name name, Type type, Symbol owner)
+    pub fn new_record_component(
+        name: Name,
+        ty: crate::ids::TypeId,
+        owner: SymbolId,
+    ) -> Symbol {
+        Symbol::new(
+            Kind::VAR,
+            crate::code::flags::PUBLIC as i64,
+            name,
+            Some(ty),
+            Some(owner),
+            SymbolKind::RecordComponent {
+                accessor: None,
+                accessor_meth: None,
+                original_annos: List::nil(),
+                pos: crate::util::position::NOPOS,
+                is_varargs: false,
+            },
+        )
+    }
+
+    /// Java: ClassSymbol.setRecordComponents(List<RecordComponent>)
+    pub fn set_record_components(&mut self, components: List<SymbolId>) {
+        if let SymbolKind::ClassSymbol {
+            record_components, ..
+        } = &mut self.kind_data
+        {
+            *record_components = components;
+        } else {
+            panic!("ClassCastException: not a class symbol");
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

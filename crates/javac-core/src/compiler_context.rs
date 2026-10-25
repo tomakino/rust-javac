@@ -28,6 +28,7 @@ use crate::code::type_::Type;
 use crate::ids::{AttributeId, DirectiveId, ScopeId, SymbolId, TreeId, TypeId};
 use crate::tree::jc_tree::JCTree;
 use crate::util::arena::Arena;
+use crate::util::list::List;
 use crate::util::name::Name;
 
 /// The compilation context: the owner of the six arena containers (ADR 0001).
@@ -312,6 +313,75 @@ impl CompilerContext {
         next_id
     }
 
+
+    /// Java: new TypeVar(Name name, Symbol owner, Type lower) — creates the
+    /// TypeVariableSymbol whose type is the new TypeVar (tsym back-pointer).
+    pub fn new_type_var_with_owner(
+        &mut self,
+        names: &crate::util::names::Names,
+        name: crate::util::name::Name,
+        owner: SymbolId,
+        lower: TypeId,
+    ) -> TypeId {
+        let _ = names;
+        let ty = self.alloc_type(crate::code::type_::Type::new(
+            crate::code::type_tag::TypeTag::TYPEVAR,
+            None,
+            crate::code::type_::TypeKindData::TypeVar {
+                bound: None,
+                lower: Some(lower),
+            },
+        ));
+        let sym = self.alloc_symbol(crate::code::symbol::Symbol::new_type_variable_symbol(
+            0,
+            name,
+            ty,
+            owner,
+        ));
+        if let crate::code::type_::TypeKindData::TypeVar { .. } = &mut self.typ_mut(ty).kind {
+            self.typ_mut(ty).tsym = Some(sym);
+        }
+        ty
+    }
+
+    /// Java: new ClassSymbol(flags, names.empty, null, syms.noSymbol) for
+    /// Types.makeIntersectionType (the COMPOUND class symbol of an
+    /// intersection type); sets type/erasure/members.
+    pub fn new_compound_class_symbol(
+        &mut self,
+        names: &crate::util::names::Names,
+        flags: i64,
+        no_symbol: SymbolId,
+        intersection: TypeId,
+        erasure: TypeId,
+    ) -> SymbolId {
+        let sym = self.alloc_symbol(crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::TYP,
+            flags,
+            names.empty.clone(),
+            Some(intersection),
+            Some(no_symbol),
+            crate::code::symbol::SymbolKind::ClassSymbol {
+                members_field: None,
+                fullname: names.empty.clone(),
+                flatname: names.empty.clone(),
+                sourcefile: None,
+                classfile: None,
+                trans_local: List::nil(),
+                record_components: List::nil(),
+                permitted: List::nil(),
+                is_permitted_explicit: false,
+            },
+        ));
+        self.sym_mut(sym).erasure_field = Some(erasure);
+        let members = self.scope_create(Some(sym));
+        if let crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } =
+            &mut self.sym_mut(sym).kind_data
+        {
+            *members_field = Some(members);
+        }
+        sym
+    }
     pub fn scope_any_match(&self, scope: ScopeId, filter: &dyn Fn(SymbolId) -> bool) -> bool {
         self.scope(scope).any_match(filter)
     }

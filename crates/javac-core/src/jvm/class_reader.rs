@@ -1,14 +1,12 @@
 // Origin: com/sun/tools/javac/jvm/ClassReader.java @ 982d53c (jdk-17.0.19-ga)
 // PORTING_RULES §19 gap registration (method-level audit of ClassReader.java):
-// Dependency/phase: P2/S2-S3 (attribute readers/signature type-variable
-// machinery/annotations) and P3 (Scope/Symbol/Type semantic batches).
+// Dependency/phase: P2/S2-B annotation/TypeAnnotation/Module/Directive batches
+// and P3 semantic batches (Annotate/Directive/Types).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: instance (ClassReader.java:257)
 // - NOT PORTED: getEnclosingType (ClassReader.java:575)
 // - NOT PORTED: setEnclosingType (ClassReader.java:600)
-// - NOT PORTED: accepts (ClassReader.java:759)
 // - NOT PORTED: read (ClassReader.java:778)
-// - NOT PORTED: initAttributeReaders (ClassReader.java:794)
 // - NOT PORTED: read (ClassReader.java:799)
 // - NOT PORTED: read (ClassReader.java:808)
 // - NOT PORTED: read (ClassReader.java:857)
@@ -31,14 +29,10 @@
 // - NOT PORTED: read (ClassReader.java:1044)
 // - NOT PORTED: read (ClassReader.java:1050)
 // - NOT PORTED: read (ClassReader.java:1064)
-// - NOT PORTED: accepts (ClassReader.java:1092)
 // - NOT PORTED: read (ClassReader.java:1095)
 // - NOT PORTED: classNameMapper (ClassReader.java:1195)
-// - NOT PORTED: accepts (ClassReader.java:1202)
 // - NOT PORTED: read (ClassReader.java:1205)
-// - NOT PORTED: accepts (ClassReader.java:1215)
 // - NOT PORTED: read (ClassReader.java:1218)
-// - NOT PORTED: accepts (ClassReader.java:1236)
 // - NOT PORTED: read (ClassReader.java:1239)
 // - NOT PORTED: readEnclosingMethodAttr (ClassReader.java:1256)
 // - NOT PORTED: simpleBinaryName (ClassReader.java:1299)
@@ -97,6 +91,23 @@
 // - NOT PORTED: resolve (ClassReader.java:3218)
 // - NOT PORTED: toString (ClassReader.java:3223)
 // - NOT PORTED: complete (ClassReader.java:3261)
+// Attribute readers registered in initAttributeReaders but not yet wired
+// (read_attribute skips them exactly like the upstream unknown-attribute path;
+// TODO items in read_attribute list the dependency batches):
+// - NOT PORTED reader: Code (S2-B batch)
+// - NOT PORTED reader: ConstantValue (S2-B batch)
+// - NOT PORTED reader: InnerClasses (S2-B batch)
+// - NOT PORTED reader: SourceFile (S2-B batch)
+// - NOT PORTED reader: EnclosingMethod (S2-B batch)
+// - NOT PORTED reader: AnnotationDefault (S2-B batch)
+// - NOT PORTED reader: RuntimeInvisibleAnnotations (S2-B batch)
+// - NOT PORTED reader: RuntimeVisibleAnnotations (S2-B batch)
+// - NOT PORTED reader: RuntimeInvisibleParameterAnnotations (S2-B batch)
+// - NOT PORTED reader: RuntimeVisibleParameterAnnotations (S2-B batch)
+// - NOT PORTED reader: RuntimeVisibleTypeAnnotations (S2-B batch)
+// - NOT PORTED reader: RuntimeInvisibleTypeAnnotations (S2-B batch)
+// - NOT PORTED reader: Module (S2-B batch)
+// - NOT PORTED reader: ModuleResolution (S2-B batch)
 // End of §19 gap registration.
 
 //! This class provides operations to read a classfile into an internal
@@ -218,6 +229,16 @@ pub struct ClassReader {
     /// Java: List<Type> missingTypeVariables / foundTypeVariables
     missing_type_variables: List<crate::ids::TypeId>,
     found_type_variables: List<crate::ids::TypeId>,
+    /// Java: protected Map<Name, AttributeReader> attributeReaders
+    attribute_readers: Vec<AttributeReaderDef>,
+    /// Java: int[] parameterNameIndices (MethodParameters/LVT batch)
+    parameter_name_indices: Option<Vec<i32>>,
+    /// Java: int[] parameterAccessFlags
+    parameter_access_flags: Option<Vec<i32>>,
+    /// Java: boolean haveParameterNameIndices
+    have_parameter_name_indices: bool,
+    /// Java: boolean sawMethodParameters
+    saw_method_parameters: bool,
     /// Java: Type.noType (syms.noType). Symtab does not expose the singleton yet,
     /// so the ClassReader caches the NONE-tag type it uses for absent supertypes
     /// (registered representation adapter; tag-based comparisons are unchanged).
@@ -249,7 +270,7 @@ impl ClassReader {
         let verbose = options.is_set_option(crate::main::option::Option::VERBOSE);
         let save_parameter_names =
             options.is_set_option(crate::main::option::Option::PARAMETERS);
-        ClassReader {
+        let mut reader = ClassReader {
             verbose,
             allow_modules: Feature::MODULES.allowed_in_source(source),
             allow_sealed_types: Feature::SEALED_CLASSES.allowed_in_source(source),
@@ -287,8 +308,15 @@ impl ClassReader {
             filling: false,
             missing_type_variables: List::nil(),
             found_type_variables: List::nil(),
+            attribute_readers: Vec::new(),
+            parameter_name_indices: None,
+            parameter_access_flags: None,
+            have_parameter_name_indices: false,
+            saw_method_parameters: false,
             no_type: None,
-        }
+        };
+        reader.init_attribute_readers();
+        reader
     }
 
     // ------------------------------------------------------------------
@@ -696,16 +724,78 @@ impl ClassReader {
         Ok(result.reverse())
     }
 
-    /// Java: List<Type> sigToTypeParams() — requires Types.setBounds and the
-    /// signature type-variable machinery (S2 Signature attribute batch).
+    /// Java: List<Type> sigToTypeParams()
     fn sig_to_type_params(
         &mut self,
-        _ctx: &mut CompilerContext,
-        _syms: &crate::code::symtab::Symtab,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
     ) -> Result<List<TypeId>, crate::code::symbol::CompletionFailure> {
-        unimplemented!("TODO(P2/S2): ClassReader.sigToTypeParams (Types.setBounds not ported yet)")
+        let mut tvars = List::nil();
+        if self.signature[self.sigp as usize] as char == '<' {
+            self.sigp += 1;
+            let start = self.sigp;
+            self.sig_enter_phase = true;
+            while self.signature[self.sigp as usize] as char != '>' {
+                tvars = tvars.prepend(self.sig_to_type_param(ctx, syms)?);
+            }
+            self.sig_enter_phase = false;
+            self.sigp = start;
+            while self.signature[self.sigp as usize] as char != '>' {
+                self.sig_to_type_param(ctx, syms)?;
+            }
+            self.sigp += 1;
+        }
+        Ok(tvars.reverse())
     }
 
+    /// Java: Type sigToTypeParam()
+    fn sig_to_type_param(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+    ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
+        let start = self.sigp;
+        while self.signature[self.sigp as usize] as char != ':' {
+            self.sigp += 1;
+        }
+        let name = self
+            .names
+            .table
+            .from_utf(&self.signature, start, self.sigp - start);
+        let tvar = if self.sig_enter_phase {
+            let owner = self.current_owner.expect("currentOwner");
+            let t = ctx.new_type_var_with_owner(&self.names, name, owner, syms.bot_type);
+            let tsym = ctx.typ(t).tsym.expect("type variable symbol");
+            let typevars = self.typevars.expect("typevars scope");
+            ctx.scope_enter(typevars, tsym);
+            t
+        } else {
+            self.find_type_var(ctx, syms, &name)?
+        };
+        let mut bounds = List::nil();
+        let mut all_interfaces = false;
+        if self.signature[self.sigp as usize] as char == ':'
+            && self.signature[self.sigp as usize + 1] as char == ':'
+        {
+            self.sigp += 1;
+            all_interfaces = true;
+        }
+        while self.signature[self.sigp as usize] as char == ':' {
+            self.sigp += 1;
+            bounds = bounds.prepend(self.sig_to_type(ctx, syms)?);
+        }
+        if !self.sig_enter_phase {
+            self.types.set_bounds(
+                ctx,
+                syms,
+                &self.names,
+                tvar,
+                bounds.reverse(),
+                all_interfaces,
+            );
+        }
+        Ok(tvar)
+    }
     /// Java: Type classSigToType()
     fn class_sig_to_type(
         &mut self,
@@ -816,19 +906,30 @@ impl ClassReader {
     }
 
     /// Java: Type findTypeVar(Name name)
-    ///
-    /// TODO(P2/S2): the type-variable lookup needs the TypeVar/TypeVariableSymbol
-    /// construction wiring and Types.setBounds (S2 Signature-attribute batch);
-    /// no proxy substitute is implemented here.
     fn find_type_var(
         &mut self,
-        _ctx: &mut CompilerContext,
-        _syms: &crate::code::symtab::Symtab,
-        _name: &Name,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        name: &Name,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
-        unimplemented!("TODO(P2/S2): ClassReader.findTypeVar (TypeVar construction/types.setBounds)")
+        let typevars = self.typevars.expect("typevars scope");
+        if let Some(sym) = ctx.scope_find_first(typevars, name, &|_| true) {
+            return Ok(ctx.sym(sym).ty.expect("type variable symbol type"));
+        }
+        if self.reading_class_attr {
+            // While reading the class attribute, the supertypes might refer to a
+            // type variable from an enclosing element (method or class).
+            let owner = self.current_owner.expect("currentOwner");
+            let t = ctx.new_type_var_with_owner(&self.names, name.clone(), owner, syms.bot_type);
+            self.missing_type_variables = self.missing_type_variables.prepend(t);
+            return Ok(t);
+        }
+        Err(self
+            .bad_class_file(Fragment::from(
+                crate::resources::compiler_properties::fragments::undecl_type_var(),
+            ))
+            .failure)
     }
-
     /// Java: protected ClassSymbol enterClass(Name name)
     fn enter_class(
         &mut self,
@@ -1186,7 +1287,7 @@ impl ClassReader {
         for _ in 0..method_count {
             self.skip_member();
         }
-        self.read_class_attrs(c);
+        self.read_class_attrs(ctx, syms, c);
 
         let has_permitted = match &ctx.sym(c).kind_data {
             crate::code::symbol::SymbolKind::ClassSymbol { permitted, .. } => !permitted.is_empty(),
@@ -1280,7 +1381,7 @@ impl ClassReader {
             flags, name, ty,
             owner,
         ));
-        self.read_member_attrs(var);
+        self.read_member_attrs(ctx, syms, var);
         Ok(var)
     }
 
@@ -1341,7 +1442,7 @@ impl ClassReader {
         }
         let prev_owner = self.current_owner;
         self.current_owner = Some(method);
-        self.read_member_attrs(method);
+        self.read_member_attrs(ctx, syms, method);
         self.current_owner = prev_owner;
         self.validate_method_type(ctx, &ctx.sym(method).name.clone(), ctx.sym(method).ty.expect("method type"))?;
         self.set_parameters(ctx, method, ty);
@@ -1395,31 +1496,372 @@ impl ClassReader {
         Ok(())
     }
 
-    /// Java: void readAttrs(Symbol sym, AttributeKind kind) — the attribute
-    /// reader table is not populated yet (S2 attribute batch); unknown
-    /// attributes are skipped exactly like the upstream unknown-attribute path.
-    fn read_attrs(&mut self, _sym: SymbolId, _class: bool) {
+    /// Java: private void initAttributeReaders()
+    fn init_attribute_readers(&mut self) {
+        let defs: Vec<(Name, Version, Vec<AttributeKind>, AttributeReaderKind)> = vec![
+            (self.names.Code.clone(), Version::V45_3, vec![AttributeKind::MEMBER], AttributeReaderKind::Code),
+            (self.names.ConstantValue.clone(), Version::V45_3, vec![AttributeKind::MEMBER], AttributeReaderKind::ConstantValue),
+            (self.names.Deprecated.clone(), Version::V45_3, vec![AttributeKind::CLASS, AttributeKind::MEMBER], AttributeReaderKind::Deprecated),
+            (self.names.Exceptions.clone(), Version::V45_3, vec![AttributeKind::CLASS, AttributeKind::MEMBER], AttributeReaderKind::Exceptions),
+            (self.names.InnerClasses.clone(), Version::V45_3, vec![AttributeKind::CLASS], AttributeReaderKind::InnerClasses),
+            (self.names.LocalVariableTable.clone(), Version::V45_3, vec![AttributeKind::CLASS, AttributeKind::MEMBER], AttributeReaderKind::LocalVariableTable),
+            (self.names.SourceFile.clone(), Version::V45_3, vec![AttributeKind::CLASS], AttributeReaderKind::SourceFile),
+            (self.names.Synthetic.clone(), Version::V45_3, vec![AttributeKind::CLASS, AttributeKind::MEMBER], AttributeReaderKind::Synthetic),
+            (self.names.EnclosingMethod.clone(), Version::V49, vec![AttributeKind::CLASS], AttributeReaderKind::EnclosingMethod),
+            (self.names.Signature.clone(), Version::V49, vec![AttributeKind::CLASS, AttributeKind::MEMBER], AttributeReaderKind::Signature),
+            (self.names.AnnotationDefault.clone(), Version::V49, vec![AttributeKind::CLASS, AttributeKind::MEMBER], AttributeReaderKind::AnnotationDefault),
+            (
+                self.names.RuntimeInvisibleAnnotations.clone(),
+                Version::V49,
+                vec![AttributeKind::CLASS, AttributeKind::MEMBER],
+                AttributeReaderKind::RuntimeInvisibleAnnotations,
+            ),
+            (
+                self.names.RuntimeInvisibleParameterAnnotations.clone(),
+                Version::V49,
+                vec![AttributeKind::CLASS, AttributeKind::MEMBER],
+                AttributeReaderKind::RuntimeInvisibleParameterAnnotations,
+            ),
+            (
+                self.names.RuntimeVisibleAnnotations.clone(),
+                Version::V49,
+                vec![AttributeKind::CLASS, AttributeKind::MEMBER],
+                AttributeReaderKind::RuntimeVisibleAnnotations,
+            ),
+            (
+                self.names.RuntimeVisibleParameterAnnotations.clone(),
+                Version::V49,
+                vec![AttributeKind::CLASS, AttributeKind::MEMBER],
+                AttributeReaderKind::RuntimeVisibleParameterAnnotations,
+            ),
+            (self.names.Annotation.clone(), Version::V49, vec![AttributeKind::CLASS, AttributeKind::MEMBER], AttributeReaderKind::Annotation),
+            (self.names.Bridge.clone(), Version::V49, vec![AttributeKind::MEMBER], AttributeReaderKind::Bridge),
+            (self.names.Enum.clone(), Version::V49, vec![AttributeKind::CLASS, AttributeKind::MEMBER], AttributeReaderKind::Enum),
+            (self.names.Varargs.clone(), Version::V49, vec![AttributeKind::CLASS, AttributeKind::MEMBER], AttributeReaderKind::Varargs),
+            (
+                self.names.RuntimeVisibleTypeAnnotations.clone(),
+                Version::V52,
+                vec![AttributeKind::CLASS, AttributeKind::MEMBER],
+                AttributeReaderKind::RuntimeVisibleTypeAnnotations,
+            ),
+            (
+                self.names.RuntimeInvisibleTypeAnnotations.clone(),
+                Version::V52,
+                vec![AttributeKind::CLASS, AttributeKind::MEMBER],
+                AttributeReaderKind::RuntimeInvisibleTypeAnnotations,
+            ),
+            (self.names.MethodParameters.clone(), Version::V52, vec![AttributeKind::MEMBER], AttributeReaderKind::MethodParameters),
+            (self.names.Module.clone(), Version::V53, vec![AttributeKind::CLASS], AttributeReaderKind::Module),
+            (self.names.ModuleResolution.clone(), Version::V53, vec![AttributeKind::CLASS], AttributeReaderKind::ModuleResolution),
+            (self.names.Record.clone(), Version::V58, vec![AttributeKind::CLASS], AttributeReaderKind::Record),
+            (self.names.PermittedSubclasses.clone(), Version::V59, vec![AttributeKind::CLASS], AttributeReaderKind::PermittedSubclasses),
+        ];
+        self.attribute_readers = defs
+            .into_iter()
+            .map(|(name, version, kinds, reader)| AttributeReaderDef {
+                name,
+                version,
+                kinds,
+                reader,
+            })
+            .collect();
+    }
+    /// Java: void readAttrs(Symbol sym, AttributeKind kind)
+    fn read_attrs(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        sym: SymbolId,
+        kind: AttributeKind,
+    ) {
         let ac = self.next_char();
         for _ in 0..ac {
             let name_index = self.next_char() as i32;
-            let _name = match self.get_name(name_index) {
+            let attr_name = match self.get_name(name_index) {
                 Ok(name) => name,
                 Err(_) => self.names.empty.clone(),
             };
             let attr_len = self.next_int();
-            // Java: AttributeReader r = attributeReaders.get(attrName); if (r != null && r.accepts(kind)) r.read(sym, attrLen); else { bp = bp + attrLen; }
-            self.bp += attr_len;
+            let position = self
+                .attribute_readers
+                .iter()
+                .position(|def| def.name.to_java_string() == attr_name.to_java_string());
+            if let Some(position) = position {
+                let reader = self.attribute_readers[position].reader;
+                if self.accepts(position, kind) {
+                    self.read_attribute(ctx, syms, reader, sym, attr_len);
+                } else {
+                    self.bp += attr_len;
+                }
+            } else {
+                self.bp += attr_len;
+            }
+        }
+    }
+
+    /// Java: AttributeReader.accepts(AttributeKind kind)
+    fn accepts(&self, position: usize, kind: AttributeKind) -> bool {
+        let def = &self.attribute_readers[position];
+        if !def.kinds.contains(&kind) {
+            return false;
+        }
+        let version_major = def.version.major();
+        let version_minor = def.version.minor();
+        if self.major_version > version_major
+            || (self.major_version == version_major && self.minor_version >= version_minor)
+        {
+            match def.reader {
+                AttributeReaderKind::Module | AttributeReaderKind::ModuleResolution => {
+                    return self.allow_modules;
+                }
+                AttributeReaderKind::Record => return self.allow_records,
+                AttributeReaderKind::PermittedSubclasses => return self.allow_sealed_types,
+                _ => {}
+            }
+            return true;
+        }
+        if self.lint_classfile && !self.warned_attrs.contains(&def.name) {
+            unimplemented!("TODO(P2/Log): FutureAttr classfile lint warning (Log/Lint batch)");
+        }
+        false
+    }
+
+    /// Java: AttributeReader.read(Symbol sym, int attrLen) — dispatch per reader.
+    fn read_attribute(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        reader: AttributeReaderKind,
+        sym: SymbolId,
+        attr_len: i32,
+    ) {
+        match reader {
+            AttributeReaderKind::Deprecated => {
+                // Java: Symbol s = sym.owner.kind == MDL ? sym.owner : sym; s.flags_field |= DEPRECATED;
+                let target = if ctx.sym(sym).owner.map(|o| ctx.sym(o).kind)
+                    == Some(crate::code::kinds::Kind::MDL)
+                {
+                    ctx.sym(sym).owner.expect("owner")
+                } else {
+                    sym
+                };
+                ctx.sym_mut(target).flags_field |= crate::code::flags::DEPRECATED as i64;
+            }
+            AttributeReaderKind::Synthetic => {
+                ctx.sym_mut(sym).flags_field |= crate::code::flags::SYNTHETIC as i64;
+            }
+            AttributeReaderKind::Annotation => {
+                ctx.sym_mut(sym).flags_field |= crate::code::flags::ANNOTATION as i64;
+            }
+            AttributeReaderKind::Bridge => {
+                ctx.sym_mut(sym).flags_field |= crate::code::flags::BRIDGE;
+            }
+            AttributeReaderKind::Enum => {
+                ctx.sym_mut(sym).flags_field |= crate::code::flags::ENUM as i64;
+            }
+            AttributeReaderKind::Varargs => {
+                ctx.sym_mut(sym).flags_field |= crate::code::flags::VARARGS;
+            }
+            AttributeReaderKind::Exceptions => {
+                let n = self.next_char();
+                let mut thrown = List::nil();
+                for _ in 0..n {
+                    let class_index = self.next_char() as i32;
+                    let class = self.get_class(ctx, syms, class_index).expect("exception class");
+                    let class_type = ctx.sym(class).ty.expect("class type");
+                    thrown = thrown.prepend(class_type);
+                }
+                let ty = ctx.sym(sym).ty.expect("symbol type");
+                if ctx.typ(ty).get_thrown_types(ctx).is_empty()
+                    && let crate::code::type_::TypeKindData::MethodType { thrown: slot, .. } =
+                        &mut ctx.typ_mut(ty).kind
+                {
+                    *slot = thrown.reverse();
+                }
+            }
+            AttributeReaderKind::Signature => {
+                self.read_signature_attr(ctx, syms, sym);
+            }
+            AttributeReaderKind::PermittedSubclasses => {
+                let n = self.next_char();
+                let mut subtypes = List::nil();
+                for _ in 0..n {
+                    let class_index = self.next_char() as i32;
+                    let class = self.get_class(ctx, syms, class_index).expect("permitted class");
+                    subtypes = subtypes.append(class);
+                }
+                if let crate::code::symbol::SymbolKind::ClassSymbol { permitted, .. } =
+                    &mut ctx.sym_mut(sym).kind_data
+                {
+                    *permitted = subtypes;
+                }
+            }
+            AttributeReaderKind::Record => {
+                self.read_record_attr(ctx, syms, sym);
+            }
+            AttributeReaderKind::MethodParameters => {
+                let newbp = self.bp + attr_len;
+                if self.save_parameter_names {
+                    self.saw_method_parameters = true;
+                    let num_entries = self.next_byte();
+                    let mut indices = vec![0i32; num_entries as usize];
+                    let mut flags_vec = vec![0i32; num_entries as usize];
+                    self.have_parameter_name_indices = true;
+                    let mut index = 0usize;
+                    for _ in 0..num_entries {
+                        let name_index = self.next_char() as i32;
+                        let flags_value = self.next_char() as i32;
+                        if (flags_value
+                            & (crate::code::flags::MANDATED
+                                | crate::code::flags::SYNTHETIC))
+                            != 0
+                        {
+                            continue;
+                        }
+                        indices[index] = name_index;
+                        flags_vec[index] = flags_value;
+                        index += 1;
+                    }
+                    self.parameter_name_indices = Some(indices);
+                    self.parameter_access_flags = Some(flags_vec);
+                }
+                self.bp = newbp;
+            }
+            AttributeReaderKind::LocalVariableTable => {
+                let newbp = self.bp + attr_len;
+                if self.save_parameter_names && !self.saw_method_parameters {
+                    let num_entries = self.next_char();
+                    for _ in 0..num_entries {
+                        let start_pc = self.next_char() as i32;
+                        let _length = self.next_char();
+                        let name_index = self.next_char() as i32;
+                        let _sig_index = self.next_char();
+                        let register = self.next_char() as i32;
+                        if start_pc == 0 {
+                            let indices = self.parameter_name_indices.get_or_insert_with(Vec::new);
+                            if register as usize >= indices.len() {
+                                let new_size = (register + 1).max(indices.len() as i32 + 8);
+                                indices.resize(new_size as usize, 0);
+                            }
+                            indices[register as usize] = name_index;
+                            self.have_parameter_name_indices = true;
+                        }
+                    }
+                }
+                self.bp = newbp;
+            }
+            AttributeReaderKind::Code
+            | AttributeReaderKind::ConstantValue
+            | AttributeReaderKind::InnerClasses
+            | AttributeReaderKind::SourceFile
+            | AttributeReaderKind::EnclosingMethod
+            | AttributeReaderKind::AnnotationDefault
+            | AttributeReaderKind::RuntimeInvisibleAnnotations
+            | AttributeReaderKind::RuntimeVisibleAnnotations
+            | AttributeReaderKind::RuntimeInvisibleParameterAnnotations
+            | AttributeReaderKind::RuntimeVisibleParameterAnnotations
+            | AttributeReaderKind::RuntimeVisibleTypeAnnotations
+            | AttributeReaderKind::RuntimeInvisibleTypeAnnotations
+            | AttributeReaderKind::Module
+            | AttributeReaderKind::ModuleResolution => {
+                // TODO(S2 next batch): Code needs the Code/LVT class, ConstantValue
+                // needs the VarSymbol.data attribute, InnerClasses/EnclosingMethod
+                // need the nested-class/proxy batches, annotations need the
+                // CompoundAnnotationProxy/Annotate batch, Module needs the
+                // Directive construction batch. Registered; attributes are skipped
+                // exactly like the upstream unknown-attribute path for now.
+                self.bp += attr_len;
+            }
         }
     }
 
     /// Java: void readClassAttrs(ClassSymbol c)
-    fn read_class_attrs(&mut self, c: SymbolId) {
-        self.read_attrs(c, true);
+    fn read_class_attrs(&mut self, ctx: &mut CompilerContext, syms: &mut crate::code::symtab::Symtab, c: SymbolId) {
+        self.read_attrs(ctx, syms, c, AttributeKind::CLASS);
     }
 
     /// Java: void readMemberAttrs(Symbol sym)
-    fn read_member_attrs(&mut self, sym: SymbolId) {
-        self.read_attrs(sym, false);
+    fn read_member_attrs(&mut self, ctx: &mut CompilerContext, syms: &mut crate::code::symtab::Symtab, sym: SymbolId) {
+        self.read_attrs(ctx, syms, sym, AttributeKind::MEMBER);
+    }
+
+    /// Java: void readClassAttrs / readMemberAttrs share readAttrs; kept distinct
+    /// for the upstream names (see above).
+    fn read_signature_attr(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) {
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP {
+            let class_ty = ctx.sym(sym).ty.expect("class type");
+            self.reading_class_attr = true;
+            let sig_index = self.next_char() as i32;
+            let sig_name = self.get_name(sig_index).expect("signature name");
+            let bytes = sig_name.get_byte_array().to_vec();
+            self.signature = bytes.clone();
+            self.sigp = 0;
+            self.siglimit = bytes.len() as i32;
+            let typarams = self.sig_to_type_params(ctx, syms).expect("type params");
+            if let crate::code::type_::TypeKindData::ClassType { typarams_field, .. } =
+                &mut ctx.typ_mut(class_ty).kind
+            {
+                *typarams_field = Some(typarams);
+            }
+            let supertype = self.sig_to_type(ctx, syms).expect("supertype signature");
+            if let crate::code::type_::TypeKindData::ClassType { supertype_field, .. } =
+                &mut ctx.typ_mut(class_ty).kind
+            {
+                *supertype_field = Some(supertype);
+            }
+            let mut interfaces = List::nil();
+            while self.sigp != self.siglimit {
+                interfaces = interfaces.append(self.sig_to_type(ctx, syms).expect("interface signature"));
+            }
+            if let crate::code::type_::TypeKindData::ClassType { interfaces_field, .. } =
+                &mut ctx.typ_mut(class_ty).kind
+            {
+                *interfaces_field = Some(interfaces);
+            }
+            self.reading_class_attr = false;
+        } else {
+            let ty = ctx.sym(sym).ty.expect("symbol type");
+            let thrown = ctx.typ(ty).get_thrown_types(ctx);
+            let sig_index = self.next_char() as i32;
+            let new_ty = self.get_type(ctx, syms, sig_index).expect("member signature");
+            ctx.sym_mut(sym).ty = Some(new_ty);
+            if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH
+                && ctx.typ(new_ty).get_thrown_types(ctx).is_empty()
+                && let crate::code::type_::TypeKindData::MethodType { thrown: slot, .. } =
+                    &mut ctx.typ_mut(new_ty).kind
+            {
+                *slot = thrown;
+            }
+        }
+    }
+
+    /// Java: Record attribute reader
+    fn read_record_attr(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) {
+        ctx.sym_mut(sym).flags_field |= crate::code::flags::RECORD;
+        let component_count = self.next_char();
+        let mut components = List::nil();
+        for _ in 0..component_count {
+            let name_index = self.next_char() as i32;
+            let name = self.get_name(name_index).expect("record component name");
+            let type_index = self.next_char() as i32;
+            let ty = self.get_type(ctx, syms, type_index).expect("record component type");
+            let component = ctx.alloc_symbol(crate::code::symbol::Symbol::new_record_component(
+                name, ty, sym,
+            ));
+            self.read_attrs(ctx, syms, component, AttributeKind::MEMBER);
+            components = components.append(component);
+        }
+        ctx.sym_mut(sym).set_record_components(components);
     }
 
     /// Java: void setParameters(MethodSymbol sym, Type jvmType) — the
@@ -1479,6 +1921,58 @@ fn class_module(ctx: &CompilerContext, c: SymbolId) -> SymbolId {
             _ => panic!("class owner chain does not reach a package"),
         }
     }
+}
+
+/// Java: protected enum AttributeKind { CLASS, MEMBER }
+///
+/// PORTING_RULES section 3: the upstream constant names CLASS/MEMBER are kept
+/// (they are Java identifiers, not Rust naming style).
+#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AttributeKind {
+    CLASS,
+    MEMBER,
+}
+
+/// Java: the class identity of the anonymous AttributeReader instances in
+/// initAttributeReaders (Rust adapter: one enum variant per upstream reader;
+/// the read behavior is dispatched in ClassReader.read_attribute).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AttributeReaderKind {
+    Code,
+    ConstantValue,
+    Deprecated,
+    Exceptions,
+    InnerClasses,
+    LocalVariableTable,
+    SourceFile,
+    Synthetic,
+    EnclosingMethod,
+    Signature,
+    AnnotationDefault,
+    RuntimeInvisibleAnnotations,
+    RuntimeVisibleAnnotations,
+    RuntimeInvisibleParameterAnnotations,
+    RuntimeVisibleParameterAnnotations,
+    Annotation,
+    Bridge,
+    Enum,
+    Varargs,
+    RuntimeVisibleTypeAnnotations,
+    RuntimeInvisibleTypeAnnotations,
+    MethodParameters,
+    Module,
+    ModuleResolution,
+    Record,
+    PermittedSubclasses,
+}
+
+/// Java: an AttributeReader entry (name/version/kinds + the reader).
+pub(crate) struct AttributeReaderDef {
+    pub(crate) name: Name,
+    pub(crate) version: Version,
+    pub(crate) kinds: Vec<AttributeKind>,
+    pub(crate) reader: AttributeReaderKind,
 }
 
 /// Java: current owner's classfile (ClassReader.readClassFile first line).
@@ -1601,7 +2095,92 @@ mod tests {
         flags: i64,
         super_is_none: bool,
         interfaces: Vec<String>,
+        class_typarams: Vec<String>,
         members: Vec<(crate::code::kinds::Kind, i64, String, Option<String>)>,
+    }
+
+    fn type_var_name(ctx: &crate::compiler_context::CompilerContext, ty: crate::ids::TypeId) -> String {
+        ctx.typ(ty)
+            .tsym
+            .map(|sym| ctx.sym(sym).name.to_java_string().to_string())
+            .unwrap_or_default()
+    }
+
+    /// Test-side type summary used to compare the Signature view with javap -v.
+    fn type_summary(
+        ctx: &crate::compiler_context::CompilerContext,
+        ty: crate::ids::TypeId,
+    ) -> String {
+        use crate::code::type_::TypeKindData;
+        match &ctx.typ(ty).kind {
+            TypeKindData::MethodType {
+                argtypes, restype, ..
+            } => {
+                let mut params = Vec::new();
+                let mut list = argtypes.clone();
+                while list.non_empty() {
+                    params.push(type_summary(ctx, *list.head()));
+                    list = list.tail();
+                }
+                let ret = restype
+                    .map(|ret| type_summary(ctx, ret))
+                    .unwrap_or_else(|| "?".to_string());
+                format!("({})->{ret}", params.join(","))
+            }
+            TypeKindData::ForAll { tvars, qtype } => {
+                let mut names = Vec::new();
+                let mut list = tvars.clone();
+                while list.non_empty() {
+                    names.push(type_var_name(ctx, *list.head()));
+                    list = list.tail();
+                }
+                format!(
+                    "FORALL({})[{}]",
+                    names.join(","),
+                    qtype.map(|q| type_summary(ctx, q)).unwrap_or_default()
+                )
+            }
+            TypeKindData::TypeVar { .. } => {
+                format!("TV:{}", type_var_name(ctx, ty))
+            }
+            TypeKindData::ArrayType { elemtype } => {
+                format!(
+                    "ARRAY[{}]",
+                    elemtype.map(|elem| type_summary(ctx, elem)).unwrap_or_default()
+                )
+            }
+            TypeKindData::ClassType {
+                typarams_field, ..
+            } => {
+                let name = ctx
+                    .typ(ty)
+                    .tsym
+                    .map(|sym| ctx.sym(sym).flat_name().to_java_string().to_string())
+                    .unwrap_or_default();
+                let mut args = Vec::new();
+                let mut list = typarams_field.clone().unwrap_or_else(List::nil);
+                while list.non_empty() {
+                    args.push(type_summary(ctx, *list.head()));
+                    list = list.tail();
+                }
+                if args.is_empty() {
+                    name
+                } else {
+                    format!("{name}<{}>", args.join(","))
+                }
+            }
+            TypeKindData::WildcardType { type_, kind, .. } => {
+                let bound = type_.map(|t| type_summary(ctx, t)).unwrap_or_default();
+                format!("WILD[{kind:?}:{bound}]")
+            }
+            TypeKindData::JCPrimitiveType => format!("{:?}", ctx.typ(ty).get_tag()),
+            TypeKindData::JCVoidType => "VOID".to_string(),
+            TypeKindData::JCNoType => "NONE".to_string(),
+            other => {
+                let _ = other;
+                format!("{:?}", ctx.typ(ty).get_tag())
+            }
+        }
     }
 
     fn parse_baseline(binary_name: &str) -> Option<ParseSummary> {
@@ -1658,8 +2237,7 @@ mod tests {
                 let mut list = interfaces_field.clone().unwrap_or_else(List::nil);
                 while list.non_empty() {
                     let inter = *list.head();
-                    let tsym = ctx.typ(inter).tsym.expect("interface symbol");
-                    names_out.push(ctx.sym(tsym).flat_name().to_java_string().to_string());
+                    names_out.push(type_summary(&ctx, inter));
                     list = list.tail();
                 }
                 names_out
@@ -1675,21 +2253,34 @@ mod tests {
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
         );
+        let class_typarams = match &ctx.typ(class_ty).kind {
+            crate::code::type_::TypeKindData::ClassType { typarams_field, .. } => {
+                let mut out = Vec::new();
+                let mut list = typarams_field.clone().unwrap_or_else(List::nil);
+                while list.non_empty() {
+                    out.push(type_var_name(&ctx, *list.head()));
+                    list = list.tail();
+                }
+                out
+            }
+            _ => Vec::new(),
+        };
         let mut members = Vec::new();
         for sym in symbols.iter() {
             let s = ctx.sym(*sym);
-            let type_tag = s.ty.map(|t| format!("{:?}", ctx.typ(t).get_tag()));
+            let ty = s.ty.map(|t| type_summary(&ctx, t));
             members.push((
                 s.kind,
                 s.flags_field,
                 s.name.to_java_string().to_string(),
-                type_tag,
+                ty,
             ));
         }
         Some(ParseSummary {
             flags: ctx.sym(c).flags_field,
             super_is_none,
             interfaces,
+            class_typarams,
             members,
         })
     }
@@ -1733,7 +2324,11 @@ mod tests {
         // Signature attribute is read by the S2 attribute batch).
         assert_ne!(summary.flags & crate::code::flags::INTERFACE as i64, 0);
         assert_ne!(summary.flags & crate::code::flags::ABSTRACT as i64, 0);
-        assert_eq!(summary.interfaces, vec!["java.util.Collection".to_string()]);
+        assert_eq!(
+            summary.interfaces,
+            vec!["java.util.Collection<TV:E>".to_string()]
+        );
+        assert_eq!(summary.class_typarams, vec!["E".to_string()]);
         assert!(!summary.super_is_none);
         assert_eq!(summary.members.len(), 41, "members: {:?}", member_names(&summary));
         let names = member_names(&summary);
@@ -1760,7 +2355,7 @@ mod tests {
             vec![
                 "java.io.Serializable".to_string(),
                 "java.lang.CharSequence".to_string(),
-                "java.lang.Comparable".to_string(),
+                "java.lang.Comparable<java.lang.String>".to_string(),
                 "java.lang.constant.Constable".to_string(),
                 "java.lang.constant.ConstantDesc".to_string(),
             ]
@@ -1814,6 +2409,72 @@ mod tests {
             *classfile = Some(file);
         }
         reader.read_class_file(&mut ctx, &mut syms, c)
+    }
+
+    #[test]
+    fn signature_views_match_javap() {
+        // javap -v data (development-time oracle):
+        //   java.util.List: class signature <E:Ljava/lang/Object;>Ljava/lang/Object;Ljava/util/Collection<TE;>;
+        //     boolean add(E): Signature (TE;)Z
+        //     <T> T[] toArray(T[]): Signature <T:Ljava/lang/Object;>([TT;)[TT;
+        //   java.lang.String: CASE_INSENSITIVE_ORDER Signature
+        //     Ljava/util/Comparator<Ljava/lang/String;>;
+        //     implements Comparable<java.lang.String>
+        let Some(list) = parse_baseline("java.util.List") else {
+            eprintln!("skipping: no baseline JDK 17 installation found");
+            return;
+        };
+        assert_eq!(list.class_typarams, vec!["E".to_string()]);
+        let add = list
+            .members
+            .iter()
+            .find(|(_, _, name, ty)| {
+                name == "add" && ty.as_deref() == Some("(TV:E)->BOOLEAN")
+            })
+            .expect("List.add(E)");
+        assert_eq!(add.3.as_deref(), Some("(TV:E)->BOOLEAN"));
+        let to_array = list
+            .members
+            .iter()
+            .find(|(_, _, name, ty)| {
+                name == "toArray" && ty.as_deref().is_some_and(|t| t.starts_with("FORALL"))
+            })
+            .expect("List.toArray(T[])");
+        assert_eq!(
+            to_array.3.as_deref(),
+            Some("FORALL(T)[(ARRAY[TV:T])->ARRAY[TV:T]]")
+        );
+        let size = list
+            .members
+            .iter()
+            .find(|(_, _, name, _)| name == "size")
+            .expect("List.size");
+        assert_eq!(size.3.as_deref(), Some("()->INT"));
+
+        let Some(string) = parse_baseline("java.lang.String") else {
+            return;
+        };
+        let comparator = string
+            .members
+            .iter()
+            .find(|(_, _, name, _)| name == "CASE_INSENSITIVE_ORDER")
+            .expect("String.CASE_INSENSITIVE_ORDER");
+        assert_eq!(
+            comparator.3.as_deref(),
+            Some("java.util.Comparator<java.lang.String>")
+        );
+        let compare_to = string
+            .members
+            .iter()
+            .find(|(_, _, name, ty)| {
+                name == "compareTo"
+                    && ty.as_deref() == Some("(java.lang.String)->INT")
+            })
+            .expect("String.compareTo(String)");
+        assert_eq!(
+            compare_to.3.as_deref(),
+            Some("(java.lang.String)->INT")
+        );
     }
 
     #[test]

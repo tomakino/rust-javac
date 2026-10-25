@@ -2875,6 +2875,100 @@ impl Types {
     }
 }
 
+
+// ----------------------------------------------------------------------
+// Java: Types.makeIntersectionType/setBounds (Signature attribute batch).
+// ----------------------------------------------------------------------
+impl Types {
+    /// Java: public IntersectionClassType makeIntersectionType(List<Type> bounds,
+    /// boolean allInterfaces)
+    pub fn make_intersection_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        names: &crate::util::names::Names,
+        bounds: List<TypeId>,
+        all_interfaces: bool,
+    ) -> TypeId {
+        assert!(bounds.non_empty(), "AssertionError: bounds must be non-empty");
+        let first_explicit_bound = *bounds.head();
+        let bounds = if all_interfaces {
+            bounds.prepend(syms.object_type)
+        } else {
+            bounds
+        };
+        // Java: ClassSymbol bc = new ClassSymbol(ABSTRACT|PUBLIC|SYNTHETIC|COMPOUND|ACYCLIC,
+        //   names.empty, null, syms.noSymbol); bc.type = intersectionType;
+        let flags = crate::code::flags::ABSTRACT as i64
+            | crate::code::flags::PUBLIC as i64
+            | crate::code::flags::SYNTHETIC as i64
+            | crate::code::flags::COMPOUND as i64
+            | crate::code::flags::ACYCLIC as i64;
+        let bc = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::TYP,
+            flags,
+            names.empty.clone(),
+            None,
+            Some(syms.no_symbol),
+            crate::code::symbol::SymbolKind::ClassSymbol {
+                members_field: None,
+                fullname: names.empty.clone(),
+                flatname: names.empty.clone(),
+                sourcefile: None,
+                classfile: None,
+                trans_local: List::nil(),
+                record_components: List::nil(),
+                permitted: List::nil(),
+                is_permitted_explicit: false,
+            },
+        ));
+        let intersection = ctx.alloc_type(
+            crate::code::type_::Type::new_intersection_class_type(bounds, bc, all_interfaces),
+        );
+        ctx.sym_mut(bc).ty = Some(intersection);
+        let erasure = if ctx.typ(first_explicit_bound).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
+            syms.object_type
+        } else {
+            self.erasure(ctx, syms, first_explicit_bound)
+        };
+        ctx.sym_mut(bc).erasure_field = Some(erasure);
+        let members = ctx.scope_create(Some(bc));
+        if let crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } =
+            &mut ctx.sym_mut(bc).kind_data
+        {
+            *members_field = Some(members);
+        }
+        intersection
+    }
+
+    /// Java: public void setBounds(TypeVar t, List<Type> bounds, boolean allInterfaces)
+    pub fn set_bounds(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        names: &crate::util::names::Names,
+        tvar: TypeId,
+        bounds: List<TypeId>,
+        all_interfaces: bool,
+    ) {
+        assert!(bounds.non_empty(), "AssertionError: bounds must be non-empty");
+        let upper = if bounds.tail().is_empty() {
+            *bounds.head()
+        } else {
+            self.make_intersection_type(ctx, syms, names, bounds, all_interfaces)
+        };
+        if let crate::code::type_::TypeKindData::TypeVar { bound, .. } =
+            &mut ctx.typ_mut(tvar).kind
+        {
+            *bound = Some(upper);
+        } else {
+            panic!("ClassCastException: not a TypeVar");
+        }
+        // Java: t.rank_field = -1; — TypeVar.rank_field is not ported yet
+        // (registered representation gap; rank is a cache for type-variable
+        // ordering and has no observable classfile-read behavior).
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

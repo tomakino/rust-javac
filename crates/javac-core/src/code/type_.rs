@@ -635,6 +635,32 @@ impl Type {
     }
 }
 
+
+// Type constructors needed by the Signature/attribute batch.
+impl Type {
+    /// Java: public IntersectionClassType(List<Type> bounds, ClassSymbol csym, boolean allInterfaces)
+    pub fn new_intersection_class_type(
+        bounds: List<TypeId>,
+        csym: SymbolId,
+        all_interfaces: bool,
+    ) -> Type {
+        let head = *bounds.head();
+        let tail = bounds.tail();
+        Type::new(
+            TypeTag::CLASS,
+            Some(csym),
+            TypeKindData::IntersectionClassType {
+                outer_field: None,
+                typarams_field: Some(List::nil()),
+                allparams_field: None,
+                supertype_field: Some(head),
+                interfaces_field: Some(tail),
+                all_interfaces_field: None,
+                all_interfaces,
+            },
+        )
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
