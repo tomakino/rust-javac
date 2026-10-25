@@ -1,0 +1,18 @@
+[package]
+name = "javac-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+javac-strings.workspace = true
+javac-charset.workspace = true
+javac-ctsym = { path = "../javac-ctsym" }
+javac-fs.workspace = true
+javac-jimage.workspace = true
+javac-source.workspace = true
+javac-tools.workspace = true
+
+[dev-dependencies]
+# Baseline JDK class bytes for the PoolReader/ModuleNameReader tests.
+javac-classpath.workspace = true

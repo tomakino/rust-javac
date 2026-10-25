@@ -1,0 +1,10 @@
+[package]
+name = "javac-classpath"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+javac-jimage.workspace = true
+javac-jmod.workspace = true
+javac-zip.workspace = true

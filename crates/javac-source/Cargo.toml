@@ -1,0 +1,14 @@
+[package]
+name = "javac-source"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# The doc comments contain Java code examples copied from com.sun.source; those
+# blocks are not Rust code and must not be executed as doctests.
+doctest = false
+
+[dependencies]
+javac-tools.workspace = true
+javac-strings.workspace = true

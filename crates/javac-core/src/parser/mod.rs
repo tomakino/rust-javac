@@ -1,0 +1,41 @@
+//! com.sun.tools.javac.parser
+//!
+//! The lexer/parser layer (Java: package com.sun.tools.javac.parser).
+//!
+//! PORTING_RULES / batch status:
+//! * S6 lexical layer (ported from the upstream parser package): Tokens, UnicodeReader,
+//!   JavaTokenizer, TextBlockSupport, JavadocTokenizer, Lexer, Scanner, ScannerFactory
+//!   (+ the java.lang.String helpers JavaTokenizer needs);
+//! * S7 parser: JavacParser, Parser, ParserFactory (in progress);
+//! * S8 doc comments: DocCommentParser, LazyDocCommentTable, ReferenceParser (in progress);
+//! * the Java subclass relations are composition/trait based (registered):
+//!   JavaTokenizer extends UnicodeReader (Deref), JavadocTokenizer extends
+//!   JavaTokenizer (composition + javadoc_comments flag), BasicComment /
+//!   JavadocComment are separate comment implementations;
+//! * ScannerFactory.instance and Tokens.instance need the Names/Source Context
+//!   registrations that are not ported yet (Names has no Context registration,
+//!   Source.instance is TODO(Options batch)): the dependencies are injected
+//!   (registered GAP/TODO(P6));
+//! * Character.isJavaIdentifierStart/Part and the Unicode digit tables are
+//!   approximated with std char classification (registered GAP).
+//!
+//! NOTE: this file is maintained by the Lead only; contributors must not edit it.
+
+pub mod doc_comment_parser;
+pub mod java_string_methods;
+pub mod java_tokenizer;
+// TEMPORARILY DISABLED (in-progress rewrite by Lead): pub mod javac_parser;
+pub mod javadoc_tokenizer;
+pub mod lazy_doc_comment_table;
+pub mod lexer;
+// TEMPORARILY DISABLED (in-progress rewrite by Lead): pub mod parser;
+// TEMPORARILY DISABLED (in-progress rewrite by Lead): pub mod parser_factory;
+pub mod reference_parser;
+pub mod scanner;
+pub mod scanner_factory;
+pub mod text_block_support;
+pub mod tokens;
+pub mod unicode_reader;
+
+#[cfg(test)]
+mod oracle_tests;

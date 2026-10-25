@@ -1,0 +1,14 @@
+[package]
+name = "javac-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# The doc comments contain the Java example code copied from the javax.tools
+# sources; those blocks are not Rust code and must not be executed as doctests.
+doctest = false
+
+[dependencies]
+javac-strings.workspace = true
+javac-unicode.workspace = true

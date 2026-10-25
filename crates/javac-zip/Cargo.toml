@@ -1,0 +1,12 @@
+[package]
+name = "javac-zip"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# Pure-Rust DEFLATE codec; the only third-party dependency of the zip reader.
+# The zip reader itself is implemented here to avoid platform build prerequisites
+# (the zip crate pulled windows-sys/getrandom with raw-dylib, which needs dlltool
+# on the Windows GNU toolchain).
+miniz_oxide = "0.8"

@@ -1,0 +1,328 @@
+# builtin diagnostics cases (sources original to rust-javac; not derived from the JDK)
+# format:
+#   === CASE: <name> ===          case name, matches the builtin:<name> source in data/diagnostics-oracle.txt
+#   # args: - | <javac options>   options passed to javac; '- ' means none
+#   --- source: <file name> ---   one or more source files (contents follow verbatim, LF)
+#   === END ===
+# The generator (src/bin/gen_diagnostics_oracle.rs) reads this file; the differential runner
+# (src/bin/diff_runner.rs, --source diagnostics) rebuilds the 35 builtin cases from it.
+=== CASE: clean/HelloWorld ===
+# args: -
+--- source: HelloWorld.java ---
+class HelloWorld {
+    int field = 1;
+}
+=== END ===
+=== CASE: syntax/IllegalStartOfExpression ===
+# args: -
+--- source: IllegalStartOfExpression.java ---
+class IllegalStartOfExpression {
+    void m() {
+        int x = ;
+    }
+}
+=== END ===
+=== CASE: syntax/MissingSemicolon ===
+# args: -
+--- source: MissingSemicolon.java ---
+class MissingSemicolon {
+    void m() {
+        int x = 1
+    }
+}
+=== END ===
+=== CASE: syntax/UnclosedStringLiteral ===
+# args: -
+--- source: UnclosedStringLiteral.java ---
+class UnclosedStringLiteral {
+    String s = "abc;
+}
+=== END ===
+=== CASE: syntax/IllegalCharacter ===
+# args: -
+--- source: IllegalCharacter.java ---
+class IllegalCharacter {
+    #
+}
+=== END ===
+=== CASE: syntax/UnclosedComment ===
+# args: -
+--- source: UnclosedComment.java ---
+class UnclosedComment {
+    /* unclosed
+}
+=== END ===
+=== CASE: syntax/IllegalEscapeChar ===
+# args: -
+--- source: IllegalEscapeChar.java ---
+class IllegalEscapeChar {
+    String s = "a\qb";
+}
+=== END ===
+=== CASE: syntax/IllegalStartOfType ===
+# args: -
+--- source: IllegalStartOfType.java ---
+class IllegalStartOfType {
+    void m(java.util.List<> list) {
+    }
+}
+=== END ===
+=== CASE: syntax/IdentifierExpected ===
+# args: -
+--- source: IdentifierExpected.java ---
+class IdentifierExpected {
+    int = 5;
+}
+=== END ===
+=== CASE: syntax/InvalidMethodDeclaration ===
+# args: -
+--- source: InvalidMethodDeclaration.java ---
+class InvalidMethodDeclaration {
+    m() {
+    }
+}
+=== END ===
+=== CASE: syntax/ReachedEndOfFile ===
+# args: -
+--- source: ReachedEndOfFile.java ---
+class ReachedEndOfFile {
+    void m() {
+=== END ===
+=== CASE: syntax/NotAStatement ===
+# args: -
+--- source: NotAStatement.java ---
+class NotAStatement {
+    void m() {
+        1 + 1;
+    }
+}
+=== END ===
+=== CASE: syntax/ElseWithoutIf ===
+# args: -
+--- source: ElseWithoutIf.java ---
+class ElseWithoutIf {
+    void m() {
+        else {
+        }
+    }
+}
+=== END ===
+=== CASE: syntax/MultipleErrors ===
+# args: -
+--- source: MultipleErrors.java ---
+class MultipleErrors {
+    void m() {
+        int x = ;
+        String s = "unclosed;
+    }
+}
+=== END ===
+=== CASE: type/CannotFindSymbol ===
+# args: -
+--- source: CannotFindSymbol.java ---
+class CannotFindSymbol {
+    void m() {
+        unknownSymbol();
+    }
+}
+=== END ===
+=== CASE: type/IncompatibleTypes ===
+# args: -
+--- source: IncompatibleTypes.java ---
+class IncompatibleTypes {
+    int x = "not an int";
+}
+=== END ===
+=== CASE: type/BadOperandTypes ===
+# args: -
+--- source: BadOperandTypes.java ---
+class BadOperandTypes {
+    boolean b = 1 && true;
+    int x = true + 1;
+}
+=== END ===
+=== CASE: type/MissingReturnStatement ===
+# args: -
+--- source: MissingReturnStatement.java ---
+class MissingReturnStatement {
+    int m() {
+    }
+}
+=== END ===
+=== CASE: type/UnreachableStatement ===
+# args: -
+--- source: UnreachableStatement.java ---
+class UnreachableStatement {
+    void m() {
+        return;
+        int x = 0;
+    }
+}
+=== END ===
+=== CASE: type/AbstractMethodNotImplemented ===
+# args: -
+--- source: AbstractMethodNotImplemented.java ---
+abstract class AbstractBase {
+    abstract void m();
+}
+
+class AbstractMethodNotImplemented extends AbstractBase {
+}
+=== END ===
+=== CASE: type/UnreportedException ===
+# args: -
+--- source: UnreportedException.java ---
+class UnreportedException {
+    void m() {
+        throw new java.io.IOException();
+    }
+}
+=== END ===
+=== CASE: type/DuplicateClass ===
+# args: -
+--- source: DuplicateClass.java ---
+class DuplicateClass {
+}
+
+class DuplicateClass {
+}
+=== END ===
+=== CASE: type/CyclicInheritance ===
+# args: -
+--- source: CyclicInheritance.java ---
+class CyclicInheritance extends CyclicInheritance {
+}
+=== END ===
+=== CASE: type/InheritFromFinal ===
+# args: -
+--- source: InheritFromFinal.java ---
+final class FinalBase {
+}
+
+class InheritFromFinal extends FinalBase {
+}
+=== END ===
+=== CASE: lint/Deprecation ===
+# args: -Xlint:deprecation
+--- source: Deprecation.java ---
+import java.util.Date;
+
+class Deprecation {
+    void m() {
+        Date date = new Date();
+        date.getYear();
+    }
+}
+=== END ===
+=== CASE: lint/AllWarnings ===
+# args: -Xlint:all
+--- source: AllWarnings.java ---
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+class AllWarnings implements java.io.Serializable {
+    void m(int x) {
+        Date date = new Date();
+        date.getYear();
+        List raw = new ArrayList();
+        raw.add("x");
+        if (x > 0);
+        switch (x) {
+            case 1: x++; case 2: x--;
+        }
+        int y = x / 0;
+        Object o = (Object) date;
+    }
+}
+=== END ===
+=== CASE: note/DeprecationNote ===
+# args: -
+--- source: DeprecationNote.java ---
+class DeprecationNote {
+    void m() {
+        java.util.Date date = new java.util.Date();
+        date.getYear();
+    }
+}
+=== END ===
+=== CASE: note/UncheckedNote ===
+# args: -
+--- source: UncheckedNote.java ---
+import java.util.ArrayList;
+import java.util.List;
+
+class UncheckedNote {
+    void m() {
+        List<String> list = (List) new ArrayList();
+        list.add("x");
+    }
+}
+=== END ===
+=== CASE: werror/DeprecationAsError ===
+# args: -Xlint:deprecation -Werror
+--- source: DeprecationAsError.java ---
+import java.util.Date;
+
+class DeprecationAsError {
+    void m() {
+        Date date = new Date();
+        date.getYear();
+    }
+}
+=== END ===
+=== CASE: stop/ShouldStopAtParse ===
+# args: -XDshould-stop.at=PARSE
+--- source: StopPolicy.java ---
+class StopSyntaxError {
+    int field = ;
+}
+
+class StopSemanticError {
+    int field = unknownSymbol;
+}
+=== END ===
+=== CASE: stop/DefaultPolicy ===
+# args: -
+--- source: StopPolicy.java ---
+class StopSyntaxError {
+    int field = ;
+}
+
+class StopSemanticError {
+    int field = unknownSymbol;
+}
+=== END ===
+=== CASE: maxerrs/TooManyErrors ===
+# args: -Xmaxerrs 1
+--- source: TooManyErrors.java ---
+class TooManyErrors {
+    boolean b = 1 && true;
+    int x = true + 1;
+}
+=== END ===
+=== CASE: multifile/TwoTypeErrors ===
+# args: -
+--- source: TypeErrorA.java ---
+class TypeErrorA {
+    int x = missingX;
+}
+--- source: TypeErrorB.java ---
+class TypeErrorB {
+    int y = missingY;
+}
+=== END ===
+=== CASE: release/RecordNotInRelease13 ===
+# args: --release 13
+--- source: RecordNotInRelease13.java ---
+class RecordNotInRelease13 {
+    java.lang.Record recordField;
+}
+=== END ===
+=== CASE: preview/RecordApiInRelease14 ===
+# args: --release 14
+--- source: RecordApiInRelease14.java ---
+class RecordApiInRelease14 {
+    java.lang.Record recordField;
+}
+=== END ===

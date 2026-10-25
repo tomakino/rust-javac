@@ -1,0 +1,23 @@
+// Origin: javax/lang/model/element/RecordComponentElement.java @ 982d53c (jdk-17.0.19-ga)
+
+//! Represents a record component.
+//!
+//! PORTING_RULES: the Java `@Override` re-declarations of
+//! `getEnclosingElement` and `getSimpleName` only narrow their documentation;
+//! Rust inherits both from `Element` (with the `Option` form of
+//! `get_enclosing_element`), so they are not repeated (registered difference).
+
+use super::element::Element;
+use super::executable_element::ExecutableElement;
+use std::rc::Rc;
+
+/// Represents a record component.
+///
+/// @since 16
+pub trait RecordComponentElement: Element {
+    /// Returns the executable element for the accessor associated with the
+    /// given record component.
+    ///
+    /// @return the record component accessor.
+    fn get_accessor(&self) -> Rc<dyn ExecutableElement>;
+}

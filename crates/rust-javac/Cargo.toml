@@ -1,0 +1,12 @@
+[package]
+name = "rust-javac"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rust-javac"
+path = "src/main.rs"
+
+[dependencies]
+javac-core.workspace = true

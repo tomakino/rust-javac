@@ -1,0 +1,8 @@
+[package]
+name = "javac-jmod"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+javac-zip = { path = "../javac-zip" }
