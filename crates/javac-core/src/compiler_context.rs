@@ -231,6 +231,180 @@ impl CompilerContext {
         self.alloc_scope(Scope::new_error_scope(owner))
     }
 
+    // ------------------------------------------------------------------
+    // Java: Scope.CompoundScope/ImportScope/NamedImportScope/StarImportScope
+    // (TypeEnter/ImportsPhase batch; the Scope import queries are registered
+    // TODO for the Scope query batch).
+    // ------------------------------------------------------------------
+
+    /// Java: CompoundScope.prependSubScope(Scope that)
+    pub fn scope_prepend_sub_scope(&mut self, parent: ScopeId, child: ScopeId) {
+        let mark = sub_scope_fields_mut(self.scope_mut(parent));
+        let Some((sub_scopes, mark)) = mark else {
+            panic!("ClassCastException: not a CompoundScope");
+        };
+        *sub_scopes = sub_scopes.prepend(child);
+        *mark += 1;
+    }
+
+    /// Java: CompoundScope.appendSubScope(Scope that)
+    pub fn scope_append_sub_scope(&mut self, parent: ScopeId, child: ScopeId) {
+        let mark = sub_scope_fields_mut(self.scope_mut(parent));
+        let Some((sub_scopes, mark)) = mark else {
+            panic!("ClassCastException: not a CompoundScope");
+        };
+        *sub_scopes = sub_scopes.append(child);
+        *mark += 1;
+    }
+
+    /// Java: CompoundScope.getMark()
+    pub fn scope_get_mark(&self, scope: ScopeId) -> i32 {
+        match &self.scope(scope).data {
+            crate::code::scope::ScopeData::CompoundScope { mark, .. }
+            | crate::code::scope::ScopeData::ImportScope { mark, .. }
+            | crate::code::scope::ScopeData::NamedImportScope { mark, .. }
+            | crate::code::scope::ScopeData::StarImportScope { mark, .. } => *mark,
+            _ => panic!("ClassCastException: not a CompoundScope"),
+        }
+    }
+
+    /// Java: StarImportScope.isFilled() (subScopes.nonEmpty())
+    pub fn scope_is_filled(&self, scope: ScopeId) -> bool {
+        match &self.scope(scope).data {
+            crate::code::scope::ScopeData::CompoundScope { sub_scopes, .. }
+            | crate::code::scope::ScopeData::ImportScope { sub_scopes, .. }
+            | crate::code::scope::ScopeData::NamedImportScope { sub_scopes, .. }
+            | crate::code::scope::ScopeData::StarImportScope { sub_scopes, .. } => {
+                !sub_scopes.is_empty()
+            }
+            _ => panic!("ClassCastException: not a CompoundScope"),
+        }
+    }
+
+    /// Java: NamedImportScope.importType(Scope delegate, Scope origin, Symbol sym)
+    pub fn scope_import_type(
+        &mut self,
+        named_scope: ScopeId,
+        delegate: ScopeId,
+        origin: ScopeId,
+        sym: SymbolId,
+    ) -> ScopeId {
+        let name = self.sym(sym).name.clone();
+        let owner = self.scope(delegate).owner;
+        let new_scope = self.alloc_scope(crate::code::scope::Scope::new_single_entry_scope(
+            owner,
+            Some(sym),
+            Some(origin),
+        ));
+        self.named_import_append(named_scope, new_scope, name);
+        new_scope
+    }
+
+    /// Java: NamedImportScope.importByName(Types types, Scope origin, Name name,
+    /// ImportFilter filter, JCImport imp, BiConsumer cfHandler)
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
+    pub fn scope_import_by_name(
+        &mut self,
+        named_scope: ScopeId,
+        origin: ScopeId,
+        name: Name,
+        filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+        imp: Option<TreeId>,
+        cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
+        static_import: bool,
+    ) -> ScopeId {
+        let owner = self.scope(origin).owner;
+        let new_scope = self.alloc_scope(
+            crate::code::scope::Scope::new_filter_import_scope(
+                owner,
+                origin,
+                Some(name.clone()),
+                filter,
+                imp,
+                static_import,
+                cf_handler,
+            ),
+        );
+        self.named_import_append(named_scope, new_scope, name);
+        new_scope
+    }
+
+    fn named_import_append(&mut self, named_scope: ScopeId, new_scope: ScopeId, name: Name) {
+        self.scope_append_sub_scope(named_scope, new_scope);
+        if let crate::code::scope::ScopeData::NamedImportScope { name2_scopes, .. } =
+            &mut self.scope_mut(named_scope).data
+        {
+            name2_scopes
+                .entry(name)
+                .or_default()
+                .push(new_scope);
+        }
+    }
+
+    /// Java: StarImportScope.importAll(Types types, Scope origin, ImportFilter
+    /// filter, JCImport imp, BiConsumer cfHandler)
+    #[allow(clippy::type_complexity)]
+    pub fn scope_import_all(
+        &mut self,
+        star_scope: ScopeId,
+        origin: ScopeId,
+        filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+        imp: Option<TreeId>,
+        cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
+        static_import: bool,
+    ) {
+        // avoid entering the same scope twice
+        let duplicates = match &self.scope(star_scope).data {
+            crate::code::scope::ScopeData::StarImportScope { sub_scopes, .. } => {
+                sub_scopes.clone()
+            }
+            _ => panic!("ClassCastException: not a StarImportScope"),
+        };
+        let mut current = duplicates;
+        while current.non_empty() {
+            let existing = *current.head();
+            if let crate::code::scope::ScopeData::FilterImportScope {
+                origin: existing_origin,
+                filter: existing_filter,
+                static_import: existing_static,
+                ..
+            } = &self.scope(existing).data
+            {
+                let same_filter = match (&existing_filter, &filter) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+                    _ => false,
+                };
+                if *existing_origin == origin && same_filter && *existing_static == static_import {
+                    return;
+                }
+            }
+            current = current.tail();
+        }
+        let owner = self.scope(origin).owner;
+        let new_scope = self.alloc_scope(
+            crate::code::scope::Scope::new_filter_import_scope(
+                owner,
+                origin,
+                None,
+                filter,
+                imp,
+                static_import,
+                cf_handler,
+            ),
+        );
+        self.scope_prepend_sub_scope(star_scope, new_scope);
+    }
+
+    /// Java: ImportScope.finalizeScope()
+    pub fn scope_finalize(&mut self, _scope: ScopeId) {
+        // TODO(Scope query batch): finalizeSingleScope needs the FilterImportScope
+        // symbol queries (getSymbols over the origin scope), which need the
+        // SymbolImporter/TypeSymbol member lookups (Scope query batch).
+        unimplemented!("TODO(Scope query batch): ImportScope.finalizeScope");
+    }
+
     /// Java: Symbol.complete() — the arena-value adapter: the completer is taken
     /// from the symbol before calling it (the completer receives &mut context and
     /// the symbol table, ADR 0001).
@@ -437,6 +611,22 @@ impl CompilerContext {
     }
 }
 
+/// Java: CompoundScope.subScopes/mark field access (the compound scope family).
+fn sub_scope_fields_mut(
+    scope: &mut crate::code::scope::Scope,
+) -> Option<(&mut crate::util::list::List<crate::ids::ScopeId>, &mut i32)> {
+    match &mut scope.data {
+        crate::code::scope::ScopeData::CompoundScope { sub_scopes, mark, .. }
+        | crate::code::scope::ScopeData::ImportScope { sub_scopes, mark, .. }
+        | crate::code::scope::ScopeData::NamedImportScope { sub_scopes, mark, .. }
+        | crate::code::scope::ScopeData::StarImportScope { sub_scopes, mark, .. } => {
+            Some((sub_scopes, mark))
+        }
+        _ => None,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -528,3 +718,4 @@ mod tests {
         assert!(ctx.scope_any_match(scope, &|_| true));
     }
 }
+

@@ -88,6 +88,7 @@ use std::rc::Weak;
 use crate::ids::{ScopeId, SymbolId};
 use crate::code::kinds;
 use crate::code::symbol::Symbol;
+use crate::ids::TreeId;
 use crate::util::arena::Arena;
 use crate::util::list::List;
 use crate::util::name::Name;
@@ -258,6 +259,21 @@ pub enum ScopeData {
         content: List<SymbolId>,
         origin: Option<ScopeId>,
     },
+    /// Java: private static class FilterImportScope extends Scope
+    FilterImportScope {
+        /// Java: private final Scope origin
+        origin: ScopeId,
+        /// Java: private final Name filterName (null for star imports)
+        filter_name: Option<Name>,
+        /// Java: private final ImportFilter filter (null for named imports)
+        filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+        /// Java: private final JCImport imp (arena tree id)
+        imp: Option<TreeId>,
+        /// Java: private final boolean staticImport
+        static_import: bool,
+        /// Java: private final BiConsumer<JCImport, CompletionFailure> cfHandler
+        cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
+    },
 }
 
 /// Java: public abstract class Scope (a scope value in the scope arena).
@@ -369,6 +385,32 @@ impl Scope {
                 sym,
                 content,
                 origin,
+            },
+        }
+    }
+
+    /// Java: public FilterImportScope(Types types, Scope origin, Name filterName,
+    /// ImportFilter filter, JCImport imp, boolean staticImport,
+    /// BiConsumer<JCImport, CompletionFailure> cfHandler)
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_filter_import_scope(
+        owner: Option<SymbolId>,
+        origin: ScopeId,
+        filter_name: Option<Name>,
+        filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+        imp: Option<TreeId>,
+        static_import: bool,
+        cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
+    ) -> Scope {
+        Scope {
+            owner,
+            data: ScopeData::FilterImportScope {
+                origin,
+                filter_name,
+                filter,
+                imp,
+                static_import,
+                cf_handler,
             },
         }
     }

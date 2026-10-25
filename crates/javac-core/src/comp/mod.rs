@@ -7,4 +7,5 @@ pub mod enter;
 pub mod env;
 pub mod member_enter;
 pub mod resolve;
+pub mod type_enter;
 pub mod type_envs;
