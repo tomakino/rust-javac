@@ -472,3 +472,52 @@ fn lexical_error_recovery_matches_the_oracle() {
     assert_eq!(scanner.token().kind, TokenKind::ERROR);
     assert_eq!(scanner.token().pos, 4);
 }
+
+fn make_floating_parser_context() -> (crate::compiler_context::CompilerContext, crate::parser::parser_factory::ParserFactory) {
+    let mut context = Context::new();
+    let log = crate::util::log::Log::instance(&mut context);
+    let dummy = Rc::new(
+        javac_tools::tools::simple_java_file_object::SimpleJavaFileObject::new(
+            javac_tools::uri::URI::create(&JavaString::from("file:///Dummy.java")),
+            javac_tools::tools::java_file_object::Kind::SOURCE,
+        ),
+    );
+    log.borrow_mut().use_source(Some(dummy));
+    let names = Rc::new(Names::new(false));
+    let scanner_factory = ScannerFactory::new(&mut context, names.clone(), Source::DEFAULT);
+    let factory = crate::parser::parser_factory::ParserFactory::new(
+        &mut context,
+        names,
+        Source::DEFAULT,
+        scanner_factory,
+        None,
+    );
+    (crate::compiler_context::CompilerContext::new(), factory)
+}
+
+/// The FLOATLITERAL/DOUBLELITERAL branches use the ported JDK FloatingDecimal
+/// (javac-floating) exactly like upstream literal() uses Float.valueOf /
+/// Double.valueOf, including the hex-float and overflow paths.
+#[test]
+fn floating_point_literals_parse_with_floating_decimal() {
+    use crate::parser::parser::Parser;
+    let source = "class Test {\n    float a = 1.5f;\n    double b = 0x1.8p1;\n    float c = 1e-45f;\n    double d = 1e-324;\n    float e = 1e39f;\n}\n";
+    let (mut ctx, factory) = make_floating_parser_context();
+    let mut parser = factory.new_parser(&mut ctx, &JavaString::from(source), false, true, false);
+    let tree = parser.parse_compilation_unit(&mut ctx);
+    assert_eq!(ctx.tree(tree).tag, crate::tree::jc_tree::Tag::TOPLEVEL);
+}
+
+/// Malformed floating point literals keep the upstream literal() behavior:
+/// the scanner reports the malformed input and Float.valueOf throws
+/// NumberFormatException, which literal() catches and maps to NaN (no panic
+/// in the parser, exactly like upstream).
+#[test]
+fn malformed_floating_point_literal_does_not_panic() {
+    use crate::parser::parser::Parser;
+    let source = "class Test { double d = 1.2.3; }\n";
+    let (mut ctx, factory) = make_floating_parser_context();
+    let mut parser = factory.new_parser(&mut ctx, &JavaString::from(source), false, true, false);
+    let tree = parser.parse_compilation_unit(&mut ctx);
+    assert_eq!(ctx.tree(tree).tag, crate::tree::jc_tree::Tag::TOPLEVEL);
+}

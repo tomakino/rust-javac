@@ -13,16 +13,10 @@
 //! call sites, registered in PORTING_RULES section 9); Type stays the ported
 //! code::type_::Type.
 //!
-//! NOT PORTED IN THIS STEP (dependency semantics that are not available in the
-//! javac reference sources; no substitute text is produced):
-//! - formatFloat / formatDouble: the Java Float.toString / Double.toString
-//!   output is produced by the JDK java.lang.FloatingDecimal algorithm (Ryu /
-//!   Dragon4 with the JDK digit-selection rules, e.g. Float.MIN_VALUE is
-//!   "1.4E-45" while the shortest round-trip decimal from a generic Ryu
-//!   implementation is "1e-45"). The javac reference tree does not contain
-//!   that algorithm, so the FLOAT/DOUBLE branches panic with a TODO message
-//!   instead of emitting a different text; a dedicated FloatingDecimal/oracle
-//!   batch must port it (report section 9).
+//! PORTING_RULES §9.17: formatFloat/formatDouble use the JDK
+//! java.lang.FloatingDecimal semantics (Float.toString/Double.toString), ported
+//! 1:1 from jdk/internal/math/FloatingDecimal.java @ 982d53c in the
+//! javac-floating adapter crate (registered in docs/DEPENDENCIES.md).
 
 use crate::code::type_::Type;
 use crate::code::type_tag::TypeTag;
@@ -61,8 +55,8 @@ impl ConstantValue {
             ConstantValue::Byte(value) => value.to_string(),
             ConstantValue::Short(value) => value.to_string(),
             ConstantValue::Long(value) => value.to_string(),
-            ConstantValue::Float(_) => panic!("unimplemented: Java Float.toString needs FloatingDecimal"),
-            ConstantValue::Double(_) => panic!("unimplemented: Java Double.toString needs FloatingDecimal"),
+            ConstantValue::Float(value) => javac_floating::to_java_string_float(*value),
+            ConstantValue::Double(value) => javac_floating::to_java_string_double(*value),
             ConstantValue::Character(value) => {
                 JavaString::from_units(vec![*value]).to_string_lossy()
             }
@@ -99,14 +93,8 @@ pub fn format(value: ConstantValue, ty: &Type) -> String {
     match ty.get_tag() {
         TypeTag::BYTE => return format_byte(expect_byte(&value)),
         TypeTag::LONG => return format_long(expect_long(&value)),
-        TypeTag::FLOAT => {
-            // NOT PORTED: see the module doc (FloatingDecimal).
-            panic!("unimplemented: Constants.formatFloat needs the JDK FloatingDecimal");
-        }
-        TypeTag::DOUBLE => {
-            // NOT PORTED: see the module doc (FloatingDecimal).
-            panic!("unimplemented: Constants.formatDouble needs the JDK FloatingDecimal");
-        }
+        TypeTag::FLOAT => return format_float(expect_float(&value)),
+        TypeTag::DOUBLE => return format_double(expect_double(&value)),
         TypeTag::CHAR => return format_char(expect_character(&value)),
         _ => {}
     }
@@ -125,14 +113,8 @@ pub fn format_value(value: &ConstantValue) -> String {
         ConstantValue::Byte(byte_val) => format_byte(*byte_val),
         ConstantValue::Short(short_val) => format_short(*short_val),
         ConstantValue::Long(long_val) => format_long(*long_val),
-        ConstantValue::Float(_) => {
-            // NOT PORTED: see the module doc (FloatingDecimal).
-            panic!("unimplemented: Constants.formatFloat needs the JDK FloatingDecimal");
-        }
-        ConstantValue::Double(_) => {
-            // NOT PORTED: see the module doc (FloatingDecimal).
-            panic!("unimplemented: Constants.formatDouble needs the JDK FloatingDecimal");
-        }
+        ConstantValue::Float(float_val) => format_float(*float_val),
+        ConstantValue::Double(double_val) => format_double(*double_val),
         ConstantValue::Character(char_val) => format_char(*char_val),
         ConstantValue::String(str_val) => format_string(str_val),
         ConstantValue::Integer(_) | ConstantValue::Boolean(_) => value.to_display(),
@@ -143,6 +125,50 @@ fn expect_byte(value: &ConstantValue) -> i8 {
     match value {
         ConstantValue::Byte(value) => *value,
         _ => panic!("unexpected constant value, expected Byte"),
+    }
+}
+
+fn expect_float(value: &ConstantValue) -> f32 {
+    match value {
+        ConstantValue::Float(value) => *value,
+        _ => panic!("unexpected constant value, expected Float"),
+    }
+}
+
+fn expect_double(value: &ConstantValue) -> f64 {
+    match value {
+        ConstantValue::Double(value) => *value,
+        _ => panic!("unexpected constant value, expected Double"),
+    }
+}
+
+// Java: private static String formatFloat(float f)
+fn format_float(f: f32) -> String {
+    if f.is_nan() {
+        "0.0f/0.0f".to_string()
+    } else if f.is_infinite() {
+        if f < 0.0 {
+            "-1.0f/0.0f".to_string()
+        } else {
+            "1.0f/0.0f".to_string()
+        }
+    } else {
+        format!("{}f", javac_floating::to_java_string_float(f))
+    }
+}
+
+// Java: private static String formatDouble(double d)
+fn format_double(d: f64) -> String {
+    if d.is_nan() {
+        "0.0/0.0".to_string()
+    } else if d.is_infinite() {
+        if d < 0.0 {
+            "-1.0/0.0".to_string()
+        } else {
+            "1.0/0.0".to_string()
+        }
+    } else {
+        javac_floating::to_java_string_double(d)
     }
 }
 
@@ -292,14 +318,30 @@ mod tests {
     }
 
     #[test]
-    fn float_and_double_formatting_are_not_ported_yet() {
-        // The FLOAT/DOUBLE branches must not emit a substitute text; they panic
-        // with the FloatingDecimal TODO message (module doc).
-        let result = std::panic::catch_unwind(|| {
-            format(ConstantValue::Float(1.0), &ty(TypeTag::FLOAT))
-        });
-        assert!(result.is_err());
-        let result = std::panic::catch_unwind(|| format_value(&ConstantValue::Double(1.0)));
-        assert!(result.is_err());
+    fn float_and_double_formatting_matches_floating_decimal() {
+        // Java: Constants.formatFloat / formatDouble semantics
+        assert_eq!(format(ConstantValue::Float(1.0), &ty(TypeTag::FLOAT)), "1.0f");
+        assert_eq!(
+            format(ConstantValue::Float(f32::from_bits(1)), &ty(TypeTag::FLOAT)),
+            "1.4E-45f"
+        );
+        assert_eq!(format(ConstantValue::Double(1.0), &ty(TypeTag::DOUBLE)), "1.0");
+        assert_eq!(
+            format(ConstantValue::Double(f64::from_bits(1)), &ty(TypeTag::DOUBLE)),
+            "4.9E-324"
+        );
+        assert_eq!(
+            format_value(&ConstantValue::Float(f32::NAN)),
+            "0.0f/0.0f"
+        );
+        assert_eq!(
+            format_value(&ConstantValue::Float(f32::INFINITY)),
+            "1.0f/0.0f"
+        );
+        assert_eq!(
+            format_value(&ConstantValue::Double(f64::NEG_INFINITY)),
+            "-1.0/0.0"
+        );
+        assert_eq!(format_value(&ConstantValue::Double(1.0)), "1.0");
     }
 }

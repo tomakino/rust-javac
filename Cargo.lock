@@ -31,6 +31,7 @@ dependencies = [
  "javac-charset",
  "javac-classpath",
  "javac-ctsym",
+ "javac-floating",
  "javac-fs",
  "javac-jimage",
  "javac-source",

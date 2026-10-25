@@ -42,6 +42,10 @@
 - 只在真实阻塞(依赖未移植且规则禁止造假/需裁决的设计冲突)时停干净状态报告。
 - 恢复后先读 STATUS 与实际文件状态,从断点继续,不重做、不重复汇报。
 - 干部分工:util-porter 独占全部 Rust 代码修改(含 mod.rs/lib.rs);Lead 只做指派、审核、docs、git 提交与决策。
+- 汇报真实性(PORTING_RULES §18):汇报前必须重新读相关代码+重跑验证,每条结论附证据(路径/行号/输出),禁止凭记忆;
+  发现不符立即更正;Lead 抽查证据,不符退回重做。
+- 补丁规则(PORTING_RULES §17):任何修复先对照官方差异——有差异则传染性重构为官方版本(禁止在偏离代码上打补丁);
+  无差异则不在该处打补丁,改查其它链路。每批承诺加『修复根因分析』。
 - 红线(PORTING_RULES §16,高于一切):禁止任何替代/简化/自创算法/行为近似;要么不写(unimplemented!+TODO
   登记),要么一次性按上游完整 1:1 写完;分批只在文件级;文件内方法不得写半成品替代。
 - 强制交付契约(PORTING_RULES §15):每批汇报必须包含『等价性承诺』(逐文件 1:1 声明/偏差清单/
@@ -105,3 +109,10 @@ platform、ct.sym、charset、file 基础、Locations、Symtab、Types 最小、
   docs/PORTING_MANIFEST.md(xtask 生成,Java→Rust 映射)。
 - docs/ADR/0001-arena-ids.md、0002-diagnostic-resources.md、0003-class-reader.md、
   0004-diagnostic-layer.md、0005-jctree-design.md、0006-parser-design.md。
+## 规则约束力与执行记录
+
+- 约束机制:每次任务/唤醒消息附带『规则速查』(§15-§18 摘要 + 最终汇报附件清单);Lead 逐项抽查证据,
+  不符退回重做;每批完成即提交 git checkpoint 便于 diff 追溯;违规实例记录在本节。
+- 已发生:§16 红线后 util-porter 自查修正 9 处半成品近似(FLOAT/DOUBLE 近似改 unimplemented 等);
+  Lead 抽查发现 type_declaration 5 处未登记缺口(已退回补齐)、syntax_error_discard 残留(已退删除)。
+- 待验证:§17(补丁/传染性重构)、§18(汇报重新读+证据)首次执行效果。

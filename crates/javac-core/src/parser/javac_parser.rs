@@ -37,7 +37,7 @@ use crate::parser::lexer::Lexer;
 use crate::parser::parser::Parser;
 use crate::parser::parser_factory::ParserFactory;
 use crate::parser::scanner::Scanner;
-use crate::parser::tokens::{dummy_token, Comment, CommentStyle, Token, TokenKind, Tokens};
+use crate::parser::tokens::{dummy_token, Comment, CommentStyle, Token, TokenKind};
 use crate::resources::compiler_properties::{errors, warnings};
 use crate::tree::doc_comment_table::DocCommentTable;
 use crate::tree::end_pos_table::EndPosTable;
@@ -55,7 +55,7 @@ use crate::util::list::List;
 use crate::util::log::Log;
 use crate::util::name::Name;
 use crate::util::names::Names;
-use crate::util::position::{LineMap, NOPOS};
+use crate::util::position::NOPOS;
 
 
 /// Type adapter: values are the upstream long (i64) modifiers from
@@ -63,7 +63,10 @@ use crate::util::position::{LineMap, NOPOS};
 /// module only re-exports them as i64 for the Java long-typed parser API. Do
 /// not add or copy constant values here: future flags.rs changes must flow
 /// through automatically.
+#[allow(non_upper_case_globals)]
 mod Flags {
+    pub const StandardFlags: i64 = crate::code::flags::StandardFlags as i64;
+    pub const COMPACT_RECORD_CONSTRUCTOR: i64 = crate::code::flags::COMPACT_RECORD_CONSTRUCTOR;
     pub const PUBLIC: i64 = crate::code::flags::PUBLIC as i64;
     pub const PRIVATE: i64 = crate::code::flags::PRIVATE as i64;
     pub const PROTECTED: i64 = crate::code::flags::PROTECTED as i64;
@@ -838,15 +841,76 @@ impl JavacParser {
                 }
             }
             TokenKind::FLOATLITERAL => {
-                // TODO(P4/Java-Number batch): Java Float.valueOf (FloatingDecimal:
-                // decimal and hexadecimal floating-point strings with correct
-                // rounding) is not ported; no substitute is used here.
-                unimplemented!("TODO: Float.valueOf (FloatingDecimal) is not ported");
+                let string_val = self.token.string_val().clone();
+                let proper = if self.token.radix() == 16 {
+                    JavaString::from("0x").concat(&string_val)
+                } else {
+                    string_val
+                };
+                // Java: try { n = Float.valueOf(proper); } catch
+                // (NumberFormatException ex) { n = Float.NaN; } (the error was
+                // already reported in the scanner).
+                let n = match javac_floating::try_parse_float(&proper.to_string_lossy()) {
+                    Ok(value) => value,
+                    Err(_) => f32::NAN,
+                };
+                if n == 0.0f32 && !Self::is_zero(&proper) {
+                    let key = JCDiagnosticError::from(errors::fp_number_too_small());
+                    self.log.borrow_mut().error_flag_at(
+                        DiagnosticFlag::SYNTAX,
+                        self.token.pos,
+                        key,
+                    );
+                } else if n == f32::INFINITY {
+                    let key = JCDiagnosticError::from(errors::fp_number_too_large());
+                    self.log.borrow_mut().error_flag_at(
+                        DiagnosticFlag::SYNTAX,
+                        self.token.pos,
+                        key,
+                    );
+                } else {
+                    t = self.F.at(pos).literal(
+                        ctx,
+                        crate::code::type_tag::TypeTag::FLOAT,
+                        Some(LiteralValue::Float(n)),
+                    );
+                }
             }
             TokenKind::DOUBLELITERAL => {
-                // TODO(P4/Java-Number batch): Java Double.valueOf (FloatingDecimal)
-                // is not ported; no substitute is used here.
-                unimplemented!("TODO: Double.valueOf (FloatingDecimal) is not ported");
+                let string_val = self.token.string_val().clone();
+                let proper = if self.token.radix() == 16 {
+                    JavaString::from("0x").concat(&string_val)
+                } else {
+                    string_val
+                };
+                // Java: try { n = Double.valueOf(proper); } catch
+                // (NumberFormatException ex) { n = Double.NaN; } (the error was
+                // already reported in the scanner).
+                let n = match javac_floating::try_parse_double(&proper.to_string_lossy()) {
+                    Ok(value) => value,
+                    Err(_) => f64::NAN,
+                };
+                if n == 0.0f64 && !Self::is_zero(&proper) {
+                    let key = JCDiagnosticError::from(errors::fp_number_too_small());
+                    self.log.borrow_mut().error_flag_at(
+                        DiagnosticFlag::SYNTAX,
+                        self.token.pos,
+                        key,
+                    );
+                } else if n == f64::INFINITY {
+                    let key = JCDiagnosticError::from(errors::fp_number_too_large());
+                    self.log.borrow_mut().error_flag_at(
+                        DiagnosticFlag::SYNTAX,
+                        self.token.pos,
+                        key,
+                    );
+                } else {
+                    t = self.F.at(pos).literal(
+                        ctx,
+                        crate::code::type_tag::TypeTag::DOUBLE,
+                        Some(LiteralValue::Double(n)),
+                    );
+                }
             }
             TokenKind::CHARLITERAL => {
                 let value = self.token.string_val().as_units()[0];
@@ -1851,75 +1915,191 @@ impl JavacParser {
             | TokenKind::LONG
             | TokenKind::FLOAT
             | TokenKind::DOUBLE
-            | TokenKind::BOOLEAN
-                if type_args.is_none() =>
-            {
-                let t = self.basic_type(ctx);
-                return self.array_creator_rest(ctx, newpos, t);
+            | TokenKind::BOOLEAN => {
+                if type_args.is_none() {
+                    if new_annotations.is_empty() {
+                        let basic = self.basic_type(ctx);
+                        return self.array_creator_rest(ctx, newpos, basic);
+                    } else {
+                        let head = *new_annotations.head();
+                        let head_pos = ctx.tree(head).pos;
+                        let basic = self.basic_type(ctx);
+                        let annotated = {
+                            let x = self.F.at(head_pos).annotated_type(ctx, new_annotations, basic);
+                            self.to_p(x)
+                        };
+                        return self.array_creator_rest(ctx, newpos, annotated);
+                    }
+                }
             }
             _ => {}
         }
         let mut t = self.qualident(ctx, true);
         let oldmode = self.mode;
         self.select_type_mode();
-        let mut first = true;
+        let mut diamond_found = false;
+        let mut last_typeargs_pos = -1;
         if self.token.kind == TokenKind::LT {
+            last_typeargs_pos = self.token.pos;
             t = self.type_arguments_tree(ctx, t, true);
-            first = false;
+            diamond_found = (self.mode & DIAMOND) != 0;
         }
         while self.token.kind == TokenKind::DOT {
+            if diamond_found {
+                // cannot select after a diamond
+                let _ = self.illegal_at_token(ctx);
+            }
             let pos = self.token.pos;
             self.next_token();
-            let _tyannos = self.type_annotations_opt(ctx);
+            let tyannos = self.type_annotations_opt(ctx);
             let name = self.ident(ctx);
-            t = { let __to_p_tree = self.F.at(pos).select(ctx, t, name); self.to_p(__to_p_tree) };
+            t = {
+                let x = self.F.at(pos).select(ctx, t, name);
+                self.to_p(x)
+            };
+            if !tyannos.is_empty() {
+                let head = *tyannos.head();
+                let head_pos = ctx.tree(head).pos;
+                t = {
+                    let x = self.F.at(head_pos).annotated_type(ctx, tyannos, t);
+                    self.to_p(x)
+                };
+            }
             if self.token.kind == TokenKind::LT {
+                last_typeargs_pos = self.token.pos;
                 t = self.type_arguments_tree(ctx, t, true);
+                diamond_found = (self.mode & DIAMOND) != 0;
             }
         }
-        let _ = first;
         self.mode = oldmode;
         if self.token.kind == TokenKind::LBRACKET || self.token.kind == TokenKind::MONKEYS_AT {
-            return self.array_creator_rest(ctx, newpos, t);
+            // handle type annotations for non primitive arrays
+            if !new_annotations.is_empty() {
+                t = self.insert_annotations_to_most_inner(ctx, t, new_annotations, false);
+            }
+            let e = self.array_creator_rest(ctx, newpos, t);
+            if diamond_found {
+                self.report_syntax_error(
+                    ctx,
+                    last_typeargs_pos,
+                    JCDiagnosticError::from(errors::cannot_create_array_with_diamond()),
+                );
+                let err = self.F.at(newpos).erroneous(ctx, List::of(e));
+                return self.to_p(err);
+            } else if let Some(type_args) = type_args {
+                let mut pos = newpos;
+                if !type_args.is_empty() && ctx.tree(*type_args.head()).pos != NOPOS {
+                    // note: this should always happen but we should
+                    // not rely on this as the parser is continuously
+                    // modified to improve error recovery.
+                    pos = ctx.tree(*type_args.head()).pos;
+                }
+                let prev_end = self.prev_token().end_pos;
+                self.set_error_end_pos(prev_end);
+                let mut errs: Vec<TreeId> = vec![e];
+                for arg in type_args.iter() {
+                    errs.push(arg);
+                }
+                let err = self.F.at(pos).erroneous(ctx, List::from_iterable(errs));
+                let err_pos = ctx.tree(err).pos;
+                self.report_syntax_error(
+                    ctx,
+                    err_pos,
+                    JCDiagnosticError::from(errors::cannot_create_array_with_type_arguments()),
+                );
+                return self.to_p(err);
+            }
+            return e;
+        } else if self.token.kind == TokenKind::LPAREN {
+            // handle type annotations for instantiations and anonymous classes
+            if !new_annotations.is_empty() {
+                t = self.insert_annotations_to_most_inner(ctx, t, new_annotations, false);
+            }
+            return self.class_creator_rest(ctx, newpos, None, type_args, t);
+        } else {
+            let token_pos = self.token.pos;
+            self.set_error_end_pos(token_pos);
+            self.report_syntax_error(
+                ctx,
+                token_pos,
+                JCDiagnosticError::from(errors::expected2(
+                    Self::token_arg(TokenKind::LPAREN),
+                    Self::token_arg(TokenKind::LBRACKET),
+                )),
+            );
+            let new_class = self.F.at(newpos).new_class(
+                ctx,
+                None,
+                type_args.unwrap_or_else(List::nil),
+                t,
+                List::nil(),
+                None,
+            );
+            let new_class = self.to_p(new_class);
+            let err = self.F.at(newpos).erroneous(ctx, List::of(new_class));
+            self.to_p(err)
         }
+    }
+
+    /// Java: JCExpression classCreatorRest(int newpos, JCExpression encl,
+    /// List<JCExpression> typeArgs, JCExpression t)
+    fn class_creator_rest(
+        &mut self,
+        ctx: &mut CompilerContext,
+        newpos: i32,
+        encl: Option<TreeId>,
+        type_args: Option<List<TreeId>>,
+        t: TreeId,
+    ) -> TreeId {
         let args = self.arguments(ctx);
         let mut body = None;
         if self.token.kind == TokenKind::LBRACE {
             let pos = self.token.pos;
-            let defs = self.class_interface_body(ctx, self.names.empty.clone(), false);
+            let defs = self.class_interface_body(ctx, self.names.empty.clone(), false, false);
             let mods = self.F.at(NOPOS).modifiers(ctx, 0);
-            let body_node = { let __to_p_tree = self.F.at(pos).anonymous_class_def(ctx, mods, defs); self.to_p(__to_p_tree) };
-            body = Some(body_node);
+            let anonymous = {
+                let x = self.F.at(pos).anonymous_class_def(ctx, mods, defs);
+                self.to_p(x)
+            };
+            body = Some(anonymous);
         }
-        { let __to_p_tree = self.F.at(newpos).new_class(ctx, None, type_args.unwrap_or_else(List::nil), t, args, body); self.to_p(__to_p_tree) }
+        {
+            let x = self.F.at(newpos).new_class(
+                ctx,
+                encl,
+                type_args.unwrap_or_else(List::nil),
+                t,
+                args,
+                body,
+            );
+            self.to_p(x)
+        }
     }
 
     /// Java: JCExpression innerCreator(int newpos, List<JCExpression> typeArgs,
     /// JCExpression encl)
     fn inner_creator(&mut self, ctx: &mut CompilerContext, newpos: i32, type_args: Option<List<TreeId>>, encl: TreeId) -> TreeId {
         let new_annotations = self.type_annotations_opt(ctx);
+        let pos = self.token.pos;
         let name = self.ident(ctx);
-        let mut t = { let __to_p_tree = self.F.at(self.token.pos).ident(ctx, name); self.to_p(__to_p_tree) };
+        let mut t = {
+            let x = self.F.at(pos).ident(ctx, name);
+            self.to_p(x)
+        };
         if !new_annotations.is_empty() {
-            let head = new_annotations.head();
-            let head_pos = tree_info::get_start_pos(ctx, *head);
-            t = { let __to_p_tree = self.F.at(head_pos).annotated_type(ctx, new_annotations, t); self.to_p(__to_p_tree) };
+            let head = *new_annotations.head();
+            let head_pos = ctx.tree(head).pos;
+            t = {
+                let x = self.F.at(head_pos).annotated_type(ctx, new_annotations, t);
+                self.to_p(x)
+            };
         }
         if self.token.kind == TokenKind::LT {
             let oldmode = self.mode;
             t = self.type_arguments_tree(ctx, t, true);
             self.mode = oldmode;
         }
-        let args = self.arguments(ctx);
-        let body = if self.token.kind == TokenKind::LBRACE {
-            let pos = self.token.pos;
-            let defs = self.class_interface_body(ctx, self.names.empty.clone(), false);
-            let mods = self.F.at(NOPOS).modifiers(ctx, 0);
-            Some({ let __to_p_tree = self.F.at(pos).anonymous_class_def(ctx, mods, defs); self.to_p(__to_p_tree) })
-        } else {
-            None
-        };
-        { let __to_p_tree = self.F.at(newpos).new_class(ctx, Some(encl), type_args.unwrap_or_else(List::nil), t, args, body); self.to_p(__to_p_tree) }
+        self.class_creator_rest(ctx, newpos, Some(encl), type_args, t)
     }
 
     /// Java: JCExpression arrayCreatorRest(int newpos, JCExpression elemtype)
@@ -2119,8 +2299,9 @@ impl JavacParser {
 
     /// Java: JCExpression term2Rest(JCExpression t, int minprec)
     fn term2_rest(&mut self, ctx: &mut CompilerContext, t: TreeId, minprec: i32) -> TreeId {
-        let mut od_stack: Vec<TreeId> = vec![t];
-        let mut op_stack: Vec<Token> = Vec::new();
+        let mut od_stack: Vec<TreeId> = Vec::with_capacity((INFIX_PRECEDENCE_LEVELS + 1) as usize);
+        od_stack.push(t);
+        let mut op_stack: Vec<Token> = Vec::with_capacity((INFIX_PRECEDENCE_LEVELS + 1) as usize);
         let mut top: usize = 0;
         let mut top_op: Token = dummy_token();
         while Self::prec(self.token.kind) >= minprec {
@@ -3023,7 +3204,7 @@ impl JavacParser {
         let mut type_seen = false;
         let mut default_result = ParensResult::Parens;
         let mut lookahead = 0i32;
-        'outer: loop {
+        loop {
             let tk = self.S.lookahead_token(lookahead).kind;
             match tk {
                 TokenKind::COMMA => {
@@ -3737,7 +3918,7 @@ impl JavacParser {
 
     /// Java: List<JCStatement> forInit()
     fn for_init(&mut self, ctx: &mut CompilerContext) -> List<TreeId> {
-        let mut stats: Vec<TreeId> = Vec::new();
+        let stats: Vec<TreeId> = Vec::new();
         let pos = self.token.pos;
         if self.token.kind == TokenKind::FINAL || self.token.kind == TokenKind::MONKEYS_AT {
             let mods = self.opt_final(ctx, 0);
@@ -4002,9 +4183,8 @@ impl JavacParser {
             ErrorRecoveryAction::CatchClause => self.catch_clause(ctx),
         };
         self.S.set_err_pos(err_pos);
-        let start = ctx.tree(stm).pos;
-        let err = self.syntax_error_list(ctx, start, List::of(stm), error_key);
-        { let __to_p_tree = self.F.at(start).exec(ctx, err); self.to_p(__to_p_tree) }
+        let err = self.syntax_error_list(ctx, start_pos, List::of(stm), error_key);
+        { let __to_p_tree = self.F.at(start_pos).exec(ctx, err); self.to_p(__to_p_tree) }
     }
 
     /// Java: protected JCCatch catchClause()
@@ -4190,7 +4370,7 @@ impl JavacParser {
             self.next_token();
             implementing = self.type_list(ctx);
         }
-        let defs = self.class_interface_body(ctx, name.clone(), false);
+        let defs = self.class_interface_body(ctx, name.clone(), false, false);
         { let __to_p_tree = self.F.at(pos).class_def(ctx, mods, name, typarams, extending, implementing, defs); self.to_p(__to_p_tree) }
     }
 
@@ -4205,17 +4385,23 @@ impl JavacParser {
             self.next_token();
             extending = self.type_list(ctx);
         }
-        let defs = self.class_interface_body(ctx, name.clone(), true);
+        let defs = self.class_interface_body(ctx, name.clone(), true, false);
         { let __to_p_tree = self.F.at(pos).class_def(ctx, mods, name, typarams, None, extending, defs); self.to_p(__to_p_tree) }
     }
 
     /// Java: List<JCTree> classInterfaceOrRecordBody(Name className,
     /// boolean isInterface, boolean isRecord)
-    fn class_interface_body(&mut self, ctx: &mut CompilerContext, class_name: Name, is_interface: bool) -> List<TreeId> {
+    fn class_interface_body(
+        &mut self,
+        ctx: &mut CompilerContext,
+        class_name: Name,
+        is_interface: bool,
+        is_record: bool,
+    ) -> List<TreeId> {
         self.accept(ctx, TokenKind::LBRACE);
         let mut defs: Vec<TreeId> = Vec::new();
         while self.token.kind != TokenKind::RBRACE && self.token.kind != TokenKind::EOF {
-            defs.extend(self.class_body_declaration(ctx, class_name.clone(), is_interface));
+            defs.extend(self.class_body_declaration(ctx, class_name.clone(), is_interface, is_record));
             if self.token.pos <= self.end_pos_table.error_end_pos() {
                 self.skip(false, true, true, false);
             }
@@ -4226,109 +4412,221 @@ impl JavacParser {
 
     /// Java: protected List<JCTree> classOrInterfaceOrRecordBodyDeclaration(
     /// Name className, boolean isInterface, boolean isRecord)
-    fn class_body_declaration(&mut self, ctx: &mut CompilerContext, class_name: Name, is_interface: bool) -> Vec<TreeId> {
+    fn class_body_declaration(
+        &mut self,
+        ctx: &mut CompilerContext,
+        class_name: Name,
+        is_interface: bool,
+        is_record: bool,
+    ) -> Vec<TreeId> {
         if self.token.kind == TokenKind::SEMI {
             self.next_token();
             return Vec::new();
         }
+        // TODO(S8 DocCommentParser batch): with keepDocComments=false the
+        // doc comment is not consumed; attach is a no-op.
+        let _dc = self.token.comment(CommentStyle::JAVADOC);
         let pos = self.token.pos;
         let mods = self.modifiers_opt(ctx);
-        if self.token.kind == TokenKind::CLASS || self.token.kind == TokenKind::INTERFACE {
+        if self.token.kind == TokenKind::CLASS
+            || (self.allow_records && self.is_record_start())
+            || self.token.kind == TokenKind::INTERFACE
+            || self.token.kind == TokenKind::ENUM
+        {
             return vec![self.class_or_record_or_interface_or_enum_declaration(ctx, mods)];
         }
-        if self.token.kind == TokenKind::ENUM {
-            return vec![self.class_or_record_or_interface_or_enum_declaration(ctx, mods)];
-        }
-        if self.token.kind == TokenKind::LBRACE {
-            return vec![self.block_at(ctx, pos, 0)];
+        let mods_flags = match &ctx.tree(mods).kind {
+            TreeKind::Modifiers { flags, .. } => *flags,
+            _ => 0,
+        };
+        let mods_annotations_empty = match &ctx.tree(mods).kind {
+            TreeKind::Modifiers { annotations, .. } => annotations.is_empty(),
+            _ => true,
+        };
+        if self.token.kind == TokenKind::LBRACE
+            && (mods_flags & Flags::StandardFlags & !Flags::STATIC) == 0
+            && mods_annotations_empty
+        {
+            if is_interface {
+                let err_pos = self.token.pos;
+                let key = JCDiagnosticError::from(errors::initializer_not_allowed());
+                self.log
+                    .borrow_mut()
+                    .error_flag_at(DiagnosticFlag::SYNTAX, err_pos, key);
+            } else if is_record && (mods_flags & Flags::STATIC) == 0 {
+                let err_pos = self.token.pos;
+                let key = JCDiagnosticError::from(
+                    errors::instance_initializer_not_allowed_in_records(),
+                );
+                self.log
+                    .borrow_mut()
+                    .error_flag_at(DiagnosticFlag::SYNTAX, err_pos, key);
+            }
+            return vec![self.block_at(ctx, pos, mods_flags)];
         }
         let mut pos = self.token.pos;
         let typarams = self.type_parameters_opt(ctx);
-        let annos_after = self.annotations_opt(ctx, false);
-        let mut mods = mods;
-        if !annos_after.is_empty() {
-            self.check_source_level(pos, Feature::ANNOTATIONS_AFTER_TYPE_PARAMS);
+        // if there are type parameters but no modifiers, save the start
+        // position of the method in the modifiers.
+        if !typarams.is_empty() && ctx.tree(mods).pos == NOPOS {
+            ctx.tree_mut(mods).pos = pos;
+            self.store_end(mods, pos);
+        }
+        let annos_after_params = self.annotations_opt(ctx, false);
+        if !annos_after_params.is_empty() {
+            let head = *annos_after_params.head();
+            let head_pos = ctx.tree(head).pos;
+            self.check_source_level(head_pos, Feature::ANNOTATIONS_AFTER_TYPE_PARAMS);
             if let TreeKind::Modifiers { annotations, .. } = &mut ctx.tree_mut(mods).kind {
                 let mut list = annotations.clone();
-                list = list.append_list(&annos_after);
+                list = list.append_list(&annos_after_params);
                 *annotations = list;
             }
             if ctx.tree(mods).pos == NOPOS {
-                let first = *annos_after.head();
-                let p = ctx.tree(first).pos;
-                ctx.tree_mut(mods).pos = p;
+                let head = *annos_after_params.head();
+                let head_pos = ctx.tree(head).pos;
+                ctx.tree_mut(mods).pos = head_pos;
             }
         }
-        let is_void = self.token.kind == TokenKind::VOID;
+        let tk = self.token.clone();
+        pos = self.token.pos;
         let type_;
+        let is_void = self.token.kind == TokenKind::VOID;
         if is_void {
-            type_ = { let __to_tree = self.F.at(pos).type_ident(ctx, TypeTag::VOID); self.to(__to_tree) };
+            type_ = {
+                let x = self.F.at(pos).type_ident(ctx, TypeTag::VOID);
+                self.to(x)
+            };
             self.next_token();
         } else {
-            // method return types are un-annotated types
-            type_ = self.term_with_mode(ctx, TYPE);
+            // method returns types are un-annotated types
+            type_ = self.unannotated_type(ctx, false);
         }
-        let is_constructor_style = (self.token.kind == TokenKind::LPAREN && !is_interface)
-            && ctx.tree(type_).tag == Tag::IDENT;
-        if is_constructor_style {
-            let construct_name = self.names.init.clone();
+        let has_ident_type = ctx.tree(type_).tag == Tag::IDENT;
+        if ((self.token.kind == TokenKind::LPAREN && !is_interface)
+            || (is_record && self.token.kind == TokenKind::LBRACE))
+            && has_ident_type
+        {
+            if is_interface || tk.name().to_java_string() != class_name.to_java_string() {
+                let key = JCDiagnosticError::from(errors::invalid_meth_decl_ret_type_req());
+                self.log
+                    .borrow_mut()
+                    .error_flag_at(DiagnosticFlag::SYNTAX, pos, key);
+            } else if !annos_after_params.is_empty() {
+                let head = *annos_after_params.head();
+                let head_pos = ctx.tree(head).pos;
+                let _ = self.illegal(ctx, head_pos);
+            }
+            if is_record && self.token.kind == TokenKind::LBRACE {
+                if let TreeKind::Modifiers { flags, .. } = &mut ctx.tree_mut(mods).kind {
+                    *flags |= Flags::COMPACT_RECORD_CONSTRUCTOR;
+                }
+            }
+            let init_name = self.names.init.clone();
             return vec![self.method_declarator_rest(
                 ctx,
                 pos,
                 mods,
                 None,
-                construct_name,
+                init_name,
                 typarams,
                 is_interface,
                 true,
+                is_record,
             )];
-        }
-        pos = self.token.pos;
-        let name = self.ident(ctx);
-        if self.token.kind == TokenKind::LPAREN {
-            vec![self.method_declarator_rest(
-                ctx, pos, mods, Some(type_), name, typarams, is_interface, is_void,
-            )]
-        } else if !is_void && typarams.is_empty() {
-            let defs = self.variable_declarators_rest(
-                ctx, pos, mods, type_, name, is_interface, Vec::new(), false,
-            );
-            self.accept(ctx, TokenKind::SEMI);
-            if let Some(last) = defs.last() {
-                let end = self.prev_token().end_pos;
-                self.store_end(*last, end);
-            }
-            defs
+        } else if is_record && has_ident_type && self.token.kind == TokenKind::THROWS {
+            // trying to define a compact constructor with a throws clause
+            // TODO(S7b): records (canonical constructor diagnostics).
+            unimplemented!("TODO(S7b): records (compact constructor with throws clause)");
         } else {
-            let pos = self.token.pos;
-            let mut err: Vec<TreeId> = Vec::new();
-            if is_void || !typarams.is_empty() {
-                let m = self.F.at(pos).method_def(
+            pos = self.token.pos;
+            let name = self.ident(ctx);
+            if self.token.kind == TokenKind::LPAREN {
+                return vec![self.method_declarator_rest(
                     ctx,
+                    pos,
                     mods,
-                    name,
                     Some(type_),
+                    name,
                     typarams,
-                    None,
-                    List::nil(),
-                    List::nil(),
-                    None,
-                    None,
+                    is_interface,
+                    is_void,
+                    false,
+                )];
+            } else if !is_void && typarams.is_empty() {
+                if !is_record || (mods_flags & Flags::STATIC) != 0 {
+                    let defs = self.variable_declarators_rest(
+                        ctx,
+                        pos,
+                        mods,
+                        type_,
+                        name,
+                        is_interface,
+                        Vec::new(),
+                        false,
+                    );
+                    self.accept(ctx, TokenKind::SEMI);
+                    if let Some(last) = defs.last() {
+                        let end = self.prev_token().end_pos;
+                        self.store_end(*last, end);
+                    }
+                    defs
+                } else {
+                    let err_pos = pos;
+                    let _ = self.variable_declarators_rest(
+                        ctx,
+                        pos,
+                        mods,
+                        type_,
+                        name,
+                        is_interface,
+                        Vec::new(),
+                        false,
+                    );
+                    self.accept(ctx, TokenKind::SEMI);
+                    let err = self.syntax_error_list(
+                        ctx,
+                        err_pos,
+                        List::nil(),
+                        JCDiagnosticError::from(
+                            errors::record_cannot_declare_instance_fields(),
+                        ),
+                    );
+                    vec![err]
+                }
+            } else {
+                pos = self.token.pos;
+                let mut err: Vec<TreeId> = Vec::new();
+                if is_void || !typarams.is_empty() {
+                    let m = self.F.at(pos).method_def(
+                        ctx,
+                        mods,
+                        name,
+                        Some(type_),
+                        typarams,
+                        None,
+                        List::nil(),
+                        List::nil(),
+                        None,
+                        None,
+                    );
+                    err.push(self.to_p(m));
+                }
+                let p = self.token.pos;
+                let e = self.syntax_error_list(
+                    ctx,
+                    p,
+                    List::from_iterable(err),
+                    JCDiagnosticError::from(errors::expected(Self::token_arg(TokenKind::LPAREN))),
                 );
-                err.push(self.to_p(m));
+                vec![e]
             }
-            let p = self.token.pos;
-            let e = self.syntax_error_list(
-                ctx,
-                p,
-                List::from_iterable(err),
-                JCDiagnosticError::from(errors::expected(Self::token_arg(TokenKind::LPAREN))),
-            );
-            vec![e]
         }
     }
 
     /// Java: protected JCTree methodDeclaratorRest(int pos, JCModifiers mods,
+    /// JCExpression type, Name name, List<JCTypeParameter> typarams,
+    /// boolean isInterface, boolean isVoid, boolean isRecord, Comment dc)
     /// JCExpression type, Name name, List<JCTypeParameter> typarams,
     /// boolean isInterface, boolean isVoid, boolean isRecord, Comment dc)
     #[allow(clippy::too_many_arguments)]
@@ -4342,6 +4640,7 @@ impl JavacParser {
         typarams: List<TreeId>,
         is_interface: bool,
         is_void: bool,
+        is_record: bool,
     ) -> TreeId {
         if is_interface {
             let mods_flags = match &ctx.tree(mods).kind {
@@ -4359,16 +4658,21 @@ impl JavacParser {
         self.receiver_param = None;
         let mut params = List::nil();
         let mut thrown = List::nil();
-        params = self.formal_parameters(ctx);
         let mut type_ = type_;
-        if !is_void {
-            if let Some(t) = type_ {
-                type_ = Some(self.brackets_opt_simple(ctx, t));
+        if !is_record
+            || name.to_java_string() != self.names.init.to_java_string()
+            || self.token.kind == TokenKind::LPAREN
+        {
+            params = self.formal_parameters(ctx);
+            if !is_void {
+                if let Some(t) = type_ {
+                    type_ = Some(self.brackets_opt_simple(ctx, t));
+                }
             }
-        }
-        if self.token.kind == TokenKind::THROWS {
-            self.next_token();
-            thrown = self.qualident_list(ctx, true);
+            if self.token.kind == TokenKind::THROWS {
+                self.next_token();
+                thrown = self.qualident_list(ctx, true);
+            }
         }
         let mut body = None;
         let mut default_value = None;
@@ -4434,7 +4738,7 @@ impl JavacParser {
         self.permit_type_annotations_push_back = true;
         let type_ = self.parse_type_impl(ctx, false);
         self.permit_type_annotations_push_back = false;
-        let mut mods = mods;
+        let mods = mods;
         if self.token.kind == TokenKind::ELLIPSIS {
             let varargs_annos = self.type_annotations_pushed_back.clone();
             self.type_annotations_pushed_back = List::nil();
@@ -4805,7 +5109,7 @@ impl JavacParser {
                     has_structural_errors = true;
                 }
                 was_error = false;
-                defs.extend(self.class_body_declaration(ctx, enum_name.clone(), false));
+                defs.extend(self.class_body_declaration(ctx, enum_name.clone(), false, false));
                 if self.token.pos <= self.end_pos_table.error_end_pos() {
                     self.skip(false, true, true, false);
                 }
@@ -4876,7 +5180,7 @@ impl JavacParser {
                 .F
                 .at(NOPOS)
                 .modifiers(ctx, Flags::ENUM);
-            let defs = self.class_interface_body(ctx, self.names.empty.clone(), false);
+            let defs = self.class_interface_body(ctx, self.names.empty.clone(), false, false);
             let anonymous = self.F.at(ident_pos).anonymous_class_def(ctx, mods1, defs);
             body = Some(self.to_p(anonymous));
         }

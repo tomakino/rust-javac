@@ -26,6 +26,7 @@ license = "GPL-2.0-only WITH Classpath-exception-2.0"
 
 [workspace.dependencies]
 javac-ctsym = { path = "crates/javac-ctsym" }
+javac-floating = { path = "crates/javac-floating" }
 javac-source = { path = "crates/javac-source" }
 javac-unicode = { path = "crates/javac-unicode" }
 javac-strings = { path = "crates/javac-strings" }

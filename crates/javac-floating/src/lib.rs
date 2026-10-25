@@ -19,6 +19,28 @@
 //!
 //! The crate is dependency-free so that the compiler front end can use it without
 //! pulling in the JDK class library.
+//!
+//! PORTING_RULES §9.17/§17: the upstream control flow/structure is kept 1:1, so
+//! clippy style lints that would require restructuring the ported code are
+//! allowed crate-wide (they are not behavioral changes):
+#![allow(
+    clippy::needless_return,
+    clippy::unnecessary_cast,
+    clippy::manual_div_ceil,
+    clippy::manual_range_contains,
+    clippy::collapsible_if,
+    clippy::needless_late_init,
+    clippy::needless_range_loop,
+    clippy::assign_op_pattern,
+    clippy::approx_constant,
+    clippy::manual_clamp,
+    clippy::float_cmp
+)]
 
 pub mod fdbig_integer;
 pub mod floating_decimal;
+
+pub use floating_decimal::{
+    parse_double, parse_float, to_java_string_double, to_java_string_float, try_parse_double,
+    try_parse_float, NumberFormatException,
+};

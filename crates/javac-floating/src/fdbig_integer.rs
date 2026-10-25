@@ -37,35 +37,34 @@ static SMALL_5_POW: [i32; 14] = [
     5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
 ];
 
-static LONG_5_POW: [i64; 28] = [
+static LONG_5_POW: [i64; 27] = [
     1,
     5,
-    5 * 5,
-    5 * 5 * 5,
-    5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
-    5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5 * 5,
+    25,
+    125,
+    625,
+    3125,
+    15625,
+    78125,
+    390625,
+    1953125,
+    9765625,
+    48828125,
+    244140625,
+    1220703125,
+    6103515625,
+    30517578125,
+    152587890625,
+    762939453125,
+    3814697265625,
+    19073486328125,
+    95367431640625,
+    476837158203125,
+    2384185791015625,
+    11920928955078125,
+    59604644775390625,
+    298023223876953125,
+    1490116119384765625,
 ];
 
 /// Cache of big powers of 5 as FDBigIntegers.
@@ -171,7 +170,7 @@ impl FDBigInteger {
                 let mut carry = (v0 as i64 & LONG_MASK) * pow5;
                 v0 = carry as i32;
                 carry = (carry as u64 >> 32) as i64;
-                carry = ((v1 as i64 & LONG_MASK) * pow5 + carry) as i64;
+                carry = (v1 as i64 & LONG_MASK) * pow5 + carry;
                 v1 = carry as i32;
                 let v2 = (carry as u64 >> 32) as i32;
                 if bitcount == 0 {
@@ -547,3 +546,620 @@ impl FDBigInteger {
             dst[i + s2_len] = p as i32;
         }
     }
+
+    /// Java: public FDBigInteger leftInplaceSub(FDBigInteger subtrahend)
+    ///
+    /// PORTING_RULES §9.17 adaptation: upstream mutates and returns \`this\`
+    /// when it is not immutable; the Rust port returns an equal value instead
+    /// (value semantics), keeping every arithmetic step 1:1.
+    pub(crate) fn left_inplace_sub(&self, subtrahend: &FDBigInteger) -> FDBigInteger {
+        assert!(self.size() >= subtrahend.size(), "result should be positive");
+        let mut minuend = self.clone();
+        let mut offset_diff = subtrahend.offset - minuend.offset;
+        let sub_len = subtrahend.n_words as usize;
+        if offset_diff < 0 {
+            // need to expand minuend
+            let min_len = minuend.n_words as usize;
+            let r_len = (min_len as i32 - offset_diff) as usize;
+            if r_len < minuend.data.len() {
+                let shift = (-offset_diff) as usize;
+                minuend.data.copy_within(0..min_len, shift);
+                for x in &mut minuend.data[0..shift] {
+                    *x = 0;
+                }
+            } else {
+                let mut r = vec![0i32; r_len];
+                let shift = (-offset_diff) as usize;
+                r[shift..shift + min_len].copy_from_slice(&minuend.data[..min_len]);
+                minuend.data = r;
+            }
+            minuend.offset = subtrahend.offset;
+            minuend.n_words = r_len as i32;
+            offset_diff = 0;
+        }
+        let mut borrow: i64 = 0;
+        let mut m_index = offset_diff as usize;
+        let s_data = &subtrahend.data;
+        let min_len = minuend.n_words as usize;
+        let mut s_index = 0usize;
+        while s_index < sub_len && m_index < min_len {
+            let diff = (minuend.data[m_index] as u32 as i64)
+                - (s_data[s_index] as u32 as i64)
+                + borrow;
+            minuend.data[m_index] = diff as i32;
+            borrow = diff >> 32; // signed shift
+            s_index += 1;
+            m_index += 1;
+        }
+        while borrow != 0 && m_index < min_len {
+            let diff = (minuend.data[m_index] as u32 as i64) + borrow;
+            minuend.data[m_index] = diff as i32;
+            borrow = diff >> 32; // signed shift
+            m_index += 1;
+        }
+        assert!(borrow == 0, "{borrow}");
+        // result should be positive
+        minuend.trim_leading_zeros();
+        minuend
+    }
+
+    /// Java: public FDBigInteger rightInplaceSub(FDBigInteger subtrahend)
+    ///
+    /// PORTING_RULES §9.17 adaptation: upstream mutates the \`subtrahend\`
+    /// argument and returns it; the Rust port takes it by value and returns the
+    /// mutated value (value semantics), keeping every arithmetic step 1:1.
+    // PORTING_RULES §9.17: upstream assigns `subLen -= offsetDiff` but does
+    // not read subLen afterwards; the assignment is kept 1:1.
+    #[allow(unused_assignments)]
+    pub(crate) fn right_inplace_sub(&self, mut subtrahend: FDBigInteger) -> FDBigInteger {
+        assert!(self.size() >= subtrahend.size(), "result should be positive");
+        let minuend = self;
+        let mut offset_diff = minuend.offset - subtrahend.offset;
+        let mut sub_len = subtrahend.n_words as usize;
+        let min_len = minuend.n_words as usize;
+        if offset_diff < 0 {
+            let r_len = min_len;
+            if r_len < subtrahend.data.len() {
+                let shift = (-offset_diff) as usize;
+                subtrahend.data.copy_within(0..sub_len, shift);
+                for x in &mut subtrahend.data[0..shift] {
+                    *x = 0;
+                }
+            } else {
+                let mut r = vec![0i32; r_len];
+                let shift = (-offset_diff) as usize;
+                r[shift..shift + sub_len].copy_from_slice(&subtrahend.data[..sub_len]);
+                subtrahend.data = r;
+            }
+            subtrahend.offset = minuend.offset;
+            sub_len = (sub_len as i32 - offset_diff) as usize;
+            offset_diff = 0;
+        } else {
+            let r_len = min_len + offset_diff as usize;
+            if r_len >= subtrahend.data.len() {
+                subtrahend.data.resize(r_len, 0);
+            }
+        }
+        let s_data = &mut subtrahend.data;
+        let m_data = &minuend.data;
+        let mut s_index = 0usize;
+        let mut borrow: i64 = 0;
+        while s_index < offset_diff as usize {
+            let diff = 0i64 - (s_data[s_index] as u32 as i64) + borrow;
+            s_data[s_index] = diff as i32;
+            borrow = diff >> 32; // signed shift
+            s_index += 1;
+        }
+        let mut m_index = 0usize;
+        while m_index < min_len {
+            let diff = (m_data[m_index] as u32 as i64)
+                - (s_data[s_index] as u32 as i64)
+                + borrow;
+            s_data[s_index] = diff as i32;
+            borrow = diff >> 32; // signed shift
+            s_index += 1;
+            m_index += 1;
+        }
+        assert!(borrow == 0, "{borrow}");
+        subtrahend.n_words = s_index as i32;
+        subtrahend.trim_leading_zeros();
+        subtrahend
+    }
+
+    /// Java: private static int checkZeroTail(int[] a, int from)
+    fn check_zero_tail(a: &[i32], from: usize) -> i32 {
+        let mut from = from;
+        while from > 0 {
+            from -= 1;
+            if a[from] != 0 {
+                return 1;
+            }
+        }
+        0
+    }
+
+    /// Java: public int cmp(FDBigInteger other)
+    pub(crate) fn cmp(&self, other: &FDBigInteger) -> i32 {
+        let a_size = self.n_words + self.offset;
+        let b_size = other.n_words + other.offset;
+        if a_size > b_size {
+            return 1;
+        } else if a_size < b_size {
+            return -1;
+        }
+        let mut a_len = self.n_words;
+        let mut b_len = other.n_words;
+        while a_len > 0 && b_len > 0 {
+            a_len -= 1;
+            b_len -= 1;
+            let a = self.data[a_len as usize];
+            let b = other.data[b_len as usize];
+            if a != b {
+                return if (a as u32 as u64) < (b as u32 as u64) { -1 } else { 1 };
+            }
+        }
+        if a_len > 0 {
+            return Self::check_zero_tail(&self.data, a_len as usize);
+        }
+        if b_len > 0 {
+            return -Self::check_zero_tail(&other.data, b_len as usize);
+        }
+        0
+    }
+
+    /// Java: public int cmpPow52(int p5, int p2)
+    pub(crate) fn cmp_pow52(&self, p5: i32, p2: i32) -> i32 {
+        if p5 == 0 {
+            let wordcount = p2 >> 5;
+            let bitcount = p2 & 0x1f;
+            let size = self.n_words + self.offset;
+            if size > wordcount + 1 {
+                return 1;
+            } else if size < wordcount + 1 {
+                return -1;
+            }
+            let a = self.data[(self.n_words - 1) as usize];
+            let b = 1i32.wrapping_shl(bitcount as u32);
+            if a != b {
+                return if (a as u32 as u64) < (b as u32 as u64) { -1 } else { 1 };
+            }
+            return Self::check_zero_tail(&self.data, (self.n_words - 1) as usize);
+        }
+        let mut shifted = Self::big5pow(p5);
+        let shifted = shifted.left_shift(p2);
+        self.cmp(&shifted)
+    }
+
+    /// Java: public int addAndCmp(FDBigInteger x, FDBigInteger y)
+    pub(crate) fn add_and_cmp(&self, x: &FDBigInteger, y: &FDBigInteger) -> i32 {
+        let x_size = x.size();
+        let y_size = y.size();
+        let (big, small, b_size, s_size);
+        if x_size >= y_size {
+            big = x;
+            small = y;
+            b_size = x_size;
+            s_size = y_size;
+        } else {
+            big = y;
+            small = x;
+            b_size = y_size;
+            s_size = x_size;
+        }
+        let th_size = self.size();
+        if b_size == 0 {
+            return if th_size == 0 { 0 } else { 1 };
+        }
+        if s_size == 0 {
+            return self.cmp(big);
+        }
+        if b_size > th_size {
+            return -1;
+        }
+        if b_size + 1 < th_size {
+            return 1;
+        }
+        let mut top = big.data[(big.n_words - 1) as usize] as u32 as i64;
+        if s_size == b_size {
+            top += small.data[(small.n_words - 1) as usize] as u32 as i64;
+        }
+        if ((top as u64) >> 32) == 0 {
+            if (((top + 1) as u64) >> 32) == 0 {
+                // good case - no carry extension
+                if b_size < th_size {
+                    return 1;
+                }
+                // here sum.nWords == this.nWords
+                let v = self.data[(self.n_words - 1) as usize] as u32 as i64;
+                if v < top {
+                    return -1;
+                }
+                if v > top + 1 {
+                    return 1;
+                }
+            }
+        } else {
+            // (top>>>32)!=0 guaranteed carry extension
+            if b_size + 1 > th_size {
+                return -1;
+            }
+            // here sum.nWords == this.nWords
+            top = (top as u64 >> 32) as i64;
+            let v = self.data[(self.n_words - 1) as usize] as u32 as i64;
+            if v < top {
+                return -1;
+            }
+            if v > top + 1 {
+                return 1;
+            }
+        }
+        self.cmp(&big.add(small))
+    }
+
+    /// Java: public void makeImmutable()
+    pub(crate) fn make_immutable(&mut self) {
+        self.is_immutable = true;
+    }
+
+    /// Java: private FDBigInteger mult(int i)
+    fn mult_i(&self, i: i32) -> FDBigInteger {
+        if self.n_words == 0 {
+            return self.clone();
+        }
+        let mut r = vec![0; self.n_words as usize + 1];
+        Self::mult_arr_const_into(&self.data, self.n_words as usize, i, &mut r);
+        FDBigInteger::new_from_int_array(r, self.offset)
+    }
+
+    /// Java: private FDBigInteger mult(FDBigInteger other)
+    fn mult_fdbig(&self, other: &FDBigInteger) -> FDBigInteger {
+        if self.n_words == 0 {
+            return self.clone();
+        }
+        if self.size() == 1 {
+            return other.mult_i(self.data[0]);
+        }
+        if other.n_words == 0 {
+            return other.clone();
+        }
+        if other.size() == 1 {
+            return self.mult_i(other.data[0]);
+        }
+        let mut r = vec![0; (self.n_words + other.n_words) as usize];
+        Self::mult_arrays_into(
+            &self.data,
+            self.n_words as usize,
+            &other.data,
+            other.n_words as usize,
+            &mut r,
+        );
+        FDBigInteger::new_from_int_array(r, self.offset + other.offset)
+    }
+
+    /// Java: private FDBigInteger add(FDBigInteger other)
+    fn add(&self, other: &FDBigInteger) -> FDBigInteger {
+        let t_size = self.size();
+        let o_size = other.size();
+        let (big, big_len, small, small_len);
+        if t_size >= o_size {
+            big = self;
+            big_len = t_size;
+            small = other;
+            small_len = o_size;
+        } else {
+            big = other;
+            big_len = o_size;
+            small = self;
+            small_len = t_size;
+        }
+        let mut r = vec![0i32; big_len as usize + 1];
+        let mut i = 0usize;
+        let mut carry: i64 = 0;
+        while i < small_len as usize {
+            carry += (if i < big.offset as usize {
+                0i64
+            } else {
+                big.data[i - big.offset as usize] as u32 as i64
+            }) + (if i < small.offset as usize {
+                0i64
+            } else {
+                small.data[i - small.offset as usize] as u32 as i64
+            });
+            r[i] = carry as i32;
+            carry >>= 32; // signed shift.
+            i += 1;
+        }
+        while i < big_len as usize {
+            carry += if i < big.offset as usize {
+                0i64
+            } else {
+                big.data[i - big.offset as usize] as u32 as i64
+            };
+            r[i] = carry as i32;
+            carry >>= 32; // signed shift.
+            i += 1;
+        }
+        r[big_len as usize] = carry as i32;
+        FDBigInteger::new_from_int_array(r, 0)
+    }
+
+    /// Java: private void multAddMe(int iv, int addend)
+    fn mult_add_me(&mut self, iv: i32, addend: i32) {
+        let v = iv as u32 as u64;
+        // unroll 0th iteration, doing addition.
+        let mut p = v * (self.data[0] as u32 as u64) + (addend as u32 as u64);
+        self.data[0] = p as i32;
+        p >>= 32;
+        for i in 1..self.n_words as usize {
+            p += v * (self.data[i] as u32 as u64);
+            self.data[i] = p as i32;
+            p >>= 32;
+        }
+        if p != 0 {
+            self.data[self.n_words as usize] = p as i32; // will fail noisily if illegal!
+            self.n_words += 1;
+        }
+    }
+
+    //
+    // original doc:
+    //
+    // do this -=q*S
+    // returns borrow
+    //
+    /// Java: private long multDiffMe(long q, FDBigInteger S)
+    fn mult_diff_me(&mut self, q: i64, s: &FDBigInteger) -> i64 {
+        let mut diff: i64 = 0;
+        if q != 0 {
+            let mut delta_size = s.offset - self.offset;
+            if delta_size >= 0 {
+                let sd = &s.data;
+                let td = &mut self.data;
+                let mut s_index = 0usize;
+                let mut t_index = delta_size as usize;
+                while s_index < s.n_words as usize {
+                    diff = diff.wrapping_add(
+                        (td[t_index] as u32 as i64)
+                            .wrapping_sub(q.wrapping_mul(sd[s_index] as u32 as i64)),
+                    );
+                    td[t_index] = diff as i32;
+                    diff >>= 32; // N.B. SIGNED shift.
+                    s_index += 1;
+                    t_index += 1;
+                }
+            } else {
+                delta_size = -delta_size;
+                let mut rd = vec![0i32; (self.n_words + delta_size) as usize];
+                let mut s_index = 0usize;
+                let mut r_index = 0usize;
+                let sd = &s.data;
+                while r_index < delta_size as usize && s_index < s.n_words as usize {
+                    diff = diff.wrapping_sub(q.wrapping_mul(sd[s_index] as u32 as i64));
+                    rd[r_index] = diff as i32;
+                    diff >>= 32; // N.B. SIGNED shift.
+                    s_index += 1;
+                    r_index += 1;
+                }
+                let mut t_index = 0usize;
+                let td = &self.data;
+                while s_index < s.n_words as usize {
+                    diff = diff.wrapping_add(
+                        (td[t_index] as u32 as i64)
+                            .wrapping_sub(q.wrapping_mul(sd[s_index] as u32 as i64)),
+                    );
+                    rd[r_index] = diff as i32;
+                    diff >>= 32; // N.B. SIGNED shift.
+                    s_index += 1;
+                    t_index += 1;
+                    r_index += 1;
+                }
+                self.n_words += delta_size;
+                self.offset -= delta_size;
+                self.data = rd;
+            }
+        }
+        diff
+    }
+
+    /// Java: private static int multAndCarryBy10(int[] src, int srcLen,
+    /// int[] dst)
+    fn mult_and_carry_by_10_into(src: &[i32], src_len: usize, dst: &mut [i32]) -> i32 {
+        let mut carry: u64 = 0;
+        for i in 0..src_len {
+            let product = (src[i] as u32 as u64) * 10u64 + carry;
+            dst[i] = product as i32;
+            carry = product >> 32;
+        }
+        carry as i32
+    }
+
+    /// Java: private static int multAndCarryBy10(int[] src, int srcLen,
+    /// int[] dst), in-place form (src and dst are the same array upstream).
+    fn mult_and_carry_by_10_in_place(data: &mut [i32], src_len: usize) -> i32 {
+        let mut carry: u64 = 0;
+        for i in 0..src_len {
+            let product = (data[i] as u32 as u64) * 10u64 + carry;
+            data[i] = product as i32;
+            carry = product >> 32;
+        }
+        carry as i32
+    }
+
+    /// Java: private static void mult(int[] src, int srcLen, int value,
+    /// int[] dst)
+    fn mult_arr_const_into(src: &[i32], src_len: usize, value: i32, dst: &mut [i32]) {
+        let val = value as u32 as u64;
+        let mut carry: u64 = 0;
+        for i in 0..src_len {
+            let product = (src[i] as u32 as u64) * val + carry;
+            dst[i] = product as i32;
+            carry = product >> 32;
+        }
+        dst[src_len] = carry as i32;
+    }
+
+    /// Java: private static void mult(int[] src, int srcLen, int v0, int v1,
+    /// int[] dst)
+    fn mult_arr_const2_into(
+        src: &[i32],
+        src_len: usize,
+        v0: i32,
+        v1: i32,
+        dst: &mut [i32],
+    ) {
+        let v = v0 as u32 as u64;
+        let mut carry: u64 = 0;
+        for j in 0..src_len {
+            let product = v * (src[j] as u32 as u64) + carry;
+            dst[j] = product as i32;
+            carry = product >> 32;
+        }
+        dst[src_len] = carry as i32;
+        let v = v1 as u32 as u64;
+        let mut carry: u64 = 0;
+        for j in 0..src_len {
+            let product = (dst[j + 1] as u32 as u64) + v * (src[j] as u32 as u64) + carry;
+            dst[j + 1] = product as i32;
+            carry = product >> 32;
+        }
+        dst[src_len + 1] = carry as i32;
+    }
+
+    // Fails assertion for negative exponent.
+    /// Java: private static FDBigInteger big5pow(int p)
+    fn big5pow(p: i32) -> FDBigInteger {
+        assert!(p >= 0, "{p}"); // negative power of 5
+        if (p as usize) < MAX_FIVE_POW {
+            return POW_5_CACHE[p as usize].clone();
+        }
+        Self::big5pow_rec(p)
+    }
+
+    // slow path
+    /// Java: private static FDBigInteger big5powRec(int p)
+    fn big5pow_rec(p: i32) -> FDBigInteger {
+        if (p as usize) < MAX_FIVE_POW {
+            return POW_5_CACHE[p as usize].clone();
+        }
+        // construct the value.
+        // recursively.
+        // in order to compute 5^p,
+        // compute its square root, 5^(p/2) and square.
+        // or, let q = p / 2, r = p -q, then
+        // 5^p = 5^(q+r) = 5^q * 5^r
+        let q = p >> 1;
+        let r = p - q;
+        let bigq = Self::big5pow_rec(q);
+        if (r as usize) < SMALL_5_POW.len() {
+            bigq.mult_i(SMALL_5_POW[r as usize])
+        } else {
+            bigq.mult_fdbig(&Self::big5pow_rec(r))
+        }
+    }
+
+    // for debugging ...
+    /// Java: public String toHexString()
+    #[allow(dead_code)]
+    pub(crate) fn to_hex_string(&self) -> String {
+        if self.n_words == 0 {
+            return "0".to_string();
+        }
+        let mut sb = String::with_capacity(((self.n_words + self.offset) * 8) as usize);
+        let mut i = self.n_words - 1;
+        while i >= 0 {
+            let sub_str = format!("{:x}", self.data[i as usize] as u32);
+            for _ in sub_str.len()..8 {
+                sb.push('0');
+            }
+            sb.push_str(&sub_str);
+            i -= 1;
+        }
+        for _ in 0..self.offset {
+            sb.push_str("00000000");
+        }
+        sb
+    }
+
+    // for debugging ...
+    /// Java: public BigInteger toBigInteger()
+    ///
+    /// TODO: java.math.BigInteger is not ported; this debug-only conversion is
+    /// left unimplemented (no substitute is provided).
+    #[allow(dead_code)]
+    pub(crate) fn to_big_integer(&self) -> ! {
+        unimplemented!("TODO: java.math.BigInteger is not ported (FDBigInteger.toBigInteger)");
+    }
+
+    // for debugging ...
+    /// Java: public String toString()
+    #[allow(dead_code)]
+    pub(crate) fn to_string_debug(&self) -> ! {
+        unimplemented!("TODO: java.math.BigInteger is not ported (FDBigInteger.toString)");
+    }
+
+    /// Java: zero as an FDBigInteger (upstream static ZERO field).
+    pub(crate) fn zero() -> FDBigInteger {
+        ZERO.clone()
+    }
+
+    /// Java: public FDBigInteger(long lValue, char[] digits, int kDigits,
+    /// int nDigits)
+    pub(crate) fn new_with_digits(
+        l_value: i64,
+        digits: &[u16],
+        k_digits: usize,
+        n_digits: usize,
+    ) -> FDBigInteger {
+        let n = (n_digits + 8) / 9;
+        let n = if n < 2 { 2 } else { n }; // estimate size needed.
+        let mut data = vec![0i32; n]; // allocate enough space
+        data[0] = l_value as i32; // starting value
+        data[1] = ((l_value as u64) >> 32) as i32;
+        let mut value = FDBigInteger {
+            data,
+            offset: 0,
+            n_words: 2,
+            is_immutable: false,
+        };
+        let mut i = k_digits as i64;
+        let limit = n_digits as i64 - 5; // slurp digits 5 at a time.
+        while i < limit {
+            let ilim = i + 5;
+            let mut v = (digits[i as usize] - b'0' as u16) as i32;
+            i += 1;
+            while i < ilim {
+                v = 10 * v + (digits[i as usize] - b'0' as u16) as i32;
+                i += 1;
+            }
+            value.mult_add_me(100000, v); // ... where 100000 is 10^5.
+        }
+        let mut factor = 1i32;
+        let mut v = 0i32;
+        while i < n_digits as i64 {
+            v = 10 * v + (digits[i as usize] - b'0' as u16) as i32;
+            i += 1;
+            factor *= 10;
+        }
+        if factor != 1 {
+            value.mult_add_me(factor, v);
+        }
+        value.trim_leading_zeros();
+        value
+    }
+}
+
+
+/// Read-only accessors for the upstream static power tables (FloatingDecimal
+/// accesses FDBigInteger.SMALL_5_POW / LONG_5_POW directly).
+pub(crate) fn small5pow(i: i32) -> i32 {
+    SMALL_5_POW[i as usize]
+}
+
+pub(crate) fn long5pow(i: i32) -> i64 {
+    LONG_5_POW[i as usize]
+}
+
+pub(crate) fn long5pow_len() -> usize {
+    LONG_5_POW.len()
+}
+
