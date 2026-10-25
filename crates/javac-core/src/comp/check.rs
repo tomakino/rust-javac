@@ -740,4 +740,119 @@ impl Check {
         self.compiled.clear();
         self.local_class_name_indexes.clear();
     }
+
+    /// Java: void checkTransparentVar(DiagnosticPosition pos, VarSymbol v,
+    /// Scope s)
+    pub fn check_transparent_var(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        v: SymbolId,
+        scope: ScopeId,
+    ) {
+        let name = ctx.sym(v).name.clone();
+        let symbols = ctx.scope_get_symbols_by_name(
+            scope,
+            &name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        for sym in symbols {
+            if ctx.sym(sym).owner != ctx.sym(v).owner {
+                break;
+            }
+            let owner_kind = ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind);
+            let owner_is_val_mth = matches!(
+                owner_kind,
+                Some(crate::code::kinds::Kind::VAR) | Some(crate::code::kinds::Kind::MTH)
+            );
+            if ctx.sym(sym).kind == crate::code::kinds::Kind::VAR
+                && owner_is_val_mth
+                && name.to_java_string() != self.names.error.to_java_string()
+            {
+                self.duplicate_error(ctx, pos, sym);
+                return;
+            }
+        }
+    }
+
+    /// Java: Type typeTagError(DiagnosticPosition pos, JCDiagnostic required,
+    /// Object found)
+    fn type_tag_error(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        required: crate::util::jc_diagnostic::JCDiagnostic,
+        found: DiagnosticArg,
+    ) -> crate::ids::TypeId {
+        self.report_error(
+            pos,
+            errors::type_found_req(found, DiagnosticArg::from_display(required.get_message(None).to_string_lossy())),
+        );
+        let _ = ctx;
+        unimplemented!("TODO(Check/Types batch): typeTagError needs the Types instance (types.createErrorType)")
+    }
+
+    /// Java: Type checkClassType(DiagnosticPosition pos, Type t)
+    pub fn check_class_type(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        t: crate::ids::TypeId,
+    ) -> crate::ids::TypeId {
+        let tag = ctx.typ(t).get_tag();
+        if tag != crate::code::type_tag::TypeTag::CLASS
+            && tag != crate::code::type_tag::TypeTag::ERROR
+        {
+            let required = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::type_req_class(),
+                ));
+            let found = if tag == crate::code::type_tag::TypeTag::TYPEVAR {
+                DiagnosticArg::from_display("type parameter")
+            } else {
+                DiagnosticArg::from_display("type")
+            };
+            return self.type_tag_error(ctx, pos, required, found);
+        }
+        t
+    }
+
+    /// Java: Type checkClassType(DiagnosticPosition pos, Type t, boolean noBounds)
+    pub fn check_class_type_no_bounds(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        t: crate::ids::TypeId,
+        no_bounds: bool,
+    ) -> crate::ids::TypeId {
+        let t = self.check_class_type(ctx, pos, t);
+        if no_bounds {
+            {
+                let mut args = ctx.typ(t).get_type_arguments();
+                while args.non_empty() {
+                    let head = *args.head();
+                    if ctx
+                        .typ(head)
+                        .has_tag(crate::code::type_tag::TypeTag::WILDCARD)
+                    {
+                        let required = self
+                            .diags
+                            .fragment(crate::util::jc_diagnostic::Fragment::from(
+                                crate::resources::compiler_properties::fragments::type_req_exact(),
+                            ));
+                        return self.type_tag_error(
+                            ctx,
+                            pos,
+                            required,
+                            DiagnosticArg::from_display("type"),
+                        );
+                    }
+                    args = args.tail();
+                }
+            }
+        }
+        t
+    }
 }

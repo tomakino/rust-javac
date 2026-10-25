@@ -3,6 +3,7 @@
 pub mod attribute;
 pub mod class_finder;
 pub mod deferred_completion_failure_handler;
+pub mod deferred_lint_handler;
 pub mod bound_kind;
 pub mod dependencies;
 pub mod directive;

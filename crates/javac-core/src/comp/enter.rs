@@ -197,7 +197,7 @@ impl Enter {
     }
 
     /// Java: WriteableScope enterScope(Env<AttrContext> env)
-    fn enter_scope(&self, ctx: &mut CompilerContext, env: &Rc<Env<AttrContext>>) -> ScopeId {
+    pub(crate) fn enter_scope(&self, ctx: &mut CompilerContext, env: &Rc<Env<AttrContext>>) -> ScopeId {
         let tree = env.tree.expect("env.tree");
         if ctx.tree(tree).has_tag(Tag::CLASSDEF) {
             let class = class_tree_symbol(ctx, tree).expect("class symbol");
@@ -233,7 +233,7 @@ impl Enter {
     }
 
     /// Java: Type classEnter(JCTree tree, Env<AttrContext> env)
-    fn class_enter(
+    pub(crate) fn class_enter(
         &mut self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
@@ -266,7 +266,7 @@ impl Enter {
 
     /// Java: <T extends JCTree> List<Type> classEnter(List<T> trees,
     /// Env<AttrContext> env)
-    fn class_enter_list(
+    pub(crate) fn class_enter_list(
         &mut self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
@@ -654,6 +654,10 @@ impl Enter {
             *allparams_field = None;
         }
         // TODO(TypeEnter/MemberEnter batch): c.completer = typeEnter;
+        // The two conditions are kept nested exactly like the upstream
+        // (if (!c.isDirectlyOrIndirectlyLocal() && uncompleted != null) ...);
+        // Rust let-chains would require a newer edition (registered).
+        #[allow(clippy::collapsible_if)]
         if !crate::code::symbol::symbol_is_directly_or_indirectly_local(ctx, class) {
             if let Some(uncompleted) = self.uncompleted.as_mut() {
                 uncompleted.push(class);

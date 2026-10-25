@@ -5,5 +5,6 @@ pub mod check;
 pub mod deferred_attr;
 pub mod enter;
 pub mod env;
+pub mod member_enter;
 pub mod resolve;
 pub mod type_envs;
