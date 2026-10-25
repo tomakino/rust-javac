@@ -1,4 +1,17 @@
 // Origin: com/sun/tools/javac/tree/DocPretty.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: tree batch (tree nodes/scanners for the corresponding upstream feature).
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: println (DocPretty.java:104)
+// - NOT PORTED: visitComment (DocPretty.java:172)
+// - NOT PORTED: visitDeprecated (DocPretty.java:182)
+// - NOT PORTED: visitDocRoot (DocPretty.java:211)
+// - NOT PORTED: visitDocType (DocPretty.java:223)
+// - NOT PORTED: visitErroneous (DocPretty.java:257)
+// - NOT PORTED: visitHidden (DocPretty.java:267)
+// - NOT PORTED: visitInheritDoc (DocPretty.java:309)
+// - NOT PORTED: visitText (DocPretty.java:547)
+// End of §19 gap registration.
 
 //! Prints out a doc-comment tree.
 //!

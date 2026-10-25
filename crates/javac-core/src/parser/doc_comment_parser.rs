@@ -1,4 +1,9 @@
 // Origin: com/sun/tools/javac/parser/DocCommentParser.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: dependent service batch (see docs/PLAN.md).
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: getTreeKind (DocCommentParser.java:1106)
+// End of §19 gap registration.
 //
 // clippy debt registration (pre-existing doc-comment batch items, NOT S7b;
 // cleanup in the doc-comment completion batch): collapsible-if 1032,

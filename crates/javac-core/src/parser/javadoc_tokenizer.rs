@@ -1,4 +1,9 @@
 // Origin: com/sun/tools/javac/parser/JavadocTokenizer.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: dependent service batch (see docs/PLAN.md).
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: ensure (JavadocTokenizer.java:398)
+// End of §19 gap registration.
 
 //! An extension to the base lexical analyzer (JavaTokenizer) that captures and
 //! processes the contents of doc comments.

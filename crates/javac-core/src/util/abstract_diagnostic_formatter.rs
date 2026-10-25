@@ -1,4 +1,13 @@
 // Origin: com/sun/tools/javac/util/AbstractDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration supplement (method-level audit):
+// Dependency/phase: P2/P3 utility-service batch.
+// - NOT PORTED: expr2String (AbstractDiagnosticFormatter.java:231)
+// - NOT PORTED: getConfiguration (AbstractDiagnosticFormatter.java:400)
+// - NOT PORTED: getPrinter (AbstractDiagnosticFormatter.java:517)
+// - NOT PORTED: setPrinter (AbstractDiagnosticFormatter.java:521)
+// - NOT PORTED: capturedVarId (AbstractDiagnosticFormatter.java:541)
+// - NOT PORTED: visitCapturedType (AbstractDiagnosticFormatter.java:545)
+// End of §19 gap registration supplement.
 
 //! This abstract class provides a basic implementation of the functionalities
 //! that should be provided by any formatter used by javac. Among the main

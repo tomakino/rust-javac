@@ -1,4 +1,9 @@
 // Origin: com/sun/tools/javac/parser/Tokens.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: dependent service batch (see docs/PLAN.md).
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: getKind (Tokens.java:258)
+// End of §19 gap registration.
 
 //! A class that defines codes/utilities for Java source tokens returned from
 //! lexical analysis.

@@ -314,8 +314,8 @@ pub fn rust_coverage(rust: &str, java_name: &str, snake: &str) -> Coverage {
     Coverage::Missing
 }
 
-/// 单文件统计:(methods, covered, registered, missing)。
-type FileStats = (usize, usize, usize, usize);
+/// 单文件统计:(methods, covered, registered, mentioned, missing)。
+type FileStats = (usize, usize, usize, usize, usize);
 
 /// 审计结果。
 #[derive(Default)]
@@ -336,9 +336,19 @@ pub struct AuditReport {
 }
 
 impl AuditReport {
-    fn add_file(&mut self, java: &str, methods: usize, covered: usize, registered: usize, missing: usize) {
-        self.per_file
-            .insert(java.to_string(), (methods, covered, registered, missing));
+    fn add_file(
+        &mut self,
+        java: &str,
+        methods: usize,
+        covered: usize,
+        registered: usize,
+        mentioned: usize,
+        missing: usize,
+    ) {
+        self.per_file.insert(
+            java.to_string(),
+            (methods, covered, registered, mentioned, missing),
+        );
     }
 }
 
@@ -371,9 +381,9 @@ where
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
         let methods = extract_methods(&java, &class_name);
+        let previous_mentioned = report.mentioned;
         let mut covered = 0;
         let mut registered = 0;
-        let mut mentioned = 0;
         let mut missing = 0;
         for method in &methods {
             report.methods += 1;
@@ -394,7 +404,6 @@ where
                     report.registered += 1;
                 }
                 Coverage::Mentioned => {
-                    mentioned += 1;
                     report.mentioned += 1;
                     report.mentioned_list.push((
                         row.java.clone(),
@@ -415,7 +424,14 @@ where
                 }
             }
         }
-        report.add_file(&row.java, methods.len(), covered, registered, missing);
+        report.add_file(
+            &row.java,
+            methods.len(),
+            covered,
+            registered,
+            report.mentioned - previous_mentioned,
+            missing,
+        );
     }
     report
 }
@@ -636,15 +652,17 @@ pub fn run(args: &[String]) -> Result<(), String> {
     let mut with_missing: Vec<(&String, FileStats)> = report
         .per_file
         .iter()
-        .filter(|(_, stats)| stats.3 > 0)
+        .filter(|(_, stats)| stats.4 > 0)
         .map(|(java, stats)| (java, *stats))
         .collect();
-    with_missing.sort_by(|a, b| b.1.3.cmp(&a.1.3).then(a.0.cmp(b.0)));
+    with_missing.sort_by(|a, b| b.1.4.cmp(&a.1.4).then(a.0.cmp(b.0)));
     if !with_missing.is_empty() {
         println!("---- files with gaps (top {}) ----", with_missing.len().min(30));
-        for (java, (methods, covered, registered, missing)) in with_missing.iter().take(30) {
+        for (java, (methods, covered, registered, mentioned, missing)) in
+            with_missing.iter().take(30)
+        {
             println!(
-                "{java}: methods {methods}, covered {covered}, registered {registered}, missing {missing}"
+                "{java}: methods {methods}, covered {covered}, registered {registered}, mentioned {mentioned}, missing {missing}"
             );
         }
     }

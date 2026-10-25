@@ -1,4 +1,12 @@
 // Origin: com/sun/tools/javac/parser/JavacParser.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: dependent service batch (see docs/PLAN.md).
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: newEndPosTable (JavacParser.java:193)
+// - NOT PORTED: newOdStack (JavacParser.java:1101)
+// - NOT PORTED: newOpStack (JavacParser.java:1107)
+// - NOT PORTED: setParser (JavacParser.java:5035)
+// End of §19 gap registration.
 
 //! The parser maps a token sequence into an abstract syntax tree.
 //! The parser is a hand-written recursive-descent parser that

@@ -1,4 +1,9 @@
 // Origin: com/sun/tools/javac/tree/DocTreeMaker.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: tree batch (tree nodes/scanners for the corresponding upstream feature).
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: cast (DocTreeMaker.java:729)
+// End of §19 gap registration.
 
 //! A factory for doc-comment trees.
 //!

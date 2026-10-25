@@ -1,4 +1,13 @@
 // Origin: com/sun/tools/javac/code/Symtab.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration supplement (method-level audit):
+// Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
+// - NOT PORTED: isTerminal (Symtab.java:324)
+// - NOT PORTED: isTerminal (Symtab.java:358)
+// - NOT PORTED: accept (Symtab.java:447)
+// - NOT PORTED: getAllModules (Symtab.java:871)
+// - NOT PORTED: getClassesForName (Symtab.java:875)
+// - NOT PORTED: getPackagesForName (Symtab.java:879)
+// End of §19 gap registration supplement.
 
 //! A class that defines all predefined constants and operators as well as
 //! special classes such as java.lang.Object, which need to be known to the

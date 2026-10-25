@@ -1,4 +1,11 @@
 // Origin: com/sun/tools/javac/file/BaseFileManager.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P2 ClassReader / API batch.
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: run (BaseFileManager.java:148)
+// - NOT PORTED: handleFileManagerOption (BaseFileManager.java:230)
+// - NOT PORTED: getValue (BaseFileManager.java:484)
+// End of §19 gap registration.
 
 //! Utility methods for building a file manager.
 //! There are no references here to file-system specific objects such as

@@ -1,4 +1,15 @@
 // Origin: com/sun/tools/javac/code/Lint.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: initSyms (Lint.java:391)
+// - NOT PORTED: visitConstant (Lint.java:403)
+// - NOT PORTED: visitClass (Lint.java:411)
+// - NOT PORTED: visitCompound (Lint.java:417)
+// - NOT PORTED: visitArray (Lint.java:429)
+// - NOT PORTED: visitEnum (Lint.java:434)
+// - NOT PORTED: visitError (Lint.java:437)
+// End of §19 gap registration.
 
 //! A class for handling -Xlint suboptions and @SuppressWarnings.
 //!

@@ -1,4 +1,11 @@
 // Origin: com/sun/tools/javac/main/Option.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: dependent service batch (see docs/PLAN.md).
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: getSupportedRuntimeOptions (Option.java:820)
+// - NOT PORTED: showHelp (Option.java:1003)
+// - NOT PORTED: getPrimaryName (Option.java:1071)
+// End of §19 gap registration.
 
 //! Options for javac.
 //! The specific Option to handle a command-line option can be found by calling

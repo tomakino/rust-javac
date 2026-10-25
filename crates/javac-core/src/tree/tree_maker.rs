@@ -1,4 +1,25 @@
 // Origin: com/sun/tools/javac/tree/TreeMaker.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: tree batch (tree nodes/scanners for the corresponding upstream feature).
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: SpeculativeNewClass (TreeMaker.java:407)
+// - NOT PORTED: classDeclRemoved (TreeMaker.java:417)
+// - NOT PORTED: Idents (TreeMaker.java:737)
+// - NOT PORTED: visitConstant (TreeMaker.java:938)
+// - NOT PORTED: visitClass (TreeMaker.java:941)
+// - NOT PORTED: visitEnum (TreeMaker.java:944)
+// - NOT PORTED: visitError (TreeMaker.java:947)
+// - NOT PORTED: visitCompound (TreeMaker.java:954)
+// - NOT PORTED: visitCompoundInternal (TreeMaker.java:961)
+// - NOT PORTED: visitTypeCompoundInternal (TreeMaker.java:970)
+// - NOT PORTED: visitArray (TreeMaker.java:979)
+// - NOT PORTED: translate (TreeMaker.java:985)
+// - NOT PORTED: translate (TreeMaker.java:989)
+// - NOT PORTED: translate (TreeMaker.java:992)
+// - NOT PORTED: isUnqualifiable (TreeMaker.java:1105)
+// - NOT PORTED: paramName (TreeMaker.java:1139)
+// - NOT PORTED: typaramName (TreeMaker.java:1143)
+// End of §19 gap registration.
 
 //! A factory for JCTree nodes: the upstream TreeMaker keeps the current position and the
 //! toplevel tree, and its makeXxx methods allocate JCxxx values; the JCTree.Factory interface

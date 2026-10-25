@@ -1,4 +1,27 @@
 // Origin: com/sun/tools/javac/file/JavacFileManager.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P2 ClassReader / API batch.
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: preRegister (JavacFileManager.java:150)
+// - NOT PORTED: isValidName (JavacFileManager.java:235)
+// - NOT PORTED: validateClassName (JavacFileManager.java:248)
+// - NOT PORTED: validatePackageName (JavacFileManager.java:253)
+// - NOT PORTED: testName (JavacFileManager.java:258)
+// - NOT PORTED: printAscii (JavacFileManager.java:284)
+// - NOT PORTED: preVisitDirectory (JavacFileManager.java:581)
+// - NOT PORTED: preVisitDirectory (JavacFileManager.java:612)
+// - NOT PORTED: visitFile (JavacFileManager.java:621)
+// - NOT PORTED: hasExplicitLocation (JavacFileManager.java:819)
+// - NOT PORTED: setLocationFromPaths (JavacFileManager.java:999)
+// - NOT PORTED: compareTo (JavacFileManager.java:1101)
+// - NOT PORTED: hashCode (JavacFileManager.java:1114)
+// - NOT PORTED: getServiceLoader (JavacFileManager.java:1145)
+// - NOT PORTED: getRelativeName (JavacFileManager.java:1240)
+// - NOT PORTED: getMessage (JavacFileManager.java:1258)
+// - NOT PORTED: hasNext (JavacFileManager.java:1300)
+// - NOT PORTED: asFiles (JavacFileManager.java:1311)
+// - NOT PORTED: hasNext (JavacFileManager.java:1319)
+// End of §19 gap registration.
 //
 // clippy debt registration (pre-existing file-manager batch items, NOT S7b;
 // cleanup in the file-manager/classpath batch): capitalized-acronym names
