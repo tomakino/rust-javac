@@ -1289,7 +1289,9 @@ pub fn innermost_type(ctx: &CompilerContext, ty: TreeId, skip_annos: bool) -> Op
 /// Java: TreeInfo.flagNames(long flags) (Flags.toString; the upstream Pretty
 /// printFlags helper uses it).
 pub fn flag_names(flags: i64) -> crate::util::java_string::JavaString {
-    flags::to_java_string(flags)
+    // Java: return Flags.toString(flags & ExtendedStandardFlags).trim();
+    let text = flags::to_java_string(flags & flags::ExtendedStandardFlags).to_string_lossy();
+    crate::util::java_string::JavaString::from(text.trim())
 }
 
 /// Java: public static boolean isModuleInfo(JCCompilationUnit tree)

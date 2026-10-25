@@ -122,6 +122,13 @@ enum ErrorRecoveryAction {
     CatchClause,
 }
 
+/// Java: private enum PatternResult
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PatternResult {
+    Expression,
+    Pattern,
+}
+
 /// Java: public class JavacParser implements Parser
 pub struct JavacParser {
     /// Is the parser instantiated to parse a module-info file?
@@ -610,6 +617,17 @@ impl JavacParser {
             let end_pos = self.prev_token().end_pos;
             let key = JCDiagnosticError::from(errors::expected(Self::token_arg(tk)));
             self.report_syntax_error(ctx, end_pos, key);
+        }
+    }
+
+    /// Java: accept(TokenKind tk, Function<TokenKind, Error> errorKey)
+    fn accept_error(&mut self, ctx: &mut CompilerContext, tk: TokenKind, error_key: JCDiagnosticError) {
+        if self.token.kind == tk {
+            self.next_token();
+        } else {
+            self.set_error_end_pos(self.token.pos);
+            let end_pos = self.prev_token().end_pos;
+            self.report_syntax_error(ctx, end_pos, error_key);
         }
     }
 
@@ -2110,7 +2128,7 @@ impl JavacParser {
             self.accept(ctx, TokenKind::RBRACKET);
             let elemtype = self.brackets_opt(ctx, elemtype, annos);
             if self.token.kind == TokenKind::LBRACE {
-                return self.array_initializer(ctx, newpos, elemtype);
+                return self.array_initializer(ctx, newpos, Some(elemtype));
             }
             let t = { let __to_p_tree = self.F.at(newpos).new_array(ctx, Some(elemtype), List::nil(), None); self.to_p(__to_p_tree) };
             let pos = self.token.pos;
@@ -2164,9 +2182,9 @@ impl JavacParser {
     }
 
     /// Java: JCExpression arrayInitializer(int newpos, JCExpression t)
-    fn array_initializer(&mut self, ctx: &mut CompilerContext, newpos: i32, t: TreeId) -> TreeId {
+    fn array_initializer(&mut self, ctx: &mut CompilerContext, newpos: i32, t: Option<TreeId>) -> TreeId {
         let elems = self.array_initializer_elements(ctx, newpos);
-        { let __to_p_tree = self.F.at(newpos).new_array(ctx, Some(t), List::nil(), Some(elems)); self.to_p(__to_p_tree) }
+        { let __to_p_tree = self.F.at(newpos).new_array(ctx, t, List::nil(), Some(elems)); self.to_p(__to_p_tree) }
     }
 
     /// Java: List<JCExpression> arrayInitializerElements(int newpos, JCExpression t)
@@ -2193,7 +2211,7 @@ impl JavacParser {
     fn variable_initializer(&mut self, ctx: &mut CompilerContext) -> TreeId {
         if self.token.kind == TokenKind::LBRACE {
             let pos = self.token.pos;
-            self.array_initializer(ctx, pos, self.error_tree)
+            self.array_initializer(ctx, pos, None)
         } else {
             self.parse_expression(ctx)
         }
@@ -2577,7 +2595,7 @@ impl JavacParser {
                             self.accept(ctx, TokenKind::RPAREN);
                             self.select_expr_mode();
                             let t1 = self.term3(ctx);
-                            return self.F.at(pos).type_cast(ctx, cast_type, t1);
+                            return self.F.at(pos).type_cast(ctx, t1, cast_type);
                         }
                         ParensResult::ImplicitLambda | ParensResult::ExplicitLambda => {
                             // TODO(S7b): lambdaExpressionOrStatement.
@@ -3701,6 +3719,33 @@ impl JavacParser {
                         let y = self.to_p(y);
                         return List::of(y);
                     }
+                } else {
+                    if self.is_non_sealed_class_start(true) {
+                        let err_pos = self.token.pos;
+                        let key = JCDiagnosticError::from(
+                            errors::sealed_or_non_sealed_local_classes_not_allowed(),
+                        );
+                        self.log.borrow_mut().error_at(err_pos, key);
+                        self.next_token();
+                        self.next_token();
+                        self.next_token();
+                        let mods = self.modifiers_opt(ctx);
+                        return List::of(
+                            self.class_or_record_or_interface_or_enum_declaration(ctx, mods),
+                        );
+                    } else if self.is_sealed_class_start(true) {
+                        let err_pos = self.token.pos;
+                        self.check_source_level(err_pos, Feature::SEALED_CLASSES);
+                        let key = JCDiagnosticError::from(
+                            errors::sealed_or_non_sealed_local_classes_not_allowed(),
+                        );
+                        self.log.borrow_mut().error_at(err_pos, key);
+                        self.next_token();
+                        let mods = self.modifiers_opt(ctx);
+                        return List::of(
+                            self.class_or_record_or_interface_or_enum_declaration(ctx, mods),
+                        );
+                    }
                 }
                 self.block_statement_default(ctx, pos)
             }
@@ -3716,28 +3761,6 @@ impl JavacParser {
         ctx: &mut CompilerContext,
         pos: i32,
     ) -> List<TreeId> {
-        if self.is_non_sealed_class_start(true) {
-            let err_pos = self.token.pos;
-            let key = JCDiagnosticError::from(
-                errors::sealed_or_non_sealed_local_classes_not_allowed(),
-            );
-            self.log.borrow_mut().error_at(err_pos, key);
-            self.next_token();
-            self.next_token();
-            self.next_token();
-            let mods = self.modifiers_opt(ctx);
-            return List::of(self.class_or_record_or_interface_or_enum_declaration(ctx, mods));
-        } else if self.is_sealed_class_start(true) {
-            let err_pos = self.token.pos;
-            self.check_source_level(err_pos, Feature::SEALED_CLASSES);
-            let key = JCDiagnosticError::from(
-                errors::sealed_or_non_sealed_local_classes_not_allowed(),
-            );
-            self.log.borrow_mut().error_at(err_pos, key);
-            self.next_token();
-            let mods = self.modifiers_opt(ctx);
-            return List::of(self.class_or_record_or_interface_or_enum_declaration(ctx, mods));
-        }
         if self.is_record_start() && self.allow_records {
             // TODO(S7b): recordDeclaration (records are not ported yet); no
             // substitute is provided.
@@ -4246,32 +4269,196 @@ impl JavacParser {
     /// Java: protected List<JCCase> switchBlockStatementGroup()
     fn switch_block_statement_group(&mut self, ctx: &mut CompilerContext) -> Vec<TreeId> {
         let pos = self.token.pos;
-        let labels = if self.token.kind == TokenKind::CASE {
-            self.next_token();
-            let mut labels = Vec::new();
-            labels.push(self.parse_expression(ctx));
-            while self.token.kind == TokenKind::COMMA {
+        let stats;
+        let c;
+        let mut cases: Vec<TreeId> = Vec::new();
+        match self.token.kind {
+            TokenKind::CASE => {
                 self.next_token();
-                labels.push(self.parse_expression(ctx));
+                let mut pats: Vec<TreeId> = Vec::new();
+                loop {
+                    pats.push(self.parse_case_label(ctx));
+                    if self.token.kind != TokenKind::COMMA {
+                        break;
+                    }
+                    self.next_token();
+                    self.check_source_level_at_token(Feature::SWITCH_MULTIPLE_CASE_LABELS);
+                }
+                let case_kind;
+                if self.token.kind == TokenKind::ARROW {
+                    // TODO(S7b): switch rules (arrow cases) are not ported yet.
+                    unimplemented!("TODO(S7b): switch rules");
+                } else {
+                    self.accept_error(
+                        ctx,
+                        TokenKind::COLON,
+                        JCDiagnosticError::from(errors::expected2(
+                            Self::token_arg(TokenKind::COLON),
+                            Self::token_arg(TokenKind::ARROW),
+                        )),
+                    );
+                    case_kind = CaseKind::STATEMENT;
+                    stats = self.block_statements(ctx);
+                }
+                c = self.F.at(pos).case(
+                    ctx,
+                    case_kind,
+                    List::from_iterable(pats),
+                    stats.clone(),
+                    None,
+                );
+                let c = self.to_p(c);
+                if stats.is_empty() {
+                    let end = self.prev_token().end_pos;
+                    self.store_end(c, end);
+                }
+                cases.push(c);
+                cases
             }
-            List::from_iterable(labels)
-        } else {
-            self.accept(ctx, TokenKind::DEFAULT);
-            List::nil()
-        };
-        self.accept(ctx, TokenKind::COLON);
-        let stats = self.block_statements(ctx);
-        let c = self.F.at(pos).case(ctx, CaseKind::STATEMENT, labels, stats.clone(), None);
-        let c = self.to_p(c);
-        if stats.is_empty() {
-            let end = self.prev_token().end_pos;
-            self.store_end(c, end);
+            TokenKind::DEFAULT => {
+                self.next_token();
+                let case_kind;
+                let pattern_pos = self.token.pos;
+                if self.token.kind == TokenKind::ARROW {
+                    // TODO(S7b): switch rules (arrow cases) are not ported yet.
+                    unimplemented!("TODO(S7b): switch rules");
+                } else {
+                    self.accept_error(
+                        ctx,
+                        TokenKind::COLON,
+                        JCDiagnosticError::from(errors::expected2(
+                            Self::token_arg(TokenKind::COLON),
+                            Self::token_arg(TokenKind::ARROW),
+                        )),
+                    );
+                    case_kind = CaseKind::STATEMENT;
+                    stats = self.block_statements(ctx);
+                }
+                let default_pattern = {
+                    let x = self.F.at(pattern_pos).default_case_label(ctx);
+                    self.to_p(x)
+                };
+                c = self.F.at(pos).case(
+                    ctx,
+                    case_kind,
+                    List::of(default_pattern),
+                    stats.clone(),
+                    None,
+                );
+                let c = self.to_p(c);
+                if stats.is_empty() {
+                    let end = self.prev_token().end_pos;
+                    self.store_end(c, end);
+                }
+                cases.push(c);
+                cases
+            }
+            _ => {
+                panic!("java.lang.AssertionError: should not reach here");
+            }
         }
-        vec![c]
     }
 
+    /// Java: private JCCaseLabel parseCaseLabel()
+    fn parse_case_label(&mut self, ctx: &mut CompilerContext) -> TreeId {
+        let pattern_pos = self.token.pos;
+        if self.token.kind == TokenKind::DEFAULT {
+            self.check_source_level_at_token(Feature::PATTERN_SWITCH);
+            self.next_token();
+            let label = {
+                let x = self.F.at(pattern_pos).default_case_label(ctx);
+                self.to_p(x)
+            };
+            return label;
+        }
+        let mut lookahead = 0i32;
+        while self.S.lookahead_token(lookahead).kind == TokenKind::LPAREN {
+            lookahead += 1;
+        }
+        let mods = self.opt_final(ctx, 0);
+        let (mods_flags, mods_annotations_empty) = match &ctx.tree(mods).kind {
+            TreeKind::Modifiers { flags, annotations, .. } => (*flags, annotations.is_empty()),
+            _ => (0, true),
+        };
+        let pattern = mods_flags != 0
+            || !mods_annotations_empty
+            || self.analyze_pattern(lookahead) == PatternResult::Pattern;
+        if pattern {
+            self.check_source_level_at_token(Feature::PATTERN_SWITCH);
+            // TODO(S7b): parsePattern (pattern matching in switch) is not ported.
+            unimplemented!("TODO(S7b): pattern matching in switch (parsePattern)");
+        }
+        self.term_with_mode(ctx, EXPR | NOLAMBDA)
+    }
 
-
+    /// Java: PatternResult analyzePattern(int lookahead)
+    fn analyze_pattern(&mut self, mut lookahead: i32) -> PatternResult {
+        let mut depth = 0i32;
+        loop {
+            let token = self.S.lookahead_token(lookahead).kind;
+            match token {
+                TokenKind::BYTE
+                | TokenKind::SHORT
+                | TokenKind::INT
+                | TokenKind::LONG
+                | TokenKind::FLOAT
+                | TokenKind::DOUBLE
+                | TokenKind::BOOLEAN
+                | TokenKind::CHAR
+                | TokenKind::VOID
+                | TokenKind::ASSERT
+                | TokenKind::ENUM
+                | TokenKind::IDENTIFIER
+                | TokenKind::UNDERSCORE => {
+                    if depth == 0
+                        && Self::is_lax_identifier(self.S.lookahead_token(lookahead + 1).kind)
+                    {
+                        return PatternResult::Pattern;
+                    }
+                }
+                TokenKind::DOT
+                | TokenKind::QUES
+                | TokenKind::EXTENDS
+                | TokenKind::SUPER
+                | TokenKind::COMMA => {}
+                TokenKind::LT => depth += 1,
+                TokenKind::GTGTGT => depth -= 1,
+                TokenKind::GTGT => depth -= 1,
+                TokenKind::GT => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return if Self::is_lax_identifier(
+                            self.S.lookahead_token(lookahead + 1).kind,
+                        ) {
+                            PatternResult::Pattern
+                        } else {
+                            PatternResult::Expression
+                        };
+                    } else if depth < 0 {
+                        return PatternResult::Expression;
+                    }
+                }
+                TokenKind::MONKEYS_AT => {
+                    lookahead = self.skip_annotation(lookahead);
+                }
+                TokenKind::LBRACKET => {
+                    if self.S.lookahead_token(lookahead + 1).kind == TokenKind::RBRACKET
+                        && Self::is_lax_identifier(
+                            self.S.lookahead_token(lookahead + 2).kind,
+                        )
+                    {
+                        return PatternResult::Pattern;
+                    } else if self.S.lookahead_token(lookahead + 1).kind == TokenKind::RBRACKET {
+                        lookahead += 1;
+                    } else {
+                        return PatternResult::Expression;
+                    }
+                }
+                _ => return PatternResult::Expression,
+            }
+            lookahead += 1;
+        }
+    }
     /// Java: <T> T moreStatementExpressions(int pos, JCExpression first, T stats)
     fn more_statement_expressions(
         &mut self,
@@ -4736,7 +4923,7 @@ impl JavacParser {
     fn formal_parameter(&mut self, ctx: &mut CompilerContext) -> TreeId {
         let mods = self.opt_final(ctx, Flags::PARAMETER);
         self.permit_type_annotations_push_back = true;
-        let type_ = self.parse_type_impl(ctx, false);
+        let mut type_ = self.parse_type_impl(ctx, false);
         self.permit_type_annotations_push_back = false;
         let mods = mods;
         if self.token.kind == TokenKind::ELLIPSIS {
@@ -4749,6 +4936,11 @@ impl JavacParser {
                 *annotations = list;
             }
             self.next_token();
+            // Java: type = to(F.at(token.pos).TypeArray(type));
+            type_ = {
+                let x = self.F.at(self.token.pos).type_array(ctx, type_);
+                self.to(x)
+            };
         } else if !self.type_annotations_pushed_back.is_empty() {
             let head = *self.type_annotations_pushed_back.head();
             let p = ctx.tree(head).pos;
@@ -4889,14 +5081,16 @@ impl JavacParser {
         let first_name = self.ident(ctx);
         let mut qual_id = { let __to_p_tree = self.F.at(first_pos).ident(ctx, first_name); self.to_p(__to_p_tree) };
         while self.token.kind == TokenKind::DOT {
-            self.next_token();
+            let pos1 = self.token.pos;
+            self.accept(ctx, TokenKind::DOT);
             if self.token.kind == TokenKind::STAR {
+                let asterisk = self.names.asterisk.clone();
+                qual_id = { let __to_tree = self.F.at(pos1).select(ctx, qual_id, asterisk); self.to(__to_tree) };
                 self.next_token();
                 break;
             }
-            let p = self.token.pos;
             let first_name = self.ident(ctx);
-            qual_id = { let __to_p_tree = self.F.at(p).select(ctx, qual_id, first_name); self.to_p(__to_p_tree) };
+            qual_id = { let __to_p_tree = self.F.at(pos1).select(ctx, qual_id, first_name); self.to_p(__to_p_tree) };
         }
         self.accept(ctx, TokenKind::SEMI);
         { let __to_p_tree = self.F.at(pos).import(ctx, qual_id, import_static); self.to_p(__to_p_tree) }
