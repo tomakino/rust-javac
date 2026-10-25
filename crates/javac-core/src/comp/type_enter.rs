@@ -61,6 +61,7 @@ use crate::comp::type_envs::TypeEnvs;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{ScopeId, SymbolId, TreeId};
 use crate::tree::jc_tree::{Tag, TreeKind};
+use crate::tree::tree_maker::TreeFactory;
 use crate::tree::tree_info;
 use crate::util::abstract_log::AbstractLog;
 use crate::code::dependencies::{CompletionCause, Dependencies};
@@ -77,6 +78,7 @@ pub struct TypeEnter {
     pub log: Rc<RefCell<Log>>,
     pub chk: Rc<RefCell<Check>>,
     pub types: Rc<Types>,
+    pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
     pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
     pub lint: Option<Rc<crate::code::lint::Lint>>,
     pub type_envs: Rc<RefCell<TypeEnvs>>,
@@ -114,6 +116,7 @@ impl TypeEnter {
         log: Rc<RefCell<Log>>,
         chk: Rc<RefCell<Check>>,
         types: Rc<Types>,
+        make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
         deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
         lint: Option<Rc<crate::code::lint::Lint>>,
         type_envs: Rc<RefCell<TypeEnvs>>,
@@ -126,6 +129,7 @@ impl TypeEnter {
             log,
             chk,
             types,
+            make,
             deferred_lint_handler,
             lint,
             type_envs,
@@ -354,7 +358,7 @@ impl TypeEnter {
             unimplemented!("TODO(File/Query batch): FatalError(Fragments.FatalErrNoJavaLang)")
         }
         // Java: importAll(make.at(tree.pos()).Import(make.QualIdent(javaLang), false), javaLang, env);
-        self.import_all_java_lang(ctx, syms, tree, env);
+        self.import_all_java_lang(ctx, syms, tree, java_lang, env);
         let has_module_decl = compilation_unit_module_decl(ctx, tree).is_some();
         // Process the package def and all import clauses.
         if compilation_unit_package_decl(ctx, tree).is_some() && !has_module_decl {
@@ -603,16 +607,19 @@ impl TypeEnter {
     fn import_all_java_lang(
         &mut self,
         ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
+        syms: &mut Symtab,
         tree: TreeId,
+        java_lang: SymbolId,
         env: &Rc<Env<AttrContext>>,
     ) {
-        // Java: importAll(make.at(pos).Import(make.QualIdent(javaLang), false),
-        //     javaLang, env)
-        // TODO(TreeMaker batch): the synthetic JCImport tree factory is not
-        // ported (TreeMaker.Import/QualIdent); registered.
-        let _ = (ctx, tree, env);
-        unimplemented!("TODO(TreeMaker batch): TypeEnter java.lang import tree (make.Import/QualIdent)")
+        let pos = ctx.tree(tree).pos;
+        let imp = {
+            let mut make = self.make.borrow_mut();
+            make.at(pos);
+            let qual = make.qual_ident(ctx, syms, java_lang);
+            make.import(ctx, qual, false)
+        };
+        self.import_all(ctx, imp, java_lang, env);
     }
     /// Java: Check.checkImportsUnique(toplevel) — TODO(Check batch).
     fn check_imports_unique(&mut self, _ctx: &mut CompilerContext, _toplevel: TreeId) {
@@ -782,10 +789,20 @@ impl TypeEnter {
         Rc::new(base_env)
     }
 
-    /// Java: protected JCExpression enumBase(int pos, ClassSymbol c) —
-    /// TODO(TreeMaker batch): make.TypeApply/make.QualIdent/make.Type factories.
-    fn enum_base(&mut self, _ctx: &mut CompilerContext, _pos: i32, _symbol: SymbolId) -> TreeId {
-        unimplemented!("TODO(TreeMaker batch): TypeEnter.enumBase (make.TypeApply/QualIdent/Type)")
+    /// Java: protected JCExpression enumBase(int pos, ClassSymbol c)
+    fn enum_base(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        pos: i32,
+        symbol: SymbolId,
+    ) -> TreeId {
+        let class_type = ctx.sym(symbol).ty.expect("enum class type");
+        let mut make = self.make.borrow_mut();
+        make.at(pos);
+        let qual = make.qual_ident(ctx, syms, syms.enum_sym);
+        let ty_tree = make.type_expr(ctx, syms, class_type);
+        make.type_apply(ctx, qual, List::of(ty_tree))
     }
 
     /// Java: protected Type modelMissingTypes(Env<AttrContext> env, Type t,
@@ -1691,6 +1708,9 @@ mod tests {
         let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
         let dependencies: Rc<RefCell<dyn Dependencies>> =
             Rc::new(RefCell::new(crate::code::dependencies::DummyDependencies));
+        let make = Rc::new(RefCell::new(crate::tree::tree_maker::TreeMaker::new(Some(
+            Rc::clone(&names),
+        ))));
         let type_enter = TypeEnter::new(
             Rc::clone(&names),
             enter,
@@ -1698,6 +1718,7 @@ mod tests {
             Rc::clone(&log),
             Rc::clone(&chk),
             Rc::clone(&types),
+            make,
             Rc::clone(&deferred),
             None,
             type_envs,

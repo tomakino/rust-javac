@@ -2,23 +2,16 @@
 // PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: tree batch (tree nodes/scanners for the corresponding upstream feature).
 // Not yet ported upstream methods (no substitutes in this file):
-// - NOT PORTED: SpeculativeNewClass (TreeMaker.java:407)
-// - NOT PORTED: classDeclRemoved (TreeMaker.java:417)
-// - NOT PORTED: Idents (TreeMaker.java:737)
-// - NOT PORTED: visitConstant (TreeMaker.java:938)
-// - NOT PORTED: visitClass (TreeMaker.java:941)
-// - NOT PORTED: visitEnum (TreeMaker.java:944)
-// - NOT PORTED: visitError (TreeMaker.java:947)
-// - NOT PORTED: visitCompound (TreeMaker.java:954)
-// - NOT PORTED: visitCompoundInternal (TreeMaker.java:961)
-// - NOT PORTED: visitTypeCompoundInternal (TreeMaker.java:970)
-// - NOT PORTED: visitArray (TreeMaker.java:979)
-// - NOT PORTED: translate (TreeMaker.java:985)
-// - NOT PORTED: translate (TreeMaker.java:989)
-// - NOT PORTED: translate (TreeMaker.java:992)
-// - NOT PORTED: isUnqualifiable (TreeMaker.java:1105)
-// - NOT PORTED: paramName (TreeMaker.java:1139)
-// - NOT PORTED: typaramName (TreeMaker.java:1143)
+// - NOT PORTED: SpeculativeNewClass (TreeMaker.java:407) / classDeclRemoved
+//   (TreeMaker.java:417): the anonymous JCNewClass subclass override has no arena
+//   mapping yet (registered; the JCNewClass node has no classDeclRemoved flag).
+// - NOT PORTED: Annotations(List<Attribute.Compound>) (TreeMaker.java:889),
+//   Annotation(Attribute) (TreeMaker.java:1001), TypeAnnotation(Attribute)
+//   (TreeMaker.java:1005), Literal(Object) (TreeMaker.java:899) and the
+//   AnnotationBuilder visitor (TreeMaker.java:929-996: visitConstant/visitClass/
+//   visitEnum/visitError/visitCompound/visitCompoundInternal/
+//   visitTypeCompoundInternal/visitArray/translate x3): the Attribute model is
+//   not ported yet (Attribute batch).
 // End of §19 gap registration.
 
 //! A factory for JCTree nodes: the upstream TreeMaker keeps the current position and the
@@ -37,14 +30,14 @@
 //!   Rc<RefCell<TreeMaker>> (the interior-mutability whitelist used for Options/Log; registered).
 //! * Names is ported (util::names::Names), but the Java Names.instance(Context) adapter is not;
 //!   TreeMaker::instance reads an Option<Rc<Names>> from the Context (registered by the
-//!   caller when available) and the field stays None until then.  Types and Symtab are not
-//!   ported yet (code/types.rs is a placeholder for the Type class, not the Types service;
-//!   Symtab::new needs many unfinished services): the upstream TreeMaker fields types/syms are
-//!   NOT declared here (TODO(Symtab/Types batch), reported; no substitute values are invented).
-//!   Convenience methods that take a Symbol/Type/Attribute (Ident(Symbol), VarDef(VarSymbol),
-//!   MethodDef(MethodSymbol), Type(Type), Annotation(Attribute), TypeParam(Symbol), ...) are
-//!   therefore TODO panics (unimplemented!) until those services land; the tree-only Factory
-//!   surface is complete.
+//!   caller when available) and the field stays None until then.  Types and Symtab are now
+//!   ported services but they are passed explicitly (the Types service is stateful and Symtab
+//!   is &mut at the call sites; ADR 0001); the upstream TreeMaker fields types/syms are
+//!   therefore not stored, and the Symbol/Type convenience factories (Ident(Symbol),
+//!   QualIdent, Type(Type), VarDef(VarSymbol), MethodDef(MethodSymbol), TypeParam, Param(s),
+//!   This/Super/ClassLiteral, Create, ...) take ctx/syms (and Types where required) as
+//!   explicit parameters (see TreeMaker.java:703-1144; the Attribute/constType based helpers
+//!   remain registered NOT PORTED, see the §19 list above).
 //! * at(DiagnosticPosition) takes Option<&dyn DiagnosticPosition> (Java null means NOPOS);
 //!   getStartPosition -> DiagnosticPosition::get_start_position.
 //! * JCLambda/conditional/member-reference constructor defaults: the Java constructors set
@@ -65,6 +58,9 @@ use javac_source::tree::member_reference_tree::ReferenceMode;
 use javac_source::tree::module_tree::ModuleKind;
 
 use crate::code::bound_kind::BoundKind;
+use crate::code::flags;
+use crate::code::symtab::Symtab;
+use crate::code::types::Types;
 use crate::code::type_tag::TypeTag;
 use crate::compiler_context::CompilerContext;
 use crate::ids::TreeId;
@@ -1638,26 +1634,641 @@ impl TreeFactory for TreeMaker {
 }
 
 impl TreeMaker {
-    /// Java: public JCMethodInvocation App(JCExpression meth).
-    pub fn app(&mut self, ctx: &mut CompilerContext, meth: TreeId) -> TreeId {
-        self.apply(ctx, List::nil(), meth, List::nil())
+    // ------------------------------------------------------------------
+    // Java: TreeMaker convenience factories (JCTree.Factory surface is in the
+    // trait above; these are the class-level helpers, TreeMaker.java:703-1144).
+    // The Attribute/constType based helpers (Annotations(Attribute),
+    // Annotation(Attribute), TypeAnnotation(Attribute), Literal(Object) and the
+    // AnnotationBuilder visitor) stay registered as NOT PORTED: they need the
+    // Attribute model (see the file header).
+    // ------------------------------------------------------------------
+
+    /// Java: public JCIdent Ident(Symbol sym)
+    pub fn ident_symbol(
+        &mut self,
+        ctx: &mut CompilerContext,
+        sym: crate::ids::SymbolId,
+    ) -> TreeId {
+        let name = {
+            let symbol = ctx.sym(sym);
+            let empty = self
+                .names
+                .as_ref()
+                .map(|names| names.empty.clone())
+                .expect("TreeMaker.names");
+            if name_equals(&symbol.name, &empty) {
+                symbol.flat_name()
+            } else {
+                symbol.name.clone()
+            }
+        };
+        let ty = ctx.sym(sym).ty;
+        let tree = self.ident(ctx, name);
+        if let TreeKind::Ident { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(sym);
+        }
+        ctx.tree_mut(tree).ty = ty;
+        tree
     }
 
-    /// Java: public JCMethodInvocation App(JCExpression meth, List<JCExpression> args).
+    /// Java: public JCExpression Select(JCExpression base, Symbol sym)
+    pub fn select_symbol(
+        &mut self,
+        ctx: &mut CompilerContext,
+        base: TreeId,
+        sym: crate::ids::SymbolId,
+    ) -> TreeId {
+        let name = ctx.sym(sym).name.clone();
+        let ty = ctx.sym(sym).ty;
+        let tree = self.select(ctx, base, name);
+        if let TreeKind::FieldAccess { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(sym);
+        }
+        ctx.tree_mut(tree).ty = ty;
+        tree
+    }
+
+    /// Java: public JCExpression QualIdent(Symbol sym)
+    pub fn qual_ident(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: crate::ids::SymbolId,
+    ) -> TreeId {
+        if self.is_unqualifiable(ctx, syms, sym) {
+            self.ident_symbol(ctx, sym)
+        } else {
+            let owner = ctx.sym(sym).owner.expect("qualified symbol owner");
+            let base = self.qual_ident(ctx, syms, owner);
+            self.select_symbol(ctx, base, sym)
+        }
+    }
+
+    /// Java: public JCExpression Ident(JCVariableDecl param)
+    pub fn ident_param(
+        &mut self,
+        ctx: &mut CompilerContext,
+        param: TreeId,
+    ) -> TreeId {
+        let sym = match &ctx.tree(param).kind {
+            TreeKind::VariableDecl { sym, .. } => sym.expect("variable declaration symbol"),
+            _ => panic!("ClassCastException: JCVariableDecl expected"),
+        };
+        self.ident_symbol(ctx, sym)
+    }
+
+    /// Java: public List<JCExpression> Idents(List<JCVariableDecl> params)
+    pub fn idents(&mut self, ctx: &mut CompilerContext, params: List<TreeId>) -> List<TreeId> {
+        let mut result: List<TreeId> = List::nil();
+        let mut current = params;
+        while current.non_empty() {
+            let param = *current.head();
+            let ident = self.ident_param(ctx, param);
+            result = result.append(ident);
+            current = current.tail();
+        }
+        result
+    }
+
+    /// Java: public JCExpression This(Type t)
+    pub fn this_expr(
+        &mut self,
+        ctx: &mut CompilerContext,
+        t: crate::ids::TypeId,
+    ) -> TreeId {
+        let tsym = ctx.typ(t).tsym.expect("type symbol");
+        let names = self.names.as_ref().expect("TreeMaker.names");
+        let sym = ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
+            flags::FINAL as i64,
+            names._this.clone(),
+            t,
+            tsym,
+        ));
+        self.ident_symbol(ctx, sym)
+    }
+
+    /// Java: public JCExpression QualThis(Type t)
+    pub fn qual_this(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: crate::ids::TypeId,
+    ) -> TreeId {
+        let tsym = ctx.typ(t).tsym.expect("type symbol");
+        let names = self.names.as_ref().expect("TreeMaker.names");
+        let sym = ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
+            flags::FINAL as i64,
+            names._this.clone(),
+            t,
+            tsym,
+        ));
+        let base = self.type_expr(ctx, syms, t);
+        self.select_symbol(ctx, base, sym)
+    }
+
+    /// Java: public JCExpression ClassLiteral(ClassSymbol clazz)
+    pub fn class_literal_symbol(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        clazz: crate::ids::SymbolId,
+    ) -> TreeId {
+        let ty = ctx.sym(clazz).ty.expect("class symbol type");
+        self.class_literal(ctx, syms, ty)
+    }
+
+    /// Java: public JCExpression ClassLiteral(Type t)
+    pub fn class_literal(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: crate::ids::TypeId,
+    ) -> TreeId {
+        let tsym = ctx.typ(t).tsym.expect("type symbol");
+        let names = self.names.as_ref().expect("TreeMaker.names");
+        let lit = ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
+            (flags::STATIC | flags::PUBLIC | flags::FINAL) as i64,
+            names._class.clone(),
+            t,
+            tsym,
+        ));
+        let base = self.type_expr(ctx, syms, t);
+        self.select_symbol(ctx, base, lit)
+    }
+
+    /// Java: public JCIdent Super(Type t, TypeSymbol owner)
+    pub fn super_expr(
+        &mut self,
+        ctx: &mut CompilerContext,
+        t: crate::ids::TypeId,
+        owner: crate::ids::SymbolId,
+    ) -> TreeId {
+        let names = self.names.as_ref().expect("TreeMaker.names");
+        let sym = ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
+            flags::FINAL as i64,
+            names._super.clone(),
+            t,
+            owner,
+        ));
+        self.ident_symbol(ctx, sym)
+    }
+
+    /// Java: public JCMethodInvocation App(JCExpression meth)
+    pub fn app(&mut self, ctx: &mut CompilerContext, meth: TreeId) -> TreeId {
+        self.app_with_args(ctx, meth, List::nil())
+    }
+
+    /// Java: public JCMethodInvocation App(JCExpression meth, List<JCExpression> args)
     pub fn app_with_args(
         &mut self,
         ctx: &mut CompilerContext,
         meth: TreeId,
         args: List<TreeId>,
     ) -> TreeId {
-        self.apply(ctx, List::nil(), meth, args)
+        let tree = self.apply(ctx, List::nil(), meth, args);
+        let return_type = ctx
+            .tree(meth)
+            .ty
+            .and_then(|ty| ctx.typ(ty).get_return_type(ctx));
+        ctx.tree_mut(tree).ty = return_type;
+        tree
     }
 
-    /// Java: public JCLiteral Literal(Object value) — TypeTag inferred from the wrapper type.
-    ///
-    /// TODO(Log batch): the upstream invalid literal case reports a compiler error
-    /// (Errors.InvalidLiteral) and returns a null literal; that diagnostic is not ported, so the
-    /// unsupported value panics (only LiteralValue can reach here, all are supported).
+    /// Java: public JCExpression Create(Symbol ctor, List<JCExpression> args)
+    pub fn create(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        ctor: crate::ids::SymbolId,
+        args: List<TreeId>,
+    ) -> TreeId {
+        let owner = ctx.sym(ctor).owner.expect("constructor owner");
+        let owner_type = ctx.sym(owner).ty.expect("constructor owner type");
+        let t = types.erasure(ctx, syms, owner_type);
+        let class_expr = self.type_expr(ctx, syms, t);
+        let tree = self.new_class(ctx, None, List::nil(), class_expr, args, None);
+        if let TreeKind::NewClass { constructor, .. } = &mut ctx.tree_mut(tree).kind {
+            *constructor = Some(ctor);
+        }
+        ctx.tree_mut(tree).ty = Some(t);
+        tree
+    }
+
+    /// Java: public JCExpression Type(Type t)
+    pub fn type_expr(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: crate::ids::TypeId,
+    ) -> TreeId {
+        let tag = ctx.typ(t).get_tag();
+        let tp = match tag {
+            TypeTag::BYTE
+            | TypeTag::CHAR
+            | TypeTag::SHORT
+            | TypeTag::INT
+            | TypeTag::LONG
+            | TypeTag::FLOAT
+            | TypeTag::DOUBLE
+            | TypeTag::BOOLEAN
+            | TypeTag::VOID => self.type_ident(ctx, tag),
+            TypeTag::TYPEVAR => {
+                let tsym = ctx.typ(t).tsym.expect("type variable symbol");
+                self.ident_symbol(ctx, tsym)
+            }
+            TypeTag::WILDCARD => {
+                let (kind, bound) = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::WildcardType {
+                        type_, kind, ..
+                    } => (*kind, *type_),
+                    _ => panic!("ClassCastException: WildcardType expected"),
+                };
+                let kind_tree = self.type_bound_kind(ctx, kind);
+                let bound_tree = if kind == BoundKind::UNBOUND {
+                    None
+                } else {
+                    Some(self.type_expr(ctx, syms, bound.expect("wildcard bound")))
+                };
+                self.wildcard(ctx, kind_tree, bound_tree)
+            }
+            TypeTag::CLASS => match &ctx.typ(t).kind {
+                crate::code::type_::TypeKindData::UnionClassType {
+                    alternatives_field,
+                    ..
+                } => {
+                    let alternatives = alternatives_field.clone();
+                    let mut trees: List<TreeId> = List::nil();
+                    let mut current = alternatives;
+                    while current.non_empty() {
+                        let alt = *current.head();
+                        let alt_tree = self.type_expr(ctx, syms, alt);
+                        trees = trees.append(alt_tree);
+                        current = current.tail();
+                    }
+                    self.type_union(ctx, trees)
+                }
+                crate::code::type_::TypeKindData::IntersectionClassType {
+                    all_interfaces,
+                    interfaces_field,
+                    supertype_field,
+                    ..
+                } => {
+                    let components = if *all_interfaces {
+                        interfaces_field.clone().unwrap_or_else(List::nil)
+                    } else {
+                        interfaces_field
+                            .clone()
+                            .unwrap_or_else(List::nil)
+                            .prepend(supertype_field.expect("intersection supertype"))
+                    };
+                    let mut trees: List<TreeId> = List::nil();
+                    let mut current = components;
+                    while current.non_empty() {
+                        let component = *current.head();
+                        let component_tree = self.type_expr(ctx, syms, component);
+                        trees = trees.append(component_tree);
+                        current = current.tail();
+                    }
+                    self.type_intersection(ctx, trees)
+                }
+                _ => {
+                    let outer = ctx.typ(t).get_enclosing_type();
+                    let clazz = match outer {
+                        Some(outer) if ctx.typ(outer).has_tag(TypeTag::CLASS) => {
+                            let tsym = ctx.typ(t).tsym.expect("class type symbol");
+                            let owner = ctx.sym(tsym).owner.expect("type owner");
+                            if ctx.sym(owner).kind == crate::code::kinds::Kind::TYP {
+                                let outer_tree = self.type_expr(ctx, syms, outer);
+                                self.select_symbol(ctx, outer_tree, tsym)
+                            } else {
+                                self.qual_ident(ctx, syms, tsym)
+                            }
+                        }
+                        _ => {
+                            let tsym = ctx.typ(t).tsym.expect("class type symbol");
+                            self.qual_ident(ctx, syms, tsym)
+                        }
+                    };
+                    let args = class_type_arguments(ctx, t);
+                    if args.is_empty() {
+                        clazz
+                    } else {
+                        let mut type_trees: List<TreeId> = List::nil();
+                        let mut current = args;
+                        while current.non_empty() {
+                            let arg = *current.head();
+                            let arg_tree = self.type_expr(ctx, syms, arg);
+                            type_trees = type_trees.append(arg_tree);
+                            current = current.tail();
+                        }
+                        self.type_apply(ctx, clazz, type_trees)
+                    }
+                }
+            },
+            TypeTag::ARRAY => {
+                let elemtype = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => {
+                        elemtype.expect("array element type")
+                    }
+                    _ => panic!("ClassCastException: ArrayType expected"),
+                };
+                let elem_tree = self.type_expr(ctx, syms, elemtype);
+                self.type_array(ctx, elem_tree)
+            }
+            TypeTag::ERROR => self.type_ident(ctx, TypeTag::ERROR),
+            _ => panic!("AssertionError: unexpected type"),
+        };
+        ctx.tree_mut(tp).ty = Some(t);
+        tp
+    }
+
+    /// Java: public List<JCExpression> Types(List<Type> ts)
+    pub fn types(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ts: List<crate::ids::TypeId>,
+    ) -> List<TreeId> {
+        let mut result: List<TreeId> = List::nil();
+        let mut current = ts;
+        while current.non_empty() {
+            let t = *current.head();
+            let tree = self.type_expr(ctx, syms, t);
+            result = result.append(tree);
+            current = current.tail();
+        }
+        result
+    }
+
+    /// Java: public JCVariableDecl VarDef(VarSymbol v, JCExpression init)
+    pub fn var_def_symbol(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        v: crate::ids::SymbolId,
+        init: StdOption<TreeId>,
+    ) -> TreeId {
+        let ty = ctx.sym(v).ty.expect("variable type");
+        let annotations = self.raw_annotations(ctx, v);
+        let mods = self.modifiers_with_annotations(ctx, ctx.sym(v).flags_field, annotations);
+        let name = ctx.sym(v).name.clone();
+        let vartype = self.type_expr(ctx, syms, ty);
+        let tree = self.var_def(ctx, mods, name, Some(vartype), init);
+        if let TreeKind::VariableDecl { sym, .. } = &mut ctx.tree_mut(tree).kind {
+            *sym = Some(v);
+        }
+        ctx.tree_mut(tree).ty = Some(ty);
+        tree
+    }
+
+    /// Java: public JCMethodDecl MethodDef(MethodSymbol m, JCBlock body)
+    pub fn method_def_symbol(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        m: crate::ids::SymbolId,
+        body: StdOption<TreeId>,
+    ) -> TreeId {
+        let ty = ctx.sym(m).ty.expect("method type");
+        self.method_def_symbol_with_type(ctx, syms, m, ty, body)
+    }
+
+    /// Java: public JCMethodDecl MethodDef(MethodSymbol m, Type mtype, JCBlock body)
+    pub fn method_def_symbol_with_type(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        m: crate::ids::SymbolId,
+        mtype: crate::ids::TypeId,
+        body: StdOption<TreeId>,
+    ) -> TreeId {
+        let annotations = self.raw_annotations(ctx, m);
+        let mods = self.modifiers_with_annotations(ctx, ctx.sym(m).flags_field, annotations);
+        let name = ctx.sym(m).name.clone();
+        let names = self.names.as_ref().expect("TreeMaker.names").clone();
+        let restype = if !name_equals(&name, &names.init) {
+            ctx.typ(mtype)
+                .get_return_type(ctx)
+                .map(|restype| self.type_expr(ctx, syms, restype))
+        } else {
+            None
+        };
+        let typarams = ctx
+            .typ(mtype)
+            .get_type_arguments()
+            .iter()
+            .map(|tvar| {
+                let name = ctx
+                    .typ(tvar)
+                    .tsym
+                    .map(|tsym| ctx.sym(tsym).name.clone())
+                    .expect("type variable symbol");
+                let bounds = ctx.typ(tvar).get_bounds();
+                let mut bound_trees: List<TreeId> = List::nil();
+                let mut current = bounds;
+                while current.non_empty() {
+                    let bound = *current.head();
+                    let bound_tree = self.type_expr(ctx, syms, bound);
+                    bound_trees = bound_trees.append(bound_tree);
+                    current = current.tail();
+                }
+                let typaram = self.type_parameter(ctx, name, bound_trees);
+                ctx.tree_mut(typaram).ty = Some(tvar);
+                typaram
+            })
+            .collect::<Vec<TreeId>>();
+        let typarams = List::from_iterable(typarams);
+        let param_types = ctx.typ(mtype).get_parameter_types(ctx);
+        let params = self.params(ctx, syms, param_types, m);
+        let thrown_types = ctx.typ(mtype).get_thrown_types(ctx);
+        let thrown = self.types(ctx, syms, thrown_types);
+        let tree = self.method_def(
+            ctx,
+            mods,
+            name,
+            restype,
+            typarams,
+            None,
+            params,
+            thrown,
+            body,
+            None,
+        );
+        if let TreeKind::MethodDecl { sym, .. } = &mut ctx.tree_mut(tree).kind {
+            *sym = Some(m);
+        }
+        ctx.tree_mut(tree).ty = Some(mtype);
+        tree
+    }
+
+    /// Java: public JCTypeParameter TypeParam(Name name, TypeVar tvar)
+    pub fn type_param(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        name: Name,
+        tvar: crate::ids::TypeId,
+    ) -> TreeId {
+        let bounds = ctx.typ(tvar).get_bounds();
+        let bound_trees = self.types(ctx, syms, bounds);
+        let tree = self.type_parameter(ctx, name, bound_trees);
+        ctx.tree_mut(tree).ty = Some(tvar);
+        tree
+    }
+
+    /// Java: public List<JCTypeParameter> TypeParams(List<Type> typarams)
+    pub fn type_params(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        typarams: List<crate::ids::TypeId>,
+    ) -> List<TreeId> {
+        let mut result: List<TreeId> = List::nil();
+        let mut current = typarams;
+        while current.non_empty() {
+            let tvar = *current.head();
+            let name = ctx
+                .typ(tvar)
+                .tsym
+                .map(|tsym| ctx.sym(tsym).name.clone())
+                .expect("type variable symbol");
+            let tree = self.type_param(ctx, syms, name, tvar);
+            result = result.append(tree);
+            current = current.tail();
+        }
+        result
+    }
+
+    /// Java: public JCVariableDecl Param(Name name, Type argtype, Symbol owner)
+    pub fn param(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        name: Name,
+        argtype: crate::ids::TypeId,
+        owner: crate::ids::SymbolId,
+    ) -> TreeId {
+        let sym = ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
+            flags::PARAMETER,
+            name,
+            argtype,
+            owner,
+        ));
+        self.var_def_symbol(ctx, syms, sym, None)
+    }
+
+    /// Java: public List<JCVariableDecl> Params(List<Type> argtypes, Symbol owner)
+    pub fn params(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        argtypes: List<crate::ids::TypeId>,
+        owner: crate::ids::SymbolId,
+    ) -> List<TreeId> {
+        let owner_sym = ctx.sym(owner);
+        let method_params = match &owner_sym.kind_data {
+            crate::code::symbol::SymbolKind::MethodSymbol { params, .. } => Some(params.clone()),
+            _ => None,
+        };
+        let matching_params = match method_params {
+            Some(method_params) if method_params.length() == argtypes.length() => {
+                Some(method_params)
+            }
+            _ => None,
+        };
+        if let Some(method_params) = matching_params {
+            let mut result: List<TreeId> = List::nil();
+            let mut current = method_params;
+            while current.non_empty() {
+                let param = *current.head();
+                let tree = self.var_def_symbol(ctx, syms, param, None);
+                result = result.append(tree);
+                current = current.tail();
+            }
+            return result;
+        }
+        let mut result: List<TreeId> = List::nil();
+        let mut index = 0;
+        let mut current = argtypes;
+        while current.non_empty() {
+            let argtype = *current.head();
+            let name = self.param_name(index);
+            index += 1;
+            let tree = self.param(ctx, syms, name, argtype, owner);
+            result = result.append(tree);
+            current = current.tail();
+        }
+        result
+    }
+
+    /// Java: public JCStatement Call(JCExpression apply)
+    pub fn call_statement(&mut self, ctx: &mut CompilerContext, apply: TreeId) -> TreeId {
+        let is_void = ctx
+            .tree(apply)
+            .ty
+            .map(|ty| ctx.typ(ty).has_tag(TypeTag::VOID))
+            .unwrap_or(false);
+        if is_void {
+            self.exec(ctx, apply)
+        } else {
+            self.return_(ctx, Some(apply))
+        }
+    }
+
+    /// Java: public JCStatement Assignment(Symbol v, JCExpression rhs)
+    pub fn assignment(
+        &mut self,
+        ctx: &mut CompilerContext,
+        v: crate::ids::SymbolId,
+        rhs: TreeId,
+    ) -> TreeId {
+        let lhs = self.ident_symbol(ctx, v);
+        let assign = self.assign(ctx, lhs, rhs);
+        let ty = ctx.sym(v).ty;
+        ctx.tree_mut(assign).ty = ty;
+        self.exec(ctx, assign)
+    }
+
+    /// Java: public JCArrayAccess Indexed(Symbol v, JCExpression index)
+    pub fn indexed_symbol(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        v: crate::ids::SymbolId,
+        index: TreeId,
+    ) -> TreeId {
+        let array = self.qual_ident(ctx, syms, v);
+        let tree = self.indexed(ctx, array, index);
+        let elemtype = ctx
+            .sym(v)
+            .ty
+            .and_then(|ty| match &ctx.typ(ty).kind {
+                crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => *elemtype,
+                _ => None,
+            });
+        ctx.tree_mut(tree).ty = elemtype;
+        tree
+    }
+
+    /// Java: public JCTypeCast TypeCast(Type type, JCExpression expr)
+    pub fn type_cast_typed(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ty: crate::ids::TypeId,
+        expr: TreeId,
+    ) -> TreeId {
+        let clazz = self.type_expr(ctx, syms, ty);
+        let tree = self.type_cast(ctx, clazz, expr);
+        ctx.tree_mut(tree).ty = Some(ty);
+        tree
+    }
+
+    /// Java: public JCLiteral Literal(Object value) — TypeTag inferred from the
+    /// wrapper type (the Attribute/constType part of the upstream method is
+    /// registered NOT PORTED, see the file header; the constant type is not set
+    /// until the Types.constType batch).
     pub fn literal_object(&mut self, ctx: &mut CompilerContext, value: LiteralValue) -> TreeId {
         let typetag = match &value {
             LiteralValue::Integer(_) => TypeTag::INT,
@@ -1671,58 +2282,85 @@ impl TreeMaker {
         self.literal(ctx, typetag, Some(value))
     }
 
-    /// Java: public JCExpression Type(Type t) — needs the Types service (TODO(Types batch)).
-    pub fn type_expr(&mut self, _ctx: &mut CompilerContext, _t: crate::ids::TypeId) -> TreeId {
-        unimplemented!("TODO(Types batch): TreeMaker.Type(Type) needs the Types service")
+    // ------------------------------------------------------------------
+    // Helper methods (TreeMaker.java:1105-1144).
+    // ------------------------------------------------------------------
+
+    /// Java: boolean isUnqualifiable(Symbol sym)
+    fn is_unqualifiable(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: crate::ids::SymbolId,
+    ) -> bool {
+        let names = self.names.as_ref().expect("TreeMaker.names").clone();
+        let symbol_name = ctx.sym(sym).name.clone();
+        let owner = ctx.sym(sym).owner;
+        let owner_kind = owner.map(|owner| ctx.sym(owner).kind);
+        if name_equals(&symbol_name, &names.empty) || owner.is_none() {
+            return true;
+        }
+        let root_package = Some(syms.root_package);
+        if owner == root_package {
+            return true;
+        }
+        if matches!(
+            owner_kind,
+            Some(crate::code::kinds::Kind::MTH) | Some(crate::code::kinds::Kind::VAR)
+        ) {
+            return true;
+        }
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP && self.toplevel.is_some() {
+            // Java: the named/star import scopes and the package members are
+            // queried; the Scope import query is not ported yet (registered
+            // TODO(Scope query batch)).
+            unimplemented!(
+                "TODO(Scope query batch): TreeMaker.isUnqualifiable import/package scope lookups"
+            )
+        }
+        false
     }
 
-    /// Java: public JCExpression Ident(Symbol sym) / Ident(JCVariableDecl tree) / ClassLiteral /
-    /// This / Super / QualThis / QualIdent / Create — Symbol-based convenience factories need the
-    /// symbol/type model (TODO(Symtab/Types batch)).
-    pub fn ident_symbol(
+    /// Java: public Name paramName(int i)   { return names.fromString("x" + i); }
+    pub fn param_name(&mut self, i: i32) -> Name {
+        self.str_name(&format!("x{i}"))
+    }
+
+    /// Java: public Name typaramName(int i) { return names.fromString("A" + i); }
+    pub fn typaram_name(&mut self, i: i32) -> Name {
+        self.str_name(&format!("A{i}"))
+    }
+
+    fn str_name(&mut self, text: &str) -> Name {
+        let names = self.names.as_ref().expect("TreeMaker.names");
+        names.from_utf(text.as_bytes())
+    }
+
+    /// Java: Symbol.getRawAttributes() — the Attribute model is not ported yet.
+    fn raw_annotations(
         &mut self,
         _ctx: &mut CompilerContext,
         _sym: crate::ids::SymbolId,
-    ) -> TreeId {
-        unimplemented!("TODO(Symtab batch): TreeMaker.Ident(Symbol) needs symbol flags/names")
+    ) -> List<TreeId> {
+        unimplemented!("TODO(Attribute batch): TreeMaker.Annotations(Symbol.getRawAttributes)")
     }
+}
 
-    /// Java: public JCVariableDecl VarDef(VarSymbol v, JCExpression init).
-    pub fn var_def_symbol(
-        &mut self,
-        _ctx: &mut CompilerContext,
-        _v: crate::ids::SymbolId,
-        _init: StdOption<TreeId>,
-    ) -> TreeId {
-        unimplemented!("TODO(Symtab batch): TreeMaker.VarDef(VarSymbol, init)")
-    }
+/// Java: Name equality (Name.contentEquals).
+fn name_equals(a: &Name, b: &Name) -> bool {
+    a.content_equals(&b.to_java_string())
+}
 
-    /// Java: public JCMethodDecl MethodDef(MethodSymbol m).
-    pub fn method_def_symbol(
-        &mut self,
-        _ctx: &mut CompilerContext,
-        _m: crate::ids::SymbolId,
-    ) -> TreeId {
-        unimplemented!("TODO(Symtab batch): TreeMaker.MethodDef(MethodSymbol)")
-    }
-
-    /// Java: public JCTypeParameter TypeParam(Symbol sym) / TypeParams / Param / Params.
-    pub fn type_param_symbol(
-        &mut self,
-        _ctx: &mut CompilerContext,
-        _sym: crate::ids::SymbolId,
-    ) -> TreeId {
-        unimplemented!("TODO(Symtab batch): TreeMaker.TypeParam(Symbol)")
-    }
-
-    /// Java: public JCExpression Call / Assignment / Indexed(Symbol) / TypeCast(Type) helpers.
-    pub fn call(
-        &mut self,
-        _ctx: &mut CompilerContext,
-        _meth: crate::ids::SymbolId,
-        _args: List<TreeId>,
-    ) -> TreeId {
-        unimplemented!("TODO(Symtab batch): TreeMaker.Call(Symbol, args) needs MethodSymbol")
+/// Java: ClassType.getTypeArguments() / UnionClassType / IntersectionClassType
+/// (the local ClassType stores Option<List<TypeId>>).
+fn class_type_arguments(ctx: &CompilerContext, t: crate::ids::TypeId) -> List<crate::ids::TypeId> {
+    match &ctx.typ(t).kind {
+        crate::code::type_::TypeKindData::ClassType { typarams_field, .. }
+        | crate::code::type_::TypeKindData::UnionClassType { typarams_field, .. }
+        | crate::code::type_::TypeKindData::IntersectionClassType { typarams_field, .. } => {
+            typarams_field.clone().unwrap_or_else(List::nil)
+        }
+        _ => List::nil(),
     }
 }
 
@@ -1917,4 +2555,99 @@ mod tests {
         let printed = pretty.get_out().to_string_lossy();
         assert!(printed.contains("return 42"), "{printed}");
     }
+    fn new_maker_with_syms() -> (
+        CompilerContext,
+        crate::code::symtab::Symtab,
+        crate::code::types::Types,
+        TreeMaker,
+    ) {
+        let names = Rc::new(Names::new(false));
+        let mut ctx = CompilerContext::new();
+        let syms = crate::code::symtab::Symtab::new(
+            &mut ctx,
+            Rc::clone(&names),
+            crate::jvm::target::Target::JDK1_17,
+            crate::code::source::Source::JDK17,
+        );
+        (ctx, syms, crate::code::types::Types::new(), TreeMaker::new(Some(names)))
+    }
+
+    #[test]
+    fn symbol_type_and_statement_convenience_factories() {
+        let (mut ctx, syms, types, mut maker) = new_maker_with_syms();
+        // Java: Ident(Symbol) — the ident keeps the symbol name/sym/type.
+        let var = ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
+            0,
+            name(&maker, "v"),
+            syms.int_type,
+            syms.java_base,
+        ));
+        let ident = maker.ident_symbol(&mut ctx, var);
+        let TreeKind::Ident { name: ident_name, sym } = &ctx.tree(ident).kind else {
+            panic!("ident");
+        };
+        assert_eq!(ident_name.to_java_string(), name(&maker, "v").to_java_string());
+        assert_eq!(*sym, Some(var));
+        assert_eq!(ctx.tree(ident).ty, Some(syms.int_type));
+
+        // Java: Type(Type) — primitive, class and array types.
+        let int_tree = maker.type_expr(&mut ctx, &syms, syms.int_type);
+        assert_eq!(ctx.tree(int_tree).tag, Tag::TYPEIDENT);
+        let TreeKind::PrimitiveTypeTree { typetag } = &ctx.tree(int_tree).kind else {
+            panic!("primitive");
+        };
+        assert_eq!(*typetag, TypeTag::INT);
+        assert_eq!(ctx.tree(int_tree).ty, Some(syms.int_type));
+
+        let array_class = syms.array_class;
+        let int_array = ctx.alloc_type(crate::code::type_::Type::new_array_type(
+            syms.int_type,
+            array_class,
+        ));
+        let array_tree = maker.type_expr(&mut ctx, &syms, int_array);
+        assert_eq!(ctx.tree(array_tree).tag, Tag::TYPEARRAY);
+        let _ = types;
+
+        // Java: This(Type)/ClassLiteral(Type) — the field selection keeps sym/type.
+        let this_tree = maker.this_expr(&mut ctx, syms.object_type);
+        assert_eq!(ctx.tree(this_tree).tag, Tag::IDENT);
+        let class_lit = maker.class_literal(&mut ctx, &syms, syms.object_type);
+        assert_eq!(ctx.tree(class_lit).tag, Tag::SELECT);
+
+        // Java: App/Assignment/Indexed/TypeCast convenience helpers.
+        let meth_sym = ctx.alloc_symbol(crate::code::symbol::Symbol::new_method_symbol(
+            0,
+            name(&maker, "m"),
+            syms.int_type,
+            syms.java_base,
+        ));
+        let meth = maker.ident_symbol(&mut ctx, meth_sym);
+        ctx.tree_mut(meth).ty = Some(syms.class_type);
+        let app = maker.app(&mut ctx, meth);
+        assert_eq!(ctx.tree(app).tag, Tag::APPLY);
+        let assignment = maker.assignment(&mut ctx, var, ident);
+        assert_eq!(ctx.tree(assignment).tag, Tag::EXEC);
+        let casted = maker.type_cast_typed(&mut ctx, &syms, syms.int_type, ident);
+        assert_eq!(ctx.tree(casted).tag, Tag::TYPECAST);
+        let array_class = syms.array_class;
+        let array_type = ctx.alloc_type(crate::code::type_::Type::new_array_type(
+            syms.int_type,
+            array_class,
+        ));
+        let array_var = ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
+            0,
+            name(&maker, "a"),
+            array_type,
+            syms.java_base,
+        ));
+        let index = maker.literal_object(&mut ctx, LiteralValue::Integer(0));
+        let indexed = maker.indexed_symbol(&mut ctx, &syms, array_var, index);
+        assert_eq!(ctx.tree(indexed).tag, Tag::INDEXED);
+        assert_eq!(ctx.tree(indexed).ty, Some(syms.int_type));
+
+        // Java: paramName/typaramName.
+        assert_eq!(maker.param_name(2).to_java_string(), name(&maker, "x2").to_java_string());
+        assert_eq!(maker.typaram_name(0).to_java_string(), name(&maker, "A0").to_java_string());
+    }
+
 }
