@@ -1009,10 +1009,6 @@ impl Types {
         t
     }
 
-    /// Return the interfaces implemented by this class.
-    ///
-    /// Java: public List<Type> interfaces(Type t)
-
     /// The direct supertypes of a type.
     ///
     /// Java: public List<Type> directSupertypes(Type t)
@@ -1032,8 +1028,7 @@ impl Types {
                 interfaces.prepend(sup)
             }
         } else {
-            let components = ctx.typ(t).get_explicit_components();
-            components
+            ctx.typ(t).get_explicit_components()
         }
     }
 
@@ -1133,8 +1128,6 @@ impl Types {
         (from, to)
     }
 
-    /// Java: Subst.visit / StructuralTypeMapping behavior.
-
     /// Return the base type of t or any of its supertypes that starts with the
     /// given symbol.
     ///
@@ -1177,19 +1170,18 @@ impl Types {
                 seen.push(c);
                 let result = (|| {
                     let st = self.supertype(ctx, syms, t);
-                    if ctx.typ(st).has_tag(TypeTag::CLASS)
-                        || ctx.typ(st).has_tag(TypeTag::TYPEVAR)
+                    if (ctx.typ(st).has_tag(TypeTag::CLASS)
+                        || ctx.typ(st).has_tag(TypeTag::TYPEVAR))
+                        && let Some(x) = self.as_super_visit(ctx, syms, st, sym, seen)
                     {
-                        if let Some(x) = self.as_super_visit(ctx, syms, st, sym, seen) {
-                            return Some(x);
-                        }
+                        return Some(x);
                     }
                     if (ctx.sym(sym).flags() & crate::code::flags::INTERFACE as i64) != 0 {
                         for i in self.interfaces(ctx, syms, t).iter() {
-                            if !ctx.typ(i).has_tag(TypeTag::ERROR) {
-                                if let Some(x) = self.as_super_visit(ctx, syms, i, sym, seen) {
-                                    return Some(x);
-                                }
+                            if !ctx.typ(i).has_tag(TypeTag::ERROR)
+                                && let Some(x) = self.as_super_visit(ctx, syms, i, sym, seen)
+                            {
+                                return Some(x);
                             }
                         }
                     }
@@ -1318,10 +1310,7 @@ impl Types {
                     let base = self.as_outer_super(ctx, syms, t, owner);
                     let base = if self.is_compound(ctx, t) {
                         // Java: base = t.isCompound() ? capture(base) : base;
-                        match base {
-                            Some(base) => Some(self.capture(ctx, syms, base)),
-                            None => None,
-                        }
+                        base.map(|base| self.capture(ctx, syms, base))
                     } else {
                         base
                     };
@@ -1368,17 +1357,17 @@ impl Types {
             return t;
         }
         let no_type = no_type_of(ctx, syms);
-        if let Some(encl) = enclosing_of(ctx, t) {
-            if encl != no_type {
-                let captured_encl = self.capture(ctx, syms, encl);
-                if captured_encl != encl {
-                    let tsym = ctx.typ(t).tsym.expect("class type symbol");
-                    let type1 = self.member_type(ctx, syms, captured_encl, tsym);
-                    let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
-                    let formals = get_type_arguments(ctx, tsym_type);
-                    let actuals = get_type_arguments(ctx, t);
-                    return self.subst_type(ctx, syms, type1, &formals, &actuals);
-                }
+        if let Some(encl) = enclosing_of(ctx, t)
+            && encl != no_type
+        {
+            let captured_encl = self.capture(ctx, syms, encl);
+            if captured_encl != encl {
+                let tsym = ctx.typ(t).tsym.expect("class type symbol");
+                let type1 = self.member_type(ctx, syms, captured_encl, tsym);
+                let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
+                let formals = get_type_arguments(ctx, tsym_type);
+                let actuals = get_type_arguments(ctx, t);
+                return self.subst_type(ctx, syms, type1, &formals, &actuals);
             }
         }
         if is_raw_type(ctx, t) || !is_parameterized_type(ctx, t) {
@@ -1752,6 +1741,10 @@ impl Types {
     }
 
     /// Java: public boolean isReifiable(Type t)
+    ///
+    /// PORTING_RULES: upstream isReifiable takes only Type; syms is threaded
+    /// through recursion for the Rust arena/context API (expression adapter).
+    #[allow(clippy::only_used_in_recursion)]
     pub fn is_reifiable(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
         let tag = ctx.typ(t).get_tag();
         if tag == TypeTag::CLASS {
@@ -2260,10 +2253,8 @@ fn allparams_of(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
                 None => params,
             }
         }
-        TypeKindData::ArrayType { elemtype } => match elemtype {
-            Some(elem) => allparams_of(ctx, *elem),
-            None => List::nil(),
-        },
+        TypeKindData::ArrayType { elemtype: Some(elem) } => allparams_of(ctx, *elem),
+        TypeKindData::ArrayType { elemtype: None } => List::nil(),
         _ => List::nil(),
     }
 }
@@ -2284,10 +2275,8 @@ fn is_parameterized_type(ctx: &CompilerContext, t: TypeId) -> bool {
 /// non-empty && this.allparams() empty; ArrayType: elemtype.isRaw()).
 fn is_raw_type(ctx: &CompilerContext, t: TypeId) -> bool {
     match &ctx.typ(t).kind {
-        TypeKindData::ArrayType { elemtype } => match elemtype {
-            Some(elem) => is_raw_type(ctx, *elem),
-            None => false,
-        },
+        TypeKindData::ArrayType { elemtype: Some(elem) } => is_raw_type(ctx, *elem),
+        TypeKindData::ArrayType { elemtype: None } => false,
         TypeKindData::ClassType { .. }
         | TypeKindData::ErasedClassType { .. }
         | TypeKindData::UnionClassType { .. }
@@ -2313,7 +2302,8 @@ fn has_erased_supertypes(ctx: &CompilerContext, t: TypeId) -> bool {
         || is_raw_type(ctx, t)
 }
 
-/// Java: Type.getThrownTypes() (MethodType: thrown; other types: List.nil()).
+/// Java: Type.getThrownTypes() (Type.java:549 default -> List.nil();
+/// Type.java:1491 MethodType -> thrown; Type.java:1808 ForAll -> qtype).
 ///
 /// TODO(Types/FunctionDescriptor batch): upstream call sites are Types.java
 /// 769/774/799 (FunctionDescriptor; not ported yet). Keep until that batch
@@ -2322,6 +2312,11 @@ fn has_erased_supertypes(ctx: &CompilerContext, t: TypeId) -> bool {
 fn get_thrown_types(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::MethodType { thrown, .. } => thrown.clone(),
+        // Java: Type.ForAll.getThrownTypes() { return qtype.getThrownTypes(); }
+        TypeKindData::ForAll { qtype, .. } => {
+            let qtype = qtype.expect("for-all qtype");
+            get_thrown_types(ctx, qtype)
+        }
         _ => List::nil(),
     }
 }
@@ -2338,15 +2333,13 @@ fn symbol_is_final(ctx: &CompilerContext, symbol: SymbolId) -> bool {
 
 /// Java: Symbol.isSealed()
 fn symbol_is_sealed(ctx: &CompilerContext, symbol: SymbolId) -> bool {
-    (ctx.sym(symbol).flags() & crate::code::flags::SEALED as i64) != 0
+    (ctx.sym(symbol).flags() & crate::code::flags::SEALED) != 0
 }
 
 /// Java: Symbol.ClassSymbol.getSuperclass() (Symbol.complete() is not ported: a
 /// null supertype_field is returned as None; an interface has no superclass).
 fn class_symbol_get_superclass(ctx: &CompilerContext, symbol: SymbolId) -> Option<TypeId> {
-    let Some(tsym_type) = ctx.sym(symbol).ty else {
-        return None;
-    };
+    let tsym_type = ctx.sym(symbol).ty?;
     match &ctx.typ(tsym_type).kind {
         TypeKindData::ClassType { supertype_field, .. }
         | TypeKindData::ErasedClassType { supertype_field, .. }
@@ -2426,9 +2419,9 @@ fn elemtype_of(ctx: &CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
 
 /// Java: Types.cvarUpperBound(Type t)
 ///
-/// TODO(Types/notSoftSubtype batch): upstream uses are Types.java:149-156 (def)
-/// and Types.notSoftSubtype (Types.java:2007-2010; not ported yet). Keep until
-/// that batch wires it; do not delete.
+/// TODO(Types/notSoftSubtype batch): upstream definition is Types.java:149-156;
+/// the only Types.java use is Types.notSoftSubtype (Types.java:2007, not ported
+/// yet). Keep until that batch wires it; do not delete.
 #[allow(dead_code)]
 fn cvar_upper_bound(ctx: &CompilerContext, t: TypeId) -> TypeId {
     if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
@@ -2522,8 +2515,10 @@ fn new_method_type_2(
 
 /// Java: new Type.TypeVar(tsym, bound, lower)
 ///
-/// TODO(Types/newTypeVar batch): upstream constructor use (Types.newTypeVar)
-/// is not ported yet. Keep until that batch wires it; do not delete.
+/// TODO(Types/rewriteSupers batch): the upstream constructor use is
+/// Types.java:3427 (new TypeVar(t.tsym, null, syms.botType, ...) inside
+/// rewriteSupers/adapt, not ported yet). Keep until that batch wires it; do
+/// not delete.
 #[allow(dead_code)]
 fn new_type_var_type(
     ctx: &mut CompilerContext,
@@ -2540,9 +2535,9 @@ fn new_type_var_type(
 
 /// Java: new Type.CapturedType(name, owner, bound, lower, wildcard)
 ///
-/// TODO(Types capture batch): upstream use is Types.capture (Types.java:4388-4470);
-/// the local capture() wildcard path is unimplemented. Keep until that batch
-/// wires it; do not delete.
+/// TODO(Types capture batch): upstream use is Types.capture (Types.java:4388-4470,
+/// new CapturedType at Types.java:4465); the local capture() wildcard path is
+/// unimplemented. Keep until that batch wires it; do not delete.
 #[allow(dead_code)]
 fn new_captured_type(
     ctx: &mut CompilerContext,
@@ -2567,8 +2562,8 @@ fn type_equals_ignore_metadata(ctx: &CompilerContext, t: TypeId, s: TypeId) -> b
     Types::new().equals_ignore_metadata(ctx, t, s)
 }
 
-/// Java: Type.contains(elem) (Type class method; upstream use is in Attr and
-/// other not-yet-ported callers, not in Types.java).
+/// Java: Type.contains(elem) (Type.java:1148/1408/1504/1854 overrides; the
+/// upstream uses are in Attr and other not-yet-ported callers, not Types.java).
 ///
 /// TODO(Attr/Type.contains batch): not wired yet. Keep until that batch wires
 /// it; do not delete.
@@ -2578,10 +2573,10 @@ fn type_contains(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, elem: Type
         return true;
     }
     if is_parameterized_type(ctx, t) {
-        if let Some(outer) = enclosing_of(ctx, t) {
-            if type_contains(ctx, syms, outer, elem) {
-                return true;
-            }
+        if let Some(outer) = enclosing_of(ctx, t)
+            && type_contains(ctx, syms, outer, elem)
+        {
+            return true;
         }
         for arg in get_type_arguments(ctx, t).iter() {
             if type_contains(ctx, syms, arg, elem) {
@@ -2620,10 +2615,10 @@ fn type_is_interface(ctx: &CompilerContext, t: TypeId) -> bool {
 
 /// Java: Type.withTypeVar(Type t) (Type: return this; WildcardType: set bound).
 fn with_type_var(ctx: &mut CompilerContext, t: TypeId, tv: TypeId) -> TypeId {
-    if let TypeKindData::WildcardType { bound, .. } = &mut ctx.typ_mut(t).kind {
-        if *bound != Some(tv) {
-            *bound = Some(tv);
-        }
+    if let TypeKindData::WildcardType { bound, .. } = &mut ctx.typ_mut(t).kind
+        && *bound != Some(tv)
+    {
+        *bound = Some(tv);
     }
     t
 }
@@ -2927,6 +2922,16 @@ mod tests {
         let method =
             new_method_type_2(&mut ctx, List::nil(), None, List::of(symtab.err_type), None);
         assert_eq!(get_thrown_types(&ctx, method), List::of(symtab.err_type));
+        // Java: Type.ForAll.getThrownTypes() -> qtype.getThrownTypes().
+        let for_all = ctx.alloc_type(Type::new(
+            TypeTag::FORALL,
+            None,
+            TypeKindData::ForAll {
+                tvars: List::of(TypeId::new(1)),
+                qtype: Some(method),
+            },
+        ));
+        assert_eq!(get_thrown_types(&ctx, for_all), List::of(symtab.err_type));
         assert_eq!(get_thrown_types(&ctx, symtab.int_type), List::nil());
     }
 
@@ -2990,6 +2995,94 @@ mod tests {
             parameterized,
             parameterized
         ));
+    }
+
+
+    /// JDK 17 oracle (tools/gen-types-oracle/GenTypesOracle.java): isSameType
+    /// and erasure results for the field types of TypesOracleSample, collected
+    /// at development time (no JVM at test time).
+    #[test]
+    fn types_oracle_is_same_type_and_erasure() {
+        let data = include_str!("../../tests/data/types-oracle.txt");
+        let (mut ctx, mut symtab) = build();
+        let types = Types::new();
+        let list_tsym = ctx.typ(symtab.list_type).tsym.expect("list symbol");
+        let int_type = symtab.int_type;
+        let boxed_sym = types.boxed_class(&mut ctx, &mut symtab, int_type);
+        let boxed = ctx.sym(boxed_sym).ty.expect("boxed type");
+        let int_array = new_array_type(&mut ctx, symtab.int_type, Some(symtab.array_class));
+        let string_array = new_array_type(&mut ctx, symtab.string_type, Some(symtab.array_class));
+        let long_array = new_array_type(&mut ctx, symtab.long_type, Some(symtab.array_class));
+        let long_array_2 = new_array_type(&mut ctx, long_array, Some(symtab.array_class));
+        let list_string = class_type(&mut ctx, list_tsym, &[symtab.string_type]);
+        let list_integer = class_type(&mut ctx, list_tsym, &[boxed]);
+        let mut map: std::collections::HashMap<&str, TypeId> =
+            std::collections::HashMap::new();
+        map.insert("i", symtab.int_type);
+        map.insert("z", symtab.boolean_type);
+        map.insert("s", symtab.string_type);
+        map.insert("o", symtab.object_type);
+        map.insert("box", boxed);
+        map.insert("ia", int_array);
+        map.insert("sa", string_array);
+        map.insert("la", long_array_2);
+        map.insert("ls", list_string);
+        map.insert("li", list_integer);
+        let mut same_checked = 0usize;
+        let mut erase_checked = 0usize;
+        for line in data.lines() {
+            let mut parts = line.split(' ');
+            match parts.next().expect("oracle kind") {
+                "SAME" => {
+                    let a = parts.next().expect("type a");
+                    let b = parts.next().expect("type b");
+                    let expected: bool = parts.next().expect("expected").parse().expect("bool");
+                    let ta = *map.get(a).expect("mapped type a");
+                    let tb = *map.get(b).expect("mapped type b");
+                    let got = types.is_same_type(&mut ctx, &symtab, ta, tb);
+                    assert_eq!(got, expected, "isSameType({a}, {b})");
+                    same_checked += 1;
+                }
+                "ERASE" => {
+                    let a = parts.next().expect("type");
+                    let expected = parts.next().expect("erased name");
+                    let ta = *map.get(a).expect("mapped type");
+                    let erased = types.erasure(&mut ctx, &symtab, ta);
+                    let erased_tsym = ctx.typ(erased).tsym;
+                    match expected {
+                        "int" => assert_eq!(erased, symtab.int_type),
+                        "boolean" => assert_eq!(erased, symtab.boolean_type),
+                        "java.lang.String" => assert_eq!(erased, symtab.string_type),
+                        "java.lang.Object" => {
+                            let object_tsym =
+                                ctx.typ(symtab.object_type).tsym.expect("object symbol");
+                            assert_eq!(erased_tsym, Some(object_tsym));
+                        }
+                        "java.lang.Integer" => assert_eq!(erased_tsym, Some(boxed_sym)),
+                        "int[]" => {
+                            assert_eq!(ctx.typ(erased).get_tag(), TypeTag::ARRAY);
+                            assert_eq!(elemtype_of(&ctx, &symtab, erased), symtab.int_type);
+                        }
+                        "java.lang.String[]" => {
+                            assert_eq!(ctx.typ(erased).get_tag(), TypeTag::ARRAY);
+                            assert_eq!(elemtype_of(&ctx, &symtab, erased), symtab.string_type);
+                        }
+                        "long[][]" => {
+                            assert_eq!(ctx.typ(erased).get_tag(), TypeTag::ARRAY);
+                            let elem = elemtype_of(&ctx, &symtab, erased);
+                            assert_eq!(ctx.typ(elem).get_tag(), TypeTag::ARRAY);
+                            assert_eq!(elemtype_of(&ctx, &symtab, elem), symtab.long_type);
+                        }
+                        "java.util.List" => assert_eq!(erased_tsym, Some(list_tsym)),
+                        other => panic!("unexpected erasure name {other}"),
+                    }
+                    erase_checked += 1;
+                }
+                other => panic!("unexpected oracle kind {other}"),
+            }
+        }
+        assert_eq!(same_checked, 100, "SAME oracle rows");
+        assert_eq!(erase_checked, 10, "ERASE oracle rows");
     }
 
 }
