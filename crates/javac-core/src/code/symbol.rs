@@ -820,6 +820,120 @@ impl std::fmt::Debug for CompletionFailure {
 
 impl std::error::Error for CompletionFailure {}
 
+
+// ----------------------------------------------------------------------
+// Java: Symbol subclass constructors (P2 ClassReader batch). The ClassSymbol
+// constructor is produced by Symtab.enterClass (fullname/flatname); these
+// helpers cover the member symbols.
+// ----------------------------------------------------------------------
+impl Symbol {
+    /// Java: public VarSymbol(long flags, Name name, Type type, Symbol owner)
+    pub fn new_var_symbol(flags: i64, name: Name, ty: TypeId, owner: SymbolId) -> Symbol {
+        Symbol::new(
+            Kind::VAR,
+            flags,
+            name,
+            Some(ty),
+            Some(owner),
+            SymbolKind::VarSymbol {
+                pos: crate::util::position::NOPOS,
+                adr: -1,
+                data_kind: None,
+            },
+        )
+    }
+
+    /// Java: public MethodSymbol(long flags, Name name, Type type, Symbol owner)
+    pub fn new_method_symbol(flags: i64, name: Name, ty: TypeId, owner: SymbolId) -> Symbol {
+        Symbol::new(
+            Kind::MTH,
+            flags,
+            name,
+            Some(ty),
+            Some(owner),
+            SymbolKind::MethodSymbol {
+                extra_params: List::nil(),
+                captured_locals: List::nil(),
+                params: List::nil(),
+            },
+        )
+    }
+
+    /// Java: public TypeVariableSymbol(long flags, Name name, Type type, Symbol owner)
+    pub fn new_type_variable_symbol(
+        flags: i64,
+        name: Name,
+        ty: TypeId,
+        owner: SymbolId,
+    ) -> Symbol {
+        Symbol::new(
+            Kind::TYP,
+            flags,
+            name,
+            Some(ty),
+            Some(owner),
+            SymbolKind::TypeVariableSymbol,
+        )
+    }
+}
+
+
+// ----------------------------------------------------------------------
+// Java: Symbol accessor methods needed by the ClassReader batch.
+// ----------------------------------------------------------------------
+impl Symbol {
+    /// Java: public boolean hasOuterInstance()
+    pub fn has_outer_instance(&self, ctx: &crate::compiler_context::CompilerContext) -> bool {
+        let enclosing_is_class = self
+            .ty
+            .and_then(|ty| ctx.typ(ty).get_enclosing_type())
+            .is_some_and(|outer| ctx.typ(outer).has_tag(crate::code::type_tag::TypeTag::CLASS));
+        let flags = self.flags_field;
+        enclosing_is_class
+            && (flags & (crate::code::flags::INTERFACE as i64 | crate::code::flags::NOOUTERTHIS as i64)) == 0
+    }
+
+    /// Java: public boolean isConstructor() { return name == name.table.names.init; }
+    pub fn is_constructor(&self, names: &crate::util::names::Names) -> bool {
+        self.name.to_java_string() == names.init.to_java_string()
+    }
+
+    /// Java: public boolean isRecord() { return (flags_field & RECORD) != 0; }
+    pub fn is_record(&self) -> bool {
+        (self.flags_field & crate::code::flags::RECORD) != 0
+    }
+}
+
+// ----------------------------------------------------------------------
+// Java: ParamSymbol/MethodSymbol parameter wiring needed by ClassReader.
+// ----------------------------------------------------------------------
+impl Symbol {
+    /// Java: public ParamSymbol(long flags, Name name, Type type, Symbol owner)
+    pub fn new_param_symbol(
+        flags: i64,
+        name: Name,
+        ty: crate::ids::TypeId,
+        owner: SymbolId,
+    ) -> Symbol {
+        Symbol::new(
+            Kind::VAR,
+            flags,
+            name,
+            Some(ty),
+            Some(owner),
+            SymbolKind::ParamSymbol,
+        )
+    }
+
+    /// Java: sym.params = params (MethodSymbol.params field setter).
+    pub fn set_params(&mut self, params: List<SymbolId>) {
+        if let SymbolKind::MethodSymbol { params: slot, .. } = &mut self.kind_data {
+            *slot = params;
+        } else {
+            panic!("ClassCastException: not a method symbol");
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -990,7 +1104,6 @@ mod tests {
         }));
         assert_eq!(ctx.sym(record_component).get_kind(&ctx), ElementKind::RECORD_COMPONENT);
     }
-    use super::*;
     use crate::util::name::NameTableHandle;
     use javac_source::tree::member_reference_tree::ReferenceMode;
 

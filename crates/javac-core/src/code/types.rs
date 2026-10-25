@@ -2837,6 +2837,44 @@ fn class_symbol_get_interfaces_option(
     }
 }
 
+
+impl Types {
+
+    /// Java: public boolean isSignaturePolymorphic(MethodSymbol msym)
+    pub fn is_signature_polymorphic(
+        &self,
+        ctx: &CompilerContext,
+        syms: &Symtab,
+        m: SymbolId,
+    ) -> bool {
+        let flags = ctx.sym(m).flags_field;
+        if (flags & crate::code::flags::NATIVE as i64) == 0 {
+            return false;
+        }
+        let owner_ty = ctx.sym(m).owner.and_then(|o| ctx.sym(o).ty);
+        if owner_ty != Some(syms.method_handle_type) && owner_ty != Some(syms.var_handle_type) {
+            return false;
+        }
+        let Some(ty) = ctx.sym(m).ty else {
+            return false;
+        };
+        let argtypes = ctx.typ(ty).get_parameter_types(ctx);
+        if argtypes.length() != 1 {
+            return false;
+        }
+        let head = *argtypes.head();
+        if !ctx.typ(head).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
+            return false;
+        }
+        let elem = match &ctx.typ(head).kind {
+            crate::code::type_::TypeKindData::ArrayType { elemtype } => *elemtype,
+            _ => None,
+        };
+        let elem_tsym = elem.and_then(|e| ctx.typ(e).tsym);
+        elem_tsym == ctx.typ(syms.object_type).tsym
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

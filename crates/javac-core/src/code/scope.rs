@@ -80,7 +80,9 @@
 //! - ErrorScope.lookup override (the upstream returns a synthetic entry);
 //! - ImportFilter/FilterImportScope/SymbolImporter.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::rc::Weak;
 
 use crate::ids::{ScopeId, SymbolId};
@@ -201,9 +203,16 @@ pub enum ScopeData {
         /// Next enclosing scope (with whom this scope may share a hashtable).
         next: Option<ScopeId>,
         /// A hash table for the scope's entries.
-        table: Vec<TableSlot>,
-        /// Mask for hash codes, always equal to (table.length - 1).
-        hash_mask: usize,
+        ///
+        /// PORTING_RULES §9 adapter: upstream dup()/dupUnshared() share the
+        /// Entry[] table object between scope instances; Rust represents the
+        /// shared table/entry object graph with Rc<RefCell<...>> (borrow rule:
+        /// never hold a borrow across a nested scope operation; the methods
+        /// clone the Rc and re-borrow, see the module header).
+        table: SharedTable,
+        /// Java: int hashMask (always table.length - 1). Derived from the
+        /// shared table length, so the field is not stored (registered mapping
+        /// difference: internal representation only, no behavior change).
         /// A linear list that also contains all entries in reverse order of
         /// appearance (i.e later entries are pushed on top).
         elems: Option<EntryId>,
@@ -211,8 +220,9 @@ pub enum ScopeData {
         /// This includes deleted elements, whose value is the sentinel.
         nelems: i32,
         remove_count: i32,
-        /// The Entry storage owned by this scope.
-        entries: Vec<Entry>,
+        /// The Entry storage (Java: the Entry objects referenced by the shared
+        /// table; represented as one shared arena per scope chain).
+        entries: SharedEntries,
         listeners: ScopeListenerList,
         /// Whether this is an ErrorScope (Java: ErrorScope extends ScopeImpl).
         error_scope: bool,
@@ -260,6 +270,11 @@ pub struct Scope {
 /// The initial table length (Java: ScopeImpl.INITIAL_SIZE).
 pub const INITIAL_SIZE: usize = 0x10;
 
+/// Shared ScopeImpl table (Java: the Entry[] shared by dup/leave).
+pub(crate) type SharedTable = Rc<RefCell<Vec<TableSlot>>>;
+/// Shared ScopeImpl entry storage (Java: the Entry object graph).
+pub(crate) type SharedEntries = Rc<RefCell<Vec<Entry>>>;
+
 impl Scope {
     /// Constructs a fresh writable scope (Java: new ScopeImpl(owner), which uses
     /// a fresh table of length INITIAL_SIZE).
@@ -269,12 +284,11 @@ impl Scope {
             data: ScopeData::ScopeImpl {
                 shared: 0,
                 next: None,
-                table: vec![TableSlot::Empty; INITIAL_SIZE],
-                hash_mask: INITIAL_SIZE - 1,
+                table: Rc::new(RefCell::new(vec![TableSlot::Empty; INITIAL_SIZE])),
                 elems: None,
                 nelems: 0,
                 remove_count: 0,
-                entries: Vec::new(),
+                entries: Rc::new(RefCell::new(Vec::new())),
                 listeners: ScopeListenerList::new(),
                 error_scope: false,
             },
@@ -363,24 +377,26 @@ impl Scope {
     ///
     /// Look for slot in the table. We use open addressing with double hashing.
     pub fn get_index(&self, name: &Name, symbols: &Arena<Symbol>) -> usize {
-        let ScopeData::ScopeImpl {
-            table,
-            hash_mask,
-            entries,
-            ..
-        } = &self.data
-        else {
+        let (table, entries) = self.table_and_entries();
+        let mask = table.borrow().len() - 1;
+        probe_index(name, &table.borrow(), mask, &entries.borrow(), symbols)
+    }
+
+    /// Clones the shared table/entry Rc handles (borrow rule: the caller must
+    /// not keep a RefCell borrow across another method call).
+    fn table_and_entries(&self) -> (SharedTable, SharedEntries) {
+        let ScopeData::ScopeImpl { table, entries, .. } = &self.data else {
             panic!("ClassCastException: not a ScopeImpl");
         };
-        probe_index(name, table, *hash_mask, entries, symbols)
+        (Rc::clone(table), Rc::clone(entries))
     }
 
     /// Java: protected Entry lookup(Name name, Predicate<Symbol> sf)
     pub fn lookup(&self, name: &Name, symbols: &Arena<Symbol>) -> Option<EntryId> {
         let slot = self.get_index(name, symbols);
-        let ScopeData::ScopeImpl { table, entries, .. } = &self.data else {
-            panic!("ClassCastException: not a ScopeImpl");
-        };
+        let (table, entries) = self.table_and_entries();
+        let table = table.borrow();
+        let entries = entries.borrow();
         let mut current = match &table[slot] {
             TableSlot::Entry(entry_id) => Some(*entry_id),
             _ => None,
@@ -404,9 +420,8 @@ impl Scope {
         filter: &dyn Fn(SymbolId) -> bool,
         symbols: &Arena<Symbol>,
     ) -> Option<SymbolId> {
-        let ScopeData::ScopeImpl { entries, .. } = &self.data else {
-            panic!("ClassCastException: not a ScopeImpl");
-        };
+        let (_, entries) = self.table_and_entries();
+        let entries = entries.borrow();
         let mut current = self.lookup(name, symbols);
         while let Some(entry_id) = current {
             let entry = &entries[entry_id.index() as usize];
@@ -424,52 +439,58 @@ impl Scope {
     pub fn enter(&mut self, self_id: ScopeId, sym: SymbolId, symbols: &Arena<Symbol>) {
         let name = symbol_name(symbols, sym);
         {
-            let ScopeData::ScopeImpl {
-                shared,
-                hash_mask,
-                nelems,
-                ..
-            } = &self.data
-            else {
+            let ScopeData::ScopeImpl { shared, nelems, .. } = &self.data else {
                 panic!("ClassCastException: not a ScopeImpl");
             };
             assert!(*shared == 0, "shared scope cannot be modified");
-            if *nelems * 3 >= *hash_mask as i32 * 2 {
+            let table_len = {
+                let (table, _) = self.table_and_entries();
+                table.borrow().len()
+            };
+            if *nelems * 3 >= (table_len as i32 - 1) * 2 {
                 self.dble(symbols);
             }
         }
         let slot = self.get_index(&name, symbols);
+        let (table, entries) = self.table_and_entries();
+        let (old_entry, entry_id) = {
+            let mut table = table.borrow_mut();
+            let old = std::mem::replace(&mut table[slot], TableSlot::Empty);
+            let old_entry = match old {
+                TableSlot::Entry(entry_id) => Some(entry_id),
+                _ => None,
+            };
+            let mut entries = entries.borrow_mut();
+            let entry_id = EntryId(entries.len() as u32);
+            let elems = match &self.data {
+                ScopeData::ScopeImpl { elems, .. } => *elems,
+                _ => unreachable!(),
+            };
+            entries.push(Entry {
+                sym: Some(sym),
+                shadowed: old_entry,
+                next_sibling: elems,
+                prev_sibling: None,
+                scope: Some(self_id),
+            });
+            if let Some(next) = elems {
+                entries[next.index() as usize].prev_sibling = Some(entry_id);
+            }
+            table[slot] = TableSlot::Entry(entry_id);
+            (old_entry, entry_id)
+        };
         let ScopeData::ScopeImpl {
-            table,
             elems,
             nelems,
-            entries,
             listeners,
             ..
         } = &mut self.data
         else {
             panic!("ClassCastException: not a ScopeImpl");
         };
-        let old = std::mem::replace(&mut table[slot], TableSlot::Empty);
-        let old_entry = match old {
-            TableSlot::Entry(entry_id) => Some(entry_id),
-            _ => None,
-        };
         if old_entry.is_none() {
             *nelems += 1;
         }
-        let entry_id = EntryId(entries.len() as u32);
-        entries.push(Entry {
-            sym: Some(sym),
-            shadowed: old_entry,
-            next_sibling: *elems,
-            prev_sibling: None,
-            scope: Some(self_id),
-        });
-        if let Some(next) = *elems {
-            entries[next.index() as usize].prev_sibling = Some(entry_id);
-        }
-        table[slot] = TableSlot::Entry(entry_id);
         *elems = Some(entry_id);
         listeners.symbol_added(Some(sym), self_id);
     }
@@ -483,12 +504,11 @@ impl Scope {
     ) {
         let name = symbol_name(symbols, sym);
         let sym_kind = symbol_kind(symbols, sym);
-        let ScopeData::ScopeImpl { entries, .. } = &self.data else {
-            panic!("ClassCastException: not a ScopeImpl");
-        };
+        let (_, entries) = self.table_and_entries();
+        let entries_ref = entries.borrow();
         let mut current = self.lookup(&name, symbols);
         while let Some(entry_id) = current {
-            let entry = &entries[entry_id.index() as usize];
+            let entry = &entries_ref[entry_id.index() as usize];
             if entry.scope != Some(self_id) {
                 break;
             }
@@ -500,9 +520,10 @@ impl Scope {
             }
         }
         let found_in_this = match current {
-            Some(entry_id) => entries[entry_id.index() as usize].scope == Some(self_id),
+            Some(entry_id) => entries_ref[entry_id.index() as usize].scope == Some(self_id),
             None => false,
         };
+        drop(entries_ref);
         if !found_in_this {
             self.enter(self_id, sym, symbols);
         }
@@ -514,70 +535,68 @@ impl Scope {
         let Some(entry_id) = self.lookup(&name, symbols) else {
             return;
         };
+        let (table, entries) = self.table_and_entries();
         {
-            let ScopeData::ScopeImpl { entries, .. } = &self.data else {
-                panic!("ClassCastException: not a ScopeImpl");
-            };
-            let entry = &entries[entry_id.index() as usize];
+            let entries_ref = entries.borrow();
+            let entry = &entries_ref[entry_id.index() as usize];
             if entry.sym != Some(sym) {
                 return;
             }
         }
         let slot = self.get_index(&name, symbols);
-        let ScopeData::ScopeImpl {
-            table,
-            elems,
-            entries,
-            remove_count,
-            listeners,
-            ..
-        } = &mut self.data
-        else {
-            panic!("ClassCastException: not a ScopeImpl");
-        };
-        // remove e from table and shadowed list;
-        match &mut table[slot] {
-            TableSlot::Entry(head) if *head == entry_id => {
-                let shadowed = entries[entry_id.index() as usize].shadowed;
-                match shadowed {
-                    Some(id) => table[slot] = TableSlot::Entry(id),
-                    None => table[slot] = TableSlot::Deleted,
-                }
-            }
-            TableSlot::Entry(head) => {
-                let mut te = *head;
-                loop {
-                    let shadowed = entries[te.index() as usize].shadowed;
+        {
+            let mut table = table.borrow_mut();
+            let mut entries = entries.borrow_mut();
+            // remove e from table and shadowed list;
+            let mut handled = false;
+            match &mut table[slot] {
+                TableSlot::Entry(head) if *head == entry_id => {
+                    let shadowed = entries[entry_id.index() as usize].shadowed;
                     match shadowed {
-                        Some(id) if id == entry_id => {
-                            entries[te.index() as usize].shadowed =
-                                entries[entry_id.index() as usize].shadowed;
-                            break;
+                        Some(id) => table[slot] = TableSlot::Entry(id),
+                        None => table[slot] = TableSlot::Deleted,
+                    }
+                    handled = true;
+                }
+                TableSlot::Entry(head) => {
+                    let mut te = *head;
+                    loop {
+                        let shadowed = entries[te.index() as usize].shadowed;
+                        match shadowed {
+                            Some(id) if id == entry_id => {
+                                entries[te.index() as usize].shadowed =
+                                    entries[entry_id.index() as usize].shadowed;
+                                handled = true;
+                                break;
+                            }
+                            Some(id) => te = id,
+                            None => break,
                         }
-                        Some(id) => te = id,
-                        None => break,
                     }
                 }
+                _ => {},
             }
-            _ => {}
-        }
-        // remove e from elems and sibling list
-        let prev = entries[entry_id.index() as usize].prev_sibling;
-        let next = entries[entry_id.index() as usize].next_sibling;
-        match prev {
-            Some(prev_id) => {
-                entries[prev_id.index() as usize].next_sibling = next;
+            let _ = handled;
+            // remove e from elems and sibling list
+            let prev = entries[entry_id.index() as usize].prev_sibling;
+            let next = entries[entry_id.index() as usize].next_sibling;
+            let ScopeData::ScopeImpl { elems, remove_count, listeners, .. } = &mut self.data else {
+                panic!("ClassCastException: not a ScopeImpl");
+            };
+            match prev {
+                Some(prev_id) => {
+                    entries[prev_id.index() as usize].next_sibling = next;
+                }
+                None => {
+                    *elems = next;
+                }
             }
-            None => {
-                *elems = next;
+            if let Some(next_id) = next {
+                entries[next_id.index() as usize].prev_sibling = prev;
             }
+            *remove_count += 1;
+            listeners.symbol_removed(Some(sym), self_id);
         }
-        if let Some(next_id) = next {
-            entries[next_id.index() as usize].prev_sibling = prev;
-        }
-        *remove_count += 1;
-        //notify listeners
-        listeners.symbol_removed(Some(sym), self_id);
     }
 
     /// Java: public boolean includes(Symbol c) (ScopeImpl override)
@@ -588,9 +607,8 @@ impl Scope {
         symbols: &Arena<Symbol>,
     ) -> bool {
         let name = symbol_name(symbols, sym);
-        let ScopeData::ScopeImpl { entries, .. } = &self.data else {
-            panic!("ClassCastException: not a ScopeImpl");
-        };
+        let (_, entries) = self.table_and_entries();
+        let entries = entries.borrow();
         let mut current = self.lookup(&name, symbols);
         while let Some(entry_id) = current {
             let entry = &entries[entry_id.index() as usize];
@@ -607,7 +625,9 @@ impl Scope {
 
     /// Java: public boolean anyMatch(Predicate<Symbol> sf) (NON_RECURSIVE).
     pub fn any_match(&self, filter: &dyn Fn(SymbolId) -> bool) -> bool {
-        let ScopeData::ScopeImpl { elems, entries, .. } = &self.data else {
+        let (_, entries) = self.table_and_entries();
+        let entries = entries.borrow();
+        let ScopeData::ScopeImpl { elems, .. } = &self.data else {
             panic!("ClassCastException: not a ScopeImpl");
         };
         let mut current = *elems;
@@ -625,7 +645,9 @@ impl Scope {
 
     /// Java: public boolean isEmpty() (does not inspect outward scopes).
     pub fn is_empty(&self) -> bool {
-        let ScopeData::ScopeImpl { elems, entries, .. } = &self.data else {
+        let (_, entries) = self.table_and_entries();
+        let entries = entries.borrow();
+        let ScopeData::ScopeImpl { elems, .. } = &self.data else {
             panic!("ClassCastException: not a ScopeImpl");
         };
         let mut current = *elems;
@@ -651,7 +673,9 @@ impl Scope {
         if lookup_kind == LookupKind::RECURSIVE {
             panic!("unimplemented: recursive scope iteration needs the scope arena");
         }
-        let ScopeData::ScopeImpl { elems, entries, .. } = &self.data else {
+        let (_, entries) = self.table_and_entries();
+        let entries = entries.borrow();
+        let ScopeData::ScopeImpl { elems, .. } = &self.data else {
             panic!("ClassCastException: not a ScopeImpl");
         };
         let mut result = Vec::new();
@@ -683,9 +707,8 @@ impl Scope {
         if lookup_kind == LookupKind::RECURSIVE {
             panic!("unimplemented: recursive scope iteration needs the scope arena");
         }
-        let ScopeData::ScopeImpl { entries, .. } = &self.data else {
-            panic!("ClassCastException: not a ScopeImpl");
-        };
+        let (_, entries) = self.table_and_entries();
+        let entries = entries.borrow();
         let mut result = Vec::new();
         let mut current = self.lookup(name, symbols);
         while let Some(entry_id) = current {
@@ -722,23 +745,134 @@ impl Scope {
         result
     }
 
-    /// Double size of hash table (Java: ScopeImpl.dble()).
-    fn dble(&mut self, symbols: &Arena<Symbol>) {
-        let ScopeData::ScopeImpl {
-            table,
-            hash_mask,
-            entries,
-            nelems,
-            ..
-        } = &mut self.data
-        else {
+    /// Java: public WriteableScope dup(Symbol newOwner) — the new scope shares
+    /// this scope's hash table and entry storage; this scope's shared count is
+    /// incremented (ScopeImpl.dup).
+    pub fn dup(&mut self, self_id: ScopeId, new_owner: Option<SymbolId>) -> Scope {
+        let (table, entries, nelems) = {
+            let (table, entries) = self.table_and_entries();
+            let ScopeData::ScopeImpl { nelems, .. } = &self.data else {
+                panic!("ClassCastException: not a ScopeImpl");
+            };
+            (table, entries, *nelems)
+        };
+        let ScopeData::ScopeImpl { shared, .. } = &mut self.data else {
             panic!("ClassCastException: not a ScopeImpl");
         };
-        let old_table = std::mem::take(table);
+        *shared += 1;
+        Scope {
+            owner: new_owner,
+            data: ScopeData::ScopeImpl {
+                shared: 0,
+                next: Some(self_id),
+                table,
+                elems: None,
+                nelems,
+                remove_count: 0,
+                entries,
+                listeners: ScopeListenerList::new(),
+                error_scope: false,
+            },
+        }
+    }
+
+    /// Java: public WriteableScope dupUnshared(Symbol newOwner)
+    pub fn dup_unshared(
+        &self,
+        self_id: ScopeId,
+        new_owner: Option<SymbolId>,
+        scopes: &Arena<Scope>,
+    ) -> Scope {
+        let (table, entries, nelems, shared) = {
+            let (table, entries) = self.table_and_entries();
+            let ScopeData::ScopeImpl { nelems, shared, .. } = &self.data else {
+                panic!("ClassCastException: not a ScopeImpl");
+            };
+            (table, entries, *nelems, *shared)
+        };
+        if shared > 0 {
+            //The nested Scopes might have already added something to the table, so all items
+            //that don't originate in this Scope or any of its outer Scopes need to be cleared:
+            let mut accept_scopes = vec![self_id];
+            let ScopeData::ScopeImpl { next, .. } = &self.data else {
+                panic!("ClassCastException: not a ScopeImpl");
+            };
+            let mut c = *next;
+            while let Some(scope_id) = c {
+                accept_scopes.push(scope_id);
+                c = match &scopes.get(scope_id.index()).data {
+                    ScopeData::ScopeImpl { next, .. } => *next,
+                    _ => None,
+                };
+            }
+            let (new_table, n) = {
+                let old_table = table.borrow();
+                let old_entries = entries.borrow();
+                let mut new_table = vec![TableSlot::Empty; old_table.len()];
+                let mut n = 0;
+                for i in 0..old_table.len() {
+                    let mut e = match &old_table[i] {
+                        TableSlot::Entry(id) => Some(*id),
+                        _ => None,
+                    };
+                    while let Some(id) = e {
+                        let entry = &old_entries[id.index() as usize];
+                        if entry.sym.is_some()
+                            && entry.scope.is_some_and(|s| accept_scopes.contains(&s))
+                        {
+                            break;
+                        }
+                        e = entry.shadowed;
+                    }
+                    if let Some(id) = e {
+                        n += 1;
+                        new_table[i] = TableSlot::Entry(id);
+                    }
+                }
+                (new_table, n)
+            };
+            Scope {
+                owner: new_owner,
+                data: ScopeData::ScopeImpl {
+                    shared: 0,
+                    next: Some(self_id),
+                    table: Rc::new(RefCell::new(new_table)),
+                    elems: None,
+                    nelems: n,
+                    remove_count: 0,
+                    entries,
+                    listeners: ScopeListenerList::new(),
+                    error_scope: false,
+                },
+            }
+        } else {
+            let new_table = table.borrow().clone();
+            Scope {
+                owner: new_owner,
+                data: ScopeData::ScopeImpl {
+                    shared: 0,
+                    next: Some(self_id),
+                    table: Rc::new(RefCell::new(new_table)),
+                    elems: None,
+                    nelems,
+                    remove_count: 0,
+                    entries,
+                    listeners: ScopeListenerList::new(),
+                    error_scope: false,
+                },
+            }
+        }
+    }
+
+    /// Double size of hash table (Java: ScopeImpl.dble()).
+    fn dble(&mut self, symbols: &Arena<Symbol>) {
+        let (table, entries) = self.table_and_entries();
+        let mut table = table.borrow_mut();
+        let new_len = table.len() * 2;
+        let old_table = std::mem::replace(&mut *table, vec![TableSlot::Empty; new_len]);
         let old_len = old_table.len();
-        table.resize(old_len * 2, TableSlot::Empty);
-        *hash_mask = table.len() - 1;
-        let mask = *hash_mask;
+        let mask = table.len() - 1;
+        let entries = entries.borrow();
         let mut n = 0i32;
         for index in (0..old_len).rev() {
             if let TableSlot::Entry(entry_id) = &old_table[index] {
@@ -747,17 +881,19 @@ impl Scope {
                     .sym
                     .expect("entry without symbol");
                 let name = symbol_name(symbols, sym);
-                let slot = probe_index(&name, table, mask, entries, symbols);
+                let slot = probe_index(&name, &table, mask, &entries, symbols);
                 table[slot] = TableSlot::Entry(entry_id);
                 n += 1;
             }
         }
         // We don't need to update nelems for shared inherited scopes,
         // since that gets handled by leave().
+        let ScopeData::ScopeImpl { nelems, .. } = &mut self.data else {
+            panic!("ClassCastException: not a ScopeImpl");
+        };
         *nelems = n;
     }
 }
-
 /// Reads the name of a symbol from the symbol arena (upstream: sym.name).
 fn symbol_name(symbols: &Arena<Symbol>, sym: SymbolId) -> Name {
     symbols.get(sym.index()).name.clone()
@@ -769,7 +905,7 @@ fn symbol_kind(symbols: &Arena<Symbol>, sym: SymbolId) -> kinds::Kind {
 }
 
 /// Java: ScopeImpl.getIndex(Name name) (pure probe over the given table).
-fn probe_index(
+pub(crate) fn probe_index(
     name: &Name,
     table: &[TableSlot],
     hash_mask: usize,
@@ -968,6 +1104,7 @@ mod tests {
             let ScopeData::ScopeImpl { entries, .. } = &scope.data else {
                 panic!("expected a ScopeImpl");
             };
+            let entries = entries.borrow();
             assert_eq!(entries[entry.index() as usize].sym, Some(*sym));
         }
     }
@@ -1014,5 +1151,72 @@ mod tests {
         ));
         let scope = Scope::new_scope_impl(None);
         let _ = scope.get_symbols(LookupKind::RECURSIVE, &|_| true);
+    }
+
+    #[test]
+    fn dup_shares_the_table_and_leave_undoes_entries() {
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let table = name_table();
+        let walk = name(&table, "walk");
+        let run = name(&table, "run");
+        let first = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            0,
+            walk.clone(),
+            None,
+            None,
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None },
+        ));
+        let second = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            0,
+            run.clone(),
+            None,
+            None,
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None },
+        ));
+        let outer = ctx.scope_create(None);
+        ctx.scope_enter(outer, first);
+        let inner = ctx.scope_dup(outer, None);
+        // Java: the dup-ed scope shares the table, so an entry entered in the
+        // inner scope is visible from the outer scope until leave() removes it.
+        ctx.scope_enter(inner, second);
+        assert!(ctx.scope_lookup(outer, &run).is_some());
+        let back = ctx.scope_leave(inner);
+        assert_eq!(back, outer);
+        assert!(ctx.scope_lookup(outer, &run).is_none());
+        assert!(ctx.scope_lookup(outer, &walk).is_some());
+    }
+
+    #[test]
+    fn dup_unshared_isolates_new_entries() {
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let table = name_table();
+        let walk = name(&table, "walk");
+        let run = name(&table, "run");
+        let first = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            0,
+            walk.clone(),
+            None,
+            None,
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None },
+        ));
+        let second = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            0,
+            run.clone(),
+            None,
+            None,
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None },
+        ));
+        let outer = ctx.scope_create(None);
+        ctx.scope_enter(outer, first);
+        let inner = ctx.scope_dup_unshared(outer, None);
+        // dupUnshared copies the table contents but not the shared structure.
+        assert!(ctx.scope_lookup(inner, &walk).is_some());
+        ctx.scope_enter(inner, second);
+        assert!(ctx.scope_lookup(inner, &run).is_some());
+        assert!(ctx.scope_lookup(outer, &run).is_none());
     }
 }

@@ -483,6 +483,158 @@ pub enum TypeKindData {
     UnknownType,
 }
 
+
+// ----------------------------------------------------------------------
+// Java: Type subclass constructors (P2 ClassReader batch). TypeMetadata is not
+// ported yet (file header); the adapter constructors take mapped fields.
+// ----------------------------------------------------------------------
+impl Type {
+    /// Java: public ClassType(Type outer, List<Type> typarams, TypeSymbol tsym)
+    pub fn new_class_type(
+        outer: Option<TypeId>,
+        typarams: Option<List<TypeId>>,
+        tsym: SymbolId,
+    ) -> Type {
+        Type::new(
+            TypeTag::CLASS,
+            Some(tsym),
+            TypeKindData::ClassType {
+                outer_field: outer,
+                typarams_field: typarams,
+                allparams_field: None,
+                supertype_field: None,
+                interfaces_field: None,
+                all_interfaces_field: None,
+            },
+        )
+    }
+
+    /// Java: public MethodType(List<Type> argtypes, Type restype, List<Type> thrown, TypeSymbol methodClass)
+    pub fn new_method_type(
+        argtypes: List<TypeId>,
+        restype: TypeId,
+        thrown: List<TypeId>,
+        method_class: SymbolId,
+    ) -> Type {
+        Type::new(
+            TypeTag::METHOD,
+            Some(method_class),
+            TypeKindData::MethodType {
+                argtypes,
+                restype: Some(restype),
+                thrown,
+                recvtype: None,
+            },
+        )
+    }
+
+    /// Java: public ArrayType(Type elemtype, TypeSymbol arrayClass)
+    pub fn new_array_type(elemtype: TypeId, array_class: SymbolId) -> Type {
+        Type::new(
+            TypeTag::ARRAY,
+            Some(array_class),
+            TypeKindData::ArrayType { elemtype: Some(elemtype) },
+        )
+    }
+
+    /// Java: public TypeVar(TypeSymbol tsym, Type bound, Type lower, TypeMetadata)
+    pub fn new_type_var(tsym: SymbolId, bound: Option<TypeId>, lower: TypeId) -> Type {
+        Type::new(
+            TypeTag::TYPEVAR,
+            Some(tsym),
+            TypeKindData::TypeVar { bound, lower: Some(lower) },
+        )
+    }
+
+    /// Java: public ForAll(List<Type> tvars, Type qtype)
+    pub fn new_for_all(tvars: List<TypeId>, qtype: TypeId) -> Type {
+        Type::new(
+            TypeTag::FORALL,
+            None,
+            TypeKindData::ForAll { tvars, qtype: Some(qtype) },
+        )
+    }
+
+    /// Java: public WildcardType(Type type, BoundKind kind, TypeSymbol tsym, TypeVar bound)
+    pub fn new_wildcard_type(
+        type_: TypeId,
+        kind: BoundKind,
+        tsym: SymbolId,
+        bound: Option<TypeId>,
+    ) -> Type {
+        Type::new(
+            TypeTag::WILDCARD,
+            Some(tsym),
+            TypeKindData::WildcardType { type_: Some(type_), kind, bound },
+        )
+    }
+
+    // ------------------------------------------------------------------
+    // Java: Type accessor methods needed by ClassReader (P2 batch).
+    // ForAll/DelegatedType delegation needs the type arena, so those
+    // accessors take CompilerContext (ADR 0001 registered adapter).
+    // ------------------------------------------------------------------
+
+    /// Java: public List<Type> getParameterTypes() (base returns List.nil();
+    /// MethodType overrides; ForAll delegates to qtype).
+    pub fn get_parameter_types(&self, ctx: &crate::compiler_context::CompilerContext) -> List<TypeId> {
+        match &self.kind {
+            TypeKindData::MethodType { argtypes, .. } => argtypes.clone(),
+            TypeKindData::ForAll { qtype: Some(qtype), .. } => {
+                ctx.typ(*qtype).get_parameter_types(ctx)
+            }
+            _ => List::nil(),
+        }
+    }
+
+    /// Java: public Type getReturnType() (base returns Type.noType -> None;
+    /// MethodType overrides; ForAll delegates to qtype).
+    pub fn get_return_type(&self, ctx: &crate::compiler_context::CompilerContext) -> Option<TypeId> {
+        match &self.kind {
+            TypeKindData::MethodType { restype, .. } => *restype,
+            TypeKindData::ForAll { qtype: Some(qtype), .. } => ctx.typ(*qtype).get_return_type(ctx),
+            _ => None,
+        }
+    }
+
+    /// Java: public List<Type> getThrownTypes() (base returns List.nil();
+    /// MethodType overrides; ForAll delegates to qtype).
+    pub fn get_thrown_types(&self, ctx: &crate::compiler_context::CompilerContext) -> List<TypeId> {
+        match &self.kind {
+            TypeKindData::MethodType { thrown, .. } => thrown.clone(),
+            TypeKindData::ForAll { qtype: Some(qtype), .. } => ctx.typ(*qtype).get_thrown_types(ctx),
+            _ => List::nil(),
+        }
+    }
+
+    /// Java: public Type getEnclosingType() (base returns Type.noType -> None;
+    /// ClassType & friends return outer_field).
+    pub fn get_enclosing_type(&self) -> Option<TypeId> {
+        match &self.kind {
+            TypeKindData::ClassType { outer_field, .. }
+            | TypeKindData::ErasedClassType { outer_field, .. }
+            | TypeKindData::UnionClassType { outer_field, .. }
+            | TypeKindData::IntersectionClassType { outer_field, .. }
+            | TypeKindData::ErrorType { outer_field, .. } => *outer_field,
+            _ => None,
+        }
+    }
+
+    /// Java: public List<Type> getTypeArguments() (ClassType view).
+    pub fn get_type_arguments(&self) -> List<TypeId> {
+        match &self.kind {
+            TypeKindData::ClassType { typarams_field, .. }
+            | TypeKindData::ErasedClassType { typarams_field, .. }
+            | TypeKindData::UnionClassType { typarams_field, .. }
+            | TypeKindData::IntersectionClassType { typarams_field, .. }
+            | TypeKindData::ErrorType { typarams_field, .. } => {
+                typarams_field.clone().unwrap_or_else(List::nil)
+            }
+            _ => List::nil(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

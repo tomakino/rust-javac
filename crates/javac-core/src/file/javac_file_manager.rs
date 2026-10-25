@@ -1252,13 +1252,12 @@ mod tests {
     use super::{is_relative_uri, JavacFileManager};
     use crate::file::cache_fs_info::CacheFSInfo;
     use crate::util::context::Context;
+    use javac_fs::Path as FsPath;
     use crate::util::log::Log;
     use crate::util::options::Options;
-    use javac_fs::Path as FsPath;
     use javac_strings::JavaString;
-    use javac_tools::tools::file_object::FileObject;
-    use javac_tools::tools::java_file_manager::{JavaFileManager, Location};
-    use javac_tools::tools::java_file_object::{JavaFileObject, Kind};
+    use javac_tools::tools::java_file_manager::JavaFileManager;
+    use javac_tools::tools::java_file_object::Kind;
     use javac_tools::tools::standard_java_file_manager::StandardJavaFileManager;
     use javac_tools::tools::standard_location::StandardLocation;
     use std::path::PathBuf;
@@ -1309,10 +1308,6 @@ mod tests {
 
     fn js(s: &str) -> JavaString {
         JavaString::from(s)
-    }
-
-    fn path_buf(path: &FsPath) -> PathBuf {
-        path.to_path_buf()
     }
 
     #[test]

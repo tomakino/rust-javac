@@ -634,7 +634,21 @@ fn enter_class_named(
     java_base: SymbolId,
     text: &str,
 ) -> TypeId {
-    let class = enter_class_full(ctx, names, maps, java_base, name_of(names, text), None);
+    // Java: Symtab constructor uses enterClass(javaBase, flatname), which is
+    // lookupPackage(msym, packagePart) + defineClass(shortName, package).
+    // PORTING_RULES: the local enterClass(msym, flatname) overload is on the
+    // Symtab value; this free helper is called from the constructor, so the
+    // same two steps are performed here (owner = the entered package).
+    let flat = name_of(names, text);
+    let package = enter_package(ctx, names, maps, java_base, convert::package_part(&flat));
+    let class = enter_class_full(
+        ctx,
+        names,
+        maps,
+        java_base,
+        convert::short_name(&flat),
+        Some(package),
+    );
     ctx.sym(class).ty.expect("class symbol type")
 }
 

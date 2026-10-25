@@ -16,9 +16,12 @@
 //!   EnumSet.of(t), so the set is represented as a fixed array).
 //! * the Java overloads lookup(String)/lookup(int) become lookup and
 //!   lookup_value (§3 overloads).
-//! * TODO(Options/Option batch): instance(Context) uses the not yet ported
-//!   Options.instance and Option.PROFILE ("-profile"); left unimplemented
-//!   (no stand-in for Options).
+//! * instance(Context): Options.instance is ported; the Option.PROFILE enum
+//!   constant is not ported yet (option.rs has the "-profile" primary name
+//!   only), so the lookup uses Options.get("-profile"), which is exactly the
+//!   upstream get(PROFILE) implementation (get(option.primaryName())).
+//! * Context stores values by Rust type instead of a Context.Key<Profile>; the
+//!   type-slot cache preserves the upstream single-instance semantics.
 
 use crate::jvm::target::Target;
 use crate::util::context::Context;
@@ -128,10 +131,22 @@ impl Profile {
     /// TODO(Options/Option batch): Options.instance/options.get and
     /// Option.PROFILE ("-profile") are not ported; the entry point stays
     /// unimplemented (no substitute Options is invented).
-    pub fn instance(_context: &mut Context) -> Rc<Profile> {
-        unimplemented!(
-            "TODO(Options/Option batch): Profile.instance (Options and Option.PROFILE are not ported)"
-        )
+    pub fn instance(context: &mut Context) -> Rc<Profile> {
+        if let Some(instance) = context.get::<Profile>() {
+            return instance;
+        }
+        let options = crate::util::options::Options::instance(context);
+        // Java: String profileString = options.get(PROFILE);
+        let profile_string = options.get("-profile");
+        // Java: if (profileString != null) instance = lookup(profileString);
+        let mut instance = profile_string.as_deref().and_then(Profile::lookup);
+        // Java: if (instance == null) instance = DEFAULT;
+        if instance.is_none() {
+            instance = Some(Profile::DEFAULT);
+        }
+        let instance = Rc::new(instance.expect("DEFAULT profile"));
+        context.put(Rc::clone(&instance));
+        instance
     }
 }
 
@@ -199,10 +214,31 @@ mod tests {
         assert_eq!(Profile::DEFAULT.to_string(), "DEFAULT");
     }
 
+}
+
+#[cfg(test)]
+mod instance_tests {
+    use super::*;
+    use crate::util::context::Context;
+    use crate::util::options::Options;
+
     #[test]
-    #[should_panic(expected = "TODO(Options/Option batch)")]
-    fn instance_needs_the_options_port() {
-        let mut context = crate::util::context::Context::new();
-        let _ = Profile::instance(&mut context);
+    fn default_profile_is_default_and_cached() {
+        let mut context = Context::new();
+        let first = Profile::instance(&mut context);
+        assert_eq!(*first, Profile::DEFAULT);
+        let second = Profile::instance(&mut context);
+        assert!(Rc::ptr_eq(&first, &second), "Context caches the instance");
+    }
+
+    #[test]
+    fn profile_option_is_looked_up() {
+        let mut context = Context::new();
+        {
+            let options = Options::instance(&mut context);
+            options.put("-profile", "compact2");
+        }
+        let profile = Profile::instance(&mut context);
+        assert_eq!(*profile, Profile::COMPACT2);
     }
 }

@@ -21,7 +21,8 @@
 use crate::code::attribute::Attribute;
 use crate::code::directive::Directive;
 use crate::code::kinds;
-use crate::code::scope::{EntryId, LookupKind, Scope};
+use crate::code::scope::{probe_index, EntryId, LookupKind, Scope, ScopeData, TableSlot};
+use std::rc::Rc;
 use crate::code::symbol::Symbol;
 use crate::code::type_::Type;
 use crate::ids::{AttributeId, DirectiveId, ScopeId, SymbolId, TreeId, TypeId};
@@ -217,6 +218,100 @@ impl CompilerContext {
     }
 
     /// Java: ScopeImpl.anyMatch(Predicate<Symbol>)
+    /// Java: WriteableScope.create(owner) (Scope.WriteableScope.create/dups).
+    /// Creates a fresh writable scope and returns its arena ID.
+    pub fn scope_create(&mut self, owner: Option<SymbolId>) -> ScopeId {
+        self.alloc_scope(Scope::new_scope_impl(owner))
+    }
+
+    /// Java: scope.dup(newOwner) — shares the hash table with the given scope.
+    pub fn scope_dup(&mut self, scope: ScopeId, new_owner: Option<SymbolId>) -> ScopeId {
+        let new_scope = self
+            .scopes
+            .get_mut(scope.index())
+            .dup(scope, new_owner);
+        ScopeId::new(self.scopes.push(new_scope))
+    }
+
+    /// Java: scope.dupUnshared(newOwner) — a new hash table; no sharing.
+    pub fn scope_dup_unshared(&mut self, scope: ScopeId, new_owner: Option<SymbolId>) -> ScopeId {
+        let new_scope = {
+            let scopes = &self.scopes;
+            scopes
+                .get(scope.index())
+                .dup_unshared(scope, new_owner, scopes)
+        };
+        ScopeId::new(self.scopes.push(new_scope))
+    }
+
+    /// Java: scope.leave() — removes this scope's entries from the shared table
+    /// and returns the enclosing scope (the upstream callers reassign
+    /// typevars = typevars.leave()).
+    pub fn scope_leave(&mut self, scope: ScopeId) -> ScopeId {
+        // Read the data needed from the leaving scope (clone the shared Rc
+        // handles first; borrow rules: no RefCell borrow across members).
+        let (next_id, table, entries, elems, nelems, has_symbols) = {
+            let leaving = self.scopes.get(scope.index());
+            let ScopeData::ScopeImpl { next, table, entries, elems, nelems, .. } =
+                &leaving.data
+            else {
+                panic!("ClassCastException: not a ScopeImpl");
+            };
+            (
+                *next,
+                Rc::clone(table),
+                Rc::clone(entries),
+                *elems,
+                *nelems,
+                true,
+            )
+        };
+        let next_id = next_id.expect("leave() on a scope without an enclosing scope");
+        let same_table = {
+            let next_scope = self.scopes.get(next_id.index());
+            match &next_scope.data {
+                ScopeData::ScopeImpl { table: next_table, .. } => Rc::ptr_eq(&table, next_table),
+                _ => false,
+            }
+        };
+        if same_table {
+            let mut table_ref = table.borrow_mut();
+            let entries_ref = entries.borrow();
+            let mut current = elems;
+            while let Some(entry_id) = current {
+                let entry = &entries_ref[entry_id.index() as usize];
+                let sym = entry.sym.expect("scope entry without symbol");
+                let name = self.symbol_name(sym);
+                let mask = table_ref.len() - 1;
+                let hash = probe_index(&name, &table_ref, mask, &entries_ref, &self.symbols);
+                match table_ref[hash] {
+                    TableSlot::Entry(head) if head == entry_id => {
+                        table_ref[hash] = match entries_ref[entry_id.index() as usize].shadowed {
+                            Some(shadowed) => TableSlot::Entry(shadowed),
+                            None => TableSlot::Empty,
+                        };
+                    }
+                    _ => panic!("leave(): entry not found in the shared table"),
+                }
+                current = entry.next_sibling;
+            }
+            let next_scope = self.scopes.get_mut(next_id.index());
+            let ScopeData::ScopeImpl {
+                shared,
+                nelems: next_nelems,
+                ..
+            } = &mut next_scope.data
+            else {
+                panic!("ClassCastException: not a ScopeImpl");
+            };
+            assert!(*shared > 0, "leave(): enclosing scope is not shared");
+            *shared -= 1;
+            *next_nelems = nelems;
+        }
+        let _ = has_symbols;
+        next_id
+    }
+
     pub fn scope_any_match(&self, scope: ScopeId, filter: &dyn Fn(SymbolId) -> bool) -> bool {
         self.scope(scope).any_match(filter)
     }
