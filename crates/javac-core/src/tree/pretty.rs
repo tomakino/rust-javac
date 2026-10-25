@@ -459,7 +459,7 @@ impl Pretty {
             Tag::CLASSDEF => self.visit_class_def(ctx, tree),
             Tag::METHODDEF => self.visit_method_def(ctx, tree),
             Tag::VARDEF => self.visit_var_def(ctx, tree),
-            Tag::SKIP => self.print(";"),
+            Tag::SKIP => self.visit_skip(ctx, tree),
             Tag::BLOCK => self.visit_block(ctx, tree),
             Tag::DOLOOP => self.visit_do_loop(ctx, tree),
             Tag::WHILELOOP => self.visit_while_loop(ctx, tree),
@@ -529,7 +529,7 @@ impl Pretty {
             Tag::TYPECAST => self.visit_type_cast(ctx, tree),
             Tag::TYPETEST => self.visit_type_test(ctx, tree),
             Tag::BINDINGPATTERN => self.visit_binding_pattern(ctx, tree),
-            Tag::DEFAULTCASELABEL => self.print("default"),
+            Tag::DEFAULTCASELABEL => self.visit_default_case_label(ctx, tree),
             Tag::PARENTHESIZEDPATTERN => self.visit_parenthesized_pattern(ctx, tree),
             Tag::GUARDPATTERN => self.visit_guard_pattern(ctx, tree),
             Tag::INDEXED => self.visit_indexed(ctx, tree),
@@ -554,10 +554,25 @@ impl Pretty {
             Tag::PROVIDES => self.visit_provides(ctx, tree),
             Tag::REQUIRES => self.visit_requires(ctx, tree),
             Tag::USES => self.visit_uses(ctx, tree),
-            Tag::ERRONEOUS => self.print("(ERROR)"),
+            Tag::ERRONEOUS => self.visit_erroneous(ctx, tree),
             Tag::LETEXPR => self.visit_let_expr(ctx, tree),
             Tag::NO_TAG => self.visit_tree(ctx, tree),
         }
+    }
+
+    /// Java: public void visitSkip(JCSkip tree)
+    fn visit_skip(&mut self, _ctx: &CompilerContext, _tree: TreeId) {
+        self.print(";");
+    }
+
+    /// Java: public void visitDefaultCaseLabel(JCTree.JCDefaultCaseLabel that)
+    fn visit_default_case_label(&mut self, _ctx: &CompilerContext, _tree: TreeId) {
+        self.print("default");
+    }
+
+    /// Java: public void visitErroneous(JCErroneous tree)
+    fn visit_erroneous(&mut self, _ctx: &CompilerContext, _tree: TreeId) {
+        self.print("(ERROR)");
     }
 
     fn visit_tree(&mut self, ctx: &CompilerContext, tree: TreeId) {

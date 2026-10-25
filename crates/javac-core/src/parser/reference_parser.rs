@@ -100,6 +100,9 @@ impl ReferenceParser {
     ///
     /// The signature splitting and parenthesis validation are ported 1:1; the
     /// fragment parsers below need JavacParser (TODO(parser S7)).
+    // TODO(parser S7/S8 wiring): ReferenceParser is not fully wired; the
+    // late-init shape mirrors the upstream Java method (registered clippy allow).
+    #[allow(clippy::needless_late_init)]
     pub fn parse(&self, sig: &JavaString) -> Result<Reference, ParseException> {
         // Break sig apart into moduleName qualifiedExpr member paramTypes.
         let slash = sig.index_of_char(b'/' as u16, 0);
@@ -206,7 +209,6 @@ mod tests {
     use super::*;
     use crate::util::name::Name;
     use crate::util::names::Names;
-    use std::rc::Rc;
 
     fn sig(text: &str) -> JavaString {
         JavaString::from(text)

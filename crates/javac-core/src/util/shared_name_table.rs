@@ -1,4 +1,13 @@
 // Origin: com/sun/tools/javac/util/SharedNameTable.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P2/P3 utility-service batch.
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: getIndex (SharedNameTable.java:171)
+// - NOT PORTED: getByteLength (SharedNameTable.java:176)
+// - NOT PORTED: getByteAt (SharedNameTable.java:181)
+// - NOT PORTED: getByteOffset (SharedNameTable.java:191)
+// - NOT PORTED: hashCode (SharedNameTable.java:198)
+// End of §19 gap registration.
 
 //! Implementation of Name.Table that stores all names in a single shared byte
 //! array, expanding it as needed. This avoids the overhead incurred by using an

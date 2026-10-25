@@ -1,4 +1,12 @@
 // Origin: com/sun/tools/javac/util/GraphUtils.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P2/P3 utility-service batch.
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: nodeAttributes (GraphUtils.java:84)
+// - NOT PORTED: dependencyAttributes (GraphUtils.java:88)
+// - NOT PORTED: formatProperties (GraphUtils.java:252)
+// - NOT PORTED: wrap (GraphUtils.java:258)
+// End of §19 gap registration.
 
 //! <p><b>This is NOT part of any supported API.
 //! If you write code that depends on this, you do so at your own risk.

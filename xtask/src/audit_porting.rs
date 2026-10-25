@@ -301,7 +301,9 @@ pub fn rust_coverage(rust: &str, java_name: &str, snake: &str) -> Coverage {
         return Coverage::Defined;
     }
     for line in rust.lines() {
-        let is_registration = line.contains("TODO") || line.contains("unimplemented");
+        let is_registration = line.contains("TODO")
+            || line.contains("unimplemented")
+            || line.contains("NOT PORTED");
         if is_registration && (line.contains(snake) || line.contains(java_name)) {
             return Coverage::Registered;
         }
@@ -371,6 +373,7 @@ where
         let methods = extract_methods(&java, &class_name);
         let mut covered = 0;
         let mut registered = 0;
+        let mut mentioned = 0;
         let mut missing = 0;
         for method in &methods {
             report.methods += 1;
@@ -417,6 +420,122 @@ where
     report
 }
 
+
+/// 归一化本地 fn 名:去掉 PORTING_RULES 的重载后缀/前缀适配片段
+/// (_impl/_full/_at/_with_kind/_set_/_get_ ...)以及 _with_ 之后的限定部分。
+pub fn normalize_fn_name(name: &str) -> String {
+    let mut base = name.to_string();
+    for suffix in ["_impl", "_full", "_at", "_with_kind", "_with_annotations"] {
+        if let Some(stripped) = base.strip_suffix(suffix) {
+            base = stripped.to_string();
+        }
+    }
+    if let Some((head, _)) = base.split_once("_with_") {
+        base = head.to_string();
+    }
+    base
+}
+
+/// 从 Rust 文件提取本地 fn 名(行级扫描;包含 pub/trait/inherent 定义)。
+pub fn extract_rust_fns(rust: &str) -> Vec<(String, usize)> {
+    let mut out = Vec::new();
+    let mut in_test_module = false;
+    for (idx, line) in rust.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("#[cfg(test)]") || trimmed.starts_with("mod tests") {
+            in_test_module = true;
+        }
+        if in_test_module {
+            continue;
+        }
+        let Some(pos) = trimmed.find("fn ") else {
+            continue;
+        };
+        let rest = &trimmed[pos + 3..];
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() {
+            continue;
+        }
+        out.push((name, idx + 1));
+    }
+    out
+}
+
+/// 反向审计结果:本地 fn -> 官方方法。
+#[derive(Debug, Default)]
+pub struct ReverseReport {
+    pub fns: usize,
+    pub matched: Vec<String>,
+    pub adapters: Vec<String>,
+    pub orphans: Vec<String>,
+    /// (official snake, local fn) 命名偏离候选。
+    pub name_deviations: Vec<(String, String)>,
+}
+
+/// 判断 local 的标识符词是否为 official 标识符词的严格子集(命名丢词检测)。
+fn word_subset(local: &str, official: &str) -> bool {
+    let lw: Vec<&str> = local.split('_').filter(|s| !s.is_empty()).collect();
+    let ow: Vec<&str> = official.split('_').filter(|s| !s.is_empty()).collect();
+    !lw.is_empty() && lw.len() < ow.len() && lw.iter().all(|w| ow.contains(w))
+}
+
+/// 通用 trait/标准库实现名(非上游方法,归为适配实现)。
+const ADAPTER_FN_NAMES: &[&str] = &[
+    "new", "default", "from", "into", "deref", "deref_mut", "drop", "clone", "fmt", "eq",
+    "ne", "hash", "cmp", "partial_cmp", "next", "len", "is_empty", "boxed", "to_string",
+];
+
+/// 对单个已映射文件做双向审计(reverse 部分),可单测(纯函数)。
+pub fn reverse_audit(java: &str, rust: &str, class_name: &str) -> ReverseReport {
+    let methods = extract_methods(java, class_name);
+    let mut official: Vec<String> = methods
+        .iter()
+        .filter(|m| !m.is_ctor)
+        .map(|m| to_snake_case(&m.name))
+        .collect();
+    official.sort();
+    official.dedup();
+    let official_set: std::collections::HashSet<&str> =
+        official.iter().map(String::as_str).collect();
+    let mut report = ReverseReport::default();
+    for (name, line) in extract_rust_fns(rust) {
+        report.fns += 1;
+        let normalized = normalize_fn_name(&name);
+        if official_set.contains(normalized.as_str()) {
+            report.matched.push(name);
+            continue;
+        }
+        // A local fn whose normalized words are a proper subset of an official
+        // snake name indicates a naming deviation that dropped a word (e.g.
+        // class_interface_body vs class_interface_or_record_body).
+        let deviation = official_set
+            .iter()
+            .find(|off| {
+                off.starts_with(&normalized) || word_subset(&normalized, off)
+            })
+            .map(|off| ((*off).to_string(), name.clone()));
+        if let Some(dev) = deviation {
+            report.name_deviations.push(dev);
+            continue;
+        }
+        let prev_context = rust.lines().nth(line.saturating_sub(2)).unwrap_or("");
+        let adapter = ADAPTER_FN_NAMES.contains(&name.as_str())
+            || prev_context.contains("PORTING_RULES")
+            || prev_context.contains("Java:")
+            || prev_context.contains("TODO")
+            || prev_context.contains("adapter");
+        if adapter {
+            report.adapters.push(name);
+        } else {
+            report.orphans.push(name);
+        }
+    }
+    report
+}
+
 pub fn run(args: &[String]) -> Result<(), String> {
     let strict = args.iter().any(|a| a == "--strict");
     let max_missing = args
@@ -429,11 +548,70 @@ pub fn run(args: &[String]) -> Result<(), String> {
         fs::read_to_string(MANIFEST).map_err(|e| format!("read {MANIFEST}: {e}"))?;
     let reference = Path::new(REFERENCE);
     let core = Path::new(CORE_SRC);
+    let rows = parse_manifest(&manifest_text);
     let report = audit_with(
         &manifest_text,
         |java| fs::read_to_string(reference.join(java)).ok(),
         |rust| fs::read_to_string(core.join(rust)).ok(),
     );
+    // Reverse audit (local fn -> upstream method) for every ported file.
+    let mut reverse_reports: Vec<(String, ReverseReport)> = Vec::new();
+    for row in &rows {
+        if !row.ported {
+            continue;
+        }
+        let Ok(java) = fs::read_to_string(reference.join(&row.java)) else {
+            continue;
+        };
+        let Ok(rust) = fs::read_to_string(core.join(&row.rust)) else {
+            continue;
+        };
+        let class_name = Path::new(&row.java)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        reverse_reports.push((row.java.clone(), reverse_audit(&java, &rust, &class_name)));
+    }
+    // Machine-readable audit file (target/porting-audit.txt).
+    let mut machine = String::new();
+    machine.push_str("# porting audit (machine-readable; generated by cargo xtask audit-porting)\n");
+    machine.push_str(&format!(
+        "# summary java_files={} mapped_present={} mapped_missing={} unmapped={} methods={} covered={} registered={} mentioned={} missing={}\n",
+        report.java_files,
+        report.mapped_present,
+        report.mapped_missing,
+        report.unmapped,
+        report.methods,
+        report.covered,
+        report.registered,
+        report.mentioned,
+        report.missing
+    ));
+    for (java, method, line, rust) in &report.missing_list {
+        machine.push_str(&format!("POS {} {} {} {}\n", java, method, line, rust));
+    }
+    for (java, method, line, rust) in &report.mentioned_list {
+        machine.push_str(&format!("MENTIONED {} {} {} {}\n", java, method, line, rust));
+    }
+    let mut orphan_total = 0usize;
+    let mut adapter_total = 0usize;
+    let mut deviation_total = 0usize;
+    for (java, rev) in &reverse_reports {
+        for orphan in &rev.orphans {
+            machine.push_str(&format!("ORPHAN {} {}\n", java, orphan));
+            orphan_total += 1;
+        }
+        for adapter in &rev.adapters {
+            machine.push_str(&format!("ADAPTER {} {}\n", java, adapter));
+            adapter_total += 1;
+        }
+        for (official, local) in &rev.name_deviations {
+            machine.push_str(&format!("NAME-DEVIATION {} {} {}\n", java, official, local));
+            deviation_total += 1;
+        }
+    }
+    fs::write("target/porting-audit.txt", &machine)
+        .map_err(|e| format!("write target/porting-audit.txt: {e}"))?;
     println!("== porting audit (method-level coverage, PORTING_RULES §19) ==");
     println!(
         "java files: {} (mapped+present: {}, mapped+missing: {}, unmapped: {})",
@@ -470,6 +648,14 @@ pub fn run(args: &[String]) -> Result<(), String> {
             );
         }
     }
+    println!(
+        "reverse audit: local fns={}, matched={}, adapters={}, orphans={}, naming-deviations={} (target/porting-audit.txt)",
+        reverse_reports.iter().map(|(_, r)| r.fns).sum::<usize>(),
+        reverse_reports.iter().map(|(_, r)| r.matched.len()).sum::<usize>(),
+        adapter_total,
+        orphan_total,
+        deviation_total
+    );
     if strict && report.missing > 0 {
         return Err(format!(
             "porting audit: {} missing methods (strict mode)",
@@ -565,6 +751,37 @@ public final class Sample<T> extends Object {
         assert_eq!(
             rust_coverage("// v.visitString(this);", "visitString", "visit_string"),
             Coverage::Mentioned
+        );
+    }
+
+
+    #[test]
+    fn normalize_fn_name_strips_overload_suffixes() {
+        assert_eq!(normalize_fn_name("class_interface_or_record_body_impl"), "class_interface_or_record_body");
+        assert_eq!(normalize_fn_name("formal_parameters_full"), "formal_parameters");
+        assert_eq!(normalize_fn_name("member_reference_suffix_at"), "member_reference_suffix");
+        assert_eq!(normalize_fn_name("modifiers_with_annotations"), "modifiers");
+        assert_eq!(normalize_fn_name("plain_name"), "plain_name");
+    }
+
+    #[test]
+    fn reverse_audit_matches_adapters_and_orphans() {
+        let java = "class Demo {\n    void classInterfaceOrRecordBody() { }\n    void plainMethod() { }\n}\n";
+        let rust = "fn class_interface_or_record_body_impl() {}\nfn plain_method() {}\n// PORTING_RULES adapter: helper for scanner API\nfn scanner_helper() {}\nfn accidental_orphan() {}\nfn class_interface_body() {}\n";
+        let report = reverse_audit(java, rust, "Demo");
+        assert_eq!(report.fns, 5);
+        assert_eq!(report.matched.len(), 2, "matched: {:?}", report.matched);
+        assert_eq!(report.adapters.len(), 1, "adapters: {:?}", report.adapters);
+        assert_eq!(report.orphans.len(), 1, "orphans: {:?}", report.orphans);
+        // class_interface_body is a strict prefix of class_interface_or_record_body.
+        assert!(
+            report
+                .name_deviations
+                .iter()
+                .any(|(official, local)| official == "class_interface_or_record_body"
+                    && local == "class_interface_body"),
+            "deviations: {:?}",
+            report.name_deviations
         );
     }
 

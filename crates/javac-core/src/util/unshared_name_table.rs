@@ -1,4 +1,13 @@
 // Origin: com/sun/tools/javac/util/UnsharedNameTable.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P2/P3 utility-service batch.
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: create (UnsharedNameTable.java:41)
+// - NOT PORTED: getIndex (UnsharedNameTable.java:153)
+// - NOT PORTED: getByteLength (UnsharedNameTable.java:158)
+// - NOT PORTED: getByteAt (UnsharedNameTable.java:163)
+// - NOT PORTED: getByteOffset (UnsharedNameTable.java:173)
+// End of §19 gap registration.
 
 //! Implementation of Name.Table that stores names in individual arrays.
 //!

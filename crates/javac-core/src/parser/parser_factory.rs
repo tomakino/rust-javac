@@ -35,6 +35,8 @@ use crate::util::options::Options;
 /// A factory for creating parsers (Java: public class ParserFactory).
 pub struct ParserFactory {
     pub(crate) log: Rc<std::cell::RefCell<Log>>,
+    /// Upstream ParserFactory.tokens (unwired yet: TODO(parser wiring batch)).
+    #[allow(dead_code)]
     pub(crate) tokens: Rc<crate::parser::tokens::Tokens>,
     pub(crate) source: Source,
     pub(crate) preview: Option<Rc<Preview>>,

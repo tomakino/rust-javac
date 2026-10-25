@@ -1,4 +1,25 @@
 // Origin: com/sun/tools/javac/tree/TreeInfo.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: tree batch (tree nodes/scanners for the corresponding upstream feature).
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: getTree (TreeInfo.java:663)
+// - NOT PORTED: getStartPosition (TreeInfo.java:664)
+// - NOT PORTED: getPreferredPosition (TreeInfo.java:665)
+// - NOT PORTED: getEndPosition (TreeInfo.java:666)
+// - NOT PORTED: visitIdent (TreeInfo.java:721)
+// - NOT PORTED: visitSelect (TreeInfo.java:725)
+// - NOT PORTED: scan (TreeInfo.java:749)
+// - NOT PORTED: visitTopLevel (TreeInfo.java:753)
+// - NOT PORTED: visitModuleDef (TreeInfo.java:757)
+// - NOT PORTED: visitPackageDef (TreeInfo.java:761)
+// - NOT PORTED: visitClassDef (TreeInfo.java:765)
+// - NOT PORTED: visitMethodDef (TreeInfo.java:769)
+// - NOT PORTED: visitVarDef (TreeInfo.java:773)
+// - NOT PORTED: visitTypeParameter (TreeInfo.java:777)
+// - NOT PORTED: scan (TreeInfo.java:810)
+// - NOT PORTED: scan (TreeInfo.java:1308)
+// - NOT PORTED: visitAnnotation (TreeInfo.java:1314)
+// End of §19 gap registration.
 
 //! Utility class containing inspector methods for trees.
 //!

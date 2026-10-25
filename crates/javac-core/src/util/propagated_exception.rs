@@ -1,4 +1,9 @@
 // Origin: com/sun/tools/javac/util/PropagatedException.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P2/P3 utility-service batch.
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: getCause (PropagatedException.java:47)
+// End of §19 gap registration.
 
 //! Used to propagate exceptions through to the user.
 //!

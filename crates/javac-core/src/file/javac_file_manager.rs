@@ -1,4 +1,10 @@
 // Origin: com/sun/tools/javac/file/JavacFileManager.java @ 982d53c (jdk-17.0.19-ga)
+//
+// clippy debt registration (pre-existing file-manager batch items, NOT S7b;
+// cleanup in the file-manager/classpath batch): capitalized-acronym names
+// FORWARD/REVERSE (upstream names kept, section 3), match-to-let 497,
+// sort_by_key 611, &PathBuf 814, ?-operator 836, length-comparison 947/971,
+// unused imports/path_buf/clone-to-slice in the test module (1230-1458).
 
 //! A file manager for javac: the file objects are PathFileObject values over javac-fs paths, and
 //! each search-path element is served by a Container (directory / archive / system image).

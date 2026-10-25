@@ -177,6 +177,8 @@ impl BaseFileManager {
     }
 
     /// Java: protected final Locations locations; (the field is exposed to JavacFileManager).
+    /// Not wired yet (TODO(file manager wiring batch)).
+    #[allow(dead_code)]
     pub(crate) fn locations(&self) -> &Locations {
         &self.locations
     }

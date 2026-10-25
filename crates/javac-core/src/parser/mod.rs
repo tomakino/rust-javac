@@ -1,3 +1,7 @@
+// Java package com.sun.tools.javac.parser maps to parser/mod.rs (upstream package
+// name kept, PORTING_RULES section 3); clippy's module_inception is expected.
+#![allow(clippy::module_inception)]
+
 //! com.sun.tools.javac.parser
 //!
 //! The lexer/parser layer (Java: package com.sun.tools.javac.parser).

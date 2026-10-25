@@ -1,4 +1,20 @@
 // Origin: com/sun/tools/javac/code/Types.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (Types service, method-level audit).
+// Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check and the
+// ClassReader/complete() symbol graph); the file currently ports the P1/P2
+// subset needed by the parser/tree layers.
+// Lead cross-check of reference code/Types.java against the local fn names
+// reports 164 not-yet-ported semantic methods. Representative groups (the
+// authoritative per-method list is maintained by the Lead in STATUS):
+//   - TypeRelation visitors: visitClassType/visitWildcardType/visitTypeVar/
+//     visitArrayType/visitErrorType dispatch for isSubtype/isSameType families;
+//   - type projection helpers: mapTypeArgument/TypeArgumentProjection/upward/
+//     downward/complement/captures/makeWildcard (TypeProjection);
+//   - lub/glb/capture fresh-type machinery and adapt/subst recursion paths;
+//   - memberType/asSuper recursion over completed symbol graphs (needs the
+//     ClassReader/Enter work).
+// No substitutes are implemented here; these are registered for the P3 batch.
+// End of §19 gap registration.
 
 //! Utility routines for the Type interface.
 //!

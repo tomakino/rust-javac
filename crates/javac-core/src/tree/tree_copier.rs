@@ -1,4 +1,32 @@
 // Origin: com/sun/tools/javac/tree/TreeCopier.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: tree batch (tree nodes/scanners for the corresponding upstream feature).
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: visitAssignment (TreeCopier.java:109)
+// - NOT PORTED: visitCompoundAssignment (TreeCopier.java:117)
+// - NOT PORTED: visitConditionalExpression (TreeCopier.java:187)
+// - NOT PORTED: visitDoWhileLoop (TreeCopier.java:202)
+// - NOT PORTED: visitExpressionStatement (TreeCopier.java:217)
+// - NOT PORTED: visitEnhancedForLoop (TreeCopier.java:224)
+// - NOT PORTED: visitIdentifier (TreeCopier.java:243)
+// - NOT PORTED: visitArrayAccess (TreeCopier.java:265)
+// - NOT PORTED: visitLabeledStatement (TreeCopier.java:273)
+// - NOT PORTED: visitMethodInvocation (TreeCopier.java:300)
+// - NOT PORTED: visitLambdaExpression (TreeCopier.java:336)
+// - NOT PORTED: visitMemberSelect (TreeCopier.java:358)
+// - NOT PORTED: visitMemberReference (TreeCopier.java:365)
+// - NOT PORTED: visitEmptyStatement (TreeCopier.java:373)
+// - NOT PORTED: visitCompilationUnit (TreeCopier.java:410)
+// - NOT PORTED: visitParameterizedType (TreeCopier.java:435)
+// - NOT PORTED: visitUnionType (TreeCopier.java:443)
+// - NOT PORTED: visitIntersectionType (TreeCopier.java:450)
+// - NOT PORTED: visitArrayType (TreeCopier.java:457)
+// - NOT PORTED: visitPrimitiveType (TreeCopier.java:472)
+// - NOT PORTED: visitInstanceOf (TreeCopier.java:486)
+// - NOT PORTED: visitGuardedPattern (TreeCopier.java:501)
+// - NOT PORTED: visitVariable (TreeCopier.java:529)
+// - NOT PORTED: visitOther (TreeCopier.java:606)
+// End of §19 gap registration.
 
 //! Creates a copy of a tree, using a given TreeMaker. Names, literal values,
 //! etc are shared with the original.

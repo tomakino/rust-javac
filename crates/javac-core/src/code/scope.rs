@@ -1,4 +1,38 @@
 // Origin: com/sun/tools/javac/code/Scope.java @ 982d53c (jdk-17.0.19-ga)
+// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
+// Not yet ported upstream methods (no substitutes in this file):
+// - NOT PORTED: isStaticallyImported (Scope.java:162)
+// - NOT PORTED: create (Scope.java:268)
+// - NOT PORTED: hasNext (Scope.java:581)
+// - NOT PORTED: doNext (Scope.java:598)
+// - NOT PORTED: skipToNextMatchingEntry (Scope.java:619)
+// - NOT PORTED: hasNext (Scope.java:635)
+// - NOT PORTED: doNext (Scope.java:651)
+// - NOT PORTED: isStaticallyImported (Scope.java:672)
+// - NOT PORTED: toString (Scope.java:676)
+// - NOT PORTED: finalizeScope (Scope.java:749)
+// - NOT PORTED: finalizeSingleScope (Scope.java:755)
+// - NOT PORTED: importByName (Scope.java:799)
+// - NOT PORTED: importType (Scope.java:803)
+// - NOT PORTED: appendScope (Scope.java:807)
+// - NOT PORTED: finalizeScope (Scope.java:830)
+// - NOT PORTED: isStaticallyImported (Scope.java:871)
+// - NOT PORTED: importAll (Scope.java:884)
+// - NOT PORTED: isFilled (Scope.java:898)
+// - NOT PORTED: accepts (Scope.java:905)
+// - NOT PORTED: doLookup (Scope.java:939)
+// - NOT PORTED: doLookup (Scope.java:963)
+// - NOT PORTED: isStaticallyImported (Scope.java:984)
+// - NOT PORTED: isStaticallyImported (Scope.java:988)
+// - NOT PORTED: importFrom (Scope.java:999)
+// - NOT PORTED: doLookup (Scope.java:1013)
+// - NOT PORTED: prependSubScope (Scope.java:1033)
+// - NOT PORTED: appendSubScope (Scope.java:1042)
+// - NOT PORTED: getMark (Scope.java:1061)
+// - NOT PORTED: toString (Scope.java:1066)
+// - NOT PORTED: isStaticallyImported (Scope.java:1110)
+// End of §19 gap registration.
 
 //! A scope represents an area of visibility in a Java program. The Scope class
 //! is a container for symbols which provides efficient access to symbols given

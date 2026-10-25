@@ -1,4 +1,8 @@
 // Origin: com/sun/tools/javac/parser/DocCommentParser.java @ 982d53c (jdk-17.0.19-ga)
+//
+// clippy debt registration (pre-existing doc-comment batch items, NOT S7b;
+// cleanup in the doc-comment completion batch): collapsible-if 1032,
+// mutable-key-type 1536/1689 (Rc<DCTree> keys, upstream identity map).
 
 //! A parser for doc comments, producing DocTree nodes.
 //!
@@ -83,6 +87,8 @@ enum TagKind {
 /// Java: private enum WhitespaceRetentionPolicy
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WhitespaceRetentionPolicy {
+    /// Not wired yet (TODO(doc comment S8 wiring batch)).
+    #[allow(dead_code)]
     RetainAll,
     RemoveFirstSpace,
     RemoveAll,
