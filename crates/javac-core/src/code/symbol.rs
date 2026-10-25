@@ -707,9 +707,175 @@ pub enum SymbolKind {
     },
 }
 
+
+/// Java: Symbol.Completer
+///
+/// PORTING_RULES: Java throws CompletionFailure; the Rust port returns
+/// Result<(), CompletionFailure> from complete(). The compiler context is passed
+/// explicitly because symbols are arena values (ADR 0001).
+pub trait Completer {
+    /// Java: void complete(Symbol sym) throws CompletionFailure
+    fn complete(&mut self, sym: SymbolId) -> Result<(), CompletionFailure>;
+
+    /// Java: default boolean isTerminal() { return false; }
+    fn is_terminal(&self) -> bool {
+        false
+    }
+}
+
+/// Java: Symbol.Completer.NULL_COMPLETER (a terminal completer that does nothing).
+pub struct NullCompleter;
+
+impl Completer for NullCompleter {
+    fn complete(&mut self, _sym: SymbolId) -> Result<(), CompletionFailure> {
+        Ok(())
+    }
+
+    fn is_terminal(&self) -> bool {
+        true
+    }
+}
+
+/// Java: public static class Symbol.CompletionFailure extends RuntimeException
+///
+/// PORTING_RULES: Rust has no unchecked exceptions, so CompletionFailure is a
+/// plain error value returned in Result; diagSupplier -> a boxed closure that is
+/// evaluated lazily (RefCell cache like the upstream lazy diag field).
+pub struct CompletionFailure {
+    /// Java: public final transient DeferredCompletionFailureHandler dcfh
+    pub dcfh: Option<Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>>,
+    /// Java: public transient Symbol sym
+    pub sym: Option<SymbolId>,
+    /// Java: private transient JCDiagnostic diag
+    ///
+    /// PORTING_RULES: boxed so that CompletionFailure stays a small error
+    /// value (upstream Java has no error-size concern; the field semantics are
+    /// unchanged).
+    diag: std::cell::RefCell<Option<Box<crate::util::jc_diagnostic::JCDiagnostic>>>,
+    /// Java: private transient Supplier<JCDiagnostic> diagSupplier
+    diag_supplier: Option<Box<dyn Fn() -> crate::util::jc_diagnostic::JCDiagnostic>>,
+}
+
+impl CompletionFailure {
+    /// Java: CompletionFailure(Symbol sym, Supplier<JCDiagnostic> diagSupplier,
+    /// DeferredCompletionFailureHandler dcfh)
+    pub fn new(
+        sym: Option<SymbolId>,
+        diag_supplier: Box<dyn Fn() -> crate::util::jc_diagnostic::JCDiagnostic>,
+        dcfh: Option<Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>>,
+    ) -> CompletionFailure {
+        CompletionFailure {
+            dcfh,
+            sym,
+            diag: std::cell::RefCell::new(None),
+            diag_supplier: Some(diag_supplier),
+        }
+    }
+
+    /// Java: public JCDiagnostic getDiagnostic()
+    pub fn get_diagnostic(&self) -> Option<crate::util::jc_diagnostic::JCDiagnostic> {
+        {
+            let mut cache = self.diag.borrow_mut();
+            if cache.is_none() && let Some(supplier) = &self.diag_supplier {
+                *cache = Some(Box::new(supplier()));
+            }
+        }
+        self.diag.borrow().as_ref().map(|diag| (**diag).clone())
+    }
+
+    /// Java: public String getMessage()
+    pub fn get_message(&self) -> crate::util::java_string::JavaString {
+        match self.get_diagnostic() {
+            Some(diag) => diag.get_message(None),
+            None => crate::util::java_string::JavaString::new(),
+        }
+    }
+
+    /// Java: public JCDiagnostic getDetailValue()
+    pub fn get_detail_value(&self) -> Option<crate::util::jc_diagnostic::JCDiagnostic> {
+        self.get_diagnostic()
+    }
+
+    /// Java: public void resetDiagnostic(Supplier<JCDiagnostic> diagSupplier)
+    pub fn reset_diagnostic(
+        &mut self,
+        diag_supplier: Box<dyn Fn() -> crate::util::jc_diagnostic::JCDiagnostic>,
+    ) {
+        self.diag_supplier = Some(diag_supplier);
+        *self.diag.borrow_mut() = None;
+    }
+}
+
+impl std::fmt::Display for CompletionFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.get_message().to_string_lossy())
+    }
+}
+
+impl std::fmt::Debug for CompletionFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CompletionFailure: {}", self.get_message().to_string_lossy())
+    }
+}
+
+impl std::error::Error for CompletionFailure {}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::code::kinds::{KindName, KindSelector};
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    fn test_diag() -> crate::util::jc_diagnostic::JCDiagnostic {
+        let mut ctx = crate::util::context::Context::new();
+        let messages = crate::util::javac_messages::JavacMessages::instance(&mut ctx);
+        let factory = crate::util::jc_diagnostic::Factory::new(messages, "compiler");
+        factory.fragment(crate::resources::compiler_properties::fragments::illegal_start_of_class_file().into())
+    }
+
+    #[test]
+    fn completion_failure_caches_lazy_diagnostic() {
+        let calls = Rc::new(Cell::new(0));
+        let calls_for_supplier = Rc::clone(&calls);
+        let failure = CompletionFailure::new(
+            None,
+            Box::new(move || {
+                calls_for_supplier.set(calls_for_supplier.get() + 1);
+                test_diag()
+            }),
+            None,
+        );
+        assert_eq!(calls.get(), 0);
+        let first = failure.get_diagnostic();
+        assert!(first.is_some());
+        assert_eq!(calls.get(), 1);
+        let _second = failure.get_diagnostic();
+        assert_eq!(calls.get(), 1, "the diagnostic is cached like the Java field");
+        assert!(!failure.get_message().is_empty());
+    }
+
+    #[test]
+    fn completion_failure_reset_diagnostic_recomputes() {
+        let calls = Rc::new(Cell::new(0));
+        let calls_for_supplier = Rc::clone(&calls);
+        let mut failure = CompletionFailure::new(
+            None,
+            Box::new(move || {
+                calls_for_supplier.set(calls_for_supplier.get() + 1);
+                test_diag()
+            }),
+            None,
+        );
+        let _ = failure.get_diagnostic();
+        let calls_for_reset = Rc::clone(&calls);
+        failure.reset_diagnostic(Box::new(move || {
+            calls_for_reset.set(calls_for_reset.get() + 1);
+            test_diag()
+        }));
+        let _ = failure.get_diagnostic();
+        assert_eq!(calls.get(), 2);
+    }
 
     fn class_kind_data() -> SymbolKind {
         SymbolKind::ClassSymbol {

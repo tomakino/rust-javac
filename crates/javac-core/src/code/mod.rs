@@ -1,6 +1,8 @@
 //! com.sun.tools.javac.code
 
 pub mod attribute;
+pub mod class_finder;
+pub mod deferred_completion_failure_handler;
 pub mod bound_kind;
 pub mod directive;
 pub mod flags;
