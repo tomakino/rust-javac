@@ -41,10 +41,17 @@
 - 上下文限制由系统处理(压缩/续接);teammate 不得以此为由提前收尾、交接或停在半成品。
 - 只在真实阻塞(依赖未移植且规则禁止造假/需裁决的设计冲突)时停干净状态报告。
 - 恢复后先读 STATUS 与实际文件状态,从断点继续,不重做、不重复汇报。
+- 干部分工:util-porter 独占全部 Rust 代码修改(含 mod.rs/lib.rs);Lead 只做指派、审核、docs、git 提交与决策。
 - 硬规则:文件 1:1(适配层登记)、来源锚点、英文 Javadoc、不写版权头;不 git;
   不改任务范围外文件;每批 cargo test + clippy 零诊断;未移植依赖暂缺 + TODO 并报告,不写替代。
 
-## 并行任务(Agent Teams)(当前进行中)
+## 执行模式
+
+- 自本文件当前版本起:只有 util-porter 一名 teammate 执行编码;Lead 负责指派、审核、共享文件
+  (所有 mod.rs/lib.rs/Cargo.toml/docs)维护与 git 提交。其余 teammate 停止。
+- 任务板:task-66(单人执行:修复 5 个失败测试 + JavacParser S7a);历史任务由 Lead 接管/关闭。
+
+## 并行任务(Agent Teams)(历史)
 
 | task | owner | 任务 | 状态 |
 |---|---|---|---|

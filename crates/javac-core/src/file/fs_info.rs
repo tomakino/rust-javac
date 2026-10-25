@@ -41,6 +41,26 @@ pub struct FileAttributes {
 /// @see CacheFSInfo
 pub struct FSInfo;
 
+/// Strip the Windows verbatim path prefix that std::fs::canonicalize adds
+/// (\\?\C:\... -> C:\..., \\?\UNC\server\share -> \\server\share);
+/// Java Path.toRealPath returns the plain form.
+pub(crate) fn strip_verbatim_prefix(path: std::path::PathBuf) -> std::path::PathBuf {
+    if !cfg!(windows) {
+        return path;
+    }
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return std::path::PathBuf::from(format!(r"\\{}", rest));
+    }
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        let bytes = rest.as_bytes();
+        if bytes.len() >= 2 && bytes[1] == b':' {
+            return std::path::PathBuf::from(rest.to_string());
+        }
+    }
+    path
+}
+
 impl FSInfo {
     /// Java: protected FSInfo() / protected FSInfo(Context context).
     ///
@@ -55,7 +75,7 @@ impl FSInfo {
         // Java: try { return file.toRealPath(); } catch (IOException e) {
         //           return file.toAbsolutePath().normalize(); }
         match std::fs::canonicalize(file.as_path()) {
-            Ok(real) => FsPath::from_path_buf(real),
+            Ok(real) => FsPath::from_path_buf(strip_verbatim_prefix(real)),
             Err(_) => match file.to_absolute_path() {
                 Ok(absolute) => absolute.normalize(),
                 Err(_) => file.normalize(),

@@ -1365,13 +1365,20 @@ mod tests {
         }
         let manager = manager();
         assert!(manager.has_location(&StandardLocation::SYSTEM_MODULES));
-        let listed = manager
-            .list(&StandardLocation::SYSTEM_MODULES, &js("java.lang"), &[Kind::CLASS], false)
-            .expect("list system modules java.lang");
-        assert!(!listed.is_empty());
-        assert!(listed
-            .iter()
-            .any(|file| file.get_name().to_string_lossy().ends_with("Object.class")));
+
+        // Upstream: JavacFileManager.list first calls
+        // checkNotModuleOrientedLocation, so the package-oriented APIs must
+        // reject a module-oriented location.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let local = manager.clone();
+            let _ = local.list(
+                &StandardLocation::SYSTEM_MODULES,
+                &js("java.lang"),
+                &[Kind::CLASS],
+                false,
+            );
+        }));
+        assert!(result.is_err());
 
         let location = manager
             .get_location_for_module(&StandardLocation::SYSTEM_MODULES, &js("java.base"))
@@ -1380,10 +1387,21 @@ mod tests {
             location.get_name().to_string_lossy(),
             "SYSTEM_MODULES[java.base]"
         );
+
         let sets = manager
             .list_locations_for_modules(&StandardLocation::SYSTEM_MODULES)
             .expect("list module locations");
         assert!(!sets.is_empty());
+        // The java.base module location is part of the listed module locations.
+        // (Java: the module-oriented location is enumerated through
+        // listLocationsForModules; getFileForInput on a module location depends
+        // on the Locations module-path mapping, which is not ported yet.)
+        let names: Vec<String> = sets
+            .iter()
+            .flatten()
+            .map(|module_location| module_location.get_name().to_string_lossy())
+            .collect();
+        assert!(names.iter().any(|name| name == "SYSTEM_MODULES[java.base]"));
         manager.close().expect("close");
     }
 

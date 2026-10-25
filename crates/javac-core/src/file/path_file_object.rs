@@ -318,7 +318,8 @@ impl PathFileObject {
             // Java: if (pn.equalsIgnoreCase(sn)) { try { return
             //           p.toRealPath(NOFOLLOW_LINKS).getFileName().toString().equals(sn); } catch ... }
             if pn.eq_ignore_ascii_case(&sn.to_string_lossy())
-                && let Ok(real) = std::fs::canonicalize(path.as_path())
+                && let Ok(raw) = std::fs::canonicalize(path.as_path())
+                && let real = crate::file::fs_info::strip_verbatim_prefix(raw)
                 && let Some(name) = real.file_name()
             {
                 return name.to_string_lossy() == sn.to_string_lossy();

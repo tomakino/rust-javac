@@ -302,14 +302,12 @@ impl DocCommentParser {
 
                     if phase == Phase::Preamble || phase == Phase::Postamble {
                         // Ignore newlines after html tags, in the meta content
-                        self.next_char();
                         continue 'outer;
                     }
                     if self.text_start == -1 {
                         self.text_start = self.bp;
                         self.last_non_white = -1;
                     }
-                    self.next_char();
                 }
                 Some('{') => {
                     self.inline_tag(&mut trees);

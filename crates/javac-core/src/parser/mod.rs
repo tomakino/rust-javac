@@ -24,12 +24,12 @@
 pub mod doc_comment_parser;
 pub mod java_string_methods;
 pub mod java_tokenizer;
-// TEMPORARILY DISABLED (in-progress rewrite by Lead): pub mod javac_parser;
+pub mod javac_parser;
 pub mod javadoc_tokenizer;
 pub mod lazy_doc_comment_table;
 pub mod lexer;
-// TEMPORARILY DISABLED (in-progress rewrite by Lead): pub mod parser;
-// TEMPORARILY DISABLED (in-progress rewrite by Lead): pub mod parser_factory;
+pub mod parser;
+pub mod parser_factory;
 pub mod reference_parser;
 pub mod scanner;
 pub mod scanner_factory;

@@ -257,6 +257,8 @@ mod tests {
         let text = sig("a/b#c(d)");
         assert_eq!(substring(&text, 0, -1).to_string_lossy(), "a/b#c(d)");
         assert_eq!(substring(&text, 2, 3).to_string_lossy(), "b");
-        assert_eq!(substring(&text, 5, -1).to_string_lossy(), "#c(d)");
+        // Java: String.substring(start, end); end < 0 means "to end of string".
+        // ("a/b#c(d)": the '#' is at index 3, so substring(3) is "#c(d)".)
+        assert_eq!(substring(&text, 3, -1).to_string_lossy(), "#c(d)");
     }
 }
