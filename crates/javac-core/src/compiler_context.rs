@@ -419,6 +419,7 @@ mod tests {
                 pos: 1,
                 adr: -1,
                 data_kind: None,
+                data: None,
             },
         ));
         let scope_id = ctx.alloc_scope(Scope::new_scope_impl(Some(symbol_id)));
@@ -456,6 +457,7 @@ mod tests {
                     pos: index as i32,
                     adr: -1,
                     data_kind: None,
+                    data: None,
                 },
             ));
             ctx.scope_enter(scope, sym);

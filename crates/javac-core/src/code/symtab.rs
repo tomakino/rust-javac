@@ -135,7 +135,7 @@ fn form_flat_name(ctx: &CompilerContext, name: &Name, owner: Option<SymbolId>) -
 }
 
 /// Java: Symbol.ClassSymbol.formFullName(Name name, Symbol owner)
-fn form_full_name(ctx: &CompilerContext, name: &Name, owner: Option<SymbolId>) -> Name {
+pub(crate) fn form_full_name(ctx: &CompilerContext, name: &Name, owner: Option<SymbolId>) -> Name {
     let Some(owner) = owner else {
         return name.clone();
     };
@@ -374,6 +374,7 @@ fn new_var_symbol(
             pos: 0,
             adr: -1,
             data_kind: None,
+            data: None,
         },
     ))
 }
@@ -589,7 +590,7 @@ fn enter_class_full(
         };
         if needs_reassign {
             if let Some(class_owner) = ctx.sym(class).owner {
-                let members = members_scope(ctx, class_owner).expect("owner members");
+                let members = ensure_members_scope(ctx, class_owner).expect("owner members");
                 ctx.scope_remove(members, class);
             }
             let fullname = form_full_name(ctx, &name, owner);
@@ -625,6 +626,27 @@ fn members_scope(ctx: &CompilerContext, symbol: SymbolId) -> Option<ScopeId> {
     }
 }
 
+/// Java: PackageSymbol.complete() lazily creates members_field =
+/// WriteableScope.create(this); the rest of complete() is not ported
+/// (PackageSymbol completer TODO), the members scope is created here.
+fn ensure_members_scope(ctx: &mut CompilerContext, symbol: SymbolId) -> Option<ScopeId> {
+    if let Some(members) = members_scope(ctx, symbol) {
+        return Some(members);
+    }
+    match &ctx.sym(symbol).kind_data {
+        SymbolKind::PackageSymbol { .. } | SymbolKind::RootPackageSymbol { .. } => {
+            let members = ctx.scope_create(Some(symbol));
+            if let SymbolKind::PackageSymbol { members_field, .. }
+            | SymbolKind::RootPackageSymbol { members_field, .. } =
+                &mut ctx.sym_mut(symbol).kind_data
+            {
+                *members_field = Some(members);
+            }
+            Some(members)
+        }
+        _ => None,
+    }
+}
 /// Java: private Type enterClass(String s) { return
 /// enterClass(java_base, names.fromString(s)).type; }
 fn enter_class_named(

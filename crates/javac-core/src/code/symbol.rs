@@ -607,6 +607,10 @@ pub enum SymbolKind {
         /// (EXCEPTION_PARAMETER/RESOURCE_VARIABLE markers; the Callable constant
         /// value stored in data is not ported yet, see the module doc).
         data_kind: Option<ElementKind>,
+        /// Java: VarSymbol.data (Object) — the ConstantValue attribute value
+        /// (Attribute.Constant's value). The Callable form of data is not
+        /// ported yet (registered in the module doc).
+        data: Option<crate::code::attribute::ConstValue>,
     },
     /// Java: Symbol.RecordComponent
     RecordComponent {
@@ -839,6 +843,7 @@ impl Symbol {
                 pos: crate::util::position::NOPOS,
                 adr: -1,
                 data_kind: None,
+                data: None,
             },
         )
     }
@@ -973,7 +978,25 @@ impl Symbol {
             panic!("ClassCastException: not a class symbol");
         }
     }
+
+    /// Java: public void setData(Object data)
+    pub fn set_data(&mut self, value: Option<crate::code::attribute::ConstValue>) {
+        if let SymbolKind::VarSymbol { data: slot, .. } = &mut self.kind_data {
+            *slot = value;
+        } else {
+            panic!("ClassCastException: not a variable symbol");
+        }
+    }
+
+    /// Java: public Object getData()
+    pub fn get_data(&self) -> Option<&crate::code::attribute::ConstValue> {
+        match &self.kind_data {
+            SymbolKind::VarSymbol { data, .. } => data.as_ref(),
+            _ => None,
+        }
+    }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1058,6 +1081,7 @@ mod tests {
             pos: 0,
             adr: -1,
             data_kind,
+            data: None,
         }
     }
 
@@ -1275,6 +1299,7 @@ mod tests {
                 pos: 3,
                 adr: -1,
                 data_kind: None,
+                data: None,
             },
         );
         assert!(var.is_private());

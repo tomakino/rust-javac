@@ -431,6 +431,7 @@ mod tests {
             pos: 0,
             adr: -1,
             data_kind,
+            data: None,
         }
     }
 

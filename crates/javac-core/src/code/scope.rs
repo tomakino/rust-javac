@@ -971,7 +971,7 @@ mod tests {
                 name(table, text),
                 None,
                 None,
-                SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None },
+                SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
             ));
             assert_eq!(index, sym.index());
         }
@@ -1083,7 +1083,7 @@ mod tests {
                 table.from_chars(&units, 0, units.len() as i32),
                 None,
                 None,
-                SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None },
+                SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
             ));
             entries.push(SymbolId::new(sym));
         }
@@ -1147,7 +1147,7 @@ mod tests {
             name(&table, "a"),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None },
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
         ));
         let scope = Scope::new_scope_impl(None);
         let _ = scope.get_symbols(LookupKind::RECURSIVE, &|_| true);
@@ -1165,7 +1165,7 @@ mod tests {
             walk.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None },
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
         ));
         let second = ctx.alloc_symbol(Symbol::new(
             Kind::VAR,
@@ -1173,7 +1173,7 @@ mod tests {
             run.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None },
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
         ));
         let outer = ctx.scope_create(None);
         ctx.scope_enter(outer, first);
@@ -1200,7 +1200,7 @@ mod tests {
             walk.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None },
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
         ));
         let second = ctx.alloc_symbol(Symbol::new(
             Kind::VAR,
@@ -1208,7 +1208,7 @@ mod tests {
             run.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None },
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
         ));
         let outer = ctx.scope_create(None);
         ctx.scope_enter(outer, first);
