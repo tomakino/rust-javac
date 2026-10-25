@@ -46,6 +46,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "javac-floating"
+version = "0.1.0"
+
+[[package]]
 name = "javac-fs"
 version = "0.1.0"
 
