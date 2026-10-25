@@ -10,11 +10,11 @@
   (JCDiagnostic/Formatter 家族/Log/MandatoryWarningHandler)、Options/Option、Source/Target/Profile/
   Lint/Preview、platform(S1-S2)、file 层 S3a+S3b、charset、ct.sym、jimage packages、classpath、
   javac-fs、差分测试基础设施 —— 完成。
-- **P1(parser/AST)**:词法层 S6(3550 行)、TreeMaker(1703 行)、Types 最小前置(1090 行)、
-  Doc 树族 S8(2534 行)—— 完成;**JavacParser S7a 进行中**(tools-api),S7b 待做;
+- **P1(parser/AST)——已完成**:词法层 S6、TreeMaker、Types 最小前置、
+  Doc 树族 S8、JavacParser S7a/S7b(完整语法 + doc comments);tree-oracle 37/37 PASS;
   DocCommentParser/LazyDocCommentTable/ReferenceParser 进行中(ctsym-porter)。
-- **P2(file/ClassReader)**:file 层 S3a(BaseFileManager/JRTIndex)+ S3b(Locations 1586 行)完成;
-  S3c(JavacFileManager)进行中;ClassReader/PoolReader/ModuleNameReader(PoolReader+ModuleNameReader
+- **P2(file/ClassReader)——进行中**:file 层 S3a/S3b 完成;
+  JavacFileManager 主体已落地(clippy 债务登记);PoolReader+ModuleNameReader 完成;ClassReader 下一批;
   已完成;ClassReader 待 code 服务)。
 - **P3(symbols/types)**:Symtab(1745 行)+ Types 最小完成;Types 批次 2(isSubtype/containsType/
   asSuper/memberType/subst)进行中;Types 全量与 Attr/Check/Flow/TransTypes/Lower/Gen 待 P3-P5。
