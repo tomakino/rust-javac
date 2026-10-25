@@ -187,15 +187,17 @@
 //!   in PORTING_RULES section 9).
 //!
 //! NOT PORTED IN THIS STEP (see docs/STATUS.md; no placeholder logic):
-//! - SymbolMetadata/AnnoConstruct attribute methods, completer (Completer is an
-//!   interface over Symbol mutation and needs the compiler context), the
-//!   metadata field, poolTag/accept(Symbol.Visitor), toString/location/
-//!   baseSymbol (the "this" result needs the arena ID), erasure/externalType
-//!   (Types), the owner-chain methods (enclClass/outermostClass/packge) and the
-//!   Types-dependent methods (isSubClass/isMemberOf/isEnclosedBy/...);
+//! - SymbolMetadata/AnnoConstruct attribute methods, the metadata field,
+//!   poolTag/accept(Symbol.Visitor), toString/location/baseSymbol (the "this"
+//!   result needs the arena ID), erasure/externalType (Types), the owner-chain
+//!   methods (enclClass/outermostClass/packge) and the Types-dependent methods
+//!   (isSubClass/isMemberOf/isEnclosedBy/...);
+//! - the Symbol.complete()/apiComplete() methods are implemented as
+//!   CompilerContext::complete_symbol/complete_class_symbol (the completer needs
+//!   &mut CompilerContext + Symtab, ADR 0001; registered adapter);
 //! - the DynamicMethodSymbol/DynamicVarSymbol variants (LoadableConstant),
-//!   MethodSymbol.code (jvm/Code) and MethodSymbol.defaultValue (Attribute),
-//!   CompletionFailure and the Symbol.Visitor interface;
+//!   MethodSymbol.code (jvm/Code) and MethodSymbol.defaultValue (Attribute) and
+//!   the Symbol.Visitor interface;
 //! - ClassSymbol.annotationTypeMetadata, VarSymbol.data (only the ElementKind
 //!   marker subset is represented as VarSymbol.data_kind; the Callable constant
 //!   value stored in data is not ported yet) and MethodHandleSymbol private
@@ -221,8 +223,8 @@ use crate::util::name::Name;
 /// A class representing Java symbols.
 ///
 /// PORTING_RULES: the shared fields of the upstream Symbol class plus the
-/// node-specific fields (SymbolKind). The completer and the metadata fields are
-/// not represented yet (see the module doc).
+/// node-specific fields (SymbolKind). The completer is represented (the metadata
+/// fields are not, see the module doc).
 pub struct Symbol {
     /// The kind of this symbol.
     pub kind: Kind,
@@ -236,13 +238,15 @@ pub struct Symbol {
     pub owner: Option<SymbolId>,
     /// A cache for the type erasure of this symbol.
     pub erasure_field: Option<TypeId>,
+    /// Java: public Symbol.Completer completer (NULL_COMPLETER -> None)
+    pub completer: Option<CompleterRef>,
     /// The node-specific fields (one variant per upstream concrete subclass).
     pub kind_data: SymbolKind,
 }
 
 impl Symbol {
-    /// Adapter constructor: the upstream constructor also installs
-    /// Completer.NULL_COMPLETER (the completer interface is not ported yet).
+    /// Adapter constructor: the upstream constructor installs
+    /// Completer.NULL_COMPLETER; locally None represents NULL_COMPLETER.
     pub fn new(
         kind: Kind,
         flags: i64,
@@ -258,7 +262,38 @@ impl Symbol {
             ty,
             owner,
             erasure_field: None,
+            completer: None,
             kind_data,
+        }
+    }
+
+    /// Java: ModuleSymbol.reset() / ClassSymbol.reset()
+    pub fn reset(&mut self) {
+        match &mut self.kind_data {
+            SymbolKind::ModuleSymbol {
+                directives,
+                requires,
+                exports,
+                opens,
+                provides,
+                uses,
+                visible_packages,
+                ..
+            } => {
+                *directives = List::nil();
+                *requires = List::nil();
+                *exports = List::nil();
+                *opens = List::nil();
+                *provides = List::nil();
+                *uses = List::nil();
+                visible_packages.clear();
+            }
+            SymbolKind::ClassSymbol { .. } => {
+                // Java: ClassSymbol.reset() resets metadata (metadata = null).
+                // TODO(Annotate batch): SymbolMetadata is not ported yet; there is
+                // no metadata state to reset (registered gap).
+            }
+            _ => {}
         }
     }
 
@@ -712,14 +747,29 @@ pub enum SymbolKind {
 }
 
 
+/// Java: Symbol.Completer reference (the upstream interface is shared by the
+/// ClassFinder instance; the shared, mutable reference is kept in Symbol.completer).
+pub type CompleterRef = Rc<std::cell::RefCell<dyn Completer>>;
+
+/// Creates a fresh Completer reference (the port creates one wrapper per symbol
+/// so nested completion does not borrow the same RefCell twice; registered
+/// adapter for the upstream shared ClassFinder instance).
+pub type CompleterFactory = Rc<dyn Fn() -> CompleterRef>;
+
 /// Java: Symbol.Completer
 ///
 /// PORTING_RULES: Java throws CompletionFailure; the Rust port returns
-/// Result<(), CompletionFailure> from complete(). The compiler context is passed
-/// explicitly because symbols are arena values (ADR 0001).
+/// Result<(), CompletionFailure> from complete(). The compiler context and the
+/// symbol table are passed explicitly because symbols are arena values and there
+/// is no global Context (ADR 0001).
 pub trait Completer {
     /// Java: void complete(Symbol sym) throws CompletionFailure
-    fn complete(&mut self, sym: SymbolId) -> Result<(), CompletionFailure>;
+    fn complete(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) -> Result<(), CompletionFailure>;
 
     /// Java: default boolean isTerminal() { return false; }
     fn is_terminal(&self) -> bool {
@@ -731,7 +781,12 @@ pub trait Completer {
 pub struct NullCompleter;
 
 impl Completer for NullCompleter {
-    fn complete(&mut self, _sym: SymbolId) -> Result<(), CompletionFailure> {
+    fn complete(
+        &mut self,
+        _ctx: &mut crate::compiler_context::CompilerContext,
+        _syms: &mut crate::code::symtab::Symtab,
+        _sym: SymbolId,
+    ) -> Result<(), CompletionFailure> {
         Ok(())
     }
 
@@ -748,6 +803,10 @@ impl Completer for NullCompleter {
 pub struct CompletionFailure {
     /// Java: public final transient DeferredCompletionFailureHandler dcfh
     pub dcfh: Option<Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>>,
+    /// Java: the ClassFinder.BadClassFile subtype marker (ClassFinder.fillIn only
+    /// purges partially initialized symbols for BadClassFile; registered adapter
+    /// because the Rust error value has no subtype information).
+    pub bad_class_file: bool,
     /// Java: public transient Symbol sym
     pub sym: Option<SymbolId>,
     /// Java: private transient JCDiagnostic diag
@@ -770,6 +829,7 @@ impl CompletionFailure {
     ) -> CompletionFailure {
         CompletionFailure {
             dcfh,
+            bad_class_file: false,
             sym,
             diag: std::cell::RefCell::new(None),
             diag_supplier: Some(diag_supplier),

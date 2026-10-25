@@ -28,8 +28,9 @@
 //! - the Java constructors that register the instance in the Context and the
 //!   binding of completers are adapted: Symtab::new takes the CompilerContext
 //!   and the ported Names explicitly (the Names.instance(Context) adapter is not
-//!   ported yet), and the completer bindings are NOT PORTED (Symbol.Completer /
-//!   CompletionFailure are not ported);
+//!   ported yet); the initial/module completer bindings are installed by the
+//!   bootstrap through set_initial_completer/set_module_completer (CompleterRef
+//!   factories; registered adapter, no Context singletons);
 //! - the anonymous ModuleSymbol/PackageSymbol subclasses that override toString
 //!   (localized "unnamed module"/"unnamed package") cannot be expressed without
 //!   the Symbol batch; the ported symbols are plain ModuleSymbol/PackageSymbol
@@ -39,13 +40,13 @@
 //!   into symbol.rs with the Symbol batch (registered).
 //!
 //! NOT PORTED IN THIS STEP (dependencies not ported yet; no substitute logic):
-//! - Symbol.Completer / CompletionFailure: initialCompleter/moduleCompleter,
-//!   ClassFinder, Modules, the java.base completer bootstrap and the anonymous
-//!   Completers of synthesizeEmptyInterfaceIfMissing /
-//!   synthesizeBoxTypeIfMissing / enterSyntheticAnnotation; the four synthetic
-//!   annotation types (previewFeatureInternalType, valueBasedInternalType,
-//!   proprietaryType, profileType) and the profileType value method are
-//!   therefore Option<TypeId> = None;
+//! - Modules (module completer): the bootstrap may pass the module completer
+//!   explicitly; the java.base completer bootstrap (Symtab.java:637) is applied
+//!   by set_module_completer; the anonymous Completers of
+//!   synthesizeEmptyInterfaceIfMissing / synthesizeBoxTypeIfMissing /
+//!   enterSyntheticAnnotation and the four synthetic annotation types
+//!   (previewFeatureInternalType, valueBasedInternalType, proprietaryType,
+//!   profileType) are therefore Option<TypeId> = None;
 //! - MissingInfoHandler: RootPackageSymbol is created without the missing info
 //!   handler;
 //! - Types: the minimal prefix ported in types.rs (hashCode/isSameType/
@@ -57,6 +58,7 @@
 //!   anonymous-subclass note above).
 
 use std::collections::HashMap;
+use crate::code::symbol::CompleterFactory;
 use std::rc::Rc;
 
 use crate::code::directive::{Directive, RequiresFlag};
@@ -103,7 +105,7 @@ fn append_char(base: &Name, ch: u8, suffix: &Name) -> Name {
 }
 
 /// Java: Symbol.TypeSymbol.formFlatName(Name name, Symbol owner)
-fn form_flat_name(ctx: &CompilerContext, name: &Name, owner: Option<SymbolId>) -> Name {
+pub(crate) fn form_flat_name(ctx: &CompilerContext, name: &Name, owner: Option<SymbolId>) -> Name {
     let Some(owner) = owner else {
         return name.clone();
     };
@@ -557,6 +559,24 @@ fn define_class(
     class
 }
 
+/// Java: ClassSymbol.complete() error recovery: new ErrorType(this, Type.noType).
+pub(crate) fn new_error_type_for_class(ctx: &mut CompilerContext, tsym: SymbolId) -> TypeId {
+    let no_type = no_type_id(ctx);
+    ctx.alloc_type(Type::new(
+        TypeTag::ERROR,
+        Some(tsym),
+        TypeKindData::ErrorType {
+            outer_field: None,
+            typarams_field: None,
+            allparams_field: None,
+            supertype_field: None,
+            interfaces_field: None,
+            all_interfaces_field: None,
+            original_type: Some(no_type),
+        },
+    ))
+}
+
 fn no_type_id(ctx: &mut CompilerContext) -> TypeId {
     ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType))
 }
@@ -921,6 +941,10 @@ pub struct Symtab {
     pub profile_type: Option<TypeId>,
     /// NOT PORTED: see profile_type.
     pub proprietary_type: Option<TypeId>,
+    /// Java: private final Completer initialCompleter (bound by the bootstrap)
+    pub initial_completer: Option<CompleterFactory>,
+    /// Java: private final Completer moduleCompleter (from Modules; not ported -> None)
+    pub module_completer: Option<CompleterFactory>,
     pub system_type: TypeId,
     pub auto_closeable_type: TypeId,
     pub trust_me_type: TypeId,
@@ -1392,6 +1416,8 @@ impl Symtab {
                 class_fields: HashMap::new(),
                 names: Rc::clone(&names),
                 maps,
+                initial_completer: None,
+                module_completer: None,
             }
         }
     }
@@ -1538,7 +1564,11 @@ impl Symtab {
         name: Name,
         owner: Option<SymbolId>,
     ) -> SymbolId {
-        enter_class_full(ctx, &self.names, &mut self.maps, msym, name, owner)
+        let class = enter_class_full(ctx, &self.names, &mut self.maps, msym, name, owner);
+        if let Some(factory) = &self.initial_completer {
+            ctx.sym_mut(class).completer = Some(factory());
+        }
+        class
     }
 
     /// Java: public ClassSymbol enterClass(ModuleSymbol msym, Name flatname)
@@ -1563,6 +1593,9 @@ impl Symtab {
             class,
             form_flat_name(ctx, &ctx.sym(class).name.clone(), Some(ps)),
         );
+        if let Some(factory) = &self.initial_completer {
+            ctx.sym_mut(class).completer = Some(factory());
+        }
         class
     }
 
@@ -1615,12 +1648,67 @@ impl Symtab {
         module: SymbolId,
         fullname: Name,
     ) -> SymbolId {
-        enter_package(ctx, &self.names, &mut self.maps, module, fullname)
+        let package = enter_package(ctx, &self.names, &mut self.maps, module, fullname);
+        if let Some(factory) = &self.initial_completer
+            && ctx.sym(package).completer.is_none() {
+                ctx.sym_mut(package).completer = Some(factory());
+            }
+        package
     }
 
     /// Java: public ModuleSymbol enterModule(Name name)
     pub fn enter_module(&mut self, ctx: &mut CompilerContext, name: Name) -> SymbolId {
-        enter_module(ctx, &self.names, &mut self.maps, name, self.root_package)
+        let module = enter_module(ctx, &self.names, &mut self.maps, name, self.root_package);
+        if let Some(factory) = &self.module_completer
+            && ctx.sym(module).completer.is_none() {
+                ctx.sym_mut(module).completer = Some(factory());
+            }
+        module
+    }
+
+    /// Java: Symtab constructor binds initialCompleter from
+    /// ClassFinder.instance(context).getCompleter(); the port binds it after the
+    /// bootstrap creates the ClassFinder (registered adapter) and applies it to
+    /// the symbols created before that point.
+    pub fn set_initial_completer(&mut self, ctx: &mut CompilerContext, factory: CompleterFactory) {
+        self.initial_completer = Some(Rc::clone(&factory));
+        let mut classes: Vec<SymbolId> = Vec::new();
+        for (_, per_module) in &self.maps.classes {
+            for (_, symbol) in per_module {
+                classes.push(*symbol);
+            }
+        }
+        for symbol in classes {
+            if symbol != self.java_base {
+                ctx.sym_mut(symbol).completer = Some(factory());
+            }
+        }
+        let mut packages: Vec<SymbolId> = Vec::new();
+        for (_, per_module) in &self.maps.packages {
+            for (_, symbol) in per_module {
+                packages.push(*symbol);
+            }
+        }
+        for symbol in packages {
+            if ctx.sym(symbol).completer.is_none() {
+                ctx.sym_mut(symbol).completer = Some(factory());
+            }
+        }
+    }
+
+    /// Java: Symtab constructor binds moduleCompleter from
+    /// Modules.instance(context).getCompleter() (Modules is not ported: the
+    /// bootstrap may pass the module completer explicitly; registered adapter).
+    pub fn set_module_completer(&mut self, ctx: &mut CompilerContext, factory: CompleterFactory) {
+        self.module_completer = Some(Rc::clone(&factory));
+        // Java: java_base.completer = moduleCompleter::complete (bootstrap issues)
+        ctx.sym_mut(self.java_base).completer = Some(factory());
+        let modules: Vec<SymbolId> = self.maps.modules.iter().map(|(_, m)| *m).collect();
+        for module in modules {
+            if ctx.sym(module).completer.is_none() {
+                ctx.sym_mut(module).completer = Some(factory());
+            }
+        }
     }
 
     /// The Names instance used by this symbol table (Symtab keeps its own

@@ -225,6 +225,56 @@ impl CompilerContext {
         self.alloc_scope(Scope::new_scope_impl(owner))
     }
 
+    /// Java: new Scope.ErrorScope(owner) (members scope placeholder used while a
+    /// class is being completed).
+    pub fn scope_create_error(&mut self, owner: Option<SymbolId>) -> ScopeId {
+        self.alloc_scope(Scope::new_error_scope(owner))
+    }
+
+    /// Java: Symbol.complete() — the arena-value adapter: the completer is taken
+    /// from the symbol before calling it (the completer receives &mut context and
+    /// the symbol table, ADR 0001).
+    pub fn complete_symbol(
+        &mut self,
+        syms: &mut crate::code::symtab::Symtab,
+        symbol: SymbolId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        let completer = self.sym_mut(symbol).completer.take();
+        if let Some(completer) = completer {
+            completer.borrow_mut().complete(self, syms, symbol)?;
+        }
+        Ok(())
+    }
+
+    /// Java: ClassSymbol.complete() — error recovery installs the error type and
+    /// the public/static flags, then notifies the DeferredCompletionFailureHandler.
+    pub fn complete_class_symbol(
+        &mut self,
+        syms: &mut crate::code::symtab::Symtab,
+        symbol: SymbolId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        let orig_completer = self.sym(symbol).completer.clone();
+        match self.complete_symbol(syms, symbol) {
+            Ok(()) => Ok(()),
+            Err(failure) => {
+                if let (Some(dcfh), Some(orig)) = (failure.dcfh.clone(), orig_completer) {
+                    dcfh.class_symbol_complete_failed(self, symbol, orig);
+                }
+                // quiet error recovery
+                self.sym_mut(symbol).flags_field |= (crate::code::flags::PUBLIC
+                    | crate::code::flags::STATIC) as i64;
+                self.sym_mut(symbol).ty =
+                    Some(crate::code::symtab::new_error_type_for_class(self, symbol));
+                Err(failure)
+            }
+        }
+    }
+
+    /// Java: Symbol.reset() (ModuleSymbol/ClassSymbol overrides; see Symbol::reset).
+    pub fn reset_symbol(&mut self, symbol: SymbolId) {
+        self.sym_mut(symbol).reset();
+    }
+
     /// Java: scope.dup(newOwner) — shares the hash table with the given scope.
     pub fn scope_dup(&mut self, scope: ScopeId, new_owner: Option<SymbolId>) -> ScopeId {
         let new_scope = self
