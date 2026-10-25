@@ -13,7 +13,7 @@
 //!   injection (its instance() is not implemented yet, TODO(Log/Lint/Options
 //!   batch)); Options is the ported Options::instance(context);
 //! * DocTreeMaker instance is not wired (doc comment parsing is deferred, see
-//!   JavacParser: keepDocComments=false path; TODO(DocCommentParser batch));
+//!   JavacParser: keepDocComments paths (LazyDocCommentTable wired));
 //! * Locale is not ported (registered GAP, no field);
 //! * newParser takes the arena CompilerContext because the JavacParser
 //!   constructor allocates the error tree.

@@ -94,9 +94,17 @@ fn make_parser() -> (CompilerContext, ParserFactory) {
     (CompilerContext::new(), factory)
 }
 
-fn parse_and_print(body: &str) -> String {
+fn parse_and_print(body: &str, parse_module_info: bool) -> String {
     let (mut ctx, factory) = make_parser();
-    let mut parser = factory.new_parser(&mut ctx, &JavaString::from(body), false, true, false);
+    let mut parser =
+        factory.new_parser_full(
+            &mut ctx,
+            &JavaString::from(body),
+            true,
+            true,
+            false,
+            parse_module_info,
+        );
     let tree = parser.parse_compilation_unit(&mut ctx);
     let mut pretty = Pretty::new(false);
     pretty.print_unit(&ctx, tree, None);
@@ -116,7 +124,7 @@ fn classify_panic(message: &str) -> Option<&'static str> {
 #[test]
 fn tree_oracle_layered_comparison() {
     let records = records();
-    assert_eq!(records.len(), 35, "tree-oracle record count");
+    assert_eq!(records.len(), 37, "tree-oracle record count");
     let mut passed = 0usize;
     let mut skipped = 0usize;
     let mut failed = 0usize;
@@ -137,18 +145,11 @@ fn tree_oracle_layered_comparison() {
                 continue;
             }
         };
-        // The oracle output keeps doc comments; the port currently runs with
-        // keepDocComments=false (TODO(S8)), so those records are outside the
-        // S7a-syntax comparison layer.
-        if source.contains("/**") {
-            skipped += 1;
-            println!(
-                "SKIP {}: oracle output contains doc comments (keepDocComments=true vs port false; TODO(S8 DocCommentParser))",
-                record.name
-            );
-            continue;
-        }
-        let result = std::panic::catch_unwind(AssertUnwindSafe(|| parse_and_print(&source)));
+        let print_source = source.clone();
+        let is_module_info = record.name.contains("module-info");
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            parse_and_print(&print_source, is_module_info)
+        }));
         match result {
             Ok(actual) => {
                 let expected = record.body.trim_end();

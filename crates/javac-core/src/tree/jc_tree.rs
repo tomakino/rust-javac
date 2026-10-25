@@ -463,7 +463,7 @@ pub enum TreeKind {
         line_map: Option<Rc<dyn LineMap>>,
         /// A table that stores all documentation comments indexed by the tree
         /// nodes they refer to. defined only if option -s is set.
-        doc_comments: Option<Rc<dyn DocCommentTable>>,
+        doc_comments: Option<Rc<std::cell::RefCell<dyn DocCommentTable>>>,
         /// An object encapsulating ending positions of source ranges indexed by
         /// the tree nodes they belong to. Defined only if option -Xjcov is set.
         end_positions: Option<Box<dyn EndPosTable>>,
@@ -883,8 +883,8 @@ pub enum TreeKind {
     MemberReference {
         /// the reference mode (invoke or new)
         mode: ReferenceMode,
-        /// the reference kind
-        kind: ReferenceKind,
+        /// the reference kind (Java null before Attr -> None)
+        kind: Option<ReferenceKind>,
         /// the referenced name
         name: Name,
         /// the expression
@@ -1725,7 +1725,7 @@ mod tests {
 
         let reference = TreeKind::MemberReference {
             mode: ReferenceMode::INVOKE,
-            kind: ReferenceKind::UNBOUND,
+            kind: Some(ReferenceKind::UNBOUND),
             name: name(&[0x4d]),
             expr: None,
             typeargs: Some(empty()),
@@ -1741,7 +1741,7 @@ mod tests {
             reference,
             TreeKind::MemberReference {
                 mode: ReferenceMode::INVOKE,
-                kind: ReferenceKind::UNBOUND,
+                kind: Some(ReferenceKind::UNBOUND),
                 ..
             }
         ));

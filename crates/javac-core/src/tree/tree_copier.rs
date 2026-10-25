@@ -805,15 +805,14 @@ impl TreeVisitor for TreeCopier {
     }
 
     fn visit_reference(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (mode, kind, name, expr, typeargs) = match &ctx.tree(tree).kind {
+        let (mode, name, expr, typeargs) = match &ctx.tree(tree).kind {
             TreeKind::MemberReference {
                 mode,
-                kind,
                 name,
                 expr,
                 typeargs,
                 ..
-            } => (*mode, *kind, name.clone(), *expr, typeargs.clone()),
+            } => (*mode, name.clone(), *expr, typeargs.clone()),
             _ => panic!("expected a member reference"),
         };
         let expr = self.copy(ctx, expr);
@@ -825,7 +824,7 @@ impl TreeVisitor for TreeCopier {
             Tag::REFERENCE,
             TreeKind::MemberReference {
                 mode,
-                kind,
+                kind: None,
                 name,
                 expr,
                 typeargs,

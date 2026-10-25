@@ -28,9 +28,8 @@
 //!   getStartPosition -> DiagnosticPosition::get_start_position.
 //! * JCLambda/conditional/member-reference constructor defaults: the Java constructors set
 //!   PolyKind.STANDALONE and ParameterKind.EXPLICIT (JCLambda(..., body) constructor); these
-//!   are reproduced.  JCMemberReference keeps its upstream uninitialized-kind limitation:
-//!   the Rust ReferenceKind is not optional (TODO, reported) so the reference factories are
-//!   not provided yet.
+//!   are reproduced.  JCMemberReference.kind is null until Attr in the upstream parser
+//!   (JCMemberReference constructor does not set it); Rust models the null as Option::None.
 
 // The upstream Factory signatures are kept 1:1 (MethodDef has 9 arguments, plus the arena
 // context); the clippy argument-count thresholds do not apply to a direct port.
@@ -41,6 +40,7 @@ use std::option::Option as StdOption;
 use std::rc::Rc;
 
 use javac_source::tree::case_tree::CaseKind;
+use javac_source::tree::member_reference_tree::ReferenceMode;
 use javac_source::tree::module_tree::ModuleKind;
 
 use crate::code::bound_kind::BoundKind;
@@ -260,6 +260,15 @@ pub trait TreeFactory {
         vartype: StdOption<TreeId>,
         init: StdOption<TreeId>,
         declared_using_var: bool,
+    ) -> TreeId;
+    /// Java: JCTree.Factory.ReceiverVarDef(JCModifiers mods, JCExpression nameexpr,
+    /// JCExpression vartype) — the receiver parameter (name is Names.empty).
+    fn receiver_var_def(
+        &mut self,
+        ctx: &mut CompilerContext,
+        mods: TreeId,
+        nameexpr: TreeId,
+        vartype: StdOption<TreeId>,
     ) -> TreeId;
     fn skip(&mut self, ctx: &mut CompilerContext) -> TreeId;
     fn block(&mut self, ctx: &mut CompilerContext, flags: i64, stats: List<TreeId>) -> TreeId;
@@ -501,6 +510,14 @@ pub trait TreeFactory {
         defs: List<TreeId>,
     ) -> TreeId;
     fn lambda(&mut self, ctx: &mut CompilerContext, params: List<TreeId>, body: TreeId) -> TreeId;
+    fn reference(
+        &mut self,
+        ctx: &mut CompilerContext,
+        mode: ReferenceMode,
+        name: Name,
+        expr: TreeId,
+        typeargs: StdOption<List<TreeId>>,
+    ) -> TreeId;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -681,6 +698,31 @@ impl TreeFactory for TreeMaker {
         // the flag is accepted and ignored until the field is added (reported).
         let _ = declared_using_var;
         self.var_def(ctx, mods, name, vartype, init)
+    }
+
+    fn receiver_var_def(
+        &mut self,
+        ctx: &mut CompilerContext,
+        mods: TreeId,
+        nameexpr: TreeId,
+        vartype: StdOption<TreeId>,
+    ) -> TreeId {
+        // Java: JCVariableDecl.Factory.ReceiverVarDef -> new JCVariableDecl(mods,
+        // names.empty, nameexpr, vartype, null).
+        let name = self.empty_name();
+        self.make(
+            ctx,
+            Tag::VARDEF,
+            TreeKind::VariableDecl {
+                mods: Some(mods),
+                name,
+                nameexpr: Some(nameexpr),
+                vartype,
+                init: None,
+                sym: None,
+                start_pos: position::NOPOS,
+            },
+        )
     }
 
     fn skip(&mut self, ctx: &mut CompilerContext) -> TreeId {
@@ -1515,7 +1557,20 @@ impl TreeFactory for TreeMaker {
     }
 
     fn lambda(&mut self, ctx: &mut CompilerContext, params: List<TreeId>, body: TreeId) -> TreeId {
-        // Java: new JCLambda(pos, params, body): ParameterKind.EXPLICIT/PolyKind.STANDALONE.
+        // Java: new JCLambda(pos, params, body): paramKind is EXPLICIT when the
+        // list is empty or the first parameter has a declared type, IMPLICIT
+        // otherwise; PolyKind.STANDALONE (JCLambda constructor).
+        let param_kind = if params.is_empty() {
+            ParameterKind::EXPLICIT
+        } else {
+            let first = *params.head();
+            match &ctx.tree(first).kind {
+                TreeKind::VariableDecl {
+                    vartype: Some(_), ..
+                } => ParameterKind::EXPLICIT,
+                _ => ParameterKind::IMPLICIT,
+            }
+        };
         self.make(
             ctx,
             Tag::LAMBDA,
@@ -1523,7 +1578,37 @@ impl TreeFactory for TreeMaker {
                 params,
                 body: Some(body),
                 can_complete_normally: false,
-                param_kind: ParameterKind::EXPLICIT,
+                param_kind,
+                poly_kind: PolyKind::STANDALONE,
+                target: None,
+            },
+        )
+    }
+
+    fn reference(
+        &mut self,
+        ctx: &mut CompilerContext,
+        mode: ReferenceMode,
+        name: Name,
+        expr: TreeId,
+        typeargs: StdOption<List<TreeId>>,
+    ) -> TreeId {
+        // Java: new JCMemberReference(mode, name, expr, typeargs): kind stays
+        // null (None) until Attr; refPolyKind/polyKind default STANDALONE.
+        self.make(
+            ctx,
+            Tag::REFERENCE,
+            TreeKind::MemberReference {
+                mode,
+                kind: None,
+                name,
+                expr: Some(expr),
+                typeargs,
+                sym: None,
+                varargs_element: None,
+                ref_poly_kind: PolyKind::STANDALONE,
+                owner_accessible: false,
+                referent_type: None,
                 poly_kind: PolyKind::STANDALONE,
                 target: None,
             },

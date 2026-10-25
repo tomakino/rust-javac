@@ -11,16 +11,19 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES / batch status (S7a):
+//! PORTING_RULES / batch status (S7b):
 //! * JCTree values are arena TreeIds (ADR 0001); every parse method takes the
 //!   CompilerContext because tree creation needs the arena;
 //! * the Java nested Abstract/Simple/Empty EndPosTable classes are ported in
 //!   this file (Simple uses util::int_hash_table::IntHashTable);
-//! * keepDocComments=false path only: DocCommentParser/LazyDocCommentTable are
-//!   not ported yet (TODO(DocCommentParser batch)); the doc comments of the
-//!   compilation unit are None and JavadocTokenizer comments are ignored;
-//! * deferred to S7b (reported): records, sealed types, patterns, switch
-//!   expressions/yield, module declarations, annotation type declarations.
+//! * the full Java 17 grammar is parsed: records, sealed types, patterns
+//!   (instanceof/switch), switch expressions/rules, lambdas, method
+//!   references, module declarations and annotation type declarations;
+//! * keepDocComments=true and keepDocComments=false both work: the
+//!   ported LazyDocCommentTable attaches comments lazily (JavacParser.attach)
+//!   and tree/Pretty prints them from the compilation unit doc comment table;
+//! * remaining dependency: DocCommentParser's ReferenceParser is still a
+//!   TODO(parser S7) marker (doc-comment reference parsing only; registered).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -33,16 +36,20 @@ use crate::code::type_tag::TypeTag;
 use crate::tree::tree_maker::TreeFactory;
 use crate::compiler_context::CompilerContext;
 use crate::ids::TreeId;
+use crate::parser::lazy_doc_comment_table::LazyDocCommentTable;
 use crate::parser::lexer::Lexer;
 use crate::parser::parser::Parser;
 use crate::parser::parser_factory::ParserFactory;
 use crate::parser::scanner::Scanner;
 use crate::parser::tokens::{dummy_token, Comment, CommentStyle, Token, TokenKind};
-use crate::resources::compiler_properties::{errors, warnings};
+use crate::resources::compiler_properties::{errors, fragments, warnings};
+use crate::resources::diagnostic_contract::{DiagnosticArg, FragmentInfo, SourceArg};
 use crate::tree::doc_comment_table::DocCommentTable;
 use crate::tree::end_pos_table::EndPosTable;
 use crate::tree::jc_tree::{LiteralValue, Tag, TreeKind};
 use javac_source::tree::case_tree::CaseKind;
+use javac_source::tree::member_reference_tree::ReferenceMode;
+use javac_source::tree::module_tree::ModuleKind;
 use crate::tree::tree_info;
 use crate::tree::tree_maker::TreeMaker;
 use crate::util::abstract_log::AbstractLog;
@@ -67,6 +74,10 @@ use crate::util::position::NOPOS;
 mod Flags {
     pub const StandardFlags: i64 = crate::code::flags::StandardFlags as i64;
     pub const COMPACT_RECORD_CONSTRUCTOR: i64 = crate::code::flags::COMPACT_RECORD_CONSTRUCTOR;
+    pub const RECORD: i64 = crate::code::flags::RECORD;
+    pub const GENERATED_MEMBER: i64 = crate::code::flags::GENERATED_MEMBER as i64;
+    pub const SEALED: i64 = crate::code::flags::SEALED;
+    pub const NON_SEALED: i64 = crate::code::flags::NON_SEALED;
     pub const PUBLIC: i64 = crate::code::flags::PUBLIC as i64;
     pub const PRIVATE: i64 = crate::code::flags::PRIVATE as i64;
     pub const PROTECTED: i64 = crate::code::flags::PROTECTED as i64;
@@ -87,6 +98,13 @@ mod Flags {
     pub const DEFAULT: i64 = crate::code::flags::DEFAULT;
     pub const MODIFIER_FLAGS: i64 = crate::code::flags::ModifierFlags;
 }
+/// P4 placeholder: a fragment used as a diagnostic argument is currently
+/// carried as its key text (diagnostic_contract::DiagnosticArg is a text
+/// placeholder until the P4 JCDiagnostic reformatting batch; registered).
+fn fragment_diagnostic_arg(fragment: FragmentInfo) -> DiagnosticArg {
+    DiagnosticArg::from_display(fragment.info().key())
+}
+
 /// The number of precedence levels of infix operators.
 const INFIX_PRECEDENCE_LEVELS: i32 = 10;
 
@@ -127,6 +145,56 @@ enum ErrorRecoveryAction {
 enum PatternResult {
     Expression,
     Pattern,
+}
+
+/// Java: JavacParser.LambdaParameterKind (the LambdaClassifier kind enum).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LambdaParameterKind {
+    Var,
+    Explicit,
+    Implicit,
+    Error,
+}
+
+/// Java: JavacParser.decisionTable (fragment for a mixed lambda parameter list).
+fn lambda_decision_fragment(
+    current: LambdaParameterKind,
+    new_kind: LambdaParameterKind,
+) -> Option<FragmentInfo> {
+    use LambdaParameterKind::{Explicit, Implicit, Var};
+    match (current, new_kind) {
+        (Var, Explicit) | (Explicit, Var) => Some(fragments::var_and_explicit_not_allowed()),
+        (Var, Implicit) | (Implicit, Var) => Some(fragments::var_and_implicit_not_allowed()),
+        (Explicit, Implicit) | (Implicit, Explicit) => {
+            Some(fragments::implicit_and_explicit_not_allowed())
+        }
+        _ => None,
+    }
+}
+
+/// Java: JavacParser.LambdaClassifier.reduce(LambdaParameterKind newKind)
+fn reduce_lambda_kind(
+    kind: &mut Option<LambdaParameterKind>,
+    diag_fragment: &mut Option<FragmentInfo>,
+    new_kind: LambdaParameterKind,
+    source: Source,
+) {
+    match *kind {
+        None => *kind = Some(new_kind),
+        Some(current) if current != new_kind && current != LambdaParameterKind::Error => {
+            *kind = Some(LambdaParameterKind::Error);
+            let var_index =
+                current == LambdaParameterKind::Var || new_kind == LambdaParameterKind::Var;
+            *diag_fragment = if Feature::VAR_SYNTAX_IMPLICIT_LAMBDAS.allowed_in_source(source)
+                || !var_index
+            {
+                lambda_decision_fragment(current, new_kind)
+            } else {
+                None
+            };
+        }
+        _ => {}
+    }
 }
 
 /// Java: public class JavacParser implements Parser
@@ -183,8 +251,8 @@ pub struct JavacParser {
     error_pos: i32,
     /// The number of consecutive errors at the same token position.
     count: i32,
-    /// The doc comments of the compilation unit (None: not wired yet).
-    doc_comments: Option<Rc<dyn DocCommentTable>>,
+    /// The doc comments of the compilation unit (None when keepDocComments=false).
+    doc_comments: Option<Rc<std::cell::RefCell<dyn DocCommentTable>>>,
 }
 
 /// Java: abstract EndPosTable that also tracks the last error position.
@@ -351,6 +419,7 @@ impl JavacParser {
         } else {
             Box::new(EmptyEndPosTable::new())
         };
+        let doc_comments = JavacParser::new_doc_comment_table(keep_doc_comments, fac);
         let mut parser = JavacParser {
             parse_module_info,
             S: scanner,
@@ -376,7 +445,7 @@ impl JavacParser {
             error_tree,
             error_pos: NOPOS,
             count: 0,
-            doc_comments: None,
+            doc_comments,
         };
         // prime the pump
         parser.next_token();
@@ -386,19 +455,30 @@ impl JavacParser {
     /// Java: protected DocCommentTable newDocCommentTable(boolean keepDocComments,
     /// ParserFactory fac).
     ///
-    /// TODO(DocCommentParser batch): LazyDocCommentTable is not ported; the
-    /// keepDocComments=false path returns None (registered).
+    /// The keepDocComments=true path uses the ported LazyDocCommentTable
+    /// (doc comments are attached lazily; see JavacParser.attach).
     fn new_doc_comment_table(
-        &self,
         keep_doc_comments: bool,
-        _fac: &ParserFactory,
-    ) -> Option<Rc<dyn DocCommentTable>> {
+        fac: &ParserFactory,
+    ) -> Option<Rc<std::cell::RefCell<dyn DocCommentTable>>> {
         if keep_doc_comments {
-            unimplemented!(
-                "TODO(DocCommentParser batch): LazyDocCommentTable (keepDocComments=true) is not ported"
+            let names = fac.names.clone();
+            let diags = fac.log.borrow().diags().clone();
+            let diag_source = fac.log.borrow().current_source();
+            let doc_tree_maker = Rc::new(std::cell::RefCell::new(
+                crate::tree::doc_tree_maker::DocTreeMaker::new(diags),
+            ));
+            let table: Rc<std::cell::RefCell<dyn DocCommentTable>> = Rc::new(
+                std::cell::RefCell::new(LazyDocCommentTable::new(
+                    names,
+                    Rc::clone(&doc_tree_maker),
+                    diag_source,
+                )),
             );
+            Some(table)
+        } else {
+            None
         }
-        None
     }
 
     /* ---------- token management -------------- */
@@ -455,7 +535,7 @@ impl JavacParser {
 
     /* ---------- error recovery -------------- */
 
-    /// Java: private static final int RECOVERY_THRESHOLD = 50; (const above)
+    // Java: private static final int RECOVERY_THRESHOLD = 50; (const above)
 
     /// Java: protected void skip(boolean stopAtImport, boolean stopAtMemberDecl,
     /// boolean stopAtIdentifier, boolean stopAtStatement)
@@ -666,10 +746,18 @@ impl JavacParser {
 
     /// Java: protected void attach(JCTree tree, Comment dc)
     ///
-    /// TODO(DocCommentParser batch): with keepDocComments=false the upstream
-    /// docComments table is null and attach() is a no-op; that is the behavior
+    /// Java: protected void attach(JCTree tree, Comment dc)
+    /// (Java: with keepDocComments=false the upstream docComments table is null
+    /// and attach() is a no-op; that is the behavior
     /// kept here.
-    fn attach(&mut self, _tree: TreeId, _dc: Option<Rc<dyn Comment>>) {}
+    fn attach(&mut self, tree: TreeId, dc: Option<Rc<dyn Comment>>) {
+        // Java: if (keepDocComments && dc != null) docComments.putComment(tree, dc);
+        if self.keep_doc_comments && let Some(dc) = dc {
+            if let Some(doc_comments) = &self.doc_comments {
+                doc_comments.borrow_mut().put_comment(tree, dc);
+            }
+        }
+    }
 
     /// Java: protected void setErrorEndPos(int errPos)
     fn set_error_end_pos(&mut self, err_pos: i32) {
@@ -1323,6 +1411,19 @@ impl JavacParser {
                     self.next_token();
                     continue 'outer;
                 }
+                TokenKind::IDENTIFIER => {
+                    if self.is_non_sealed_class_start(false) {
+                        // Java: flag = NON_SEALED; nextToken(); nextToken();
+                        self.next_token();
+                        self.next_token();
+                        Flags::NON_SEALED
+                    } else if self.is_sealed_class_start(false) {
+                        self.check_source_level(self.token.pos, Feature::SEALED_CLASSES);
+                        Flags::SEALED
+                    } else {
+                        break 'outer;
+                    }
+                }
                 _ => break 'outer,
             };
             if (flags & flag) != 0 {
@@ -1895,6 +1996,39 @@ impl JavacParser {
         false
     }
 
+    /// Java: JCExpression memberReferenceSuffix(JCExpression t)
+    fn member_reference_suffix(&mut self, ctx: &mut CompilerContext, t: TreeId) -> TreeId {
+        let pos1 = self.token.pos;
+        self.accept(ctx, TokenKind::COLCOL);
+        self.member_reference_suffix_at(ctx, pos1, t)
+    }
+
+    /// Java: JCExpression memberReferenceSuffix(int pos1, JCExpression t)
+    fn member_reference_suffix_at(
+        &mut self,
+        ctx: &mut CompilerContext,
+        _pos1: i32,
+        t: TreeId,
+    ) -> TreeId {
+        self.check_source_level_at_token(Feature::METHOD_REFERENCES);
+        self.select_expr_mode();
+        let mut type_args: Option<List<TreeId>> = None;
+        if self.token.kind == TokenKind::LT {
+            type_args = Some(self.type_arguments_list(ctx, false));
+        }
+        let (ref_mode, ref_name) = if self.token.kind == TokenKind::NEW {
+            let name = self.names.init.clone();
+            self.next_token();
+            (ReferenceMode::NEW, name)
+        } else {
+            (ReferenceMode::INVOKE, self.ident(ctx))
+        };
+        // Java: F.at(t.getStartPosition()).Reference(refMode, refName, t, typeArgs)
+        let pos = tree_info::get_start_pos(ctx, t);
+        let reference = self.F.at(pos).reference(ctx, ref_mode, ref_name, t, type_args);
+        self.to_p(reference)
+    }
+
     /// Java: JCExpression superSuffix(List<JCExpression> typeArgs, JCExpression t)
     fn super_suffix(&mut self, ctx: &mut CompilerContext, type_args: Option<List<TreeId>>, t: TreeId) -> TreeId {
         self.next_token();
@@ -1905,8 +2039,7 @@ impl JavacParser {
             if type_args.is_some() {
                 return self.illegal(ctx, self.token.pos);
             }
-            // TODO(S7b): memberReferenceSuffix (method references).
-            unimplemented!("TODO(S7b): method references");
+            t = self.member_reference_suffix(ctx, t);
         } else {
             let pos = self.token.pos;
             self.accept(ctx, TokenKind::DOT);
@@ -2330,17 +2463,20 @@ impl JavacParser {
             if self.token.kind == TokenKind::INSTANCEOF {
                 let pos = self.token.pos;
                 self.next_token();
+                let pattern: TreeId;
                 if self.token.kind == TokenKind::LPAREN {
-                    // TODO(S7b): pattern matching in instanceof (parsePattern).
-                    unimplemented!("TODO(S7b): pattern matching instanceof");
-                }
+                    self.check_source_level(self.token.pos, Feature::PATTERN_SWITCH);
+                    // Java: pattern = parsePattern(token.pos, null, null, true);
+                    pattern = self.parse_pattern(ctx, self.token.pos, None, None, true);
+                } else {
                 let pattern_pos = self.token.pos;
                 let mods = self.opt_final(ctx, 0);
                 let type_pos = self.token.pos;
                 let mut type_ = self.unannotated_type(ctx, false);
-                let pattern = if self.token.kind == TokenKind::IDENTIFIER {
-                    // TODO(S7b): pattern matching in instanceof (parsePattern).
-                    unimplemented!("TODO(S7b): pattern matching instanceof");
+                pattern = if self.token.kind == TokenKind::IDENTIFIER {
+                    self.check_source_level(self.token.pos, Feature::PATTERN_MATCHING_IN_INSTANCEOF);
+                    // Java: pattern = parsePattern(patternPos, mods, type, true);
+                    self.parse_pattern(ctx, pattern_pos, Some(mods), Some(type_), true)
                 } else {
                     let mods_flags = match &ctx.tree(mods).kind {
                         TreeKind::Modifiers { flags, .. } => *flags,
@@ -2380,7 +2516,7 @@ impl JavacParser {
                     }
                     type_
                 };
-                let _ = pattern_pos;
+                }
                 od_stack[top] = self.F.at(pos).type_test(ctx, od_stack[top], pattern);
             } else {
                 top_op = self.token.clone();
@@ -2410,6 +2546,55 @@ impl JavacParser {
             t = self.fold_strings(ctx, t);
         }
         t
+    }
+
+    /// Java: public JCPattern parsePattern(int pos, JCModifiers mods,
+    /// JCExpression parsedType, boolean inInstanceOf)
+    fn parse_pattern(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        mods: Option<TreeId>,
+        parsed_type: Option<TreeId>,
+        in_instance_of: bool,
+    ) -> TreeId {
+        let pattern: TreeId;
+        if self.token.kind == TokenKind::LPAREN && parsed_type.is_none() {
+            let start_pos = self.token.pos;
+            self.accept(ctx, TokenKind::LPAREN);
+            let inner = self.parse_pattern(ctx, self.token.pos, None, None, false);
+            self.accept(ctx, TokenKind::RPAREN);
+            pattern = {
+                let x = self.F.at(start_pos).parenthesized_pattern(ctx, inner);
+                self.to_p(x)
+            };
+        } else {
+            let mods = match mods {
+                Some(mods) => mods,
+                None => self.opt_final(ctx, 0),
+            };
+            let e = match parsed_type {
+                Some(t) => t,
+                None => self.term_with_mode(ctx, TYPE | NOLAMBDA),
+            };
+            let var_pos = self.token.pos;
+            let var_name = self.ident(ctx);
+            let var = {
+                let x = self.F.at(var_pos).var_def(ctx, mods, var_name, Some(e), None);
+                self.to_p(x)
+            };
+            pattern = {
+                let x = self.F.at(pos).binding_pattern(ctx, var);
+                self.to_p(x)
+            };
+        }
+        if !in_instance_of && self.token.kind == TokenKind::AMPAMP {
+            self.check_source_level_at_token(Feature::PATTERN_SWITCH);
+            self.next_token();
+            let guard = self.term_with_mode(ctx, EXPR | NOLAMBDA);
+            return self.F.at(pos).guard_pattern(ctx, pattern, guard);
+        }
+        pattern
     }
 
     /// Java: protected JCExpression foldStrings(JCExpression tree)
@@ -2569,7 +2754,9 @@ impl JavacParser {
             }
             TokenKind::LPAREN => {
                 if type_args.is_none() && (self.mode & EXPR) != 0 {
-                    match self.analyze_parens() {
+                    // Java: ParensResult pres = analyzeParens(); switch (pres) { ... }
+                    let pres = self.analyze_parens();
+                    match pres {
                         ParensResult::Cast => {
                             self.accept(ctx, TokenKind::LPAREN);
                             self.select_type_mode();
@@ -2598,8 +2785,14 @@ impl JavacParser {
                             return self.F.at(pos).type_cast(ctx, t1, cast_type);
                         }
                         ParensResult::ImplicitLambda | ParensResult::ExplicitLambda => {
-                            // TODO(S7b): lambdaExpressionOrStatement.
-                            unimplemented!("TODO(S7b): lambda expressions");
+                            // Java: t = lambdaExpressionOrStatement(true,
+                            // pres == ParensResult.EXPLICIT_LAMBDA, pos);
+                            t = self.lambda_expression_or_statement(
+                                ctx,
+                                true,
+                                pres == ParensResult::ExplicitLambda,
+                                pos,
+                            );
                         }
                         ParensResult::Parens => {
                             self.accept(ctx, TokenKind::LPAREN);
@@ -2696,8 +2889,27 @@ impl JavacParser {
                 if (self.mode & TYPE) == 0 {
                     match ctx.tree(expr).tag {
                         Tag::REFERENCE => {
-                            // TODO(S7b): JCMemberReference annotated type.
-                            unimplemented!("TODO(S7b): method references");
+                            // Java: JCMemberReference mref = (JCMemberReference) expr;
+                            // mref.expr = toP(F.at(pos).AnnotatedType(typeAnnos, mref.expr));
+                            // t = mref;
+                            let mref_expr = match &ctx.tree(expr).kind {
+                                TreeKind::MemberReference { expr, .. } => *expr,
+                                _ => unreachable!(),
+                            };
+                            let inner = mref_expr.expect("member reference expr");
+                            let annotated = {
+                                let x = self
+                                    .F
+                                    .at(pos)
+                                    .annotated_type(ctx, type_annos.clone(), inner);
+                                self.to_p(x)
+                            };
+                            if let TreeKind::MemberReference { expr, .. } =
+                                &mut ctx.tree_mut(expr).kind
+                            {
+                                *expr = Some(annotated);
+                            }
+                            t = expr;
                         }
                         Tag::SELECT => {
                             let sel_name = match &ctx.tree(expr).kind {
@@ -2737,9 +2949,9 @@ impl JavacParser {
                     && (self.mode & NOLAMBDA) == 0
                     && self.peek_token(TokenKind::ARROW)
                 {
-                    // TODO(S7b): lambdaExpressionOrStatement(false, false, pos).
-                    unimplemented!("TODO(S7b): lambda expressions");
-                }
+                    // Java: t = lambdaExpressionOrStatement(false, false, pos);
+                    t = self.lambda_expression_or_statement(ctx, false, false, pos);
+                } else {
                 let ident_pos = self.token.pos;
                 let name = self.ident(ctx);
                 let mut ident_tree = {
@@ -2959,6 +3171,7 @@ impl JavacParser {
                 }
                 ident_tree = self.type_arguments_opt_expr(ctx, ident_tree);
                 t = ident_tree;
+                }
             }
             TokenKind::BYTE
             | TokenKind::SHORT
@@ -3000,8 +3213,48 @@ impl JavacParser {
                 }
             }
             TokenKind::SWITCH => {
-                // TODO(S7b): switch expressions.
-                unimplemented!("TODO(S7b): switch expressions");
+                // Java: checkSourceLevel(Feature.SWITCH_EXPRESSION);
+                // allowYieldStatement = true; int switchPos = token.pos;
+                // nextToken(); JCExpression selector = parExpression();
+                // accept(LBRACE); ListBuffer<JCCase> cases = new ListBuffer<>();
+                self.check_source_level_at_token(Feature::SWITCH_EXPRESSION);
+                self.allow_yield_statement = true;
+                let switch_pos = self.token.pos;
+                self.next_token();
+                let selector = self.par_expression(ctx);
+                self.accept(ctx, TokenKind::LBRACE);
+                let mut cases: Vec<TreeId> = Vec::new();
+                loop {
+                    let rule_pos = self.token.pos;
+                    match self.token.kind {
+                        TokenKind::CASE | TokenKind::DEFAULT => {
+                            cases.extend(self.switch_expression_statement_group(ctx));
+                        }
+                        TokenKind::RBRACE | TokenKind::EOF => {
+                            let e = self
+                                .F
+                                .at(switch_pos)
+                                .switch_expression(ctx, selector, List::from_iterable(cases));
+                            let endpos = self.token.pos;
+                            if let TreeKind::SwitchExpression { endpos: field, .. } =
+                                &mut ctx.tree_mut(e).kind
+                            {
+                                *field = endpos;
+                            }
+                            self.accept(ctx, TokenKind::RBRACE);
+                            return e;
+                        }
+                        _ => {
+                            self.next_token(); // to ensure progress
+                            let key = JCDiagnosticError::from(errors::expected3(
+                                Self::token_arg(TokenKind::CASE),
+                                Self::token_arg(TokenKind::DEFAULT),
+                                Self::token_arg(TokenKind::RBRACE),
+                            ));
+                            let _ = self.syntax_error(ctx, rule_pos, key);
+                        }
+                    }
+                }
             }
             _ => return self.illegal(ctx, pos),
         }
@@ -3119,9 +3372,8 @@ impl JavacParser {
                 if type_args.is_some() {
                     return self.illegal(ctx, pos1);
                 }
-                self.accept(ctx, TokenKind::COLCOL);
-                // TODO(S7b): memberReferenceSuffix(pos1, t).
-                unimplemented!("TODO(S7b): method references");
+                // Java: t = memberReferenceSuffix(t); (accepts the COLCOL itself)
+                t = self.member_reference_suffix(ctx, t);
             } else {
                 if !annos.is_empty() {
                     if self.permit_type_annotations_push_back {
@@ -3152,6 +3404,186 @@ impl JavacParser {
             self.next_token();
         }
         self.to_p(t)
+    }
+
+    /// Java: JCExpression lambdaExpressionOrStatement(boolean hasParens,
+    /// boolean explicitParams, int pos)
+    fn lambda_expression_or_statement(
+        &mut self,
+        ctx: &mut CompilerContext,
+        has_parens: bool,
+        explicit_params: bool,
+        pos: i32,
+    ) -> TreeId {
+        let params = if explicit_params {
+            self.formal_parameters_impl(ctx, true, false)
+        } else {
+            self.implicit_parameters(ctx, has_parens)
+        };
+        if explicit_params {
+            // Java: LambdaClassifier validation (lambda parameter kinds).
+            let mut kind: Option<LambdaParameterKind> = None;
+            let mut diag_fragment: Option<FragmentInfo> = None;
+            for param in params.iter() {
+                let param_pos = ctx.tree(param).pos;
+                let (vartype, pname) = match &ctx.tree(param).kind {
+                    TreeKind::VariableDecl {
+                        vartype,
+                        name,
+                        ..
+                    } => (*vartype, name.clone()),
+                    _ => (None, self.names.empty.clone()),
+                };
+                if let Some(vartype) = vartype {
+                    if let Some(restricted) = self.restricted_type_name(ctx, vartype, false)
+                        && ctx.tree(vartype).has_tag(Tag::TYPEARRAY)
+                    {
+                        let key = if Feature::VAR_SYNTAX_IMPLICIT_LAMBDAS
+                            .allowed_in_source(self.source)
+                        {
+                            JCDiagnosticError::from(errors::restricted_type_not_allowed_array(
+                                restricted,
+                            ))
+                        } else {
+                            JCDiagnosticError::from(errors::restricted_type_not_allowed_here(
+                                restricted,
+                            ))
+                        };
+                        self.log
+                            .borrow_mut()
+                            .error_flag_at(DiagnosticFlag::SYNTAX, param_pos, key);
+                    }
+                }
+                // Java: LambdaClassifier.addParameter(param)
+                if let Some(vartype) = vartype {
+                    if pname.to_java_string() != self.names.empty.to_java_string() {
+                        let new_kind = if self.restricted_type_name(ctx, vartype, false).is_some()
+                        {
+                            LambdaParameterKind::Var
+                        } else {
+                            LambdaParameterKind::Explicit
+                        };
+                        reduce_lambda_kind(&mut kind, &mut diag_fragment, new_kind, self.source);
+                    }
+                }
+                let implicit = (vartype.is_none()
+                    && pname.to_java_string() != self.names.empty.to_java_string())
+                    || (vartype.is_some()
+                        && pname.to_java_string() == self.names.empty.to_java_string());
+                if implicit {
+                    reduce_lambda_kind(
+                        &mut kind,
+                        &mut diag_fragment,
+                        LambdaParameterKind::Implicit,
+                        self.source,
+                    );
+                }
+                if kind == Some(LambdaParameterKind::Error) {
+                    break;
+                }
+            }
+            if let Some(fragment) = diag_fragment {
+                let key = JCDiagnosticError::from(errors::invalid_lambda_parameter_declaration(
+                    fragment_diagnostic_arg(fragment),
+                ));
+                self.log
+                    .borrow_mut()
+                    .error_flag_at(DiagnosticFlag::SYNTAX, pos, key);
+            }
+            // Java: for (JCVariableDecl param : params) { if (param.vartype != null
+            // && restrictedTypeName(param.vartype, true) != null) { checkSourceLevel(
+            // param.pos, Feature.VAR_SYNTAX_IMPLICIT_LAMBDAS);
+            // param.startPos = TreeInfo.getStartPos(param.vartype); param.vartype = null; } }
+            for param in params.iter() {
+                let vartype = match &ctx.tree(param).kind {
+                    TreeKind::VariableDecl { vartype, .. } => *vartype,
+                    _ => None,
+                };
+                if let Some(vartype) = vartype
+                    && self.restricted_type_name(ctx, vartype, true).is_some()
+                {
+                    let param_pos = ctx.tree(param).pos;
+                    self.check_source_level(param_pos, Feature::VAR_SYNTAX_IMPLICIT_LAMBDAS);
+                    let start = tree_info::get_start_pos(ctx, vartype);
+                    if let TreeKind::VariableDecl {
+                        vartype,
+                        start_pos,
+                        ..
+                    } = &mut ctx.tree_mut(param).kind
+                    {
+                        *vartype = None;
+                        *start_pos = start;
+                    }
+                }
+            }
+        }
+        self.lambda_expression_or_statement_rest(ctx, params, pos)
+    }
+
+    /// Java: JCExpression lambdaExpressionOrStatementRest(List<JCVariableDecl> args, int pos)
+    fn lambda_expression_or_statement_rest(
+        &mut self,
+        ctx: &mut CompilerContext,
+        args: List<TreeId>,
+        pos: i32,
+    ) -> TreeId {
+        self.check_source_level_at_token(Feature::LAMBDA);
+        self.accept(ctx, TokenKind::ARROW);
+        if self.token.kind == TokenKind::LBRACE {
+            self.lambda_statement(ctx, args, pos, self.token.pos)
+        } else {
+            self.lambda_expression(ctx, args, pos)
+        }
+    }
+
+    /// Java: JCExpression lambdaStatement(List<JCVariableDecl> args, int pos, int pos2)
+    fn lambda_statement(
+        &mut self,
+        ctx: &mut CompilerContext,
+        args: List<TreeId>,
+        pos: i32,
+        pos2: i32,
+    ) -> TreeId {
+        let block = self.block_at(ctx, pos2, 0);
+        let t = self.F.at(pos).lambda(ctx, args, block);
+        self.to_p(t)
+    }
+
+    /// Java: JCExpression lambdaExpression(List<JCVariableDecl> args, int pos)
+    fn lambda_expression(
+        &mut self,
+        ctx: &mut CompilerContext,
+        args: List<TreeId>,
+        pos: i32,
+    ) -> TreeId {
+        let expr = self.parse_expression(ctx);
+        let t = self.F.at(pos).lambda(ctx, args, expr);
+        self.to_p(t)
+    }
+
+    /// Java: List<JCVariableDecl> implicitParameters(boolean hasParens)
+    fn implicit_parameters(&mut self, ctx: &mut CompilerContext, has_parens: bool) -> List<TreeId> {
+        if has_parens {
+            self.accept(ctx, TokenKind::LPAREN);
+        }
+        let mut params: Vec<TreeId> = Vec::new();
+        if self.token.kind != TokenKind::RPAREN && self.token.kind != TokenKind::ARROW {
+            params.push(self.implicit_parameter(ctx));
+            while self.token.kind == TokenKind::COMMA {
+                self.next_token();
+                params.push(self.implicit_parameter(ctx));
+            }
+        }
+        if has_parens {
+            self.accept(ctx, TokenKind::RPAREN);
+        }
+        List::from_iterable(params)
+    }
+
+    /// Java: JCVariableDecl implicitParameter()
+    fn implicit_parameter(&mut self, ctx: &mut CompilerContext) -> TreeId {
+        let mods = self.F.at(self.token.pos).modifiers(ctx, Flags::PARAMETER);
+        self.variable_declarator_id_full(ctx, mods, None, true, false)
     }
 
     /// Java: boolean isUnboundMemberRef()
@@ -3487,7 +3919,16 @@ impl JavacParser {
 
     /// Java: Name typeName()
     fn type_name(&mut self, ctx: &mut CompilerContext) -> Name {
-        self.ident(ctx)
+        let pos = self.token.pos;
+        let name = self.ident(ctx);
+        if let Some(source) = self.restricted_type_name_starting_at_source(&name, pos, true) {
+            let key = JCDiagnosticError::from(errors::restricted_type_not_allowed(
+                name.clone(),
+                SourceArg::placeholder(source.to_string()),
+            ));
+            self.report_syntax_error(ctx, pos, key);
+        }
+        name
     }
 
     /* ---------- variables -------------- */
@@ -3504,7 +3945,8 @@ impl JavacParser {
     ) -> Vec<TreeId> {
         let pos = self.token.pos;
         let name = self.ident(ctx);
-        vdefs = self.variable_declarators_rest(ctx, pos, mods, type_, name, false, vdefs, local_decl);
+        vdefs =
+            self.variable_declarators_rest(ctx, pos, mods, type_, name, false, None, vdefs, local_decl);
         vdefs
     }
 
@@ -3518,10 +3960,13 @@ impl JavacParser {
         type_: TreeId,
         name: Name,
         req_init: bool,
+        dc: Option<Rc<dyn Comment>>,
         mut vdefs: Vec<TreeId>,
         local_decl: bool,
     ) -> Vec<TreeId> {
-        let head = self.variable_declarator_rest(ctx, pos, mods, type_, name, req_init, local_decl, false);
+        let head = self.variable_declarator_rest(
+            ctx, pos, mods, type_, name, req_init, dc.clone(), local_decl, false,
+        );
         vdefs.push(head);
         while self.token.kind == TokenKind::COMMA {
             let last = *vdefs.last().expect("declarator");
@@ -3530,7 +3975,9 @@ impl JavacParser {
             self.next_token();
             let pos = self.token.pos;
             let name = self.ident(ctx);
-            let def = self.variable_declarator_rest(ctx, pos, mods, type_, name, req_init, local_decl, true);
+            let def = self.variable_declarator_rest(
+                ctx, pos, mods, type_, name, req_init, dc.clone(), local_decl, true,
+            );
             vdefs.push(def);
         }
         vdefs
@@ -3548,9 +3995,11 @@ impl JavacParser {
         type_: TreeId,
         name: Name,
         req_init: bool,
-        _local_decl: bool,
-        _compound: bool,
+        dc: Option<Rc<dyn Comment>>,
+        local_decl: bool,
+        compound: bool,
     ) -> TreeId {
+        let mut declared_using_var = false;
         let type_ = self.brackets_opt_simple(ctx, type_);
         let mut init = None;
         if self.token.kind == TokenKind::EQ {
@@ -3564,16 +4013,74 @@ impl JavacParser {
                 JCDiagnosticError::from(errors::expected(Self::token_arg(TokenKind::EQ))),
             );
         }
-        let def = { let __to_p_tree = self.F.at(pos).var_def(ctx, mods, name, Some(type_), init); self.to_p(__to_p_tree) };
+        let elem_type = tree_info::innermost_type(ctx, type_, true).expect("type has no innermost");
+        let mut type_opt = Some(type_);
+        let mut start_pos = NOPOS;
+        if ctx.tree(elem_type).has_tag(Tag::IDENT) {
+            let type_name = match &ctx.tree(elem_type).kind {
+                TreeKind::Ident { name, .. } => name.clone(),
+                _ => unreachable!(),
+            };
+            if self
+                .restricted_type_name_starting_at_source(
+                    &type_name,
+                    pos,
+                    !compound && local_decl,
+                )
+                .is_some()
+            {
+                if type_name.to_java_string() != self.names.var.to_java_string() {
+                    let elem_pos = ctx.tree(elem_type).pos;
+                    let key = JCDiagnosticError::from(errors::restricted_type_not_allowed_here(
+                        type_name,
+                    ));
+                    let _ = self.syntax_error(ctx, elem_pos, key);
+                } else if ctx.tree(type_).has_tag(Tag::TYPEARRAY) && !compound {
+                    let elem_pos = ctx.tree(elem_type).pos;
+                    let key = JCDiagnosticError::from(errors::restricted_type_not_allowed_array(
+                        type_name,
+                    ));
+                    let _ = self.syntax_error(ctx, elem_pos, key);
+                } else {
+                    declared_using_var = true;
+                    if compound {
+                        let elem_pos = ctx.tree(elem_type).pos;
+                        let key = JCDiagnosticError::from(
+                            errors::restricted_type_not_allowed_compound(type_name),
+                        );
+                        let _ = self.syntax_error(ctx, elem_pos, key);
+                    }
+                    start_pos = tree_info::get_start_pos(ctx, mods);
+                    if start_pos == NOPOS {
+                        start_pos = tree_info::get_start_pos(ctx, type_);
+                    }
+                    // implicit type
+                    type_opt = None;
+                }
+            }
+        }
+        let def = {
+            let __to_p_tree = self.F.at(pos).var_def_declared_using_var(
+                ctx,
+                mods,
+                name,
+                type_opt,
+                init,
+                declared_using_var,
+            );
+            self.to_p(__to_p_tree)
+        };
+        if let TreeKind::VariableDecl { start_pos: field, .. } = &mut ctx.tree_mut(def).kind {
+            *field = start_pos;
+        }
+        self.attach(def, dc);
         def
     }
 
     /// Java: JCVariableDecl variableDeclaratorId(JCModifiers mods, JCExpression type)
+    /// Java: JCVariableDecl variableDeclaratorId(JCModifiers mods, JCExpression type)
     fn variable_declarator_id(&mut self, ctx: &mut CompilerContext, mods: TreeId, type_: TreeId) -> TreeId {
-        let pos = self.token.pos;
-        let name = self.ident(ctx);
-        let type_ = self.brackets_opt_simple(ctx, type_);
-        { let __to_p_tree = self.F.at(pos).var_def(ctx, mods, name, Some(type_), None); self.to_p(__to_p_tree) }
+        self.variable_declarator_id_full(ctx, mods, Some(type_), false, false)
     }
 
     /* ---------- blocks and statements -------------- */
@@ -3672,9 +4179,7 @@ impl JavacParser {
             | TokenKind::CATCH
             | TokenKind::ASSERT => List::of(self.parse_simple_statement(ctx)),
             TokenKind::MONKEYS_AT | TokenKind::FINAL => {
-                // TODO(S8 DocCommentParser batch): the doc comment is not
-                // consumed (keepDocComments=false; attach is a no-op).
-                let _dc = self.token.comment(CommentStyle::JAVADOC);
+                let dc = self.token.comment(CommentStyle::JAVADOC);
                 let mods = self.modifiers_opt(ctx);
                 if matches!(
                     self.token.kind,
@@ -3682,21 +4187,21 @@ impl JavacParser {
                 ) || self.is_record_start()
                 {
                     return List::of(
-                        self.class_or_record_or_interface_or_enum_declaration(ctx, mods),
+                        self.class_or_record_or_interface_or_enum_declaration(ctx, mods, dc),
                     );
                 }
                 let t = self.parse_type_impl(ctx, true);
                 List::from_iterable(self.local_variable_declarations(ctx, mods, t))
             }
             TokenKind::ABSTRACT | TokenKind::STRICTFP => {
-                let _dc = self.token.comment(CommentStyle::JAVADOC);
+                let dc = self.token.comment(CommentStyle::JAVADOC);
                 let mods = self.modifiers_opt(ctx);
-                List::of(self.class_or_record_or_interface_or_enum_declaration(ctx, mods))
+                List::of(self.class_or_record_or_interface_or_enum_declaration(ctx, mods, dc))
             }
             TokenKind::INTERFACE | TokenKind::CLASS => {
-                let _dc = self.token.comment(CommentStyle::JAVADOC);
+                let dc = self.token.comment(CommentStyle::JAVADOC);
                 let mods = self.modifiers_opt(ctx);
-                List::of(self.class_or_record_or_interface_or_enum_declaration(ctx, mods))
+                List::of(self.class_or_record_or_interface_or_enum_declaration(ctx, mods, dc))
             }
             TokenKind::ENUM => {
                 if !self.allow_records {
@@ -3704,9 +4209,9 @@ impl JavacParser {
                     let key = JCDiagnosticError::from(errors::local_enum());
                     self.log.borrow_mut().error_at(pos_err, key);
                 }
-                let _dc = self.token.comment(CommentStyle::JAVADOC);
+                let dc = self.token.comment(CommentStyle::JAVADOC);
                 let mods = self.modifiers_opt(ctx);
-                List::of(self.class_or_record_or_interface_or_enum_declaration(ctx, mods))
+                List::of(self.class_or_record_or_interface_or_enum_declaration(ctx, mods, dc))
             }
             TokenKind::IDENTIFIER => {
                 if self.token.name() == &self.names.r#yield && self.allow_yield_statement {
@@ -3730,8 +4235,9 @@ impl JavacParser {
                         self.next_token();
                         self.next_token();
                         let mods = self.modifiers_opt(ctx);
+                        let dc = self.token.comment(CommentStyle::JAVADOC);
                         return List::of(
-                            self.class_or_record_or_interface_or_enum_declaration(ctx, mods),
+                            self.class_or_record_or_interface_or_enum_declaration(ctx, mods, dc),
                         );
                     } else if self.is_sealed_class_start(true) {
                         let err_pos = self.token.pos;
@@ -3742,8 +4248,9 @@ impl JavacParser {
                         self.log.borrow_mut().error_at(err_pos, key);
                         self.next_token();
                         let mods = self.modifiers_opt(ctx);
+                        let dc = self.token.comment(CommentStyle::JAVADOC);
                         return List::of(
-                            self.class_or_record_or_interface_or_enum_declaration(ctx, mods),
+                            self.class_or_record_or_interface_or_enum_declaration(ctx, mods, dc),
                         );
                     }
                 }
@@ -3762,9 +4269,11 @@ impl JavacParser {
         pos: i32,
     ) -> List<TreeId> {
         if self.is_record_start() && self.allow_records {
-            // TODO(S7b): recordDeclaration (records are not ported yet); no
-            // substitute is provided.
-            unimplemented!("TODO(S7b): record declarations");
+            // Java: dc = token.comment(JAVADOC);
+            // return List.of(recordDeclaration(F.at(pos).Modifiers(0), dc));
+            let dc = self.token.comment(CommentStyle::JAVADOC);
+            let mods = self.F.at(pos).modifiers(ctx, 0);
+            return List::of(self.record_declaration(ctx, mods, dc));
         }
         let prev_token = self.token.clone();
         let t = self.term_with_mode(ctx, EXPR | TYPE);
@@ -4240,6 +4749,75 @@ impl JavacParser {
         List::from_iterable(types)
     }
 
+    /// Java: private List<JCCase> switchExpressionStatementGroup()
+    fn switch_expression_statement_group(&mut self, ctx: &mut CompilerContext) -> Vec<TreeId> {
+        let case_pos = self.token.pos;
+        let mut pats: Vec<TreeId> = Vec::new();
+        if self.token.kind == TokenKind::DEFAULT {
+            self.next_token();
+            let label = {
+                let x = self.F.at(case_pos).default_case_label(ctx);
+                self.to_p(x)
+            };
+            pats.push(label);
+        } else {
+            self.accept(ctx, TokenKind::CASE);
+            loop {
+                let label = self.parse_case_label(ctx);
+                pats.push(label);
+                if self.token.kind != TokenKind::COMMA {
+                    break;
+                }
+                self.check_source_level_at_token(Feature::SWITCH_MULTIPLE_CASE_LABELS);
+                self.next_token();
+            }
+        }
+        let stats: List<TreeId>;
+        let body: Option<TreeId>;
+        let kind: CaseKind;
+        match self.token.kind {
+            TokenKind::ARROW => {
+                self.check_source_level_at_token(Feature::SWITCH_RULE);
+                self.next_token();
+                if self.token.kind == TokenKind::THROW || self.token.kind == TokenKind::LBRACE {
+                    let statement = self.parse_statement(ctx);
+                    stats = List::of(statement);
+                    body = Some(statement);
+                    kind = CaseKind::RULE;
+                } else {
+                    let value = self.parse_expression(ctx);
+                    let value_pos = ctx.tree(value).pos;
+                    let yielded = {
+                        let x = self.F.at(value_pos).yield_(ctx, value);
+                        self.to(x)
+                    };
+                    stats = List::of(yielded);
+                    body = Some(value);
+                    kind = CaseKind::RULE;
+                    self.accept(ctx, TokenKind::SEMI);
+                }
+            }
+            _ => {
+                self.accept_error(
+                    ctx,
+                    TokenKind::COLON,
+                    JCDiagnosticError::from(errors::expected2(
+                        Self::token_arg(TokenKind::COLON),
+                        Self::token_arg(TokenKind::ARROW),
+                    )),
+                );
+                stats = self.block_statements(ctx);
+                kind = CaseKind::STATEMENT;
+                body = None;
+            }
+        }
+        let c = self
+            .F
+            .at(case_pos)
+            .case(ctx, kind, List::from_iterable(pats), stats, body);
+        vec![self.to_p(c)]
+    }
+
     /// Java: List<JCCase> switchBlockStatementGroups()
     fn switch_block_statement_groups(&mut self, ctx: &mut CompilerContext) -> List<TreeId> {
         let mut cases = Vec::new();
@@ -4285,9 +4863,22 @@ impl JavacParser {
                     self.check_source_level_at_token(Feature::SWITCH_MULTIPLE_CASE_LABELS);
                 }
                 let case_kind;
+                let mut body: Option<TreeId> = None;
                 if self.token.kind == TokenKind::ARROW {
-                    // TODO(S7b): switch rules (arrow cases) are not ported yet.
-                    unimplemented!("TODO(S7b): switch rules");
+                    self.check_source_level_at_token(Feature::SWITCH_RULE);
+                    self.accept(ctx, TokenKind::ARROW);
+                    case_kind = CaseKind::RULE;
+                    let statement = self.parse_statement_as_block(ctx);
+                    let tag = ctx.tree(statement).tag;
+                    if tag != Tag::EXEC && tag != Tag::BLOCK && tag != Tag::THROW {
+                        let stmt_pos = ctx.tree(statement).pos;
+                        let key = JCDiagnosticError::from(
+                            errors::switch_case_unexpected_statement(),
+                        );
+                        self.log.borrow_mut().error_at(stmt_pos, key);
+                    }
+                    stats = List::of(statement);
+                    body = Some(statement);
                 } else {
                     self.accept_error(
                         ctx,
@@ -4305,7 +4896,7 @@ impl JavacParser {
                     case_kind,
                     List::from_iterable(pats),
                     stats.clone(),
-                    None,
+                    body,
                 );
                 let c = self.to_p(c);
                 if stats.is_empty() {
@@ -4319,9 +4910,22 @@ impl JavacParser {
                 self.next_token();
                 let case_kind;
                 let pattern_pos = self.token.pos;
+                let mut body: Option<TreeId> = None;
                 if self.token.kind == TokenKind::ARROW {
-                    // TODO(S7b): switch rules (arrow cases) are not ported yet.
-                    unimplemented!("TODO(S7b): switch rules");
+                    self.check_source_level_at_token(Feature::SWITCH_RULE);
+                    self.accept(ctx, TokenKind::ARROW);
+                    case_kind = CaseKind::RULE;
+                    let statement = self.parse_statement_as_block(ctx);
+                    let tag = ctx.tree(statement).tag;
+                    if tag != Tag::EXEC && tag != Tag::BLOCK && tag != Tag::THROW {
+                        let stmt_pos = ctx.tree(statement).pos;
+                        let key = JCDiagnosticError::from(
+                            errors::switch_case_unexpected_statement(),
+                        );
+                        self.log.borrow_mut().error_at(stmt_pos, key);
+                    }
+                    stats = List::of(statement);
+                    body = Some(statement);
                 } else {
                     self.accept_error(
                         ctx,
@@ -4343,7 +4947,7 @@ impl JavacParser {
                     case_kind,
                     List::of(default_pattern),
                     stats.clone(),
-                    None,
+                    body,
                 );
                 let c = self.to_p(c);
                 if stats.is_empty() {
@@ -4385,8 +4989,8 @@ impl JavacParser {
             || self.analyze_pattern(lookahead) == PatternResult::Pattern;
         if pattern {
             self.check_source_level_at_token(Feature::PATTERN_SWITCH);
-            // TODO(S7b): parsePattern (pattern matching in switch) is not ported.
-            unimplemented!("TODO(S7b): pattern matching in switch (parsePattern)");
+            // Java: return parsePattern(patternPos, mods, null, false);
+            return self.parse_pattern(ctx, pattern_pos, Some(mods), None, false);
         }
         self.term_with_mode(ctx, EXPR | NOLAMBDA)
     }
@@ -4512,14 +5116,14 @@ impl JavacParser {
             let t = self.parse_type_impl(ctx, true);
             let pos = self.token.pos;
             let name = self.ident(ctx);
-            return self.variable_declarator_rest(ctx, pos, mods, t, name, true, true, false);
+            return self.variable_declarator_rest(ctx, pos, mods, t, name, true, None, true, false);
         }
         let t = self.term_with_mode(ctx, EXPR | TYPE);
         if (self.last_mode & TYPE) != 0 && Self::is_lax_identifier(self.token.kind) {
             let mods = self.F.at(start_pos).modifiers(ctx, Flags::FINAL);
             let pos = self.token.pos;
             let name = self.ident(ctx);
-            return self.variable_declarator_rest(ctx, pos, mods, t, name, true, true, false);
+            return self.variable_declarator_rest(ctx, pos, mods, t, name, true, None, true, false);
         }
         let check_pos = self.token.pos;
         self.check_source_level(
@@ -4537,12 +5141,144 @@ impl JavacParser {
 
     /* ---------- class/interface declarations -------------- */
 
-    /// Java: protected JCStatement classOrRecordOrInterfaceOrEnumDeclaration(
-    /// JCModifiers mods, Comment dc)
- 
+    /// Java: List<JCExpression> permitsClause(JCModifiers mods, String classOrInterface)
+    fn permits_clause(
+        &mut self,
+        ctx: &mut CompilerContext,
+        mods: TreeId,
+        class_or_interface: &str,
+    ) -> List<TreeId> {
+        if self.allow_sealed_types
+            && self.token.kind == TokenKind::IDENTIFIER
+            && self.token.name().to_java_string() == self.names.permits.to_java_string()
+        {
+            self.check_source_level(self.token.pos, Feature::SEALED_CLASSES);
+            let mods_flags = match &ctx.tree(mods).kind {
+                TreeKind::Modifiers { flags, .. } => *flags,
+                _ => 0,
+            };
+            if (mods_flags & Flags::SEALED) == 0 {
+                // Java: Errors.InvalidPermitsClause(Fragments.ClassIsNotSealed(classOrInterface)).
+                let class_fragment = fragments::class_is_not_sealed(JavaString::from(class_or_interface));
+                let key = JCDiagnosticError::from(errors::invalid_permits_clause(
+                    fragment_diagnostic_arg(class_fragment),
+                ));
+                self.log.borrow_mut().error_at(self.token.pos, key);
+            }
+            self.next_token();
+            return self.qualident_list(ctx, false);
+        }
+        List::nil()
+    }
+
+    /// Java: protected JCClassDecl recordDeclaration(JCModifiers mods, Comment dc)
+    fn record_declaration(
+        &mut self,
+        ctx: &mut CompilerContext,
+        mods: TreeId,
+        dc: Option<Rc<dyn Comment>>,
+    ) -> TreeId {
+        let pos = self.token.pos;
+        self.next_token();
+        if let TreeKind::Modifiers { flags, .. } = &mut ctx.tree_mut(mods).kind {
+            *flags |= Flags::RECORD;
+        }
+        let name = self.type_name(ctx);
+        let typarams = self.type_parameters_opt(ctx);
+        let header_fields = self.formal_parameters_impl(ctx, false, true);
+        let mut implementing = List::nil();
+        if self.token.kind == TokenKind::IMPLEMENTS {
+            self.next_token();
+            implementing = self.type_list(ctx);
+        }
+        let defs = self.class_interface_body(ctx, name.clone(), false, true);
+        // Java: for (JCTree def : defs) { if (def.hasTag(METHODDEF)) { ... } }
+        let mut defs_vec: Vec<TreeId> = defs.iter().collect();
+        for def in defs_vec.iter_mut() {
+            if !ctx.tree(*def).has_tag(Tag::METHODDEF) {
+                continue;
+            }
+            let (is_init, params_empty, is_compact) = match &ctx.tree(*def).kind {
+                TreeKind::MethodDecl {
+                    name: mname,
+                    params,
+                    mods: mmods,
+                    ..
+                } => {
+                    let mflags = match mmods {
+                        Some(m) => match &ctx.tree(*m).kind {
+                            TreeKind::Modifiers { flags, .. } => *flags,
+                            _ => 0,
+                        },
+                        None => 0,
+                    };
+                    (
+                        mname.to_java_string() == self.names.init.to_java_string(),
+                        params.is_empty(),
+                        (mflags & Flags::COMPACT_RECORD_CONSTRUCTOR) != 0,
+                    )
+                }
+                _ => (false, false, false),
+            };
+            if !(is_init && params_empty && is_compact) {
+                continue;
+            }
+            let mut tmp_params: Vec<TreeId> = Vec::new();
+            for param in header_fields.iter() {
+                let param_pos = ctx.tree(param).pos;
+                let (param_flags, param_annos, param_name, param_vartype) =
+                    match &ctx.tree(param).kind {
+                        TreeKind::VariableDecl {
+                            mods: Some(pm),
+                            name,
+                            vartype,
+                            ..
+                        } => {
+                            let (pf, pa) = match &ctx.tree(*pm).kind {
+                                TreeKind::Modifiers { flags, annotations } => {
+                                    (*flags, annotations.clone())
+                                }
+                                _ => (0, List::nil()),
+                            };
+                            (pf, pa, name.clone(), *vartype)
+                        }
+                        _ => panic!("expected record header variable declaration"),
+                    };
+                // Java: F.at(param).VarDef(F.Modifiers(PARAMETER | GENERATED_MEMBER
+                //        | param.mods.flags & VARARGS, param.mods.annotations),
+                //        param.name, param.vartype, null)
+                let generated_flags =
+                    Flags::PARAMETER | Flags::GENERATED_MEMBER | (param_flags & Flags::VARARGS);
+                let generated_mods =
+                    self.F.at(param_pos).modifiers_with_annotations(ctx, generated_flags, param_annos);
+                let generated =
+                    self.F.at(param_pos).var_def(ctx, generated_mods, param_name, param_vartype, None);
+                tmp_params.push(generated);
+            }
+            if let TreeKind::MethodDecl { params, .. } = &mut ctx.tree_mut(*def).kind {
+                *params = List::from_iterable(tmp_params);
+            }
+        }
+        let mut defs_list = List::from_iterable(defs_vec);
+        // Java: for (int i = fields.size() - 1; i >= 0; i--) defs = defs.prepend(fields.get(i));
+        let header_vec: Vec<TreeId> = header_fields.iter().collect();
+        for field in header_vec.iter().rev() {
+            defs_list = defs_list.prepend(*field);
+        }
+        let result =
+            self.F.at(pos).class_def(ctx, mods, name, typarams, None, implementing, defs_list);
+        let result = self.to_p(result);
+        self.attach(result, dc);
+        result
+    }
 
     /// Java: protected JCClassDecl classDeclaration(JCModifiers mods, Comment dc)
-    fn class_declaration(&mut self, ctx: &mut CompilerContext, mods: TreeId) -> TreeId {
+    fn class_declaration(
+        &mut self,
+        ctx: &mut CompilerContext,
+        mods: TreeId,
+        dc: Option<Rc<dyn Comment>>,
+    ) -> TreeId {
         let pos = self.token.pos;
         self.accept(ctx, TokenKind::CLASS);
         let name = self.type_name(ctx);
@@ -4557,12 +5293,23 @@ impl JavacParser {
             self.next_token();
             implementing = self.type_list(ctx);
         }
+        let permitting = self.permits_clause(ctx, mods, "class");
         let defs = self.class_interface_body(ctx, name.clone(), false, false);
-        { let __to_p_tree = self.F.at(pos).class_def(ctx, mods, name, typarams, extending, implementing, defs); self.to_p(__to_p_tree) }
+        let result = self.F.at(pos).class_def_permitting(
+            ctx, mods, name, typarams, extending, implementing, permitting, defs,
+        );
+        let result = self.to_p(result);
+        self.attach(result, dc);
+        result
     }
 
     /// Java: protected JCClassDecl interfaceDeclaration(JCModifiers mods, Comment dc)
-    fn interface_declaration(&mut self, ctx: &mut CompilerContext, mods: TreeId) -> TreeId {
+    fn interface_declaration(
+        &mut self,
+        ctx: &mut CompilerContext,
+        mods: TreeId,
+        dc: Option<Rc<dyn Comment>>,
+    ) -> TreeId {
         let pos = self.token.pos;
         self.accept(ctx, TokenKind::INTERFACE);
         let name = self.type_name(ctx);
@@ -4572,8 +5319,14 @@ impl JavacParser {
             self.next_token();
             extending = self.type_list(ctx);
         }
+        let permitting = self.permits_clause(ctx, mods, "interface");
         let defs = self.class_interface_body(ctx, name.clone(), true, false);
-        { let __to_p_tree = self.F.at(pos).class_def(ctx, mods, name, typarams, None, extending, defs); self.to_p(__to_p_tree) }
+        let result = self.F.at(pos).class_def_permitting(
+            ctx, mods, name, typarams, None, extending, permitting, defs,
+        );
+        let result = self.to_p(result);
+        self.attach(result, dc);
+        result
     }
 
     /// Java: List<JCTree> classInterfaceOrRecordBody(Name className,
@@ -4610,9 +5363,8 @@ impl JavacParser {
             self.next_token();
             return Vec::new();
         }
-        // TODO(S8 DocCommentParser batch): with keepDocComments=false the
-        // doc comment is not consumed; attach is a no-op.
-        let _dc = self.token.comment(CommentStyle::JAVADOC);
+        // Java: Comment dc = token.comment(CommentStyle.JAVADOC);
+        let dc = self.token.comment(CommentStyle::JAVADOC);
         let pos = self.token.pos;
         let mods = self.modifiers_opt(ctx);
         if self.token.kind == TokenKind::CLASS
@@ -4620,7 +5372,7 @@ impl JavacParser {
             || self.token.kind == TokenKind::INTERFACE
             || self.token.kind == TokenKind::ENUM
         {
-            return vec![self.class_or_record_or_interface_or_enum_declaration(ctx, mods)];
+            return vec![self.class_or_record_or_interface_or_enum_declaration(ctx, mods, dc)];
         }
         let mods_flags = match &ctx.tree(mods).kind {
             TreeKind::Modifiers { flags, .. } => *flags,
@@ -4720,11 +5472,30 @@ impl JavacParser {
                 is_interface,
                 true,
                 is_record,
+                dc,
             )];
         } else if is_record && has_ident_type && self.token.kind == TokenKind::THROWS {
             // trying to define a compact constructor with a throws clause
-            // TODO(S7b): records (canonical constructor diagnostics).
-            unimplemented!("TODO(S7b): records (compact constructor with throws clause)");
+            // Java: log.error(SYNTAX, token.pos, Errors.InvalidCanonicalConstructorInRecord(
+            //         Fragments.Compact, className,
+            //         Fragments.ThrowsClauseNotAllowedForCanonicalConstructor(Fragments.Compact)));
+            let key = JCDiagnosticError::from(errors::invalid_canonical_constructor_in_record(
+                fragment_diagnostic_arg(fragments::compact()),
+                class_name.clone(),
+                fragment_diagnostic_arg(
+                    fragments::throws_clause_not_allowed_for_canonical_constructor(
+                        fragment_diagnostic_arg(fragments::compact()),
+                    ),
+                ),
+            ));
+            self.log
+                .borrow_mut()
+                .error_flag_at(DiagnosticFlag::SYNTAX, self.token.pos, key);
+            self.skip(false, true, false, false);
+            let init_name = self.names.init.clone();
+            return vec![self.method_declarator_rest(
+                ctx, pos, mods, None, init_name, typarams, is_interface, true, is_record, dc,
+            )];
         } else {
             pos = self.token.pos;
             let name = self.ident(ctx);
@@ -4739,6 +5510,7 @@ impl JavacParser {
                     is_interface,
                     is_void,
                     false,
+                    dc,
                 )];
             } else if !is_void && typarams.is_empty() {
                 if !is_record || (mods_flags & Flags::STATIC) != 0 {
@@ -4749,6 +5521,7 @@ impl JavacParser {
                         type_,
                         name,
                         is_interface,
+                        dc,
                         Vec::new(),
                         false,
                     );
@@ -4767,6 +5540,7 @@ impl JavacParser {
                         type_,
                         name,
                         is_interface,
+                        dc,
                         Vec::new(),
                         false,
                     );
@@ -4828,6 +5602,7 @@ impl JavacParser {
         is_interface: bool,
         is_void: bool,
         is_record: bool,
+        dc: Option<Rc<dyn Comment>>,
     ) -> TreeId {
         if is_interface {
             let mods_flags = match &ctx.tree(mods).kind {
@@ -4882,20 +5657,59 @@ impl JavacParser {
             ctx, mods, name, type_, typarams, None, params, thrown, body, default_value,
         );
         let result = self.to_p(result);
+        self.attach(result, dc);
         self.receiver_param = prev_receiver;
         result
     }
 
     /// Java: List<JCVariableDecl> formalParameters()
     fn formal_parameters(&mut self, ctx: &mut CompilerContext) -> List<TreeId> {
-        let mut params = Vec::new();
+        self.formal_parameters_impl(ctx, false, false)
+    }
+
+    /// Java: List<JCVariableDecl> formalParameters(boolean lambdaParameters,
+    /// boolean recordComponents)
+    fn formal_parameters_impl(
+        &mut self,
+        ctx: &mut CompilerContext,
+        lambda_parameters: bool,
+        record_components: bool,
+    ) -> List<TreeId> {
+        let mut params: Vec<TreeId> = Vec::new();
         self.accept(ctx, TokenKind::LPAREN);
         if self.token.kind != TokenKind::RPAREN {
-            let mut last_param = self.formal_parameter(ctx);
-            params.push(last_param);
+            self.allow_this_ident = !lambda_parameters && !record_components;
+            let mut last_param = self.formal_parameter(ctx, lambda_parameters, record_components);
+            let is_receiver = match &ctx.tree(last_param).kind {
+                TreeKind::VariableDecl {
+                    nameexpr: Some(_), ..
+                } => true,
+                _ => false,
+            };
+            if is_receiver {
+                self.receiver_param = Some(last_param);
+            } else {
+                params.push(last_param);
+            }
+            self.allow_this_ident = false;
             while self.token.kind == TokenKind::COMMA {
+                let last_flags = match &ctx.tree(last_param).kind {
+                    TreeKind::VariableDecl { mods: Some(m), .. } => match &ctx.tree(*m).kind {
+                        TreeKind::Modifiers { flags, .. } => *flags,
+                        _ => 0,
+                    },
+                    _ => 0,
+                };
+                if (last_flags & Flags::VARARGS) != 0 {
+                    // Java: log.error(SYNTAX, lastParam, Errors.VarargsMustBeLast)
+                    let err_pos = ctx.tree(last_param).pos;
+                    let key = JCDiagnosticError::from(errors::varargs_must_be_last());
+                    self.log
+                        .borrow_mut()
+                        .error_flag_at(DiagnosticFlag::SYNTAX, err_pos, key);
+                }
                 self.next_token();
-                last_param = self.formal_parameter(ctx);
+                last_param = self.formal_parameter(ctx, lambda_parameters, record_components);
                 params.push(last_param);
             }
         }
@@ -4905,56 +5719,183 @@ impl JavacParser {
             let p = self.token.pos;
             self.set_error_end_pos(p);
             let end = self.prev_token().end_pos;
-            let _ = self.report_syntax_error_pos(
-                ctx,
-                end,
-                JCDiagnosticError::from(errors::expected3(
-                    Self::token_arg(TokenKind::COMMA),
-                    Self::token_arg(TokenKind::RPAREN),
-                    Self::token_arg(TokenKind::LBRACKET),
-                )),
-            );
+            let key = JCDiagnosticError::from(errors::expected3(
+                Self::token_arg(TokenKind::COMMA),
+                Self::token_arg(TokenKind::RPAREN),
+                Self::token_arg(TokenKind::LBRACKET),
+            ));
+            let _ = self.report_syntax_error_pos(ctx, end, key);
         }
         List::from_iterable(params)
     }
 
     /// Java: protected JCVariableDecl formalParameter(boolean lambdaParameter,
     /// boolean recordComponent)
-    fn formal_parameter(&mut self, ctx: &mut CompilerContext) -> TreeId {
-        let mods = self.opt_final(ctx, Flags::PARAMETER);
+    fn formal_parameter(
+        &mut self,
+        ctx: &mut CompilerContext,
+        lambda_parameter: bool,
+        record_component: bool,
+    ) -> TreeId {
+        // Java: JCModifiers mods = !recordComponent ? optFinal(Flags.PARAMETER) : modifiersOpt();
+        let mods = if !record_component {
+            self.opt_final(ctx, Flags::PARAMETER)
+        } else {
+            self.modifiers_opt(ctx)
+        };
+        if record_component {
+            let mods_flags = match &ctx.tree(mods).kind {
+                TreeKind::Modifiers { flags, .. } => *flags,
+                _ => 0,
+            };
+            if mods_flags != 0 {
+                let err_pos = ctx.tree(mods).pos;
+                let key = JCDiagnosticError::from(errors::record_cant_declare_field_modifiers());
+                self.log.borrow_mut().error_at(err_pos, key);
+            }
+            if let TreeKind::Modifiers { flags, .. } = &mut ctx.tree_mut(mods).kind {
+                *flags |= Flags::RECORD | Flags::FINAL | Flags::PRIVATE | Flags::GENERATED_MEMBER;
+            }
+        }
+        // need to distinguish between vararg annos and array annos
+        // look at typeAnnotationsPushedBack comment
         self.permit_type_annotations_push_back = true;
-        let mut type_ = self.parse_type_impl(ctx, false);
+        let mut type_ = self.parse_type_impl(ctx, lambda_parameter);
         self.permit_type_annotations_push_back = false;
-        let mods = mods;
         if self.token.kind == TokenKind::ELLIPSIS {
             let varargs_annos = self.type_annotations_pushed_back.clone();
             self.type_annotations_pushed_back = List::nil();
-            if let TreeKind::Modifiers { flags, annotations, .. } = &mut ctx.tree_mut(mods).kind {
+            if let TreeKind::Modifiers { flags, .. } = &mut ctx.tree_mut(mods).kind {
                 *flags |= Flags::VARARGS;
-                let mut list = annotations.clone();
-                list = list.append_list(&varargs_annos);
-                *annotations = list;
             }
+            // Java: type = insertAnnotationsToMostInner(type, varargsAnnos, true);
+            type_ = self.insert_annotations_to_most_inner(ctx, type_, varargs_annos, true);
             self.next_token();
-            // Java: type = to(F.at(token.pos).TypeArray(type));
-            type_ = {
-                let x = self.F.at(self.token.pos).type_array(ctx, type_);
-                self.to(x)
-            };
-        } else if !self.type_annotations_pushed_back.is_empty() {
-            let head = *self.type_annotations_pushed_back.head();
-            let p = ctx.tree(head).pos;
-            let _ = self.syntax_error(
-                ctx,
-                p,
-                JCDiagnosticError::from(errors::illegal_start_of_type()),
-            );
+        } else {
+            // if not a var arg, then typeAnnotationsPushedBack should be null
+            if !self.type_annotations_pushed_back.is_empty() {
+                let head = *self.type_annotations_pushed_back.head();
+                let p = ctx.tree(head).pos;
+                let key = JCDiagnosticError::from(errors::illegal_start_of_type());
+                self.report_syntax_error(ctx, p, key);
+            }
             self.type_annotations_pushed_back = List::nil();
         }
+        self.variable_declarator_id_full(ctx, mods, Some(type_), lambda_parameter, record_component)
+    }
+
+    /// Java: JCVariableDecl variableDeclaratorId(JCModifiers mods, JCExpression type,
+    /// boolean lambdaParameter, boolean recordComponent) — the overload is named with
+    /// the _full suffix (PORTING_RULES section 3).
+    fn variable_declarator_id_full(
+        &mut self,
+        ctx: &mut CompilerContext,
+        mods: TreeId,
+        type_: Option<TreeId>,
+        lambda_parameter: bool,
+        record_component: bool,
+    ) -> TreeId {
         let pos = self.token.pos;
-        let name = self.ident(ctx);
-        let type_ = self.brackets_opt_simple(ctx, type_);
-        { let __to_p_tree = self.F.at(pos).var_def(ctx, mods, name, Some(type_), None); self.to_p(__to_p_tree) }
+        let name: Name;
+        if lambda_parameter && self.token.kind == TokenKind::UNDERSCORE {
+            let key = JCDiagnosticError::from(errors::underscore_as_identifier_in_lambda());
+            self.log.borrow_mut().error_at(pos, key);
+            name = self.token.name().clone();
+            self.next_token();
+        } else {
+            let mods_flags = match &ctx.tree(mods).kind {
+                TreeKind::Modifiers { flags, .. } => *flags,
+                _ => 0,
+            };
+            let mods_annotations_empty = match &ctx.tree(mods).kind {
+                TreeKind::Modifiers { annotations, .. } => annotations.is_empty(),
+                _ => true,
+            };
+            if self.allow_this_ident
+                || !lambda_parameter
+                || Self::is_lax_identifier(self.token.kind)
+                || mods_flags != Flags::PARAMETER
+                || !mods_annotations_empty
+            {
+                let pn = self.qualident(ctx, false);
+                let mut found_name: Option<Name> = None;
+                if let TreeKind::Ident { name: id_name, .. } = &ctx.tree(pn).kind {
+                    if id_name.to_java_string() != self.names._this.to_java_string() {
+                        found_name = Some(id_name.clone());
+                    }
+                }
+                match found_name {
+                    Some(n) => name = n,
+                    None => {
+                        if self.allow_this_ident {
+                            if (mods_flags & Flags::VARARGS) != 0 {
+                                let key = JCDiagnosticError::from(errors::varargs_and_receiver());
+                                self.log.borrow_mut().error_at(self.token.pos, key);
+                            }
+                            if self.token.kind == TokenKind::LBRACKET {
+                                let key = JCDiagnosticError::from(errors::array_and_receiver());
+                                self.log.borrow_mut().error_at(self.token.pos, key);
+                            }
+                            let wrong_receiver = ctx.tree(pn).has_tag(Tag::SELECT)
+                                && match &ctx.tree(pn).kind {
+                                    TreeKind::FieldAccess { name, .. } => {
+                                        name.to_java_string() != self.names._this.to_java_string()
+                                    }
+                                    _ => false,
+                                };
+                            if wrong_receiver {
+                                let key = JCDiagnosticError::from(errors::wrong_receiver());
+                                self.log.borrow_mut().error_at(self.token.pos, key);
+                            }
+                        }
+                        let vd = self.F.at(pos).receiver_var_def(ctx, mods, pn, type_);
+                        return self.to_p(vd);
+                    }
+                }
+            } else {
+                // Java: name = names.empty (mixed implicit/var/explicit lambda params).
+                name = self.names.empty.clone();
+            }
+        }
+        let mods_flags = match &ctx.tree(mods).kind {
+            TreeKind::Modifiers { flags, .. } => *flags,
+            _ => 0,
+        };
+        if (mods_flags & Flags::VARARGS) != 0 && self.token.kind == TokenKind::LBRACKET {
+            let key = JCDiagnosticError::from(errors::varargs_and_old_array_syntax());
+            self.log.borrow_mut().error_at(self.token.pos, key);
+        }
+        if record_component && self.token.kind == TokenKind::LBRACKET {
+            let key = JCDiagnosticError::from(errors::record_component_and_old_array_syntax());
+            self.log.borrow_mut().error_at(self.token.pos, key);
+        }
+        // PORTING_RULES adapter: type is Some in every current call site; the
+        // null type of implicit lambda parameters is parsed by the lambda batch.
+        let type_ = match type_ {
+            Some(t) => Some(self.brackets_opt_simple(ctx, t)),
+            None => None,
+        };
+        let declared_using_var = match type_ {
+            Some(t) => {
+                ctx.tree(t).has_tag(Tag::IDENT)
+                    && match &ctx.tree(t).kind {
+                        TreeKind::Ident { name, .. } => {
+                            name.to_java_string() == self.names.var.to_java_string()
+                        }
+                        _ => false,
+                    }
+            }
+            None => false,
+        };
+        let vd = self.F.at(pos).var_def_declared_using_var(
+            ctx,
+            mods,
+            name,
+            type_,
+            None,
+            declared_using_var,
+        );
+        self.to_p(vd)
     }
 
     /* ---------- compilation unit -------------- */
@@ -4964,6 +5905,7 @@ impl JavacParser {
     pub fn parse_compilation_unit_impl(&mut self, ctx: &mut CompilerContext) -> TreeId {
         let first_token = self.token.clone();
         let mut mods: Option<TreeId> = None;
+        let mut consumed_toplevel_doc = false;
         let mut seen_import = false;
         let mut seen_package = false;
         let mut defs: Vec<TreeId> = Vec::new();
@@ -4988,6 +5930,9 @@ impl JavacParser {
             let pid = self.qualident(ctx, false);
             self.accept(ctx, TokenKind::SEMI);
             let pd = { let __to_p_tree = self.F.at(package_pos).package_decl(ctx, annotations, pid); self.to_p(__to_p_tree) };
+            // Java: attach(pd, firstToken.comment(JAVADOC)); consumedToplevelDoc = true;
+            self.attach(pd, first_token.comment(CommentStyle::JAVADOC));
+            consumed_toplevel_doc = true;
             defs.push(pd);
             let _ = seen_package;
         }
@@ -5005,32 +5950,48 @@ impl JavacParser {
                 defs.push(self.import_declaration(ctx));
             } else {
                 let first = first_token.clone();
-                let doc_comment = self.token.comment(CommentStyle::JAVADOC);
+                let mut doc_comment = self.token.comment(CommentStyle::JAVADOC);
+                if first_type_decl && !seen_import && !seen_package {
+                    // Java: docComment = firstToken.comment(JAVADOC);
+                    doc_comment = first_token.comment(CommentStyle::JAVADOC);
+                    consumed_toplevel_doc = true;
+                }
                 if mods.is_some() || self.token.kind != TokenKind::SEMI {
                     let taken = mods.take();
                     mods = Some(self.modifiers_opt_partial(ctx, taken));
                 }
                 if first_type_decl && self.token.kind == TokenKind::IDENTIFIER {
-                    let name = self.token.name().clone();
-                    if name == self.names.open.clone() {
+                    // Java: ModuleKind kind = ModuleKind.STRONG;
+                    // if (token.name() == names.open) { kind = ModuleKind.OPEN; nextToken(); }
+                    // if (token.name() == names.module) { ... moduleDecl(mods, kind, docComment); break; }
+                    // else if (kind != ModuleKind.STRONG) reportSyntaxError(ExpectedModule);
+                    let mut kind = ModuleKind::STRONG;
+                    if self.token.name().to_java_string() == self.names.open.to_java_string() {
+                        kind = ModuleKind::OPEN;
                         self.next_token();
-                        if self.token.kind == TokenKind::IDENTIFIER
-                            && self.token.name() == &self.names.module
-                        {
-                            // TODO(S7b): module declarations (moduleDecl) are not
-                            // ported; no substitute is provided.
-                            unimplemented!("TODO(S7b): module declarations");
-                        } else {
-                            self.report_syntax_error(
-                                ctx,
-                                self.token.pos,
-                                JCDiagnosticError::from(errors::expected_module()),
-                            );
+                    }
+                    if self.token.kind == TokenKind::IDENTIFIER
+                        && self.token.name().to_java_string() == self.names.module.to_java_string()
+                    {
+                        if let Some(mods_id) = mods {
+                            let mods_flags = match &ctx.tree(mods_id).kind {
+                                TreeKind::Modifiers { flags, .. } => *flags,
+                                _ => 0,
+                            };
+                            let mods_pos = ctx.tree(mods_id).pos;
+                            self.check_no_mods_at(ctx, mods_pos, mods_flags & !Flags::DEPRECATED);
                         }
-                    } else if name == self.names.module.clone() {
-                        // TODO(S7b): module declarations (moduleDecl) are not
-                        // ported; no substitute is provided.
-                        unimplemented!("TODO(S7b): module declarations");
+                        let mods_for_module = mods.take().expect("module modifiers");
+                        defs.push(self.module_decl(ctx, mods_for_module, kind, doc_comment));
+                        consumed_toplevel_doc = true;
+                        break;
+                    } else if kind != ModuleKind::STRONG {
+                        let p = self.token.pos;
+                        let _ = self.syntax_error(
+                            ctx,
+                            p,
+                            JCDiagnosticError::from(errors::expected_module()),
+                        );
                     }
                 }
                 let mut def = self.type_declaration(ctx, mods.take(), doc_comment);
@@ -5051,6 +6012,13 @@ impl JavacParser {
         }
         let defs_list = List::from_iterable(defs);
         let toplevel = self.F.at(first_token.pos).top_level(ctx, defs_list.clone());
+        if let TreeKind::CompilationUnit { doc_comments, .. } = &mut ctx.tree_mut(toplevel).kind {
+            *doc_comments = self.doc_comments.clone();
+        }
+        if !consumed_toplevel_doc {
+            // Java: attach(toplevel, firstToken.comment(JAVADOC));
+            self.attach(toplevel, first_token.comment(CommentStyle::JAVADOC));
+        }
         if defs_list.is_empty() {
             let end = self.prev_token().end_pos;
             self.store_end(toplevel, end);
@@ -5066,6 +6034,138 @@ impl JavacParser {
             *end_positions = Some(table.boxed());
         }
         toplevel
+    }
+
+    /// Java: JCModuleDecl moduleDecl(JCModifiers mods, ModuleKind kind, Comment dc)
+    fn module_decl(
+        &mut self,
+        ctx: &mut CompilerContext,
+        mods: TreeId,
+        kind: ModuleKind,
+        dc: Option<Rc<dyn Comment>>,
+    ) -> TreeId {
+        let pos = self.token.pos;
+        self.check_source_level_at_token(Feature::MODULES);
+        self.next_token();
+        let name = self.qualident(ctx, false);
+        self.accept(ctx, TokenKind::LBRACE);
+        let directives = self.module_directive_list(ctx);
+        self.accept(ctx, TokenKind::RBRACE);
+        self.accept(ctx, TokenKind::EOF);
+        let result = self
+            .F
+            .at(pos)
+            .module_def(ctx, mods, kind, Some(name), directives);
+        let result = self.to_p(result);
+        self.attach(result, dc);
+        result
+    }
+
+    /// Java: List<JCDirective> moduleDirectiveList()
+    fn module_directive_list(&mut self, ctx: &mut CompilerContext) -> List<TreeId> {
+        let mut defs: Vec<TreeId> = Vec::new();
+        while self.token.kind == TokenKind::IDENTIFIER {
+            let pos = self.token.pos;
+            let directive_name = self.token.name().to_java_string();
+            if directive_name == self.names.requires.to_java_string() {
+                self.next_token();
+                let mut is_transitive = false;
+                let mut is_static_phase = false;
+                loop {
+                    match self.token.kind {
+                        TokenKind::IDENTIFIER => {
+                            if self.token.name().to_java_string()
+                                == self.names.transitive.to_java_string()
+                                && !is_transitive
+                            {
+                                // Java: Token t1 = S.token(1);
+                                let t1 = self.S.lookahead_token(1).kind;
+                                if t1 == TokenKind::SEMI || t1 == TokenKind::DOT {
+                                    break;
+                                }
+                                is_transitive = true;
+                            } else {
+                                break;
+                            }
+                        }
+                        TokenKind::STATIC => {
+                            if is_static_phase {
+                                let p = self.token.pos;
+                                let key = JCDiagnosticError::from(errors::repeated_modifier());
+                                self.log
+                                    .borrow_mut()
+                                    .error_flag_at(DiagnosticFlag::SYNTAX, p, key);
+                            }
+                            is_static_phase = true;
+                        }
+                        _ => break,
+                    }
+                    self.next_token();
+                }
+                let module_name = self.qualident(ctx, false);
+                self.accept(ctx, TokenKind::SEMI);
+                let d = self
+                    .F
+                    .at(pos)
+                    .requires(ctx, is_transitive, is_static_phase, module_name);
+                defs.push(self.to_p(d));
+            } else if directive_name == self.names.exports.to_java_string()
+                || directive_name == self.names.opens.to_java_string()
+            {
+                let exports = directive_name == self.names.exports.to_java_string();
+                self.next_token();
+                let pkg_name = self.qualident(ctx, false);
+                let mut module_names: Option<List<TreeId>> = None;
+                if self.token.kind == TokenKind::IDENTIFIER
+                    && self.token.name().to_java_string() == self.names.to.to_java_string()
+                {
+                    self.next_token();
+                    module_names = Some(self.qualident_list(ctx, false));
+                }
+                self.accept(ctx, TokenKind::SEMI);
+                let d = if exports {
+                    self.F.at(pos).exports(ctx, pkg_name, module_names)
+                } else {
+                    self.F.at(pos).opens(ctx, pkg_name, module_names)
+                };
+                defs.push(self.to_p(d));
+            } else if directive_name == self.names.provides.to_java_string() {
+                self.next_token();
+                let service_name = self.qualident(ctx, false);
+                if self.token.kind == TokenKind::IDENTIFIER
+                    && self.token.name().to_java_string() == self.names.with.to_java_string()
+                {
+                    self.next_token();
+                    let impl_names = self.qualident_list(ctx, false);
+                    self.accept(ctx, TokenKind::SEMI);
+                    let d = self.F.at(pos).provides(ctx, service_name, impl_names);
+                    defs.push(self.to_p(d));
+                } else {
+                    // Java: log.error(SYNTAX, token.pos, Errors.ExpectedStr("'" + names.with + "'"));
+                    let p = self.token.pos;
+                    let with_text = format!("'{}'", self.names.with);
+                    let key = JCDiagnosticError::from(errors::expected_str(JavaString::from(
+                        with_text.as_str(),
+                    )));
+                    self.log
+                        .borrow_mut()
+                        .error_flag_at(DiagnosticFlag::SYNTAX, p, key);
+                    self.skip(false, false, false, false);
+                }
+            } else if directive_name == self.names.uses.to_java_string() {
+                self.next_token();
+                let service = self.qualident(ctx, false);
+                self.accept(ctx, TokenKind::SEMI);
+                let d = self.F.at(pos).uses(ctx, service);
+                defs.push(self.to_p(d));
+            } else {
+                self.set_error_end_pos(pos);
+                let key = JCDiagnosticError::from(errors::invalid_module_directive());
+                let _ = self.syntax_error(ctx, pos, key);
+                break;
+            }
+        }
+        List::from_iterable(defs)
     }
 
     /// Java: protected JCTree importDeclaration()
@@ -5098,14 +6198,13 @@ impl JavacParser {
 
     /// Java: JCTree typeDeclaration(JCModifiers mods, Comment docComment)
     ///
-    /// PORTING_RULES: docComment is accepted as None-only for now (the
-    /// keepDocComments=true path needs DocCommentParser/LazyDocCommentTable,
-    /// TODO(S8 DocCommentParser batch); attach() is a no-op for now).
+    /// PORTING_RULES: the doc comment received here is attached to the created
+    /// declaration through JavacParser.attach when keepDocComments is set.
     fn type_declaration(
         &mut self,
         ctx: &mut CompilerContext,
         mods: Option<TreeId>,
-        _dc: Option<Rc<dyn Comment>>,
+        dc: Option<Rc<dyn Comment>>,
     ) -> TreeId {
         let pos = self.token.pos;
         if mods.is_none() && self.token.kind == TokenKind::SEMI {
@@ -5114,7 +6213,7 @@ impl JavacParser {
             return self.to_p(skip);
         }
         let mods = self.modifiers_opt_partial(ctx, mods);
-        self.class_or_record_or_interface_or_enum_declaration(ctx, mods)
+        self.class_or_record_or_interface_or_enum_declaration(ctx, mods, dc)
     }
 
     /// Java: protected JCStatement
@@ -5123,18 +6222,17 @@ impl JavacParser {
         &mut self,
         ctx: &mut CompilerContext,
         mods: TreeId,
+        dc: Option<Rc<dyn Comment>>,
     ) -> TreeId {
         if self.token.kind == TokenKind::CLASS {
-            return self.class_declaration(ctx, mods);
+            return self.class_declaration(ctx, mods, dc);
         }
         if self.is_record_start() {
-            // TODO(S7b): recordDeclaration (records are not ported yet); no
-            // substitute is provided.
-            unimplemented!("TODO(S7b): record declarations");
+            return self.record_declaration(ctx, mods, dc);
         } else if self.token.kind == TokenKind::INTERFACE {
-            return self.interface_declaration(ctx, mods);
+            return self.interface_declaration(ctx, mods, dc);
         } else if self.token.kind == TokenKind::ENUM {
-            return self.enum_declaration(ctx, mods);
+            return self.enum_declaration(ctx, mods, dc);
         }
         let pos = self.token.pos;
         if self.token.kind == TokenKind::IDENTIFIER && self.token.name() == &self.names.record {
@@ -5193,7 +6291,12 @@ impl JavacParser {
     }
 
     /// Java: protected JCClassDecl enumDeclaration(JCModifiers mods, Comment dc)
-    fn enum_declaration(&mut self, ctx: &mut CompilerContext, mods: TreeId) -> TreeId {
+    fn enum_declaration(
+        &mut self,
+        ctx: &mut CompilerContext,
+        mods: TreeId,
+        dc: Option<Rc<dyn Comment>>,
+    ) -> TreeId {
         let pos = self.token.pos;
         self.accept(ctx, TokenKind::ENUM);
         let name = self.type_name(ctx);
@@ -5215,7 +6318,9 @@ impl JavacParser {
             implementing,
             defs,
         );
-        self.to_p(result)
+        let result = self.to_p(result);
+        self.attach(result, dc);
+        result
     }
 
     /// Java: List<JCTree> enumBody(Name enumName)
@@ -5347,7 +6452,7 @@ impl JavacParser {
 
     /// Java: JCTree enumeratorDeclaration(Name enumName)
     fn enumerator_declaration(&mut self, ctx: &mut CompilerContext, enum_name: Name) -> TreeId {
-        let _dc = self.token.comment(CommentStyle::JAVADOC);
+        let dc = self.token.comment(CommentStyle::JAVADOC);
         let mut flags = Flags::PUBLIC | Flags::STATIC | Flags::FINAL | Flags::ENUM;
         if self.token.deprecated_flag() {
             flags |= Flags::DEPRECATED;
@@ -5399,15 +6504,16 @@ impl JavacParser {
         let ident2 = self.F.at(ident_pos).ident(ctx, enum_name);
         let result = self.F.at(pos).var_def(ctx, mods, name, Some(ident2), Some(create));
         let result = self.to_p(result);
+        self.attach(result, dc);
         result
     }
 
     /// Java: protected boolean isRecordStart()
     fn is_record_start(&mut self) -> bool {
         if self.token.kind == TokenKind::IDENTIFIER && self.token.name() == &self.names.record
-            && (self.peek_token_at2(1, TokenKind::IDENTIFIER, TokenKind::LPAREN)
-                || self.peek_token_at2(1, TokenKind::IDENTIFIER, TokenKind::EOF)
-                || self.peek_token_at2(1, TokenKind::IDENTIFIER, TokenKind::LT))
+            && (self.peek_token_at2(0, TokenKind::IDENTIFIER, TokenKind::LPAREN)
+                || self.peek_token_at2(0, TokenKind::IDENTIFIER, TokenKind::EOF)
+                || self.peek_token_at2(0, TokenKind::IDENTIFIER, TokenKind::LT))
         {
             self.check_source_level(self.token.pos, Feature::RECORDS);
             true

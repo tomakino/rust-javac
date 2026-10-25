@@ -38,8 +38,13 @@ pub struct JavaMethod {
 /// 覆盖判定。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Coverage {
-    Covered,
+    /// A Rust function definition was found (exact name or an overload suffix).
+    Defined,
+    /// No function definition, but a TODO/unimplemented registration names it.
     Registered,
+    /// The name appears in the Rust file without a definition (possible rename /
+    /// macro / trait impl); requires manual review, not counted as covered.
+    Mentioned,
     Missing,
 }
 
@@ -285,16 +290,24 @@ pub fn extract_methods(java: &str, class_name: &str) -> Vec<JavaMethod> {
 
 /// 判定 Rust 文件对上游方法的覆盖状态。
 pub fn rust_coverage(rust: &str, java_name: &str, snake: &str) -> Coverage {
-    let fn_pat = format!("fn {snake}");
-    let fn_pat2 = format!("fn {java_name}");
-    if rust.contains(&fn_pat) || rust.contains(&fn_pat2) {
-        return Coverage::Covered;
+    // PORTING_RULES overload suffixes (_full/_at/_impl/...) are treated as the
+    // same upstream method (registered naming convention, section 3).
+    let defined = rust.contains(&format!("fn {snake}("))
+        || rust.contains(&format!("fn {snake}<"))
+        || rust.contains(&format!("fn {snake}_"))
+        || rust.contains(&format!("fn {java_name}("))
+        || rust.contains(&format!("fn {java_name}_"));
+    if defined {
+        return Coverage::Defined;
     }
     for line in rust.lines() {
         let is_registration = line.contains("TODO") || line.contains("unimplemented");
         if is_registration && (line.contains(snake) || line.contains(java_name)) {
             return Coverage::Registered;
         }
+    }
+    if rust.contains(snake) || rust.contains(java_name) {
+        return Coverage::Mentioned;
     }
     Coverage::Missing
 }
@@ -313,8 +326,10 @@ pub struct AuditReport {
     pub ctors: usize,
     pub covered: usize,
     pub registered: usize,
+    pub mentioned: usize,
     pub missing: usize,
     pub missing_list: Vec<(String, String, usize, String)>,
+    pub mentioned_list: Vec<(String, String, usize, String)>,
     pub per_file: BTreeMap<String, FileStats>,
 }
 
@@ -367,13 +382,23 @@ where
             }
             let snake = to_snake_case(&method.name);
             match rust_coverage(&rust, &method.name, &snake) {
-                Coverage::Covered => {
+                Coverage::Defined => {
                     covered += 1;
                     report.covered += 1;
                 }
                 Coverage::Registered => {
                     registered += 1;
                     report.registered += 1;
+                }
+                Coverage::Mentioned => {
+                    mentioned += 1;
+                    report.mentioned += 1;
+                    report.mentioned_list.push((
+                        row.java.clone(),
+                        method.name.clone(),
+                        method.line,
+                        row.rust.clone(),
+                    ));
                 }
                 Coverage::Missing => {
                     missing += 1;
@@ -415,8 +440,13 @@ pub fn run(args: &[String]) -> Result<(), String> {
         report.java_files, report.mapped_present, report.mapped_missing, report.unmapped
     );
     println!(
-        "methods: {} (constructors: {}), covered: {}, registered: {}, missing: {}",
-        report.methods, report.ctors, report.covered, report.registered, report.missing
+        "methods: {} (constructors: {}), covered: {}, registered: {}, mentioned: {}, missing: {}",
+        report.methods,
+        report.ctors,
+        report.covered,
+        report.registered,
+        report.mentioned,
+        report.missing
     );
     if !report.missing_list.is_empty() {
         println!("---- missing (showing up to {} of {}) ----", max_missing, report.missing_list.len());
@@ -516,7 +546,7 @@ public final class Sample<T> extends Object {
         let rust = "//! doc\nfn get_thrown_types(ctx: &CompilerContext) -> List<TypeId> { }\n// TODO(Types batch): is_capture_of not wired\nfn other() {}\n";
         assert_eq!(
             rust_coverage(rust, "getThrownTypes", "get_thrown_types"),
-            Coverage::Covered
+            Coverage::Defined
         );
         assert_eq!(
             rust_coverage(rust, "isCaptureOf", "is_capture_of"),
@@ -525,6 +555,16 @@ public final class Sample<T> extends Object {
         assert_eq!(
             rust_coverage(rust, "newTypeVar", "new_type_var"),
             Coverage::Missing
+        );
+        // Overload suffix (registered naming convention) counts as defined.
+        assert_eq!(
+            rust_coverage("fn get_value_impl() {}", "getValue", "get_value"),
+            Coverage::Defined
+        );
+        // A bare mention is reported for manual review, not counted as covered.
+        assert_eq!(
+            rust_coverage("// v.visitString(this);", "visitString", "visit_string"),
+            Coverage::Mentioned
         );
     }
 

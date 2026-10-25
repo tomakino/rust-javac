@@ -68,7 +68,7 @@ pub struct Pretty {
     /// The enclosing class name.
     encl_class_name: Option<Name>,
     /// A table mapping trees to their documentation comments (can be None).
-    doc_comments: Option<Rc<dyn DocCommentTable>>,
+    doc_comments: Option<Rc<std::cell::RefCell<dyn DocCommentTable>>>,
     /// Visitor argument: the current precedence level.
     prec: i32,
 }
@@ -289,7 +289,7 @@ impl Pretty {
         let Some(doc_comments) = self.doc_comments.clone() else {
             return;
         };
-        let Some(dc) = doc_comments.get_comment_text(tree) else {
+        let Some(dc) = doc_comments.borrow().get_comment_text(tree) else {
             return;
         };
         self.print("/**");
@@ -914,7 +914,7 @@ impl Pretty {
             None => (0, List::nil()),
         };
         if let Some(doc_comments) = self.doc_comments.clone() {
-            if doc_comments.has_comment(tree) {
+            if doc_comments.borrow().has_comment(tree) {
                 self.println();
                 self.align();
             }
@@ -1862,7 +1862,6 @@ impl Pretty {
     fn visit_reference(&mut self, ctx: &CompilerContext, tree: TreeId) {
         let TreeKind::MemberReference {
             mode,
-            kind,
             name,
             expr,
             typeargs,
@@ -1872,7 +1871,6 @@ impl Pretty {
             return;
         };
         let mode = *mode;
-        let kind = *kind;
         let name = name.clone();
         let expr = *expr;
         let typeargs = typeargs.clone();
@@ -1889,7 +1887,6 @@ impl Pretty {
             }
             javac_source::tree::member_reference_tree::ReferenceMode::NEW => self.print("new"),
         }
-        let _ = kind;
     }
 
     fn visit_ident(&mut self, ctx: &CompilerContext, tree: TreeId) {
@@ -1914,11 +1911,19 @@ impl Pretty {
                 _ => self.print("0L"),
             },
             TypeTag::FLOAT => match value {
-                Some(LiteralValue::Float(v)) => self.print(&format!("{v}F")),
-                _ => self.print("0F"),
+                // Java: print(tree.value + "F") -> Float.toString(v) + "F"
+                // (FloatingDecimal.toJavaFormatString; javac-floating).
+                Some(LiteralValue::Float(v)) => {
+                    self.print(&format!("{}F", javac_floating::to_java_string_float(v)))
+                }
+                _ => self.print("0.0F"),
             },
             TypeTag::DOUBLE => match value {
-                Some(LiteralValue::Double(v)) => self.print(&v.to_string()),
+                // Java: print(tree.value.toString()) -> Double.toString(v)
+                // (FloatingDecimal.toJavaFormatString; javac-floating).
+                Some(LiteralValue::Double(v)) => {
+                    self.print(&javac_floating::to_java_string_double(v))
+                }
                 _ => self.print("0.0"),
             },
             TypeTag::CHAR => match value {

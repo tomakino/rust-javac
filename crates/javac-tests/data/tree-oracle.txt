@@ -1145,5 +1145,50 @@ public class Sample5 {
     long underscore = 1000000L;
 }
 === END ===
-# records: 35
+=== FILE: samples/Sample6.java ===
+package samples;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.TYPE, ElementType.METHOD})
+public @interface Sample6 {
+    
+    String value() default "default";
+    
+    int[] numbers() default {1, 2, 3};
+    
+    Class<?> type() default Object.class;
+    
+    Nested nested() default @Nested;
+    
+    @interface Nested {
+        
+        String name() default "";
+    }
+}
+@Sample6(value = "x", numbers = {4, 5})
+class Sample6User {
+    
+    @Sample6
+    public void annotated() {
+    }
+}
+=== END ===
+=== FILE: samples/module-info.java ===
+module sample.module {
+    requires java.base;
+    requires transitive java.logging;
+    requires static java.sql;
+    exports sample.pkg;
+    exports sample.pkg2 to other.module, third.module;
+    opens sample.pkg;
+    uses sample.pkg.Service;
+    provides sample.pkg.Service with sample.pkg.ServiceImpl;
+}
+=== END ===
+# records: 37
 # skipped: 0

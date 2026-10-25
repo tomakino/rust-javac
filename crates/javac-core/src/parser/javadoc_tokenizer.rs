@@ -223,7 +223,11 @@ impl JavadocComment {
                     break 'outer_loop;
                 } else if reader.is_one_of('\n', '\r') {
                     // We've seen a newline.  Add it to our buffer.
+                    // (put_unit reads the position-tracking reader; release the
+                    // mutable borrow first so the RefCell adapter is not re-entered.)
+                    drop(reader);
                     self.put_unit('\n' as u16);
+                    let mut reader = self.reader.borrow_mut();
                     reader.accept('\r');
                     reader.accept('\n');
                     break;

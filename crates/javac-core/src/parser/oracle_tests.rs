@@ -521,3 +521,91 @@ fn malformed_floating_point_literal_does_not_panic() {
     let tree = parser.parse_compilation_unit(&mut ctx);
     assert_eq!(ctx.tree(tree).tag, crate::tree::jc_tree::Tag::TOPLEVEL);
 }
+
+/// S7b: lambda expressions (explicit/implicit/var parameter lists) parse through
+/// the ported lambdaExpressionOrStatement pipeline (JDK 17 syntax).
+#[test]
+fn s7b_lambda_expressions_parse() {
+    use crate::parser::parser::Parser;
+    use crate::tree::jc_tree::Tag;
+    let samples = [
+        "class T { Object a = () -> 1; }\n",
+        "class T { Object b = (x) -> x; }\n",
+        "class T { Object c = x -> x + 1; }\n",
+        "class T { Object d = (int x) -> x; }\n",
+        "class T { Object e = (var x) -> x; }\n",
+        "class T { Object f = () -> { return 1; }; }\n",
+        "class T { java.util.function.IntUnaryOperator g = (int x) -> { return x; }; }\n",
+    ];
+    for source in samples {
+        let (mut ctx, factory) = make_floating_parser_context();
+        let mut parser =
+            factory.new_parser(&mut ctx, &JavaString::from(source), false, true, false);
+        let tree = parser.parse_compilation_unit(&mut ctx);
+        assert_eq!(ctx.tree(tree).tag, Tag::TOPLEVEL, "source: {source}");
+    }
+}
+
+/// S7b: sealed types (modifiers + permits clauses) and record declarations
+/// (header, compact constructor, implements clause) parse like upstream.
+#[test]
+fn s7b_sealed_and_record_declarations_parse() {
+    use crate::parser::parser::Parser;
+    use crate::tree::jc_tree::Tag;
+    let samples = [
+        "sealed class A permits B {}\nfinal class B extends A {}\n",
+        "non-sealed class C extends A {}\n",
+        "sealed interface I permits J {}\nfinal class J implements I {}\n",
+        "record Point(int x, int y) {}\n",
+        "record R(int x) implements java.io.Serializable { R { } }\n",
+        "record Pair<T>(T a, T b) { Pair(T a, T b) { this.a = a; this.b = b; } }\n",
+    ];
+    for source in samples {
+        let (mut ctx, factory) = make_floating_parser_context();
+        let mut parser =
+            factory.new_parser(&mut ctx, &JavaString::from(source), false, true, false);
+        let tree = parser.parse_compilation_unit(&mut ctx);
+        assert_eq!(ctx.tree(tree).tag, Tag::TOPLEVEL, "source: {source}");
+    }
+}
+
+/// S7b: module declarations (open module, requires/exports/opens/provides/uses)
+/// parse through the ported moduleDecl pipeline.
+#[test]
+fn s7b_module_declarations_parse() {
+    use crate::parser::parser::Parser;
+    use crate::tree::jc_tree::Tag;
+    let samples = [
+        "module m { requires java.base; }\n",
+        "open module m { requires transitive java.logging; exports p to q, r; }\n",
+        "module m { requires static java.sql; exports p; uses p.Service; provides p.Service with p.Impl; }\n",
+    ];
+    for source in samples {
+        let (mut ctx, factory) = make_floating_parser_context();
+        let mut parser =
+            factory.new_parser(&mut ctx, &JavaString::from(source), false, true, true);
+        let tree = parser.parse_compilation_unit(&mut ctx);
+        assert_eq!(ctx.tree(tree).tag, Tag::TOPLEVEL, "source: {source}");
+    }
+}
+
+/// S7b: annotation type declarations (@interface, members with defaults) parse
+/// through the ported interfaceDeclaration path (ANNOTATION flag handling).
+#[test]
+fn s7b_annotation_type_declarations_parse() {
+    use crate::parser::parser::Parser;
+    use crate::tree::jc_tree::Tag;
+    let samples = [
+        "@interface Ann { String value(); }\n",
+        "@interface Ann { int count() default 1; String[] names() default {}; }\n",
+        "@interface Outer { @interface Inner { Class<?> type(); } }\n",
+        "@Ann(\"x\") class UsesAnn {}\n",
+    ];
+    for source in samples {
+        let (mut ctx, factory) = make_floating_parser_context();
+        let mut parser =
+            factory.new_parser(&mut ctx, &JavaString::from(source), false, true, false);
+        let tree = parser.parse_compilation_unit(&mut ctx);
+        assert_eq!(ctx.tree(tree).tag, Tag::TOPLEVEL, "source: {source}");
+    }
+}
