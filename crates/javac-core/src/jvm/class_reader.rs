@@ -239,6 +239,10 @@ pub struct ClassReader {
     have_parameter_name_indices: bool,
     /// Java: boolean sawMethodParameters
     saw_method_parameters: bool,
+    /// Java: private List<InterimUsesDirective> interimUses = List.nil();
+    interim_uses: List<Name>,
+    /// Java: private List<InterimProvidesDirective> interimProvides = List.nil();
+    interim_provides: List<(Name, List<Name>)>,
     /// Java: Type.noType (syms.noType). Symtab does not expose the singleton yet,
     /// so the ClassReader caches the NONE-tag type it uses for absent supertypes
     /// (registered representation adapter; tag-based comparisons are unchanged).
@@ -313,6 +317,8 @@ impl ClassReader {
             parameter_access_flags: None,
             have_parameter_name_indices: false,
             saw_method_parameters: false,
+            interim_uses: List::nil(),
+            interim_provides: List::nil(),
             no_type: None,
         };
         reader.init_attribute_readers();
@@ -1153,16 +1159,75 @@ impl ClassReader {
             unimplemented!("TODO(P2/S3): AnnotationTypeMetadata for annotation types (annotation batch)");
         }
 
-        // Java: if (c == currentModule.module_info) { ... interimUses/interimProvides ... }
+        // Java: if (c == currentModule.module_info) {
+        //             if (interimUses.nonEmpty() || interimProvides.nonEmpty()) {
+        //                 currentModule.usesProvidesCompleter = new UsesProvidesCompleter(...)
+        //             } }
+        //
+        // PORTING_RULES adapter: UsesProvidesCompleter / ModuleSymbol.completer are not
+        // ported yet, so the interim names are resolved to ClassSymbols and recorded as
+        // UsesDirective/ProvidesDirective here (the same result the upstream completer
+        // produces on completion; registered structural adapter). The use of a
+        // deferred completer instead of immediate entry is not observable for the
+        // module-info reading path covered by the tests.
         if let Some(module) = self.current_module {
             let module_info = match &ctx.sym(module).kind_data {
                 crate::code::symbol::SymbolKind::ModuleSymbol { module_info, .. } => *module_info,
                 _ => None,
             };
-            if module_info == Some(c) {
-                unimplemented!("TODO(P2/S2): module uses/provides (UsesProvidesCompleter, module batch)");
+            if module_info == Some(c)
+                && (!self.interim_uses.is_empty() || !self.interim_provides.is_empty())
+            {
+                    let uses_names = self.interim_uses.clone();
+                    let provides_names = self.interim_provides.clone();
+                    self.interim_uses = List::nil();
+                    self.interim_provides = List::nil();
+                    let mut uses: List<crate::ids::DirectiveId> = List::nil();
+                    let mut list = uses_names;
+                    while list.non_empty() {
+                        let service = self.enter_class(ctx, syms, list.head().clone())?;
+                        let directive = ctx.alloc_directive(crate::code::directive::Directive::Uses {
+                            service: Some(service),
+                        });
+                        uses = uses.append(directive);
+                        list = list.tail();
+                    }
+                    let mut provides: List<crate::ids::DirectiveId> = List::nil();
+                    let mut list = provides_names;
+                    while list.non_empty() {
+                        let (service_name, impl_names) = list.head().clone();
+                        let service = self.enter_class(ctx, syms, service_name)?;
+                        let mut impls: List<SymbolId> = List::nil();
+                        let mut impls_list = impl_names;
+                        while impls_list.non_empty() {
+                            let impl_class = self.enter_class(ctx, syms, impls_list.head().clone())?;
+                            impls = impls.append(impl_class);
+                            impls_list = impls_list.tail();
+                        }
+                        let directive = ctx.alloc_directive(
+                            crate::code::directive::Directive::Provides {
+                                service: Some(service),
+                                impls,
+                            },
+                        );
+                        provides = provides.append(directive);
+                        list = list.tail();
+                    }
+                    if let crate::code::symbol::SymbolKind::ModuleSymbol {
+                        uses: uses_slot,
+                        provides: provides_slot,
+                        directives: directives_field,
+                        ..
+                    } = &mut ctx.sym_mut(module).kind_data
+                    {
+                        *uses_slot = uses.clone();
+                        *provides_slot = provides.clone();
+                        *directives_field = directives_field
+                            .append_list(&uses)
+                            .append_list(&provides);
+                    }
+                }
             }
-        }
         Ok(())
     }
 
@@ -1609,6 +1674,308 @@ impl ClassReader {
             })
             .collect();
     }
+    // ------------------------------------------------------------------
+    // Module / ModuleResolution attribute readers (ClassReader.java:1090-1212)
+    // ------------------------------------------------------------------
+
+    /// Java: Set<ModuleFlags> readModuleFlags(int flags)
+    fn read_module_flags(flags: i32) -> Vec<crate::code::symbol::ModuleFlags> {
+        let mut set = Vec::new();
+        for flag in crate::code::symbol::ModuleFlags::values() {
+            if (flags & flag.value()) != 0 {
+                set.push(flag);
+            }
+        }
+        set
+    }
+
+    /// Java: Set<ModuleResolutionFlags> readModuleResolutionFlags(int flags)
+    fn read_module_resolution_flags(flags: i32) -> Vec<crate::code::symbol::ModuleResolutionFlags> {
+        let mut set = Vec::new();
+        for flag in crate::code::symbol::ModuleResolutionFlags::values() {
+            if (flags & flag.value()) != 0 {
+                set.push(flag);
+            }
+        }
+        set
+    }
+
+    /// Java: Set<RequiresFlag> readRequiresFlags(int flags)
+    fn read_requires_flags(flags: i32) -> Vec<crate::code::directive::RequiresFlag> {
+        let mut set = Vec::new();
+        for flag in crate::code::directive::RequiresFlag::values() {
+            if (flags & flag.value()) != 0 {
+                set.push(flag);
+            }
+        }
+        set
+    }
+
+    /// Java: Set<ExportsFlag> readExportsFlags(int flags)
+    fn read_exports_flags(flags: i32) -> Vec<crate::code::directive::ExportsFlag> {
+        let mut set = Vec::new();
+        for flag in crate::code::directive::ExportsFlag::values() {
+            if (flags & flag.value()) != 0 {
+                set.push(flag);
+            }
+        }
+        set
+    }
+
+    /// Java: Set<OpensFlag> readOpensFlags(int flags)
+    fn read_opens_flags(flags: i32) -> Vec<crate::code::directive::OpensFlag> {
+        let mut set = Vec::new();
+        for flag in crate::code::directive::OpensFlag::values() {
+            if (flags & flag.value()) != 0 {
+                set.push(flag);
+            }
+        }
+        set
+    }
+
+    /// Java: Name classNameMapper(byte[] arr, int offset, int length) — names.fromUtf(internalize(arr))
+    fn class_name_mapper(&self, class_name: javac_strings::JavaString) -> Name {
+        self.names.from_string(&class_name)
+    }
+
+    /// Java: Module AttributeReader.read (ClassReader.java:1090-1198)
+    fn read_module_attr(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        if ctx.sym(sym).kind != crate::code::kinds::Kind::TYP
+            || ctx.sym(sym).owner.map(|o| ctx.sym(o).kind) != Some(crate::code::kinds::Kind::MDL)
+        {
+            return Ok(());
+        }
+        let msym = ctx.sym(sym).owner.expect("module owner");
+        let module_index = self.next_char() as i32;
+        let peeked = {
+            let pool = self.pool();
+            pool.peek_module_name(&self.buf, module_index, true, &self.names)
+        };
+        let module_name = self.class_name_mapper(peeked.expect("module name"));
+        let current_name = ctx.sym(self.current_module.expect("currentModule")).name.clone();
+        if module_name.to_java_string() != current_name.to_java_string() {
+            let key = Fragment::from(
+                crate::resources::compiler_properties::fragments::module_name_mismatch(
+                    module_name.clone(),
+                    current_name.clone(),
+                ),
+            );
+            return Err(self.bad_class_file(key).failure);
+        }
+        let module_flags = Self::read_module_flags(self.next_char() as i32);
+        {
+            let flags = match &mut ctx.sym_mut(msym).kind_data {
+                crate::code::symbol::SymbolKind::ModuleSymbol { flags, .. } => flags,
+                _ => panic!("module symbol"),
+            };
+            flags.extend(module_flags.iter().copied());
+        }
+        let version_index = self.next_char() as i32;
+        let version = if version_index == 0 {
+            None
+        } else {
+            Some(self.get_name(version_index)?)
+        };
+        if let crate::code::symbol::SymbolKind::ModuleSymbol { version: slot, .. } =
+            &mut ctx.sym_mut(msym).kind_data
+        {
+            *slot = version;
+        }
+        let nrequires = self.next_char();
+        let mut requires: List<crate::ids::DirectiveId> = List::nil();
+        for _ in 0..nrequires {
+            let rsym = { let index = self.next_char() as i32; self.get_module(ctx, syms, index)? };
+            let flags = Self::read_requires_flags(self.next_char() as i32);
+            if rsym == syms.java_base && self.major_version >= Version::V54.major() {
+                if flags.contains(&crate::code::directive::RequiresFlag::TRANSITIVE) {
+                    // The generated accessor currently has no parameters (registered
+                    // P4 diagnostic-contract deviation, see the batch report).
+                    let key = Fragment::from(
+                        crate::resources::compiler_properties::fragments::bad_requires_flag(),
+                    );
+                    return Err(self.bad_class_file(key).failure);
+                }
+                if flags.contains(&crate::code::directive::RequiresFlag::STATIC_PHASE) {
+                    let key = Fragment::from(
+                        crate::resources::compiler_properties::fragments::bad_requires_flag(),
+                    );
+                    return Err(self.bad_class_file(key).failure);
+                }
+            }
+            self.next_char(); // skip compiled version
+            let directive = ctx.alloc_directive(crate::code::directive::Directive::Requires {
+                module: Some(rsym),
+                flags,
+            });
+            requires = requires.append(directive);
+        }
+        {
+            let (req_slot, dir_slot) = match &mut ctx.sym_mut(msym).kind_data {
+                crate::code::symbol::SymbolKind::ModuleSymbol {
+                    requires: requires_field,
+                    directives: directives_field,
+                    ..
+                } => (requires_field, directives_field),
+                _ => panic!("module symbol"),
+            };
+            *req_slot = requires.clone();
+            *dir_slot = dir_slot.append_list(&requires);
+        }
+        let mut all_directives = {
+            match &ctx.sym(msym).kind_data {
+                crate::code::symbol::SymbolKind::ModuleSymbol { directives, .. } => directives.clone(),
+                _ => List::nil(),
+            }
+        };
+        let nexports = self.next_char();
+        let mut exports: List<crate::ids::DirectiveId> = List::nil();
+        for _ in 0..nexports {
+            let p = { let index = self.next_char() as i32; self.get_package(ctx, syms, index)? };
+            let flags = Self::read_exports_flags(self.next_char() as i32);
+            let nto = self.next_char();
+            let modules = if nto == 0 {
+                None
+            } else {
+                let mut to = List::nil();
+                for _ in 0..nto {
+                    let module = { let index = self.next_char() as i32; self.get_module(ctx, syms, index)? };
+                    to = to.append(module);
+                }
+                Some(to)
+            };
+            let directive = ctx.alloc_directive(crate::code::directive::Directive::Exports {
+                packge: Some(p),
+                modules,
+                flags,
+            });
+            exports = exports.append(directive);
+        }
+        all_directives = all_directives.append_list(&exports);
+        {
+            let exports_slot = match &mut ctx.sym_mut(msym).kind_data {
+                crate::code::symbol::SymbolKind::ModuleSymbol {
+                    exports: exports_field,
+                    ..
+                } => exports_field,
+                _ => panic!("module symbol"),
+            };
+            *exports_slot = exports.clone();
+            all_directives = all_directives.append_list(&exports);
+            if let crate::code::symbol::SymbolKind::ModuleSymbol {
+                directives: directives_field,
+                ..
+            } = &mut ctx.sym_mut(msym).kind_data
+            {
+                *directives_field = all_directives.clone();
+            }
+        }
+        let module_flags_now = match &ctx.sym(msym).kind_data {
+            crate::code::symbol::SymbolKind::ModuleSymbol { flags, .. } => flags.clone(),
+            _ => Vec::new(),
+        };
+        let nopens = self.next_char();
+        if nopens != 0 && module_flags_now.contains(&crate::code::symbol::ModuleFlags::OPEN) {
+            let key = Fragment::from(
+                crate::resources::compiler_properties::fragments::module_non_zero_opens(
+                    ctx.sym(self.current_module.expect("currentModule")).name.clone(),
+                ),
+            );
+            return Err(self.bad_class_file(key).failure);
+        }
+        let mut opens: List<crate::ids::DirectiveId> = List::nil();
+        for _ in 0..nopens {
+            let p = { let index = self.next_char() as i32; self.get_package(ctx, syms, index)? };
+            let flags = Self::read_opens_flags(self.next_char() as i32);
+            let nto = self.next_char();
+            let modules = if nto == 0 {
+                None
+            } else {
+                let mut to = List::nil();
+                for _ in 0..nto {
+                    let module = { let index = self.next_char() as i32; self.get_module(ctx, syms, index)? };
+                    to = to.append(module);
+                }
+                Some(to)
+            };
+            let directive = ctx.alloc_directive(crate::code::directive::Directive::Opens {
+                packge: Some(p),
+                modules,
+                flags,
+            });
+            opens = opens.append(directive);
+        }
+        {
+            if let crate::code::symbol::SymbolKind::ModuleSymbol {
+                opens: opens_field,
+                directives: directives_field,
+                ..
+            } = &mut ctx.sym_mut(msym).kind_data
+            {
+                *opens_field = opens.clone();
+                *directives_field = directives_field.append_list(&opens);
+            }
+        }
+        let mut uses_names: List<Name> = List::nil();
+        let nuses = self.next_char();
+        for _ in 0..nuses {
+            let index = self.next_char() as i32;
+            let peeked = {
+                let pool = self.pool();
+                pool.peek_class_name(&self.buf, index, true, &self.names)
+            };
+            uses_names = uses_names.append(self.class_name_mapper(peeked.expect("uses name")));
+        }
+        self.interim_uses = uses_names;
+        let mut provides_names: List<(Name, List<Name>)> = List::nil();
+        let nprovides = self.next_char();
+        for _ in 0..nprovides {
+            let index = self.next_char() as i32;
+            let peeked = {
+                let pool = self.pool();
+                pool.peek_class_name(&self.buf, index, true, &self.names)
+            };
+            let service = self.class_name_mapper(peeked.expect("provides service"));
+            let nimpls = self.next_char();
+            let mut impls: List<Name> = List::nil();
+            for _ in 0..nimpls {
+                let index = self.next_char() as i32;
+                let peeked = {
+                    let pool = self.pool();
+                    pool.peek_class_name(&self.buf, index, true, &self.names)
+                };
+                impls = impls.append(self.class_name_mapper(peeked.expect("provides impl")));
+            }
+            provides_names = provides_names.append((service, impls));
+        }
+        self.interim_provides = provides_names;
+        Ok(())
+    }
+
+    /// Java: ModuleResolution AttributeReader.read (ClassReader.java:1200-1212)
+    fn read_module_resolution_attr(
+        &mut self,
+        ctx: &mut CompilerContext,
+        sym: SymbolId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        if ctx.sym(sym).kind != crate::code::kinds::Kind::TYP
+            || ctx.sym(sym).owner.map(|o| ctx.sym(o).kind) != Some(crate::code::kinds::Kind::MDL)
+        {
+            return Ok(());
+        }
+        let msym = ctx.sym(sym).owner.expect("module owner");
+        let flags = Self::read_module_resolution_flags(self.next_char() as i32);
+        if let crate::code::symbol::SymbolKind::ModuleSymbol { resolution_flags, .. } =
+            &mut ctx.sym_mut(msym).kind_data
+        {
+            resolution_flags.extend(flags);
+        }
+        Ok(())
+    }
     /// Java: void readAttrs(Symbol sym, AttributeKind kind)
     fn read_attrs(
         &mut self,
@@ -1792,6 +2159,12 @@ impl ClassReader {
                 }
                 self.bp = newbp;
             }
+            AttributeReaderKind::Module => {
+                self.read_module_attr(ctx, syms, sym)?;
+            }
+            AttributeReaderKind::ModuleResolution => {
+                self.read_module_resolution_attr(ctx, sym)?;
+            }
             AttributeReaderKind::Code => {
                 if self.save_parameter_names {
                     self.read_code(ctx, syms, sym)?;
@@ -1828,9 +2201,7 @@ impl ClassReader {
             | AttributeReaderKind::RuntimeInvisibleParameterAnnotations
             | AttributeReaderKind::RuntimeVisibleParameterAnnotations
             | AttributeReaderKind::RuntimeVisibleTypeAnnotations
-            | AttributeReaderKind::RuntimeInvisibleTypeAnnotations
-            | AttributeReaderKind::Module
-            | AttributeReaderKind::ModuleResolution => {
+            | AttributeReaderKind::RuntimeInvisibleTypeAnnotations => {
                 // TODO(S2-B next step): CompoundAnnotationProxy/TypeAnnotationPosition/
                 // Module Directive batches (registered in the §19 block); skipped
                 // exactly like the upstream unknown-attribute path until then.
@@ -3327,6 +3698,132 @@ mod tests {
             return;
         };
         assert!(circle.interfaces.iter().any(|i| i.contains("SealedFixture")));
+    }
+
+    #[test]
+    fn fixture_module_info_directives() {
+        // module-info.class: module fixtures.mod { exports fixtures.p; uses
+        // fixtures.p.Service; provides fixtures.p.Service with fixtures.p.ServiceImpl;
+        // requires java.base; } (javap -v Module attribute oracle).
+        let bytes = fixture_bytes("module-info.class");
+        let mut context = Context::new();
+        let log = Log::instance(&mut context);
+        let names = Rc::new(Names::new(false));
+        let messages = crate::util::javac_messages::JavacMessages::instance(&mut context);
+        let factory = Rc::new(Factory::new(messages, "compiler"));
+        let dcfh = DeferredCompletionFailureHandler::instance();
+        let preview = Rc::new(Preview::new(false, false));
+        let profile = Profile::instance(&mut context);
+        let options = Options::instance(&mut context);
+        let source = Source::JDK17;
+        let mut reader = ClassReader::new(
+            log,
+            Rc::clone(&names),
+            factory,
+            dcfh,
+            preview,
+            profile,
+            &options,
+            source,
+        );
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let module_name = names.from_string(&javac_strings::JavaString::from("fixtures.mod"));
+        let module = syms.enter_module(&mut ctx, module_name);
+        let module_info_name = names.module_info.clone();
+        let c = syms.define_class(&mut ctx, module_info_name, Some(module));
+        // Java: ClassFinder sets module.module_info to the module-info ClassSymbol.
+        if let crate::code::symbol::SymbolKind::ModuleSymbol { module_info, .. } =
+            &mut ctx.sym_mut(module).kind_data
+        {
+            *module_info = Some(c);
+        }
+        let file = Rc::new(ClassBytesFile {
+            name: javac_strings::JavaString::from("module-info.class"),
+            bytes,
+        });
+        if let crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } =
+            &mut ctx.sym_mut(c).kind_data
+        {
+            *classfile = Some(file);
+        }
+        reader
+            .read_class_file(&mut ctx, &mut syms, c)
+            .expect("module-info readClassFile");
+        assert_ne!(ctx.sym(c).flags_field & crate::code::flags::MODULE, 0);
+        let (requires, exports, uses, provides) = match &ctx.sym(module).kind_data {
+            crate::code::symbol::SymbolKind::ModuleSymbol {
+                requires,
+                exports,
+                uses,
+                provides,
+                ..
+            } => (
+                requires.clone(),
+                exports.clone(),
+                uses.clone(),
+                provides.clone(),
+            ),
+            _ => panic!("module symbol"),
+        };
+        let mut requires_names = Vec::new();
+        let mut list = requires;
+        while list.non_empty() {
+            let directive = ctx.directive(*list.head());
+            if let crate::code::directive::Directive::Requires { module: Some(m), .. } = directive {
+                requires_names.push(ctx.sym(*m).name.to_java_string().to_string());
+            } else {
+                panic!("requires directive expected");
+            }
+            list = list.tail();
+        }
+        assert!(
+            requires_names.contains(&"java.base".to_string()),
+            "requires: {requires_names:?}"
+        );
+        assert_eq!(exports.length(), 1, "exports");
+        match ctx.directive(*exports.head()) {
+            crate::code::directive::Directive::Exports {
+                packge: Some(p),
+                modules,
+                ..
+            } => {
+                let fullname = match &ctx.sym(*p).kind_data {
+                    crate::code::symbol::SymbolKind::PackageSymbol { fullname, .. } => {
+                        fullname.to_java_string().to_string()
+                    }
+                    _ => panic!("package"),
+                };
+                assert_eq!(fullname, "fixtures.p");
+                assert!(modules.is_none(), "unqualified exports");
+            }
+            _ => panic!("exports directive expected"),
+        }
+        assert_eq!(uses.length(), 1, "uses");
+        match ctx.directive(*uses.head()) {
+            crate::code::directive::Directive::Uses { service: Some(s) } => {
+                assert_eq!(
+                    ctx.sym(*s).flat_name().to_java_string().to_string(),
+                    "fixtures.p.Service"
+                );
+            }
+            _ => panic!("uses directive expected"),
+        }
+        assert_eq!(provides.length(), 1, "provides");
+        match ctx.directive(*provides.head()) {
+            crate::code::directive::Directive::Provides { service: Some(s), impls } => {
+                assert_eq!(
+                    ctx.sym(*s).flat_name().to_java_string().to_string(),
+                    "fixtures.p.Service"
+                );
+                assert_eq!(impls.length(), 1);
+                assert_eq!(
+                    ctx.sym(*impls.head()).flat_name().to_java_string().to_string(),
+                    "fixtures.p.ServiceImpl"
+                );
+            }
+            _ => panic!("provides directive expected"),
+        }
     }
 
     #[test]
