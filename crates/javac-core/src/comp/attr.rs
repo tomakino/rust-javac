@@ -5540,8 +5540,11 @@ impl Attr {
             self.result = Some(self.check(ctx, syms, tree, captured, KindSelector::VAL, &result_info2));
         }
         // Java: chk.validate(tree.typeargs, localEnv);
-        // NOT PORTED: Check.validate/Validator (Check.java:1397-1525, Check);
-        // registered.
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.validate_list(ctx, syms, &local_env, &typeargs);
+        }
         Ok(self.result.expect("attribution result"))
     }
 }
@@ -6055,8 +6058,11 @@ impl Attr {
         if let Some(elemtype_tree) = elemtype_tree {
             elemtype = self.attrib_type_use(ctx, syms, elemtype_tree, &local_env);
             // Java: chk.validate(tree.elemtype, localEnv);
-            // NOT PORTED: Check.validate/Validator (Check.java:1397-1525, Check);
-            // registered.
+            {
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                chk.validate(ctx, syms, &local_env, elemtype_tree);
+            }
             owntype = elemtype;
             let mut l = dims.clone();
             while l.non_empty() {
@@ -6847,8 +6853,11 @@ impl Attr {
         let env = self.env.clone().expect("env");
         let clazztype = self.attrib_type_use(ctx, syms, clazz, &env);
         // Java: chk.validate(tree.clazz, env, false);
-        // NOT PORTED: Check.validate/Validator (Check.java:1397-1525, Check);
-        // registered.
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.validate_with(ctx, syms, &env, clazz, false);
+        }
         let local_env = env.dup(Some(tree), env.info.borrow().dup(env.info.borrow().scope));
         let result_info = self.result_info.clone().expect("resultInfo");
         let expr_skipped = crate::tree::tree_info::skip_parens(ctx, expr);
@@ -7978,8 +7987,12 @@ impl Attr {
             );
             let _ = annotate_rc.flush(ctx);
         }
-        // NOT PORTED: chk.validate(tree.var.vartype, env, true) — Check.validate/
-        // Validator is not ported yet (Check.java:1397-1525); registered.
+        // Java: chk.validate(tree.var.vartype, env, true);
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.validate_with(ctx, syms, &env, vartype, true);
+        }
         ctx.tree_mut(tree).ty = Some(ty);
         self.result = Some(ty);
         self.match_bindings = crate::comp::match_bindings::MatchBindings::new(
@@ -9722,8 +9735,11 @@ impl Attr {
         let is_static_selector = crate::tree::tree_info::is_static_selector(ctx, Some(expr), &self.names);
         if is_static_selector {
             // Java: chk.validate(that.expr, env, false);
-            // TODO(Check): chk.validate/Validator is not ported (Check.java:1397-1525);
-            // registered.
+            {
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                chk.validate_with(ctx, syms, &env, expr, false);
+            }
         } else {
             let lhs_sym = crate::tree::tree_info::symbol(ctx, expr);
             local_env.info.borrow_mut().select_super = lhs_sym

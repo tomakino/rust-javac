@@ -1676,34 +1676,17 @@ impl Check {
         )
     }
 
-    /// Java: void validate(JCTree tree, Env<AttrContext> env, boolean
-    /// checkRaw) (Check.java:1397-1407) and class Validator
-    /// (Check.java:1421-1525)
-    ///
-    /// TODO(Types/Check): the Validator requires firstIncompatibleTypeArg,
-    /// checkClassBounds, TreeInfo.containsTypeAnnotation and the JCTree.Visitor
-    /// subclass navigation; registered (no partial validator).
-    pub fn validate(
-        &self,
-        _ctx: &mut CompilerContext,
-        _env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
-        _tree: TreeId,
-    ) {
-        unimplemented!(
-            "TODO(Types/Check batch): Check.validate/Validator (Check.java:1397-1525)"
-        )
-    }
-
     /// Java: void validate(List<? extends JCTree> trees, Env<AttrContext> env)
     /// (Check.java:1406-1410)
     pub fn validate_list(
         &self,
         ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
         env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         trees: &List<TreeId>,
     ) {
         for tree in trees.iter() {
-            self.validate(ctx, env, tree);
+            self.validate(ctx, syms, env, tree);
         }
     }
 }
@@ -4037,4 +4020,347 @@ impl Check {
             || full_name.starts_with("sun.")
             || full_name.contains(".internal.")
     }
+}
+impl Check {
+    /// Java: void validate(JCTree tree, Env<AttrContext> env) (Check.java:1397-1399).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - env: the attribution environment;
+    ///   - tree: the type expression to validate.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:1397-1399.
+    pub fn validate(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        tree: TreeId,
+    ) {
+        self.validate_with(ctx, syms, env, tree, true);
+    }
+
+    /// Java: void validate(JCTree tree, Env<AttrContext> env, boolean checkRaw)
+    /// (Check.java:1400-1402).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - env: the attribution environment;
+    ///   - tree: the type expression to validate;
+    ///   - check_raw: whether the raw-type check is performed.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:1400-1402.
+    pub fn validate_with(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        tree: TreeId,
+        check_raw: bool,
+    ) {
+        self.validate_tree(ctx, syms, env, tree, check_raw, true);
+    }
+
+    /// Java: Validator.validateTree(JCTree tree, boolean checkRaw, boolean isOuter)
+    /// (Check.java:1513-1530).
+    fn validate_tree(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        tree: TreeId,
+        check_raw: bool,
+        is_outer: bool,
+    ) {
+        self.validate_visit(ctx, syms, env, tree, check_raw, is_outer);
+        if check_raw {
+            self.check_raw(ctx, env, tree);
+        }
+    }
+
+    /// Java: Validator tree.accept(this) dispatch (Check.java:1424-1510).
+    #[allow(clippy::collapsible_if)]
+    fn validate_visit(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        tree: TreeId,
+        check_raw: bool,
+        is_outer: bool,
+    ) {
+        match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::ArrayTypeTree { elemtype: Some(elemtype) } => {
+                let elemtype = *elemtype;
+                self.validate_tree(ctx, syms, env, elemtype, check_raw, is_outer);
+            }
+            crate::tree::jc_tree::TreeKind::TypeApply { clazz, arguments } => {
+                let clazz = *clazz.as_ref().expect("type apply clazz");
+                let arguments = arguments.clone();
+                let tree_type = match ctx.tree(tree).ty {
+                    Some(t) => t,
+                    None => return,
+                };
+                if ctx.typ(tree_type).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+                    let tsym = ctx.typ(tree_type).tsym.expect("type apply symbol");
+                    let tsym_ty = ctx.sym(tsym).ty.expect("type symbol type");
+                    let mut forms = crate::code::types::get_type_arguments(ctx, tsym_ty);
+                    let incompatible = self.first_incompatible_type_arg(ctx, syms, tree_type);
+                    if let Some(incompatible) = incompatible {
+                        let mut args_iter = arguments.clone();
+                        let mut forms_iter = forms.clone();
+                        while args_iter.non_empty() && forms_iter.non_empty() {
+                            let arg = *args_iter.head();
+                            if ctx.tree(arg).ty == Some(incompatible) {
+                                let form = *forms_iter.head();
+                                let info = crate::resources::compiler_properties::errors::not_within_bounds(
+                                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                        crate::comp::attr::type_display_of(ctx, incompatible),
+                                    ),
+                                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                                        crate::comp::attr::type_display_of(ctx, form),
+                                    ),
+                                );
+                                crate::util::abstract_log::AbstractLog::error_at(
+                                    &mut *self.log.borrow_mut(),
+                                    ctx.tree(arg).pos,
+                                    crate::util::jc_diagnostic::Error::from(info),
+                                );
+                            }
+                            args_iter = args_iter.tail();
+                            forms_iter = forms_iter.tail();
+                        }
+                    }
+                    forms = crate::code::types::get_type_arguments(ctx, tsym_ty);
+                    let flat_name = match &ctx.sym(tsym).kind_data {
+                        crate::code::symbol::SymbolKind::ClassSymbol { flatname, .. } => {
+                            flatname.clone()
+                        }
+                        _ => ctx.sym(tsym).name.clone(),
+                    };
+                    let is_java_lang_class = flat_name == self.names.java_lang_Class;
+                    let mut args_iter = arguments.clone();
+                    let mut forms_iter = forms;
+                    while args_iter.non_empty() && forms_iter.non_empty() {
+                        let arg = *args_iter.head();
+                        self.validate_tree(
+                            ctx,
+                            syms,
+                            env,
+                            arg,
+                            !(is_outer && is_java_lang_class),
+                            false,
+                        );
+                        args_iter = args_iter.tail();
+                        forms_iter = forms_iter.tail();
+                    }
+                    let enclosing = ctx.typ(tree_type).get_enclosing_type();
+                    if let Some(enclosing) = enclosing {
+                        if self.types.is_raw_type_public(ctx, enclosing) {
+                            let info = crate::resources::compiler_properties::errors::improperly_formed_type_inner_raw_param();
+                            crate::util::abstract_log::AbstractLog::error_at(
+                                &mut *self.log.borrow_mut(),
+                                ctx.tree(tree).pos,
+                                crate::util::jc_diagnostic::Error::from(info),
+                            );
+                        }
+                    }
+                    if ctx.tree(clazz).tag == crate::tree::jc_tree::Tag::SELECT {
+                        self.visit_select_internal(ctx, syms, env, clazz, check_raw, is_outer);
+                    }
+                }
+            }
+            crate::tree::jc_tree::TreeKind::TypeParameter { bounds, .. } => {
+                let bounds = bounds.clone();
+                let mut current = bounds;
+                while current.non_empty() {
+                    let bound = *current.head();
+                    self.validate_tree(ctx, syms, env, bound, true, is_outer);
+                    current = current.tail();
+                }
+                let tree_ty = match ctx.tree(tree).ty {
+                    Some(t) => t,
+                    None => return,
+                };
+                let mut seensofar: std::collections::HashMap<SymbolId, TypeId> =
+                    std::collections::HashMap::new();
+                self.check_class_bounds(ctx, syms, ctx.tree(tree).pos, &mut seensofar, tree_ty);
+            }
+            crate::tree::jc_tree::TreeKind::Wildcard { inner: Some(inner), .. } => {
+                let inner = *inner;
+                self.validate_tree(ctx, syms, env, inner, true, is_outer);
+            }
+            crate::tree::jc_tree::TreeKind::FieldAccess { selected, .. } => {
+                let selected = *selected.as_ref().expect("select qualifier");
+                let tree_ty = match ctx.tree(tree).ty {
+                    Some(t) => t,
+                    None => return,
+                };
+                if ctx.typ(tree_ty).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+                    self.visit_select_internal(ctx, syms, env, tree, check_raw, is_outer);
+                    let selected_ty = ctx.tree(selected).ty;
+                    let tsym = ctx.typ(tree_ty).tsym.expect("select type symbol");
+                    let tsym_ty = ctx.sym(tsym).ty.expect("type symbol type");
+                    let typarams = crate::code::types::get_type_arguments(ctx, tsym_ty);
+                    if selected_ty
+                        .map(|selected_ty| self.types.is_parameterized_type_of(ctx, selected_ty))
+                        .unwrap_or(false)
+                        && !typarams.is_empty()
+                    {
+                        let info = crate::resources::compiler_properties::errors::improperly_formed_type_param_missing();
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            ctx.tree(tree).pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
+                    }
+                }
+            }
+            crate::tree::jc_tree::TreeKind::AnnotatedType { underlying_type, .. } => {
+                let underlying = *underlying_type.as_ref().expect("annotated type underlying");
+                self.validate_visit(ctx, syms, env, underlying, check_raw, is_outer);
+            }
+            crate::tree::jc_tree::TreeKind::PrimitiveTypeTree { .. } => {
+                if let Some(tree_ty) = ctx.tree(tree).ty {
+                    if ctx.typ(tree_ty).has_tag(crate::code::type_tag::TypeTag::VOID) {
+                        let info = crate::resources::compiler_properties::errors::void_not_allowed_here();
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            ctx.tree(tree).pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Java: Validator.visitSelectInternal(JCFieldAccess tree)
+    /// (Check.java:1490-1505).
+    #[allow(clippy::collapsible_if)]
+    fn visit_select_internal(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        tree: TreeId,
+        check_raw: bool,
+        is_outer: bool,
+    ) {
+        let (selected, tree_ty) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::FieldAccess { selected, .. } => {
+                (*selected.as_ref().expect("select qualifier"), ctx.tree(tree).ty)
+            }
+            _ => return,
+        };
+        let tree_ty = match tree_ty {
+            Some(t) => t,
+            None => return,
+        };
+        if !ctx.typ(tree_ty).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            return;
+        }
+        let tsym = ctx.typ(tree_ty).tsym.expect("select type symbol");
+        let is_static = ctx.sym(tsym).is_static(ctx);
+        let selected_parameterized = ctx.tree(selected)
+            .ty
+            .map(|selected_ty| self.types.is_parameterized_type_of(ctx, selected_ty))
+            .unwrap_or(false);
+        if is_static && selected_parameterized {
+            let info = crate::resources::compiler_properties::errors::cant_select_static_class_from_param_type();
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                ctx.tree(tree).pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        } else {
+            self.validate_visit(ctx, syms, env, selected, check_raw, is_outer);
+        }
+    }
+
+    /// Java: void checkClassBounds(DiagnosticPosition pos, Map<TypeSymbol,Type>
+    /// seensofar, Type type) (Check.java:2810-2840).
+    #[allow(clippy::collapsible_if)]
+    fn check_class_bounds(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        seensofar: &mut std::collections::HashMap<SymbolId, TypeId>,
+        t: TypeId,
+    ) {
+        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::ERROR) {
+            return;
+        }
+        let mut current = self.types.interfaces(ctx, syms, t);
+        while current.non_empty() {
+            let it = *current.head();
+            if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS)
+                && !ctx.typ(it).has_tag(crate::code::type_tag::TypeTag::CLASS)
+            {
+                current = current.tail();
+                continue;
+            }
+            let it_tsym = ctx.typ(it).tsym.expect("interface symbol");
+            let old_it = seensofar.insert(it_tsym, it);
+            if let Some(old_it) = old_it {
+                let old_params = crate::code::types::allparams_of(ctx, old_it);
+                let new_params = crate::code::types::allparams_of(ctx, it);
+                let equivalent = self.types.contains_type_equivalent(ctx, syms, &old_params, &new_params);
+                if !equivalent {
+                    let info = crate::resources::compiler_properties::errors::cant_inherit_diff_arg(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            crate::comp::resolve::symbol_display_name(ctx, it_tsym),
+                        ),
+                        crate::util::java_string::JavaString::from(
+                            type_list_display(ctx, &old_params).as_str(),
+                        ),
+                        crate::util::java_string::JavaString::from(
+                            type_list_display(ctx, &new_params).as_str(),
+                        ),
+                    );
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                }
+            }
+            self.check_class_bounds(ctx, syms, pos, seensofar, it);
+            current = current.tail();
+        }
+        let st = self.types.supertype(ctx, syms, t);
+        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS)
+            && !ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS)
+        {
+            return;
+        }
+        if !ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::NONE) {
+            self.check_class_bounds(ctx, syms, pos, seensofar, st);
+        }
+    }
+}
+
+/// Java: Type.toString(List<Type>) display helper for the class-bound error.
+fn type_list_display(ctx: &mut crate::compiler_context::CompilerContext, ts: &List<TypeId>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut current = ts.clone();
+    while current.non_empty() {
+        parts.push(crate::comp::attr::type_display_of(ctx, *current.head()));
+        current = current.tail();
+    }
+    format!("<{}>", parts.join(","))
 }
