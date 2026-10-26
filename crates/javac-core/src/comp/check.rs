@@ -6161,4 +6161,467 @@ impl Check {
         };
         self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(info))
     }
+}impl Check {
+    /// Java: void checkLeaksNotAccessible(Env<AttrContext> env, JCClassDecl check)
+    /// (Check.java:4082-4210).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - env: the attribution environment;
+    ///   - check: the class declaration to scan.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the env toplevel must be a compilation unit.
+    ///
+    /// Upstream: Check.java:4082-4210.
+    pub fn check_leaks_not_accessible(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        env: &std::rc::Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        check: TreeId,
+    ) {
+        let toplevel = env.toplevel.expect("env toplevel");
+        let (toplevel_modle, toplevel_packge) = match &ctx.tree(toplevel).kind {
+            crate::tree::jc_tree::TreeKind::CompilationUnit { modle, packge, .. } => (*modle, *packge),
+            _ => panic!("ClassCastException: JCCompilationUnit expected"),
+        };
+        let (module, packge) = match (toplevel_modle, toplevel_packge) {
+            (Some(module), Some(packge)) => (module, packge),
+            _ => return,
+        };
+        let unnamed = self.syms.borrow().unnamed_module;
+        let no_module = self.syms.borrow().no_module;
+        if module == unnamed || module == no_module {
+            return;
+        }
+        let check_sym = match &ctx.tree(check).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+            _ => return,
+        };
+        if (ctx.sym(check_sym).flags_field & crate::code::flags::COMPOUND as i64) != 0 {
+            return;
+        }
+        let current_export = find_export(ctx, packge);
+        let in_export = match current_export {
+            None => return,
+            Some((_, Some(_))) => return,
+            Some((p, None)) => (p, None),
+        };
+        let lint = env.info.borrow().lint.clone();
+        let mut checker = LeaksChecker {
+            chk: self,
+            syms,
+            in_package: packge,
+            in_export: Some(in_export),
+            lint,
+            in_super_type: false,
+            check_tree: check,
+        };
+        crate::tree::jc_tree::accept(ctx, check, &mut checker);
+    }
+}
+
+/// Java: the TreeScanner used by checkLeaksNotAccessible (Check.java:4096-4205).
+pub struct LeaksChecker<'a> {
+    chk: &'a Check,
+    syms: &'a mut crate::code::symtab::Symtab,
+    in_package: SymbolId,
+    in_export: Option<(Option<SymbolId>, Option<List<SymbolId>>)>,
+    lint: Option<std::rc::Rc<crate::code::lint::Lint>>,
+    in_super_type: bool,
+    check_tree: TreeId,
+}
+
+impl<'a> crate::tree::tree_scanner::TreeScannerVisitor for LeaksChecker<'a> {
+    /// Java: public void visitBlock(JCBlock tree) — no-op.
+    fn visit_block(
+        &mut self,
+        _ctx: &mut crate::compiler_context::CompilerContext,
+        _tree: TreeId,
+    ) {
+    }
+
+    /// Java: public void visitMethodDef(JCMethodDecl tree) (Check.java:4108-4122).
+    fn visit_method_def(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) {
+        let sym = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(sym), .. } => *sym,
+            _ => return,
+        };
+        if !is_api_symbol(ctx, sym) {
+            return;
+        }
+        let prev_lint = self.lint.clone();
+        if let Some(lint) = prev_lint.clone() {
+            let augmented = {
+                let sym_ref = ctx.sym(sym);
+                lint.augment(&*ctx, &*self.syms, sym_ref)
+            };
+            self.lint = Some(std::rc::Rc::new(augmented));
+        }
+        if self.exports_lint_enabled() {
+            for child in crate::tree::tree_scanner::tree_children(ctx, tree) {
+                self.scan(ctx, Some(child));
+            }
+        }
+        self.lint = prev_lint;
+    }
+
+    /// Java: public void visitVarDef(JCVariableDecl tree) (Check.java:4124-4140).
+    fn visit_var_def(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) {
+        let (sym, mods, vartype) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::VariableDecl {
+                sym: Some(sym),
+                mods,
+                vartype,
+                ..
+            } => (*sym, *mods, *vartype),
+            _ => return,
+        };
+        let owner_is_mth = ctx
+            .sym(sym)
+            .owner
+            .map(|owner| ctx.sym(owner).kind == crate::code::kinds::Kind::MTH)
+            .unwrap_or(false);
+        if !is_api_symbol(ctx, sym) && !owner_is_mth {
+            return;
+        }
+        let prev_lint = self.lint.clone();
+        if let Some(lint) = prev_lint.clone() {
+            let augmented = {
+                let sym_ref = ctx.sym(sym);
+                lint.augment(&*ctx, &*self.syms, sym_ref)
+            };
+            self.lint = Some(std::rc::Rc::new(augmented));
+        }
+        if self.exports_lint_enabled() {
+            self.scan(ctx, mods);
+            self.scan(ctx, vartype);
+        }
+        self.lint = prev_lint;
+    }
+
+    /// Java: public void visitClassDef(JCClassDecl tree) (Check.java:4142-4172).
+    fn visit_class_def(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) {
+        if tree != self.check_tree {
+            return;
+        }
+        let (sym, mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl {
+                sym: Some(sym),
+                mods,
+                typarams,
+                extending,
+                implementing,
+                defs,
+                ..
+            } => (
+                *sym,
+                *mods,
+                typarams.clone(),
+                *extending,
+                implementing.clone(),
+                defs.clone(),
+            ),
+            _ => return,
+        };
+        if !is_api_symbol(ctx, sym) {
+            return;
+        }
+        let prev_lint = self.lint.clone();
+        if let Some(lint) = prev_lint.clone() {
+            let augmented = {
+                let sym_ref = ctx.sym(sym);
+                lint.augment(&*ctx, &*self.syms, sym_ref)
+            };
+            self.lint = Some(std::rc::Rc::new(augmented));
+        }
+        if self.exports_lint_enabled() {
+            self.scan(ctx, mods);
+            self.scan_list(ctx, &typarams);
+            let old_in_super_type = self.in_super_type;
+            self.in_super_type = true;
+            self.scan(ctx, extending);
+            self.scan_list(ctx, &implementing);
+            self.in_super_type = old_in_super_type;
+            self.scan_list(ctx, &defs);
+        }
+        self.lint = prev_lint;
+    }
+
+    /// Java: public void visitTypeApply(JCTypeApply tree) (Check.java:4174-4186).
+    fn visit_type_apply(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) {
+        let (clazz, arguments) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::TypeApply { clazz, arguments } => (*clazz, arguments.clone()),
+            _ => return,
+        };
+        self.scan(ctx, clazz);
+        let old_in_super_type = self.in_super_type;
+        self.in_super_type = false;
+        self.scan_list(ctx, &arguments);
+        self.in_super_type = old_in_super_type;
+    }
+
+    /// Java: public void visitIdent(JCIdent tree) (Check.java:4188-4194).
+    fn visit_ident(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) {
+        let Some(sym) = crate::tree::tree_info::symbol(ctx, tree) else {
+            return;
+        };
+        let is_type = ctx.sym(sym).kind == crate::code::kinds::Kind::TYP;
+        let is_typevar = ctx
+            .sym(sym)
+            .ty
+            .map(|ty| ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::TYPEVAR))
+            .unwrap_or(false);
+        if is_type && !is_typevar {
+            self.check_visible(ctx, ctx.tree(tree).pos, sym);
+        }
+    }
+
+    /// Java: public void visitSelect(JCFieldAccess tree) (Check.java:4196-4205).
+    fn visit_select(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) {
+        let (sym, selected) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::FieldAccess { sym, selected, .. } => (*sym, *selected),
+            _ => return,
+        };
+        let Some(sym) = sym else {
+            return;
+        };
+        let sitesym = selected.and_then(|selected| crate::tree::tree_info::symbol(ctx, selected));
+        let sitesym_is_pck = sitesym
+            .map(|s| ctx.sym(s).kind == crate::code::kinds::Kind::PCK)
+            .unwrap_or(false);
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP && sitesym_is_pck {
+            self.check_visible(ctx, ctx.tree(tree).pos, sym);
+        } else if let Some(selected) = selected {
+            self.scan(ctx, Some(selected));
+        }
+    }
+}
+
+crate::tree::tree_scanner::tree_scanner_visitor_delegate!(LeaksChecker<'a>, 'a);
+
+impl<'a> LeaksChecker<'a> {
+    fn exports_lint_enabled(&self) -> bool {
+        self.lint
+            .as_ref()
+            .map(|lint| lint.is_enabled(crate::code::lint::LintCategory::EXPORTS))
+            .unwrap_or(false)
+    }
+
+    /// Java: private void checkVisible(DiagnosticPosition pos, Symbol what,
+    /// PackageSymbol inPackage, boolean inSuperType) (Check.java:4230-4290).
+    #[allow(clippy::collapsible_if)]
+    fn check_visible(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        pos: i32,
+        what: SymbolId,
+    ) {
+        let what_kind = crate::code::kinds::kind_name(ctx.sym(what), ctx).to_string();
+        let what_display = crate::comp::resolve::symbol_display_name(ctx, what);
+        let what_pkg = crate::code::symbol::packge(ctx, what);
+        let what_module = what_pkg.and_then(|pkg| crate::code::symbol::Symbol::symbol_module(ctx, pkg));
+        if !is_api_symbol(ctx, what) && !self.in_super_type {
+            let warning = crate::util::jc_diagnostic::Warning::from(
+                crate::resources::compiler_properties::warnings::leaks_not_accessible(
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(what_kind.clone()),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(what_display.clone()),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(module_display(ctx, what_module)),
+                ),
+            );
+            self.emit_warning(pos, warning);
+            return;
+        }
+        let what_pkg = match what_pkg {
+            Some(pkg) => pkg,
+            None => return,
+        };
+        let what_export = find_export(ctx, what_pkg);
+        let what_export = match what_export {
+            Some(export) => export,
+            None => {
+                let warning = crate::util::jc_diagnostic::Warning::from(
+                    crate::resources::compiler_properties::warnings::leaks_not_accessible_unexported(
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(what_kind.clone()),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(what_display.clone()),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(module_display(ctx, what_module)),
+                    ),
+                );
+                self.emit_warning(pos, warning);
+                return;
+            }
+        };
+        let (_, what_export_modules) = what_export;
+        if let Some(what_export_modules) = what_export_modules {
+            let in_modules = self.in_export.clone().and_then(|(_, modules)| modules);
+            let contains_all = match (&what_export_modules, &in_modules) {
+                (what_modules, Some(in_modules)) => {
+                    let mut in_current = in_modules.clone();
+                    let mut all = true;
+                    while in_current.non_empty() {
+                        let target = *in_current.head();
+                        let mut what_current = what_modules.clone();
+                        let mut found = false;
+                        while what_current.non_empty() {
+                            if *what_current.head() == target {
+                                found = true;
+                                break;
+                            }
+                            what_current = what_current.tail();
+                        }
+                        if !found {
+                            all = false;
+                            break;
+                        }
+                        in_current = in_current.tail();
+                    }
+                    all
+                }
+                (_, None) => false,
+            };
+            if !contains_all {
+                let warning = crate::util::jc_diagnostic::Warning::from(
+                    crate::resources::compiler_properties::warnings::leaks_not_accessible_unexported_qualified(
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(what_kind.clone()),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(what_display.clone()),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(module_display(ctx, what_module)),
+                    ),
+                );
+                self.emit_warning(pos, warning);
+            }
+        }
+        let in_package_module = crate::code::symbol::Symbol::symbol_module(ctx, self.in_package);
+        if what_module != in_package_module && what_module != Some(self.syms.java_base) {
+            let target = match in_package_module {
+                Some(module) => module,
+                None => return,
+            };
+            let mut todo: List<SymbolId> = List::of(target);
+            while todo.non_empty() {
+                let current = *todo.head();
+                todo = todo.tail();
+                if Some(current) == what_module {
+                    return;
+                }
+                if (ctx.sym(current).flags_field & crate::code::flags::AUTOMATIC_MODULE) != 0 {
+                    continue;
+                }
+                let requires = match &ctx.sym(current).kind_data {
+                    crate::code::symbol::SymbolKind::ModuleSymbol { requires, .. } => requires.clone(),
+                    _ => List::nil(),
+                };
+                let mut current_requires = requires;
+                while current_requires.non_empty() {
+                    let directive = *current_requires.head();
+                    current_requires = current_requires.tail();
+                    if let crate::code::directive::Directive::Requires { module, flags } = ctx.directive(directive) {
+                        if flags.contains(&crate::code::directive::RequiresFlag::TRANSITIVE) {
+                            if let Some(module) = module {
+                                todo = todo.prepend(*module);
+                            }
+                        }
+                    }
+                }
+            }
+            let warning = crate::util::jc_diagnostic::Warning::from(
+                crate::resources::compiler_properties::warnings::leaks_not_accessible_not_required_transitive(
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(what_kind.clone()),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(what_display.clone()),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(module_display(ctx, what_module)),
+                ),
+            );
+            self.emit_warning(pos, warning);
+        }
+    }
+
+    fn emit_warning(&self, pos: i32, warning: crate::util::jc_diagnostic::Warning) {
+        crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+            &mut *self.chk.log.borrow_mut(),
+            Some(crate::code::lint::LintCategory::EXPORTS),
+            Some(std::rc::Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
+            warning,
+        );
+    }
+}
+
+/// Adapter: module display name for the leaks diagnostics.
+fn module_display(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    module: Option<SymbolId>,
+) -> String {
+    match module {
+        Some(module) => crate::comp::resolve::symbol_display_name(ctx, module),
+        None => String::new(),
+    }
+}
+
+/// Java: private boolean isAPISymbol(Symbol sym) (Check.java:4207-4215).
+#[allow(clippy::collapsible_if)]
+fn is_api_symbol(ctx: &mut crate::compiler_context::CompilerContext, mut sym: SymbolId) -> bool {
+    loop {
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::PCK {
+            return true;
+        }
+        let flags_value = ctx.sym(sym).flags_field;
+        let public_or_protected = (crate::code::flags::PUBLIC as i64) | (crate::code::flags::PROTECTED as i64);
+        if (flags_value & public_or_protected) == 0 {
+            return false;
+        }
+        match ctx.sym(sym).owner {
+            Some(owner) => sym = owner,
+            None => return true,
+        }
+    }
+}
+
+/// Java: private ExportsDirective findExport(PackageSymbol pack) (Check.java:4216-4225).
+#[allow(clippy::collapsible_if)]
+fn find_export(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    pack: SymbolId,
+) -> Option<(Option<SymbolId>, Option<List<SymbolId>>)> {
+    let module = crate::code::symbol::Symbol::symbol_module(ctx, pack)?;
+    let exports = match &ctx.sym(module).kind_data {
+        crate::code::symbol::SymbolKind::ModuleSymbol { exports, .. } => exports.clone(),
+        _ => return None,
+    };
+    let mut current = exports;
+    while current.non_empty() {
+        let directive = *current.head();
+        current = current.tail();
+        if let crate::code::directive::Directive::Exports { packge, modules, .. } = ctx.directive(directive) {
+            if *packge == Some(pack) {
+                return Some((*packge, modules.clone()));
+            }
+        }
+    }
+    None
 }
