@@ -1235,6 +1235,7 @@ impl Attr {
     /// Env<AttrContext> env, ResultInfo resultInfo) (Attr.java:4520-4620)
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::needless_late_init)]
+    #[allow(clippy::collapsible_if)]
     pub(crate) fn check_id_internal(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1314,9 +1315,6 @@ impl Attr {
             }
             Kind::VAR => {
                 // Java: VarSymbol v = (VarSymbol)sym; (Attr.java:4560-4600)
-                // NOT PORTED: VarSymbol.getConstValue (Symbol.java:1190-1210,
-                // ConstValue) — the constant-value sub-branch is skipped
-                // and registered; everything else follows the upstream body.
                 let sym_ty = ctx.sym(sym).ty.expect("symbol type");
                 let encl_var = env.info.borrow().encl_var;
                 if encl_var.is_some() && ctx.typ(sym_ty).has_tag(TypeTag::NONE) {
@@ -1388,9 +1386,13 @@ impl Attr {
                 } else {
                     ctx.sym(sym).ty.expect("symbol type")
                 };
-                // NOT PORTED: if (v.getConstValue() != null &&
-                // isStaticReference(tree)) owntype = owntype.constType(...)
-                // (Symbol/ConstValue; registered).
+                // Java: if (v.getConstValue() != null &&
+                //     isStaticReference(tree)) owntype = owntype.constType(v.getConstValue());
+                if let Some(const_value) = ctx.sym(sym).get_const_value() {
+                    if self.is_static_reference(ctx, tree) {
+                        own = ctx.type_const_type(own, const_value);
+                    }
+                }
                 if pkind == crate::code::kinds::KindSelector::VAL {
                     own = self.types.capture(ctx, syms, own);
                 }
@@ -4958,8 +4960,8 @@ impl Attr {
                 }
             }
         }
-        // NOT PORTED: v.getConstValue() (Symbol.java:1759, ConstValue);
-        // the constant-value evaluation side effect is registered.
+        // Java: v.getConstValue(); // ensure initializer is evaluated
+        let _ = ctx.sym(v).get_const_value();
         self.check_enum_initializer(ctx, syms, env, tree, v);
     }
 }
@@ -9903,15 +9905,15 @@ impl Attr {
         if result_info.check_context.deferred_attr_context().mode
             == crate::comp::deferred_attr::AttrMode::CHECK
         {
-            // TODO(Check): chk.checkRaw is not ported (Check.java:1560-1580);
-            // registered.
             if let Some(helper) = &helper {
                 if let TreeKind::MemberReference { kind: Some(reference_kind), .. } = &ctx.tree(that).kind {
                     if is_static_selector
                         && reference_kind.is_unbound()
                         && self.types.is_raw_type_public(ctx, helper.site)
                     {
-                        // Java: chk.checkRaw(that.expr, localEnv); — registered.
+                        let chk_rc = Rc::clone(&self.chk);
+                        let chk = chk_rc.borrow();
+                        chk.check_raw(ctx, &local_env, expr);
                     }
                 }
             }
@@ -9948,8 +9950,9 @@ impl Attr {
                 }
             }
             if is_target_serializable {
-                // TODO(Check): chk.checkAccessFromSerializableElement is not ported
-                // (Check.java:2745-2800, lint/serial); registered.
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                chk.check_access_from_serializable_element(ctx, syms, that, true);
             }
         }
         let check_info_context: Rc<dyn crate::comp::check::CheckContext> = Rc::new(FunctionalReturnContext {

@@ -1996,7 +1996,7 @@ fn tsym_type(
 }
 
 /// Java: private PackageSymbol packge() / Symbol.packge (Symbol.java:305-320).
-fn packge(
+pub(crate) fn packge(
     ctx: &crate::compiler_context::CompilerContext,
     sym: SymbolId,
 ) -> Option<SymbolId> {
@@ -2409,6 +2409,37 @@ impl Symbol {
         // The Java Callable<?> lazy-initializer channel is not represented: the
         // constant is computed when the symbol is entered (Porting adapter).
         data.clone()
+    }
+}
+
+
+impl Symbol {
+    /// Java: public boolean isDirectlyOrIndirectlyLocal() (Symbol.java:438-446).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - sym: the symbol.
+    ///
+    /// # Returns
+    ///   - true when the symbol is declared (directly or indirectly) local to a
+    ///     method or variable initializer.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Symbol.java:438-446.
+    pub fn is_directly_or_indirectly_local(ctx: &CompilerContext, sym: SymbolId) -> bool {
+        let Some(owner) = ctx.sym(sym).owner else {
+            return false;
+        };
+        let owner_kind = ctx.sym(owner).kind;
+        if owner_kind == crate::code::kinds::Kind::VAR || owner_kind == crate::code::kinds::Kind::MTH {
+            return true;
+        }
+        if owner_kind == crate::code::kinds::Kind::TYP {
+            return Symbol::is_directly_or_indirectly_local(ctx, owner);
+        }
+        false
     }
 }
 

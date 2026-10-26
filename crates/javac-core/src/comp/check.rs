@@ -88,6 +88,9 @@ pub struct Check {
     /// Java: the Symtab service (Symtab.instance(context)); explicit service
     /// per ADR 0001.
     pub syms: Rc<RefCell<Symtab>>,
+    /// Java: final boolean warnOnAnyAccessToMembers (from -Xlint options);
+    /// injected through the setter at wiring time (Adapter).
+    pub warn_on_any_access_to_members: bool,
     /// Java: Feature.PRIVATE_SAFE_VARARGS.allowedInSource(source) (Check.java:970-977)
     pub private_safe_varargs: bool,
 }
@@ -130,6 +133,7 @@ impl Check {
             private_safe_varargs: crate::code::source::Feature::PRIVATE_SAFE_VARARGS
                 .allowed_in_source(source),
             syms,
+            warn_on_any_access_to_members: false,
         }
     }
 
@@ -3821,5 +3825,216 @@ impl Check {
             }
         }
         t
+    }
+}
+impl Check {
+    /// Java: void checkRaw(JCTree tree, Env<AttrContext> env) (Check.java:1547-1560).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - env: the attribution environment;
+    ///   - tree: the type tree.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:1547-1560.
+    pub fn check_raw(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        tree: TreeId,
+    ) {
+        if !self.lint.is_enabled(crate::code::lint::LintCategory::RAW) {
+            return;
+        }
+        let tree_type = match ctx.tree(tree).ty {
+            Some(t) => t,
+            None => return,
+        };
+        if !ctx.typ(tree_type).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            return;
+        }
+        if crate::tree::tree_info::is_diamond(ctx, tree) {
+            return;
+        }
+        let within_anon = {
+            let encl_class = env.encl_class;
+            let encl_method = env.encl_method;
+            let anon = encl_class
+                .map(|encl| match &ctx.tree(encl).kind {
+                    crate::tree::jc_tree::TreeKind::ClassDecl { name, .. } => name.is_empty(),
+                    _ => false,
+                })
+                .unwrap_or(false);
+            let init_method = encl_method
+                .map(|method| match &ctx.tree(method).kind {
+                    crate::tree::jc_tree::TreeKind::MethodDecl { name, .. } => {
+                        name == &self.names.init
+                    }
+                    _ => false,
+                })
+                .unwrap_or(false);
+            anon && init_method
+        };
+        if !self.types.is_raw_type_public(ctx, tree_type) || within_anon {
+            return;
+        }
+        let declared = ctx
+            .typ(tree_type)
+            .tsym
+            .and_then(|tsym| ctx.sym(tsym).ty)
+            .unwrap_or(tree_type);
+        let warning = crate::resources::compiler_properties::warnings::raw_class_use(
+            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                crate::comp::attr::type_display_of(ctx, tree_type),
+            ),
+            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                crate::comp::attr::type_display_of(ctx, declared),
+            ),
+        );
+        let warning = crate::util::jc_diagnostic::Warning::from(warning);
+        crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+            &mut *self.log.borrow_mut(),
+            Some(crate::code::lint::LintCategory::RAW),
+            Some(std::rc::Rc::new(
+                crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+            )),
+            warning,
+        );
+    }
+}
+impl Check {
+    /// Java: void checkAccessFromSerializableElement(JCTree tree, boolean isLambda)
+    /// (Check.java:2745-2775).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the referenced tree;
+    ///   - is_lambda: whether the access is from a serializable lambda.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the tree symbol kind is required to be a value/method.
+    ///
+    /// Upstream: Check.java:2745-2775.
+    pub fn check_access_from_serializable_element(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        tree: TreeId,
+        is_lambda: bool,
+    ) {
+        let serial_lint = self.lint.is_enabled(crate::code::lint::LintCategory::SERIAL);
+        let serial_suppressed = self.lint.is_suppressed(crate::code::lint::LintCategory::SERIAL);
+        if !(self.warn_on_any_access_to_members || (serial_lint && !serial_suppressed && is_lambda)) {
+            return;
+        }
+        let Some(sym) = crate::tree::tree_info::symbol(ctx, tree) else {
+            return;
+        };
+        let sym_kind = ctx.sym(sym).kind;
+        if !sym_kind.matches(crate::code::kinds::KindSelector::VAL_MTH) {
+            return;
+        }
+        if sym_kind == crate::code::kinds::Kind::VAR {
+            let flags_value = ctx.sym(sym).flags_field;
+            let name = ctx.sym(sym).name.clone();
+            if (flags_value & crate::code::flags::PARAMETER) != 0
+                || crate::code::symbol::Symbol::is_directly_or_indirectly_local(ctx, sym)
+                || name == self.names._this
+                || name == self.names._super
+            {
+                return;
+            }
+        }
+        let owner = ctx.sym(sym).owner.expect("symbol owner");
+        let owner_type = ctx.sym(owner).ty.expect("owner type");
+        if !self.types.is_subtype(ctx, syms, owner_type, syms.serializable_type)
+            && self.is_effectively_non_public(ctx, syms, sym)
+        {
+            let sym_arg = crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                crate::comp::resolve::symbol_display_name(ctx, sym),
+            );
+            if is_lambda {
+                if self.belongs_to_restricted_package(ctx, sym) {
+                    let warning = crate::resources::compiler_properties::warnings::access_to_member_from_serializable_lambda(sym_arg);
+                    let warning = crate::util::jc_diagnostic::Warning::from(warning);
+                    crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                        &mut *self.log.borrow_mut(),
+                        Some(crate::code::lint::LintCategory::SERIAL),
+                        Some(std::rc::Rc::new(
+                            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+                        )),
+                        warning,
+                    );
+                }
+            } else {
+                let warning = crate::resources::compiler_properties::warnings::access_to_member_from_serializable_element(sym_arg);
+                let warning = crate::util::jc_diagnostic::Warning::from(warning);
+                crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                    &mut *self.log.borrow_mut(),
+                    None,
+                    Some(std::rc::Rc::new(
+                        crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+                    )),
+                    warning,
+                );
+            }
+        }
+    }
+
+    /// Java: private boolean isEffectivelyNonPublic(Symbol sym) (Check.java:2777-2790).
+    fn is_effectively_non_public(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) -> bool {
+        if crate::code::symbol::packge(ctx, sym) == Some(syms.root_package) {
+            return false;
+        }
+        let mut current = sym;
+        loop {
+            if ctx.sym(current).kind == crate::code::kinds::Kind::PCK {
+                break;
+            }
+            if (ctx.sym(current).flags_field & (crate::code::flags::PUBLIC as i64)) == 0 {
+                return true;
+            }
+            match ctx.sym(current).owner {
+                Some(owner) => current = owner,
+                None => break,
+            }
+        }
+        false
+    }
+
+    /// Java: private boolean belongsToRestrictedPackage(Symbol sym)
+    /// (Check.java:2792-2798).
+    fn belongs_to_restricted_package(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        sym: SymbolId,
+    ) -> bool {
+        let pkg = match crate::code::symbol::packge(ctx, sym) {
+            Some(pkg) => pkg,
+            None => return false,
+        };
+        let full_name = match &ctx.sym(pkg).kind_data {
+            crate::code::symbol::SymbolKind::PackageSymbol { fullname, .. } => {
+                fullname.to_java_string().to_string_lossy()
+            }
+            _ => ctx.sym(pkg).name.to_java_string().to_string_lossy(),
+        };
+        full_name.starts_with("java.")
+            || full_name.starts_with("javax.")
+            || full_name.starts_with("sun.")
+            || full_name.contains(".internal.")
     }
 }
