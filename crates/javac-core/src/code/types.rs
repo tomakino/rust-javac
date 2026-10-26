@@ -6328,7 +6328,7 @@ impl Types {
     }
 
     /// Java: UndetVar.baseType() (Type.java:2043-2048)
-    fn base_type_of(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
+    pub(crate) fn base_type_of(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
         match &ctx.typ(t).kind {
             TypeKindData::UndetVar { .. } => match self.undet_var_get_inst(ctx, t) {
                 Some(inst) => self.base_type_of(ctx, inst),
@@ -8608,6 +8608,395 @@ impl Types {
             interfaces = interfaces.tail();
         }
         false
+    }
+}
+
+impl Types {
+    /// Java: public List<Type> captures(Type t) (Types.java:431-436).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - t: the type to scan.
+    ///
+    /// # Returns
+    ///   - the captured/synthetic type variables mentioned in t.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:431-436.
+    pub fn captures(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> List<TypeId> {
+        let mut seen: Vec<TypeId> = Vec::new();
+        let mut result: List<TypeId> = List::nil();
+        self.capture_scan_collect(ctx, syms, t, &mut seen, &mut result);
+        result
+    }
+
+    /// Java: CaptureScanner (Types.java:441-482).
+    #[allow(clippy::collapsible_if, clippy::collapsible_match)]
+    fn capture_scan_collect(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        seen: &mut Vec<TypeId>,
+        result: &mut List<TypeId>,
+    ) {
+        let kind = ctx.typ(t).kind.clone();
+        match &kind {
+            crate::code::type_::TypeKindData::ClassType { .. } => {
+                if self.is_compound(ctx, t) {
+                    let mut current = self.direct_supertypes(ctx, syms, t);
+                    while current.non_empty() {
+                        let sup = *current.head();
+                        self.capture_scan_collect(ctx, syms, sup, seen, result);
+                        current = current.tail();
+                    }
+                } else {
+                    let mut current = crate::code::types::allparams_of(ctx, t);
+                    while current.non_empty() {
+                        let param = *current.head();
+                        self.capture_scan_collect(ctx, syms, param, seen, result);
+                        current = current.tail();
+                    }
+                }
+            }
+            crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => {
+                if let Some(elemtype) = elemtype {
+                    self.capture_scan_collect(ctx, syms, *elemtype, seen, result);
+                }
+            }
+            crate::code::type_::TypeKindData::WildcardType { type_, .. } => {
+                if let Some(type_) = type_ {
+                    self.capture_scan_collect(ctx, syms, *type_, seen, result);
+                }
+            }
+            crate::code::type_::TypeKindData::TypeVar { bound, .. } => {
+                let synthetic = ctx
+                    .typ(t)
+                    .tsym
+                    .map(|tsym| {
+                        ctx.sym(tsym).flags_field & (crate::code::flags::SYNTHETIC as i64) != 0
+                    })
+                    .unwrap_or(false);
+                if synthetic && !seen.contains(&t) {
+                    seen.push(t);
+                    *result = result.prepend(t);
+                    if let Some(bound) = bound {
+                        self.capture_scan_collect(ctx, syms, *bound, seen, result);
+                    }
+                }
+            }
+            crate::code::type_::TypeKindData::CapturedType { bound, lower, .. } => {
+                if !seen.contains(&t) {
+                    seen.push(t);
+                    *result = result.prepend(t);
+                    if let Some(bound) = bound {
+                        self.capture_scan_collect(ctx, syms, *bound, seen, result);
+                    }
+                    if let Some(lower) = lower {
+                        self.capture_scan_collect(ctx, syms, *lower, seen, result);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Java: public Type upward(Type t, List<Type> vars) (Types.java:420-422).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - t: the type to project;
+    ///   - vars: the type variables to map.
+    ///
+    /// # Returns
+    ///   - the upward projection.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:420-422.
+    pub fn upward(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        vars: &List<TypeId>,
+    ) -> TypeId {
+        let mut seen: Vec<TypeId> = Vec::new();
+        self.projection(ctx, syms, t, vars, ProjectionKind::UPWARDS, &mut seen)
+    }
+
+    /// Java: TypeProjection.visit dispatch (Types.java:240-430).
+    fn projection(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        vars: &List<TypeId>,
+        pkind: ProjectionKind,
+        seen: &mut Vec<TypeId>,
+    ) -> TypeId {
+        let tag = ctx.typ(t).get_tag();
+        match tag {
+            crate::code::type_tag::TypeTag::CLASS => {
+                let (outer_field, typarams_field) = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::ClassType {
+                        outer_field,
+                        typarams_field,
+                        ..
+                    } => (*outer_field, typarams_field.clone()),
+                    _ => (None, None),
+                };
+                if self.is_compound(ctx, t) {
+                    let components = self.direct_supertypes(ctx, syms, t);
+                    let mut projected: List<TypeId> = List::nil();
+                    let mut current = components.clone();
+                    let mut changed = false;
+                    while current.non_empty() {
+                        let component = *current.head();
+                        let projected_component =
+                            self.projection(ctx, syms, component, vars, pkind, seen);
+                        if projected_component != component {
+                            changed = true;
+                        }
+                        projected = projected.append(projected_component);
+                        current = current.tail();
+                    }
+                    if !changed {
+                        return t;
+                    }
+                    let names = self
+                        .names
+                        .as_ref()
+                        .expect("Types::with_names must be used for intersection projection");
+                    return self.make_intersection_type(ctx, syms, names, projected, false);
+                }
+                let outer = outer_field;
+                let outer1 = outer.map(|outer| self.projection(ctx, syms, outer, vars, pkind, seen));
+                let typarams = typarams_field.unwrap_or_else(List::nil);
+                let tsym = ctx.typ(t).tsym.expect("class type symbol");
+                let formals_type = ctx.sym(tsym).ty.expect("class symbol type");
+                let mut formals = ctx.typ(formals_type).get_type_arguments();
+                let mut typarams1: List<TypeId> = List::nil();
+                let mut changed = false;
+                let mut current = typarams.clone();
+                while current.non_empty() {
+                    let actual = *current.head();
+                    let declared_bound = if formals.non_empty() {
+                        let formal = *formals.head();
+                        ctx.typ(formal).get_upper_bound().unwrap_or(syms.object_type)
+                    } else {
+                        syms.object_type
+                    };
+                    let t2 = self.map_type_argument(ctx, syms, t, declared_bound, actual, vars, pkind, seen);
+                    if ctx.typ(t2).has_tag(crate::code::type_tag::TypeTag::BOT) {
+                        return syms.bot_type;
+                    }
+                    if t2 != actual {
+                        changed = true;
+                    }
+                    typarams1 = typarams1.append(t2);
+                    if formals.non_empty() {
+                        formals = formals.tail();
+                    }
+                    current = current.tail();
+                }
+                if outer1 == outer && !changed {
+                    return t;
+                }
+                ctx.alloc_type(crate::code::type_::Type::new(
+                    crate::code::type_tag::TypeTag::CLASS,
+                    Some(tsym),
+                    crate::code::type_::TypeKindData::ClassType {
+                        outer_field: outer1,
+                        typarams_field: Some(typarams1),
+                        allparams_field: None,
+                        supertype_field: None,
+                        interfaces_field: None,
+                        all_interfaces_field: None,
+                    },
+                ))
+            }
+            crate::code::type_tag::TypeTag::ARRAY => {
+                let elemtype = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => {
+                        elemtype.expect("array element type")
+                    }
+                    _ => unreachable!(),
+                };
+                let elemtype1 = self.projection(ctx, syms, elemtype, vars, pkind, seen);
+                if elemtype1 == elemtype {
+                    return t;
+                }
+                if ctx.typ(elemtype1).has_tag(crate::code::type_tag::TypeTag::BOT) {
+                    return syms.bot_type;
+                }
+                ctx.alloc_type(crate::code::type_::Type::new_array_type(
+                    elemtype1,
+                    syms.array_class,
+                ))
+            }
+            crate::code::type_tag::TypeTag::TYPEVAR => {
+                let (bound, lower) = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::TypeVar { bound, lower } => (*bound, *lower),
+                    _ => (None, None),
+                };
+                if !self.list_contains_type(ctx, syms, vars, t) {
+                    return t;
+                }
+                if seen.contains(&t) {
+                    // cycle
+                    return if pkind == ProjectionKind::UPWARDS {
+                        syms.object_type
+                    } else {
+                        syms.bot_type
+                    };
+                }
+                seen.push(t);
+                let bound_type = match pkind {
+                    ProjectionKind::UPWARDS => bound.unwrap_or(syms.object_type),
+                    ProjectionKind::DOWNWARDS => lower.unwrap_or(syms.bot_type),
+                };
+                let result = self.projection(ctx, syms, bound_type, vars, pkind, seen);
+                seen.pop();
+                result
+            }
+            _ => t,
+        }
+    }
+
+    /// Java: TypeProjection.mapTypeArgument (Types.java:326-330).
+    #[allow(clippy::too_many_arguments)]
+    fn map_type_argument(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        site: TypeId,
+        declared_bound: TypeId,
+        t: TypeId,
+        vars: &List<TypeId>,
+        pkind: ProjectionKind,
+        seen: &mut Vec<TypeId>,
+    ) -> TypeId {
+        if !self.contains_any(ctx, syms, t, vars) {
+            return t;
+        }
+        self.type_argument_projection(ctx, syms, site, declared_bound, t, vars, pkind, seen)
+    }
+
+    /// Java: TypeArgumentProjection.visit (Types.java:340-400).
+    #[allow(clippy::too_many_arguments)]
+    fn type_argument_projection(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        site: TypeId,
+        declared_bound: TypeId,
+        t: TypeId,
+        vars: &List<TypeId>,
+        pkind: ProjectionKind,
+        seen: &mut Vec<TypeId>,
+    ) -> TypeId {
+        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::WILDCARD) {
+            let (wt_type, wt_kind) = match &ctx.typ(t).kind {
+                crate::code::type_::TypeKindData::WildcardType { type_, kind, .. } => {
+                    (*type_, *kind)
+                }
+                _ => return t,
+            };
+            let mut bound = syms.bot_type;
+            let mut bk = wt_kind;
+            match wt_kind {
+                crate::code::bound_kind::BoundKind::EXTENDS => {
+                    if let Some(wt_type) = wt_type {
+                        bound = self.projection(ctx, syms, wt_type, vars, pkind, seen);
+                    }
+                    if ctx.typ(bound).has_tag(crate::code::type_tag::TypeTag::BOT) {
+                        return syms.bot_type;
+                    }
+                }
+                crate::code::bound_kind::BoundKind::SUPER => {
+                    if let Some(wt_type) = wt_type {
+                        bound = self.projection(ctx, syms, wt_type, vars, pkind.complement(), seen);
+                    }
+                    if ctx.typ(bound).has_tag(crate::code::type_tag::TypeTag::BOT) {
+                        bound = syms.object_type;
+                        bk = crate::code::bound_kind::BoundKind::UNBOUND;
+                    }
+                }
+                _ => {}
+            }
+            return ctx.alloc_type(crate::code::type_::Type::new_wildcard_type(
+                bound,
+                bk,
+                syms.bound_class,
+                None,
+            ));
+        }
+        // type argument is some type containing restricted vars
+        if pkind == ProjectionKind::DOWNWARDS {
+            return syms.bot_type;
+        }
+        let upper = self.projection(ctx, syms, t, vars, ProjectionKind::UPWARDS, seen);
+        let lower = self.projection(ctx, syms, t, vars, ProjectionKind::DOWNWARDS, seen);
+        let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
+        let formals_type = ctx.sym(site_tsym).ty.expect("site symbol type");
+        let formals = ctx.typ(formals_type).get_type_arguments();
+        let object = syms.object_type;
+        let (bound, bk) = if !self.is_same_type(ctx, syms, upper, object)
+            && (self.contains_any(ctx, syms, declared_bound, &formals)
+                || !self.is_subtype(ctx, syms, declared_bound, upper))
+        {
+            (upper, crate::code::bound_kind::BoundKind::EXTENDS)
+        } else if !ctx.typ(lower).has_tag(crate::code::type_tag::TypeTag::BOT) {
+            (lower, crate::code::bound_kind::BoundKind::SUPER)
+        } else {
+            (object, crate::code::bound_kind::BoundKind::UNBOUND)
+        };
+        ctx.alloc_type(crate::code::type_::Type::new_wildcard_type(
+            bound,
+            bk,
+            syms.bound_class,
+            None,
+        ))
+    }
+
+    fn list_contains_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        list: &List<TypeId>,
+        t: TypeId,
+    ) -> bool {
+        let mut current = list.clone();
+        while current.non_empty() {
+            if self.is_same_type(ctx, syms, *current.head(), t) {
+                return true;
+            }
+            current = current.tail();
+        }
+        false
+    }
+}
+
+/// Java: Types.ProjectionKind (Types.java:198-215).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProjectionKind {
+    /// Java: UPWARDS
+    UPWARDS,
+    /// Java: DOWNWARDS
+    DOWNWARDS,
+}
+
+impl ProjectionKind {
+    /// Java: ProjectionKind.complement()
+    pub fn complement(self) -> ProjectionKind {
+        match self {
+            ProjectionKind::UPWARDS => ProjectionKind::DOWNWARDS,
+            ProjectionKind::DOWNWARDS => ProjectionKind::UPWARDS,
+        }
     }
 }
 

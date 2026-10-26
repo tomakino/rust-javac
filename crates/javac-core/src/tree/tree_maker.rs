@@ -2678,6 +2678,122 @@ impl TreeMaker {
     }
 }
 
+
+impl TreeMaker {
+    /// Java: public JCExpression Type(Type t) (TreeMaker.java:790-860).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - t: the represented type.
+    ///
+    /// # Returns
+    ///   - the type tree for t.
+    ///
+    /// # Panics
+    ///   - non-class/array/typevar/wildcard/primitive tags assert.
+    ///
+    /// Upstream: TreeMaker.java:790-860.
+    pub fn type_from_type(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        t: crate::ids::TypeId,
+    ) -> TreeId {
+        let tag = ctx.typ(t).get_tag();
+        match tag {
+            TypeTag::BYTE | TypeTag::CHAR | TypeTag::SHORT | TypeTag::INT | TypeTag::LONG
+            | TypeTag::FLOAT | TypeTag::DOUBLE | TypeTag::BOOLEAN | TypeTag::VOID => {
+                self.type_ident(ctx, tag)
+            }
+            TypeTag::TYPEVAR => {
+                let tsym = ctx.typ(t).tsym.expect("type variable symbol");
+                let name = ctx.sym(tsym).name.clone();
+                self.ident(ctx, name)
+            }
+            TypeTag::WILDCARD => {
+                let (inner, kind) = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::WildcardType { type_, kind, .. } => (*type_, *kind),
+                    _ => (None, crate::code::bound_kind::BoundKind::UNBOUND),
+                };
+                let kind_tree = self.type_bound_kind(ctx, kind);
+                let inner_tree = if kind == crate::code::bound_kind::BoundKind::UNBOUND {
+                    None
+                } else {
+                    inner.map(|inner| self.type_from_type(ctx, syms, inner))
+                };
+                self.wildcard(ctx, kind_tree, inner_tree)
+            }
+            TypeTag::CLASS => {
+                if ctx.typ(t).is_union() {
+                    let alternatives = ctx.typ(t).get_alternative_types();
+                    let mut components: List<TreeId> = List::nil();
+                    let mut current = alternatives;
+                    while current.non_empty() {
+                        let alternative = *current.head();
+                        let tree = self.type_from_type(ctx, syms, alternative);
+                        components = components.append(tree);
+                        current = current.tail();
+                    }
+                    return self.type_union(ctx, components);
+                }
+                if ctx.typ(t).is_intersection() {
+                    let components_types = ctx.typ(t).get_explicit_components();
+                    let mut components: List<TreeId> = List::nil();
+                    let mut current = components_types;
+                    while current.non_empty() {
+                        let component = *current.head();
+                        let tree = self.type_from_type(ctx, syms, component);
+                        components = components.append(tree);
+                        current = current.tail();
+                    }
+                    return self.type_intersection(ctx, components);
+                }
+                let tsym = ctx.typ(t).tsym.expect("class type symbol");
+                let outer = ctx.typ(t).get_enclosing_type();
+                let owner_kind = ctx.sym(tsym).owner.map(|owner| ctx.sym(owner).kind);
+                let clazz = match outer {
+                    Some(outer)
+                        if ctx.typ(outer).has_tag(TypeTag::CLASS)
+                            && owner_kind == Some(crate::code::kinds::Kind::TYP) =>
+                    {
+                        // Java: Select(Type(outer), t.tsym)
+                        let selected = self.type_from_type(ctx, syms, outer);
+                        let name = ctx.sym(tsym).name.clone();
+                        self.select(ctx, selected, name)
+                    }
+                    _ => self.qual_ident(ctx, syms, tsym),
+                };
+                let args = ctx.typ(t).get_type_arguments();
+                if args.is_empty() {
+                    clazz
+                } else {
+                    let mut argument_trees: List<TreeId> = List::nil();
+                    let mut current = args;
+                    while current.non_empty() {
+                        let argument = *current.head();
+                        let tree = self.type_from_type(ctx, syms, argument);
+                        argument_trees = argument_trees.append(tree);
+                        current = current.tail();
+                    }
+                    self.type_apply(ctx, clazz, argument_trees)
+                }
+            }
+            TypeTag::ARRAY => {
+                let elemtype = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => {
+                        elemtype.expect("array element type")
+                    }
+                    _ => panic!("AssertionError: array type expected"),
+                };
+                let elem_tree = self.type_from_type(ctx, syms, elemtype);
+                self.type_array(ctx, elem_tree)
+            }
+            other => panic!("AssertionError: unexpected type tag: {:?}", other),
+        }
+    }
+
+}
+
 #[cfg(test)]
 mod tests {
     use super::{TreeFactory, TreeMaker};

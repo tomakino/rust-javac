@@ -706,6 +706,7 @@ impl Attr {
             Tag::DOLOOP => self.visit_do_loop(ctx, syms, tree),
             Tag::WHILELOOP => self.visit_while_loop(ctx, syms, tree),
             Tag::FORLOOP => self.visit_for_loop(ctx, syms, tree),
+            Tag::FOREACHLOOP => self.visit_foreach_loop(ctx, syms, tree),
             Tag::SYNCHRONIZED => self.visit_synchronized(ctx, syms, tree),
             Tag::TRY => self.visit_try(ctx, syms, tree),
             Tag::TYPECAST => self.visit_type_cast(ctx, syms, tree),
@@ -7622,6 +7623,236 @@ impl Attr {
         }
     }
 }
+
+impl Attr {
+    /// Java: private void setSyntheticVariableType(JCVariableDecl tree, Type type)
+    /// (Attr.java:5577-5583).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the variable declaration;
+    ///   - ty: the synthetic inferred type.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the variable declaration kind is asserted.
+    ///
+    /// Upstream: Attr.java:5577-5583.
+    fn set_synthetic_variable_type(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        tree: TreeId,
+        ty: TypeId,
+    ) {
+        let vartype = if ctx.typ(ty).has_tag(TypeTag::ERROR) {
+            let mut make = self.make.borrow_mut();
+            make.at(crate::util::position::NOPOS);
+            make.erroneous_empty(ctx)
+        } else {
+            let mut make = self.make.borrow_mut();
+            make.at(crate::util::position::NOPOS);
+            make.type_from_type(ctx, syms, ty)
+        };
+        if let TreeKind::VariableDecl { vartype: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(vartype);
+        }
+    }
+
+    /// Java: public void visitForeachLoop(JCEnhancedForLoop tree)
+    /// (Attr.java:1532-1580).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the for-each loop.
+    ///
+    /// # Returns
+    ///   - Type.noType (statement result).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:1532-1580.
+    #[allow(clippy::collapsible_if, clippy::too_many_lines)]
+    fn visit_foreach_loop(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let (var, expr, body) = match &ctx.tree(tree).kind {
+            TreeKind::EnhancedForLoop { var, expr, body } => (
+                var.expect("foreach var"),
+                expr.expect("foreach expr"),
+                body.expect("foreach body"),
+            ),
+            _ => panic!("ClassCastException: JCEnhancedForLoop expected"),
+        };
+        let loop_env = self.dup_env_with_scope(ctx, &env, env.tree, None);
+        // the formal parameter of a for-each loop is not in the scope when
+        // attributing the for-each expression; attribute the expression first.
+        let expr_attr = self.attrib_expr(ctx, syms, expr, &loop_env);
+        let expr_type = self.types.cvar_upper_bound(ctx, expr_attr);
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_non_void(ctx, ctx.tree(tree).pos, expr_type);
+        }
+        let elemtype: TypeId = if ctx.typ(expr_type).has_tag(TypeTag::ARRAY) {
+            self.types.elemtype(ctx, syms, expr_type)
+        } else {
+            // or perhaps expr implements Iterable<T>?
+            let iterable_tsym = ctx
+                .typ(syms.iterable_type)
+                .tsym
+                .expect("Iterable type symbol");
+            match self.types.as_super(ctx, syms, expr_type, iterable_tsym) {
+                None => {
+                    self.attr_error(
+                        ctx.tree(expr).pos,
+                        crate::resources::compiler_properties::errors::foreach_not_applicable_to_type(
+                            Self::type_arg_placeholder(ctx, expr_type),
+                            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                                Rc::new(self.diags.fragment(
+                                    crate::util::jc_diagnostic::Fragment::from(
+                                        crate::resources::compiler_properties::fragments::type_req_array_or_iterable(),
+                                    ),
+                                )),
+                            ),
+                        ),
+                    );
+                    self.types.create_error_type_original(ctx, Some(expr_type), syms)
+                }
+                Some(base) => {
+                    let iterable_params = crate::code::types::allparams_of(ctx, base);
+                    let elem = if iterable_params.is_empty() {
+                        syms.object_type
+                    } else {
+                        let head = *iterable_params.head();
+                        self.types.wild_upper_bound(ctx, syms, head)
+                    };
+                    // Check the return type of the method iterator().
+                    let mut iter_type = expr_type;
+                    while ctx.typ(iter_type).has_tag(TypeTag::TYPEVAR) {
+                        match ctx.typ(iter_type).get_upper_bound() {
+                            Some(upper) => iter_type = upper,
+                            None => break,
+                        }
+                    }
+                    let iter_sym = {
+                        let rs_rc = self
+                            .rs
+                            .borrow()
+                            .clone()
+                            .expect("AssertionError: rs service must be installed");
+                        let mut rs = rs_rc.borrow_mut();
+                        let types_rc = Rc::clone(&self.types);
+                        let chk_rc = Rc::clone(&self.chk);
+                        let chk = chk_rc.borrow();
+                        let infer_rc = Rc::clone(&self.infer);
+                        let iterator_name = self.names.iterator.clone();
+                        rs.resolve_internal_method(
+                            ctx,
+                            syms,
+                            &types_rc,
+                            self,
+                            &chk,
+                            &infer_rc,
+                            simple_diag_pos(ctx.tree(tree).pos),
+                            &loop_env,
+                            iter_type,
+                            iterator_name,
+                            List::nil(),
+                            None,
+                        )
+                    };
+                    let iter_ret = ctx
+                        .sym(iter_sym)
+                        .ty
+                        .map(|iter_ty| self.types.get_return_type_public(ctx, iter_ty))
+                        .unwrap_or_else(|| self.no_type(ctx));
+                    let iterator_tsym = ctx
+                        .typ(syms.iterator_type)
+                        .tsym
+                        .expect("Iterator type symbol");
+                    if self
+                        .types
+                        .as_super(ctx, syms, iter_ret, iterator_tsym)
+                        .is_none()
+                    {
+                        self.attr_error(
+                            ctx.tree(tree).pos,
+                            crate::resources::compiler_properties::errors::foreach_not_applicable_to_type(
+                                Self::type_arg_placeholder(ctx, expr_type),
+                                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                                    Rc::new(self.diags.fragment(
+                                        crate::util::jc_diagnostic::Fragment::from(
+                                            crate::resources::compiler_properties::fragments::type_req_array_or_iterable(),
+                                        ),
+                                    )),
+                                ),
+                            ),
+                        );
+                    }
+                    elem
+                }
+            }
+        };
+        // Java: if (tree.var.isImplicitlyTyped()) { ... }
+        let var_implicitly_typed = match &ctx.tree(var).kind {
+            TreeKind::VariableDecl { vartype: Some(vartype), .. } => {
+                ctx.tree(*vartype).pos == crate::util::position::NOPOS
+            }
+            TreeKind::VariableDecl { vartype: None, .. } => true,
+            _ => false,
+        };
+        if var_implicitly_typed {
+            let var_name = match &ctx.tree(var).kind {
+                TreeKind::VariableDecl { name, .. } => name.clone(),
+                _ => self.names.empty.clone(),
+            };
+            let inferred_type = {
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                chk.check_local_var_type(ctx, syms, ctx.tree(var).pos, elemtype, var_name)
+            };
+            self.set_synthetic_variable_type(ctx, syms, var, inferred_type);
+        }
+        self.attrib_stat(ctx, syms, var, &loop_env);
+        // Java: chk.checkType(tree.expr.pos(), elemtype, tree.var.sym.type);
+        let var_sym_ty = match &ctx.tree(var).kind {
+            TreeKind::VariableDecl { sym: Some(sym), .. } => ctx.sym(*sym).ty,
+            _ => None,
+        };
+        if let Some(var_sym_ty) = var_sym_ty {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_type(
+                ctx,
+                syms,
+                ctx.tree(expr).pos,
+                elemtype,
+                var_sym_ty,
+                &*self.basic_handler,
+            );
+        }
+        // Java: loopEnv.tree = tree; (before, we were not in loop!)
+        let loop_env = Rc::new(Env {
+            next: loop_env.next.clone(),
+            outer: loop_env.outer.clone(),
+            tree: Some(tree),
+            toplevel: loop_env.toplevel,
+            encl_class: loop_env.encl_class,
+            encl_method: loop_env.encl_method,
+            info: Rc::clone(&loop_env.info),
+            base_clause: loop_env.base_clause,
+        });
+        self.attrib_stat(ctx, syms, body, &loop_env);
+        Ok(self.no_type(ctx))
+    }}
 
 #[cfg(test)]
 mod tests {

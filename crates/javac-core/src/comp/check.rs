@@ -2952,3 +2952,71 @@ impl Check {
         let _ = ctx;
     }
 }
+
+impl Check {
+    /// Java: Type checkLocalVarType(DiagnosticPosition pos, Type t, Name name)
+    /// (Check.java:954-977).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - t: the inferred initializer type;
+    ///   - name: the variable name.
+    ///
+    /// # Returns
+    ///   - the inferred local variable type (or an error type).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:954-977.
+    pub fn check_local_var_type(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        pos: i32,
+        t: TypeId,
+        name: crate::util::name::Name,
+    ) -> TypeId {
+        // check that resulting type is not the null type
+        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::BOT) {
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::local_cant_infer_null(),
+            ));
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(
+                    crate::resources::compiler_properties::errors::cant_infer_local_var_type(
+                        name,
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                            std::rc::Rc::new(fragment),
+                        ),
+                    ),
+                ),
+            );
+            return self.types.create_error_type_original(ctx, Some(t), syms);
+        } else if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::VOID) {
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::local_cant_infer_void(),
+            ));
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(
+                    crate::resources::compiler_properties::errors::cant_infer_local_var_type(
+                        name,
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                            std::rc::Rc::new(fragment),
+                        ),
+                    ),
+                ),
+            );
+            return self.types.create_error_type_original(ctx, Some(t), syms);
+        }
+        // upward project the initializer type
+        let captures = self.types.captures(ctx, syms, t);
+        let upward = self.types.upward(ctx, syms, t, &captures);
+        self.types.base_type_of(ctx, upward)
+    }
+}
