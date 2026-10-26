@@ -2874,3 +2874,45 @@ impl Check {
 
 }
 
+impl Check {
+    /// Java: List<Type> checkRefTypes(List<JCExpression> trees, List<Type> types)
+    /// (Check.java:801-812).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - trees: the original trees (for positions);
+    ///   - types: the types to check.
+    ///
+    /// # Returns
+    ///   - the checked types (error types replaced).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:801-812.
+    pub fn check_ref_types(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        _syms: &crate::code::symtab::Symtab,
+        trees: crate::util::list::List<TreeId>,
+        types: crate::util::list::List<TypeId>,
+    ) -> crate::util::list::List<TypeId> {
+        let mut result: crate::util::list::List<TypeId> = crate::util::list::List::nil();
+        let mut tl = trees;
+        let mut l = types;
+        while l.non_empty() {
+            let head = *l.head();
+            let pos = if tl.non_empty() {
+                ctx.tree(*tl.head()).pos
+            } else {
+                0
+            };
+            result = result.append(self.check_ref_type(ctx, pos, head));
+            if tl.non_empty() {
+                tl = tl.tail();
+            }
+            l = l.tail();
+        }
+        result
+    }
+}

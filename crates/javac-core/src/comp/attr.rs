@@ -683,6 +683,7 @@ impl Attr {
             Tag::THROW => self.visit_throw(ctx, syms, tree),
             Tag::INDEXED => self.visit_indexed(ctx, syms, tree),
             Tag::ASSIGN => self.visit_assign(ctx, syms, tree),
+            Tag::APPLY => self.visit_apply(ctx, syms, tree),
             Tag::LABELLED => self.visit_labeled(ctx, syms, tree),
             other => {
                 let _ = other;
@@ -1204,13 +1205,27 @@ impl Attr {
                         ctx.typ(*own_outer).has_tag(TypeTag::CLASS) && site != *own_outer
                     }) {
                         {
+                            // Java: normOuter = types.asEnclosingSuper(site,
+                            //     ownOuter.tsym); (Attr.java:4555-4565)
                             let mut norm_outer = site;
                             if ctx.typ(norm_outer).has_tag(TypeTag::CLASS) {
-                                // TODO(Types batch): types.asEnclosingSuper(site,
-                                //     ownOuter.tsym) is not ported.
-                                unimplemented!(
-                                    "TODO(Types batch): Attr.checkIdInternal types.asEnclosingSuper"
-                                )
+                                let own_outer_tsym = ctx
+                                    .typ(own_outer)
+                                    .tsym
+                                    .expect("enclosing type symbol");
+                                norm_outer = match self.types.as_enclosing_super(
+                                    ctx,
+                                    syms,
+                                    norm_outer,
+                                    own_outer_tsym,
+                                ) {
+                                    Some(super_type) => super_type,
+                                    None => {
+                                        // perhaps from an import
+                                        norm_outer = self.types.erasure(ctx, syms, own_outer);
+                                        norm_outer
+                                    }
+                                };
                             }
                             if ctx.typ(norm_outer).has_tag(TypeTag::ERROR) {
                                 norm_outer = self.types.erasure(ctx, syms, own_outer);
@@ -2260,27 +2275,116 @@ impl Attr {
     /// (370-375)
     pub fn attrib_ident(
         &mut self,
-        _ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
-        _tree: TreeId,
-        _env: &Rc<Env<AttrContext>>,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
     ) -> SymbolId {
-        // TODO(Resolve batch): the IdentAttributer visitor (rs.findIdent/
-        // findIdentInPackage/findMemberType); registered.
-        unimplemented!("TODO(Resolve batch): Attr.attribIdent IdentAttributer")
+        // Java: return tree.accept(identAttributer, env); (Attr.java:370-375)
+        // IdentAttributer (Attr.java:377-410):
+        use crate::code::kinds::Kind;
+        match ctx.tree(tree).tag {
+            Tag::SELECT => {
+                let (selected, name) = match &ctx.tree(tree).kind {
+                    TreeKind::FieldAccess { selected, name, .. } => (*selected, name.clone()),
+                    _ => panic!("ClassCastException: JCFieldAccess expected"),
+                };
+                let selected = selected.expect("member select qualifier");
+                let site = self.attrib_ident(ctx, syms, selected, env);
+                let site_kind = ctx.sym(site).kind;
+                if site_kind == Kind::ERR
+                    || site_kind == Kind::ABSENT_TYP
+                    || site_kind == Kind::HIDDEN
+                {
+                    return site;
+                }
+                if site_kind == Kind::PCK {
+                    // Java: env.toplevel.packge = (PackageSymbol)site;
+                    let toplevel = env.toplevel.expect("env.toplevel");
+                    if let TreeKind::CompilationUnit { packge, .. } =
+                        &mut ctx.tree_mut(toplevel).kind
+                    {
+                        *packge = Some(site);
+                    }
+                    let rs_rc = self
+                        .rs
+                        .borrow()
+                        .clone()
+                        .expect("AssertionError: rs service must be installed");
+                    let mut rs = rs_rc.borrow_mut();
+                    return rs.find_ident_in_package(
+                        ctx,
+                        syms,
+                        None,
+                        env,
+                        site,
+                        &name,
+                        crate::code::kinds::KindSelector::TYP_PCK,
+                    );
+                }
+                // Java: env.enclClass.sym = (ClassSymbol)site;
+                //       return rs.findMemberType(env, site.asType(), name,
+                //           (TypeSymbol)site);
+                let encl_class = env.encl_class.expect("env.enclClass");
+                if let TreeKind::ClassDecl { sym, .. } = &mut ctx.tree_mut(encl_class).kind {
+                    *sym = Some(site);
+                }
+                let site_type = ctx.sym(site).ty.expect("site type");
+                let rs_rc = self
+                    .rs
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: rs service must be installed");
+                let mut rs = rs_rc.borrow_mut();
+                rs.find_member_type_pub(ctx, syms, env, site_type, &name, site)
+            }
+            Tag::IDENT => {
+                let name = ident_name(ctx, tree);
+                let rs_rc = self
+                    .rs
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: rs service must be installed");
+                let mut rs = rs_rc.borrow_mut();
+                rs.find_ident(
+                    ctx,
+                    syms,
+                    None,
+                    env,
+                    &name,
+                    crate::code::kinds::KindSelector::TYP_PCK,
+                )
+            }
+            _ => panic!("AssertionError: unexpected tree kind"),
+        }
     }
 
     /// Java: Type attribIdentAsEnumType(Env<AttrContext> env, JCIdent id) (941-947)
     pub fn attrib_ident_as_enum_type(
         &mut self,
-        _ctx: &mut CompilerContext,
+        ctx: &mut CompilerContext,
         _syms: &mut Symtab,
-        _env: &Rc<Env<AttrContext>>,
-        _id: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        id: TreeId,
     ) -> TypeId {
-        // TODO(Resolve batch): rs.findIdentInPackage(..., names._class?) and the
-        // enum class literal type; registered.
-        unimplemented!("TODO(Resolve batch): Attr.attribIdentAsEnumType")
+        // Java: Assert.check((env.enclClass.sym.flags() & ENUM) != 0);
+        //       id.type = env.info.scope.owner.enclClass().type;
+        //       id.sym = env.info.scope.owner.enclClass();
+        //       return id.type; (Attr.java:941-947)
+        let scope_owner = env
+            .info
+            .borrow()
+            .scope
+            .and_then(|scope| ctx.scope(scope).owner)
+            .expect("AssertionError: enclosing scope owner");
+        let encl_class = crate::code::symbol::symbol_encl_class(ctx, scope_owner)
+            .expect("AssertionError: enclosing class");
+        let encl_type = ctx.sym(encl_class).ty.expect("enclosing class type");
+        ctx.tree_mut(id).ty = Some(encl_type);
+        if let TreeKind::Ident { sym, .. } = &mut ctx.tree_mut(id).kind {
+            *sym = Some(encl_class);
+        }
+        encl_type
     }
 
     // ------------------------------------------------------------------
@@ -2297,13 +2401,14 @@ impl Attr {
     ) -> TypeId {
         match self.attrib_tree(ctx, syms, tree, env, result_info) {
             Ok(value) => value,
-            Err(_failure) => {
+            Err(failure) => {
                 // Java: catch (CompletionFailure ex) { tree.type = syms.errType;
                 //     return chk.completionError(tree.pos(), ex); }
-                // The attribTree implementation sets the tree type and returns
-                // the failure; the completion error reporting is Check's
-                // completionError (Check batch).
-                unimplemented!("TODO(Check batch): Attr.attribTree CompletionFailure completionError")
+                // (Attr.java:688-695)
+                ctx.tree_mut(tree).ty = Some(syms.err_type);
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                chk.completion_error(ctx, ctx.tree(tree).pos, &failure, syms)
             }
         }
     }
@@ -4834,6 +4939,517 @@ fn simple_diag_pos(
     Some(std::rc::Rc::new(
         crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
     ))
+}
+
+impl Attr {
+    /// Java: KindSelector attribArgs(KindSelector initialKind, List<JCExpression> trees,
+    /// Env<AttrContext> env, ListBuffer<Type> argtypes) (Attr.java:772-787).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - initial_kind: the initial method kind selector;
+    ///   - trees: the argument trees;
+    ///   - env: the attribution environment.
+    ///
+    /// # Returns
+    ///   - (kind, argtypes) as the upstream ListBuffer contract.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:772-787.
+    fn attrib_args(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        initial_kind: KindSelector,
+        trees: List<TreeId>,
+        env: &Rc<Env<AttrContext>>,
+    ) -> (KindSelector, List<TypeId>) {
+        let mut kind = initial_kind;
+        let mut argtypes: List<TypeId> = List::nil();
+        let mut current = trees;
+        while current.non_empty() {
+            let arg = *current.head();
+            let info = if self.allow_poly {
+                self.method_attr_info.clone()
+            } else {
+                self.unknown_expr_info.clone()
+            };
+            let argtype = self.attrib_tree_use(ctx, syms, arg, env, info);
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            let argtype = chk.check_non_void(ctx, ctx.tree(arg).pos, argtype);
+            drop(chk);
+            if ctx.typ(argtype).has_tag(TypeTag::DEFERRED) {
+                kind = KindSelector::of(&[KindSelector::POLY, kind]);
+            }
+            argtypes = argtypes.append(argtype);
+            current = current.tail();
+        }
+        (kind, argtypes)
+    }
+
+    /// Java: Type newMethodTemplate(Type restype, List<Type> argtypes,
+    /// List<Type> typeargtypes) (Attr.java:2621-2625).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - restype: the method return type;
+    ///   - argtypes: the parameter types;
+    ///   - typeargtypes: the type arguments (None for a plain MethodType).
+    ///
+    /// # Returns
+    ///   - the method type (ForAll when type arguments are present).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:2621-2625.
+    fn new_method_template(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        restype: TypeId,
+        argtypes: List<TypeId>,
+        typeargtypes: Option<List<TypeId>>,
+    ) -> TypeId {
+        let mt = crate::code::type_::Type::new_method_type(
+            argtypes,
+            restype,
+            List::nil(),
+            syms.method_class,
+        );
+        match typeargtypes {
+            None => ctx.alloc_type(mt),
+            Some(typeargtypes) => {
+                let qtype = ctx.alloc_type(mt);
+                ctx.alloc_type(crate::code::type_::Type::new_for_all(typeargtypes, qtype))
+            }
+        }
+    }
+
+    /// Java: Type adjustMethodReturnType(Symbol msym, Type qualifierType,
+    /// Name methodName, List<Type> argtypes, Type restype) (Attr.java:2627-2649).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - msym: the resolved method symbol;
+    ///   - qualifier_type: the qualifier static type;
+    ///   - method_name: the method name;
+    ///   - argtypes: the actual argument types;
+    ///   - restype: the declared return type.
+    ///
+    /// # Returns
+    ///   - the adjusted return type (getClass/array clone special cases).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:2627-2649.
+    #[allow(clippy::too_many_arguments)]
+    fn adjust_method_return_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        msym: SymbolId,
+        qualifier_type: TypeId,
+        method_name: &crate::util::name::Name,
+        argtypes: &List<TypeId>,
+        restype: TypeId,
+    ) -> TypeId {
+        let object_tsym = ctx.typ(syms.object_type).tsym.expect("object symbol");
+        if ctx.sym(msym).owner == Some(object_tsym)
+            && method_name == &self.names.getClass
+            && argtypes.is_empty()
+        {
+            // x.getClass() has type Class<? extends |X|>
+            let encl = ctx.typ(restype).get_enclosing_type();
+            let tsym = ctx.typ(restype).tsym.expect("Class symbol");
+            let erased = self.types.erasure(ctx, syms, qualifier_type);
+            let wildcard = ctx.alloc_type(Type::new_wildcard_type(
+                erased,
+                crate::code::bound_kind::BoundKind::EXTENDS,
+                syms.bound_class,
+                None,
+            ));
+            return ctx.alloc_type(Type::new(
+                TypeTag::CLASS,
+                Some(tsym),
+                TypeKindData::ClassType {
+                    outer_field: encl,
+                    typarams_field: Some(List::of(wildcard)),
+                    allparams_field: None,
+                    supertype_field: None,
+                    interfaces_field: None,
+                    all_interfaces_field: None,
+                },
+            ));
+        }
+        let array_tsym = Some(syms.array_class);
+        if ctx.sym(msym).owner == array_tsym
+            && method_name == &self.names.clone
+            && ctx.typ(qualifier_type).has_tag(TypeTag::ARRAY)
+        {
+            // array.clone() has a result that is the same as the static type
+            // of the array being cloned
+            return qualifier_type;
+        }
+        restype
+    }
+
+    /// Java: boolean checkFirstConstructorStat(JCMethodInvocation tree,
+    /// JCMethodDecl enclMethod, boolean error) (Attr.java:2653-2671).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - tree: the application node;
+    ///   - encl_method: the enclosing method (None for an initializer);
+    ///   - error: whether an error is issued.
+    ///
+    /// # Returns
+    ///   - true when the call is the first statement of the constructor.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:2653-2671.
+    #[allow(clippy::collapsible_if)]
+    fn check_first_constructor_stat(
+        &mut self,
+        ctx: &CompilerContext,
+        tree: TreeId,
+        encl_method: Option<TreeId>,
+        error: bool,
+    ) -> bool {
+        if let Some(encl_method) = encl_method {
+            let (name, body) = match &ctx.tree(encl_method).kind {
+                TreeKind::MethodDecl { name, body, .. } => (name.clone(), *body),
+                _ => (self.names.empty.clone(), None),
+            };
+            if name == self.names.init {
+                if let Some(body) = body {
+                    if let TreeKind::Block { stats, .. } = &ctx.tree(body).kind {
+                        if stats.non_empty() {
+                            let head = *stats.head();
+                            if ctx.tree(head).tag == Tag::EXEC {
+                                let expr = match &ctx.tree(head).kind {
+                                    TreeKind::ExpressionStatement { expr } => *expr,
+                                    _ => None,
+                                };
+                                if expr == Some(tree) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if error {
+            let name = match &ctx.tree(tree).kind {
+                TreeKind::MethodInvocation { meth, .. } => meth
+                    .and_then(|meth| crate::tree::tree_info::name(ctx, meth))
+                    .unwrap_or_else(|| self.names.empty.clone()),
+                _ => self.names.empty.clone(),
+            };
+            self.attr_error(
+                ctx.tree(tree).pos,
+                crate::resources::compiler_properties::errors::call_must_be_first_stmt_in_ctor(name),
+            );
+        }
+        false
+    }
+}
+
+impl Attr {
+    /// Java: public void visitApply(JCMethodInvocation tree) (Attr.java:2465-2601).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the method invocation.
+    ///
+    /// # Returns
+    ///   - the attributed invocation type.
+    ///
+    /// # Panics
+    ///   - the resolved method type is asserted non-wildcard (upstream AssertionError).
+    ///
+    /// Upstream: Attr.java:2465-2601.
+    #[allow(unused_assignments, clippy::collapsible_if)]
+    fn visit_apply(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        // Java: Env<AttrContext> localEnv = env.dup(tree, env.info.dup());
+        let env = self.env.clone().expect("env");
+        let info_copy = {
+            let info = env.info.borrow();
+            info.dup(info.scope)
+        };
+        let local_env = env.dup(Some(tree), info_copy);
+        let (meth, args, typeargs) = match &ctx.tree(tree).kind {
+            TreeKind::MethodInvocation {
+                meth, args, typeargs, ..
+            } => (*meth, args.clone(), typeargs.clone()),
+            _ => panic!("ClassCastException: JCMethodInvocation expected"),
+        };
+        let meth = meth.expect("method invocation meth");
+        let meth_name = crate::tree::tree_info::name(ctx, meth).unwrap_or_else(|| self.names.empty.clone());
+        let is_constructor_call =
+            meth_name == self.names._this || meth_name == self.names._super;
+        let mut argtypes: List<TypeId> = List::nil();
+        let mut typeargtypes: Option<List<TypeId>> = None;
+        if is_constructor_call {
+            // We are seeing a ...this(...) or ...super(...) call.
+            // Check that this is the first statement in a constructor.
+            self.check_first_constructor_stat(ctx, tree, env.encl_method, true);
+            // Record the fact that this is a constructor call (using isSelfCall).
+            local_env.info.borrow_mut().is_self_call = true;
+            // Attribute arguments, yielding list of argument types.
+            let (kind, attributed) = self.attrib_args(
+                ctx,
+                syms,
+                KindSelector::MTH,
+                args.clone(),
+                &local_env,
+            );
+            argtypes = attributed;
+            typeargtypes = Some(self.attrib_types(
+                ctx,
+                syms,
+                typeargs.clone(),
+                &local_env,
+            ));
+            // Variable `site` points to the class in which the called constructor is defined.
+            let encl_class = env.encl_class.expect("env.enclClass");
+            let encl_sym = class_tree_symbol(ctx, encl_class).expect("enclClass sym");
+            let mut site = ctx.sym(encl_sym).ty.expect("enclClass type");
+            if meth_name == self.names._super {
+                if site == syms.object_type {
+                    self.attr_error(
+                        ctx.tree(meth).pos,
+                        crate::resources::compiler_properties::errors::no_superclass(
+                            Self::type_arg_placeholder(ctx, site),
+                        ),
+                    );
+                    site = self.types.create_error_type_original(ctx, Some(syms.object_type), syms);
+                } else {
+                    site = self.types.supertype(ctx, syms, site);
+                }
+            }
+            if ctx.typ(site).has_tag(TypeTag::CLASS) {
+                let mut encl = ctx.typ(site).get_enclosing_type();
+                while let Some(encl_type) = encl {
+                    if !ctx.typ(encl_type).has_tag(TypeTag::TYPEVAR) {
+                        break;
+                    }
+                    encl = ctx.typ(encl_type).get_upper_bound();
+                }
+                if encl
+                    .map(|encl| ctx.typ(encl).has_tag(TypeTag::CLASS))
+                    .unwrap_or(false)
+                {
+                    // we are calling a nested class
+                    if ctx.tree(meth).tag == Tag::SELECT {
+                        let qualifier = match &ctx.tree(meth).kind {
+                            TreeKind::FieldAccess { selected, .. } => {
+                                selected.expect("select qualifier")
+                            }
+                            _ => panic!("ClassCastException: JCFieldAccess expected"),
+                        };
+                        // We are seeing a prefixed call, of the form <expr>.super(...).
+                        // Check that the prefix expression conforms to the outer
+                        // instance type of the class.
+                        let encl = encl.expect("enclosing type");
+                        let qual_type = self.attrib_expr_with_type(
+                            ctx,
+                            syms,
+                            qualifier,
+                            &local_env,
+                            Some(encl),
+                        );
+                        let chk_rc = Rc::clone(&self.chk);
+                        let chk = chk_rc.borrow();
+                        chk.check_ref_type(ctx, ctx.tree(qualifier).pos, qual_type);
+                    } else if meth_name == self.names._super {
+                        // qualifier omitted; check for existence of an appropriate
+                        // implicit qualifier.
+                        let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                        let mut rs = rs_rc.borrow_mut();
+                        let types_rc = Rc::clone(&self.types);
+                        rs.resolve_implicit_this(
+                            ctx,
+                            syms,
+                            &types_rc,
+                            simple_diag_pos(ctx.tree(meth).pos),
+                            &local_env,
+                            site,
+                            true,
+                        );
+                    }
+                } else if ctx.tree(meth).tag == Tag::SELECT {
+                    let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
+                    self.attr_error(
+                        ctx.tree(meth).pos,
+                        crate::resources::compiler_properties::errors::illegal_qual_not_icls(
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                ctx.sym(site_tsym)
+                                    .name
+                                    .to_java_string()
+                                    .to_string_lossy()
+                                    .to_string(),
+                            ),
+                        ),
+                    );
+                    let selected = match &ctx.tree(meth).kind {
+                        TreeKind::FieldAccess { selected, .. } => selected.expect("select qualifier"),
+                        _ => panic!("ClassCastException: JCFieldAccess expected"),
+                    };
+                    self.attrib_expr_with_type(ctx, syms, selected, &local_env, Some(site));
+                }
+                // if we are calling a java.lang.Enum constructor, prefix the
+                // implicit String and int parameters
+                let enum_tsym = Some(syms.enum_sym);
+                if ctx.typ(site).tsym == enum_tsym {
+                    argtypes = argtypes.prepend(syms.int_type).prepend(syms.string_type);
+                }
+                // Resolve the called constructor under the assumption that we are
+                // referring to a superclass instance of the current instance.
+                let select_super_prev = local_env.info.borrow().select_super;
+                local_env.info.borrow_mut().select_super = true;
+                local_env.info.borrow_mut().pending_resolution_phase = None;
+                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                let mut rs = rs_rc.borrow_mut();
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                let infer_rc = Rc::clone(&self.infer);
+                let types_rc = Rc::clone(&self.types);
+                let sym = rs.resolve_constructor(
+                    ctx,
+                    syms,
+                    &types_rc,
+                    self,
+                    &chk,
+                    &infer_rc,
+                    simple_diag_pos(ctx.tree(meth).pos),
+                    &local_env,
+                    site,
+                    argtypes.clone(),
+                    typeargtypes.clone(),
+                );
+                drop(chk);
+                drop(rs);
+                local_env.info.borrow_mut().select_super = select_super_prev;
+                // Set method symbol to resolved constructor...
+                crate::tree::tree_info::set_symbol(ctx, meth, sym);
+                // ...and check that it is legal in the current context.
+                // (this will also set the tree's type)
+                let pt = self.pt().unwrap_or_else(|| self.no_type(ctx));
+                let mpt = self.new_method_template(ctx, syms, pt, argtypes.clone(), typeargtypes.clone());
+                let result_info = self.result_info.clone().expect("resultInfo");
+                let new_info = ResultInfo::new_with_mode(
+                    kind,
+                    Some(mpt),
+                    Rc::clone(&result_info.check_context),
+                    result_info.check_mode,
+                );
+                self.check_id(ctx, syms, meth, site, sym, &local_env, &new_info);
+            } else if ctx.typ(site).has_tag(TypeTag::ERROR)
+                && ctx.tree(meth).tag == Tag::SELECT
+            {
+                let selected = match &ctx.tree(meth).kind {
+                    TreeKind::FieldAccess { selected, .. } => selected.expect("select qualifier"),
+                    _ => panic!("ClassCastException: JCFieldAccess expected"),
+                };
+                self.attrib_expr_with_type(ctx, syms, selected, &local_env, Some(site));
+            }
+            // Otherwise, `site' is an error type and we do nothing
+            ctx.tree_mut(tree).ty = Some(syms.void_type);
+            self.result = Some(syms.void_type);
+        } else {
+            // Otherwise, we are seeing a regular method call.
+            // Attribute the arguments, yielding list of argument types, ...
+            let (kind, attributed) = self.attrib_args(
+                ctx,
+                syms,
+                KindSelector::VAL,
+                args.clone(),
+                &local_env,
+            );
+            argtypes = attributed;
+            typeargtypes = Some(self.attrib_any_types(
+                ctx,
+                syms,
+                typeargs.clone(),
+                &local_env,
+            ));
+            // ... and attribute the method using as a prototype a methodtype whose
+            // formal argument types are exactly the list of actual arguments
+            // (this will also set the method symbol).
+            let pt = self.pt().unwrap_or_else(|| self.no_type(ctx));
+            let mpt = self.new_method_template(ctx, syms, pt, argtypes.clone(), typeargtypes.clone());
+            local_env.info.borrow_mut().pending_resolution_phase = None;
+            let result_info = self.result_info.clone().expect("resultInfo");
+            let new_info = ResultInfo::new_with_mode(
+                kind,
+                Some(mpt),
+                Rc::clone(&result_info.check_context),
+                result_info.check_mode,
+            );
+            let mtype = self.attrib_tree_use(ctx, syms, meth, &local_env, new_info);
+            // Compute the result type.
+            let mut restype = self.types.get_return_type_public(ctx, mtype);
+            if ctx.typ(restype).has_tag(TypeTag::WILDCARD) {
+                panic!("AssertionError: {:?}", mtype);
+            }
+            let qualifier = if ctx.tree(meth).tag == Tag::SELECT {
+                let selected = match &ctx.tree(meth).kind {
+                    TreeKind::FieldAccess { selected, .. } => selected.expect("select qualifier"),
+                    _ => panic!("ClassCastException: JCFieldAccess expected"),
+                };
+                ctx.tree(selected).ty.unwrap_or_else(|| self.no_type(ctx))
+            } else {
+                let encl_class = env.encl_class.expect("env.enclClass");
+                let encl_sym = class_tree_symbol(ctx, encl_class).expect("enclClass sym");
+                ctx.sym(encl_sym).ty.expect("enclClass type")
+            };
+            let msym = crate::tree::tree_info::symbol(ctx, meth);
+            restype = self.adjust_method_return_type(
+                ctx,
+                syms,
+                msym.unwrap_or(syms.err_symbol),
+                qualifier,
+                &meth_name,
+                &argtypes,
+                restype,
+            );
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_ref_types(
+                ctx,
+                syms,
+                typeargs.clone(),
+                typeargtypes.clone().unwrap_or_else(List::nil),
+            );
+            drop(chk);
+            // Check that value of resulting type is admissible in the current
+            // context. Also, capture the return type.
+            let captured = result_info
+                .check_context
+                .inference_context()
+                .cached_capture(ctx, syms, &self.types, tree, restype, true);
+            let result_info2 = self.result_info.clone().expect("resultInfo");
+            self.result = Some(self.check(ctx, syms, tree, captured, KindSelector::VAL, &result_info2));
+        }
+        // Java: chk.validate(tree.typeargs, localEnv);
+        // NOT PORTED: Check.validate/Validator (Check.java:1397-1525, Check batch);
+        // registered.
+        Ok(self.result.expect("attribution result"))
+    }
 }
 
 #[cfg(test)]

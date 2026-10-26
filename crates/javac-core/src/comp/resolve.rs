@@ -8155,6 +8155,147 @@ impl Resolve {
     }
 }
 
+
+    /// §9 helper: public wrapper of findMemberType for Attr.attribIdent
+    /// (Resolve.java:2461-2480).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - env: the attribution environment;
+    ///   - site: the qualifier type;
+    ///   - name: the member type name;
+    ///   - c: the qualifier class symbol.
+    ///
+    /// # Returns
+    ///   - the member type symbol or a resolve error.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Resolve.java:2461-2480.
+impl Resolve {
+    pub(crate) fn find_member_type_pub(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &Symtab,
+        env: &Rc<Env<AttrContext>>,
+        site: TypeId,
+        name: &crate::util::name::Name,
+        c: SymbolId,
+    ) -> SymbolId {
+        self.find_member_type(ctx, syms, env, site, name, c)
+    }
+}
+
+impl Resolve {
+    /// Java: Symbol resolveSelfContaining(DiagnosticPosition pos, Env<AttrContext>
+    /// env, Symbol member, boolean isSuperCall) (Resolve.java:3793-3803).
+    ///
+    /// # Arguments
+    ///   - ctx/syms/types: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - env: the attribution environment;
+    ///   - member: the member symbol;
+    ///   - is_super_call: the super-call context.
+    ///
+    /// # Returns
+    ///   - the enclosing this symbol or syms.errSymbol.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Resolve.java:3793-3803.
+    #[allow(clippy::too_many_arguments)]
+    pub fn resolve_self_containing(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
+        env: &Rc<Env<AttrContext>>,
+        member: SymbolId,
+        is_super_call: bool,
+    ) -> SymbolId {
+        let sym = self.resolve_self_containing_internal(ctx, syms, types, env, member, is_super_call);
+        let Some(sym) = sym else {
+            let info = crate::resources::compiler_properties::errors::encl_class_required(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    ctx.sym(member).name.to_java_string().to_string_lossy().to_string(),
+                ),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos.as_ref().map(|pos| pos.get_start_position()).unwrap_or(0),
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+            return syms.err_symbol;
+        };
+        let encl_sym = crate::tree::tree_info::symbol(ctx, env.encl_class.expect("enclClass"))
+            .expect("enclClass sym");
+        let encl_type = ctx.sym(encl_sym).ty;
+        let name = ctx.sym(sym).name.clone();
+        self.access_base(ctx, syms, sym, pos, None, encl_type, &name, true)
+    }
+
+    /// Java: Type resolveImplicitThis(DiagnosticPosition pos, Env<AttrContext> env,
+    /// Type t, boolean isSuperCall) (Resolve.java:3845-3852).
+    ///
+    /// # Arguments
+    ///   - ctx/syms/types: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - env: the attribution environment;
+    ///   - t: the type whose container this is resolved;
+    ///   - is_super_call: the super-call context.
+    ///
+    /// # Returns
+    ///   - the implicit this type.
+    ///
+    /// # Panics
+    ///   - the type must have an enclosing type (upstream cast).
+    ///
+    /// Upstream: Resolve.java:3845-3852.
+    #[allow(clippy::too_many_arguments)]
+    pub fn resolve_implicit_this(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
+        env: &Rc<Env<AttrContext>>,
+        t: TypeId,
+        is_super_call: bool,
+    ) -> TypeId {
+        let t_tsym = ctx.typ(t).tsym.expect("AssertionError: type symbol");
+        let owner = ctx.sym(t_tsym).owner.expect("type owner");
+        let owner_kind = ctx.sym(owner).kind;
+        let vals_mth = crate::code::kinds::KindSelector::VAL_MTH.contains(owner_kind.to_selector());
+        let this_sym = if vals_mth {
+            let encl = ctx.typ(t).get_enclosing_type().expect("enclosing type");
+            let encl_tsym = ctx.typ(encl).tsym.expect("enclosing type symbol");
+            self.resolve_self(ctx, syms, types, pos.clone(), env, encl_tsym, self.names._this.clone())
+        } else {
+            self.resolve_self_containing(ctx, syms, types, pos.clone(), env, t_tsym, is_super_call)
+        };
+        let this_type = ctx.sym(this_sym).ty.expect("this type");
+        let encl_sym = crate::tree::tree_info::symbol(ctx, env.encl_class.expect("enclClass"))
+            .expect("enclClass sym");
+        if env.info.borrow().is_self_call
+            && ctx.typ(this_type).tsym == Some(encl_sym)
+        {
+            // Java: log.error(pos, Errors.CantRefBeforeCtorCalled("this"));
+            let info = crate::resources::compiler_properties::errors::cant_ref_before_ctor_called(
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display("this"),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos.as_ref().map(|pos| pos.get_start_position()).unwrap_or(0),
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+        this_type
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
