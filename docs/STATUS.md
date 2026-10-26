@@ -151,3 +151,5 @@ file/locations/classfinder 适配 helper、资源生成器。后续按优先级�
 - 注释规范(PORTING_RULES §26):新代码 100% /// 注释,与上游 Javadoc 对齐(摘要/参数/返回/异常/上游行号);旧代码随批次补。
 - 源码语言(PORTING_RULES §27):注释/运行时消息英文,禁止中文与『批N』标记进入 .rs;TODO 统一英文格式;历史中文注释按批次清理。
 - 注释规范补充(§28):源码注释禁止内部规则编号(§N)/批次标记;适配说明用英文自然语句,集中清单放 docs/ADAPTERS.md;历史标注随触及清理。
+- 批6 完成(至依赖边界):Attr 表达式/语句/成员选择/方法调用/switch/lambda/reference/模式匹配/checkIdInternal/check/**Infer listener**/wire_attr_services;Check 大量方法(implementations/override/validate/repeatable/compatible/leaks 等);Preview 完整;Analyzer 完整;Types 投影/warn 只读化;684 lib tests 全绿。
+- 批6 遗留(显式登记):TypeAnnotations.java(1453 行)未移植 → Attr.attribClass/attribClassBody/匿名类/sealed/visitNewClass 未写;visitModuleDef/Modules;resolve-b CALL/ERROR 与诊断 oracle 回放待 P4。B7 顺序:TypeMetadata/Symbol annotation metadata → TypeAnnotations → attribClass/attribClassBody/匿名类/visitNewClass → Modules → oracle 回放。
