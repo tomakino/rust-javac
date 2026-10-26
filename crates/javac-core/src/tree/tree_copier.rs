@@ -45,12 +45,27 @@ use crate::util::position;
 pub struct TreeCopier {
     /// Java: private TreeMaker M
     pub make: Rc<std::cell::RefCell<TreeMaker>>,
+    /// Java: DeferredAttr's anonymous copier subclass flag (§9): when set,
+    /// diamond new-class nodes are copied as speculative new classes (def set to
+    /// null) and member references forward their overload kind.
+    pub speculative: bool,
 }
 
 impl TreeCopier {
     /// Java: public TreeCopier(TreeMaker M)
     pub fn new(make: Rc<std::cell::RefCell<TreeMaker>>) -> TreeCopier {
-        TreeCopier { make }
+        TreeCopier {
+            make,
+            speculative: false,
+        }
+    }
+
+    /// Java: the DeferredAttr anonymous TreeCopier subclass (§9 flag).
+    pub fn new_speculative(make: Rc<std::cell::RefCell<TreeMaker>>) -> TreeCopier {
+        TreeCopier {
+            make,
+            speculative: true,
+        }
     }
 
     /// Java: public <T extends JCTree> T copy(T tree)
@@ -979,22 +994,39 @@ impl TreeCopier {
             _ => panic!("ClassCastException: JCMemberReference expected"),
         };
         let pos = ctx.tree(tree).pos;
+        // Java: DeferredAttr's copier forwards the overload kind (setOverloadKind
+        // forwards to the original tree; getOverloadKind reads the original), so
+        // the speculative copy keeps the reference kind/poly kind (§9).
+        let (kind, ref_poly_kind, owner_accessible, poly_kind) = if self.speculative {
+            match &ctx.tree(tree).kind {
+                TreeKind::MemberReference {
+                    kind,
+                    ref_poly_kind,
+                    owner_accessible,
+                    poly_kind,
+                    ..
+                } => (*kind, *ref_poly_kind, *owner_accessible, *poly_kind),
+                _ => (None, PolyKind::STANDALONE, false, PolyKind::STANDALONE),
+            }
+        } else {
+            (None, PolyKind::STANDALONE, false, PolyKind::STANDALONE)
+        };
         self.mk(
             ctx,
             pos,
             Tag::REFERENCE,
             TreeKind::MemberReference {
                 mode,
-                kind: None,
+                kind,
                 name,
                 expr,
                 typeargs,
                 sym: None,
                 varargs_element: None,
-                ref_poly_kind: PolyKind::STANDALONE,
-                owner_accessible: false,
+                ref_poly_kind,
+                owner_accessible,
                 referent_type: None,
-                poly_kind: PolyKind::STANDALONE,
+                poly_kind,
                 target: None,
             },
         )

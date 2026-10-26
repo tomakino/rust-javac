@@ -37,6 +37,8 @@ use crate::ids::{SymbolId, TreeId, TypeId};
 use crate::tree::jc_tree::{Tag, TreeKind};
 use crate::util::list::List;
 use crate::util::warner::Warner;
+use crate::util::names::Names;
+use crate::tree::tree_scanner::TreeScannerVisitor;
 
 /// Java: enum DeferredAttr.AttributionMode
 #[allow(non_camel_case_types)]
@@ -1926,6 +1928,239 @@ pub fn overload_stuck_policy_new(
     dt: TypeId,
 ) -> OverloadStuckPolicy {
     OverloadStuckPolicy::new(ctx, syms, types, result_info, dt)
+}
+
+// ---------------------------------------------------------------------------
+// Batch 5: the DeferredAttr service (DeferredAttr.java:96-560): the service
+// instance/constructor, the attribSpeculative overloads, DeferredAttrDiagHandler
+// and its PosScanner. §9 adapters: the upstream service fields are explicit
+// construction parameters (ADR 0001); the Position scanner is a precomputed
+// position set of the copied tree (same tree, same positions, registered);
+// the LocalCacheContext overload is registered as depending on ArgumentAttr
+// (implemented with ArgumentAttr in the next stage).
+// ---------------------------------------------------------------------------
+
+/// Java: public class DeferredAttr (DeferredAttr.java:96-560)
+pub struct DeferredAttrService {
+    /// Java: final Annotate annotate (lazily installed, §9 cell).
+    pub annotate: Rc<RefCell<Option<Rc<crate::comp::annotate::Annotate>>>>,
+    /// Java: final JCDiagnostic.Factory diags
+    pub diags: Rc<crate::util::jc_diagnostic::Factory>,
+    /// Java: final Enter enter
+    pub enter: Rc<RefCell<crate::comp::enter::Enter>>,
+    /// Java: final Infer infer
+    pub infer: Rc<crate::comp::infer::Infer>,
+    /// Java: final Log log
+    pub log: Rc<RefCell<crate::util::log::Log>>,
+    /// Java: final TreeMaker make
+    pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
+    /// Java: final Types types
+    pub types: Rc<Types>,
+    /// Java: final Symtab syms
+    pub syms: Rc<RefCell<Symtab>>,
+    /// Java: final Names names
+    pub names: Rc<Names>,
+    /// Java: final DeferredCompletionFailureHandler dcfh
+    pub dcfh: Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>,
+    /// Java: final TreeCopier<Void> treeCopier
+    pub tree_copier: crate::tree::tree_copier::TreeCopier,
+    /// Java: shared tree for stuck expressions
+    pub stuck_tree: TreeId,
+    /// Java: emptyDeferredAttrContext
+    pub empty_deferred_attr_context: Rc<DeferredAttrContext>,
+}
+
+/// §9: the positions of a copied tree, scanned once when the speculative
+/// DeferredAttrDiagHandler is installed (equivalent to the upstream PosScanner,
+/// which scans the unchanged tree per diagnostic).
+pub struct PositionScannerVisitor {
+    pub positions: std::collections::HashSet<i32>,
+}
+
+impl crate::tree::tree_scanner::TreeScannerVisitor for PositionScannerVisitor {
+    /// Java: PosScanner.scan(JCTree): record the position then navigate.
+    fn scan(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) {
+        if let Some(tree) = tree {
+            self.positions.insert(ctx.tree(tree).pos);
+            crate::tree::jc_tree::accept(ctx, tree, self);
+        }
+    }
+}
+
+crate::tree::tree_scanner::tree_scanner_visitor_delegate!(PositionScannerVisitor);
+
+impl DeferredAttrService {
+    /// Java: protected DeferredAttr(Context context) (DeferredAttr.java:112-200)
+    /// — the Ported construction with explicit services (ADR 0001).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        ctx: &mut CompilerContext,
+        annotate: Rc<RefCell<Option<Rc<crate::comp::annotate::Annotate>>>>,
+        diags: Rc<crate::util::jc_diagnostic::Factory>,
+        enter: Rc<RefCell<crate::comp::enter::Enter>>,
+        infer: Rc<crate::comp::infer::Infer>,
+        log: Rc<RefCell<crate::util::log::Log>>,
+        make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
+        types: Rc<Types>,
+        syms: Rc<RefCell<Symtab>>,
+        names: Rc<Names>,
+        dcfh: Rc<crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler>,
+    ) -> Rc<DeferredAttrService> {
+        // Java: stuckTree = make.Ident(names.empty).setType(Type.stuckType);
+        let stuck_type = syms.borrow().stuck_type;
+        let stuck_tree = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
+            pos: crate::util::position::NOPOS,
+            ty: Some(stuck_type),
+            tag: crate::tree::jc_tree::Tag::IDENT,
+            kind: crate::tree::jc_tree::TreeKind::Ident {
+                name: names.empty.clone(),
+                sym: None,
+            },
+        });
+        let tree_copier = crate::tree::tree_copier::TreeCopier::new_speculative(Rc::clone(&make));
+        Rc::new(DeferredAttrService {
+            annotate,
+            diags,
+            enter,
+            infer,
+            log,
+            make,
+            types,
+            syms,
+            names,
+            dcfh,
+            tree_copier,
+            stuck_tree,
+            empty_deferred_attr_context: crate::comp::deferred_attr::empty_deferred_attr_context(),
+        })
+    }
+
+    /// Java: JCTree attribSpeculative(JCTree, Env, ResultInfo)
+    /// (DeferredAttr.java:470-472)
+    pub fn attrib_speculative(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        attr: &mut Attr,
+        tree: TreeId,
+        env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
+        result_info: &ResultInfo,
+    ) -> Result<TreeId, DeferredAttrFailure> {
+        self.attrib_speculative_with_diag(
+            ctx,
+            syms,
+            attr,
+            tree,
+            env,
+            result_info,
+            None,
+            AttributionMode::SPECULATIVE,
+        )
+    }
+
+    /// Java: JCTree attribSpeculative(JCTree tree, Env, ResultInfo,
+    /// TreeCopier<Z> deferredCopier, Supplier<DiagnosticHandler>,
+    /// AttributionMode, LocalCacheContext) (DeferredAttr.java:481-489)
+    #[allow(clippy::too_many_arguments)]
+    pub fn attrib_speculative_with_copier(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        attr: &mut Attr,
+        tree: TreeId,
+        env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
+        result_info: &ResultInfo,
+        diag_handler_creator: Option<Box<dyn Fn() -> crate::util::log::DiagnosticHandler>>,
+        attribution_mode: AttributionMode,
+    ) -> Result<TreeId, DeferredAttrFailure> {
+        let new_tree = self.tree_copier.copy(ctx, Some(tree)).expect("copied tree");
+        self.attrib_speculative_with_diag(
+            ctx,
+            syms,
+            attr,
+            new_tree,
+            env,
+            result_info,
+            diag_handler_creator,
+            attribution_mode,
+        )
+    }
+
+    /// Java: JCTree attribSpeculative(JCTree tree, Env, ResultInfo,
+    /// Supplier<DiagnosticHandler>, AttributionMode, LocalCacheContext)
+    /// (DeferredAttr.java:496-520) — the LocalCacheContext parameter is
+    /// registered with the ArgumentAttr stage (§4 of the batch report).
+    #[allow(clippy::too_many_arguments)]
+    pub fn attrib_speculative_with_diag(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        attr: &mut Attr,
+        tree: TreeId,
+        env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
+        result_info: &ResultInfo,
+        diag_handler_creator: Option<Box<dyn Fn() -> crate::util::log::DiagnosticHandler>>,
+        attribution_mode: AttributionMode,
+    ) -> Result<TreeId, DeferredAttrFailure> {
+        use crate::util::log::DiagnosticHandler;
+        let (scope, owner) = {
+            let info = env.info.borrow();
+            let scope = info.scope.expect("env scope");
+            let owner = ctx.scope(scope).owner;
+            (scope, owner)
+        };
+        let new_scope = ctx.scope_dup_unshared(scope, owner);
+        let new_info = env.info.borrow().dup(Some(new_scope));
+        let speculative_env = env.dup(Some(tree), new_info);
+        speculative_env.info.borrow_mut().attribution_mode = attribution_mode;
+        let deferred_diagnostic_handler = match diag_handler_creator {
+            Some(creator) => creator(),
+            None => {
+                let mut visitor = PositionScannerVisitor {
+                    positions: std::collections::HashSet::new(),
+                };
+                crate::tree::tree_scanner::TreeScannerVisitor::scan(&mut visitor, ctx, Some(tree));
+                let positions = Rc::new(visitor.positions);
+                DiagnosticHandler::Deferred {
+                    prev: None,
+                    deferred: std::collections::VecDeque::new(),
+                    filter: Some(Box::new(move |diag| {
+                        positions.contains(&diag.get_int_position())
+                    })),
+                }
+            }
+        };
+        let prev_cf_handler = self.dcfh.set_handler(
+            ctx,
+            Box::new(crate::code::deferred_completion_failure_handler::SpeculativeCodeHandler::new()),
+        );
+        let annotate_rc = self.annotate.borrow().clone();
+        let prev_queues = annotate_rc.as_ref().map(|annotate| {
+            annotate.set_queues(crate::comp::annotate::AnnotateQueues::new())
+        });
+        let nwarnings = self.log.borrow().nwarnings;
+        self.log.borrow_mut().nwarnings = 0;
+        self.log
+            .borrow_mut()
+            .install_diagnostic_handler(deferred_diagnostic_handler);
+        let result = attr.attrib_tree(ctx, syms, tree, &speculative_env, result_info.clone());
+        if let Some(annotate) = &annotate_rc {
+            annotate.set_queues(prev_queues.expect("prev queues"));
+        }
+        self.dcfh.set_handler(ctx, prev_cf_handler);
+        {
+            let mut log = self.log.borrow_mut();
+            log.nwarnings += nwarnings;
+        }
+        if let Some(toplevel) = env.toplevel {
+            self.enter.borrow_mut().unenter(ctx, toplevel, tree);
+        }
+        self.log.borrow_mut().pop_diagnostic_handler();
+        match result {
+            Ok(_) => Ok(tree),
+            Err(failure) => Err(DeferredAttrFailure::from(failure)),
+        }
+    }
 }
 
 #[cfg(test)]
