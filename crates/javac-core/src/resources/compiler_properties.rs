@@ -8481,6 +8481,7 @@ pub static COMPILER_KEYS: &[(&str, &str, &str, usize)] = &[
 #[cfg(test)]
 mod p4_fragment_arguments {
     use super::fragments;
+    use std::rc::Rc;
     use crate::util::names::Names;
     use javac_strings::JavaString;
 
@@ -8491,6 +8492,47 @@ mod p4_fragment_arguments {
         let info = fragments::undecl_type_var(name);
         assert_eq!(info.info().key(), "compiler.misc.undecl.type.var");
         assert_eq!(info.info().args.len(), 1);
+    }
+
+    #[test]
+    fn undecl_type_var_message_matches_javac_oracle() {
+        // Oracle (JDK 17, Locale.ENGLISH, JCDiagnostic.Factory.fragment):
+        // "undeclared type variable: T"
+        use crate::util::jc_diagnostic::Factory;
+        use crate::util::javac_messages::{JavacMessages, DEFAULT_BUNDLE_NAME};
+        let messages = Rc::new(JavacMessages::new(DEFAULT_BUNDLE_NAME));
+        let factory = Factory::new(messages, "compiler");
+        let names = Names::new(false);
+        let name = names.from_string(&JavaString::from("T"));
+        let diag = factory.fragment(crate::util::jc_diagnostic::Fragment::from(
+            fragments::undecl_type_var(name),
+        ));
+        assert_eq!(
+            diag.get_message(None).to_string(),
+            "undeclared type variable: T"
+        );
+    }
+
+    #[test]
+    fn wrong_version_message_matches_javac_oracle() {
+        // Oracle (JDK 17, Locale.ENGLISH, JCDiagnostic.Factory.fragment):
+        // "class file has wrong version 63.0, should be 61.0"
+        use crate::util::jc_diagnostic::Factory;
+        use crate::util::javac_messages::{JavacMessages, DEFAULT_BUNDLE_NAME};
+        let messages = Rc::new(JavacMessages::new(DEFAULT_BUNDLE_NAME));
+        let factory = Factory::new(messages, "compiler");
+        let diag = factory.fragment(crate::util::jc_diagnostic::Fragment::from(
+            fragments::wrong_version(
+                JavaString::from("63"),
+                JavaString::from("0"),
+                JavaString::from("61"),
+                JavaString::from("0"),
+            ),
+        ));
+        assert_eq!(
+            diag.get_message(None).to_string(),
+            "class file has wrong version 63.0, should be 61.0"
+        );
     }
 
     #[test]

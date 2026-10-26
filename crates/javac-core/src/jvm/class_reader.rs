@@ -1330,14 +1330,13 @@ impl ClassReader {
                     .warning(None, None, warning_from_info(info));
             } else {
                 // Java: badClassFile("wrong.version", major, minor, maxMajor, maxMinor);
-                // The generated accessor currently has no parameters (registered
-                // P4 diagnostic-contract deviation, see the registration).
+                // The generated accessor takes the four version strings (P4 contract).
                 let key = Fragment::from(
                 crate::resources::compiler_properties::fragments::wrong_version(
-                    javac_strings::JavaString::from(format!("{}", self.major_version.to_string()).as_str()),
-                    javac_strings::JavaString::from(format!("{}", self.minor_version.to_string()).as_str()),
-                    javac_strings::JavaString::from(format!("{}", max_major.to_string()).as_str()),
-                    javac_strings::JavaString::from(format!("{}", max_minor.to_string()).as_str()),
+                    javac_strings::JavaString::from(self.major_version.to_string().as_str()),
+                    javac_strings::JavaString::from(self.minor_version.to_string().as_str()),
+                    javac_strings::JavaString::from(max_major.to_string().as_str()),
+                    javac_strings::JavaString::from(max_minor.to_string().as_str()),
                 ),
                 );
                 return Err(self.bad_class_file(key).failure);
