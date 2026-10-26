@@ -7919,7 +7919,8 @@ impl Check {
                     continue;
                 }
                 if !overrides_any {
-                    potentially_ambiguous.push(m1);
+                    // Java: potentiallyAmbiguousList = potentiallyAmbiguousList.prepend(m1)
+                    potentially_ambiguous.insert(0, m1);
                 }
                 continue;
             }
@@ -8060,7 +8061,7 @@ impl Check {
     }
 
     /// Java: void checkHideClashes(DiagnosticPosition pos, Type site,
-    /// MethodSymbol sym) (Check.java:2588-2621).
+    /// MethodSymbol sym) (Check.java).
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -8074,7 +8075,7 @@ impl Check {
     /// # Panics
     ///   - a class invariant is violated.
     ///
-    /// Upstream: Check.java:2588-2621.
+    /// Upstream: the corresponding Check.java method.
     pub fn check_hide_clashes(
         &self,
         ctx: &mut CompilerContext,
@@ -8102,7 +8103,7 @@ impl Check {
                 continue;
             }
             // Java: MembersScope.combine excludes interface-owned members
-            // (Types.java:3020-3025).
+            // (Types.java).
             if let Some(owner) = ctx.sym(candidate).owner
                 && (ctx.sym(owner).flags_field & flags::INTERFACE as i64) != 0
             {
@@ -8192,7 +8193,7 @@ impl Check {
     }
 
     /// Java: void checkPotentiallyAmbiguousOverloads(DiagnosticPosition pos,
-    /// Type site, MethodSymbol msym1, MethodSymbol msym2) (Check.java:2695-2761).
+    /// Type site, MethodSymbol msym1, MethodSymbol msym2) (Check.java).
     ///
     /// # Arguments
     ///   - ctx/syms: explicit services;
@@ -8206,7 +8207,7 @@ impl Check {
     /// # Panics
     ///   - a method invariant is violated.
     ///
-    /// Upstream: Check.java:2695-2761.
+    /// Upstream: the corresponding Check.java method.
     #[allow(clippy::too_many_lines)]
     pub fn check_potentially_ambiguous_overloads(
         &self,
@@ -8390,6 +8391,18 @@ impl Check {
     }
 
     /// Return the parameter count of the functional descriptor of a type.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - ty: the functional interface type.
+    ///
+    /// # Returns
+    ///   - the descriptor parameter count.
+    ///
+    /// # Panics
+    ///   - the descriptor lookup failure is unreachable (guarded by
+    ///     isFunctionalInterface); it propagates like the upstream exception.
     fn descriptor_parameter_count(
         &self,
         ctx: &mut CompilerContext,
@@ -8397,17 +8410,19 @@ impl Check {
         ty: TypeId,
     ) -> usize {
         let diags = Rc::clone(&self.diags);
-        match self
+        // Java: types.findDescriptorType(s) may throw FunctionDescriptorLookupError
+        // (uncaught upstream). The call site is guarded by isFunctionalInterface(s) &&
+        // isFunctionalInterface(t), which proves a descriptor exists, so a failure
+        // propagates as the upstream uncaught exception (panic).
+        let descriptor = self
             .types
             .find_descriptor_type(ctx, syms, &diags, self, ty)
-        {
-            Ok(descriptor) => match &ctx.typ(descriptor).kind {
-                crate::code::type_::TypeKindData::MethodType { argtypes, .. } => {
-                    argtypes.length() as usize
-                }
-                _ => 0,
-            },
-            Err(_) => 0,
+            .unwrap_or_else(|error| panic!("FunctionDescriptorLookupError: {error:?}"));
+        match &ctx.typ(descriptor).kind {
+            crate::code::type_::TypeKindData::MethodType { argtypes, .. } => {
+                argtypes.length() as usize
+            }
+            _ => 0,
         }
     }
 }

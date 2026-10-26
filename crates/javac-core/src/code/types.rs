@@ -2745,6 +2745,16 @@ impl Types {
 
     /// Java: public boolean hasSameBounds(ForAll t, ForAll s) (the bounds slice
     /// form used by isSameType's ForAll branch).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - t_tvars/s_tvars: the quantified variable lists.
+    ///
+    /// # Returns
+    ///   - true when both quantifiers have the same bounds.
+    ///
+    /// # Panics
+    ///   - none.
     pub fn has_same_bounds(
         &self,
         ctx: &mut CompilerContext,
