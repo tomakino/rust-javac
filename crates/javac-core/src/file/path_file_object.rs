@@ -39,7 +39,7 @@ use crate::file::relative_path::{RelativeFile, RelativePath};
 use javac_fs::{Files as FsFiles, Path as FsPath};
 use javac_strings::JavaString;
 use javac_tools::error::Error;
-use javac_tools::java_io::{Reader, Writer};
+use javac_tools::java_io::{InputStreamReader, OutputStreamWriter, Reader, Writer};
 use javac_tools::lang::model::element::modifier::Modifier;
 use javac_tools::lang::model::element::nesting_kind::NestingKind;
 use javac_tools::tools::file_object::FileObject;
@@ -479,25 +479,51 @@ impl FileObject for PathFileObject {
         Ok(Box::new(file))
     }
 
-    /// Java: public Reader openReader(boolean ignoreEncodingErrors) throws IOException.
-    fn open_reader(&self, _ignore_encoding_errors: bool) -> Result<Box<dyn Reader>, Error> {
-        unimplemented!(
-            "TODO(P2): PathFileObject.openReader needs java.nio.charset and the BaseFileManager decoder"
-        )
+    /// Java: public Reader openReader(boolean ignoreEncodingErrors) throws
+    /// IOException (PathFileObject.java:472-476):
+    ///   CharsetDecoder decoder = fileManager.getDecoder(
+    ///       fileManager.getEncodingName(), ignoreEncodingErrors);
+    ///   return new InputStreamReader(openInputStream(), decoder);
+    fn open_reader(&self, ignore_encoding_errors: bool) -> Result<Box<dyn Reader>, Error> {
+        let encoding_name = self.file_manager.get_encoding_name();
+        let decoder = self
+            .file_manager
+            .get_decoder(&encoding_name, ignore_encoding_errors)
+            .map_err(|_| Error::io(JavaString::from("UnsupportedEncodingException")))?;
+        let input = self.open_input_stream()?;
+        Ok(Box::new(InputStreamReader::new(input, decoder)))
     }
 
-    /// Java: public CharSequence getCharContent(boolean ignoreEncodingErrors).
-    fn get_char_content(&self, _ignore_encoding_errors: bool) -> Result<Option<JavaString>, Error> {
-        unimplemented!(
-            "TODO(P2): PathFileObject.getCharContent needs the BaseFileManager content cache and decoder"
-        )
+    /// Java: public CharSequence getCharContent(boolean ignoreEncodingErrors)
+    /// throws IOException (PathFileObject.java:478-497).
+    fn get_char_content(&self, ignore_encoding_errors: bool) -> Result<Option<JavaString>, Error> {
+        if let Some(cached) = self.file_manager.get_cached_content(self) {
+            return Ok(Some(cached));
+        }
+        let mut input = self.open_input_stream()?;
+        let bytes = self.file_manager.make_byte_buffer(&mut *input)?;
+        let text = self.file_manager.decode(&bytes, ignore_encoding_errors);
+        self.file_manager.recycle_byte_buffer(bytes);
+        if !ignore_encoding_errors {
+            self.file_manager.cache(self, text.clone());
+        }
+        Ok(Some(text))
     }
 
-    /// Java: public Writer openWriter() throws IOException.
+    /// Java: public Writer openWriter() throws IOException
+    /// (PathFileObject.java:499-505):
+    ///   return new OutputStreamWriter(Files.newOutputStream(path),
+    ///       fileManager.getEncodingName());
     fn open_writer(&self) -> Result<Box<dyn Writer>, Error> {
-        unimplemented!(
-            "TODO(P2): PathFileObject.openWriter needs java.nio.charset and the BaseFileManager encoding name"
-        )
+        let encoding_name = self.file_manager.get_encoding_name();
+        let charset = javac_charset::Charset::for_name(&encoding_name)
+            .map_err(|_| Error::io(JavaString::from("UnsupportedEncodingException")))?;
+        let mut encoder = charset.new_encoder();
+        encoder
+            .on_malformed_input(javac_charset::CodingErrorAction::Report)
+            .on_unmappable_character(javac_charset::CodingErrorAction::Report);
+        let output = self.open_output_stream()?;
+        Ok(Box::new(OutputStreamWriter::new(output, encoder)))
     }
 
     /// Java: public long getLastModified().
@@ -589,6 +615,57 @@ mod tests {
         fn jrt_read_resource(&self, _path: &FsPath) -> Option<Vec<u8>> {
             None
         }
+
+        fn decode(&self, inbuf: &[u8], ignore_encoding_errors: bool) -> JavaString {
+            let action = if ignore_encoding_errors {
+                javac_charset::MalformedAction::Replace
+            } else {
+                javac_charset::MalformedAction::Report
+            };
+            javac_charset::Charset::Utf8
+                .decode(inbuf, action)
+                .unwrap_or_else(|_| JavaString::from(""))
+        }
+
+        fn get_decoder(
+            &self,
+            _encoding_name: &JavaString,
+            ignore: bool,
+        ) -> Result<javac_charset::CharsetDecoder, crate::util::jc_diagnostic::Error> {
+            let action = if ignore {
+                javac_charset::CodingErrorAction::Replace
+            } else {
+                javac_charset::CodingErrorAction::Report
+            };
+            let mut decoder = javac_charset::Charset::Utf8.new_decoder();
+            decoder
+                .on_malformed_input(action)
+                .on_unmappable_character(action);
+            Ok(decoder)
+        }
+
+        fn get_encoding_name(&self) -> JavaString {
+            JavaString::from("UTF-8")
+        }
+
+        fn make_byte_buffer(
+            &self,
+            input: &mut dyn std::io::Read,
+        ) -> Result<Vec<u8>, javac_tools::error::Error> {
+            let mut bytes = Vec::new();
+            input
+                .read_to_end(&mut bytes)
+                .map_err(|error| javac_tools::error::Error::io(JavaString::from(error.to_string().as_str())))?;
+            Ok(bytes)
+        }
+
+        fn recycle_byte_buffer(&self, _buffer: Vec<u8>) {}
+
+        fn get_cached_content(&self, _file: &PathFileObject) -> Option<JavaString> {
+            None
+        }
+
+        fn cache(&self, _file: &PathFileObject, _cb: JavaString) {}
     }
 
     fn manager() -> Rc<dyn BaseFileManagerApi> {
@@ -784,27 +861,44 @@ mod tests {
     }
 
     #[test]
-    fn deferred_reader_and_writer_methods_panic() {
-        let dir = temp_dir("deferred");
+    fn reader_writer_and_char_content_follow_the_file() {
+        use javac_tools::java_io::{Reader as _, Writer as _};
+        let dir = temp_dir("reader-writer");
         std::fs::create_dir_all(&dir).expect("temp dir");
         let file = dir.join("A.java");
-        std::fs::write(&file, b"class A {}").expect("write");
+        std::fs::write(&file, b"class A {}\n").expect("write");
         let path = fs_path(&file);
         let fo = PathFileObject::for_simple_path(manager(), &path, &path);
 
-        assert!(
-            std::panic::catch_unwind(AssertUnwindSafe(|| FileObject::open_reader(&*fo, false)))
-                .is_err()
+        // Java: getCharContent decodes the file with the manager encoding.
+        let content = FileObject::get_char_content(&*fo, false)
+            .expect("char content")
+            .expect("content");
+        assert_eq!(content.to_string_lossy(), "class A {}\n");
+
+        // Java: openReader returns an InputStreamReader over the decoder.
+        let mut reader = FileObject::open_reader(&*fo, false).expect("reader");
+        let mut units = vec![0u16; 32];
+        let count = reader.read(&mut units).expect("read");
+        assert!(count > 0);
+        assert_eq!(
+            String::from_utf16(&units[..count as usize]).expect("utf16"),
+            "class A {}\n"
         );
-        assert!(
-            std::panic::catch_unwind(AssertUnwindSafe(|| FileObject::get_char_content(
-                &*fo, false
-            )))
-            .is_err()
-        );
-        assert!(
-            std::panic::catch_unwind(AssertUnwindSafe(|| FileObject::open_writer(&*fo))).is_err()
-        );
+
+        // Java: openWriter returns an OutputStreamWriter over the encoder.
+        let out_path = dir.join("B.java");
+        let out_path_fs = fs_path(&out_path);
+        let out = PathFileObject::for_simple_path(manager(), &out_path_fs, &out_path_fs);
+        {
+            let mut writer = FileObject::open_writer(&*out).expect("writer");
+            writer
+                .write(JavaString::from("class B {}\n").as_units())
+                .expect("write");
+            writer.close().expect("close");
+        }
+        let written = std::fs::read(&out_path).expect("read back");
+        assert_eq!(String::from_utf8(written).expect("utf8"), "class B {}\n");
 
         std::fs::remove_dir_all(&dir).expect("cleanup");
     }

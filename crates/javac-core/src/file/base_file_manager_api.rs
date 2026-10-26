@@ -30,4 +30,35 @@ pub trait BaseFileManagerApi {
     /// java.nio.file; the port reads the system modules image through the
     /// JRTIndex (registered adapter).
     fn jrt_read_resource(&self, path: &FsPath) -> Option<Vec<u8>>;
+
+    /// Java: BaseFileManager.decode(ByteBuffer, boolean).
+    fn decode(&self, inbuf: &[u8], ignore_encoding_errors: bool) -> javac_strings::JavaString;
+
+    /// Java: BaseFileManager.getDecoder(String, boolean).
+    fn get_decoder(
+        &self,
+        encoding_name: &javac_strings::JavaString,
+        ignore: bool,
+    ) -> Result<
+        javac_charset::CharsetDecoder,
+        crate::util::jc_diagnostic::Error,
+    >;
+
+    /// Java: BaseFileManager.getEncodingName().
+    fn get_encoding_name(&self) -> javac_strings::JavaString;
+
+    /// Java: BaseFileManager.makeByteBuffer(InputStream).
+    fn make_byte_buffer(
+        &self,
+        input: &mut dyn std::io::Read,
+    ) -> Result<Vec<u8>, javac_tools::error::Error>;
+
+    /// Java: BaseFileManager.recycleByteBuffer(ByteBuffer).
+    fn recycle_byte_buffer(&self, buffer: Vec<u8>);
+
+    /// Java: BaseFileManager.getCachedContent(JavaFileObject).
+    fn get_cached_content(&self, file: &PathFileObject) -> Option<javac_strings::JavaString>;
+
+    /// Java: BaseFileManager.cache(JavaFileObject, CharBuffer).
+    fn cache(&self, file: &PathFileObject, cb: javac_strings::JavaString);
 }

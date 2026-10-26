@@ -31,10 +31,17 @@
 //!   explicit UnsupportedCharset error is returned.
 
 pub mod charset;
+pub mod coder;
 pub mod error;
+pub mod nio;
 
 pub use charset::{available_charsets, Charset, MalformedAction};
+pub use coder::{CharsetDecoder, CharsetEncoder};
 pub use error::{CharacterCodingError, CharsetError};
+pub use nio::{ByteBuffer, CharBuffer, CoderResult, CodingErrorAction};
 
 #[cfg(test)]
 mod oracle_tests;
+
+#[cfg(test)]
+mod stream_tests;

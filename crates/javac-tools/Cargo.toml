@@ -12,3 +12,4 @@ doctest = false
 [dependencies]
 javac-strings.workspace = true
 javac-unicode.workspace = true
+javac-charset.workspace = true

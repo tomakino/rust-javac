@@ -53,7 +53,9 @@ use std::io::Read;
 use std::option::Option as StdOption;
 use std::rc::Rc;
 
-use javac_charset::{Charset, MalformedAction};
+use javac_charset::{
+    ByteBuffer, CharBuffer, Charset, CharsetDecoder, CodingErrorAction,
+};
 use javac_fs::Path as FsPath;
 use javac_strings::JavaString;
 use javac_tools::error::Error;
@@ -65,6 +67,7 @@ use crate::file::cache_fs_info::CacheFSInfo;
 use crate::file::locations::Locations;
 use crate::file::path_file_object::PathFileObject;
 use crate::main::option::Option as JavacOption;
+use crate::util::abstract_log::AbstractLog;
 use crate::util::assert;
 use crate::util::options::Options;
 
@@ -297,14 +300,12 @@ impl BaseFileManager {
         )
     }
 
-    /// Java: private String getDefaultEncodingName() { return Charset.defaultCharset().name(); }
-    ///
-    /// TODO(charset): the javac-charset adapter does not implement
-    /// Charset.defaultCharset() yet (the JVM default charset has no Rust counterpart without
-    /// the launcher's file.encoding handling); reported.
-    #[allow(dead_code)]
+    /// Java: private String getDefaultEncodingName() {
+    ///           if (defaultEncodingName == null)
+    ///               defaultEncodingName = Charset.defaultCharset().name();
+    ///           return defaultEncodingName; }
     fn get_default_encoding_name(&self) -> JavaString {
-        unimplemented!("TODO(charset batch): Charset.defaultCharset() is not ported")
+        Charset::default_charset().name()
     }
 
     /// Java: public String getEncodingName() {
@@ -339,42 +340,109 @@ impl BaseFileManager {
         }
     }
 
-    /// Java: public CharBuffer decode(ByteBuffer inbuf, boolean ignoreEncodingErrors).
+    /// Java: public CharBuffer decode(ByteBuffer inbuf, boolean
+    /// ignoreEncodingErrors) (BaseFileManager.java:417-470).
     ///
-    /// PORTING_RULES: ByteBuffer -> &[u8], CharBuffer -> JavaString (whole-input decode of the
-    /// javac-charset adapter).  The malformed/unmappable branch of the upstream loop reports
-    /// Errors.IllegalCharForEncoding and substitutes U+FFFD; that reporting needs the Log error
-    /// entry point (not ported) and is a TODO panic.
+    /// PORTING_RULES: ByteBuffer -> &[u8] wrapped into the ported ByteBuffer
+    /// view; CharBuffer -> JavaString; the decoder is the incremental
+    /// javac-charset CharsetDecoder (the java.nio.charset state machine).
     pub fn decode(&self, inbuf: &[u8], ignore_encoding_errors: bool) -> JavaString {
         let encoding_name = self.get_encoding_name();
-        let charset = match self.get_charset(&encoding_name) {
-            Ok(charset) => charset,
+        let mut decoder = match self.get_decoder(&encoding_name, ignore_encoding_errors) {
+            Ok(decoder) => decoder,
             Err(error) => {
                 if let Some(log) = &self.log {
-                    use crate::util::abstract_log::AbstractLog;
                     log.borrow_mut().error_pos(None, error);
                 }
                 // Java: return CharBuffer.allocate(1).flip() (the empty buffer).
                 return JavaString::from("");
             }
         };
-        let action = if ignore_encoding_errors {
-            MalformedAction::Replace
-        } else {
-            MalformedAction::Report
-        };
-        match charset.decode(inbuf, action) {
-            Ok(text) => text,
-            Err(_) => unimplemented!(
-                "TODO(Log batch): BaseFileManager.decode malformed input reporting needs log.error(Errors.IllegalCharForEncoding)"
-            ),
+        // Java: slightly overestimate the buffer size to avoid reallocation.
+        let factor = decoder.average_chars_per_byte() * 0.8 + decoder.max_chars_per_byte() * 0.2;
+        let mut input = ByteBuffer::wrap(inbuf);
+        let mut dest = CharBuffer::allocate(10 + (input.remaining() as f32 * factor) as usize);
+        loop {
+            let result = decoder.decode(&mut input, &mut dest, true);
+            dest.flip();
+            if result.is_underflow() {
+                // Java: make sure there is at least one extra character.
+                if dest.limit() == dest.capacity() {
+                    let mut bigger = CharBuffer::allocate(dest.capacity() + 1);
+                    bigger.put_flipped(&dest);
+                    dest = bigger;
+                }
+                return dest.to_java_string();
+            } else if result.is_overflow() {
+                let capacity = 10
+                    + dest.capacity()
+                    + (input.remaining() as f32 * decoder.max_chars_per_byte()) as usize;
+                let mut bigger = CharBuffer::allocate(capacity);
+                bigger.put_flipped(&dest);
+                dest = bigger;
+            } else if result.is_malformed() || result.is_unmappable() {
+                // Java: bad character in input — collect the bytes and report.
+                let length = result.length();
+                let mut unmappable = String::new();
+                for _ in 0..length {
+                    unmappable.push_str(&format!("{:02X}", input.get()));
+                }
+                let charset_name = self
+                    .charset
+                    .map(|charset| charset.name())
+                    .unwrap_or_else(|| encoding_name.clone());
+                if let Some(log) = &self.log {
+                    log.borrow_mut().error_at(
+                        dest.limit() as i32,
+                        crate::util::jc_diagnostic::Error::from(
+                            crate::resources::compiler_properties::errors::illegal_char_for_encoding(
+                                JavaString::from(unmappable.as_str()),
+                                charset_name,
+                            ),
+                        ),
+                    );
+                }
+                // Java: undo the flip() to prepare the output buffer for more
+                // translation, then put U+FFFD.
+                dest.set_position(dest.limit());
+                dest.set_limit(dest.capacity());
+                dest.put(0xFFFD);
+            } else {
+                panic!("AssertionError: unexpected CoderResult");
+            }
         }
     }
 
-    // Java: public CharsetDecoder getDecoder(String, boolean).
-    //
-    // TODO(charset): the streaming CharsetDecoder has no Rust form in the javac-charset
-    // adapter; decode() above covers the whole-input conversion (not declared: getDecoder).
+    /// Java: public CharsetDecoder getDecoder(String encodingName, boolean
+    /// ignoreEncodingErrors) (BaseFileManager.java:389-403).
+    ///
+    /// # Arguments
+    ///   - encoding_name: the requested encoding name;
+    ///   - ignore: true selects CodingErrorAction.REPLACE, false REPORT.
+    ///
+    /// # Returns
+    ///   - the decoder, or the UnsupportedEncoding error (Java throws
+    ///     IllegalArgumentException/UnsupportedCharsetException).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn get_decoder(
+        &self,
+        encoding_name: &JavaString,
+        ignore: bool,
+    ) -> Result<CharsetDecoder, crate::util::jc_diagnostic::Error> {
+        let charset = self.get_charset(encoding_name)?;
+        let action = if ignore {
+            CodingErrorAction::Replace
+        } else {
+            CodingErrorAction::Report
+        };
+        let mut decoder = charset.new_decoder();
+        decoder
+            .on_malformed_input(action)
+            .on_unmappable_character(action);
+        Ok(decoder)
+    }
 
     /// Java: public ByteBuffer makeByteBuffer(InputStream in) throws IOException.
     ///
@@ -470,6 +538,41 @@ impl BaseFileManagerApi for BaseFileManager {
 
     fn jrt_read_resource(&self, _path: &javac_fs::Path) -> Option<Vec<u8>> {
         None
+    }
+
+    fn decode(&self, inbuf: &[u8], ignore_encoding_errors: bool) -> JavaString {
+        BaseFileManager::decode(self, inbuf, ignore_encoding_errors)
+    }
+
+    fn get_decoder(
+        &self,
+        encoding_name: &JavaString,
+        ignore: bool,
+    ) -> Result<CharsetDecoder, crate::util::jc_diagnostic::Error> {
+        BaseFileManager::get_decoder(self, encoding_name, ignore)
+    }
+
+    fn get_encoding_name(&self) -> JavaString {
+        BaseFileManager::get_encoding_name(self)
+    }
+
+    fn make_byte_buffer(
+        &self,
+        input: &mut dyn Read,
+    ) -> Result<Vec<u8>, Error> {
+        BaseFileManager::make_byte_buffer(self, input)
+    }
+
+    fn recycle_byte_buffer(&self, buffer: Vec<u8>) {
+        BaseFileManager::recycle_byte_buffer(self, buffer);
+    }
+
+    fn get_cached_content(&self, file: &PathFileObject) -> Option<JavaString> {
+        BaseFileManager::get_cached_content(self, file)
+    }
+
+    fn cache(&self, file: &PathFileObject, cb: JavaString) {
+        BaseFileManager::cache(self, file, cb);
     }
 }
 

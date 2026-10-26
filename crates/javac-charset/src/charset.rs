@@ -197,6 +197,70 @@ impl Charset {
             .map(|(_, _, aliases)| *aliases)
             .expect("all charsets are in the table")
     }
+/// Java: Charset.newDecoder() — the incremental decoder of this charset.
+///
+/// # Arguments
+///   - none.
+///
+/// # Returns
+///   - a CharsetDecoder in the REPORT state (callers select the action).
+///
+/// # Panics
+///   - none.
+pub fn new_decoder(self) -> crate::coder::CharsetDecoder {
+    crate::coder::CharsetDecoder::new(self)
+}
+
+/// Java: Charset.newEncoder() — the incremental encoder of this charset.
+///
+/// # Arguments
+///   - none.
+///
+/// # Returns
+///   - a CharsetEncoder in the REPORT state (callers select the action).
+///
+/// # Panics
+///   - none.
+pub fn new_encoder(self) -> crate::coder::CharsetEncoder {
+    crate::coder::CharsetEncoder::new(self)
+}
+
+/// Java: Charset.defaultCharset() — the platform default charset adapter.
+///
+/// PORTING_RULES: the JVM default comes from the launcher's file.encoding /
+/// platform locale; the port takes the launcher-injected
+/// JAVAC_DEFAULT_ENCODING variable first (registered adapter), then the POSIX
+/// locale (LC_ALL/LC_CTYPE/LANG), and falls back to UTF-8 (the recorded
+/// JDK 17 oracle on the development host is UTF-8: file.encoding=UTF-8,
+/// native.encoding=UTF-8, sun.jnu.encoding=UTF-8).
+///
+/// # Arguments
+///   - none.
+///
+/// # Returns
+///   - the default charset.
+///
+/// # Panics
+///   - none.
+pub fn default_charset() -> Charset {
+    if let Ok(name) = std::env::var("JAVAC_DEFAULT_ENCODING") {
+        if let Ok(charset) = Charset::for_name(&JavaString::from(name.as_str())) {
+            return charset;
+        }
+    }
+    for key in ["LC_ALL", "LC_CTYPE", "LANG"] {
+        if let Ok(value) = std::env::var(key) {
+            let upper = value.to_ascii_uppercase();
+            if upper.contains("UTF-8") || upper.contains("UTF8") {
+                return Charset::Utf8;
+            }
+            if upper.contains("ISO-8859-1") || upper.contains("LATIN1") {
+                return Charset::Iso8859_1;
+            }
+        }
+    }
+    Charset::Utf8
+}
 }
 
 /// The canonical names of the implemented charsets (the JDK also has charsets
@@ -207,6 +271,7 @@ pub fn available_charsets() -> Vec<JavaString> {
         .map(|(_, canonical, _)| JavaString::from(*canonical))
         .collect()
 }
+
 
 /// Java: Charset.checkName / IllegalCharsetNameException rules (first character
 /// alphanumeric; the rest alphanumeric or '-', '+', '.', ':', '_').

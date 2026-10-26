@@ -1222,6 +1222,40 @@ impl BaseFileManagerApi for JavacFileManager {
     fn jrt_read_resource(&self, path: &javac_fs::Path) -> Option<Vec<u8>> {
         self.get_jrt_index().get_resource(path)
     }
+    fn decode(&self, inbuf: &[u8], ignore_encoding_errors: bool) -> JavaString {
+        self.base.borrow().decode(inbuf, ignore_encoding_errors)
+    }
+
+    fn get_decoder(
+        &self,
+        encoding_name: &JavaString,
+        ignore: bool,
+    ) -> Result<javac_charset::CharsetDecoder, crate::util::jc_diagnostic::Error> {
+        self.base.borrow().get_decoder(encoding_name, ignore)
+    }
+
+    fn get_encoding_name(&self) -> JavaString {
+        self.base.borrow().get_encoding_name()
+    }
+
+    fn make_byte_buffer(
+        &self,
+        input: &mut dyn std::io::Read,
+    ) -> Result<Vec<u8>, Error> {
+        self.base.borrow().make_byte_buffer(input)
+    }
+
+    fn recycle_byte_buffer(&self, buffer: Vec<u8>) {
+        self.base.borrow().recycle_byte_buffer(buffer);
+    }
+
+    fn get_cached_content(&self, file: &PathFileObject) -> Option<JavaString> {
+        self.base.borrow().get_cached_content(file)
+    }
+
+    fn cache(&self, file: &PathFileObject, cb: JavaString) {
+        self.base.borrow().cache(file, cb);
+    }
 }
 
 /// Java: protected static boolean isRelativeUri(String u) — the checks of the javadoc contract

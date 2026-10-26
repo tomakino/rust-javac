@@ -86,6 +86,7 @@ version = "0.1.0"
 name = "javac-tools"
 version = "0.1.0"
 dependencies = [
+ "javac-charset",
  "javac-strings",
  "javac-unicode",
 ]
