@@ -2400,7 +2400,7 @@ impl TreeMaker {
     }
 
     /// Java: AnnotationBuilder.translate(Attribute a) / the Visitor dispatch.
-    fn translate_attribute(
+    pub fn translate_attribute(
         &mut self,
         ctx: &mut CompilerContext,
         syms: &Symtab,

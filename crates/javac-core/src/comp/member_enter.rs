@@ -714,7 +714,7 @@ fn init_allowed_operator(tag: Tag) -> bool {
     )
 }
 
-fn init_tree_visitor(ctx: &CompilerContext, tree: TreeId) -> bool {
+pub(crate) fn init_tree_visitor(ctx: &CompilerContext, tree: TreeId) -> bool {
     match &ctx.tree(tree).kind {
         TreeKind::Literal { .. } => true,
         TreeKind::Ident { .. } => true,

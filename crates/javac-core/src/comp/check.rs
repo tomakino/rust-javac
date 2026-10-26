@@ -1742,7 +1742,7 @@ impl Check {
         &self,
         ctx: &mut CompilerContext,
         annotations: &List<TreeId>,
-        declaration_tree: TreeId,
+        declaration_tree: Option<TreeId>,
         s: SymbolId,
     ) -> Result<(), CompletionFailure> {
         for a in annotations.iter() {
@@ -1757,7 +1757,7 @@ impl Check {
         &self,
         ctx: &mut CompilerContext,
         a: TreeId,
-        declaration_tree: TreeId,
+        declaration_tree: Option<TreeId>,
         s: SymbolId,
     ) -> Result<(), CompletionFailure> {
         self.validate_annotation_tree(ctx, a);
@@ -1769,7 +1769,9 @@ impl Check {
                 .map(|encl| ctx.sym(encl).is_record())
                 .unwrap_or(false);
         let is_record_field = (ctx.sym(s).flags_field & crate::code::flags::RECORD) != 0
-            && ctx.tree(declaration_tree).has_tag(Tag::VARDEF)
+            && declaration_tree
+                .map(|declaration_tree| ctx.tree(declaration_tree).has_tag(Tag::VARDEF))
+                .unwrap_or(false)
             && ctx.sym(s).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::TYP);
         if is_record_field {
             // Java: the record-component annotation propagation needs

@@ -400,6 +400,11 @@ impl Symbol {
         }
     }
 
+    /// Java: public void setDeclarationAttributes(List<Attribute.Compound> a)
+    pub fn set_declaration_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
+        self.inited_metadata().set_declaration_attributes(attributes);
+    }
+
     /// Java: public void resetAnnotations()
     pub fn reset_annotations(&mut self) {
         self.inited_metadata().reset();

@@ -4081,6 +4081,17 @@ impl Types {
 // ----------------------------------------------------------------------
 
 impl Types {
+    /// Java: public ArrayType makeArrayType(Type t) (Types.java:1333-1336)
+    pub fn make_array_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+    ) -> TypeId {
+        let array = crate::code::type_::Type::new_array_type(t, syms.array_class);
+        ctx.alloc_type(array)
+    }
+
     /// Java: public Type createErrorType(Type originalType)
     pub fn create_error_type_original(
         &self,
