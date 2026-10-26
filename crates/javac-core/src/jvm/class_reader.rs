@@ -1594,7 +1594,7 @@ impl ClassReader {
         let name_index = self.next_char() as i32;
         let name = self.get_name(name_index)?;
         let type_index = self.next_char() as i32;
-        let ty = self.get_type(ctx, syms, type_index)?;
+        let mut ty = self.get_type(ctx, syms, type_index)?;
         let owner = self.current_owner.expect("currentOwner");
         let owner_is_interface = ctx.sym(owner).is_interface();
         let is_clinit = name.to_java_string() == self.names.clinit.to_java_string();
@@ -1623,11 +1623,73 @@ impl ClassReader {
             }
         }
         self.validate_method_type(ctx, &name, ty)?;
-        if ctx.sym(owner).is_constructor(&self.names) && ctx.sym(owner).has_outer_instance(ctx) {
-            // Sometimes anonymous classes don't have an outer instance...
-            // (upstream: skip this$n handling; the local port keeps the
-            // MethodType unchanged when the owner is local/anonymous)
-            unimplemented!("TODO(P2/S2): readMethod this$n stripping (requires owner.members()/name checks and Code batch)");
+        if name == self.names.init && ctx.sym(owner).has_outer_instance(ctx) {
+            // Sometimes anonymous classes don't have an outer instance, however,
+            // there is no reliable way to tell so we never strip this$n;
+            // ditto for local classes.
+            // Java: boolean local = !currentOwner.owner.members().includes(
+            //     currentOwner, LookupKind.NON_RECURSIVE);
+            let local = match ctx.sym(owner).owner {
+                Some(owner_owner) => match ctx.sym(owner_owner).members() {
+                    Some(members) => {
+                        let scope = ctx.scope(members).clone();
+                        !scope.includes_full(members, owner, &self.types, syms, ctx)
+                    }
+                    None => true,
+                },
+                None => true,
+            };
+            if !ctx.sym(owner).name.is_empty() && !local {
+                // Java: type = new MethodType(adjustMethodParams(flags, type.getParameterTypes()),
+                //     type.getReturnType(), type.getThrownTypes(), syms.methodClass);
+                use crate::code::type_::TypeKindData;
+                use crate::code::type_tag::TypeTag;
+                let argtypes = ctx.typ(ty).get_parameter_types(ctx);
+                let is_varargs = (flags & crate::code::flags::VARARGS) != 0;
+                let mut adjusted: crate::util::list::List<TypeId> = crate::util::list::List::nil();
+                if is_varargs && !argtypes.is_empty() {
+                    let mut items: Vec<TypeId> = argtypes.iter().collect();
+                    let last_index = items.len() - 1;
+                    let last = items[last_index];
+                    if let TypeKindData::ArrayType {
+                        elemtype: Some(elemtype),
+                        varargs: false,
+                    } = &ctx.typ(last).kind
+                    {
+                        let elemtype = *elemtype;
+                        let array_class = ctx.typ(last).tsym.expect("array class");
+                        let varargs_array = ctx.alloc_type(crate::code::type_::Type::new(
+                            TypeTag::ARRAY,
+                            Some(array_class),
+                            TypeKindData::ArrayType {
+                                elemtype: Some(elemtype),
+                                varargs: true,
+                            },
+                        ));
+                        items[last_index] = varargs_array;
+                    }
+                    for (index, item) in items.iter().enumerate() {
+                        if index > 0 {
+                            adjusted = adjusted.append(*item);
+                        }
+                    }
+                } else {
+                    adjusted = if argtypes.is_empty() {
+                        argtypes
+                    } else {
+                        argtypes.tail()
+                    };
+                }
+                let restype = ctx.typ(ty).get_return_type(ctx).expect("method return type");
+                let thrown = ctx.typ(ty).get_thrown_types(ctx);
+                let new_type = crate::code::type_::Type::new_method_type(
+                    adjusted,
+                    restype,
+                    thrown,
+                    syms.method_class,
+                );
+                ty = ctx.alloc_type(new_type);
+            }
         }
         let method = ctx.alloc_symbol(crate::code::symbol::Symbol::new_method_symbol(
             flags, name, ty, owner,

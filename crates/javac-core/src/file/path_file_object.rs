@@ -215,9 +215,11 @@ impl PathFileObject {
                 Some(to_binary_name_relative(relative_path))
             }
             PathFileObjectKind::Jar { .. } => {
-                unimplemented!(
-                    "TODO(P2): JarFileObject.inferBinaryName needs the jar FileSystem root directories"
-                )
+                // Java: Path root = path.getFileSystem().getRootDirectories()
+                //     .iterator().next(); return toBinaryName(root.relativize(path));
+                let entry = jar_entry_string(&self.path);
+                let relative = entry.strip_prefix('/').unwrap_or(&entry);
+                Some(to_binary_name(&jstr(relative), b'/' as u16))
             }
             PathFileObjectKind::Jrt => {
                 // Java: use subpath to ignore the leading /modules/MODULE-NAME
@@ -455,10 +457,15 @@ impl FileObject for PathFileObject {
     /// Java: public URI toUri() (Jar/JRT override in the subclasses).
     fn to_uri(&self) -> URI {
         match &self.kind {
-            PathFileObjectKind::Jar { .. } => {
-                unimplemented!(
-                    "TODO(P2): JarFileObject.toUri needs java.net.URI.normalize/createJarUri"
-                )
+            PathFileObjectKind::Jar { user_jar_path } => {
+                // Java: return createJarUri(userJarPath, path.toString());
+                // (PathFileObject.java:201-210).
+                let jar_uri = user_jar_path.to_uri().expect("jar file uri");
+                let jar_uri = normalize_uri(&jar_uri);
+                let entry_name = jar_entry_string(&self.path);
+                let separator = if entry_name.starts_with('/') { "!" } else { "!/" };
+                let text = format!("jar:{jar_uri}{separator}{entry_name}");
+                URI::create(&jstr(&text))
             }
             PathFileObjectKind::Jrt => {
                 // Java: JRTFileObject does not override toUri; the base
@@ -603,6 +610,108 @@ fn io_error(error: std::io::Error) -> Error {
 fn jstr<T: AsRef<str>>(value: T) -> JavaString {
     JavaString::from(value.as_ref())
 }
+
+/// The jar-file-system spelling of a path: the ZipFS path string uses '/'
+/// separators and a leading '/' for absolute paths (Java: Path.toString() of
+/// a ZipFS path; the local FsPath renders native separators).
+fn jar_entry_string(path: &FsPath) -> String {
+    let text = path.to_java_string();
+    let rooted = text
+        .chars()
+        .next()
+        .map(|first| first == '/' || first == std::path::MAIN_SEPARATOR)
+        .unwrap_or(false);
+    let mut result = String::new();
+    if rooted {
+        result.push('/');
+    }
+    for index in 0..path.name_count() {
+        if index > 0 {
+            result.push('/');
+        }
+        result.push_str(&path.subpath(index, index + 1).expect("subpath").to_java_string());
+    }
+    result
+}
+
+/// Java: java.net.URI.normalize() for the jar-file URI (PathFileObject.createJarUri).
+///
+/// PORTING_RULES adapter: java.net.URI is not ported; this implements the
+/// normalize path-segment algorithm recorded from the JDK 17 oracle:
+/// - an opaque URI (scheme-specific part not starting with '/') is unchanged;
+/// - "." segments are removed, ".." pops the previous non-empty segment;
+/// - empty (duplicated-slash) segments are collapsed;
+/// - when the path is unchanged the original URI text is returned (Java
+///   returns the same URI instance, preserving its spelling);
+/// - the rebuilt URI prints an empty authority without the "//" separator,
+///   like URI.toString() after normalize ("file:///a/./c" -> "file:/a/c").
+fn normalize_uri(uri: &str) -> String {
+    let Some(colon) = uri.find(':') else {
+        return uri.to_string();
+    };
+    let scheme = &uri[..colon];
+    let rest = &uri[colon + 1..];
+    if !rest.starts_with('/') {
+        return uri.to_string();
+    }
+    let (authority, after_authority) = if let Some(after) = rest.strip_prefix("//") {
+        match after.find('/') {
+            Some(index) => (Some(&after[..index]), &after[index..]),
+            None => (Some(after), ""),
+        }
+    } else {
+        (None, rest)
+    };
+    let suffix_index = after_authority
+        .find(['?', '#'])
+        .unwrap_or(after_authority.len());
+    let path = &after_authority[..suffix_index];
+    let suffix = &after_authority[suffix_index..];
+    let segments: Vec<&str> = path.split('/').collect();
+    let mut output: Vec<&str> = Vec::new();
+    for (index, segment) in segments.iter().enumerate() {
+        match *segment {
+            "." => {
+                if index == segments.len() - 1 {
+                    output.push("");
+                }
+            }
+            ".." => {
+                while let Some(last) = output.last() {
+                    if last.is_empty() {
+                        break;
+                    }
+                    output.pop();
+                }
+                if index == segments.len() - 1 {
+                    output.push("");
+                }
+            }
+            _ => {
+                if segment.is_empty() && !output.is_empty() {
+                    continue;
+                }
+                output.push(segment);
+            }
+        }
+    }
+    let normalized = output.join("/");
+    if normalized == path {
+        return uri.to_string();
+    }
+    let mut result = String::from(scheme);
+    result.push(':');
+    if let Some(authority) = authority
+        && !authority.is_empty()
+    {
+        result.push_str("//");
+        result.push_str(authority);
+    }
+    result.push_str(&normalized);
+    result.push_str(suffix);
+    result
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -900,13 +1009,34 @@ mod tests {
             )
         );
 
-        // Deferred upstream dependencies: jar/jrt URIs (and jar binary names).
-        assert!(std::panic::catch_unwind(AssertUnwindSafe(|| FileObject::to_uri(&*jar))).is_err());
-        // Java: JRTFileObject uses the base PathFileObject.toUri() = path.toUri().
-        let jrt_uri = FileObject::to_uri(&*jrt);
-        let jrt_path_uri = jrt_path.to_uri().expect("jrt path uri");
-        assert_eq!(jrt_uri.to_uri_string().to_string_lossy(), jrt_path_uri);
-        assert!(std::panic::catch_unwind(AssertUnwindSafe(|| jar.infer_binary_name(&[]))).is_err());
+        // The jar binary name is derived from the ZipFS entry path (jar path
+        // toString uses "/" and a leading "/" for absolute paths).
+        assert_eq!(
+            jar.infer_binary_name(&[])
+                .expect("binary name")
+                .to_string_lossy(),
+            "x.y.A"
+        );
+    }
+
+    #[test]
+    fn jar_file_object_uri_matches_create_jar_uri() {
+        // Java: PathFileObject.createJarUri(userJarPath, path.toString()).
+        let jar_file = fs_path(&std::env::temp_dir().join("y.jar"));
+        let entry = fs_path(&std::path::PathBuf::from("/x/y/A.class"));
+        let fo = PathFileObject::for_jar_path(manager(), &entry, &jar_file);
+        assert_eq!(
+            fo.infer_binary_name(&[])
+                .expect("binary name")
+                .to_string_lossy(),
+            "x.y.A"
+        );
+        let jar_uri = jar_file.to_uri().expect("jar file uri");
+        let uri = FileObject::to_uri(&*fo);
+        assert_eq!(
+            uri.to_uri_string().to_string_lossy(),
+            format!("jar:{jar_uri}!/x/y/A.class")
+        );
     }
 
     #[test]

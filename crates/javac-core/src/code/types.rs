@@ -413,6 +413,16 @@ fn init_new_types_fields() -> (
     )
 }
 
+thread_local! {
+    /// The shared Name table used by Types instances created without an
+    /// injected Names service (Java: Types reads Names.instance(context), one
+    /// table per context). The compiler is single-threaded; the thread-local
+    /// keeps one table so that names produced by the non-injected constructors
+    /// are identical (registered adapter).
+    static DEFAULT_NAMES: std::rc::Rc<crate::util::names::Names> =
+        std::rc::Rc::new(crate::util::names::Names::new(false));
+}
+
 impl Types {
     /// Get the Types instance for this context.
     ///
@@ -490,13 +500,19 @@ impl Types {
         self.map_captures_to_bounds
     }
 
+    /// The Names service: the injected one, or the shared thread-local table
+    /// for the constructors that cannot inject it (registered adapter; upstream
+    /// Types always reads Names.instance(context)).
+    fn names_or_default(&self) -> std::rc::Rc<crate::util::names::Names> {
+        match &self.names {
+            Some(names) => std::rc::Rc::clone(names),
+            None => DEFAULT_NAMES.with(std::rc::Rc::clone),
+        }
+    }
+
     /// The captured type variable name (Types.java:122).
     fn captured_name(&self) -> crate::util::name::Name {
-        let Some(names) = &self.names else {
-            unimplemented!(
-                "TODO(Types batch): Types names service not wired (Types::with_names)"
-            );
-        };
+        let names = self.names_or_default();
         names.from_utf(b"<captured wildcard>")
     }
 
@@ -1560,11 +1576,7 @@ impl Types {
             if st == supertype && list_same(&interfaces, &is) {
                 return t;
             }
-            let Some(names) = self.names.clone() else {
-                unimplemented!(
-                    "TODO(Types batch): subst on compound types needs the Names service (Types::with_names)"
-                );
-            };
+        let names = self.names_or_default();
             return self.make_intersection_type(ctx, syms, &names, is.prepend(st), false);
         }
         t
@@ -5186,11 +5198,7 @@ impl Types {
             }
             return self.glb_list(ctx, syms, list);
         }
-        let Some(names) = self.names.clone() else {
-            unimplemented!(
-                "TODO(Types batch): glb makeIntersectionType needs the Names service (Types::with_names)"
-            );
-        };
+        let names = self.names_or_default();
         self.make_intersection_type(ctx, syms, &names, bounds, false)
     }
 }
@@ -5518,11 +5526,7 @@ impl Types {
         ctx: &mut CompilerContext,
         syms: &Symtab,
     ) -> TypeId {
-        let Some(names) = self.names.clone() else {
-            unimplemented!(
-                "TODO(Types batch): arraySuperType needs the Names service (Types::with_names)"
-            );
-        };
+        let names = self.names_or_default();
         let bounds = List::of(syms.serializable_type).append(syms.cloneable_type);
         self.make_intersection_type(ctx, syms, &names, bounds, true)
     }
