@@ -146,3 +146,5 @@ file/locations/classfinder 适配 helper、资源生成器。后续按优先级�
   猜测时间视为未验证。
 - 监控工具(PORTING_RULES §24):current_time 取时/session_usage 看占用(以 estimated_next_request_tokens 为准)/task_timer 长任务计时
   (start→query→stop,实测耗时报告,Host 内存不回压缩不持久)。
+- 汇报规范(PORTING_RULES §25):禁止预算/时间叙事;未完成只写事实(内容/依赖/下一步);
+  session_usage/current_time/task_timer 仅附表,不解释、不作为调整范围/质量/验证的理由。

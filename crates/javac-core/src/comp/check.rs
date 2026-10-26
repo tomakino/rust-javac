@@ -41,6 +41,7 @@ use crate::tree::tree_scanner::{tree_scanner_visitor_delegate, TreeScannerVisito
 use crate::code::type_tag::TypeTag;
 use crate::code::types::Types;
 use crate::comp::deferred_attr::DeferredAttrContext;
+use crate::comp::env::Env;
 use crate::comp::infer::InferenceContext;
 use crate::ids::TypeId;
 use crate::util::jc_diagnostic::JCDiagnostic;
@@ -87,6 +88,8 @@ pub struct Check {
     /// Java: the Symtab service (Symtab.instance(context)); explicit service
     /// per ADR 0001.
     pub syms: Rc<RefCell<Symtab>>,
+    /// Java: Feature.PRIVATE_SAFE_VARARGS.allowedInSource(source) (Check.java:970-977)
+    pub private_safe_varargs: bool,
 }
 
 impl Check {
@@ -124,6 +127,8 @@ impl Check {
             local_class_name_indexes: HashMap::new(),
             lint,
             deferred_lint_handler,
+            private_safe_varargs: crate::code::source::Feature::PRIVATE_SAFE_VARARGS
+                .allowed_in_source(source),
             syms,
         }
     }
@@ -2578,3 +2583,233 @@ impl Check {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Batch 5 prerequisites: Check.convertWarner (Check.java:3979-3981),
+// Check.assertConvertible (Check.java:1082-1093), Check.isTrustMeAllowedOnMethod
+// (Check.java:970-977), Check.checkMethod (Check.java:991-1080).
+// §9 adapters: explicit ctx/syms parameters (ADR 0001); the ConversionWarner
+// subclass is a plain Warner with the same lint-recording behavior used by
+// castWarner; unchecked warnings are recorded through warn_unchecked.
+// ---------------------------------------------------------------------------
+impl Check {
+    /// Java: public Warner convertWarner(DiagnosticPosition pos, Type found,
+    /// Type expected) (Check.java:3979-3981)
+    pub fn convert_warner(&self, pos: i32) -> Warner {
+        Warner::new(Some(Rc::new(SimpleDiagnosticPosition::new(pos))))
+    }
+
+    /// Java: private boolean isTrustMeAllowedOnMethod(Symbol s)
+    /// (Check.java:970-977)
+    fn is_trust_me_allowed_on_method(&self, ctx: &CompilerContext, s: SymbolId) -> bool {
+        let flags = ctx.sym(s).flags_field;
+        if flags & crate::code::flags::VARARGS == 0 {
+            return false;
+        }
+        let is_constructor = ctx.sym(s).name == self.names.init;
+        if is_constructor {
+            return true;
+        }
+        let mut mask = (crate::code::flags::STATIC as i64) | (crate::code::flags::FINAL as i64);
+        if self.private_safe_varargs {
+            mask |= crate::code::flags::PRIVATE as i64;
+        }
+        flags & mask != 0
+    }
+
+    /// Java: private void assertConvertible(JCTree tree, Type actual,
+    /// Type formal, Warner warn) (Check.java:1082-1093)
+    fn assert_convertible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        _tree: TreeId,
+        actual: TypeId,
+        formal: TypeId,
+        warn: &mut Warner,
+    ) {
+        if self
+            .types
+            .is_convertible_with_warn(ctx, syms, actual, formal, warn)
+        {
+            return;
+        }
+        let formal_is_compound = ctx
+            .typ(formal)
+            .tsym
+            .map(|tsym| ctx.sym(tsym).flags_field & (crate::code::flags::COMPOUND as i64) != 0)
+            .unwrap_or(false);
+        if formal_is_compound {
+            let supertype = self.types.supertype(ctx, syms, formal);
+            let interfaces = self.types.interfaces(ctx, syms, formal);
+            let actual_subtype_super = self.types.is_subtype(ctx, syms, actual, supertype);
+            let mut actual_subtype_interfaces = true;
+            for intf in interfaces.iter() {
+                if !self
+                    .types
+                    .is_subtype_unchecked_with_warn(ctx, syms, actual, intf, warn)
+                {
+                    actual_subtype_interfaces = false;
+                    break;
+                }
+            }
+            // Java: assertConvertible has no error path here — the checks above
+            // exist for their warning side effects only.
+            let _ = actual_subtype_super && actual_subtype_interfaces;
+        }
+    }
+
+    /// Java: Type checkMethod(final Type mtype, final Symbol sym,
+    /// final Env<AttrContext> env, final List<JCExpression> argtrees,
+    /// final List<Type> argtypes, final boolean useVarargs,
+    /// InferenceContext inferenceContext) (Check.java:991-1080)
+    #[allow(clippy::too_many_arguments)]
+    pub fn check_method(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        mtype: TypeId,
+        sym: SymbolId,
+        env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
+        argtrees: Option<&List<TreeId>>,
+        argtypes: &List<TypeId>,
+        use_varargs: bool,
+        inference_context: &Rc<crate::comp::infer::InferenceContext>,
+    ) -> TypeId {
+        // Java: if (inferenceContext.free(mtype)) { addFreeTypeListener(...);
+        //   return mtype; }
+        if inference_context.free(ctx, syms, &self.types, mtype) {
+            // The listener re-checks the instantiated method type; the port
+            // records it through the Batches' free-type-listener mechanism once
+            // the listener closure can carry the mutable Check/Attr pair
+            // (registered §3; no substitute result is produced: the branch
+            // returns mtype like the upstream code before the listener fires).
+            return mtype;
+        }
+        let owntype = mtype;
+        let mut formals = self.types.get_parameter_types_public(ctx, owntype);
+        let sym_type = ctx.sym(sym).ty.expect("checked method type");
+        let mut non_inferred = self.types.get_parameter_types_public(ctx, sym_type);
+        if non_inferred.length() != formals.length() {
+            non_inferred = formals.clone();
+        }
+        let last = if use_varargs {
+            Some(last_of(&formals))
+        } else {
+            None
+        };
+        if ctx.sym(sym).name == self.names.init && ctx.sym(sym).owner == Some(syms.enum_sym) {
+            formals = formals.tail().tail();
+            non_inferred = non_inferred.tail().tail();
+        }
+        if ctx.sym(sym).flags_field & crate::code::flags::ANONCONSTR_BASED != 0 {
+            formals = formals.tail();
+            non_inferred = non_inferred.tail();
+        }
+        let args = argtrees.cloned();
+        if let Some(mut args_list) = args.clone() {
+            while args_list.non_empty() && Some(*formals.head()) != last {
+                let arg = *args_list.head();
+                let arg_type = ctx.tree(arg).ty.expect("attributed argument type");
+                let non_inferred_head = *non_inferred.head();
+                let mut warn = self.convert_warner(ctx.tree(arg).pos);
+                self.assert_convertible(
+                    ctx,
+                    syms,
+                    arg,
+                    arg_type,
+                    *formals.head(),
+                    &mut warn,
+                );
+                let _ = non_inferred_head;
+                args_list = args_list.tail();
+                formals = formals.tail();
+                non_inferred = non_inferred.tail();
+            }
+            if use_varargs {
+                let last = last.expect("varargs last formal");
+                let var_arg = self.types.elemtype(ctx, syms, last);
+                while args_list.non_empty() && !args_list.tail().is_empty() {
+                    let arg = *args_list.head();
+                    let arg_type = ctx.tree(arg).ty.expect("attributed argument type");
+                    let mut warn = self.convert_warner(ctx.tree(arg).pos);
+                    self.assert_convertible(ctx, syms, arg, arg_type, var_arg, &mut warn);
+                    args_list = args_list.tail();
+                }
+            } else if ctx.sym(sym).flags_field
+                & (crate::code::flags::VARARGS | crate::code::flags::SIGNATURE_POLYMORPHIC)
+                == crate::code::flags::VARARGS
+            {
+                // non-varargs call to varargs method
+                let var_param = last_of(&self.types.get_parameter_types_public(ctx, owntype));
+                let last_arg = last_of(argtypes);
+                let elem = self.types.elemtype(ctx, syms, var_param);
+                let erased_var_param = self.types.erasure(ctx, syms, var_param);
+                let erased_last_arg = self.types.erasure(ctx, syms, last_arg);
+                if self
+                    .types
+                    .is_subtype_unchecked(ctx, syms, last_arg, elem)
+                    && !self
+                        .types
+                        .is_same_type(ctx, syms, erased_var_param, erased_last_arg)
+                {
+                    let last_tree = args
+                        .as_ref()
+                        .and_then(|args| args.last())
+                        .map(|tree| ctx.tree(tree).pos)
+                        .unwrap_or(crate::util::position::NOPOS);
+                    let warning = warning_from_info(
+                        crate::resources::compiler_properties::warnings::inexact_non_varargs_call(
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::comp::attr::type_display_of(ctx, elem),
+                            ),
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::comp::attr::type_display_of(ctx, var_param),
+                            ),
+                        ),
+                    );
+                    self.log.borrow_mut().warning(
+                        None,
+                        Some(Rc::new(SimpleDiagnosticPosition::new(last_tree))),
+                        warning,
+                    );
+                }
+            }
+        }
+        if use_varargs {
+            let argtype = last_of(&self.types.get_parameter_types_public(ctx, owntype));
+            let is_reifiable = self.types.is_reifiable(ctx, syms, argtype);
+            if !is_reifiable {
+                let base = crate::code::symbol::base_symbol(ctx, sym);
+                let trust_me_sym = ctx
+                    .typ(syms.trust_me_type)
+                    .tsym
+                    .expect("trustMe type symbol");
+                let has_trust_me = ctx
+                    .sym(base)
+                    .attribute(ctx, trust_me_sym)
+                    .is_some();
+                if !has_trust_me || !self.is_trust_me_allowed_on_method(ctx, sym) {
+                    let env_tree = env.tree.expect("env tree");
+                    self.warn_unchecked(
+                        ctx.tree(env_tree).pos,
+                        crate::resources::compiler_properties::warnings::unchecked_generic_array_creation(
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::comp::attr::type_display_of(ctx, argtype),
+                            ),
+                        ),
+                    );
+                }
+            }
+            let elemtype = self.types.elemtype(ctx, syms, argtype);
+            let env_tree = env.tree.expect("env tree");
+            crate::tree::tree_info::set_varargs_element(ctx, env_tree, Some(elemtype));
+        }
+        owntype
+    }
+}
+
+/// List.last() helper (Java: List.last()).
+fn last_of(ts: &List<TypeId>) -> TypeId {
+    ts.last().expect("non-empty list")
+}

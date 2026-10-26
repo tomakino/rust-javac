@@ -639,6 +639,10 @@ pub enum TypeKindData {
     ArrayType {
         /// The element type.
         elemtype: Option<TypeId>,
+        /// Java: ArrayType.isVarargs() — the upstream override lives in the
+        /// anonymous subclass returned by makeVarargs (§9: the flag is a field
+        /// here).
+        varargs: bool,
     },
     /// Java: Type.MethodType
     MethodType {
@@ -814,12 +818,23 @@ impl Type {
         )
     }
 
+    /// Java: ArrayType.isVarargs()
+    pub fn is_varargs(&self) -> bool {
+        match &self.kind {
+            TypeKindData::ArrayType { varargs, .. } => *varargs,
+            _ => false,
+        }
+    }
+
     /// Java: public ArrayType(Type elemtype, TypeSymbol arrayClass)
     pub fn new_array_type(elemtype: TypeId, array_class: SymbolId) -> Type {
         Type::new(
             TypeTag::ARRAY,
             Some(array_class),
-            TypeKindData::ArrayType { elemtype: Some(elemtype) },
+            TypeKindData::ArrayType {
+                elemtype: Some(elemtype),
+                varargs: false,
+            },
         )
     }
 
@@ -976,6 +991,7 @@ mod tests {
             None,
             TypeKindData::ArrayType {
                 elemtype: Some(elem),
+                varargs: false,
             },
         )
     }
@@ -1307,7 +1323,10 @@ mod tests {
             },
         );
         assert_eq!(class.as_element(), Some(SymbolId::new(9)));
-        let array = Type::new(TypeTag::ARRAY, None, TypeKindData::ArrayType { elemtype: None });
+        let array = Type::new(TypeTag::ARRAY, None, TypeKindData::ArrayType {
+            elemtype: None,
+            varargs: false,
+        });
         assert_eq!(array.as_element(), None);
     }
 

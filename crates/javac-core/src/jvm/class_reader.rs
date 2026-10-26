@@ -3945,7 +3945,7 @@ mod tests {
             TypeKindData::TypeVar { .. } => {
                 format!("TV:{}", type_var_name(ctx, ty))
             }
-            TypeKindData::ArrayType { elemtype } => {
+            TypeKindData::ArrayType { elemtype, .. } => {
                 format!(
                     "ARRAY[{}]",
                     elemtype.map(|elem| type_summary(ctx, elem)).unwrap_or_default()

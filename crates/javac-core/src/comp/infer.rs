@@ -2568,7 +2568,7 @@ impl ReachabilityVisitor {
                     // called with UndetVar nodes only from the graph roots.
                     Ok(())
                 }
-                TypeKindData::ArrayType { elemtype: Some(elem) } => {
+                TypeKindData::ArrayType { elemtype: Some(elem), .. } => {
                     self.visit(ctx, syms, types, *elem)
                 }
                 TypeKindData::ClassType { .. }
@@ -2834,7 +2834,7 @@ fn contains_any_list(
 
 fn elemtype_of(ctx: &mut CompilerContext, t: TypeId) -> TypeId {
     match &ctx.typ(t).kind {
-        TypeKindData::ArrayType { elemtype } => elemtype.expect("array element type"),
+        TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
         _ => panic!("unexpected array type"),
     }
 }
@@ -2845,6 +2845,7 @@ fn new_array_type_ctx(ctx: &mut CompilerContext, elem: TypeId, tsym: SymbolId) -
         Some(tsym),
         TypeKindData::ArrayType {
             elemtype: Some(elem),
+                varargs: false,
         },
     ))
 }

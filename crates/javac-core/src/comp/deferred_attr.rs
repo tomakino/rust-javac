@@ -912,7 +912,7 @@ impl<T> DeferredTypeMap<T> {
                     ))
                 }
             }
-            TypeKindData::ArrayType { elemtype } => {
+            TypeKindData::ArrayType { elemtype, .. } => {
                 let elem = match elemtype {
                     Some(e) => *e,
                     None => return t,
@@ -927,6 +927,7 @@ impl<T> DeferredTypeMap<T> {
                         tsym,
                         TypeKindData::ArrayType {
                             elemtype: Some(elem1),
+                varargs: false,
                         },
                     ))
                 }

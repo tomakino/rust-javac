@@ -81,6 +81,9 @@ pub struct ResultInfo {
     /// Java: the ResultInfo subclass flavor (MethodAttrInfo is an inner subclass
     /// upstream; the port carries the flavor explicitly — registered §9).
     pub kind: ResultInfoKind,
+    /// Java: Attr.RecoveryInfo overrides check() to wrap the result in
+    /// chk.checkNonVoid (Attr.java:598-620); expressed as a flag (§9 registered).
+    pub check_non_void: bool,
     /// The identity of this ResultInfo (the upstream ArgumentType.speculativeTypes
     /// map is keyed by ResultInfo object identity; Rust needs an explicit id).
     /// §9 registered adapter: unique ids are assigned by new_with_mode, so every
@@ -126,6 +129,7 @@ impl ResultInfo {
             pt,
             check_context,
             check_mode,
+            check_non_void: false,
             kind: ResultInfoKind::Normal,
             id: NEXT_RESULT_INFO_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
@@ -167,7 +171,14 @@ impl ResultInfo {
             Some(pt) => pt,
             None => crate::code::symtab::no_type_id(ctx),
         };
-        chk.check_type(ctx, syms, pos, found, pt, &*self.check_context)
+        let result = chk.check_type(ctx, syms, pos, found, pt, &*self.check_context);
+        if self.check_non_void {
+            // Java: RecoveryInfo overrides check() to wrap the result with
+            // chk.checkNonVoid (Attr.java:598-620); §9 flag-based expression.
+            chk.check_non_void(ctx, pos, result)
+        } else {
+            result
+        }
     }
 
     /// Java: public String toString() —
@@ -194,9 +205,12 @@ impl ResultInfo {
                 self.check_mode,
             );
             info.kind = ResultInfoKind::MethodAttr;
+            info.check_non_void = self.check_non_void;
             return info;
         }
-        ResultInfo::new_with_mode(self.pkind, self.pt, check_context, self.check_mode)
+        let mut result = ResultInfo::new_with_mode(self.pkind, self.pt, check_context, self.check_mode);
+        result.check_non_void = self.check_non_void;
+        result
     }
 
     /// Java: protected ResultInfo dup(Type newPt)
@@ -205,12 +219,14 @@ impl ResultInfo {
             // Java: MethodAttrInfo.dup(Type) throws IllegalStateException.
             panic!("IllegalStateException");
         }
-        ResultInfo::new_with_mode(
+        let mut result = ResultInfo::new_with_mode(
             self.pkind,
             new_pt,
             Rc::clone(&self.check_context),
             self.check_mode,
-        )
+        );
+        result.check_non_void = self.check_non_void;
+        result
     }
 
     /// Java: protected ResultInfo dup(CheckContext newContext)
@@ -219,14 +235,17 @@ impl ResultInfo {
             // Java: MethodAttrInfo.dup(CheckContext) -> new MethodAttrInfo(newContext)
             let mut info = ResultInfo::new_with_mode(self.pkind, self.pt, new_context, self.check_mode);
             info.kind = ResultInfoKind::MethodAttr;
+            info.check_non_void = self.check_non_void;
             return info;
         }
-        ResultInfo::new_with_mode(
+        let mut result = ResultInfo::new_with_mode(
             self.pkind,
             self.pt,
             new_context,
             self.check_mode,
-        )
+        );
+        result.check_non_void = self.check_non_void;
+        result
     }
 
     /// Java: protected ResultInfo dup(Type newPt, CheckContext newContext)
@@ -238,7 +257,9 @@ impl ResultInfo {
         if matches!(self.kind, ResultInfoKind::MethodAttr) {
             panic!("IllegalStateException");
         }
-        ResultInfo::new_with_mode(self.pkind, new_pt, new_context, self.check_mode)
+        let mut result = ResultInfo::new_with_mode(self.pkind, new_pt, new_context, self.check_mode);
+        result.check_non_void = self.check_non_void;
+        result
     }
 
     /// Java: protected ResultInfo dup(Type newPt, CheckContext newContext,
@@ -252,7 +273,9 @@ impl ResultInfo {
         if matches!(self.kind, ResultInfoKind::MethodAttr) {
             panic!("IllegalStateException");
         }
-        ResultInfo::new_with_mode(self.pkind, new_pt, new_context, new_mode)
+        let mut result = ResultInfo::new_with_mode(self.pkind, new_pt, new_context, new_mode);
+        result.check_non_void = self.check_non_void;
+        result
     }
 
     /// Java: protected ResultInfo dup(CheckMode newMode)
@@ -260,12 +283,14 @@ impl ResultInfo {
         if matches!(self.kind, ResultInfoKind::MethodAttr) {
             panic!("IllegalStateException");
         }
-        ResultInfo::new_with_mode(
+        let mut result = ResultInfo::new_with_mode(
             self.pkind,
             self.pt,
             Rc::clone(&self.check_context),
             new_mode,
-        )
+        );
+        result.check_non_void = self.check_non_void;
+        result
     }
 }
 
@@ -2905,13 +2930,12 @@ impl PostAttrAnalyzer<'_> {
                 TreeKind::MethodDecl { restype, .. } => *restype,
                 _ => None,
             };
-            if let Some(restype_tree) = restype_tree {
-                if ctx.tree(restype_tree).tag == Tag::TYPEIDENT
-                    && let TreeKind::PrimitiveTypeTree { typetag } = ctx.tree(restype_tree).kind
-                    && typetag == crate::code::type_tag::TypeTag::VOID
-                {
-                    restype = self.syms.void_type;
-                }
+            if let Some(restype_tree) = restype_tree
+                && ctx.tree(restype_tree).tag == Tag::TYPEIDENT
+                && let TreeKind::PrimitiveTypeTree { typetag } = ctx.tree(restype_tree).kind
+                && typetag == crate::code::type_tag::TypeTag::VOID
+            {
+                restype = self.syms.void_type;
             }
         }
         let ty = crate::code::type_::Type::new_method_type(
@@ -3244,14 +3268,13 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
                 *slot = Some(sym);
             }
         }
-        if constructor_type.is_none() {
-            if let TreeKind::NewClass {
+        if constructor_type.is_none()
+            && let TreeKind::NewClass {
                 constructor_type: slot,
                 ..
             } = &mut ctx.tree_mut(tree).kind
-            {
-                *slot = Some(self.syms.unknown_type);
-            }
+        {
+            *slot = Some(self.syms.unknown_type);
         }
         let (encl, typeargs, clazz, args, def) = match &ctx.tree(tree).kind {
             TreeKind::NewClass {

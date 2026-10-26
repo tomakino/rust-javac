@@ -485,7 +485,7 @@ impl Types {
                 }
                 result
             }
-            TypeKindData::ArrayType { elemtype } => {
+            TypeKindData::ArrayType { elemtype, .. } => {
                 let elemtype = elemtype.expect("array element type");
                 self.hash_code_impl(ctx, elemtype, strict).wrapping_add(12)
             }
@@ -818,11 +818,11 @@ impl Types {
             return false;
         }
         let elemtype = match &ctx.typ(t).kind {
-            TypeKindData::ArrayType { elemtype } => elemtype.expect("array element type"),
+            TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
             _ => unreachable!(),
         };
         let elemtype_s = match &ctx.typ(s).kind {
-            TypeKindData::ArrayType { elemtype } => elemtype.expect("array element type"),
+            TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
             _ => unreachable!(),
         };
         self.contains_type_equivalent_single(ctx, syms, elemtype, elemtype_s)
@@ -1158,8 +1158,8 @@ impl Types {
             &ctx.typ(s).kind,
         ) {
             (
-                TypeKindData::ArrayType { elemtype: t_elem },
-                TypeKindData::ArrayType { elemtype: s_elem },
+                TypeKindData::ArrayType { elemtype: t_elem, .. },
+                TypeKindData::ArrayType { elemtype: s_elem, .. },
             ) => match (t_elem, s_elem) {
                 (Some(t_elem), Some(s_elem)) => self.equals_ignore_metadata(ctx, *t_elem, *s_elem),
                 (None, None) => true,
@@ -1237,7 +1237,7 @@ impl Types {
         }
         if tag == TypeTag::ARRAY {
             let elem = match &ctx.typ(t).kind {
-                TypeKindData::ArrayType { elemtype } => elemtype.expect("array element type"),
+                TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
                 _ => unreachable!(),
             };
             let elem_is_primitive = ctx.typ(elem).is_primitive();
@@ -1412,7 +1412,7 @@ impl Types {
         }
         if tag == TypeTag::ARRAY {
             let elem = match &ctx.typ(t).kind {
-                TypeKindData::ArrayType { elemtype } => elemtype.expect("array element type"),
+                TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
                 _ => unreachable!(),
             };
             let elem1 = self.subst_visit(ctx, syms, elem, from, to);
@@ -2573,12 +2573,12 @@ impl Types {
             TypeKindData::ErrorType { .. } => true,
             TypeKindData::ArrayType { .. } => {
                 let t_elem = match &ctx.typ(t).kind {
-                    TypeKindData::ArrayType { elemtype } => elemtype.expect("array element"),
+                    TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
                     _ => unreachable!(),
                 };
                 if ctx.typ(s).has_tag(TypeTag::ARRAY) {
                     let s_elem = match &ctx.typ(s).kind {
-                        TypeKindData::ArrayType { elemtype } => elemtype.expect("array element"),
+                        TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
                         _ => unreachable!(),
                     };
                     if ctx.typ(t_elem).is_primitive() {
@@ -2728,7 +2728,7 @@ impl Types {
         }
         if tag == TypeTag::ARRAY {
             let elem = match &ctx.typ(t).kind {
-                TypeKindData::ArrayType { elemtype } => elemtype.expect("array element type"),
+                TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
                 _ => unreachable!(),
             };
             return self.is_reifiable(ctx, syms, elem);
@@ -3343,11 +3343,11 @@ impl Types {
                 }
                 if tag == TypeTag::ARRAY {
                     let t_elem = match &ctx.typ(t).kind {
-                        TypeKindData::ArrayType { elemtype } => elemtype.expect("array element"),
+                        TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
                         _ => unreachable!(),
                     };
                     let s_elem = match &ctx.typ(s).kind {
-                        TypeKindData::ArrayType { elemtype } => elemtype.expect("array element"),
+                        TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
                         _ => unreachable!(),
                     };
                     if ctx.typ(t_elem).is_primitive() || ctx.typ(s_elem).is_primitive() {
@@ -3703,8 +3703,8 @@ pub(crate) fn allparams_of(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
                 None => params,
             }
         }
-        TypeKindData::ArrayType { elemtype: Some(elem) } => allparams_of(ctx, *elem),
-        TypeKindData::ArrayType { elemtype: None } => List::nil(),
+        TypeKindData::ArrayType { elemtype: Some(elem), .. } => allparams_of(ctx, *elem),
+        TypeKindData::ArrayType { elemtype: None, .. } => List::nil(),
         _ => List::nil(),
     }
 }
@@ -3747,8 +3747,8 @@ fn is_parameterized_type(ctx: &CompilerContext, t: TypeId) -> bool {
 /// non-empty && this.allparams() empty; ArrayType: elemtype.isRaw()).
 fn is_raw_type(ctx: &CompilerContext, t: TypeId) -> bool {
     match &ctx.typ(t).kind {
-        TypeKindData::ArrayType { elemtype: Some(elem) } => is_raw_type(ctx, *elem),
-        TypeKindData::ArrayType { elemtype: None } => false,
+        TypeKindData::ArrayType { elemtype: Some(elem), .. } => is_raw_type(ctx, *elem),
+        TypeKindData::ArrayType { elemtype: None, .. } => false,
         TypeKindData::ClassType { .. }
         | TypeKindData::ErasedClassType { .. }
         | TypeKindData::UnionClassType { .. }
@@ -3878,7 +3878,7 @@ fn elemtype_of(ctx: &CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
             let upper = Types::new().wild_upper_bound(ctx, syms, t);
             elemtype_of(ctx, syms, upper)
         }
-        TypeKindData::ArrayType { elemtype } => elemtype.expect("array element type"),
+        TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
         TypeKindData::ForAll { qtype, .. } => {
             let qtype = qtype.expect("for-all qtype");
             elemtype_of(ctx, syms, qtype)
@@ -3959,6 +3959,7 @@ fn new_array_type(ctx: &mut CompilerContext, elemtype: TypeId, tsym: Option<Symb
         tsym,
         TypeKindData::ArrayType {
             elemtype: Some(elemtype),
+                varargs: false,
         },
     ))
 }
@@ -4184,7 +4185,7 @@ impl Types {
             return false;
         }
         let elem = match &ctx.typ(head).kind {
-            crate::code::type_::TypeKindData::ArrayType { elemtype } => *elemtype,
+            crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => *elemtype,
             _ => None,
         };
         let elem_tsym = elem.and_then(|e| ctx.typ(e).tsym);
@@ -4540,13 +4541,13 @@ impl Types {
             TypeKindData::ArrayType { .. } => {
                 if ctx.typ(target).has_tag(TypeTag::ARRAY) {
                     let source_elem = match &ctx.typ(source).kind {
-                        TypeKindData::ArrayType { elemtype } => {
+                        TypeKindData::ArrayType { elemtype, .. } => {
                             elemtype.expect("array element")
                         }
                         _ => unreachable!(),
                     };
                     let target_elem = match &ctx.typ(target).kind {
-                        TypeKindData::ArrayType { elemtype } => {
+                        TypeKindData::ArrayType { elemtype, .. } => {
                             elemtype.expect("array element")
                         }
                         _ => unreachable!(),
@@ -5866,7 +5867,7 @@ impl Types {
                 };
                 tsym_type != t && self.is_erroneous(ctx, syms, tsym_type)
             }
-            TypeKindData::ArrayType { elemtype } => elemtype
+            TypeKindData::ArrayType { elemtype, .. } => elemtype
                 .map(|elem| self.is_erroneous(ctx, syms, elem))
                 .unwrap_or(false),
             TypeKindData::MethodType {
@@ -6230,7 +6231,7 @@ impl Types {
                     new_class_type(ctx, outer1, Some(typarams1), tsym_opt)
                 }
             }
-            TypeKindData::ArrayType { elemtype } => {
+            TypeKindData::ArrayType { elemtype, .. } => {
                 let elemtype = elemtype.expect("array element type");
                 let elemtype1 = self.map_undet_vars_to_typevars(ctx, syms, elemtype);
                 if elemtype1 == elemtype {
@@ -8413,6 +8414,144 @@ impl Types {
     }
 }
 
+impl Types {
+    /// Java: private boolean isSubtypeUncheckedInternal(Type t, Type s,
+    /// boolean capture, Warner warn) (Types.java:1020-1055) — the warning
+    /// carrying variant; the boolean relation is identical to
+    /// is_subtype_unchecked_internal.
+    #[allow(clippy::too_many_arguments)]
+    fn is_subtype_unchecked_internal_warn(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+        capture: bool,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        if ctx.typ(t).has_tag(TypeTag::ARRAY) && ctx.typ(s).has_tag(TypeTag::ARRAY) {
+            let t_elem = elemtype_of(ctx, syms, t);
+            let s_elem = elemtype_of(ctx, syms, s);
+            if ctx.typ(t_elem).is_primitive() {
+                return self.is_same_type(ctx, syms, t_elem, s_elem);
+            }
+            return self.is_subtype_unchecked_internal_warn(
+                ctx, syms, t_elem, s_elem, false, warn,
+            );
+        }
+        if self.is_subtype_with_capture(ctx, syms, t, s, capture) {
+            return true;
+        }
+        if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
+            let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+            return self.is_subtype_unchecked_internal_warn(ctx, syms, upper, s, false, warn);
+        }
+        if !is_raw_type(ctx, s) {
+            let Some(s_tsym) = ctx.typ(s).tsym else {
+                return false;
+            };
+            if let Some(t2) = self.as_super(ctx, syms, t, s_tsym)
+                && is_raw_type(ctx, t2)
+            {
+                // Java: if (isReifiable(s)) warn.silentWarn(UNCHECKED);
+                //       else warn.warn(UNCHECKED);
+                if self.is_reifiable(ctx, syms, s) {
+                    warn.silent_warn(crate::code::lint::LintCategory::UNCHECKED);
+                } else {
+                    warn.warn(crate::code::lint::LintCategory::UNCHECKED);
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Java: public boolean isSubtypeUnchecked(Type t, Type s, Warner warn)
+    /// (Types.java:1011-1018)
+    pub fn is_subtype_unchecked_with_warn(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        let result = self.is_subtype_unchecked_internal_warn(ctx, syms, t, s, true, warn);
+        if result {
+            self.check_unsafe_varargs_conversion(ctx, syms, t, s, warn);
+        }
+        result
+    }
+
+    /// Java: private void checkUnsafeVarargsConversion(Type t, Type s, Warner
+    /// warn) (Types.java:1057-1080)
+    fn check_unsafe_varargs_conversion(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) {
+        if !ctx.typ(t).has_tag(TypeTag::ARRAY) || self.is_reifiable(ctx, syms, t) {
+            return;
+        }
+        // ArrayType from = (ArrayType)t;
+        let should_warn = match ctx.typ(s).get_tag() {
+            TypeTag::ARRAY => {
+                // Java: from.isVarargs() && !to.isVarargs() && !isReifiable(from)
+                ctx.typ(t).is_varargs()
+                    && !ctx.typ(s).is_varargs()
+                    && !self.is_reifiable(ctx, syms, t)
+            }
+            TypeTag::CLASS => ctx.typ(t).is_varargs(),
+            _ => false,
+        };
+        if should_warn {
+            warn.warn(crate::code::lint::LintCategory::VARARGS);
+        }
+    }
+
+    /// Java: public boolean isConvertible(Type t, Type s, Warner warn)
+    /// (Types.java:601-625) — the warning carrying variant.
+    pub fn is_convertible_with_warn(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        if ctx.typ(t).has_tag(TypeTag::ERROR) {
+            return true;
+        }
+        let t_primitive = ctx.typ(t).is_primitive();
+        let s_primitive = ctx.typ(s).is_primitive();
+        if t_primitive == s_primitive {
+            return self.is_subtype_unchecked_with_warn(ctx, syms, t, s, warn);
+        }
+        let t_undet = ctx.typ(t).has_tag(TypeTag::UNDETVAR);
+        let s_undet = ctx.typ(s).has_tag(TypeTag::UNDETVAR);
+        if t_undet || s_undet {
+            return if t_undet {
+                let boxed = self.boxed_type_or_type_ro(ctx, syms, s);
+                self.is_subtype(ctx, syms, t, boxed)
+            } else {
+                let boxed = self.boxed_type_or_type_ro(ctx, syms, t);
+                self.is_subtype(ctx, syms, boxed, s)
+            };
+        }
+        if t_primitive {
+            let boxed = self.boxed_class_ro(ctx, syms, t);
+            let boxed_type = ctx.sym(boxed).ty.expect("boxed type");
+            self.is_subtype(ctx, syms, boxed_type, s)
+        } else {
+            let unboxed = self.unboxed_type_ro(ctx, syms, t);
+            self.is_subtype(ctx, syms, unboxed, s)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -8486,6 +8625,7 @@ mod tests {
             Some(symtab.array_class),
             TypeKindData::ArrayType {
                 elemtype: Some(symtab.int_type),
+                varargs: false,
             },
         ));
         assert_eq!(types.hash_code(&mut ctx, int_array), 5 + 12);
@@ -8494,6 +8634,7 @@ mod tests {
             Some(symtab.array_class),
             TypeKindData::ArrayType {
                 elemtype: Some(int_array),
+                varargs: false,
             },
         ));
         assert_eq!(types.hash_code(&mut ctx, int_array_2d), 5 + 12 + 12);
@@ -8517,6 +8658,7 @@ mod tests {
             Some(symtab.array_class),
             TypeKindData::ArrayType {
                 elemtype: Some(symtab.string_type),
+                varargs: false,
             },
         ));
         let string_array2 = ctx.alloc_type(Type::new(
@@ -8524,6 +8666,7 @@ mod tests {
             Some(symtab.array_class),
             TypeKindData::ArrayType {
                 elemtype: Some(symtab.string_type),
+                varargs: false,
             },
         ));        assert!(types.is_same_type(&mut ctx, &symtab, string_array, string_array2));
     }
@@ -8542,6 +8685,7 @@ mod tests {
             Some(symtab.array_class),
             TypeKindData::ArrayType {
                 elemtype: Some(symtab.int_type),
+                varargs: false,
             },
         ));
         assert_eq!(types.erasure(&mut ctx, &symtab, int_array), int_array);
