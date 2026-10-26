@@ -2935,6 +2935,10 @@ impl crate::comp::check::CheckContext for RecoveryCheckContext {
 pub struct PostAttrAnalyzer<'a> {
     pub syms: &'a Symtab,
     pub names: &'a Names,
+    /// Java: preFlow's anonymous PostAttrAnalyzer override: None for the plain
+    /// postAttr analyzer; Some(stuckType) skips stuck subtrees, class decls and
+    /// lambdas (§9: the override is this field).
+    pub pre_flow_stuck_type: Option<TypeId>,
 }
 
 impl PostAttrAnalyzer<'_> {
@@ -3017,6 +3021,16 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
     /// Java: public void scan(JCTree tree)
     fn scan(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) {
         if let Some(tree) = tree {
+            if let Some(stuck_type) = self.pre_flow_stuck_type {
+                // Java: preFlow's scanner: skip stuck expressions, class decls
+                // and lambdas.
+                if ctx.tree(tree).ty == Some(stuck_type)
+                    || ctx.tree(tree).tag == Tag::CLASSDEF
+                    || ctx.tree(tree).tag == Tag::LAMBDA
+                {
+                    return;
+                }
+            }
             if crate::tree::tree_info::is_expression(ctx, tree) {
                 self.init_type_if_needed(ctx, tree);
             }
@@ -3426,6 +3440,7 @@ impl Attr {
         let mut analyzer = PostAttrAnalyzer {
             syms,
             names: &self.names,
+            pre_flow_stuck_type: None,
         };
         crate::tree::tree_scanner::TreeScannerVisitor::scan(&mut analyzer, ctx, Some(tree));
     }
@@ -3768,6 +3783,136 @@ impl Attr {
             last_varargs,
             result_info.check_context.inference_context(),
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Batch 5: Attr.lambdaEnv (Attr.java:3484-3560) + Attr.preFlow
+// (Attr.java:3296-3315). §9: the anonymous PostAttrAnalyzer subclass of
+// preFlow is the PostAttrAnalyzer pre_flow flag; explicit ctx/syms parameters
+// per ADR 0001.
+// ---------------------------------------------------------------------------
+impl Attr {
+    /// Java: public Env<AttrContext> lambdaEnv(JCLambda that,
+    /// Env<AttrContext> env) (Attr.java:3484-3560)
+    pub fn lambda_env(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        that: TreeId,
+        env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
+    ) -> Rc<Env<crate::comp::attr_context::AttrContext>> {
+        use crate::code::flags;
+        let owner = {
+            let info = env.info.borrow();
+            let scope = info.scope.expect("env scope");
+            ctx.scope(scope).owner.expect("scope owner")
+        };
+        let owner_kind = ctx.sym(owner).kind;
+        let owner_owner_kind = ctx
+            .sym(owner)
+            .owner
+            .map(|owner| ctx.sym(owner).kind)
+            .expect("symbol owner");
+        let lambda_env = if owner_kind == crate::code::kinds::Kind::VAR
+            && owner_owner_kind == crate::code::kinds::Kind::TYP
+        {
+            // field initializer
+            let encl_class = crate::code::symbol::symbol_encl_class(ctx, owner)
+                .expect("field enclosing class");
+            let mut new_scope_owner = owner;
+            if ctx.sym(owner).flags_field & (flags::STATIC as i64) == 0 {
+                let members = ctx.sym(encl_class).members().expect("class members");
+                let inits = ctx.scope_get_symbols_by_name(
+                    members,
+                    &self.names.init,
+                    crate::code::scope::LookupKind::NON_RECURSIVE,
+                    &|_| true,
+                );
+                if let Some(first) = inits.first() {
+                    new_scope_owner = *first;
+                }
+            } else {
+                let mut clinits = self.clinits.borrow_mut();
+                let clinit = match clinits.get(&encl_class) {
+                    Some(clinit) => *clinit,
+                    None => {
+                        let clinit_type = ctx.alloc_type(
+                            crate::code::type_::Type::new_method_type(
+                                List::nil(),
+                                syms.void_type,
+                                List::nil(),
+                                syms.method_class,
+                            ),
+                        );
+                        let clinit = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+                            crate::code::kinds::Kind::MTH,
+                            (flags::STATIC as i64)
+                                | (flags::SYNTHETIC as i64)
+                                | (flags::PRIVATE as i64),
+                            self.names.clinit.clone(),
+                            Some(clinit_type),
+                            Some(encl_class),
+                            crate::code::symbol::SymbolKind::MethodSymbol {
+                                extra_params: List::nil(),
+                                captured_locals: List::nil(),
+                                params: List::nil(),
+                                default_value: None,
+                            },
+                        ));
+                        clinits.insert(encl_class, clinit);
+                        clinit
+                    }
+                };
+                new_scope_owner = clinit;
+            }
+            let new_scope = ctx.scope_dup_unshared(
+                env.info.borrow().scope.expect("env scope"),
+                Some(new_scope_owner),
+            );
+            let info = env.info.borrow().dup(Some(new_scope));
+            env.dup(Some(that), info)
+        } else {
+            // Java: env.dup(that, env.info.dup(env.info.scope.dup()))
+            let scope = ctx.scope_dup(env.info.borrow().scope.expect("env scope"), None);
+            let info = env.info.borrow().dup(Some(scope));
+            env.dup(Some(that), info)
+        };
+        {
+            let mut info = lambda_env.info.borrow_mut();
+            info.yield_result = None;
+            info.is_lambda = true;
+        }
+        lambda_env
+    }
+
+    /// Java: void preFlow(JCLambda tree) (Attr.java:3296-3315)
+    #[allow(clippy::too_many_arguments)]
+    pub fn pre_flow(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        attr_recover: &mut crate::comp::attr_recover::AttrRecover,
+        rs: &mut crate::comp::resolve::Resolve,
+        infer: &Rc<crate::comp::infer::Infer>,
+        chk: &crate::comp::check::Check,
+        diags: &crate::util::jc_diagnostic::Factory,
+        env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
+        tree: TreeId,
+    ) {
+        attr_recover.do_recovery(ctx, syms, self, rs, infer, chk, diags);
+        let body = match &ctx.tree(tree).kind {
+            TreeKind::Lambda { body, .. } => *body,
+            _ => panic!("ClassCastException: JCLambda expected"),
+        };
+        let stuck_type = syms.stuck_type;
+        let mut analyzer = PostAttrAnalyzer {
+            syms,
+            names: &self.names,
+            pre_flow_stuck_type: Some(stuck_type),
+        };
+        let _ = env;
+        crate::tree::tree_scanner::TreeScannerVisitor::scan(&mut analyzer, ctx, body);
     }
 }
 
