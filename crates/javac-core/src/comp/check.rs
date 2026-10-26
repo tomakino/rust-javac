@@ -8443,3 +8443,159 @@ fn type_display_name(ctx: &mut CompilerContext, ty: TypeId) -> String {
         None => format!("{ty:?}"),
     }
 }
+
+impl Check {
+    /// Validate the return type of an annotation method (the tree form).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - restype: the annotation method return type tree.
+    ///
+    /// # Returns
+    ///   - none (diagnostics are reported).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn validate_annotation_type_tree(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        restype: Option<TreeId>,
+    ) {
+        let Some(restype) = restype else {
+            return;
+        };
+        let Some(ty) = ctx.tree(restype).ty else {
+            return;
+        };
+        self.validate_annotation_type(ctx, syms, ctx.tree(restype).pos, ty);
+    }
+
+    /// Validate an annotation member type.
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - ty: the annotation member type.
+    ///
+    /// # Returns
+    ///   - none (diagnostics are reported).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn validate_annotation_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        pos: i32,
+        ty: TypeId,
+    ) {
+        use crate::code::flags;
+        if ctx.typ(ty).is_primitive() {
+            return;
+        }
+        if self.types.is_same_type(ctx, syms, ty, syms.string_type) {
+            return;
+        }
+        if let Some(tsym) = ctx.typ(ty).tsym {
+            let flags_value = ctx.sym(tsym).flags_field;
+            if (flags_value & flags::ENUM as i64) != 0
+                || (flags_value & flags::ANNOTATION as i64) != 0
+            {
+                return;
+            }
+        }
+        let lower = crate::code::types::cvar_lower_bound(ctx, ty);
+        if ctx.typ(lower).tsym == ctx.typ(syms.class_type).tsym {
+            return;
+        }
+        if ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
+            let elem = self.types.elemtype(ctx, syms, ty);
+            if !ctx.typ(elem).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
+                self.validate_annotation_type(ctx, syms, pos, elem);
+                return;
+            }
+        }
+        self.log.borrow_mut().error_at(
+            pos,
+            crate::util::jc_diagnostic::Error::from(
+                crate::resources::compiler_properties::errors::invalid_annotation_member_type(),
+            ),
+        );
+    }
+
+    /// Check that an annotation method does not clash with Object/Annotation.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - pos: the diagnostic position;
+    ///   - m: the annotation method.
+    ///
+    /// # Returns
+    ///   - none (diagnostics are reported).
+    ///
+    /// # Panics
+    ///   - a class invariant is violated.
+    pub fn validate_annotation_method(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        m: SymbolId,
+    ) {
+        use crate::code::flags;
+        let mut sup = {
+            let syms_rc = Rc::clone(&self.syms);
+            let syms_borrow = syms_rc.borrow();
+            syms_borrow.annotation_type
+        };
+        loop {
+            if !ctx.typ(sup).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+                break;
+            }
+            let Some(sup_tsym) = ctx.typ(sup).tsym else {
+                break;
+            };
+            let Some(members) = ctx.sym(sup_tsym).members() else {
+                break;
+            };
+            let name = ctx.sym(m).name.clone();
+            let symbols = ctx.scope_get_symbols_by_name(
+                members,
+                &name,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+            );
+            for sym in symbols {
+                if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH
+                    && (ctx.sym(sym).flags_field
+                        & (flags::PUBLIC as i64 | flags::PROTECTED as i64))
+                        != 0
+                {
+                    let m_ty = ctx.sym(m).ty.expect("annotation method type");
+                    let sym_ty = ctx.sym(sym).ty.expect("clashing method type");
+                    let equivalent = self.types.override_equivalent(ctx, syms, m_ty, sym_ty);
+                    if equivalent {
+                        let info = crate::resources::compiler_properties::errors::intf_annotation_member_clash(
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                symbol_display_name(ctx, sym),
+                            ),
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                type_display_name(ctx, sup),
+                            ),
+                        );
+                        self.log
+                            .borrow_mut()
+                            .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
+                    }
+                }
+            }
+            sup = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                self.types.supertype(ctx, &syms_borrow, sup)
+            };
+        }
+    }
+}

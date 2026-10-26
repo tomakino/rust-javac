@@ -3986,7 +3986,7 @@ fn cvar_upper_bound(ctx: &CompilerContext, t: TypeId) -> TypeId {
 }
 
 /// Java: Types.cvarLowerBound(Type t)
-fn cvar_lower_bound(ctx: &CompilerContext, t: TypeId) -> TypeId {
+pub(crate) fn cvar_lower_bound(ctx: &CompilerContext, t: TypeId) -> TypeId {
     if ctx.typ(t).has_tag(TypeTag::TYPEVAR) && ctx.typ(t).is_captured() {
         let lower = ctx.typ(t).get_lower_bound().expect("captured type lower bound");
         cvar_lower_bound(ctx, lower)

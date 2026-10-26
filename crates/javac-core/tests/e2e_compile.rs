@@ -197,7 +197,7 @@ fn compile(name: &str, source: &str) -> (Vec<u8>, String) {
     (bytes, compiled[0].name.clone())
 }
 
-#[ignore = "E2E blocked: Attr class-body visitors (visitMethodDef/visitVarDef/MODULEDEF/PACKAGEDEF) + Check override/hide/varargs checks not yet ported — tracked for next batch"]
+#[ignore = "E2E blocked: TypeEnter phases (Header/Hierarchy/Permits/Members/Record/finishClass) not yet ported — tracked for next batch"]
 #[test]
 fn hello_world_end_to_end() {
     let source = r#"public class HelloWorld {
@@ -251,7 +251,7 @@ fn hello_world_end_to_end() {
         .any(|entry| entry == "java/lang/System"));
 }
 
-#[ignore = "E2E blocked: Attr class-body visitors (visitMethodDef/visitVarDef/MODULEDEF/PACKAGEDEF) + Check override/hide/varargs checks not yet ported — tracked for next batch"]
+#[ignore = "E2E blocked: TypeEnter phases (Header/Hierarchy/Permits/Members/Record/finishClass) not yet ported — tracked for next batch"]
 #[test]
 fn simple_class_with_field_and_branch() {
     let source = r#"public class Simple {

@@ -58,6 +58,8 @@ use crate::comp::type_enter::TypeEnter;
 use crate::comp::type_envs::TypeEnvs;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId, TreeId, TypeId};
+use crate::util::abstract_log::AbstractLog;
+use crate::util::name::Name;
 use crate::tree::jc_tree::{Tag, TreeKind};
 use crate::tree::tree_maker::TreeFactory;
 use crate::code::dependencies::Dependencies;
@@ -759,6 +761,8 @@ impl Attr {
             Tag::SELECT => self.visit_select(ctx, syms, tree),
             Tag::NEWARRAY => self.visit_new_array(ctx, syms, tree),
             Tag::NEWCLASS => self.visit_new_class(ctx, syms, tree),
+            Tag::METHODDEF => self.visit_method_def_result(ctx, syms, tree),
+            Tag::VARDEF => self.visit_var_def_result(ctx, syms, tree),
             Tag::CLASSDEF => self.visit_class_def(ctx, syms, tree),
             Tag::CONDEXPR => self.visit_conditional(ctx, syms, tree),
             Tag::ASSERT => self.visit_assert(ctx, syms, tree),
@@ -13211,6 +13215,985 @@ fn enum_sym_value(syms: &crate::code::symtab::Symtab) -> SymbolId {
     syms.enum_sym
 }
 
+impl Attr {
+    /// Attribute a method declaration (the class-body visitor).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the method declaration tree.
+    ///
+    /// # Returns
+    ///   - the method type.
+    ///
+    /// # Panics
+    ///   - a method invariant is violated.
+    pub fn visit_method_def_result(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        use crate::code::flags;
+        let env = self.env.clone().expect("Attr.env (visitMethodDef)");
+        let (mods, typarams, restype, recvparam, params, thrown, body, default_value, m) =
+            match &ctx.tree(tree).kind {
+                TreeKind::MethodDecl {
+                    mods,
+                    typarams,
+                    restype,
+                    recvparam,
+                    params,
+                    thrown,
+                    body,
+                    default_value,
+                    sym: Some(sym),
+                    ..
+                } => (
+                    *mods,
+                    typarams.clone(),
+                    *restype,
+                    *recvparam,
+                    params.clone(),
+                    thrown.clone(),
+                    *body,
+                    *default_value,
+                    *sym,
+                ),
+                _ => return Ok(self.no_type(ctx)),
+            };
+        let m_flags = ctx.sym(m).flags_field;
+        let is_default_method = (m_flags & flags::DEFAULT) != 0;
+        let base_lint = {
+            let info = env.info.borrow();
+            match &info.lint {
+                Some(lint) => Rc::clone(lint),
+                None => self.chk.borrow().lint.clone(),
+            }
+        };
+        let lint = {
+            let syms_rc = Rc::clone(&self.syms);
+            let syms_borrow = syms_rc.borrow();
+            base_lint.augment(ctx, &syms_borrow, ctx.sym(m))
+        };
+        let lint_rc = Rc::new(lint);
+        let prev_lint = self.chk.borrow_mut().set_lint(Rc::clone(&lint_rc));
+        let prev_method = self.chk.borrow_mut().set_method(Some(m));
+        let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+            Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                ctx.tree(tree).pos,
+            ));
+        self.deferred_lint_handler.borrow_mut().flush(&position);
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            let syms_rc = Rc::clone(&self.syms);
+            let syms_borrow = syms_rc.borrow();
+            chk.check_deprecated_annotation(ctx, &syms_borrow, ctx.tree(tree).pos, m);
+        }
+        let local_env = {
+            let member_enter = Rc::clone(&self.member_enter);
+            member_enter.borrow_mut().method_env(ctx, tree, &env)
+        };
+        local_env.info.borrow_mut().lint = Some(Rc::clone(&lint_rc));
+        self.attrib_stats(ctx, syms, typarams.clone(), &local_env);
+        let origin = ctx.sym(m).owner.expect("method owner");
+        let origin_ty = ctx.sym(origin).ty.expect("enclosing class type");
+        if ctx.sym(m).is_static(ctx) {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            let pos = ctx.tree(tree).pos;
+            chk.check_hide_clashes(ctx, syms, pos, origin_ty, m);
+        } else {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            let pos = ctx.tree(tree).pos;
+            chk.check_override_clashes(ctx, syms, pos, origin_ty, m);
+        }
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_override_env(ctx, syms, &env, tree, m);
+        }
+        if is_default_method {
+            let overrides_object = {
+                let syms_rc = Rc::clone(&self.syms);
+                let mut syms_borrow = syms_rc.borrow_mut();
+                self.types
+                    .overrides_object_method(ctx, &mut syms_borrow, origin, m)
+            };
+            if overrides_object {
+                let kind_name = crate::code::kinds::kind_name(ctx.sym(m), ctx);
+                let info =
+                    crate::resources::compiler_properties::errors::default_overrides_object_member(
+                        ctx.sym(m).name.clone(),
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(format!(
+                            "{kind_name:?}"
+                        )),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            attr_symbol_name(ctx, m),
+                        ),
+                    );
+                self.log.borrow_mut().error_at(
+                    ctx.tree(tree).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+        }
+        let method_scope = local_env.info.borrow().scope.expect("local env scope");
+        let mut type_params = typarams.clone();
+        while type_params.non_empty() {
+            let type_param = *type_params.head();
+            type_params = type_params.tail();
+            if let Some(type_ty) = ctx.tree(type_param).ty
+                && let Some(type_sym) = ctx.typ(type_ty).tsym
+            {
+                ctx.scope_enter_if_absent(method_scope, type_sym);
+            }
+        }
+        let owner_flags = ctx.sym(origin).flags_field;
+        if (owner_flags & flags::ANNOTATION as i64) != 0 && !params.is_empty() {
+            let first = *params.head();
+            let info =
+                crate::resources::compiler_properties::errors::intf_annotation_members_cant_have_params();
+            self.log.borrow_mut().error_at(
+                ctx.tree(first).pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+        let mut param_list = params.clone();
+        while param_list.non_empty() {
+            let param = *param_list.head();
+            param_list = param_list.tail();
+            self.attrib_stat(ctx, syms, param, &local_env);
+        }
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            let syms_rc = Rc::clone(&self.syms);
+            let syms_borrow = syms_rc.borrow();
+            chk.check_varargs_method_decl(ctx, &syms_borrow, &local_env, tree);
+        }
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            let mut validate_list = typarams.clone();
+            while validate_list.non_empty() {
+                let item = *validate_list.head();
+                validate_list = validate_list.tail();
+                chk.validate(ctx, syms, &local_env, item);
+            }
+        }
+        if let Some(restype) = restype
+            && ctx
+                .tree(restype)
+                .ty
+                .map(|ty| !ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::VOID))
+                .unwrap_or(false)
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.validate(ctx, syms, &local_env, restype);
+        }
+        if let Some(recvparam) = recvparam {
+            let new_env = {
+                let member_enter = Rc::clone(&self.member_enter);
+                member_enter.borrow_mut().method_env(ctx, tree, &env)
+            };
+            self.attrib_type(ctx, syms, recvparam, &new_env);
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.validate(ctx, syms, &new_env, recvparam);
+        }
+        self.record_method_checks(ctx, tree, m, origin, mods, typarams.clone(), params.clone(), thrown.clone());
+        if (owner_flags & flags::ANNOTATION as i64) != 0 {
+            if !thrown.is_empty() {
+                let first = *thrown.head();
+                let info = crate::resources::compiler_properties::errors::throws_not_allowed_in_intf_annotation();
+                self.log.borrow_mut().error_at(
+                    ctx.tree(first).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+            if !typarams.is_empty() {
+                let first = *typarams.head();
+                let info =
+                    crate::resources::compiler_properties::errors::intf_annotation_members_cant_have_type_params();
+                self.log.borrow_mut().error_at(
+                    ctx.tree(first).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+            {
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                chk.validate_annotation_type_tree(ctx, &syms_borrow, restype);
+            }
+            {
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                chk.validate_annotation_method(ctx, syms, ctx.tree(tree).pos, m);
+            }
+        }
+        {
+            let mut thrown_list = thrown.clone();
+            while thrown_list.non_empty() {
+                let thrown_tree = *thrown_list.head();
+                thrown_list = thrown_list.tail();
+                let thrown_ty = ctx.tree(thrown_tree).ty.expect("thrown type");
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                let throwable_ty = syms_borrow.throwable_type;
+                chk.check_type(
+                    ctx,
+                    &syms_borrow,
+                    ctx.tree(thrown_tree).pos,
+                    thrown_ty,
+                    throwable_ty,
+                    self.basic_handler.as_ref(),
+                );
+            }
+        }
+        if body.is_none() {
+            if default_value.is_some() && (owner_flags & flags::ANNOTATION as i64) == 0 {
+                let info =
+                    crate::resources::compiler_properties::errors::default_allowed_in_intf_annotation_member();
+                self.log.borrow_mut().error_at(
+                    ctx.tree(tree).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+            if is_default_method
+                || (m_flags & (flags::ABSTRACT as i64 | flags::NATIVE as i64)) == 0
+            {
+                let info =
+                    crate::resources::compiler_properties::errors::missing_meth_body_or_decl_abstract();
+                self.log.borrow_mut().error_at(
+                    ctx.tree(tree).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+        } else if let Some(body) = body {
+            if (m_flags & (flags::ABSTRACT as i64 | flags::DEFAULT | flags::PRIVATE as i64))
+                == flags::ABSTRACT as i64
+            {
+                let info = if (owner_flags & flags::INTERFACE as i64) != 0 {
+                    crate::resources::compiler_properties::errors::intf_meth_cant_have_body()
+                } else {
+                    crate::resources::compiler_properties::errors::abstract_meth_cant_have_body()
+                };
+                let error_pos = if (owner_flags & flags::INTERFACE as i64) != 0 {
+                    ctx.tree(body).pos
+                } else {
+                    ctx.tree(tree).pos
+                };
+                self.log
+                    .borrow_mut()
+                    .error_at(error_pos, crate::util::jc_diagnostic::Error::from(info));
+            } else if (m_flags & flags::NATIVE as i64) != 0 {
+                let info =
+                    crate::resources::compiler_properties::errors::native_meth_cant_have_body();
+                self.log.borrow_mut().error_at(
+                    ctx.tree(tree).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+            if ctx.sym(m).name == self.names.init && ctx.sym(origin).ty != Some(self.syms.borrow().object_type) {
+                let body_stats = match &ctx.tree(body).kind {
+                    TreeKind::Block { stats, .. } => stats.clone(),
+                    _ => List::nil(),
+                };
+                let invocation_name =
+                    crate::tree::tree_info::get_constructor_invocation_name(ctx, &body_stats);
+                if body_stats.is_empty() || invocation_name.is_none() {
+                    let super_call = {
+                        let mut make = self.make.borrow_mut();
+                        let pos = ctx.tree(body).pos;
+                        make.at(pos);
+                        let ident = make.ident(ctx, self.names._super.clone());
+                        let idents = make.idents(ctx, List::nil());
+                        let apply = make.apply(ctx, List::nil(), ident, idents);
+                        make.exec(ctx, apply)
+                    };
+                    if let TreeKind::Block { stats, .. } = &mut ctx.tree_mut(body).kind {
+                        *stats = stats.clone().prepend(super_call);
+                    }
+                } else if (ctx.sym(origin).flags_field & flags::ENUM as i64) != 0
+                    && (attr_mods_flags(ctx, mods) & flags::GENERATEDCONSTR) == 0
+                    && !body_stats.is_empty()
+                    && crate::tree::tree_info::is_super_call(ctx, *body_stats.head())
+                {
+                    let first = *body_stats.head();
+                    let info =
+                        crate::resources::compiler_properties::errors::call_to_super_not_allowed_in_enum_ctor(
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                attr_symbol_name(ctx, origin),
+                            ),
+                        );
+                    self.log.borrow_mut().error_at(
+                        ctx.tree(first).pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                }
+            }
+            {
+                let annotate = self
+                    .annotate
+                    .borrow()
+                    .clone()
+                    .expect("Attr.annotate must be injected");
+                annotate.services.queue_scan_tree_and_type_annotate(
+                    body,
+                    &local_env,
+                    m,
+                    crate::util::position::NOPOS,
+                );
+                annotate.flush(ctx).expect("annotation flush");
+            }
+            self.attrib_stat(ctx, syms, body, &local_env);
+        }
+        if let Some(scope) = local_env.info.borrow().scope {
+            ctx.scope_leave(scope);
+        }
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let mut chk = chk_rc.borrow_mut();
+            chk.set_lint(prev_lint);
+            chk.set_method(prev_method);
+        }
+        Ok(ctx.sym(m).ty.expect("method type"))
+    }
+
+    /// The record accessor/canonical-constructor checks of visitMethodDef.
+    #[allow(clippy::too_many_arguments, clippy::collapsible_if)]
+    fn record_method_checks(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        m: SymbolId,
+        origin: SymbolId,
+        mods: Option<TreeId>,
+        typarams: List<TreeId>,
+        params: List<TreeId>,
+        thrown: List<TreeId>,
+    ) {
+        use crate::code::flags;
+        let _ = mods;
+        let is_record = ctx.sym(origin).is_record();
+        if !is_record || !ctx.sym(m).owner.map(|owner| ctx.sym(owner).kind == crate::code::kinds::Kind::TYP).unwrap_or(false) {
+            return;
+        }
+        let components = match &ctx.sym(origin).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol {
+                record_components, ..
+            } => record_components.clone(),
+            _ => List::nil(),
+        };
+        // user-defined accessor checks
+        let mut current = components.clone();
+        while current.non_empty() {
+            let rc = *current.head();
+            current = current.tail();
+            let accessor = match &ctx.sym(rc).kind_data {
+                crate::code::symbol::SymbolKind::RecordComponent {
+                    accessor: Some(accessor),
+                    ..
+                } => *accessor,
+                _ => continue,
+            };
+            if accessor != m {
+                continue;
+            }
+            let method_ty = ctx.sym(m).ty.expect("accessor type");
+            let component_ty = ctx.sym(rc).ty.expect("record component type");
+            let method_ret = ctx.typ(method_ty).get_return_type(ctx);
+            let same = match method_ret {
+                Some(ret) => {
+                    let syms_rc = Rc::clone(&self.syms);
+                    let syms_borrow = syms_rc.borrow();
+                    self.types.is_same_type(ctx, &syms_borrow, ret, component_ty)
+                }
+                None => false,
+            };
+            if !same {
+                let m_name = attr_symbol_name(ctx, m);
+                let rc_name = attr_symbol_name(ctx, rc);
+                self.record_error(
+                    ctx,
+                    tree,
+                    origin,
+                    crate::resources::compiler_properties::fragments::accessor_return_type_doesnt_match(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(m_name),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(rc_name),
+                    ),
+                );
+            }
+            let thrown_empty = thrown.is_empty();
+            if !thrown_empty {
+                self.record_error(
+                    ctx,
+                    tree,
+                    origin,
+                    crate::resources::compiler_properties::fragments::accessor_method_cant_throw_exception(),
+                );
+            }
+            if !typarams.is_empty() {
+                self.record_error(
+                    ctx,
+                    tree,
+                    origin,
+                    crate::resources::compiler_properties::fragments::accessor_method_must_not_be_generic(),
+                );
+            }
+            if ctx.sym(m).is_static(ctx) {
+                self.record_error(
+                    ctx,
+                    tree,
+                    origin,
+                    crate::resources::compiler_properties::fragments::accessor_method_must_not_be_static(),
+                );
+            }
+            if (ctx.sym(m).flags_field & flags::PUBLIC as i64) == 0 {
+                self.record_error(
+                    ctx,
+                    tree,
+                    origin,
+                    crate::resources::compiler_properties::fragments::method_must_be_public(),
+                );
+            }
+        }
+        if ctx.sym(m).name != self.names.init {
+            return;
+        }
+        // constructor checks
+        let canonical = (ctx.sym(m).flags_field & flags::RECORD) != 0;
+        let first_call = crate::tree::tree_info::first_constructor_call(ctx, tree);
+        if !canonical {
+            let is_this_call = first_call
+                .and_then(|app| match &ctx.tree(app).kind {
+                    TreeKind::MethodInvocation {
+                        meth: Some(meth), ..
+                    } => crate::tree::tree_info::name(ctx, *meth),
+                    _ => None,
+                })
+                .map(|name| name == self.names._this)
+                .unwrap_or(false);
+            if !is_this_call
+                || !self.check_first_constructor_stat(
+                    ctx,
+                    first_call.unwrap_or(tree),
+                    Some(tree),
+                    false,
+                )
+            {
+                let info = crate::resources::compiler_properties::errors::first_statement_must_be_call_to_another_constructor(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        attr_symbol_name(ctx, origin),
+                    ),
+                );
+                self.log.borrow_mut().error_at(
+                    ctx.tree(tree).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+        } else if (ctx.sym(m).flags_field & flags::GENERATEDCONSTR) == 0 {
+            let canonical_frag = crate::resources::compiler_properties::fragments::canonical();
+            let stronger = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                let _ = &syms_borrow;
+                crate::comp::check::Check::protection(ctx.sym(m).flags_field)
+                    > crate::comp::check::Check::protection(ctx.sym(origin).flags_field)
+            };
+            if stronger {
+                let access = ctx.sym(origin).flags_field & flags::AccessFlags as i64;
+                let access_text = if access == 0 {
+                    String::from("package")
+                } else {
+                    format!("{:?}", flags::as_flag_set(access))
+                };
+                let access_frag = crate::resources::compiler_properties::fragments::canonical_must_not_have_stronger_access(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(access_text),
+                );
+                self.record_canonical_error(
+                    ctx,
+                    tree,
+                    canonical_frag.clone(),
+                    origin,
+                    access_frag,
+                );
+            }
+            if let Some(app) = first_call
+                && let TreeKind::MethodInvocation {
+                    meth: Some(meth), ..
+                } = &ctx.tree(app).kind
+                && let Some(name) = crate::tree::tree_info::name(ctx, *meth)
+                && (name == self.names._this || name == self.names._super)
+                && self.check_first_constructor_stat(ctx, app, Some(tree), false)
+            {
+                self.record_canonical_error(
+                    ctx,
+                    tree,
+                    canonical_frag.clone(),
+                    origin,
+                    crate::resources::compiler_properties::fragments::canonical_must_not_contain_explicit_constructor_invocation(),
+                );
+            }
+            if !typarams.is_empty() {
+                self.record_canonical_error(
+                    ctx,
+                    tree,
+                    canonical_frag.clone(),
+                    origin,
+                    crate::resources::compiler_properties::fragments::canonical_must_not_declare_type_variables(),
+                );
+            }
+            let record_fields = crate::tree::tree_info::record_fields(ctx, env_of(self).encl_class.unwrap_or(tree));
+            let mut field_types: Vec<TypeId> = Vec::new();
+            let mut l = record_fields;
+            while l.non_empty() {
+                let field = *l.head();
+                l = l.tail();
+                if let Some(sym) = match &ctx.tree(field).kind {
+                    TreeKind::VariableDecl { sym, .. } => *sym,
+                    _ => None,
+                } && let Some(ty) = ctx.sym(sym).ty
+                {
+                    field_types.push(ty);
+                }
+            }
+            let mut index = 0usize;
+            let mut param_iter = params.clone();
+            while param_iter.non_empty() {
+                let param = *param_iter.head();
+                param_iter = param_iter.tail();
+                let param_ty = match &ctx.tree(param).kind {
+                    TreeKind::VariableDecl {
+                        vartype: Some(vartype),
+                        ..
+                    } => ctx.tree(*vartype).ty,
+                    _ => None,
+                };
+                let matches = match (param_ty, field_types.get(index)) {
+                    (Some(param_ty), Some(field_ty)) => {
+                        let syms_rc = Rc::clone(&self.syms);
+                        let syms_borrow = syms_rc.borrow();
+                        self.types
+                            .is_same_type(ctx, &syms_borrow, param_ty, *field_ty)
+                    }
+                    _ => false,
+                };
+                if !matches {
+                    self.record_canonical_error(
+                        ctx,
+                        tree,
+                        canonical_frag.clone(),
+                        origin,
+                        crate::resources::compiler_properties::fragments::type_must_be_identical_to_corresponding_record_component_type(),
+                    );
+                }
+                index += 1;
+            }
+            let record_component_names = {
+                let mut names: Vec<Name> = Vec::new();
+                let mut components = components;
+                while components.non_empty() {
+                    let rc = *components.head();
+                    components = components.tail();
+                    names.push(ctx.sym(rc).name.clone());
+                }
+                names
+            };
+            let init_param_names = {
+                let mut names: Vec<Name> = Vec::new();
+                let mut p = params.clone();
+                while p.non_empty() {
+                    let param = *p.head();
+                    p = p.tail();
+                    let param_sym = match &ctx.tree(param).kind {
+                        TreeKind::VariableDecl { sym, .. } => *sym,
+                        _ => None,
+                    };
+                    names.push(match param_sym {
+                        Some(param_sym) => ctx.sym(param_sym).name.clone(),
+                        None => self.names.empty.clone(),
+                    });
+                }
+                names
+            };
+            if init_param_names != record_component_names {
+                self.record_canonical_error(
+                    ctx,
+                    tree,
+                    canonical_frag.clone(),
+                    origin,
+                    crate::resources::compiler_properties::fragments::canonical_with_name_mismatch(),
+                );
+            }
+            let method_ty = ctx.sym(m).ty.expect("canonical constructor type");
+            let thrown_types = ctx.typ(method_ty).get_thrown_types(ctx);
+            if !thrown_types.is_empty() {
+                let frag = if crate::tree::tree_info::is_compact_constructor(ctx, tree) {
+                    crate::resources::compiler_properties::fragments::compact()
+                } else {
+                    canonical_frag.clone()
+                };
+                let frag_key = frag.info().key().to_string();
+                self.record_canonical_error(
+                    ctx,
+                    tree,
+                    frag,
+                    origin,
+                    crate::resources::compiler_properties::fragments::throws_clause_not_allowed_for_canonical_constructor(
+                        crate::resources::diagnostic_contract::DiagnosticArg::from_display(frag_key),
+                    ),
+                );
+            }
+        }
+    }
+
+    /// Report an invalid accessor method in a record.
+    fn record_error(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        origin: SymbolId,
+        fragment: crate::resources::diagnostic_contract::FragmentInfo,
+    ) {
+        let info = crate::resources::compiler_properties::errors::invalid_accessor_method_in_record(
+            crate::resources::diagnostic_contract::SymbolArg::placeholder(attr_symbol_name(
+                ctx, origin,
+            )),
+            crate::resources::diagnostic_contract::DiagnosticArg::from_display(fragment.info().key()),
+        );
+        self.log.borrow_mut().error_at(
+            ctx.tree(tree).pos,
+            crate::util::jc_diagnostic::Error::from(info),
+        );
+    }
+
+    /// Report an invalid canonical constructor in a record.
+    fn record_canonical_error(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        frag: crate::resources::diagnostic_contract::FragmentInfo,
+        origin: SymbolId,
+        detail: crate::resources::diagnostic_contract::FragmentInfo,
+    ) {
+        let info = crate::resources::compiler_properties::errors::invalid_canonical_constructor_in_record(
+            crate::resources::diagnostic_contract::DiagnosticArg::from_display(frag.info().key()),
+            ctx.sym(origin).name.clone(),
+            crate::resources::diagnostic_contract::DiagnosticArg::from_display(detail.info().key()),
+        );
+        self.log.borrow_mut().error_at(
+            ctx.tree(tree).pos,
+            crate::util::jc_diagnostic::Error::from(info),
+        );
+    }
+}
+
+/// Return the flags of a modifiers tree.
+fn attr_mods_flags(ctx: &CompilerContext, mods: Option<TreeId>) -> i64 {
+    match mods.map(|mods| &ctx.tree(mods).kind) {
+        Some(TreeKind::Modifiers { flags, .. }) => *flags,
+        _ => 0,
+    }
+}
+
+/// Return a printable symbol name for diagnostics.
+fn attr_symbol_name(ctx: &mut CompilerContext, sym: SymbolId) -> String {
+    ctx.sym(sym)
+        .name
+        .to_java_string()
+        .to_string_lossy()
+        .to_string()
+}
+
+/// Return the environment of the current attribution.
+fn env_of(attr: &Attr) -> &Rc<Env<AttrContext>> {
+    attr.env.as_ref().expect("Attr.env")
+}
+
+impl Attr {
+    /// Attribute a variable declaration in a class body (the class-body
+    /// visitor).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the variable declaration tree.
+    ///
+    /// # Returns
+    ///   - the variable type.
+    ///
+    /// # Panics
+    ///   - a variable declaration invariant is violated.
+    pub fn visit_var_def_result(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        use crate::code::flags;
+        let env = self.env.clone().expect("Attr.env (visitVarDef)");
+        let (mods, name, vartype, init, sym_opt, declared_using_var, start_pos) =
+            match &ctx.tree(tree).kind {
+                TreeKind::VariableDecl {
+                    mods,
+                    name,
+                    vartype,
+                    init,
+                    sym,
+                    declared_using_var,
+                    start_pos,
+                    ..
+                } => (
+                    *mods,
+                    name.clone(),
+                    *vartype,
+                    *init,
+                    *sym,
+                    *declared_using_var,
+                    *start_pos,
+                ),
+                _ => return Ok(self.no_type(ctx)),
+            };
+        let scope = env.info.borrow().scope;
+        let scope_owner_kind = scope
+            .and_then(|scope| ctx.scope(scope).owner)
+            .map(|owner| ctx.sym(owner).kind);
+        let in_method_or_var = matches!(
+            scope_owner_kind,
+            Some(crate::code::kinds::Kind::MTH) | Some(crate::code::kinds::Kind::VAR)
+        );
+        if in_method_or_var {
+            if let Some(sym) = sym_opt {
+                if let Some(scope) = scope {
+                    ctx.scope_enter(scope, sym);
+                }
+            } else {
+                if declared_using_var
+                    && (attr_mods_flags(ctx, mods) & flags::PARAMETER) == 0
+                {
+                    let bad_fragment = if init.is_none() {
+                        Some(crate::resources::compiler_properties::fragments::local_missing_init())
+                    } else {
+                        self.can_infer_local_var_type(ctx, tree)
+                    };
+                    if let Some(fragment) = bad_fragment {
+                        let info = crate::resources::compiler_properties::errors::cant_infer_local_var_type(
+                            name.clone(),
+                            crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                                fragment.info().key(),
+                            ),
+                        );
+                        self.log.borrow_mut().error_at(
+                            ctx.tree(tree).pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
+                        let erroneous = {
+                            let mut make = self.make.borrow_mut();
+                            make.at(ctx.tree(tree).pos);
+                            make.erroneous_empty(ctx)
+                        };
+                        if let TreeKind::VariableDecl { vartype, .. } =
+                            &mut ctx.tree_mut(tree).kind
+                        {
+                            *vartype = Some(erroneous);
+                        }
+                    }
+                }
+                {
+                    let annotate = self
+                        .annotate
+                        .borrow()
+                        .clone()
+                        .expect("Attr.annotate must be injected");
+                    annotate.block_annotations();
+                }
+                {
+                    let member_enter = Rc::clone(&self.member_enter);
+                    member_enter
+                        .borrow_mut()
+                        .member_enter(ctx, syms, tree, &env);
+                }
+                {
+                    let annotate = self
+                        .annotate
+                        .borrow()
+                        .clone()
+                        .expect("Attr.annotate must be injected");
+                    annotate
+                        .unblock_annotations(ctx)
+                        .expect("unblockAnnotations flush");
+                }
+            }
+        } else if let Some(init) = init
+            && (attr_mods_flags(ctx, mods) & flags::FIELD_INIT_TYPE_ANNOTATIONS_QUEUED) == 0
+        {
+            if let Some(mods) = mods
+                && let TreeKind::Modifiers { flags, .. } = &mut ctx.tree_mut(mods).kind
+            {
+                *flags |= crate::code::flags::FIELD_INIT_TYPE_ANNOTATIONS_QUEUED;
+            }
+            if let Some(sym) = sym_opt {
+                let annotate = self
+                    .annotate
+                    .borrow()
+                    .clone()
+                    .expect("Attr.annotate must be injected");
+                annotate.services.queue_scan_tree_and_type_annotate(
+                    init,
+                    &env,
+                    sym,
+                    ctx.tree(tree).pos,
+                );
+                annotate.flush(ctx).expect("annotation flush");
+            }
+        }
+        let v = sym_opt.expect("var symbol");
+        let v_ty = ctx.sym(v).ty.expect("var type");
+        let base_lint = {
+            let info = env.info.borrow();
+            match &info.lint {
+                Some(lint) => Rc::clone(lint),
+                None => self.chk.borrow().lint.clone(),
+            }
+        };
+        let lint = {
+            let syms_rc = Rc::clone(&self.syms);
+            let syms_borrow = syms_rc.borrow();
+            base_lint.augment(ctx, &syms_borrow, ctx.sym(v))
+        };
+        let lint_rc = Rc::new(lint);
+        let prev_lint = self.chk.borrow_mut().set_lint(Rc::clone(&lint_rc));
+        let is_implicit_lambda_param = env.tree.map(|env_tree| {
+            matches!(
+                &ctx.tree(env_tree).kind,
+                TreeKind::Lambda {
+                    param_kind: crate::tree::jc_tree::ParameterKind::IMPLICIT,
+                    ..
+                }
+            )
+        }).unwrap_or(false)
+            && (ctx.sym(v).flags_field & flags::PARAMETER) != 0;
+        let check_raw = !is_implicit_lambda_param && !declared_using_var;
+        if let Some(vartype) = vartype {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.validate_with(ctx, syms, &env, vartype, check_raw);
+        }
+        let _ = ctx.sym(v).get_const_value();
+        let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+            Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                ctx.tree(tree).pos,
+            ));
+        self.deferred_lint_handler.borrow_mut().flush(&position);
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            let syms_rc = Rc::clone(&self.syms);
+            let syms_borrow = syms_rc.borrow();
+            chk.check_deprecated_annotation(ctx, &syms_borrow, ctx.tree(tree).pos, v);
+        }
+        if let Some(init) = init
+            && ((ctx.sym(v).flags_field & flags::FINAL as i64) == 0
+                || !{
+                    let member_enter = Rc::clone(&self.member_enter);
+                    member_enter
+                        .borrow()
+                        .needs_lazy_const_value(ctx, init)
+                })
+        {
+            let init_env = {
+                let member_enter = Rc::clone(&self.member_enter);
+                member_enter.borrow_mut().init_env(ctx, tree, &env)
+            };
+            init_env.info.borrow_mut().lint = Some(Rc::clone(&lint_rc));
+            init_env.info.borrow_mut().encl_var = Some(v);
+            self.attrib_expr_with_type(ctx, syms, init, &init_env, Some(v_ty));
+            if declared_using_var {
+                let init_ty = ctx.tree(init).ty.unwrap_or(v_ty);
+                let inferred = {
+                    let syms_rc = Rc::clone(&self.syms);
+                    let syms_borrow = syms_rc.borrow();
+                    self.chk.borrow().check_local_var_type(
+                        ctx,
+                        &syms_borrow,
+                        start_pos,
+                        init_ty,
+                        name.clone(),
+                    )
+                };
+                ctx.sym_mut(v).ty = Some(inferred);
+            }
+        }
+        if declared_using_var {
+            let inferred = ctx.sym(v).ty.expect("inferred var type");
+            let syms_rc = Rc::clone(&self.syms);
+            let syms_borrow = syms_rc.borrow();
+            self.set_synthetic_variable_type(ctx, &syms_borrow, tree, inferred);
+        }
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let mut chk = chk_rc.borrow_mut();
+            chk.set_lint(prev_lint);
+        }
+        let owner = ctx.sym(v).owner;
+        if let Some(owner) = owner
+            && ctx.sym(owner).kind == crate::code::kinds::Kind::TYP
+            && ctx.sym(owner).is_record()
+            && !ctx.sym(v).is_static(ctx)
+            && self.is_non_args_method_in_object(ctx, &name)
+        {
+            let info = crate::resources::compiler_properties::errors::illegal_record_component_name(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(attr_symbol_name(
+                    ctx, v,
+                )),
+            );
+            self.log.borrow_mut().error_at(
+                ctx.tree(tree).pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+        Ok(ctx.sym(v).ty.expect("var type"))
+    }
+
+
+    /// Return whether the name is a no-argument method of Object.
+    fn is_non_args_method_in_object(&self, ctx: &mut CompilerContext, name: &Name) -> bool {
+        let object_type = {
+            let syms_rc = Rc::clone(&self.syms);
+            let syms_borrow = syms_rc.borrow();
+            syms_borrow.object_type
+        };
+        let Some(object_tsym) = ctx.typ(object_type).tsym else {
+            return false;
+        };
+        let Some(members) = ctx.sym(object_tsym).members() else {
+            return false;
+        };
+        let symbols = ctx.scope_get_symbols_by_name(
+            members,
+            name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        symbols.into_iter().any(|sym| {
+            ctx.sym(sym).kind == crate::code::kinds::Kind::MTH
+                && ctx
+                    .sym(sym)
+                    .ty
+                    .map(|ty| ctx.typ(ty).get_parameter_types(ctx).is_empty())
+                    .unwrap_or(false)
+        })
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -14733,4 +15716,6 @@ class Sample {
     }
 
 }
+
+
 
