@@ -148,6 +148,46 @@ pub fn externalize(buf: &[u8], offset: i32, len: i32) -> Vec<u8> {
 // TODO(P0+): internalize(Name) / externalize(Name) overloads are added together with
 // the Name port (they are trivial wrappers around the byte[] versions above).
 
+
+/// Java: public static byte[] internalize(Name name) (ClassFile.java:164-166).
+///
+/// # Arguments
+///   - name: the external name.
+///
+/// # Returns
+///   - the internal name bytes.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: ClassFile.java:164-166.
+pub fn internalize_name(name: &crate::util::name::Name) -> Vec<u8> {
+    internalize(
+        name.get_byte_array(),
+        name.get_byte_offset(),
+        name.get_byte_length(),
+    )
+}
+
+/// Java: public static byte[] externalize(Name name) (ClassFile.java:190-192).
+///
+/// # Arguments
+///   - name: the internal name.
+///
+/// # Returns
+///   - the external name bytes.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: ClassFile.java:190-192.
+pub fn externalize_name(name: &crate::util::name::Name) -> Vec<u8> {
+    externalize(
+        name.get_byte_array(),
+        name.get_byte_offset(),
+        name.get_byte_length(),
+    )
+}
 #[cfg(test)]
 mod tests {
     use super::*;

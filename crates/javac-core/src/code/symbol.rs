@@ -2570,6 +2570,141 @@ impl Symbol {
         }
     }
 }
+
+/// Java: public enum OperatorSymbol.AccessCode (Symbol.java:2462-2532).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub enum AccessCode {
+    /// UNKNOWN(-1, Tag.NO_TAG)
+    UNKNOWN,
+    /// DEREF(0, Tag.NO_TAG)
+    DEREF,
+    /// ASSIGN(2, Tag.ASSIGN)
+    ASSIGN,
+    /// PREINC(4, Tag.PREINC)
+    PREINC,
+    /// PREDEC(6, Tag.PREDEC)
+    PREDEC,
+    /// POSTINC(8, Tag.POSTINC)
+    POSTINC,
+    /// POSTDEC(10, Tag.POSTDEC)
+    POSTDEC,
+    /// FIRSTASGOP(12, Tag.NO_TAG)
+    FIRSTASGOP,
+}
+
+impl AccessCode {
+    /// Java: public final int code (Symbol.java:2472).
+    pub fn code(self) -> i32 {
+        match self {
+            AccessCode::UNKNOWN => -1,
+            AccessCode::DEREF => 0,
+            AccessCode::ASSIGN => 2,
+            AccessCode::PREINC => 4,
+            AccessCode::PREDEC => 6,
+            AccessCode::POSTINC => 8,
+            AccessCode::POSTDEC => 10,
+            AccessCode::FIRSTASGOP => 12,
+        }
+    }
+
+    /// Java: public final Tag tag (Symbol.java:2473).
+    pub fn tag(self) -> crate::tree::jc_tree::Tag {
+        match self {
+            AccessCode::UNKNOWN | AccessCode::DEREF | AccessCode::FIRSTASGOP => {
+                crate::tree::jc_tree::Tag::NO_TAG
+            }
+            AccessCode::ASSIGN => crate::tree::jc_tree::Tag::ASSIGN,
+            AccessCode::PREINC => crate::tree::jc_tree::Tag::PREINC,
+            AccessCode::PREDEC => crate::tree::jc_tree::Tag::PREDEC,
+            AccessCode::POSTINC => crate::tree::jc_tree::Tag::POSTINC,
+            AccessCode::POSTDEC => crate::tree::jc_tree::Tag::POSTDEC,
+        }
+    }
+
+    /// Java: public static final int numberOfAccessCodes (Symbol.java:2474).
+    pub fn number_of_access_codes() -> i32 {
+        (crate::jvm::byte_codes::LUSHRL - crate::jvm::byte_codes::ISHLL
+            + crate::jvm::byte_codes::LXOR
+            + 2
+            - crate::jvm::byte_codes::IADD)
+            * 2
+            + AccessCode::FIRSTASGOP.code()
+            + 2
+    }
+
+    /// Java: public static AccessCode getFromCode(int code)
+    /// (Symbol.java:2482-2489).
+    pub fn get_from_code(code: i32) -> AccessCode {
+        for a_code in [
+            AccessCode::UNKNOWN,
+            AccessCode::DEREF,
+            AccessCode::ASSIGN,
+            AccessCode::PREINC,
+            AccessCode::PREDEC,
+            AccessCode::POSTINC,
+            AccessCode::POSTDEC,
+            AccessCode::FIRSTASGOP,
+        ] {
+            if a_code.code() == code {
+                return a_code;
+            }
+        }
+        AccessCode::UNKNOWN
+    }
+
+    /// Java: static int from(Tag tag, int opcode) (Symbol.java:2491-2513).
+    pub fn from(tag: crate::tree::jc_tree::Tag, opcode: i32) -> i32 {
+        match tag {
+            crate::tree::jc_tree::Tag::PREINC => return AccessCode::PREINC.code(),
+            crate::tree::jc_tree::Tag::PREDEC => return AccessCode::PREDEC.code(),
+            crate::tree::jc_tree::Tag::POSTINC => return AccessCode::POSTINC.code(),
+            crate::tree::jc_tree::Tag::POSTDEC => return AccessCode::POSTDEC.code(),
+            _ => {}
+        }
+        use crate::jvm::byte_codes::{IADD, ISHLL, LUSHRL, LXOR, STRING_ADD};
+        if (IADD..=LXOR).contains(&opcode) {
+            return (opcode - IADD) * 2 + AccessCode::FIRSTASGOP.code();
+        } else if opcode == STRING_ADD {
+            return (LXOR + 1 - IADD) * 2 + AccessCode::FIRSTASGOP.code();
+        } else if (ISHLL..=LUSHRL).contains(&opcode) {
+            return (opcode - ISHLL + LXOR + 2 - IADD) * 2 + AccessCode::FIRSTASGOP.code();
+        }
+        -1
+    }
+}
+
+impl Symbol {
+    /// Java: public int getAccessCode(Tag tag) (Symbol.java:2442-2449).
+    ///
+    /// # Arguments
+    ///   - tag: the operator tree tag.
+    ///
+    /// # Returns
+    ///   - the cached/derived operator access code.
+    ///
+    /// # Panics
+    ///   - the symbol must be an OperatorSymbol.
+    ///
+    /// Upstream: Symbol.java:2442-2449.
+    pub fn get_access_code(&mut self, tag: crate::tree::jc_tree::Tag) -> i32 {
+        let (opcode, access_code) = match &self.kind_data {
+            SymbolKind::OperatorSymbol {
+                opcode,
+                access_code,
+            } => (*opcode, *access_code),
+            _ => panic!("AssertionError: not an OperatorSymbol"),
+        };
+        if access_code != i32::MIN && !tag.is_inc_or_dec_unary_op() {
+            return access_code;
+        }
+        let new_code = AccessCode::from(tag, opcode);
+        if let SymbolKind::OperatorSymbol { access_code, .. } = &mut self.kind_data {
+            *access_code = new_code;
+        }
+        new_code
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
