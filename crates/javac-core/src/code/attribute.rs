@@ -350,14 +350,14 @@ impl Attribute {
     }
 }
 
-/// Java: Type.toString()/Symbol.toString() — the display layers are not ported
-/// yet (Types/Symbol printing); explicit unimplemented helpers.
-fn type_display(_ctx: &CompilerContext, _ty: TypeId) -> String {
-    unimplemented!("TODO(Types/Symbol printing batch): Type.toString")
+/// Java: Type.toString() (the display layer, code/type_.rs type_to_string).
+fn type_display(ctx: &CompilerContext, ty: TypeId) -> String {
+    crate::code::type_::type_to_string(ctx, ty)
 }
 
-fn symbol_display(_ctx: &CompilerContext, _symbol: SymbolId) -> String {
-    unimplemented!("TODO(Symbol printing batch): Symbol.toString")
+/// Java: Symbol.toString() (the display layer, code/symbol.rs symbol_to_string).
+fn symbol_display(ctx: &CompilerContext, symbol: SymbolId) -> String {
+    crate::code::symbol::symbol_to_string(ctx, symbol)
 }
 
 /// The node-specific fields of the Attribute subclasses.

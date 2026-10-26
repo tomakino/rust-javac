@@ -3218,6 +3218,165 @@ pub fn symbol_pool_key(
         _ => crate::jvm::pool_constant::PoolKey::Symbol(sym),
     }
 }
+
+// ----------------------------------------------------------------------
+// Java: Symbol.toString() and the subclass overrides (the display layer).
+// ----------------------------------------------------------------------
+
+/// Java: Symbol.toString() and subclass overrides.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - sym: the symbol to display.
+///
+/// # Returns
+///   - the symbol display string (Symbol/ClassSymbol/MethodSymbol/VarSymbol/
+///     PackageSymbol/ModuleSymbol toString rules).
+///
+/// # Panics
+///   - a method symbol has no owner (upstream invariant).
+pub fn symbol_to_string(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> String {
+    let symbol = ctx.sym(sym);
+    match &symbol.kind_data {
+        SymbolKind::ClassSymbol { fullname, flatname, .. } => {
+            if symbol.name.is_empty() {
+                // Java: ClassSymbol.className (Symbol.java:1360-1366):
+                // Log.getLocalizedString("anonymous.class", flatname).
+                let messages = crate::util::javac_messages::JavacMessages::new(
+                    crate::util::javac_messages::DEFAULT_BUNDLE_NAME,
+                );
+                messages.get_localized_string(
+                    "compiler.misc.anonymous.class",
+                    &[flatname.to_java_string().to_string_lossy().to_string()],
+                )
+            } else {
+                fullname.to_java_string().to_string_lossy().to_string()
+            }
+        }
+        SymbolKind::PackageSymbol { fullname, .. }
+        | SymbolKind::RootPackageSymbol { fullname, .. } => {
+            // Java: PackageSymbol.toString (Symbol.java:1161-1163).
+            fullname.to_java_string().to_string_lossy().to_string()
+        }
+        SymbolKind::ModuleSymbol { .. } => {
+            // Java: ModuleSymbol.toString (Symbol.java:1064-1071): null name is
+            // "<unknown>", empty is "<unnamed>". The port has no null Name.
+            if symbol.name.is_empty() {
+                String::from("<unnamed>")
+            } else {
+                symbol.name.to_java_string().to_string_lossy().to_string()
+            }
+        }
+        SymbolKind::MethodSymbol { .. } | SymbolKind::DynamicMethodSymbol { .. } => {
+            method_symbol_to_string(ctx, sym)
+        }
+        _ => symbol.name.to_java_string().to_string_lossy().to_string(),
+    }
+}
+
+/// Java: MethodSymbol.toString (Symbol.java:1952-1966).
+fn method_symbol_to_string(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> String {
+    let method = ctx.sym(sym);
+    let flags = method.flags_field;
+    if (flags & i64::from(crate::code::flags::BLOCK)) != 0 {
+        return method
+            .owner
+            .map(|owner| {
+                ctx.sym(owner)
+                    .name
+                    .to_java_string()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .expect("method owner");
+    }
+    let mut result = if method.name.content_equals(&javac_strings::JavaString::from("<init>")) {
+        method
+            .owner
+            .map(|owner| {
+                ctx.sym(owner)
+                    .name
+                    .to_java_string()
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .expect("method owner")
+    } else {
+        method.name.to_java_string().to_string_lossy().to_string()
+    };
+    if let Some(method_ty) = method.ty {
+        // Java: if (type.hasTag(FORALL)) s = "<" + getTypeArguments() + ">" + s.
+        if ctx.typ(method_ty).has_tag(crate::code::type_tag::TypeTag::FORALL) {
+            if let crate::code::type_::TypeKindData::ForAll { tvars, .. } =
+                &ctx.typ(method_ty).kind
+            {
+                result = format!(
+                    "<{}>{}",
+                    crate::code::type_::type_list_to_string(ctx, tvars),
+                    result
+                );
+            }
+        }
+        if let Some((params, varargs)) = method_type_params(ctx, method_ty) {
+            result.push('(');
+            result.push_str(&argtypes_to_string(ctx, &params, varargs));
+            result.push(')');
+        }
+    }
+    result
+}
+
+fn method_type_params(
+    ctx: &crate::compiler_context::CompilerContext,
+    ty: crate::ids::TypeId,
+) -> Option<(crate::util::list::List<crate::ids::TypeId>, bool)> {
+    match &ctx.typ(ty).kind {
+        crate::code::type_::TypeKindData::MethodType { argtypes, .. } => {
+            Some((argtypes.clone(), false))
+        }
+        crate::code::type_::TypeKindData::ForAll { qtype: Some(qtype), .. } => {
+            method_type_params(ctx, *qtype)
+        }
+        _ => None,
+    }
+}
+
+fn argtypes_to_string(
+    ctx: &crate::compiler_context::CompilerContext,
+    params: &crate::util::list::List<crate::ids::TypeId>,
+    varargs: bool,
+) -> String {
+    if !varargs {
+        return crate::code::type_::type_list_to_string(ctx, params);
+    }
+    let mut result = String::new();
+    let mut current = params.clone();
+    while current.tail().non_empty() {
+        result.push_str(&crate::code::type_::type_to_string(ctx, *current.head()));
+        result.push(',');
+        current = current.tail();
+    }
+    if current.non_empty() {
+        let last = *current.head();
+        if ctx.typ(last).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
+            if let crate::code::type_::TypeKindData::ArrayType { elemtype: Some(elemtype), .. } =
+                &ctx.typ(last).kind
+            {
+                result.push_str(&crate::code::type_::type_to_string(ctx, elemtype.clone()));
+            }
+            result.push_str("...");
+        } else {
+            result.push_str(&crate::code::type_::type_to_string(ctx, last.clone()));
+        }
+    }
+    result
+}
 #[cfg(test)]
 mod tests {
     use super::*;

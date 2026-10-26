@@ -597,7 +597,7 @@ impl Types {
             TypeKindData::JCPrimitiveType
             | TypeKindData::JCVoidType
             | TypeKindData::BottomType
-            | TypeKindData::JCNoType
+            | TypeKindData::JCNoType { .. }
             | TypeKindData::TypeVar { .. }
             | TypeKindData::CapturedType { .. }
             | TypeKindData::UnknownType
@@ -1455,7 +1455,7 @@ impl Types {
         }
         if matches!(&ctx.typ(t).kind, TypeKindData::WildcardType { .. }) {
             let (type_, kind, bound) = match &ctx.typ(t).kind {
-                TypeKindData::WildcardType { type_, kind, bound } => (*type_, *kind, *bound),
+                TypeKindData::WildcardType { type_, kind, bound, .. } => (*type_, *kind, *bound),
                 _ => unreachable!(),
             };
             let Some(type_) = type_ else {
@@ -2577,7 +2577,7 @@ impl Types {
             TypeKindData::JCPrimitiveType
             | TypeKindData::JCVoidType
             | TypeKindData::BottomType
-            | TypeKindData::JCNoType
+            | TypeKindData::JCNoType { .. }
             | TypeKindData::UnknownType => match ctx.typ(t).get_tag() {
                 TypeTag::BYTE => {
                     !ctx.typ(s).has_tag(TypeTag::CHAR)
@@ -3364,7 +3364,7 @@ impl Types {
             TypeKindData::JCPrimitiveType
             | TypeKindData::JCVoidType
             | TypeKindData::BottomType
-            | TypeKindData::JCNoType
+            | TypeKindData::JCNoType { .. }
             | TypeKindData::UnknownType => {
                 if ctx.typ(s).has_tag(TypeTag::ERROR) || ctx.typ(t).has_tag(TypeTag::NONE) {
                     return true;
@@ -4031,7 +4031,12 @@ fn new_wildcard_type(
     ctx.alloc_type(Type::new(
         TypeTag::WILDCARD,
         tsym,
-        TypeKindData::WildcardType { type_, kind, bound },
+        TypeKindData::WildcardType {
+            type_,
+            kind,
+            bound,
+            is_printing_bound: std::cell::Cell::new(false),
+        },
     ))
 }
 
@@ -4477,7 +4482,7 @@ impl Types {
         ctx.alloc_type(Type::new(
             crate::code::type_tag::TypeTag::NONE,
             None,
-            TypeKindData::JCNoType,
+            TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base },
         ))
     }
 }
@@ -4815,8 +4820,7 @@ impl Types {
                     TypeKindData::WildcardType {
                         type_: Some(syms.object_type),
                         kind: crate::code::bound_kind::BoundKind::UNBOUND,
-                        bound: None,
-                    },
+                        bound: None, is_printing_bound: std::cell::Cell::new(false), },
                 ));
                 changed = true;
             } else if s != *orig {
@@ -4827,8 +4831,7 @@ impl Types {
                     TypeKindData::WildcardType {
                         type_: Some(upper),
                         kind: crate::code::bound_kind::BoundKind::EXTENDS,
-                        bound: None,
-                    },
+                        bound: None, is_printing_bound: std::cell::Cell::new(false), },
                 ));
                 changed = true;
             }
@@ -5283,8 +5286,7 @@ impl Types {
                         TypeKindData::WildcardType {
                             type_: Some(syms.object_type),
                             kind: crate::code::bound_kind::BoundKind::UNBOUND,
-                            bound: Some(*open),
-                        },
+                            bound: Some(*open), is_printing_bound: std::cell::Cell::new(false), },
                     ));
                     wildcards = wildcards.append(wildcard);
                 }
@@ -5382,8 +5384,7 @@ impl Types {
                     TypeKindData::WildcardType {
                         type_: Some(type_),
                         bound,
-                        kind,
-                    } => (*type_, *bound, *kind),
+                        kind, .. } => (*type_, *bound, *kind),
                     _ => return t,
                 };
                 let bound2 = self.rewrite_quantifiers(ctx, syms, bound, high, rewrite_type_vars);
@@ -5479,8 +5480,7 @@ impl Types {
             TypeKindData::WildcardType {
                 type_: Some(bound),
                 kind,
-                bound: formal,
-            },
+                bound: formal, is_printing_bound: std::cell::Cell::new(false), },
         ))
     }
 
@@ -5507,8 +5507,7 @@ impl Types {
             TypeKindData::WildcardType {
                 type_: Some(type_),
                 kind,
-                bound: formal,
-            },
+                bound: formal, is_printing_bound: std::cell::Cell::new(false), },
         ))
     }
 
@@ -6325,7 +6324,7 @@ impl Types {
                     new_array_type(ctx, elemtype1, tsym_opt)
                 }
             }
-            TypeKindData::WildcardType { type_, kind, bound } => {
+            TypeKindData::WildcardType { type_, kind, bound, .. } => {
                 let Some(type_) = *type_ else {
                     return t;
                 };
@@ -6662,8 +6661,7 @@ impl Types {
                         TypeKindData::WildcardType {
                             type_: Some(lub),
                             kind: crate::code::bound_kind::BoundKind::EXTENDS,
-                            bound: None,
-                        },
+                            bound: None, is_printing_bound: std::cell::Cell::new(false), },
                     ))
                 } else {
                     ctx.alloc_type(crate::code::type_::Type::new(
@@ -6672,8 +6670,7 @@ impl Types {
                         TypeKindData::WildcardType {
                             type_: Some(syms.object_type),
                             kind: crate::code::bound_kind::BoundKind::UNBOUND,
-                            bound: None,
-                        },
+                            bound: None, is_printing_bound: std::cell::Cell::new(false), },
                     ))
                 }
             };

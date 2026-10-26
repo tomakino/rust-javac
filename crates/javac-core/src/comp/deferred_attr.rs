@@ -1145,6 +1145,7 @@ impl DeferredTypeMap {
                 type_,
                 kind,
                 bound,
+                ..
             } => {
                 let Some(type_) = *type_ else {
                     return t;
@@ -1160,8 +1161,7 @@ impl DeferredTypeMap {
                         TypeKindData::WildcardType {
                             type_: Some(type1),
                             kind: *kind,
-                            bound: *bound,
-                        },
+                            bound: *bound, is_printing_bound: std::cell::Cell::new(false), },
                     ))
                 }
             }

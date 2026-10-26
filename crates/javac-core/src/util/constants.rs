@@ -237,7 +237,7 @@ mod tests {
     use crate::util::java_string::JavaString;
 
     fn ty(tag: TypeTag) -> Type {
-        Type::new(tag, None, crate::code::type_::TypeKindData::JCNoType)
+        Type::new(tag, None, crate::code::type_::TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base })
     }
 
     #[test]

@@ -582,7 +582,7 @@ pub(crate) fn new_error_type_for_class(ctx: &mut CompilerContext, tsym: SymbolId
 }
 
 pub(crate) fn no_type_id(ctx: &mut CompilerContext) -> TypeId {
-    ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType))
+    ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::NoType }))
 }
 
 /// Java: public ClassSymbol enterClass(ModuleSymbol msym, Name name,
@@ -1056,8 +1056,16 @@ impl Symtab {
         let unknown_type = ctx.alloc_type(Type::new(TypeTag::UNKNOWN, None, TypeKindData::UnknownType));
         // Java: Type.stuckType / Type.recoveryType (Type.java:108-120): both are
         // JCNoType instances; their toString differs upstream (debug only).
-        let stuck_type = ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType));
-        let recovery_type = ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType));
+        let stuck_type = ctx.alloc_type(Type::new(
+            TypeTag::NONE,
+            None,
+            TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Stuck },
+        ));
+        let recovery_type = ctx.alloc_type(Type::new(
+            TypeTag::NONE,
+            None,
+            TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Recovery },
+        ));
 
         // TODO(MissingInfoHandler): MissingInfoHandler.instance(context) is
         // not ported; the root package is created without it.
@@ -2049,7 +2057,7 @@ mod tests {
         symtab.remove_class(symtab.java_base, &flat);
         assert_eq!(symtab.get_class(symtab.java_base, &flat), None);
         // initType with a new primitive-like class symbol keeps tag order.
-        let new_type = ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType));
+        let new_type = ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base }));
         let class = symtab.init_type_named(&mut ctx, new_type, name_of(symtab.names(), "testtype"), 0);
         assert_eq!(symtab.type_of_tag[tag_ordinal(TypeTag::NONE)], Some(new_type));
         let _ = class;

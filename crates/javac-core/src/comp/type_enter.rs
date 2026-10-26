@@ -373,7 +373,6 @@ impl TypeEnter {
         let chk = Rc::clone(&self.chk);
         let types = Rc::clone(&self.types);
         let packge_symbol = packge.expect("package symbol");
-        let syms_for_static = Rc::clone(&self.chk.borrow().syms);
         let chk_for_static = Rc::clone(&chk);
         let types_for_static = Rc::clone(&types);
         self.static_import_filter = Some(Rc::new(move |ctx, syms, origin, sym| {

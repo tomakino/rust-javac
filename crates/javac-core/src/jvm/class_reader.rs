@@ -698,7 +698,7 @@ impl ClassReader {
         let no_type = ctx.alloc_type(crate::code::type_::Type::new(
             crate::code::type_tag::TypeTag::NONE,
             None,
-            crate::code::type_::TypeKindData::JCNoType,
+            crate::code::type_::TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base },
         ));
         self.no_type = Some(no_type);
         no_type
@@ -2345,15 +2345,12 @@ impl ClassReader {
                 let services = Rc::clone(&annotate.services);
                 let class_file = self.current_class_file.clone();
                 let reader_handle = self.reader_handle.clone();
-                let reader_handle = self.reader_handle.clone();
                 annotate.normal(Box::new(move |ctx: &mut CompilerContext| {
                     let syms_rc = Rc::clone(&services.syms);
                     let mut syms_guard = syms_rc.borrow_mut();
                     let syms = &mut *syms_guard;
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
-                        let mut reader_guard =
-                            reader_handle.as_ref().map(|rc| rc.borrow_mut());
                         let mut reader_guard =
                             reader_handle.as_ref().map(|rc| rc.borrow_mut());
                         let types = Rc::clone(&services.types);
@@ -2986,11 +2983,14 @@ impl ClassReader {
         let ty = ctx.sym(sym).ty.expect("variable type");
         let tag = ctx.typ(ty).get_tag();
         let value_text = format!("{const_value:?}");
+        let symbol_text = crate::code::symbol::symbol_to_string(ctx, sym);
         let bad_value = |clazz: &str| -> crate::code::symbol::CompletionFailure {
             let key = Fragment::from(
                 crate::resources::compiler_properties::fragments::bad_constant_value(
                     javac_strings::JavaString::from(value_text.as_str()),
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder("symbol"),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        symbol_text.clone(),
+                    ),
                     javac_strings::JavaString::from(clazz),
                 ),
             );
@@ -3006,8 +3006,12 @@ impl ClassReader {
                     let key = Fragment::from(
                         crate::resources::compiler_properties::fragments::bad_constant_range(
                             javac_strings::JavaString::from(format!("{int_value}").as_str()),
-                            crate::resources::diagnostic_contract::SymbolArg::placeholder("symbol"),
-                            crate::resources::diagnostic_contract::TypeArg::placeholder("type"),
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                crate::code::symbol::symbol_to_string(ctx, sym),
+                            ),
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::code::type_::type_to_string(ctx, ty),
+                            ),
                         ),
                     );
                     return Err(self.bad_class_file(key).failure);
@@ -3479,7 +3483,8 @@ impl ClassReader {
         // Java: diagFactory.fragment(Fragments.BadEnclosingMethod(sym)) — the
         // generated accessor carries the symbol name as diagnostic text until
         // the P4 Symbol argument lands.
-        let display = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+        // Java: Fragments.BadEnclosingMethod(sym) prints the symbol.
+        let display = crate::code::symbol::symbol_to_string(ctx, sym);
         let diag = self.diag_factory.fragment(Fragment::from(
             crate::resources::compiler_properties::fragments::bad_enclosing_method(
                 crate::resources::diagnostic_contract::SymbolArg::placeholder(display),
@@ -4242,7 +4247,7 @@ mod tests {
             }
             TypeKindData::JCPrimitiveType => format!("{:?}", ctx.typ(ty).get_tag()),
             TypeKindData::JCVoidType => "VOID".to_string(),
-            TypeKindData::JCNoType => "NONE".to_string(),
+            TypeKindData::JCNoType { .. } => "NONE".to_string(),
             other => {
                 let _ = other;
                 format!("{:?}", ctx.typ(ty).get_tag())

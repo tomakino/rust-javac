@@ -542,7 +542,7 @@ impl Infer {
         let any_poly = ctx.alloc_type(crate::code::type_::Type::new(
             TypeTag::NONE,
             None,
-            TypeKindData::JCNoType,
+            TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base },
         ));
         Rc::new(Infer {
             allow_graph_inference,

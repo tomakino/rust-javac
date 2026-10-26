@@ -5353,7 +5353,7 @@ mod tests {
         let no_type = ctx.alloc_type(Type::new(
             TypeTag::NONE,
             None,
-            crate::code::type_::TypeKindData::JCNoType,
+            crate::code::type_::TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base },
         ));
         let class_sym = crate::code::symtab::new_class_symbol(
             &mut ctx,
