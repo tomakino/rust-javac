@@ -154,3 +154,4 @@ file/locations/classfinder 适配 helper、资源生成器。后续按优先级�
 - 批6 完成(至依赖边界):Attr 表达式/语句/成员选择/方法调用/switch/lambda/reference/模式匹配/checkIdInternal/check/**Infer listener**/wire_attr_services;Check 大量方法(implementations/override/validate/repeatable/compatible/leaks 等);Preview 完整;Analyzer 完整;Types 投影/warn 只读化;684 lib tests 全绿。
 - 批6 遗留(显式登记):TypeAnnotations.java(1453 行)未移植 → Attr.attribClass/attribClassBody/匿名类/sealed/visitNewClass 未写;visitModuleDef/Modules;resolve-b CALL/ERROR 与诊断 oracle 回放待 P4。B7 顺序:TypeMetadata/Symbol annotation metadata → TypeAnnotations → attribClass/attribClassBody/匿名类/visitNewClass → Modules → oracle 回放。
 - doc 质量规则(§26.1):仅约束**新写/重写代码**(四部分 100%);既有旧代码 doc 不重写、不改动(负责人明确要求)。
+- 注释方案(§26.2):官方语义注释保留;位置引用/抄签名/内部标记禁止;位置集中 docs/PORTING_MAP.md;示例 docs/DOC_STYLE_DEMO.md;仅新代码,旧代码不动。
