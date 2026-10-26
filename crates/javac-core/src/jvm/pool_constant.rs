@@ -30,7 +30,17 @@ pub enum PoolKey {
     MethodHandle(SymbolId),
     /// A dynamic (invokedynamic/constant dynamic) loadable constant.
     Dynamic(SymbolId),
+    /// A pool key wrapping another unique type pool key.
+    Type(TypeId),
+    /// A pool key wrapping a symbol identity.
+    Symbol(SymbolId),
+    /// A pair pool key (Java: Pair).
+    Pair(Box<PoolKey>, Box<PoolKey>),
+    /// A name-and-type pool key.
+    NameAndType(Name, TypeId),
 }
+
+use crate::util::name::Name;
 
 pub trait PoolConstant {
     fn pool_key(&self) -> PoolKey;
@@ -40,7 +50,7 @@ pub trait PoolConstant {
 
 pub trait LoadableConstant: PoolConstant {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BasicConstant {
     pub tag: i32,
     pub data: PoolKey,
@@ -189,7 +199,7 @@ impl LoadableConstant for BasicConstant {}
 /// symbol (trait objects cannot be cloned into the arena) while keeping every
 /// Java producer (BasicConstant, ClassType, MethodHandleSymbol, dynamic
 /// symbols) individually recognizable.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LoadableConstantRef {
     /// A basic constant (int/float/long/double/String).
     Basic(BasicConstant),
@@ -231,3 +241,80 @@ impl PoolConstant for LoadableConstantRef {
 }
 
 impl LoadableConstant for LoadableConstantRef {}
+
+/// A name-and-type constant pool entry.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NameAndType {
+    /// The member name.
+    pub name: Name,
+    /// The member type.
+    pub type_: TypeId,
+}
+
+impl NameAndType {
+    /// Create a name-and-type constant.
+    pub fn new(name: Name, type_: TypeId) -> NameAndType {
+        NameAndType { name, type_ }
+    }
+}
+
+impl PoolConstant for NameAndType {
+    fn pool_key(&self) -> PoolKey {
+        PoolKey::NameAndType(self.name.clone(), self.type_)
+    }
+
+    fn pool_tag(&self) -> i32 {
+        crate::jvm::class_file::CONSTANT_NAMEANDTYPE
+    }
+}
+
+/// The contract of a dynamic pool constant (invokedynamic or constant dynamic).
+///
+/// The upstream Dynamic interface exposes the dynamic type, the bootstrap
+/// method and the static argument list, plus a bootstrap-method key used to
+/// deduplicate BootstrapMethods attribute entries. The ported dynamic symbols
+/// live in the symbol arena, so the trait is implemented here for the shared
+/// helper views rather than for the arena values themselves.
+pub trait Dynamic: PoolConstant {
+    /// Return the dynamic type of this constant.
+    fn dynamic_type(&self) -> PoolKey;
+    /// Return the bootstrap method handle.
+    fn bootstrap_method(&self) -> Option<SymbolId>;
+    /// Return the static argument list.
+    fn static_args(&self) -> Vec<LoadableConstantRef>;
+}
+
+/// A bootstrap method key used to deduplicate BootstrapMethods entries.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BsmKey {
+    /// The bootstrap method constant.
+    pub bsm: Option<SymbolId>,
+    /// The static argument list.
+    pub static_args: Vec<LoadableConstantRef>,
+    /// The pool key of the bootstrap method.
+    pub bsm_key: PoolKey,
+    /// The pool keys of the static arguments.
+    pub static_arg_keys: Vec<PoolKey>,
+}
+
+impl BsmKey {
+    /// Build the bootstrap method key for a dynamic pool constant.
+    pub fn new(dynamic: &dyn Dynamic) -> BsmKey {
+        let bsm = dynamic.bootstrap_method();
+        let static_args = dynamic.static_args();
+        let bsm_key = match bsm {
+            Some(sym) => PoolKey::MethodHandle(sym),
+            None => PoolKey::Symbol(crate::ids::SymbolId::new(0)),
+        };
+        let static_arg_keys = static_args
+            .iter()
+            .map(|arg| arg.pool_key())
+            .collect::<Vec<_>>();
+        BsmKey {
+            bsm,
+            static_args,
+            bsm_key,
+            static_arg_keys,
+        }
+    }
+}

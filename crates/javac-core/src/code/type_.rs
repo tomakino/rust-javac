@@ -635,6 +635,17 @@ pub enum TypeKindData {
         /// The intersection components are all interfaces.
         all_interfaces: bool,
     },
+    /// Java: Type.DelegatedType subtype used by the JVM verifier tables.
+    ///
+    /// The wrapped qualified type and the allocation offset identify an object
+    /// that has been allocated but not yet constructed; the tag is
+    /// UNINITIALIZED_THIS or UNINITIALIZED_OBJECT.
+    UninitializedType {
+        /// The qualified type of the constructed object.
+        qtype: Option<TypeId>,
+        /// The bytecode offset of the allocation site (-1 for this).
+        offset: i32,
+    },
     /// Java: Type.ArrayType
     ArrayType {
         /// The element type.

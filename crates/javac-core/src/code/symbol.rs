@@ -969,6 +969,24 @@ pub enum SymbolKind {
         static_args: Vec<crate::jvm::pool_constant::LoadableConstantRef>,
     },
     /// Java: Symbol.OperatorSymbol
+    /// Java: Symbol.DynamicVarSymbol (a constant-dynamic variable symbol).
+    ///
+    /// The symbol carries the VarSymbol state plus the bootstrap method handle
+    /// and the static argument constants of the constant dynamic entry.
+    DynamicVarSymbol {
+        /// The variable position (declaration order).
+        pos: i32,
+        /// The variable address (set during code generation).
+        adr: i32,
+        /// The ElementKind marker of the upstream Object data field.
+        data_kind: Option<ElementKind>,
+        /// Java: VarSymbol.data (the ConstantValue attribute value).
+        data: Option<crate::code::attribute::ConstValue>,
+        /// The bootstrap method handle.
+        bsm: SymbolId,
+        /// The static arguments passed to the bootstrap method.
+        static_args: Vec<crate::jvm::pool_constant::LoadableConstantRef>,
+    },
     OperatorSymbol {
         /// The operator opcode (a JCTree.Tag ordinal in the upstream code).
         opcode: i32,
@@ -2908,6 +2926,253 @@ pub fn new_dynamic_method_symbol(
         SymbolKind::DynamicMethodSymbol { bsm, static_args },
     );
     ctx.alloc_symbol(symbol)
+}
+
+/// Create a constant-dynamic variable symbol.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - name: the constant name;
+///   - owner: the owner symbol;
+///   - bsm: the bootstrap method handle;
+///   - ty: the constant type;
+///   - static_args: the bootstrap static arguments.
+///
+/// # Returns
+///   - the fresh dynamic variable symbol.
+///
+/// # Panics
+///   - none.
+pub fn new_dynamic_var_symbol(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    name: Name,
+    owner: SymbolId,
+    bsm: SymbolId,
+    ty: crate::ids::TypeId,
+    static_args: Vec<crate::jvm::pool_constant::LoadableConstantRef>,
+) -> SymbolId {
+    let symbol = Symbol::new(
+        Kind::VAR,
+        0,
+        name,
+        Some(ty),
+        Some(owner),
+        SymbolKind::DynamicVarSymbol {
+            pos: crate::util::position::NOPOS,
+            adr: -1,
+            data_kind: None,
+            data: None,
+            bsm,
+            static_args,
+        },
+    );
+    ctx.alloc_symbol(symbol)
+}
+
+/// Return whether a symbol is a dynamic (invokedynamic/constant-dynamic)
+/// symbol.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - sym: the symbol to test.
+///
+/// # Returns
+///   - true for DynamicMethodSymbol and DynamicVarSymbol.
+///
+/// # Panics
+///   - none.
+pub fn symbol_is_dynamic(ctx: &crate::compiler_context::CompilerContext, sym: SymbolId) -> bool {
+    matches!(
+        ctx.sym(sym).kind_data,
+        SymbolKind::DynamicMethodSymbol { .. } | SymbolKind::DynamicVarSymbol { .. }
+    )
+}
+
+/// Return the static arguments of a dynamic symbol.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - sym: the dynamic symbol.
+///
+/// # Returns
+///   - the static argument constants, or None for a non-dynamic symbol.
+///
+/// # Panics
+///   - none.
+pub fn dynamic_static_args(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> Option<Vec<crate::jvm::pool_constant::LoadableConstantRef>> {
+    match &ctx.sym(sym).kind_data {
+        SymbolKind::DynamicMethodSymbol { static_args, .. }
+        | SymbolKind::DynamicVarSymbol { static_args, .. } => Some(static_args.clone()),
+        _ => None,
+    }
+}
+
+/// Return the bootstrap method handle of a dynamic symbol.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - sym: the dynamic symbol.
+///
+/// # Returns
+///   - the bootstrap method symbol, or None for a non-dynamic symbol.
+///
+/// # Panics
+///   - none.
+pub fn dynamic_bootstrap_method(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> Option<SymbolId> {
+    match &ctx.sym(sym).kind_data {
+        SymbolKind::DynamicMethodSymbol { bsm, .. }
+        | SymbolKind::DynamicVarSymbol { bsm, .. } => Some(*bsm),
+        _ => None,
+    }
+}
+
+/// Return the referenced symbol of a method-handle symbol.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - sym: the method-handle symbol.
+///
+/// # Returns
+///   - the referenced symbol, or None for a non-handle symbol.
+///
+/// # Panics
+///   - none.
+pub fn method_handle_base_symbol(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> Option<SymbolId> {
+    match &ctx.sym(sym).kind_data {
+        SymbolKind::MethodHandleSymbol { ref_sym, .. } => *ref_sym,
+        _ => None,
+    }
+}
+
+/// Return the reference kind of a method-handle symbol.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - sym: the method-handle symbol.
+///
+/// # Returns
+///   - the ClassFile REF_* reference kind, or None for a non-handle symbol.
+///
+/// # Panics
+///   - none.
+pub fn method_handle_reference_kind(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> Option<i32> {
+    let (ref_sym, getter) = match &ctx.sym(sym).kind_data {
+        SymbolKind::MethodHandleSymbol { ref_sym, getter } => ((*ref_sym)?, *getter),
+        _ => return None,
+    };
+    let referenced = ctx.sym(ref_sym);
+    let kind = referenced.kind;
+    Some(if kind == Kind::VAR {
+        if getter {
+            if referenced.is_static(ctx) {
+                crate::jvm::class_file::REF_GETSTATIC
+            } else {
+                crate::jvm::class_file::REF_GETFIELD
+            }
+        } else if referenced.is_static(ctx) {
+            crate::jvm::class_file::REF_PUTSTATIC
+        } else {
+            crate::jvm::class_file::REF_PUTFIELD
+        }
+    } else if referenced_is_constructor(ctx, ref_sym) {
+        crate::jvm::class_file::REF_NEWINVOKESPECIAL
+    } else if referenced.is_static(ctx) {
+        crate::jvm::class_file::REF_INVOKESTATIC
+    } else if let Some(owner) = referenced.owner
+        && ctx.sym(owner).kind == Kind::TYP
+        && ctx.sym(owner).is_interface()
+    {
+        crate::jvm::class_file::REF_INVOKEINTERFACE
+    } else {
+        crate::jvm::class_file::REF_INVOKEVIRTUAL
+    })
+}
+
+/// Return whether a symbol is a constructor.
+///
+/// The check needs the name table; it is kept local to the helper because the
+/// method-handle reference kind needs it for the invoked-special case.
+fn referenced_is_constructor(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> bool {
+    let name = &ctx.sym(sym).name;
+    name.to_java_string().to_string_lossy() == "<init>"
+}
+
+/// Return the constant-pool tag of a symbol.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - sym: the symbol.
+///
+/// # Returns
+///   - the JVMS constant pool tag.
+///
+/// # Panics
+///   - the symbol kind has no valid pool entry.
+pub fn symbol_pool_tag(ctx: &crate::compiler_context::CompilerContext, sym: SymbolId) -> i32 {
+    let symbol = ctx.sym(sym);
+    match &symbol.kind_data {
+        SymbolKind::MethodHandleSymbol { .. } => crate::jvm::class_file::CONSTANT_METHODHANDLE,
+        SymbolKind::DynamicMethodSymbol { .. } => crate::jvm::class_file::CONSTANT_INVOKEDYNAMIC,
+        SymbolKind::DynamicVarSymbol { .. } => crate::jvm::class_file::CONSTANT_DYNAMIC,
+        _ => match symbol.kind {
+            Kind::VAR => crate::jvm::class_file::CONSTANT_FIELDREF,
+            Kind::MTH => {
+                if let Some(owner) = symbol.owner
+                    && ctx.sym(owner).kind == Kind::TYP
+                    && ctx.sym(owner).is_interface()
+                {
+                    crate::jvm::class_file::CONSTANT_INTERFACEMETHODREF
+                } else {
+                    crate::jvm::class_file::CONSTANT_METHODREF
+                }
+            }
+            Kind::MDL => crate::jvm::class_file::CONSTANT_MODULE,
+            Kind::PCK => crate::jvm::class_file::CONSTANT_PACKAGE,
+            _ => panic!("AssertionError: Invalid pool entry"),
+        },
+    }
+}
+
+/// Return the constant-pool key of a symbol.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - sym: the symbol.
+///
+/// # Returns
+///   - the pool key carrying the symbol identity (or the handle identity for
+///     method-handle symbols).
+///
+/// # Panics
+///   - none.
+pub fn symbol_pool_key(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> crate::jvm::pool_constant::PoolKey {
+    match &ctx.sym(sym).kind_data {
+        SymbolKind::MethodHandleSymbol { .. } => {
+            crate::jvm::pool_constant::PoolKey::MethodHandle(sym)
+        }
+        SymbolKind::DynamicMethodSymbol { .. } | SymbolKind::DynamicVarSymbol { .. } => {
+            crate::jvm::pool_constant::PoolKey::Dynamic(sym)
+        }
+        _ => crate::jvm::pool_constant::PoolKey::Symbol(sym),
+    }
 }
 #[cfg(test)]
 mod tests {

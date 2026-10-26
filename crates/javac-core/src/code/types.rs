@@ -600,7 +600,10 @@ impl Types {
             | TypeKindData::JCNoType
             | TypeKindData::TypeVar { .. }
             | TypeKindData::CapturedType { .. }
-            | TypeKindData::UnknownType => self.is_same_type_visit_type(ctx, syms, t, s),
+            | TypeKindData::UnknownType
+            | TypeKindData::UninitializedType { .. } => {
+                self.is_same_type_visit_type(ctx, syms, t, s)
+            }
             TypeKindData::ClassType { .. }
             | TypeKindData::ErasedClassType { .. }
             | TypeKindData::UnionClassType { .. }
@@ -978,6 +981,9 @@ impl Types {
                     )
             }
             TypeKindData::ErrorType { .. } => false,
+            TypeKindData::UninitializedType { .. } => {
+                self.is_subtype_no_capture(ctx, syms, t, s)
+            }
             TypeKindData::ForAll { .. } => {
                 // Java: HasSameArgs.visitForAll (Types.java:2830-2840):
                 // non-strict allows comparing a ForAll with its method type.
@@ -2593,6 +2599,9 @@ impl Types {
                 }
                 tag => panic!("AssertionError: isSubtype {tag:?}"),
             },
+            TypeKindData::UninitializedType { .. } => {
+                panic!("AssertionError: isSubtype UNINITIALIZED")
+            }
             TypeKindData::UndetVar { .. } => {
                 self.is_subtype_visit_undet_var(ctx, syms, t, s)
             }
@@ -10762,4 +10771,38 @@ mod tests {
     }
 
 
+}
+
+/// A type together with the Types instance that owns its equality and hash.
+///
+/// Java Types.UniqueType is used as the constant-pool key for types so that two
+/// structurally equal types share one entry; the Rust port keeps the same
+/// contract behind explicit methods because equality needs the compiler context.
+#[derive(Clone, Debug)]
+pub struct UniqueType {
+    /// The wrapped type.
+    pub type_: TypeId,
+}
+
+impl UniqueType {
+    /// Create a unique-type wrapper.
+    pub fn new(type_: TypeId) -> UniqueType {
+        UniqueType { type_ }
+    }
+
+    /// Return the hash code of the wrapped type.
+    pub fn hash_code(&self, ctx: &mut CompilerContext, types: &Types) -> i32 {
+        types.hash_code(ctx, self.type_)
+    }
+
+    /// Return whether the wrapped type equals the other wrapped type.
+    pub fn equals(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        other: &UniqueType,
+    ) -> bool {
+        types.is_same_type(ctx, syms, self.type_, other.type_)
+    }
 }
