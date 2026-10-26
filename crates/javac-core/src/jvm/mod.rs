@@ -4,6 +4,7 @@ pub mod byte_codes;
 pub mod code;
 pub mod class_file;
 pub mod cr_table;
+pub mod items;
 pub mod crt_flags;
 pub mod class_reader;
 pub mod module_name_reader;
