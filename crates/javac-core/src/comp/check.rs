@@ -1719,7 +1719,7 @@ fn warn_div_zero(log: &Rc<RefCell<Log>>, lint: &Rc<Lint>, pos: i32) {
 /// Build the JCDiagnostic.Warning logging key from the generated WarningInfo
 /// (ADR 0002 P4 adapter: the generated accessors carry the diagnostic info;
 /// the argument mapping renders the known value types as display text).
-fn warning_from_info(
+pub(crate) fn warning_from_info(
     info: crate::resources::diagnostic_contract::WarningInfo,
 ) -> Warning {
     let args: Vec<crate::util::jc_diagnostic::DiagnosticArg> = info

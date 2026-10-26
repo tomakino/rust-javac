@@ -107,6 +107,10 @@ use crate::util::log::Log;
 use crate::util::name::Name;
 use crate::util::names::Names;
 use crate::util::options::Options;
+use crate::util::mandatory_warning_handler::MandatoryWarningLog;
+use crate::comp::check::warning_from_info;
+use crate::resources::compiler_properties::warnings;
+use crate::resources::diagnostic_contract::{FileObjectArg, IntoDiagnosticArg};
 
 /// Java: public class ClassReader
 ///
@@ -1294,8 +1298,22 @@ impl ClassReader {
                 < Version::min().major() * 1000 + Version::min().minor()
         {
             if self.major_version == max_major + 1 && !preview_class_file {
-                // Java: log.warning(Warnings.BigMajorVersion(currentClassFile, majorVersion, maxMajor))
-                unimplemented!("TODO(P2/Log): log.warning(BigMajorVersion) needs a DiagnosticPosition-carrying Log adapter");
+                // Java: ClassReader.java:2926-2929
+                //   log.warning(Warnings.BigMajorVersion(currentClassFile,
+                //                                      majorVersion, maxMajor));
+                let file_name = self
+                    .current_class_file
+                    .clone()
+                    .map(|file| file.get_name().to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let info = warnings::big_major_version(
+                    FileObjectArg::from(file_name.as_str()).into_diagnostic_arg(),
+                    self.major_version,
+                    max_major,
+                );
+                self.log
+                    .borrow_mut()
+                    .warning(None, None, warning_from_info(info));
             } else {
                 // Java: badClassFile("wrong.version", major, minor, maxMajor, maxMinor);
                 // The generated accessor currently has no parameters (registered
