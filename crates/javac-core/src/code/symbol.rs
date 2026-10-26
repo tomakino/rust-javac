@@ -830,6 +830,12 @@ pub enum ResolveErrorData {
     },
     /// Resolve.BadVarargsMethod (Resolve.java:4617-4650)
     BadVarargs { delegated: SymbolId },
+    /// Resolve.BadMethodReferenceError (Resolve.java:4645-4675) extends
+    /// StaticError: the found method reference symbol has the wrong staticness.
+    BadMethodReference { sym: SymbolId, unbound_lookup: bool },
+    /// Resolve.BadConstructorReferenceError (Resolve.java:4680-4690) extends
+    /// InvalidSymbolError: an enclosing instance is not available.
+    BadConstructorReference { sym: SymbolId },
 }
 
 /// Java: public enum SymbolKind (Resolve.ResolveError hierarchy lives here).
@@ -1444,6 +1450,8 @@ pub fn symbol_exists(ctx: &CompilerContext, symbol: SymbolId) -> bool {
                 | ResolveErrorData::Invisible { .. }
                 | ResolveErrorData::Static { .. }
                 | ResolveErrorData::Ambiguity { .. }
+                | ResolveErrorData::BadMethodReference { .. }
+                | ResolveErrorData::BadConstructorReference { .. }
         ),
         _ => ctx.sym(symbol).kind != crate::code::kinds::Kind::ERR,
     }

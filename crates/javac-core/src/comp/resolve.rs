@@ -801,6 +801,24 @@ impl Resolve {
                         .create_error_type(ctx, name.clone(), location, Some(original));
                 ctx.typ(error_type).tsym.expect("error type symbol")
             }
+            crate::code::symbol::ResolveErrorData::BadMethodReference { sym, .. }
+            | crate::code::symbol::ResolveErrorData::BadConstructorReference { sym } => {
+                // Java: InvalidSymbolError.access
+                if ctx.sym(sym).kind.is_resolution_error()
+                    || !ctx.sym(sym).kind.matches(crate::code::kinds::KindSelector::TYP)
+                {
+                    sym
+                } else {
+                    let original = ctx.sym(sym).ty;
+                    let error_type = self.types.create_error_type(
+                        ctx,
+                        name.clone(),
+                        location,
+                        original,
+                    );
+                    ctx.typ(error_type).tsym.expect("error type symbol")
+                }
+            }
             crate::code::symbol::ResolveErrorData::BadVarargs { delegated } => {
                 // Java: BadVarargsMethod.access -> delegatedError.access
                 self.resolve_error_access(ctx, syms, delegated, name, location)
@@ -858,6 +876,70 @@ impl Resolve {
                 );
                 let diagnostic = self.factory_error(dkind, pos, info);
                 Some(diagnostic)
+            }
+            crate::code::symbol::ResolveErrorData::BadMethodReference { sym, unbound_lookup } => {
+                // Java: BadMethodReferenceError.getDiagnostic (Resolve.java:4655-4675)
+                // §9: the fragment constructors are used (the generated resource
+                // helper is the Fragment form of the upstream diags.create key).
+                if ctx.sym(sym).kind.is_resolution_error() {
+                    return self.resolve_error_diagnostic(
+                        ctx, syms, sym, dkind, pos, location, site, name, argtypes, typeargtypes,
+                    );
+                }
+                let kind_name = crate::code::kinds::kind_name(ctx.sym(sym), ctx).name();
+                let sym_display = symbol_display_name(ctx, sym);
+                let info = if !unbound_lookup {
+                    crate::resources::compiler_properties::fragments::bad_static_method_in_bound_lookup(
+                        crate::resources::diagnostic_contract::SymbolKindArg::placeholder(kind_name),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(sym_display),
+                    )
+                } else if ctx.sym(sym).flags_field & (crate::code::flags::STATIC as i64) != 0 {
+                    crate::resources::compiler_properties::fragments::bad_static_method_in_unbound_lookup(
+                        crate::resources::diagnostic_contract::SymbolKindArg::placeholder(kind_name),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(sym_display),
+                    )
+                } else {
+                    crate::resources::compiler_properties::fragments::bad_instance_method_in_unbound_lookup(
+                        crate::resources::diagnostic_contract::SymbolKindArg::placeholder(kind_name),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(sym_display),
+                    )
+                };
+                Some(self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(info)))
+            }
+            crate::code::symbol::ResolveErrorData::BadConstructorReference { sym } => {
+                // Java: BadConstructorReferenceError.getDiagnostic (Resolve.java:4680-4690)
+                let _ = sym;
+                let site_tsym = site.and_then(|site| ctx.typ(site).tsym);
+                let site_name = site_tsym
+                    .map(|tsym| symbol_display_name(ctx, tsym))
+                    .unwrap_or_default();
+                let type_args: Vec<crate::resources::diagnostic_contract::TypeArg> = argtypes
+                    .clone()
+                    .unwrap_or_else(crate::util::list::List::nil)
+                    .iter()
+                    .map(|t| {
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, t),
+                        )
+                    })
+                    .collect();
+                let enclosing = site
+                    .and_then(|site| ctx.typ(site).get_enclosing_type())
+                    .map(|encl| {
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, encl),
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        crate::resources::diagnostic_contract::TypeArg::placeholder("(no enclosing type)")
+                    });
+                let info =
+                    crate::resources::compiler_properties::fragments::cant_access_inner_cls_constr(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(site_name),
+                        type_args,
+                        enclosing,
+                    );
+                Some(self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(info)))
             }
             crate::code::symbol::ResolveErrorData::Ambiguity { syms: ambiguous } => {
                 let mut reversed = ambiguous.clone();
