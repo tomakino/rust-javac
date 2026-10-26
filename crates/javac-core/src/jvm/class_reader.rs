@@ -1118,13 +1118,61 @@ impl ClassReader {
             ));
         }
         self.read_class_buffer(ctx, syms, c)?;
-        // Java: if (!missingTypeVariables.isEmpty() && !foundTypeVariables.isEmpty()) {...}
+        // Java: if (!missingTypeVariables.isEmpty() && !foundTypeVariables.isEmpty()) {
+        //     ... ct.supertype_field = types.subst(...); ct.interfaces_field = ...
+        //     ct.typarams_field = types.substBounds(...); ... }
         if !self.missing_type_variables.is_empty() && !self.found_type_variables.is_empty() {
-            unimplemented!("TODO(P2/S2): readClassFile missingTypeVariables substitution (Types.subst/substBounds)");
+            let missing = self.missing_type_variables.clone();
+            let found = self.found_type_variables.clone();
+            self.missing_type_variables = List::nil();
+            self.found_type_variables = List::nil();
+            self.interim_uses = List::nil();
+            self.interim_provides = List::nil();
+            self.filling = false;
+            let owner = self.current_owner.expect("currentOwner");
+            let ct = ctx.sym(owner).ty.expect("currentOwner.type");
+            let types = &self.types;
+            let (supertype, interfaces, bounds) = match &ctx.typ(ct).kind {
+                crate::code::type_::TypeKindData::ClassType {
+                    supertype_field,
+                    interfaces_field,
+                    typarams_field,
+                    ..
+                } => (
+                    *supertype_field,
+                    interfaces_field.clone(),
+                    typarams_field.clone().unwrap_or_else(List::nil),
+                ),
+                _ => panic!("ClassCastException: ClassType expected"),
+            };
+            let new_supertype =
+                supertype.map(|supertype| types.subst_type(ctx, syms, supertype, &missing, &found));
+            let new_interfaces =
+                interfaces.map(|interfaces| types.subst(ctx, syms, &interfaces, &missing, &found));
+            let new_bounds = types.subst_bounds(ctx, syms, &bounds, &missing, &found);
+            if let crate::code::type_::TypeKindData::ClassType {
+                supertype_field,
+                interfaces_field,
+                typarams_field,
+                ..
+            } = &mut ctx.typ_mut(ct).kind
+            {
+                *supertype_field = new_supertype;
+                *interfaces_field = new_interfaces;
+                *typarams_field = Some(new_bounds.clone());
+            }
+            for typevar in new_bounds.iter() {
+                if let Some(tsym) = ctx.typ(typevar).tsym {
+                    ctx.sym_mut(tsym).ty = Some(typevar);
+                }
+            }
         } else if self.missing_type_variables.is_empty()
             != self.found_type_variables.is_empty()
         {
-            // Java: throw badClassFile("undecl.type.var", name);
+            // Java: Name name = missingTypeVariables.head.tsym.name;
+            // throw badClassFile("undecl.type.var", name);
+            // (the generated Fragment accessor currently takes no argument; the
+            // name argument is a registered P4 diagnostic-contract pending item)
             let key = Fragment::from(
                 crate::resources::compiler_properties::fragments::undecl_type_var(),
             );
