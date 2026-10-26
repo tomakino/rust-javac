@@ -341,6 +341,11 @@ impl Symbol {
         }
     }
 
+    /// Java: public void setTypeAttributes(List<Attribute.TypeCompound> l)
+    pub fn set_type_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
+        self.inited_metadata().set_type_attributes(attributes);
+    }
+
     /// Java: public void appendUniqueTypeAttributes(List<Attribute.TypeCompound> l)
     pub fn append_unique_type_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
         if !attributes.is_empty() {

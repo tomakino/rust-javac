@@ -2470,12 +2470,12 @@ impl ClassReader {
             TargetType::CLASS_TYPE_PARAMETER_BOUND => {
                 let parameter_index = self.next_byte();
                 let bound_index = self.next_byte();
-                Pos::type_parameter_bound(self.read_type_path(), parameter_index, bound_index, None)
+                Pos::type_parameter_bound(self.read_type_path(), parameter_index, bound_index, -1, None)
             }
             TargetType::METHOD_TYPE_PARAMETER_BOUND => {
                 let parameter_index = self.next_byte();
                 let bound_index = self.next_byte();
-                Pos::method_type_parameter_bound(self.read_type_path(), parameter_index, bound_index, None)
+                Pos::method_type_parameter_bound(self.read_type_path(), parameter_index, bound_index, -1, None)
             }
             TargetType::CLASS_EXTENDS => {
                 let type_index = self.next_char() as i32;

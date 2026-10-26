@@ -265,13 +265,13 @@ impl TypeAnnotationPosition {
     }
 
     /// Java: public static TypeAnnotationPosition type_parameter_bound(List<TypePathEntry> location, int parameter_index, int bound_index)
-    pub fn type_parameter_bound(location: List<TypePathEntry>, parameter_index: i32, bound_index: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::CLASS_TYPE_PARAMETER_BOUND, -1, parameter_index, on_lambda, i32::MIN, bound_index, location)
+    pub fn type_parameter_bound(location: List<TypePathEntry>, parameter_index: i32, bound_index: i32, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::CLASS_TYPE_PARAMETER_BOUND, pos, parameter_index, on_lambda, i32::MIN, bound_index, location)
     }
 
     /// Java: public static TypeAnnotationPosition method_type_parameter_bound(List<TypePathEntry> location, int parameter_index, int bound_index)
-    pub fn method_type_parameter_bound(location: List<TypePathEntry>, parameter_index: i32, bound_index: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::METHOD_TYPE_PARAMETER_BOUND, -1, parameter_index, on_lambda, i32::MIN, bound_index, location)
+    pub fn method_type_parameter_bound(location: List<TypePathEntry>, parameter_index: i32, bound_index: i32, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::METHOD_TYPE_PARAMETER_BOUND, pos, parameter_index, on_lambda, i32::MIN, bound_index, location)
     }
 
     /// Java: public boolean emitToClassfile()
