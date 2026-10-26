@@ -230,6 +230,32 @@ pub struct ClassReader {
 }
 
 impl ClassReader {
+    /// Java: ClassReader.initParameterNames(MethodSymbol sym) — initialize the
+    /// parameter-name index array, slightly oversized for synthetic slots
+    /// (ClassReader.java:2616-2628).
+    fn init_parameter_names(&mut self, ctx: &CompilerContext, method: SymbolId) {
+        const EXCESS_SLOTS: usize = 4;
+        let parameter_types = ctx
+            .sym(method)
+            .ty
+            .map(|ty| ctx.typ(ty).get_parameter_types(ctx))
+            .unwrap_or_else(crate::util::list::List::nil);
+        let mut expected = EXCESS_SLOTS as i32;
+        for ty in parameter_types.iter() {
+            expected += jvm_type_width(ctx, ty);
+        }
+        let expected = expected as usize;
+        match &mut self.parameter_name_indices {
+            None => self.parameter_name_indices = Some(vec![0; expected]),
+            Some(indices) if indices.len() < expected => {
+                *indices = vec![0; expected];
+            }
+            Some(indices) => indices.fill(0),
+        }
+        self.have_parameter_name_indices = false;
+        self.saw_method_parameters = false;
+    }
+
     /// Java: public static final int INITIAL_BUFFER_SIZE = 0x0fff0;
     pub const INITIAL_BUFFER_SIZE: i32 = 0x0fff0;
 
@@ -1698,7 +1724,7 @@ impl ClassReader {
             ctx.sym_mut(method).flags_field |= crate::code::flags::SIGNATURE_POLYMORPHIC;
         }
         if self.save_parameter_names {
-            unimplemented!("TODO(P2/Code batch): initParameterNames (Code.width/LocalVariableTable)");
+            self.init_parameter_names(ctx, method);
         }
         let prev_owner = self.current_owner;
         self.current_owner = Some(method);
@@ -4140,6 +4166,31 @@ fn set_flag_if_attribute_true(
     }
     let _ = ctx;
     false
+}
+
+
+/// Java: Code.width(Type) / Code.typecode(Type): the JVM parameter slot width
+/// (long and double are two slots, void is zero, everything else is one).
+fn jvm_type_width(ctx: &CompilerContext, ty: TypeId) -> i32 {
+    use crate::code::type_tag::TypeTag;
+    match ctx.typ(ty).tag {
+        TypeTag::LONG | TypeTag::DOUBLE => 2,
+        TypeTag::VOID => 0,
+        TypeTag::BYTE
+        | TypeTag::SHORT
+        | TypeTag::CHAR
+        | TypeTag::INT
+        | TypeTag::FLOAT
+        | TypeTag::BOOLEAN
+        | TypeTag::CLASS
+        | TypeTag::ARRAY
+        | TypeTag::METHOD
+        | TypeTag::BOT
+        | TypeTag::TYPEVAR
+        | TypeTag::UNINITIALIZED_THIS
+        | TypeTag::UNINITIALIZED_OBJECT => 1,
+        other => panic!("AssertionError: typecode {other:?}"),
+    }
 }
 
 #[cfg(test)]

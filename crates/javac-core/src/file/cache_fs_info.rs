@@ -86,12 +86,26 @@ impl CacheFSInfo {
             .unwrap_or(false)
     }
 
-    /// Java: public List<Path> getJarClassPath(Path file) throws IOException.
+    /// Java: public List<Path> getJarClassPath(Path file) throws IOException —
+    /// cached (CacheFSInfo.java:85-93).
     ///
-    /// TODO(P2): the base implementation needs java.util.jar.JarFile/Manifest
-    /// (not ported); the cache bookkeeping is kept in place for later wiring.
-    pub fn get_jar_class_path(&self, _file: &FsPath) -> Result<Vec<FsPath>, javac_fs::Error> {
-        unimplemented!("TODO(P2): CacheFSInfo.getJarClassPath needs java.util.jar.JarFile/Manifest")
+    /// # Arguments
+    ///   - file: the jar file.
+    ///
+    /// # Returns
+    ///   - the Class-Path entries of the jar manifest.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn get_jar_class_path(&self, file: &FsPath) -> Result<Vec<FsPath>, javac_fs::Error> {
+        if let Some(cached) = self.jar_class_path_cache.borrow().get(file) {
+            return Ok(cached.clone());
+        }
+        let jar_class_path = self.base.get_jar_class_path(file)?;
+        self.jar_class_path_cache
+            .borrow_mut()
+            .insert(file.clone(), jar_class_path.clone());
+        Ok(jar_class_path)
     }
 
     /// Java: protected Optional<BasicFileAttributes> getAttributes(Path file).
@@ -190,10 +204,105 @@ mod tests {
         std::fs::remove_dir_all(&dir).expect("cleanup");
     }
 
-    #[test]
-    #[should_panic(expected = "TODO(P2)")]
-    fn jar_class_path_is_deferred() {
-        let cache = CacheFSInfo::new();
-        let _ = cache.get_jar_class_path(&FsPath::new("x.jar").expect("path"));
+    fn crc32(bytes: &[u8]) -> u32 {
+        let mut crc = 0xFFFF_FFFFu32;
+        for byte in bytes {
+            crc ^= *byte as u32;
+            for _ in 0..8 {
+                if crc & 1 != 0 {
+                    crc = (crc >> 1) ^ 0xEDB8_8320;
+                } else {
+                    crc >>= 1;
+                }
+            }
+        }
+        !crc
     }
+
+    fn write_stored_zip(path: &std::path::Path, entries: &[(&str, &[u8])]) {
+        let mut data: Vec<u8> = Vec::new();
+        let mut central: Vec<u8> = Vec::new();
+        for (name, content) in entries {
+            let offset = data.len() as u32;
+            let name_bytes = name.as_bytes();
+            let crc = crc32(content);
+            let size = content.len() as u32;
+            data.extend(0x0403_4B50u32.to_le_bytes());
+            data.extend(20u16.to_le_bytes());
+            data.extend(0u16.to_le_bytes());
+            data.extend(0u16.to_le_bytes());
+            data.extend(0u16.to_le_bytes());
+            data.extend(0u16.to_le_bytes());
+            data.extend(crc.to_le_bytes());
+            data.extend(size.to_le_bytes());
+            data.extend(size.to_le_bytes());
+            data.extend((name_bytes.len() as u16).to_le_bytes());
+            data.extend(0u16.to_le_bytes());
+            data.extend(name_bytes);
+            data.extend(*content);
+
+            central.extend(0x0201_4B50u32.to_le_bytes());
+            central.extend(20u16.to_le_bytes());
+            central.extend(20u16.to_le_bytes());
+            central.extend(0u16.to_le_bytes());
+            central.extend(0u16.to_le_bytes());
+            central.extend(0u16.to_le_bytes());
+            central.extend(0u16.to_le_bytes());
+            central.extend(crc.to_le_bytes());
+            central.extend(size.to_le_bytes());
+            central.extend(size.to_le_bytes());
+            central.extend((name_bytes.len() as u16).to_le_bytes());
+            central.extend(0u16.to_le_bytes());
+            central.extend(0u16.to_le_bytes());
+            central.extend(0u16.to_le_bytes());
+            central.extend(0u16.to_le_bytes());
+            central.extend(0u32.to_le_bytes());
+            central.extend(offset.to_le_bytes());
+            central.extend(name_bytes);
+        }
+        let central_offset = data.len() as u32;
+        let central_size = central.len() as u32;
+        data.extend(central);
+        data.extend(0x0605_4B50u32.to_le_bytes());
+        data.extend(0u16.to_le_bytes());
+        data.extend(0u16.to_le_bytes());
+        data.extend((entries.len() as u16).to_le_bytes());
+        data.extend((entries.len() as u16).to_le_bytes());
+        data.extend(central_size.to_le_bytes());
+        data.extend(central_offset.to_le_bytes());
+        data.extend(0u16.to_le_bytes());
+        std::fs::write(path, data).expect("write zip");
+    }
+
+    #[test]
+    fn jar_class_path_is_cached_until_cleared() {
+        let dir = temp_dir("jarclasspath");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let jar = dir.join("y.jar");
+        write_stored_zip(
+            &jar,
+            &[
+                (
+                    "META-INF/MANIFEST.MF",
+                    b"Manifest-Version: 1.0\r\nClass-Path: lib/a.jar\r\n\r\n",
+                ),
+                ("lib/a.jar", b""),
+            ],
+        );
+        let jar_path = FsPath::from_path_buf(jar.clone());
+        let cache = CacheFSInfo::new();
+        let first = cache.get_jar_class_path(&jar_path).expect("first");
+        assert_eq!(
+            first,
+            vec![FsPath::from_path_buf(dir.join("lib").join("a.jar"))]
+        );
+        // The cached list is returned even after the jar is deleted.
+        std::fs::remove_file(&jar).expect("remove jar");
+        assert_eq!(cache.get_jar_class_path(&jar_path).expect("cached"), first);
+        // clearCache() drops the list; the next query re-reads the jar.
+        cache.clear_cache();
+        assert!(cache.get_jar_class_path(&jar_path).is_err());
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
 }

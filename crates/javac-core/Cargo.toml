@@ -13,6 +13,7 @@ javac-fs.workspace = true
 javac-jimage.workspace = true
 javac-source.workspace = true
 javac-tools.workspace = true
+javac-zip.workspace = true
 javac-unicode.workspace = true
 
 [dev-dependencies]

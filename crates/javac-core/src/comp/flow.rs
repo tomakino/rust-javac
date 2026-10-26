@@ -2915,14 +2915,15 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
     }
 
     fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (encl, args, def, constructor_type) = match &ctx.tree(tree).kind {
+        let (encl, args, def, constructor, constructor_type) = match &ctx.tree(tree).kind {
             TreeKind::NewClass {
                 encl,
                 args,
                 def,
+                constructor,
                 constructor_type,
                 ..
-            } => (*encl, args.clone(), *def, *constructor_type),
+            } => (*encl, args.clone(), *def, *constructor, *constructor_type),
             _ => panic!("expected a new class"),
         };
         self.scan(ctx, encl);
@@ -2932,12 +2933,29 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                 self.mark_thrown(ctx, tree, ty);
             }
         }
-        if def.is_some() {
-            unimplemented!(
-                "TODO(TreeMaker/Types batch): FlowAnalyzer.visitNewClass anonymous class throws propagation (Flow.java:1500-1520)"
-            )
+        // Java: Flow.java:1443-1473. If the new class expression defines an
+        // anonymous class, analysis of the anonymous constructor may encounter
+        // thrown types which are unsubstituted type variables; the constructor's
+        // formal thrown types are therefore added to the caught set for the
+        // duration of the class definition analysis.
+        let caught_prev = self.caught.clone();
+        if let Some(def) = def {
+            if let Some(constructor) = constructor
+                && let Some(constructor_signature) = ctx.sym(constructor).ty
+            {
+                let mut caught = self.caught.clone();
+                {
+                    let syms = self.flow.syms.borrow();
+                    let chk = self.flow.chk.borrow();
+                    for ty in thrown_types_of(ctx, constructor_signature).iter() {
+                        caught = chk.incl(ctx, &syms, ty, &caught);
+                    }
+                }
+                self.caught = caught;
+            }
+            self.scan(ctx, Some(def));
         }
-        self.scan(ctx, def);
+        self.caught = caught_prev;
     }
 
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -2968,9 +2986,63 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             self.in_lambda = false;
             return;
         }
-        unimplemented!(
-            "TODO(FunctionDescriptor batch): FlowAnalyzer.visitLambda descriptor thrown types (Flow.java:1460-1490)"
-        )
+        // Java: Flow.java:1476-1509 (FlowAnalyzer.visitLambda).
+        let prev_caught = self.caught.clone();
+        let prev_thrown = self.thrown.clone();
+        let prev_pending = std::mem::take(&mut self.pending_exits);
+        let target = match &ctx.tree(tree).kind {
+            TreeKind::Lambda { target, .. } => *target,
+            _ => panic!("expected a lambda"),
+        };
+        let descriptor = {
+            let mut syms = self.flow.syms.borrow_mut();
+            let chk = self.flow.chk.borrow();
+            self.flow
+                .types
+                .find_descriptor_type(
+                    ctx,
+                    &mut syms,
+                    &self.flow.diags,
+                    &chk,
+                    target.expect("lambda target type"),
+                )
+                .expect("functional interface descriptor")
+        };
+        self.caught = ctx.typ(descriptor).get_thrown_types(ctx);
+        self.thrown = List::nil();
+        let body = match &ctx.tree(tree).kind {
+            TreeKind::Lambda { body, .. } => *body,
+            _ => panic!("expected a lambda"),
+        };
+        self.scan(ctx, body);
+        let mut exits = std::mem::take(&mut self.pending_exits);
+        while exits.non_empty() {
+            let exit = exits.head().clone();
+            exits = exits.tail();
+            match &exit {
+                PendingExit::Thrown { .. } => {
+                    self.pending_exits = self.pending_exits.clone().append(exit);
+                }
+                _ => {
+                    let exit_tree = match &exit {
+                        PendingExit::Plain { tree } => *tree,
+                        PendingExit::Assign { tree, .. } => *tree,
+                        PendingExit::Thrown { tree, .. } => *tree,
+                    };
+                    let has_return = ctx.tree(exit_tree).has_tag(Tag::RETURN);
+                    let has_error = self.flow.log.borrow().has_error_on(Some(Rc::new(
+                        crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(exit_tree).pos),
+                    ) as Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>));
+                    if !(has_return || has_error) {
+                        panic!("AssertionError: unexpected lambda pending exit");
+                    }
+                }
+            }
+        }
+        self.error_uncaught(ctx);
+        self.pending_exits = prev_pending;
+        self.caught = prev_caught;
+        self.thrown = prev_thrown;
     }
 
     fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {

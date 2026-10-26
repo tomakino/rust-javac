@@ -486,25 +486,48 @@ impl Path {
 
     /// Java: Paths.get(URI) for "file" URIs.
     pub fn from_uri(uri: &str) -> Result<Path, Error> {
-        if let Some(rest) = uri.strip_prefix("file://") {
-            let (authority, path) = match rest.find('/') {
-                Some(index) => (&rest[..index], &rest[index..]),
-                None => ("", rest),
-            };
-            let mut decoded = decode_uri_path(path)?;
-            if cfg!(windows) && authority.is_empty() {
-                let bytes = decoded.as_bytes();
-                if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
-                    decoded = decoded[1..].to_string();
-                }
+        // Java: Path.of(URI) for "file" URIs: accepts "file:/x", "file:///x"
+        // and "file://host/share/x"; a non-hierarchical URI or a URI with a
+        // query/fragment reports IllegalArgumentException.
+        let Some(rest) = uri.strip_prefix("file:") else {
+            return Err(Error::UnsupportedUri {
+                uri: uri.to_string(),
+            });
+        };
+        let (authority, path) = if let Some(after) = rest.strip_prefix("//") {
+            match after.find('/') {
+                Some(index) => (&after[..index], &after[index..]),
+                None => (after, ""),
             }
-            let mut text = decoded.replace('/', &SEP.to_string());
-            if !authority.is_empty() {
-                text = format!("{}{}{}{}", SEP, SEP, authority, text);
-            }
-            return Path::new(&text);
+        } else if rest.starts_with('/') {
+            ("", rest)
+        } else {
+            return Err(Error::IllegalArgument {
+                message: format!("URI is not hierarchical: {}", uri),
+            });
+        };
+        if path.contains('?') {
+            return Err(Error::IllegalArgument {
+                message: "URI has a query component".to_string(),
+            });
         }
-        Err(Error::UnsupportedUri { uri: uri.to_string() })
+        if path.contains('#') {
+            return Err(Error::IllegalArgument {
+                message: "URI has a fragment component".to_string(),
+            });
+        }
+        let mut decoded = decode_uri_path(path)?;
+        if cfg!(windows) && authority.is_empty() {
+            let bytes = decoded.as_bytes();
+            if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
+                decoded = decoded[1..].to_string();
+            }
+        }
+        let mut text = decoded.replace('/', &SEP.to_string());
+        if !authority.is_empty() {
+            text = format!("{}{}{}{}", SEP, SEP, authority, text);
+        }
+        Path::new(&text)
     }
 }
 
@@ -899,6 +922,32 @@ mod oracle {
             Path::from_uri("http://example.com/x"),
             Err(Error::UnsupportedUri { .. })
         ));
+        // Java oracle: Path.of(URI) rejects non-hierarchical and query/fragment URIs.
+        assert!(matches!(
+            Path::from_uri("file:relative/x"),
+            Err(Error::IllegalArgument { .. })
+        ));
+        assert!(matches!(
+            Path::from_uri("file:/tmp/x?a"),
+            Err(Error::IllegalArgument { .. })
+        ));
+        assert!(matches!(
+            Path::from_uri("file:/tmp/x#f"),
+            Err(Error::IllegalArgument { .. })
+        ));
+        if cfg!(windows) {
+            // Java oracle: "file:/tmp/x" -> \tmp\x; "file://host/share/x" -> \\host\share\x.
+            assert_eq!(
+                Path::from_uri("file:/tmp/x").expect("single slash").to_java_string(),
+                "\\tmp\\x"
+            );
+            assert_eq!(
+                Path::from_uri("file://host/share/x")
+                    .expect("unc")
+                    .to_java_string(),
+                "\\\\host\\share\\x"
+            );
+        }
     }
 
     #[test]

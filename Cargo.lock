@@ -38,6 +38,7 @@ dependencies = [
  "javac-strings",
  "javac-tools",
  "javac-unicode",
+ "javac-zip",
 ]
 
 [[package]]
