@@ -2593,6 +2593,12 @@ mod tests {
         assert_eq!(print_tree(&mut ctx, string_literal), "\"s\"");
         let char_literal = make(&mut ctx, TypeTag::CHAR, LiteralValue::Character('a' as u16));
         assert_eq!(print_tree(&mut ctx, char_literal), "'a'");
+        // Oracle (JDK 17 Pretty.toSimpleString): BYTE/SHORT literals print in
+        // the default branch with quotes: Byte 5 -> "5", Short 7 -> "7".
+        let byte_literal = make(&mut ctx, TypeTag::BYTE, LiteralValue::Byte(5));
+        assert_eq!(print_tree(&mut ctx, byte_literal), "\"5\"");
+        let short_literal = make(&mut ctx, TypeTag::SHORT, LiteralValue::Short(7));
+        assert_eq!(print_tree(&mut ctx, short_literal), "\"7\"");
         let _ = table;
     }
 }

@@ -273,13 +273,12 @@ impl Target {
             return instance;
         }
         let options = crate::util::options::Options::instance(context);
-        let mut value = options
+        let value = options
             .get_option(crate::main::option::Option::TARGET)
             .and_then(|target_string| Target::lookup(&target_string))
             .unwrap_or(Target::DEFAULT);
         let instance = Rc::new(value);
         context.put(Rc::clone(&instance));
-        value = *instance;
         instance
     }
 }

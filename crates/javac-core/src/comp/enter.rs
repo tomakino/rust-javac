@@ -130,10 +130,25 @@ impl Enter {
     }
 
     /// Java: public Env<AttrContext> getClassEnv(TypeSymbol sym)
-    pub fn get_class_env(&self, sym: SymbolId) -> Option<Rc<Env<AttrContext>>> {
-        let _local_env = self.get_env(sym)?;
-        // TODO(Lint): lint.augment(sym) is not ported (Lint::augment).
-        unimplemented!("TODO(Lint batch): Enter.getClassEnv lintEnv.augment")
+    pub fn get_class_env(
+        &self,
+        ctx: &CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) -> Option<Rc<Env<AttrContext>>> {
+        // Java: Enter.java:158-166.
+        let local_env = self.get_env(sym)?;
+        let mut lint_env = Rc::clone(&local_env);
+        while lint_env.info.borrow().lint.is_none() {
+            lint_env = Rc::clone(lint_env.next.as_ref()?);
+        }
+        let augmented = {
+            let info = lint_env.info.borrow();
+            let lint = info.lint.as_ref().expect("lint");
+            lint.augment(ctx, syms, ctx.sym(sym))
+        };
+        local_env.info.borrow_mut().lint = Some(Rc::new(augmented));
+        Some(local_env)
     }
 
     /// Java: public Env<AttrContext> classEnv(JCClassDecl tree,

@@ -4330,6 +4330,26 @@ impl TreeVisitor for Gen {
     }
 }
 
+#[cfg(test)]
+mod byte_short_immediate_tests {
+    use super::{literal_value_to_immediate, ImmediateValue};
+    use crate::tree::jc_tree::LiteralValue;
+
+    #[test]
+    fn byte_and_short_convert_to_int_immediates() {
+        // Java: Types.constType(byte/short) is an int constant; Code emits an
+        // int immediate (the wrapper is widened like Gen.visitLiteral).
+        match literal_value_to_immediate(&LiteralValue::Byte(5)) {
+            ImmediateValue::Int(value) => assert_eq!(value, 5),
+            other => panic!("expected int immediate, got {other:?}"),
+        }
+        match literal_value_to_immediate(&LiteralValue::Short(-2)) {
+            ImmediateValue::Int(value) => assert_eq!(value, -2),
+            other => panic!("expected int immediate, got {other:?}"),
+        }
+    }
+}
+
 /// Return whether a case label is an expression (as opposed to a pattern).
 fn case_label_is_expression(ctx: &CompilerContext, label: TreeId) -> bool {
     !matches!(
