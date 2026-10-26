@@ -2363,6 +2363,7 @@ struct UnusedFileManager;
         let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
         let dependencies: Rc<RefCell<dyn Dependencies>> = Rc::new(RefCell::new(DummyDependencies));
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
+        let todo = crate::comp::todo::Todo::instance(&mut context);
         let enter = Rc::new(RefCell::new(Enter::new(
             Rc::clone(&log),
             Rc::clone(&names),
@@ -2372,6 +2373,8 @@ struct UnusedFileManager;
             None,
             manager,
             &options,
+            Rc::clone(&todo),
+            Rc::clone(&type_envs)
         )));
         let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
         let member_enter = Rc::new(RefCell::new(MemberEnter::new(
@@ -2380,7 +2383,7 @@ struct UnusedFileManager;
             Rc::clone(&check),
             Rc::clone(&types),
             Rc::clone(&deferred),
-            Rc::clone(&annotate_cell),
+            Rc::clone(&annotate_cell)
         )));
         let type_enter = Rc::new(RefCell::new(TypeEnter::new(
             Rc::clone(&names),
@@ -2395,6 +2398,7 @@ struct UnusedFileManager;
             Rc::clone(&type_envs),
             Rc::clone(&dependencies),
             Rc::clone(&annotate_cell),
+            Rc::clone(&todo)
         )));
         let basic_handler = Rc::clone(&check.borrow().basic_handler);
         let infer = crate::comp::infer::Infer::new(

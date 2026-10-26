@@ -118,7 +118,7 @@ pub struct Gen {
     /// The lower pass (for pruned trees).
     pub lower: Option<Rc<RefCell<Lower>>>,
     /// The annotation service.
-    pub annotate: Rc<RefCell<Annotate>>,
+    pub annotate: Rc<Annotate>,
     /// The attribution service.
     pub attr: Rc<RefCell<Attr>>,
     /// The type inference service.
@@ -210,7 +210,7 @@ impl Gen {
         names: Rc<Names>,
         target: Target,
         types: Rc<Types>,
-        annotate: Rc<RefCell<Annotate>>,
+        annotate: Rc<Annotate>,
         attr: Rc<RefCell<Attr>>,
         infer: Rc<Infer>,
         pool_writer: Rc<RefCell<PoolWriter>>,
@@ -2782,7 +2782,7 @@ impl Gen {
             if ctx.tree(alt).has_tag(Tag::ANNOTATED_TYPE) {
                 if let TreeKind::AnnotatedType { annotations, .. } = &ctx.tree(alt).kind {
                     let annotations = annotations.clone();
-                    let tas = self.annotate.borrow_mut().from_annotations(ctx, &annotations);
+                    let tas = self.annotate.from_annotations(ctx, &annotations);
                     res.push((tas, alt));
                 }
             } else {

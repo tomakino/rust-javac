@@ -562,6 +562,22 @@ impl JavacFileManager {
                 .insert(path.clone(), container.clone());
             return Ok(container);
         }
+        // Java: the jrt: filesystem paths are served by the JRT image container;
+        // without a jrt FileSystem the port represents them as the jrt-style
+        // textual paths /modules/<module> (see the file header), so those virtual
+        // paths must map to the same container.
+        if path
+            .to_java_string()
+            .to_string()
+            .replace('\\', "/")
+            .starts_with("/modules/")
+        {
+            let container: Rc<dyn Container> = Rc::new(JRTImageContainer);
+            self.containers
+                .borrow_mut()
+                .insert(path.clone(), container.clone());
+            return Ok(container);
+        }
         let real_path = self.fs_info.get_canonical_file(path);
         if let Some(container) = self.containers.borrow().get(&real_path) {
             self.containers

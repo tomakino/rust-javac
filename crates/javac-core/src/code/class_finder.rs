@@ -800,7 +800,6 @@ impl ClassFinder {
             .list(&**location, &package_name, &all_kinds, false);
         let listed = match listed {
             Ok(listed) => {
-                for f in &listed { eprintln!("  file {}", f.get_name().to_string_lossy()); }
                 listed
             }
             Err(error) => return Err(self.io_failure(ctx, p, error)),

@@ -374,7 +374,7 @@ impl CompilerContext {
         named_scope: ScopeId,
         origin: ScopeId,
         name: Name,
-        filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+        filter: Option<crate::code::scope::FilterImportFn>,
         imp: Option<TreeId>,
         cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
         static_import: bool,
@@ -414,7 +414,7 @@ impl CompilerContext {
         &mut self,
         star_scope: ScopeId,
         origin: ScopeId,
-        filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+        filter: Option<crate::code::scope::FilterImportFn>,
         imp: Option<TreeId>,
         cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
         static_import: bool,
@@ -462,12 +462,117 @@ impl CompilerContext {
         self.scope_prepend_sub_scope(star_scope, new_scope);
     }
 
-    /// Java: ImportScope.finalizeScope()
-    pub fn scope_finalize(&mut self, _scope: ScopeId) {
-        // TODO(Scope query): finalizeSingleScope needs the FilterImportScope
-        // symbol queries (getSymbols over the origin scope), which need the
-        // SymbolImporter/TypeSymbol member lookups (Scope query).
-        unimplemented!("TODO(Scope query batch): ImportScope.finalizeScope");
+    /// Java: ImportScope.finalizeScope() (Scope.java:749-785) and
+    /// NamedImportScope.finalizeScope() (Scope.java:830-844).
+    ///
+    /// # Arguments
+    ///   - scope: the import scope;
+    ///   - types: the type relations (for the FilterImportScope query);
+    ///   - syms: the symbol table (for the FilterImportScope query).
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    #[allow(clippy::mutable_key_type)]
+    pub fn scope_finalize(
+        &mut self,
+        scope: ScopeId,
+        types: &crate::code::types::Types,
+        syms: &crate::code::symtab::Symtab,
+    ) {
+        let (sub_scopes, _name2_scopes) = match &self.scope(scope).data {
+            crate::code::scope::ScopeData::ImportScope { sub_scopes, .. } => {
+                (sub_scopes.clone(), None)
+            }
+            crate::code::scope::ScopeData::NamedImportScope {
+                sub_scopes,
+                name2_scopes,
+                ..
+            } => (sub_scopes.clone(), Some(name2_scopes.clone())),
+            crate::code::scope::ScopeData::StarImportScope { sub_scopes, .. } => {
+                (sub_scopes.clone(), None)
+            }
+            _ => return,
+        };
+        let mut finalized: Vec<(ScopeId, ScopeId)> = Vec::new();
+        let mut out: Vec<ScopeId> = Vec::new();
+        for sub in sub_scopes.iter() {
+            let result = self.finalize_single_scope(sub, types, syms);
+            finalized.push((sub, result));
+            out.push(result);
+        }
+        let new_sub_scopes = List::from_iterable(out);
+        match &mut self.scope_mut(scope).data {
+            crate::code::scope::ScopeData::ImportScope { sub_scopes, .. } => {
+                *sub_scopes = new_sub_scopes;
+            }
+            crate::code::scope::ScopeData::NamedImportScope {
+                sub_scopes,
+                name2_scopes,
+                ..
+            } => {
+                *sub_scopes = new_sub_scopes;
+                let mut updated = std::collections::HashMap::new();
+                for (name, scopes) in name2_scopes.iter() {
+                    let remapped: Vec<ScopeId> = scopes
+                        .iter()
+                        .map(|candidate| {
+                            finalized
+                                .iter()
+                                .find(|(old, _)| old == candidate)
+                                .map(|(_, new)| *new)
+                                .unwrap_or(*candidate)
+                        })
+                        .collect();
+                    updated.insert(name.clone(), remapped);
+                }
+                *name2_scopes = updated;
+            }
+            crate::code::scope::ScopeData::StarImportScope { sub_scopes, .. } => {
+                *sub_scopes = new_sub_scopes;
+            }
+            _ => {}
+        }
+    }
+
+    /// Java: ImportScope.finalizeSingleScope(Scope) (Scope.java:760-785).
+    fn finalize_single_scope(
+        &mut self,
+        scope: ScopeId,
+        types: &crate::code::types::Types,
+        syms: &crate::code::symtab::Symtab,
+    ) -> ScopeId {
+        let (owner, statically_imported) = match &self.scope(scope).data {
+            crate::code::scope::ScopeData::FilterImportScope {
+                static_import, ..
+            } => (self.scope(scope).owner, *static_import),
+            _ => return scope,
+        };
+        if !statically_imported {
+            return scope;
+        }
+        let Some(owner) = owner else {
+            return scope;
+        };
+        if self.sym(owner).kind != crate::code::kinds::Kind::TYP {
+            return scope;
+        }
+        let snapshot = self.scope(scope).clone();
+        let symbols = snapshot.get_symbols_full(
+            scope,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+            types,
+            syms,
+            self,
+        );
+        let finalized = self.scope_create(Some(owner));
+        for sym in symbols {
+            self.scope_enter(finalized, sym);
+        }
+        finalized
     }
 
     /// Java: Symbol.complete() — the arena-value adapter: the completer is taken

@@ -274,6 +274,10 @@ impl JRTIndex {
                 if let Some(resources) = self.module_resources.get(&module) {
                     for relative in resources {
                         if let Some(rest) = relative.strip_prefix(&package_path) {
+                            // Java: the package directory path has no trailing
+                            // separator; strip the separator of the resolved
+                            // directory before classifying the entry.
+                            let rest = rest.strip_prefix('/').unwrap_or(rest);
                             JRTIndex::add_entry(rd, &module, rest, relative, &mut entry);
                         }
                     }

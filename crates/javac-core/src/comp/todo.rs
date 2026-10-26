@@ -45,10 +45,16 @@ pub struct Todo {
     /// The environments, in insertion order.
     pub contents: Vec<Rc<Env<AttrContext>>>,
     /// The per-file queues, when grouping has been requested.
-    pub contents_by_file: Option<Vec<Rc<RefCell<FileQueue>>>>,
+    pub contents_by_file: Option<Vec<FileQueueRef>>,
     /// The per-file lookup table.
-    pub file_map: Vec<(Rc<dyn JavaFileObject>, Rc<RefCell<FileQueue>>)>,
+    pub file_map: Vec<(Rc<dyn JavaFileObject>, FileQueueRef)>,
 }
+
+/// One shared per-file queue.
+pub type FileQueueRef = Rc<RefCell<FileQueue>>;
+
+/// The shared todo list (Java: the Todo singleton).
+pub type TodoRef = Rc<RefCell<Todo>>;
 
 impl Todo {
     /// Create an empty todo list.
@@ -61,11 +67,11 @@ impl Todo {
     ///
     /// # Panics
     ///   - none.
-    pub fn instance(context: &mut Context) -> Rc<Todo> {
-        if let Some(instance) = context.get::<Todo>() {
+    pub fn instance(context: &mut Context) -> TodoRef {
+        if let Some(instance) = context.get::<RefCell<Todo>>() {
             return instance;
         }
-        let todo = Rc::new(Todo::new_empty());
+        let todo = Rc::new(RefCell::new(Todo::new_empty()));
         context.put(Rc::clone(&todo));
         todo
     }
@@ -154,7 +160,7 @@ impl Todo {
     }
 
     /// Return the per-file queues, building them when needed.
-    pub fn group_by_file(&mut self, ctx: &CompilerContext) -> Vec<Rc<RefCell<FileQueue>>> {
+    pub fn group_by_file(&mut self, ctx: &CompilerContext) -> Vec<FileQueueRef> {
         if self.contents_by_file.is_none() {
             self.contents_by_file = Some(Vec::new());
             let contents = self.contents.clone();

@@ -1801,6 +1801,17 @@ impl Symtab {
         module
     }
 
+    /// Adapter: add a visible package mapping to a module (the Modules port
+    /// fills the unnamed module's visible packages; registered adapter).
+    pub fn add_visible_package(
+        &mut self,
+        ctx: &mut CompilerContext,
+        module: SymbolId,
+        package: SymbolId,
+    ) {
+        set_visible_package(ctx, module, package);
+    }
+
     /// Java: Symtab constructor binds initialCompleter from
     /// ClassFinder.instance(context).getCompleter(); the port binds it after the
     /// bootstrap creates the ClassFinder (registered adapter) and applies it to

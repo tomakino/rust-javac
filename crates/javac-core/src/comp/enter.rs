@@ -74,6 +74,12 @@ pub struct Enter {
     pub env: Option<Rc<Env<AttrContext>>>,
     /// Java: Type result;
     pub result: Option<TypeId>,
+    /// Java: Annotate annotate (installed after construction, adapter cell).
+    pub annotate: Rc<RefCell<Option<Rc<crate::comp::annotate::Annotate>>>>,
+    /// Java: TypeEnter typeEnter (installed after construction, adapter cell).
+    pub type_enter: Rc<RefCell<Option<Rc<RefCell<crate::comp::type_enter::TypeEnter>>>>>,
+    /// Java: Todo todo
+    pub todo: Rc<RefCell<crate::comp::todo::Todo>>,
 }
 
 impl Enter {
@@ -89,6 +95,8 @@ impl Enter {
         lint: Option<Rc<crate::code::lint::Lint>>,
         file_manager: Rc<dyn JavaFileManager>,
         options: &crate::util::options::Options,
+        todo: Rc<RefCell<crate::comp::todo::Todo>>,
+        type_envs: Rc<RefCell<TypeEnvs>>,
     ) -> Enter {
         Enter {
             log,
@@ -99,12 +107,15 @@ impl Enter {
             lint,
             file_manager,
             pkginfo_opt: crate::main::option::PkgInfo::get(options),
-            type_envs: Rc::new(RefCell::new(TypeEnvs::new())),
+            type_envs,
             predef_class_def: None,
             uncompleted: None,
             unfinished_modules: Vec::new(),
             env: None,
             result: None,
+            annotate: Rc::new(RefCell::new(None)),
+            type_enter: Rc::new(RefCell::new(None)),
+            todo,
         }
     }
 
@@ -160,9 +171,17 @@ impl Enter {
         let toplevel_scope = ctx.scope_create(Some(packge));
         // Java: tree.namedImportScope = new NamedImportScope(tree.packge);
         // tree.starImportScope = new StarImportScope(tree.packge);
-        // TODO(Scope): NamedImportScope/StarImportScope are not ported;
-        // the fields stay None (registered).
-        set_compilation_unit_scopes(ctx, tree, toplevel_scope);
+        let named_import_scope = ctx
+            .alloc_scope(crate::code::scope::Scope::new_named_import_scope(Some(packge)));
+        let star_import_scope = ctx
+            .alloc_scope(crate::code::scope::Scope::new_star_import_scope(Some(packge)));
+        set_compilation_unit_scopes(
+            ctx,
+            tree,
+            toplevel_scope,
+            Some(named_import_scope),
+            Some(star_import_scope),
+        );
         let mut info = AttrContext::new();
         info.scope = Some(toplevel_scope);
         info.lint = self.lint.clone();
@@ -433,7 +452,8 @@ impl Enter {
             }
             self.class_enter_list(ctx, syms, compilation_unit_defs(ctx, tree), Some(top_env.clone()));
             if add_env {
-                // TODO(Todo): todo.append(packageEnv);
+                let package_env = package_env.clone().expect("package env");
+                self.todo.borrow_mut().append(ctx, package_env);
             }
         }
         self.log.borrow_mut().use_source(prev_source);
@@ -746,32 +766,59 @@ impl Enter {
     }
 
     /// Java: public void main(List<JCCompilationUnit> trees)
-    pub fn main(&mut self, ctx: &mut CompilerContext, syms: &mut Symtab, trees: List<TreeId>) {
-        self.complete(ctx, syms, trees, None);
+    pub fn main(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        trees: List<TreeId>,
+    ) -> Vec<SymbolId> {
+        self.complete(ctx, syms, trees, None)
     }
 
     /// Java: public void complete(List<JCCompilationUnit> trees, ClassSymbol c)
+    ///
+    /// PORTING_RULES adapter (registered): the upstream method drives
+    /// TypeEnter.complete / TypeEnter.ensureImportsChecked internally; the
+    /// Rust Enter is borrowed mutably by its caller while TypeEnter needs the
+    /// same Enter handle, so the uncompleted class list is returned and the
+    /// TypeEnter calls are performed by the JavaCompiler-level wiring
+    /// (mini_compiler), preserving the upstream order.
     pub fn complete(
         &mut self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         trees: List<TreeId>,
         c: Option<SymbolId>,
-    ) {
-        // TODO(Annotate): annotate.blockAnnotations();
+    ) -> Vec<SymbolId> {
+        // Java: annotate.blockAnnotations(); the test harnesses that drive Enter
+        // without the annotation service skip the block/unblock pair (adapter).
+        let annotate = self.annotate.borrow().clone();
+        if let Some(annotate) = &annotate {
+            annotate.block_annotations();
+        }
         let prev_uncompleted = self.uncompleted.take();
-        // TODO(TypeEnter): if (typeEnter.completionEnabled)
-        // uncompleted = new ListBuffer<>();
-        let result = self.class_enter_list(ctx, syms, trees, None);
-        let _ = result;
-        // TODO(TypeEnter): complete the uncompleted classes in memberEnter
-        // and run ensureImportsChecked; not ported yet (registered).
-        let _ = c;
+        let completion_enabled = self
+            .type_enter
+            .borrow()
+            .as_ref()
+            .map(|type_enter| type_enter.borrow().completion_enabled)
+            .unwrap_or(false);
+        if completion_enabled {
+            self.uncompleted = Some(Vec::new());
+        }
+        // enter all classes, and construct uncompleted list
+        let _ = self.class_enter_list(ctx, syms, trees, None);
+        let queued = self.uncompleted.take().unwrap_or_default();
         self.uncompleted = prev_uncompleted;
-        // TODO(Annotate): annotate.unblockAnnotations();
+        if let Some(annotate) = &annotate {
+            annotate
+                .unblock_annotations(ctx)
+                .expect("unblockAnnotations flush");
+        }
+        let _ = c;
+        queued
     }
 
-    /// Java: public void newRound() { typeEnvs.clear(); }
     pub fn new_round(&mut self) {
         self.type_envs.borrow_mut().clear();
     }
@@ -833,18 +880,23 @@ fn compilation_unit_toplevel_scope(ctx: &CompilerContext, tree: TreeId) -> Optio
     }
 }
 
-fn set_compilation_unit_scopes(ctx: &mut CompilerContext, tree: TreeId, toplevel_scope: ScopeId) {
+fn set_compilation_unit_scopes(
+    ctx: &mut CompilerContext,
+    tree: TreeId,
+    toplevel_scope: ScopeId,
+    named_import_scope: Option<ScopeId>,
+    star_import_scope: Option<ScopeId>,
+) {
     if let TreeKind::CompilationUnit {
         toplevel_scope: slot,
-        named_import_scope,
-        star_import_scope,
+        named_import_scope: named_slot,
+        star_import_scope: star_slot,
         ..
     } = &mut ctx.tree_mut(tree).kind
     {
         *slot = Some(toplevel_scope);
-        // TODO(Scope): NamedImportScope/StarImportScope (registered).
-        *named_import_scope = None;
-        *star_import_scope = None;
+        *named_slot = named_import_scope;
+        *star_slot = star_import_scope;
     }
 }
 
@@ -1323,6 +1375,8 @@ mod tests {
             Rc::clone(&syms),
         )));
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
+        let todo = crate::comp::todo::Todo::instance(&mut harness.context);
+        let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
         let mut enter = Enter::new(
             Rc::clone(&harness.log),
             Rc::clone(&harness.names),
@@ -1332,6 +1386,8 @@ mod tests {
             None,
             manager,
             &harness.options,
+            Rc::clone(&todo),
+            Rc::clone(&type_envs)
         );
         enter.main(&mut ctx, &mut syms.borrow_mut(), List::of(harness.unit));
         harness.ctx = ctx;

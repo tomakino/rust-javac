@@ -197,6 +197,12 @@ pub struct Entry {
 
 /// The scope's structure (one variant per upstream concrete Scope class; the
 /// abstract Scope/WriteableScope behavior is expressed by the methods).
+/// The ImportFilter predicate (Scope.ImportFilter.accepts(origin, sym)); the
+/// compiler context is threaded explicitly because symbols live in the arena.
+#[allow(clippy::type_complexity)]
+pub type FilterImportFn =
+    Rc<dyn Fn(&mut crate::compiler_context::CompilerContext, ScopeId, SymbolId) -> bool>;
+
 #[derive(Clone)]
 pub enum ScopeData {
     /// Java: private static class ScopeImpl (error_scope marks ErrorScope)
@@ -269,7 +275,7 @@ pub enum ScopeData {
         filter_name: Option<Name>,
         /// Java: private final ImportFilter filter (null for named imports)
         #[allow(clippy::type_complexity)]
-    filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+        filter: Option<FilterImportFn>,
         /// Java: private final JCImport imp (arena tree id)
         imp: Option<TreeId>,
         /// Java: private final boolean staticImport
@@ -403,7 +409,7 @@ impl Scope {
         owner: Option<SymbolId>,
         origin: ScopeId,
         filter_name: Option<Name>,
-        filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+        filter: Option<FilterImportFn>,
         imp: Option<TreeId>,
         static_import: bool,
         cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
@@ -1661,7 +1667,7 @@ fn symbol_importer_import_from(
 fn query_filter_import_scope_members(
     origin: ScopeId,
     static_import: bool,
-    import_filter: &Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+    import_filter: &Option<FilterImportFn>,
     by_name: Option<&Name>,
     sf: &dyn Fn(SymbolId) -> bool,
     lookup_kind: LookupKind,
@@ -1688,7 +1694,7 @@ fn query_filter_import_scope_members(
     for group in results {
         for sym in group {
             let accepted = match import_filter {
-                Some(filter) => filter(origin, sym),
+                Some(filter) => filter(ctx, origin, sym),
                 None => panic!("AssertionError: FilterImportScope without filter"),
             };
             if accepted {

@@ -95,12 +95,14 @@ pub struct TypeEnter {
     pub top_level_phase: Option<Phase>,
     /// ImportsPhase state (Java: inner class fields).
     pub imports_env: Option<Rc<Env<AttrContext>>>,
-    pub static_import_filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
-    pub type_import_filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+    pub static_import_filter: Option<crate::code::scope::FilterImportFn>,
+    pub type_import_filter: Option<crate::code::scope::FilterImportFn>,
     /// Java: private final Annotate annotate = Annotate.instance(context) —
     /// explicit injection adapter (ADR 0001; Rc cycle broken by a cell, see
     /// MemberEnter.annotate).
     pub annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
+    /// Java: private final Todo todo = Todo.instance(context)
+    pub todo: Rc<RefCell<crate::comp::todo::Todo>>,
 }
 
 /// Java: TypeEnter.Phase (the inner subclasses are expressed as TypeEnter phase
@@ -127,6 +129,7 @@ impl TypeEnter {
         type_envs: Rc<RefCell<TypeEnvs>>,
         dependencies: Rc<RefCell<dyn Dependencies>>,
         annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
+        todo: Rc<RefCell<crate::comp::todo::Todo>>,
     ) -> TypeEnter {
         TypeEnter {
             names,
@@ -148,6 +151,7 @@ impl TypeEnter {
             static_import_filter: None,
             type_import_filter: None,
             annotate,
+            todo,
         }
     }
 
@@ -187,14 +191,16 @@ impl TypeEnter {
         if let Some(env) = resolve {
             self.resolve_imports(ctx, syms, toplevel, env);
         }
-        self.check_imports_unique(ctx, toplevel);
-        self.check_imports_resolvable(ctx, toplevel);
+        self.check_imports_unique(ctx, syms, toplevel);
+        self.check_imports_resolvable(ctx, syms, toplevel);
         self.check_imported_packages_observable(ctx, toplevel);
+        let types = Rc::clone(&self.types);
+        let syms_snapshot: &Symtab = &*syms;
         if let Some(scope) = compilation_unit_named_import_scope(ctx, toplevel) {
-            ctx.scope_finalize(scope);
+            ctx.scope_finalize(scope, &types, syms_snapshot);
         }
         if let Some(scope) = compilation_unit_star_import_scope(ctx, toplevel) {
-            ctx.scope_finalize(scope);
+            ctx.scope_finalize(scope, &types, syms_snapshot);
         }
         self.log.borrow_mut().use_source(prev);
     }
@@ -308,7 +314,7 @@ impl TypeEnter {
         if ctx.sym(owner).kind == Kind::PCK {
             let top = self.enter.borrow().get_top_level_env(ctx, toplevel(env));
             self.resolve_imports(ctx, syms, toplevel(env), &top);
-            // TODO(Todo): todo.append(env);
+            self.todo.borrow_mut().append(ctx, Rc::clone(env));
         }
         if ctx.sym(owner).kind == Kind::TYP {
             // Java: sym.owner.complete();
@@ -346,27 +352,52 @@ impl TypeEnter {
         let names = Rc::clone(&self.names);
         let chk = Rc::clone(&self.chk);
         let types = Rc::clone(&self.types);
+        let packge_symbol = packge.expect("package symbol");
+        let syms_for_static = Rc::clone(&self.chk.borrow().syms);
         let chk_for_static = Rc::clone(&chk);
         let types_for_static = Rc::clone(&types);
-        self.static_import_filter = Some(Rc::new(move |origin, sym| {
-            let mut ctx = CompilerContext::new();
-            let _ = (&mut ctx, origin, sym, &chk_for_static, &types_for_static);
-            unimplemented!("TODO(Attr/Check batch): ImportsPhase.importAccessible/static filter")
+        self.static_import_filter = Some(Rc::new(move |ctx, origin, sym| {
+            let origin_owner = ctx.scope(origin).owner;
+            ctx.sym(sym).is_static(ctx)
+                && chk_for_static
+                    .borrow()
+                    .import_accessible(ctx, sym, packge_symbol)
+                && origin_owner
+                    .map(|owner| {
+                        let syms_rc = Rc::clone(&syms_for_static);
+                        let syms = syms_rc.borrow();
+                        crate::code::symbol::is_member_of(
+                            ctx,
+                            &syms,
+                            &types_for_static,
+                            sym,
+                            owner,
+                        )
+                    })
+                    .unwrap_or(false)
         }));
         let chk_for_type = Rc::clone(&chk);
-        self.type_import_filter = Some(Rc::new(move |_origin, sym| {
-            let _ = (sym, &chk_for_type);
-            unimplemented!("TODO(Check batch): ImportsPhase.importAccessible/type filter")
+        self.type_import_filter = Some(Rc::new(move |ctx, _origin, sym| {
+            ctx.sym(sym).kind == crate::code::kinds::Kind::TYP
+                && chk_for_type
+                    .borrow()
+                    .import_accessible(ctx, sym, packge_symbol)
         }));
         // Import-on-demand java.lang.
         let java_lang = syms.enter_package(ctx, syms.java_base, self.names.java_lang.clone());
-        let java_lang_members_empty = ctx
-            .scope_get_symbols(
-                class_members_scope(ctx, java_lang).expect("java.lang members"),
-                LookupKind::NON_RECURSIVE,
-                &|_| true,
-            )
-            .is_empty();
+        // Java: javaLang.members() completes the package before listing it.
+        if let Err(failure) = ctx.complete_symbol(syms, java_lang) {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.completion_error(ctx, ctx.tree(tree).pos, &failure, syms);
+            return;
+        }
+        let java_lang_members_empty = match class_members_scope(ctx, java_lang) {
+            Some(scope) => ctx
+                .scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true)
+                .is_empty(),
+            None => true,
+        };
         if java_lang_members_empty && !symbol_exists(ctx, java_lang) {
             // Java: throw new FatalError(diags.fragment(Fragments.FatalErrNoJavaLang));
             unimplemented!("TODO(File/Query batch): FatalError(Fragments.FatalErrNoJavaLang)")
@@ -546,7 +577,8 @@ impl TypeEnter {
         env: &Rc<Env<AttrContext>>,
     ) {
         let star_scope = compilation_unit_star_import_scope(ctx, toplevel(env)).expect("star scope");
-        let origin = class_members_scope(ctx, tsym).expect("type members");
+        // Java: tsym.members() (works for packages and classes).
+        let origin = ctx.sym(tsym).members().expect("type members");
         let filter = self.static_import_filter.clone();
         let _ = filter;
         // Java: toplevel(&env).starImportScope.importAll(types, tsym.members(),
@@ -665,19 +697,29 @@ impl TypeEnter {
         };
         self.import_all(ctx, imp, java_lang, env);
     }
-    /// Java: Check.checkImportsUnique(toplevel) — TODO(Check).
-    fn check_imports_unique(&mut self, _ctx: &mut CompilerContext, _toplevel: TreeId) {
-        unimplemented!("TODO(Check batch): Check.checkImportsUnique")
+    /// Java: Check.checkImportsUnique(toplevel) (Check.java:3793-3820).
+    fn check_imports_unique(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        toplevel: TreeId,
+    ) {
+        self.chk.borrow().check_imports_unique(ctx, syms, toplevel);
     }
 
-    /// Java: Check.checkImportsResolvable(toplevel) — TODO(Check).
-    fn check_imports_resolvable(&mut self, _ctx: &mut CompilerContext, _toplevel: TreeId) {
-        unimplemented!("TODO(Check batch): Check.checkImportsResolvable")
+    /// Java: Check.checkImportsResolvable(toplevel) (Check.java:4002-4024).
+    fn check_imports_resolvable(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        toplevel: TreeId,
+    ) {
+        self.chk.borrow().check_imports_resolvable(ctx, syms, toplevel);
     }
 
-    /// Java: Check.checkImportedPackagesObservable(toplevel) — TODO(Check).
-    fn check_imported_packages_observable(&mut self, _ctx: &mut CompilerContext, _toplevel: TreeId) {
-        unimplemented!("TODO(Check batch): Check.checkImportedPackagesObservable")
+    /// Java: Check.checkImportedPackagesObservable(toplevel) (Check.java:4026-4039).
+    fn check_imported_packages_observable(&mut self, ctx: &mut CompilerContext, toplevel: TreeId) {
+        self.chk.borrow().check_imported_packages_observable(ctx, toplevel);
     }
 
     /// Java: public void markDeprecated(Symbol sym, List<JCAnnotation>
@@ -1744,6 +1786,8 @@ mod tests {
             Rc::clone(&syms),
         )));
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
+        let todo = crate::comp::todo::Todo::instance(&mut context);
+        let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
         let enter = Rc::new(RefCell::new(Enter::new(
             Rc::clone(&log),
             Rc::clone(&names),
@@ -1753,6 +1797,8 @@ mod tests {
             None,
             manager,
             &options,
+            Rc::clone(&todo),
+            Rc::clone(&type_envs)
         )));
         let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
         let member_enter = Rc::new(RefCell::new(MemberEnter::new(
@@ -1761,9 +1807,8 @@ mod tests {
             Rc::clone(&chk),
             Rc::clone(&types),
             Rc::clone(&deferred),
-            Rc::clone(&annotate_cell),
+            Rc::clone(&annotate_cell)
         )));
-        let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
         let dependencies: Rc<RefCell<dyn Dependencies>> =
             Rc::new(RefCell::new(crate::code::dependencies::DummyDependencies));
         let make = Rc::new(RefCell::new(crate::tree::tree_maker::TreeMaker::new(Some(
@@ -1782,6 +1827,7 @@ mod tests {
             type_envs,
             dependencies,
             annotate_cell,
+            Rc::clone(&todo)
         );
         Harness {
             ctx,

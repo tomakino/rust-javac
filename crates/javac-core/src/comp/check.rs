@@ -94,6 +94,8 @@ pub struct Check {
     /// Java: final boolean warnOnAnyAccessToMembers (from -Xlint options);
     /// injected through the setter at wiring time (Adapter).
     pub warn_on_any_access_to_members: bool,
+    /// Java: private MethodSymbol method (Check.java:109).
+    pub method: Option<SymbolId>,
     /// Java: final Source source (Check.java:200).
     pub source: crate::code::source::Source,
     /// Java: Feature.PRIVATE_SAFE_VARARGS.allowedInSource(source) (Check.java:970-977)
@@ -139,6 +141,7 @@ impl Check {
                 .allowed_in_source(source),
             syms,
             type_annotations: Rc::new(RefCell::new(None)),
+            method: None,
             warn_on_any_access_to_members: false,
             source,
         }
@@ -7016,5 +7019,829 @@ impl Check {
                 .unwrap_or(true),
             _ => true,
         }
+    }
+}
+impl Check {
+    /// Java: public boolean importAccessible(Symbol sym, PackageSymbol packge)
+    /// (Check.java:4042-4056).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - sym: the imported symbol;
+    ///   - packge: the package doing the import.
+    ///
+    /// # Returns
+    ///   - true when the symbol is accessible everywhere in the package.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:4042-4056.
+    pub fn import_accessible(
+        &self,
+        ctx: &mut CompilerContext,
+        sym: SymbolId,
+        packge: SymbolId,
+    ) -> bool {
+        let flags_value = (ctx.sym(sym).flags_field & crate::code::flags::AccessFlags as i64) as i32;
+        match flags_value {
+            crate::code::flags::PUBLIC => true,
+            crate::code::flags::PRIVATE => false,
+            _ => crate::code::symbol::symbol_packge(ctx, sym) == Some(packge),
+        }
+    }
+
+    /// Java: void checkImportsUnique(JCCompilationUnit toplevel) (Check.java:3793-3820).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - toplevel: the compilation unit.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:3793-3820.
+    pub fn check_imports_unique(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        toplevel: TreeId,
+    ) {
+        let (defs, packge, top_level_scope) = match &ctx.tree(toplevel).kind {
+            TreeKind::CompilationUnit {
+                defs,
+                packge,
+                toplevel_scope,
+                ..
+            } => (defs.clone(), *packge, *toplevel_scope),
+            _ => return,
+        };
+        let Some(packge) = packge else {
+            return;
+        };
+        let ordinally_imported_scope = ctx.scope_create(Some(packge));
+        let statically_imported_scope = ctx.scope_create(Some(packge));
+        let Some(top_level_scope) = top_level_scope else {
+            return;
+        };
+        let mut current = defs;
+        while current.non_empty() {
+            let def = *current.head();
+            current = current.tail();
+            let import_scope = match &ctx.tree(def).kind {
+                TreeKind::Import { import_scope, .. } => *import_scope,
+                _ => continue,
+            };
+            let Some(import_scope) = import_scope else {
+                continue;
+            };
+            let symbols = ctx.scope_get_symbols(
+                import_scope,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|sym| ctx.sym(sym).kind == crate::code::kinds::Kind::TYP,
+            );
+            let is_static = match &ctx.tree(def).kind {
+                TreeKind::Import { static_import, .. } => *static_import,
+                _ => false,
+            };
+            for sym in symbols {
+                self.check_unique_import(
+                    ctx,
+                    syms,
+                    def,
+                    ordinally_imported_scope,
+                    statically_imported_scope,
+                    top_level_scope,
+                    sym,
+                    is_static,
+                );
+                if is_static {
+                    ctx.scope_enter(statically_imported_scope, sym);
+                } else {
+                    ctx.scope_enter(ordinally_imported_scope, sym);
+                }
+            }
+            if let TreeKind::Import { import_scope, .. } = &mut ctx.tree_mut(def).kind {
+                *import_scope = None;
+            }
+        }
+    }
+
+    /// Java: private boolean checkUniqueImport(...) (Check.java:3830-3860).
+    #[allow(clippy::too_many_arguments)]
+    fn check_unique_import(
+        &self,
+        ctx: &mut CompilerContext,
+        _syms: &mut crate::code::symtab::Symtab,
+        import_tree: TreeId,
+        ordinally_imported_scope: ScopeId,
+        statically_imported_scope: ScopeId,
+        top_level_scope: ScopeId,
+        sym: SymbolId,
+        static_import: bool,
+    ) -> bool {
+        let symbol_name = ctx.sym(sym).name.clone();
+        let candidates = ctx.scope_get_symbols_by_name(
+            ordinally_imported_scope,
+            &symbol_name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        let ordinary_clashing = candidates
+            .into_iter()
+            .find(|candidate| *candidate != sym && !erroneous_symbol(ctx, *candidate));
+        let mut static_clashing = None;
+        if ordinary_clashing.is_none() && !static_import {
+            let candidates = ctx.scope_get_symbols_by_name(
+                statically_imported_scope,
+                &symbol_name,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+            );
+            static_clashing = candidates
+                .into_iter()
+                .find(|candidate| *candidate != sym && !erroneous_symbol(ctx, *candidate));
+        }
+        let pos = ctx.tree(import_tree).pos;
+        if let Some(clashing) = ordinary_clashing {
+            let message = crate::resources::compiler_properties::errors::already_defined_single_import(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_text(
+                    ctx, clashing,
+                )),
+            );
+            self.log
+                .borrow_mut()
+                .error_at(pos, crate::util::jc_diagnostic::Error::from(message));
+            return false;
+        }
+        if let Some(clashing) = static_clashing {
+            let message = crate::resources::compiler_properties::errors::already_defined_static_single_import(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_text(
+                    ctx, clashing,
+                )),
+            );
+            self.log
+                .borrow_mut()
+                .error_at(pos, crate::util::jc_diagnostic::Error::from(message));
+            return false;
+        }
+        let candidates = ctx.scope_get_symbols_by_name(
+            top_level_scope,
+            &symbol_name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        let clashing = candidates
+            .into_iter()
+            .find(|candidate| *candidate != sym && !erroneous_symbol(ctx, *candidate));
+        if let Some(clashing) = clashing {
+            let message = crate::resources::compiler_properties::errors::already_defined_this_unit(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_text(
+                    ctx, clashing,
+                )),
+            );
+            self.log
+                .borrow_mut()
+                .error_at(pos, crate::util::jc_diagnostic::Error::from(message));
+            return false;
+        }
+        true
+    }
+
+    /// Java: public void checkImportsResolvable(JCCompilationUnit toplevel)
+    /// (Check.java:4002-4024).
+    pub fn check_imports_resolvable(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        toplevel: TreeId,
+    ) {
+        let _ = syms;
+        let (defs, packge) = match &ctx.tree(toplevel).kind {
+            TreeKind::CompilationUnit { defs, packge, .. } => (defs.clone(), *packge),
+            _ => return,
+        };
+        let Some(packge) = packge else {
+            return;
+        };
+        let mut current = defs;
+        while current.non_empty() {
+            let imp = *current.head();
+            current = current.tail();
+            let (static_import, qualid) = match &ctx.tree(imp).kind {
+                TreeKind::Import {
+                    static_import,
+                    qualid,
+                    ..
+                } => (*static_import, *qualid),
+                _ => continue,
+            };
+            if !static_import {
+                continue;
+            }
+            let Some(qualid) = qualid else {
+                continue;
+            };
+            let TreeKind::FieldAccess {
+                selected: Some(selected),
+                name,
+                ..
+            } = &ctx.tree(qualid).kind
+            else {
+                continue;
+            };
+            let (selected, name) = (*selected, name.clone());
+            if name == self.names.asterisk {
+                continue;
+            }
+            let Some(origin) = ctx.tree(selected).ty else {
+                continue;
+            };
+            let Some(site) = ctx.typ(origin).tsym else {
+                continue;
+            };
+            if ctx.sym(site).kind != crate::code::kinds::Kind::TYP {
+                continue;
+            }
+            let mut processed: Vec<SymbolId> = Vec::new();
+            if !self.check_type_contains_importable_element(
+                ctx,
+                site,
+                site,
+                packge,
+                &name,
+                &mut processed,
+            ) {
+                let message = crate::resources::compiler_properties::errors::cant_resolve_location(
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder("STATIC"),
+                    name.clone(),
+                    (),
+                    (),
+                    crate::resources::diagnostic_contract::DiagnosticArg::Text(
+                        symbol_text(ctx, site),
+                    ),
+                );
+                self.log
+                    .borrow_mut()
+                    .error_at(ctx.tree(imp).pos, crate::util::jc_diagnostic::Error::from(message));
+            }
+        }
+    }
+
+    /// Java: private boolean checkTypeContainsImportableElement(...)
+    /// (Check.java:4028-4040).
+    fn check_type_contains_importable_element(
+        &self,
+        ctx: &mut CompilerContext,
+        tsym: SymbolId,
+        origin: SymbolId,
+        packge: SymbolId,
+        name: &Name,
+        processed: &mut Vec<SymbolId>,
+    ) -> bool {
+        if processed.contains(&tsym) {
+            return false;
+        }
+        processed.push(tsym);
+        let Some(ty) = ctx.sym(tsym).ty else {
+            return false;
+        };
+        let supertype = self.types.supertype(ctx, &self.syms.borrow(), ty);
+        if let Some(super_tsym) = ctx.typ(supertype).tsym
+            && super_tsym != tsym
+            && self.check_type_contains_importable_element(
+                ctx, super_tsym, origin, packge, name, processed,
+            )
+        {
+            return true;
+        }
+        let interfaces = self.types.interfaces(ctx, &self.syms.borrow(), ty);
+        let mut interface_list = interfaces;
+        while interface_list.non_empty() {
+            let interface_ty = *interface_list.head();
+            interface_list = interface_list.tail();
+            if let Some(interface_tsym) = ctx.typ(interface_ty).tsym
+                && interface_tsym != tsym
+                && self.check_type_contains_importable_element(
+                    ctx,
+                    interface_tsym,
+                    origin,
+                    packge,
+                    name,
+                    processed,
+                )
+            {
+                return true;
+            }
+        }
+        let members = ctx.sym(tsym).members();
+        let Some(members) = members else {
+            return false;
+        };
+        let symbols =
+            ctx.scope_get_symbols_by_name(members, name, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true);
+        for sym in symbols {
+            if ctx.sym(sym).is_static(ctx)
+                && self.import_accessible(ctx, sym, packge)
+                && {
+                    let syms_rc = Rc::clone(&self.syms);
+                    let syms = syms_rc.borrow();
+                    crate::code::symbol::is_member_of(ctx, &syms, &self.types, sym, origin)
+                }
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Java: public void checkImportedPackagesObservable(JCCompilationUnit toplevel)
+    /// (Check.java:4026-4039).
+    pub fn check_imported_packages_observable(
+        &self,
+        ctx: &mut CompilerContext,
+        toplevel: TreeId,
+    ) {
+        let defs = match &ctx.tree(toplevel).kind {
+            TreeKind::CompilationUnit { defs, .. } => defs.clone(),
+            _ => return,
+        };
+        let mut current = defs;
+        while current.non_empty() {
+            let imp = *current.head();
+            current = current.tail();
+            let (static_import, qualid) = match &ctx.tree(imp).kind {
+                TreeKind::Import {
+                    static_import,
+                    qualid,
+                    ..
+                } => (*static_import, *qualid),
+                _ => continue,
+            };
+            if static_import {
+                continue;
+            }
+            let Some(qualid) = qualid else {
+                continue;
+            };
+            let TreeKind::FieldAccess {
+                selected: Some(selected),
+                name,
+                ..
+            } = &ctx.tree(qualid).kind
+            else {
+                continue;
+            };
+            if name != &self.names.asterisk {
+                continue;
+            }
+            let selected = *selected;
+            let target = ctx
+                .tree(selected)
+                .ty
+                .and_then(|ty| ctx.typ(ty).tsym);
+            let Some(tsym) = target else {
+                continue;
+            };
+            if ctx.sym(tsym).kind != crate::code::kinds::Kind::PCK {
+                continue;
+            }
+            let empty = ctx
+                .sym(tsym)
+                .members()
+                .map(|members| {
+                    ctx.scope_get_symbols(
+                        members,
+                        crate::code::scope::LookupKind::NON_RECURSIVE,
+                        &|_| true,
+                    )
+                    .is_empty()
+                })
+                .unwrap_or(true);
+            let observable = crate::code::source::Feature::IMPORT_ON_DEMAND_OBSERVABLE_PACKAGES
+                .allowed_in_source(self.source)
+                && symbol_exists_public(ctx, tsym);
+            if empty && !observable {
+                let message = crate::resources::compiler_properties::errors::doesnt_exist(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_text(
+                        ctx, tsym,
+                    )),
+                );
+                self.log
+                    .borrow_mut()
+                    .error_at(ctx.tree(imp).pos, crate::util::jc_diagnostic::Error::from(message));
+            }
+        }
+    }
+}
+
+/// Return whether the symbol's type is erroneous.
+fn erroneous_symbol(ctx: &mut CompilerContext, sym: SymbolId) -> bool {
+    ctx.sym(sym)
+        .ty
+        .map(|ty| ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::ERROR))
+        .unwrap_or(true)
+}
+
+/// Return the printable name of a symbol (diagnostic argument adapter).
+fn symbol_text(ctx: &mut CompilerContext, sym: SymbolId) -> String {
+    ctx.sym(sym)
+        .name
+        .to_java_string()
+        .to_string_lossy()
+        .to_string()
+}
+
+/// Return whether a package/class symbol exists (Symbol.exists()).
+fn symbol_exists_public(ctx: &mut CompilerContext, sym: SymbolId) -> bool {
+    (ctx.sym(sym).flags_field & crate::code::flags::EXISTS as i64) != 0
+}
+
+impl Check {
+    /// Java: MethodSymbol setMethod(MethodSymbol newMethod) (Check.java:217-221).
+    ///
+    /// # Arguments
+    ///   - new_method: the method now being checked.
+    ///
+    /// # Returns
+    ///   - the previous method.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:217-221.
+    pub fn set_method(&mut self, new_method: Option<SymbolId>) -> Option<SymbolId> {
+        let prev = self.method;
+        self.method = new_method;
+        prev
+    }
+
+    /// Java: boolean isOverrider(Symbol s) (Check.java:3281-3302).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - s: the symbol to test.
+    ///
+    /// # Returns
+    ///   - true when s overrides a method of a superclass.
+    ///
+    /// # Panics
+    ///   - the symbol type of the owner is missing.
+    ///
+    /// Upstream: Check.java:3281-3302.
+    pub fn is_overrider(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        s: SymbolId,
+    ) -> bool {
+        if ctx.sym(s).kind != crate::code::kinds::Kind::MTH || ctx.sym(s).is_static(ctx) {
+            return false;
+        }
+        let owner = ctx.sym(s).owner.expect("method owner");
+        let owner_ty = ctx.sym(owner).ty.expect("owner type");
+        let syms_rc = Rc::clone(&self.syms);
+        let closure = {
+            let syms_borrow = syms_rc.borrow();
+            self.types.closure(ctx, &syms_borrow, owner_ty)
+        };
+        let mut sup_types = closure;
+        while sup_types.non_empty() {
+            let sup = *sup_types.head();
+            sup_types = sup_types.tail();
+            if sup == owner_ty {
+                continue;
+            }
+            let Some(sup_tsym) = ctx.typ(sup).tsym else {
+                continue;
+            };
+            let Some(members) = ctx.sym(sup_tsym).members() else {
+                continue;
+            };
+            let name = ctx.sym(s).name.clone();
+            let symbols = ctx.scope_get_symbols_by_name(
+                members,
+                &name,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+            );
+            for sym in symbols {
+                if !ctx.sym(sym).is_static(ctx)
+                    && crate::code::symbol::overrides(ctx, syms, &self.types, s, sym, owner, true)
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Java: void checkOverride(Env<AttrContext> env, JCMethodDecl tree,
+    /// MethodSymbol m) (Check.java:2103-2150).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - env: the current environment;
+    ///   - tree: the method declaration;
+    ///   - m: the overriding method.
+    ///
+    /// # Returns
+    ///   - none (diagnostics are reported).
+    ///
+    /// # Panics
+    ///   - a class invariant is violated.
+    ///
+    /// Upstream: Check.java:2103-2150.
+    #[allow(clippy::too_many_lines)]
+    pub fn check_override_env(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        tree: TreeId,
+        m: SymbolId,
+    ) {
+        use crate::code::flags;
+        let origin = ctx.sym(m).owner.expect("method owner");
+        if (ctx.sym(origin).flags_field & flags::ENUM as i64) != 0
+            && ctx.sym(m).name == self.names.finalize
+            && crate::code::symbol::overrides(
+                ctx,
+                syms,
+                &self.types,
+                m,
+                syms.enum_final_finalize,
+                origin,
+                false,
+            )
+        {
+            self.log.borrow_mut().error_at(
+                ctx.tree(tree).pos,
+                crate::util::jc_diagnostic::Error::from(
+                    crate::resources::compiler_properties::errors::enum_no_finalize(),
+                ),
+            );
+            return;
+        }
+        if self.allow_records && ctx.sym(origin).is_record() {
+            // A user-defined accessor is not checked for @Override.
+            let components = match &ctx.sym(origin).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol {
+                    record_components, ..
+                } => record_components.clone(),
+                _ => List::nil(),
+            };
+            let mut current = components;
+            while current.non_empty() {
+                let rc = *current.head();
+                current = current.tail();
+                if let crate::code::symbol::SymbolKind::RecordComponent {
+                    accessor: Some(accessor),
+                    ..
+                } = ctx.sym(rc).kind_data
+                    && accessor == m
+                    && (ctx.sym(accessor).flags_field & flags::GENERATED_MEMBER as i64) == 0
+                {
+                    return;
+                }
+            }
+        }
+        let origin_ty = ctx.sym(origin).ty.expect("origin type");
+        let mut t = origin_ty;
+        loop {
+            if !ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+                break;
+            }
+            if t != origin_ty {
+                self.check_override_at(ctx, syms, tree, t, origin, m);
+            }
+            let interfaces = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                self.types.interfaces(ctx, &syms_borrow, t)
+            };
+            let mut list = interfaces;
+            while list.non_empty() {
+                let t2 = *list.head();
+                list = list.tail();
+                self.check_override_at(ctx, syms, tree, t2, origin, m);
+            }
+            let supertype = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                self.types.supertype(ctx, &syms_borrow, t)
+            };
+            if supertype == t {
+                break;
+            }
+            t = supertype;
+        }
+        let override_tsym = ctx.typ(syms.override_type).tsym.expect("Override type");
+        let explicit_override = ctx.sym(m).attribute(ctx, override_tsym).is_some();
+        let anonymous_diamond = env.info.borrow().is_anonymous_diamond;
+        let must_override = explicit_override
+            || (anonymous_diamond
+                && !ctx.sym(m).is_constructor(&self.names)
+                && !ctx.sym(m).is_private());
+        if must_override && !self.is_overrider(ctx, syms, m) {
+            let pos = self.override_error_position(ctx, tree, override_tsym, explicit_override);
+            let info = if explicit_override {
+                if ctx.sym(m).is_static(ctx) {
+                    crate::resources::compiler_properties::errors::static_methods_cannot_be_annotated_with_override()
+                } else {
+                    crate::resources::compiler_properties::errors::method_does_not_override_superclass()
+                }
+            } else {
+                crate::resources::compiler_properties::errors::anonymous_diamond_method_does_not_override_superclass(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        crate::resources::compiler_properties::fragments::diamond_anonymous_methods_implicitly_override()
+                            .info()
+                            .key(),
+                    ),
+                )
+            };
+            self.log
+                .borrow_mut()
+                .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
+        }
+    }
+
+    /// The position of the @Override annotation (or the declaration).
+    fn override_error_position(
+        &self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        override_tsym: SymbolId,
+        explicit_override: bool,
+    ) -> i32 {
+        if explicit_override
+            && let crate::tree::jc_tree::TreeKind::MethodDecl { mods: Some(mods), .. } =
+                &ctx.tree(tree).kind
+            && let crate::tree::jc_tree::TreeKind::Modifiers { annotations, .. } =
+                &ctx.tree(*mods).kind
+        {
+            let mut current = annotations.clone();
+            while current.non_empty() {
+                let anno = *current.head();
+                let anno_tsym = ctx.tree(anno).ty.and_then(|ty| ctx.typ(ty).tsym);
+                if anno_tsym == Some(override_tsym) {
+                    return ctx.tree(anno).pos;
+                }
+                current = current.tail();
+            }
+        }
+        ctx.tree(tree).pos
+    }
+
+    /// Java: void checkVarargsMethodDecl(Env<AttrContext> env, JCMethodDecl tree)
+    /// (Check.java:938-990).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - env: the current environment;
+    ///   - tree: the method declaration.
+    ///
+    /// # Returns
+    ///   - none (diagnostics are reported).
+    ///
+    /// # Panics
+    ///   - a method invariant is violated.
+    ///
+    /// Upstream: Check.java:938-990.
+    pub fn check_varargs_method_decl(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        tree: TreeId,
+    ) {
+        let _ = env;
+        use crate::code::flags;
+        let (params, m) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::MethodDecl {
+                params,
+                sym: Some(sym),
+                ..
+            } => (params.clone(), *sym),
+            _ => return,
+        };
+        let trust_me_tsym = self
+            .syms
+            .borrow()
+            .trust_me_type;
+        let trust_me_tsym = ctx.typ(trust_me_tsym).tsym.expect("SafeVarargs type");
+        let has_trust_me = ctx.sym(m).attribute(ctx, trust_me_tsym).is_some();
+        let is_var_args = (ctx.sym(m).flags_field & flags::VARARGS) != 0;
+        let mut vararg_elem_type: Option<TypeId> = None;
+        if is_var_args
+            && let Some(last_param) = params.last()
+            && let crate::tree::jc_tree::TreeKind::VariableDecl { vartype: Some(vartype), .. } =
+                &ctx.tree(last_param).kind
+            && let Some(param_ty) = ctx.tree(*vartype).ty
+        {
+            vararg_elem_type = Some(self.types.elemtype(ctx, syms, param_ty));
+        }
+        let private_safe = crate::code::source::Feature::PRIVATE_SAFE_VARARGS
+            .allowed_in_source(self.source);
+        if has_trust_me && !self.is_trust_me_allowed_on_method(ctx, m) {
+            if let Some(elem) = vararg_elem_type {
+                let fragment = if private_safe {
+                    crate::resources::compiler_properties::fragments::varargs_trustme_on_virtual_varargs(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_name(ctx, m)),
+                    )
+                } else {
+                    crate::resources::compiler_properties::fragments::varargs_trustme_on_virtual_varargs_final_only(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_name(ctx, m)),
+                    )
+                };
+                let _ = elem;
+                let info = crate::resources::compiler_properties::errors::varargs_invalid_trustme_anno(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_name(ctx, trust_me_tsym)),
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        fragment.info().key(),
+                    ),
+                );
+                self.log
+                    .borrow_mut()
+                    .error_at(ctx.tree(tree).pos, crate::util::jc_diagnostic::Error::from(info));
+            } else {
+                let fragment =
+                    crate::resources::compiler_properties::fragments::varargs_trustme_on_non_varargs_meth(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_name(ctx, m)),
+                    );
+                let info = crate::resources::compiler_properties::errors::varargs_invalid_trustme_anno(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_name(ctx, trust_me_tsym)),
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        fragment.info().key(),
+                    ),
+                );
+                self.log
+                    .borrow_mut()
+                    .error_at(ctx.tree(tree).pos, crate::util::jc_diagnostic::Error::from(info));
+            }
+        } else if has_trust_me
+            && let Some(elem) = vararg_elem_type
+            && self.types.is_reifiable(ctx, syms, elem)
+        {
+            let fragment =
+                crate::resources::compiler_properties::fragments::varargs_trustme_on_reifiable_varargs(
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                        type_name(ctx, elem),
+                    ),
+                );
+            let warning = crate::resources::compiler_properties::warnings::varargs_redundant_trustme_anno(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_name(ctx, trust_me_tsym)),
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                    fragment.info().key(),
+                ),
+            );
+            self.warn_unsafe_vararg(ctx.tree(tree).pos, warning);
+        } else if !has_trust_me
+            && let Some(elem) = vararg_elem_type
+            && !self.types.is_reifiable(ctx, syms, elem)
+            && !params.is_empty()
+        {
+            let first = *params.head();
+            let warning =
+                crate::resources::compiler_properties::warnings::unchecked_varargs_non_reifiable_type(
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(type_name(
+                        ctx, elem,
+                    )),
+                );
+            self.warn_unchecked(ctx.tree(first).pos, warning);
+        }
+    }
+
+    /// Java: void warnUnsafeVararg(DiagnosticPosition pos, Warning warnKey)
+    /// (Check.java:???).
+    fn warn_unsafe_vararg(&self, pos: i32, warning: crate::resources::diagnostic_contract::WarningInfo) {
+        if self.lint.is_enabled(crate::code::lint::LintCategory::VARARGS) {
+            self.log
+                .borrow_mut()
+                .warning_at(pos, crate::util::jc_diagnostic::Warning::from(warning));
+        }
+    }
+}
+
+/// Return the printable name of a symbol (diagnostic argument adapter).
+fn symbol_name(ctx: &mut CompilerContext, sym: SymbolId) -> String {
+    ctx.sym(sym)
+        .name
+        .to_java_string()
+        .to_string_lossy()
+        .to_string()
+}
+
+/// Return the printable name of a type (diagnostic argument adapter).
+fn type_name(ctx: &mut CompilerContext, ty: TypeId) -> String {
+    let tsym = ctx.typ(ty).tsym;
+    match tsym {
+        Some(sym) => symbol_name(ctx, sym),
+        None => format!("{ty:?}"),
     }
 }

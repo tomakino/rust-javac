@@ -306,6 +306,19 @@ impl ResultInfo {
     }
 }
 
+/// The Symtab values read by Attr during attribution; cached at the entry
+/// points so the shared Symtab cell is not borrowed while the caller holds a
+/// mutable borrow of the same Symtab (adapters registered).
+#[derive(Clone, Copy)]
+pub struct SymtabFacts {
+    pub recovery_type: TypeId,
+    pub unnamed_module: SymbolId,
+    pub no_module: SymbolId,
+    pub enum_sym: SymbolId,
+    pub throwable_type: TypeId,
+    pub void_type: TypeId,
+}
+
 /// Java: public class Attr extends JCTree.Visitor (the visitor is expressed as
 /// the visit_* methods + the TreeKind dispatch in visit()).
 pub struct Attr {
@@ -402,9 +415,39 @@ pub struct Attr {
     /// Java: final TypeAnnotations typeAnnotations (service cell: installed by
     /// the wiring).
     pub type_annotations: Rc<RefCell<Option<Rc<crate::code::type_annotations::TypeAnnotations>>>>,
+    /// Adapter: the Symtab values cached at the entry points (see SymtabFacts).
+    pub symtab_facts: RefCell<Option<SymtabFacts>>,
 }
 
 impl Attr {
+    /// Cache the Symtab values read during attribution.
+    fn cache_symtab_facts(&self, syms: &Symtab) {
+        *self.symtab_facts.borrow_mut() = Some(SymtabFacts {
+            recovery_type: syms.recovery_type,
+            unnamed_module: syms.unnamed_module,
+            no_module: syms.no_module,
+            enum_sym: enum_sym_value(syms),
+            throwable_type: syms.throwable_type,
+            void_type: syms.void_type,
+        });
+    }
+
+    /// Return the cached Symtab value, or read it from the shared cell.
+    fn symtab_facts(&self) -> SymtabFacts {
+        if let Some(facts) = *self.symtab_facts.borrow() {
+            return facts;
+        }
+        let syms = self.syms.borrow();
+        SymtabFacts {
+            recovery_type: syms.recovery_type,
+            unnamed_module: syms.unnamed_module,
+            no_module: syms.no_module,
+            enum_sym: enum_sym_value(&syms),
+            throwable_type: syms.throwable_type,
+            void_type: syms.void_type,
+        }
+    }
+
     /// Java: protected Attr(Context context) — injected dependencies.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -499,6 +542,7 @@ impl Attr {
             flow: Rc::new(RefCell::new(None)),
             annotate: Rc::new(RefCell::new(None)),
             type_annotations: Rc::new(RefCell::new(None)),
+            symtab_facts: RefCell::new(None),
             attr_recover: Rc::new(RefCell::new(None)),
             syms,
             infer,
@@ -3008,7 +3052,7 @@ impl Attr {
         let return_type = self
             .types
             .get_return_type_public(ctx, descriptor);
-        if Some(return_type) == Some(self.syms.borrow().recovery_type) {
+        if Some(return_type) == Some(self.symtab_facts().recovery_type) {
             // Java: descriptor.getReturnType() == Type.recoveryType ? recoveryInfo:...
             self.recovery_info.clone()
         } else {
@@ -3064,7 +3108,7 @@ impl Attr {
         };
         let return_type_is_void =
             ctx.typ(return_type).has_tag(crate::code::type_tag::TypeTag::VOID);
-        let return_type_is_recovery = return_type == self.syms.borrow().recovery_type;
+        let return_type_is_recovery = return_type == self.symtab_facts().recovery_type;
         let body_is_statement = body
             .map(|body| ctx.tree(body).tag == Tag::BLOCK)
             .unwrap_or(true);
@@ -3155,7 +3199,7 @@ impl Attr {
         explicit_param_types: Option<List<TypeId>>,
     ) -> Result<TargetInfo, crate::code::types::FunctionDescriptorLookupError> {
         use crate::code::type_tag::TypeTag;
-        let recovery_type = self.syms.borrow().recovery_type;
+        let recovery_type = self.symtab_facts().recovery_type;
         let mut current_target = result_info.pt.expect("resultInfo.pt");
         let lambda_type;
         if Some(current_target) != Some(recovery_type) {
@@ -3247,7 +3291,7 @@ impl Attr {
                 .report(ctx, ctx.tree(that).pos, &fragment);
             current_target =
                 self.types
-                    .create_error_type_original(ctx, result_info.pt, &self.syms.borrow());
+                    .create_error_type_original(ctx, result_info.pt, syms);
         }
         Ok(TargetInfo {
             target: current_target,
@@ -10445,6 +10489,7 @@ impl Attr {
     fn get_diagnostic_position(
         &self,
         ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         tree: TreeId,
         t: TypeId,
     ) -> Option<i32> {
@@ -10468,7 +10513,7 @@ impl Attr {
                 _ => None,
             };
             if let Some(anno_type) = anno_type {
-                if self.types.is_same_type(ctx, &self.syms.borrow(), anno_type, t) {
+                if self.types.is_same_type(ctx, syms, anno_type, t) {
                     return Some(ctx.tree(anno).pos);
                 }
             }
@@ -11193,6 +11238,47 @@ impl Attr {
         self.attrib_class(ctx, syms, c);
     }
 
+    /// Java: public void attrib(Env<AttrContext> env) (Attr.java:5143-5155).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - env: the environment to attribute.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the module/package declaration branches need Modules (not ported yet).
+    ///
+    /// Upstream: Attr.java:5143-5155.
+    pub fn attrib(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        env: &Rc<Env<AttrContext>>,
+    ) {
+        let tree = env.tree.expect("env tree");
+        match ctx.tree(tree).tag {
+            Tag::MODULEDEF => {
+                unimplemented!("TODO(Modules batch): Attr.attribModule (Attr.java:5144-5146)")
+            }
+            Tag::PACKAGEDEF => {
+                unimplemented!("TODO(Modules batch): Attr.attribPackage (Attr.java:5147-5149)")
+            }
+            _ => {
+                let pos = ctx.tree(tree).pos;
+                let c = env
+                    .encl_class
+                    .and_then(|encl| match &ctx.tree(encl).kind {
+                        TreeKind::ClassDecl { sym: Some(sym), .. } => Some(*sym),
+                        _ => None,
+                    })
+                    .expect("AssertionError: env.enclClass.sym");
+                self.attrib_class_with_pos(ctx, syms, pos, c);
+            }
+        }
+    }
+
     /// Java: void attribClass(ClassSymbol c) throws CompletionFailure
     /// (Attr.java:5202-5398).
     ///
@@ -11209,6 +11295,7 @@ impl Attr {
     /// Upstream: Attr.java:5202-5398.
     #[allow(clippy::too_many_lines, clippy::collapsible_if)]
     fn attrib_class(&mut self, ctx: &mut CompilerContext, syms: &mut Symtab, c: SymbolId) {
+        self.cache_symtab_facts(syms);
         let c_ty = match ctx.sym(c).ty {
             Some(ty) => ty,
             None => return,
@@ -11596,7 +11683,7 @@ impl Attr {
             // java.lang.Enum may not be subclassed by a non-enum
             let st_tsym = ctx.typ(st).tsym;
             let enum_flag = crate::code::flags::ENUM as i64;
-            if st_tsym == Some(self.syms.borrow().enum_sym)
+            if st_tsym == Some(enum_sym_value(syms))
                 && (ctx.sym(c).flags_field & (enum_flag | compound_flag)) == 0
             {
                 let info = crate::resources::compiler_properties::errors::enum_no_subclassing();
@@ -11763,7 +11850,7 @@ impl Attr {
             };
             if let Some(repeatable) = repeatable {
                 let repeatable_ty = ctx.attr(repeatable).ty.expect("repeatable type");
-                let cb_pos = self.get_diagnostic_position(ctx, tree, repeatable_ty);
+                let cb_pos = self.get_diagnostic_position(ctx, syms, tree, repeatable_ty);
                 let cb_pos = cb_pos.expect("AssertionError: repeatable diagnostic position");
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = chk_rc.borrow();
@@ -11786,7 +11873,7 @@ impl Attr {
         ctx.tree_mut(tree).ty = Some(c_ty);
         // Check that a generic class does not extend Throwable
         let allparams = crate::code::types::allparams_of(ctx, c_ty);
-        let throwable_ty = self.syms.borrow().throwable_type;
+        let throwable_ty = syms.throwable_type;
         if !allparams.is_empty() && self.types.is_subtype(ctx, syms, c_ty, throwable_ty) {
             if let Some(extending) = extending {
                 let info = crate::resources::compiler_properties::errors::generic_throwable();
@@ -12266,7 +12353,7 @@ impl Attr {
                 if !ctx.typ(constructor_type).has_tag(TypeTag::ERROR) {
                     let constructor_ret = self.types.get_return_type_public(ctx, constructor_type);
                     ctx.tree_mut(clazz).ty = Some(constructor_ret);
-                    let void_ty = self.syms.borrow().void_type;
+                    let void_ty = syms.void_type;
                     let constructor_type_void = self
                         .types
                         .create_method_type_with_return(ctx, constructor_type, void_ty);
@@ -12312,7 +12399,7 @@ impl Attr {
                     *slot = Some(constructor);
                 }
                 if cdef.is_none() {
-                    let void_ty = self.syms.borrow().void_type;
+                    let void_ty = syms.void_type;
                     let method_template = self.new_method_template(
                         ctx,
                         syms,
@@ -12845,6 +12932,7 @@ impl Attr {
             flow: Rc::clone(&self.flow),
             annotate: Rc::clone(&self.annotate),
             type_annotations: Rc::clone(&self.type_annotations),
+            symtab_facts: RefCell::new(*self.symtab_facts.borrow()),
         }
     }
 }
@@ -13117,6 +13205,12 @@ impl Attr {
         tree
     }
 }
+/// Return the java.lang.Enum symbol of the symbol table (the upstream
+/// syms.enumSym field).
+fn enum_sym_value(syms: &crate::code::symtab::Symtab) -> SymbolId {
+    syms.enum_sym
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -13839,6 +13933,7 @@ mod tests {
             Rc::new(RefCell::new(DummyDependencies));
         let make = Rc::new(RefCell::new(TreeMaker::new(Some(Rc::clone(&names)))));
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
+        let todo = crate::comp::todo::Todo::instance(&mut context);
         let enter = Rc::new(RefCell::new(Enter::new(
             Rc::clone(&log),
             Rc::clone(&names),
@@ -13848,6 +13943,8 @@ mod tests {
             None,
             manager,
             &options,
+            Rc::clone(&todo),
+            Rc::clone(&type_envs)
         )));
         let member_enter = Rc::new(RefCell::new(MemberEnter::new(
             Rc::clone(&enter),
@@ -13855,7 +13952,7 @@ mod tests {
             Rc::clone(&chk),
             Rc::clone(&types),
             Rc::clone(&deferred),
-            Rc::new(RefCell::new(None)),
+            Rc::new(RefCell::new(None))
         )));
         let type_enter = Rc::new(RefCell::new(TypeEnter::new(
             Rc::clone(&names),
@@ -13870,6 +13967,7 @@ mod tests {
             Rc::clone(&type_envs),
             Rc::clone(&dependencies),
             Rc::new(RefCell::new(None)),
+            Rc::clone(&todo)
         )));
         let preview = Preview::new(false, false);
         let basic_handler = Rc::clone(&chk.borrow().basic_handler);
@@ -14635,3 +14733,4 @@ class Sample {
     }
 
 }
+

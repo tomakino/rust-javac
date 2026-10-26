@@ -702,6 +702,13 @@ impl Locations {
                 if let Some(location) = table.get(name) {
                     return Some(location);
                 }
+                if let Some((_, location)) = table
+                    .names
+                    .iter()
+                    .find(|(_, location)| location.get_name().to_string() == name)
+                {
+                    return Some(Rc::clone(location));
+                }
             }
         }
         None
@@ -1040,10 +1047,8 @@ impl Locations {
 
     /// Java: Collection<Path> getLocation(Location location).
     pub fn get_location(&mut self, location: &dyn Location) -> StdOption<Vec<FsPath>> {
-        if let Some(module) = self.find_module_location(&location.get_name().to_string_lossy()) {
-            return Some(module.search_path());
-        }
-        let index = self.handler_index(location)?;
+        if let Some(module) = self.find_module_location(&location.get_name().to_string_lossy()) {            return Some(module.search_path());
+        }        let index = self.handler_index(location)?;
         self.prepare(index);
         if let HandlerKind::PatchModules(_) = &self.handlers[index].kind {
             panic!("UnsupportedOperationException: getPaths");
