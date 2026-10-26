@@ -35,6 +35,7 @@
 //!   parsing needs JavacParser; comments with references panic with the
 //!   ReferenceParser unimplemented! marker until parser S7 lands.
 //! - Java Character.isUnicodeIdentifierStart/Part and isJavaIdentifierStart/Part
+//!   (javac-unicode ported JDK 17 tables)
 //!   are approximated with std char classification, consistent with the tokenizer
 //!   GAP registered in parser/mod.rs; Character.isWhitespace uses the ported
 //!   java_string_methods::is_java_whitespace (same registered GAP).
@@ -1088,18 +1089,14 @@ impl DocCommentParser {
     }
 
     fn is_identifier_start(unit: u16) -> bool {
-        // Java: Character.isUnicodeIdentifierStart (approximation, GAP: see the
-        // file header and parser/mod.rs).
-        char::from_u32(u32::from(unit))
-            .map(|ch| ch.is_alphabetic() || ch == '_')
-            .unwrap_or(false)
+        // Java: Character.isUnicodeIdentifierStart(char) — javac-unicode is the
+        // ported JDK 17 data table (int overload; identical for UTF-16 units).
+        javac_unicode::is_unicode_identifier_start(i32::from(unit))
     }
 
     fn is_unicode_identifier_part(unit: u16) -> bool {
-        // Java: Character.isUnicodeIdentifierPart (approximation, GAP).
-        char::from_u32(u32::from(unit))
-            .map(|ch| ch.is_alphanumeric() || ch == '_')
-            .unwrap_or(false)
+        // Java: Character.isUnicodeIdentifierPart(char) (javac-unicode data).
+        javac_unicode::is_unicode_identifier_part(i32::from(unit))
     }
 
     fn read_identifier(&mut self) -> Name {
@@ -1137,17 +1134,13 @@ impl DocCommentParser {
     }
 
     fn is_java_identifier_start(&self, unit: u16) -> bool {
-        // Java: Character.isJavaIdentifierStart (approximation, GAP).
-        char::from_u32(u32::from(unit))
-            .map(|ch| ch.is_alphabetic() || ch == '_' || ch == '$')
-            .unwrap_or(false)
+        // Java: Character.isJavaIdentifierStart(char) (javac-unicode data).
+        javac_unicode::is_java_identifier_start(i32::from(unit))
     }
 
     fn is_java_identifier_part(unit: u16) -> bool {
-        // Java: Character.isJavaIdentifierPart (approximation, GAP).
-        char::from_u32(u32::from(unit))
-            .map(|ch| ch.is_alphanumeric() || ch == '_' || ch == '$')
-            .unwrap_or(false)
+        // Java: Character.isJavaIdentifierPart(char) (javac-unicode data).
+        javac_unicode::is_java_identifier_part(i32::from(unit))
     }
 
     fn read_java_identifier(&mut self) -> Name {
@@ -1906,5 +1899,33 @@ mod tests {
         assert!(kinds.contains(&"linkplain".to_string()));
         assert!(kinds.contains(&"systemProperty".to_string()));
         assert!(kinds.contains(&"version".to_string()));
+    }
+}
+
+#[cfg(test)]
+mod unicode_classification_tests {
+    /// The doc-comment identifier helpers must be exactly the JDK 17
+    /// Character.isUnicodeIdentifierStart/Part and isJavaIdentifierStart/Part
+    /// decisions (they are used through UTF-16 units, so cover the BMP).
+    #[test]
+    fn identifier_helpers_use_the_jdk_tables() {
+        for unit in 0u16..=0xFFFF {
+            let code_point = i32::from(unit);
+            assert_eq!(
+                super::DocCommentParser::is_identifier_start(unit),
+                javac_unicode::is_unicode_identifier_start(code_point),
+                "isUnicodeIdentifierStart {unit:#x}"
+            );
+            assert_eq!(
+                super::DocCommentParser::is_unicode_identifier_part(unit),
+                javac_unicode::is_unicode_identifier_part(code_point),
+                "isUnicodeIdentifierPart {unit:#x}"
+            );
+            assert_eq!(
+                super::DocCommentParser::is_java_identifier_part(unit),
+                javac_unicode::is_java_identifier_part(code_point),
+                "isJavaIdentifierPart {unit:#x}"
+            );
+        }
     }
 }

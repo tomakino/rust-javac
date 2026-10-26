@@ -1685,6 +1685,7 @@ mod tests {
             Rc::clone(&diags),
             Source::JDK17,
             '$',
+            Rc::clone(&types),
         )));
         let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);

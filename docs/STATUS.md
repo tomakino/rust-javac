@@ -118,3 +118,21 @@ platform、ct.sym、charset、file 基础、Locations、Symtab、Types 最小、
 - 已发生:§16 红线后 util-porter 自查修正 9 处半成品近似(FLOAT/DOUBLE 近似改 unimplemented 等);
   Lead 抽查发现 type_declaration 5 处未登记缺口(已退回补齐)、syntax_error_discard 残留(已退删除)。
 - 待验证:§17(补丁/传染性重构)、§18(汇报重新读+证据)首次执行效果。
+## 审核记录
+
+- Attr 批 A(9617fdf)Lead 逐方法抽查发现 4 项待修正:attrib_type_symbol 的 env.info 共享、ResultInfo::to_display 与官方 toString 不符、attribTree 缺 ArgumentAttr 分支登记、attrib_type 无操作调用;已反馈执行者按 §17 修正/登记。
+- 审核原则(PORTING_RULES §20):Lead 零信任——独立读代码对照/独立跑验证/独立核对 oracle/查 diff/抽验映射/记录证据;
+  汇报断言不可验证视为未验证。每批必须附审核证据(参考行号/本地行号/命令输出)。
+## 未审核项回溯审查(Lead,零信任)
+
+已核对确认无问题:message_format 适配(上游零使用子格式,已登记)、javac_messages 的 TODO 说明(非实际简化)、flags 注释(上游原文)、
+corpus 的 #[ignore](仅全量基线生成耗时用例)、List.from_iterable(1:1 ListBuffer 语义)。
+
+发现必须修正(按§16/§17 处理,已派发):
+1) parser Character 分类近似:java_tokenizer/doc_comment_parser/java_string_methods 用 Rust std char 分类代替 Java Character
+   (isJavaIdentifierStart/Part、isIdentifierIgnorable、isUnicodeIdentifierStart/Part、isWhitespace)——影响标识符/空白/文档注释边界。
+   修正:JDK17 采集区间表(运行期零 JVM),替换近似,全表 oracle 对照。
+2) ClassFinder.io_failure 用 Rust Debug 格式化 IOException,上游用 getLocalizedMessage 的文本——诊断文本可能不同;按上游修正/登记。
+
+待审 backlog(尚未逐方法对照):早期 util 批(22 文件)、javac-tools/javac-source 接口层、javac_parser 错误恢复/诊断细节、
+file/locations/classfinder 适配 helper、资源生成器。后续按优先级逐项对照并记录证据。

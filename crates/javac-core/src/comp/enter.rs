@@ -1309,6 +1309,7 @@ mod tests {
             Rc::clone(&harness.diags),
             Source::JDK17,
             '$',
+            Rc::clone(&types),
         )));
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let mut enter = Enter::new(

@@ -46,8 +46,9 @@ fn main() {
 
 fn gen_unicode() -> Result<(), String> {
     let out = "crates/javac-unicode/src/generated.rs";
+    let oracle = "crates/javac-unicode/tests/data/char-oracle.txt";
     let status = std::process::Command::new("java")
-        .args(["tools/gen-unicode/GenUnicode.java", out])
+        .args(["tools/gen-unicode/GenUnicode.java", out, oracle])
         .status()
         .map_err(|e| format!("failed to run java (JDK 17 required): {e}"))?;
     if !status.success() {

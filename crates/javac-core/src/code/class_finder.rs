@@ -826,12 +826,29 @@ impl ClassFinder {
         p: SymbolId,
         error: Error,
     ) -> CompletionFailure {
-        let message = format!("{error:?}");
+        // Java: Fragments.ExceptionMessage(ex.getLocalizedMessage()) — for
+        // java.io.IOException getLocalizedMessage() == getMessage(), i.e. the
+        // Java String message of the exception.
+        let message = io_failure_message(&error);
         let diag = self.diag_factory.fragment(Fragment::from(
-            fragments::exception_message(javac_strings::JavaString::from(message.as_str())),
+            fragments::exception_message(message),
         ));
         let dcfh = Rc::clone(&self.dcfh);
         CompletionFailure::new(Some(p), Box::new(move || diag.clone()), Some(dcfh))
+    }
+}
+
+/// Java: ex.getLocalizedMessage() for the IOException caught by ClassFinder
+/// (ClassFinder.java:300-306). The Rust Error enum models the checked
+/// IOException and UnsupportedOperationException; the latter is a runtime
+/// exception that upstream does not catch here (PORTING_RULES section 6: a
+/// runtime exception maps to panic).
+pub(crate) fn io_failure_message(error: &Error) -> javac_strings::JavaString {
+    match error {
+        Error::IOException(message) => message.clone(),
+        Error::UnsupportedOperationException => {
+            panic!("UnsupportedOperationException")
+        }
     }
 }
 
@@ -1527,5 +1544,28 @@ mod tests {
         let error = load(&mut fixture, "java.lang.Bad").expect_err("bad class file");
         let message = error.get_message().to_string_lossy();
         assert!(message.contains("bad class file"), "message: {message}");
+    }
+}
+
+#[cfg(test)]
+mod io_failure_tests {
+    use super::*;
+
+    #[test]
+    fn io_failure_message_uses_the_ioexception_message() {
+        let error = Error::io(javac_strings::JavaString::from("disk read failed"));
+        assert_eq!(
+            io_failure_message(&error).to_string_lossy(),
+            "disk read failed"
+        );
+        // The Debug representation must not leak into the diagnostic.
+        assert_ne!(io_failure_message(&error).to_string_lossy(), format!("{error:?}"));
+    }
+
+    #[test]
+    #[should_panic(expected = "UnsupportedOperationException")]
+    fn io_failure_message_panics_for_unsupported_operation() {
+        let error = Error::UnsupportedOperationException;
+        let _ = io_failure_message(&error);
     }
 }

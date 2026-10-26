@@ -1,0 +1,9 @@
+# char-oracle-v1
+# Developed from the JDK 17 java.lang.Character int overloads over
+# code points 0x000000..=0x10FFFF; FNV-1a 64 over one bit per code point.
+JAVA_ID_START 0x80b10cc18041e15a
+JAVA_ID_PART 0xa5f35738a3d77f31
+UNICODE_ID_START 0xb86fd94851d5a678
+UNICODE_ID_PART 0x61b292e5f3b5bf73
+WHITESPACE 0x1d0e12a94ef543a6
+IDENTIFIER_IGNORABLE 0x9d900a0e2670be50

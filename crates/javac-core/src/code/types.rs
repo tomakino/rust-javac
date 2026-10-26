@@ -2000,6 +2000,66 @@ impl Types {
     }
 
     /// Java: public boolean isConvertible(Type t, Type s)
+    /// Java: public boolean Type.contains(Type t) — the base Type implementation
+    /// is equalsIgnoreMetadata (the port maps it to isSameType); WildcardType
+    /// overrides it (kind != UNBOUND && type.contains(t)).
+    pub fn contains(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+    ) -> bool {
+        if let crate::code::type_::TypeKindData::WildcardType {
+            type_, kind, ..
+        } = &ctx.typ(t).kind
+        {
+            if *kind != crate::code::bound_kind::BoundKind::UNBOUND {
+                let inner = type_.expect("wildcard bound type");
+                return self.contains(ctx, syms, inner, s);
+            }
+            return false;
+        }
+        self.is_same_type(ctx, syms, t, s)
+    }
+
+    /// Java: public boolean Type.containsAny(List<Type> ts)
+    pub fn contains_any(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        ts: &List<TypeId>,
+    ) -> bool {
+        let mut current = ts.clone();
+        while current.non_empty() {
+            let s = *current.head();
+            if self.contains(ctx, syms, t, s) {
+                return true;
+            }
+            current = current.tail();
+        }
+        false
+    }
+
+    /// Java: public Type Type.withTypeVar(Type t) — the base implementation
+    /// returns this; WildcardType sets its bound (the port mutates the arena
+    /// value and returns the same id, like the upstream in-place mutation).
+    pub fn with_type_var(
+        &self,
+        ctx: &mut CompilerContext,
+        t: TypeId,
+        tvar: TypeId,
+    ) -> TypeId {
+        if let crate::code::type_::TypeKindData::WildcardType { bound, .. } =
+            &mut ctx.typ_mut(t).kind
+        {
+            // Java: if (bound == t) return this; bound = (TypeVar)t; return this;
+            *bound = Some(tvar);
+        }
+        t
+    }
+
     pub fn is_convertible(
         &self,
         ctx: &mut CompilerContext,

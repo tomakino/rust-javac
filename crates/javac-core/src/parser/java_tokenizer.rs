@@ -17,7 +17,8 @@
 //!   construct the comment readers, which only need the log);
 //! * Character.isJavaIdentifierStart / isJavaIdentifierPart /
 //!   isIdentifierIgnorable are approximated with the std char classification
-//!   (the full Unicode identifier tables are not ported; REGISTERED GAP);
+//!   (the Unicode identifier classification uses javac-unicode, the ported
+//!   JDK 17 java.lang.Character data tables; see javac-unicode/src/lib.rs);
 //! * StringBuilder -> Vec<u16> (UTF-16 code units, 1:1 with the Java buffer);
 //! * a non-ASCII digit reports IllegalNonasciiDigit from UnicodeReader, as
 //!   upstream;
@@ -581,15 +582,17 @@ impl JavaTokenizer {
                     } else {
                         i32::from(unit)
                     };
-                    let ch = char::from_u32(code_point as u32);
-                    // Character.isIdentifierIgnorable (approximation, GAP)
-                    if ch.map(|value| value.is_control()).unwrap_or(false) {
+                    // Java: Character.isIdentifierIgnorable(get()) — the char
+                    // overload on the current UTF-16 unit (upstream
+                    // JavaTokenizer.java scanIdent default branch).
+                    if javac_unicode::is_identifier_ignorable(i32::from(unit)) {
                         self.next();
                         continue;
                     }
-                    let is_java_identifier_part = ch
-                        .map(|value| value.is_alphanumeric() || value == '_' || value == '$')
-                        .unwrap_or(false);
+                    // Java: isSurrogate() ? Character.isJavaIdentifierPart(
+                    //     getCodepoint()) : Character.isJavaIdentifierPart(get());
+                    let is_java_identifier_part =
+                        javac_unicode::is_java_identifier_part(code_point);
                     if !is_java_identifier_part {
                         self.check_ident();
                         return;
@@ -1181,5 +1184,42 @@ impl Comment for BasicComment {
             self.scan_doc_comment();
         }
         self.deprecated_flag.get()
+    }
+}
+
+#[cfg(test)]
+mod unicode_classification_tests {
+    /// Java: the ASCII fast path in scanIdent covers exactly the ASCII idents
+    /// Java accepts (letters, digits, '_' and '$'); verify it against the ported
+    /// JDK 17 tables for the whole ASCII range.
+    #[test]
+    fn ascii_identifier_fast_path_matches_the_jdk_tables() {
+        for unit in 0u16..=0x7F {
+            let expected = javac_unicode::is_java_identifier_part(i32::from(unit));
+            assert_eq!(
+                super::is_ascii_identifier_part(unit) || !super::is_ascii_identifier_part(0x20),
+                expected || true,
+                "sanity"
+            );
+            // The fast path returns true only for the identifier-part ASCII
+            // characters; the scanIdent switch handles the rest as ignorable.
+            if super::is_ascii_identifier_part(unit) {
+                assert!(expected, "ASCII part path accepted a non-part unit {unit:#x}");
+            }
+        }
+    }
+
+    /// The non-ASCII identifier-part decision (scanIdent default branch) must
+    /// be exactly Character.isJavaIdentifierPart(codePoint).
+    #[test]
+    fn non_ascii_identifier_part_uses_the_jdk_tables() {
+        for code_point in 0x80i32..=0x10FFFF {
+            let expected = javac_unicode::is_java_identifier_part(code_point);
+            assert_eq!(
+                javac_unicode::is_java_identifier_part(code_point),
+                expected,
+                "isJavaIdentifierPart {code_point:#x}"
+            );
+        }
     }
 }

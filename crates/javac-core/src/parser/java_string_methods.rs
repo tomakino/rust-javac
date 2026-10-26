@@ -8,20 +8,16 @@
 // String.java:3832, outdent at :3852, indent at :3718, translateEscapes at
 // :3955, lines/indexOfNonWhitespace helpers).
 //
-// REGISTERED GAP: Character.isWhitespace is modeled with Rust
-// char::is_whitespace (the Unicode White_Space table); Java's
-// Character.isWhitespace excludes the non-breaking spaces (U+00A0 etc.) and
-// this difference is not observable in the token oracle corpus.
+// Java: Character.isWhitespace is the ported javac_unicode::is_whitespace
+// (JDK 17 java.lang.Character data; excludes U+00A0/U+2007/U+202F like the JDK).
 
 //! java.lang.String helpers used by the tokenizer.
 
 use javac_strings::JavaString;
 
-/// Java: Character.isWhitespace(int) (modeled: see the module header GAP).
+/// Java: Character.isWhitespace(char) — javac-unicode ported JDK 17 table.
 pub(crate) fn is_java_whitespace(unit: u16) -> bool {
-    char::from_u32(u32::from(unit))
-        .map(|ch| ch.is_whitespace())
-        .unwrap_or(false)
+    javac_unicode::is_whitespace(i32::from(unit))
 }
 
 /// Java: String.lines() — split at \n, \r, \r\n; no trailing empty line.
@@ -193,4 +189,20 @@ pub(crate) fn translate_escapes(text: &JavaString) -> Result<JavaString, String>
         result.push(ch);
     }
     Ok(JavaString::from_units(result))
+}
+
+#[cfg(test)]
+mod unicode_classification_tests {
+    /// Character.isWhitespace over the BMP must match the JDK 17 table (the
+    /// string helpers consume UTF-16 units).
+    #[test]
+    fn whitespace_uses_the_jdk_table() {
+        for unit in 0u16..=0xFFFF {
+            assert_eq!(
+                super::is_java_whitespace(unit),
+                javac_unicode::is_whitespace(i32::from(unit)),
+                "isWhitespace {unit:#x}"
+            );
+        }
+    }
 }

@@ -21,6 +21,12 @@ use crate::code::symbol::{
     symbol_location, symbol_packge, SymbolKind,
 };
 use crate::code::symtab::Symtab;
+use crate::code::types::Types;
+use crate::comp::deferred_attr::DeferredAttrContext;
+use crate::comp::infer::InferenceContext;
+use crate::ids::TypeId;
+use crate::util::jc_diagnostic::JCDiagnostic;
+use crate::util::warner::Warner;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{ScopeId, SymbolId, TreeId};
 use crate::resources::compiler_properties::errors;
@@ -47,6 +53,10 @@ pub struct Check {
     pub compiled: HashMap<(SymbolId, Name), SymbolId>,
     /// Java: private Map<Pair<Name, Name>, Integer> localClassNameIndexes
     pub local_class_name_indexes: HashMap<(Name, Name), i32>,
+    /// Java: final Types types
+    pub types: Rc<Types>,
+    /// Java: CheckContext basicHandler = new CheckContext() {...}
+    pub basic_handler: Rc<dyn CheckContext>,
 }
 
 impl Check {
@@ -57,11 +67,20 @@ impl Check {
         diags: Rc<Factory>,
         source: crate::code::source::Source,
         synthetic_name_char: char,
+        types: Rc<Types>,
     ) -> Check {
+        let basic_handler: Rc<dyn CheckContext> = Rc::new(BasicCheckContext {
+            log: Rc::clone(&log),
+            types: Rc::clone(&types),
+            infer_empty: crate::comp::infer::empty_context(),
+            deferred_empty: Rc::new(DeferredAttrContext::empty()),
+        });
         Check {
             names,
             log,
             diags,
+            types,
+            basic_handler,
             allow_records:
                 crate::code::source::Feature::RECORDS.allowed_in_source(source),
             allow_sealed:
@@ -778,19 +797,21 @@ impl Check {
 
     /// Java: Type typeTagError(DiagnosticPosition pos, JCDiagnostic required,
     /// Object found)
+    ///
+    /// TODO(Check/Types + printing batch): the upstream body logs
+    /// Errors.TypeFoundReq(found, required) — the Object found is a Type or a
+    /// JCDiagnostic fragment and the diagnostic argument mapping needs
+    /// Type.toString (Types/Symbol printing batch) — and returns
+    /// types.createErrorType(found instanceof Type ? type : syms.errType).
+    /// Registered; no substitute diagnostic text is produced.
     fn type_tag_error(
         &self,
-        ctx: &mut CompilerContext,
-        pos: i32,
-        required: crate::util::jc_diagnostic::JCDiagnostic,
-        found: DiagnosticArg,
+        _ctx: &mut CompilerContext,
+        _pos: i32,
+        _required: JCDiagnostic,
+        _found: DiagnosticArg,
     ) -> crate::ids::TypeId {
-        self.report_error(
-            pos,
-            errors::type_found_req(found, DiagnosticArg::from_display(required.get_message(None).to_string_lossy())),
-        );
-        let _ = ctx;
-        unimplemented!("TODO(Check/Types batch): typeTagError needs the Types instance (types.createErrorType)")
+        unimplemented!("TODO(Check/Types + printing batch): Check.typeTagError")
     }
 
     /// Java: Type checkClassType(DiagnosticPosition pos, Type t)
@@ -854,5 +875,244 @@ impl Check {
             }
         }
         t
+    }
+    /// Java: public Type checkType(DiagnosticPosition pos, Type found, Type req)
+    pub fn check_type_basic(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> TypeId {
+        self.check_type(ctx, syms, pos, found, req, &*self.basic_handler)
+    }
+
+    /// Java: Type checkType(DiagnosticPosition pos, Type found, Type req,
+    /// CheckContext checkContext)
+    pub fn check_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+        check_context: &dyn CheckContext,
+    ) -> TypeId {
+        let inference_context = check_context.inference_context();
+        if inference_context.free(ctx, syms, &self.types, req)
+            || inference_context.free(ctx, syms, &self.types, found)
+        {
+            // TODO(Infer batch): inferenceContext.addFreeTypeListener(List.of(req,
+            //     found), solvedContext -> checkType(pos, solvedContext.asInstType
+            //     (found), solvedContext.asInstType(req), checkContext)); the
+            //     listener needs the mutable Attr/Check recursion; registered.
+            unimplemented!("TODO(Infer batch): Check.checkType free type listener");
+        }
+        if ctx.typ(req).has_tag(crate::code::type_tag::TypeTag::ERROR) {
+            return req;
+        }
+        if ctx.typ(req).has_tag(crate::code::type_tag::TypeTag::NONE) {
+            return found;
+        }
+        let mut warn = check_context.check_warner(ctx, syms, &self.types, pos, found, req);
+        if check_context.compatible(ctx, syms, &self.types, found, req, &mut warn) {
+            return found;
+        }
+        if ctx.typ(found).is_numeric() && ctx.typ(req).is_numeric() {
+            // TODO(Check/Types + printing batch): checkContext.report(pos,
+            //     diags.fragment(Fragments.PossibleLossOfPrecision(found, req)))
+            //     needs the Type argument printing (DiagnosticArg.TypeArg) and
+            //     types.createErrorType(found); registered, no substitute text.
+            unimplemented!("TODO(Check/Types + printing batch): Check.checkType possible loss of precision");
+        }
+        // TODO(Check/Types + printing batch): checkContext.report(pos,
+        //     diags.fragment(Fragments.InconvertibleTypes(found, req))) + the
+        //     error type; registered, no substitute text.
+        unimplemented!("TODO(Check/Types + printing batch): Check.checkType inconvertible types")
+    }
+
+    /// Java: Type checkRefType(DiagnosticPosition pos, Type t)
+    pub fn check_ref_type(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        t: TypeId,
+    ) -> TypeId {
+        if ctx.typ(t).is_reference() {
+            return t;
+        }
+        let required = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+            crate::resources::compiler_properties::fragments::type_req_ref(),
+        ));
+        self.type_tag_error(ctx, pos, required, DiagnosticArg::from_display("type"))
+    }
+
+}
+
+
+/// Java: enum Attr.CheckMode (Attr.java:461-491) — the mode controlling the
+/// Attr/Check tree update behavior.
+#[allow(non_camel_case_types)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub enum CheckMode {
+    /// Java: NORMAL
+    #[default]
+    NORMAL,
+    /// Java: NO_TREE_UPDATE
+    NO_TREE_UPDATE,
+    /// Java: NO_INFERENCE_HOOK
+    NO_INFERENCE_HOOK,
+}
+
+impl CheckMode {
+    /// Java: public boolean updateTreeType() (overridden by NO_TREE_UPDATE)
+    pub fn update_tree_type(&self) -> bool {
+        !matches!(self, CheckMode::NO_TREE_UPDATE)
+    }
+
+    /// Java: public boolean installPostInferenceHook() (overridden by
+    /// NO_INFERENCE_HOOK)
+    pub fn install_post_inference_hook(&self) -> bool {
+        !matches!(self, CheckMode::NO_INFERENCE_HOOK)
+    }
+}
+
+/// Java: public interface Check.CheckContext
+pub trait CheckContext {
+    /// Java: boolean compatible(Type found, Type req, Warner warn)
+    fn compatible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        found: TypeId,
+        req: TypeId,
+        warn: &mut Warner,
+    ) -> bool;
+
+    /// Java: void report(DiagnosticPosition pos, JCDiagnostic details)
+    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &JCDiagnostic);
+
+    /// Java: public Warner checkWarner(DiagnosticPosition pos, Type found,
+    /// Type req)
+    fn check_warner(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> Warner;
+
+    /// Java: public InferenceContext inferenceContext()
+    fn inference_context(&self) -> &Rc<InferenceContext>;
+
+    /// Java: public DeferredAttr.DeferredAttrContext deferredAttrContext()
+    fn deferred_attr_context(&self) -> &Rc<DeferredAttrContext>;
+}
+
+/// Java: static class Check.NestedCheckContext (redirects all calls to the
+/// enclosing context).
+pub struct NestedCheckContext {
+    /// Java: CheckContext enclosingContext
+    pub enclosing_context: Rc<dyn CheckContext>,
+}
+
+impl CheckContext for NestedCheckContext {
+    fn compatible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        found: TypeId,
+        req: TypeId,
+        warn: &mut Warner,
+    ) -> bool {
+        self.enclosing_context
+            .compatible(ctx, syms, types, found, req, warn)
+    }
+
+    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &JCDiagnostic) {
+        self.enclosing_context.report(ctx, pos, details);
+    }
+
+    fn check_warner(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> Warner {
+        self.enclosing_context
+            .check_warner(ctx, syms, types, pos, found, req)
+    }
+
+    fn inference_context(&self) -> &Rc<InferenceContext> {
+        self.enclosing_context.inference_context()
+    }
+
+    fn deferred_attr_context(&self) -> &Rc<DeferredAttrContext> {
+        self.enclosing_context.deferred_attr_context()
+    }
+}
+
+/// Java: Check.basicHandler = new CheckContext() { ... } — the default check
+/// context (assignment/return checking).
+pub struct BasicCheckContext {
+    /// Java: Check.log
+    pub log: Rc<RefCell<Log>>,
+    /// Java: Check.types
+    pub types: Rc<Types>,
+    /// Java: infer.emptyContext
+    pub infer_empty: Rc<InferenceContext>,
+    /// Java: deferredAttr.emptyDeferredAttrContext
+    pub deferred_empty: Rc<DeferredAttrContext>,
+}
+
+impl CheckContext for BasicCheckContext {
+    fn compatible(
+        &self,
+        _ctx: &mut CompilerContext,
+        _syms: &Symtab,
+        _types: &Types,
+        _found: TypeId,
+        _req: TypeId,
+        _warn: &mut Warner,
+    ) -> bool {
+        // TODO(Types batch): types.isAssignable(found, req, warn) is not ported.
+        unimplemented!("TODO(Types batch): Check.basicHandler compatible (Types.isAssignable)")
+    }
+
+    fn report(&self, _ctx: &mut CompilerContext, _pos: i32, _details: &JCDiagnostic) {
+        // TODO(Check/Types + printing batch): log.error(pos,
+        //     Errors.ProbFoundReq(details)) needs the JCDiagnostic diagnostic
+        //     argument mapping (DiagnosticArg has no JCDiagnostic variant in the
+        //     port yet).
+        unimplemented!("TODO(Check/Types + printing batch): Check.basicHandler report")
+    }
+
+    fn check_warner(
+        &self,
+        _ctx: &mut CompilerContext,
+        _syms: &Symtab,
+        _types: &Types,
+        _pos: i32,
+        _found: TypeId,
+        _req: TypeId,
+    ) -> Warner {
+        // TODO(Check batch): convertWarner(pos, found, req) is not ported.
+        unimplemented!("TODO(Check batch): Check.basicHandler checkWarner (convertWarner)")
+    }
+
+    fn inference_context(&self) -> &Rc<InferenceContext> {
+        &self.infer_empty
+    }
+
+    fn deferred_attr_context(&self) -> &Rc<DeferredAttrContext> {
+        &self.deferred_empty
     }
 }

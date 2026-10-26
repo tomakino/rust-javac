@@ -15,11 +15,13 @@
 //
 // NOT PORTED IN THIS BATCH (registered; dependency batches not ported yet, no
 // substitute in this file):
-// - Check.CheckContext/CheckMode/checkType (Check batch): ResultInfo keeps
-//   pkind/pt and its dup methods, but the checkContext/checkMode fields and
-//   ResultInfo.check() are registered (the check pipeline is the Check batch);
-// - Infer.InferenceContext (Infer batch): the check()/poly inference glue is
-//   registered; ResultInfo.pt is Option<TypeId> (Java Type.noType -> None);
+// - the CheckContext/CheckMode/checkType pipeline: ported in the dependency
+//   batch (Check::check_type/CheckContext/CheckMode/NestedCheckContext/
+//   BasicCheckContext; the compatible/report/checkWarner leaves that need
+//   Types.isAssignable/convertWarner are registered);
+// - Infer.InferenceContext: the context structure/free/asInstType/
+//   addFreeTypeListener/notifyChange are ported (comp/infer.rs); the free-type
+//   listener recursion inside check() remains registered (Infer batch);
 // - DeferredAttr.DeferredAttrContext/AttrMode (DeferredAttr batch): the
 //   attribTree deferred-mode/breakTree/matchBindings parts are registered;
 // - Resolve (Resolve batch): attribIdent/visitIdent/visitSelect resolution is
@@ -70,28 +72,120 @@ pub struct ResultInfo {
     pub pkind: KindSelector,
     /// Java: final Type pt (Java Type.noType -> None; ADR 0001).
     pub pt: Option<TypeId>,
+    /// Java: final CheckContext checkContext
+    pub check_context: Rc<dyn crate::comp::check::CheckContext>,
+    /// Java: final CheckMode checkMode
+    pub check_mode: crate::comp::check::CheckMode,
 }
 
 impl ResultInfo {
-    /// Java: ResultInfo(KindSelector pkind, Type pt)
-    pub fn new(pkind: KindSelector, pt: Option<TypeId>) -> ResultInfo {
-        ResultInfo { pkind, pt }
+    /// Java: ResultInfo(KindSelector pkind, Type pt) — the upstream 2-arg
+    /// constructor uses chk.basicHandler and CheckMode.NORMAL.
+    pub fn new(
+        pkind: KindSelector,
+        pt: Option<TypeId>,
+        check_context: Rc<dyn crate::comp::check::CheckContext>,
+    ) -> ResultInfo {
+        ResultInfo::new_with_mode(pkind, pt, check_context, crate::comp::check::CheckMode::NORMAL)
+    }
+
+    /// Java: protected ResultInfo(KindSelector pkind, Type pt, CheckContext
+    /// checkContext, CheckMode checkMode)
+    pub fn new_with_mode(
+        pkind: KindSelector,
+        pt: Option<TypeId>,
+        check_context: Rc<dyn crate::comp::check::CheckContext>,
+        check_mode: crate::comp::check::CheckMode,
+    ) -> ResultInfo {
+        ResultInfo {
+            pkind,
+            pt,
+            check_context,
+            check_mode,
+        }
+    }
+
+    /// Java: protected boolean needsArgumentAttr(JCTree tree) (the upstream
+    /// default returns false; MethodAttrInfo overrides it — registered for the
+    /// ArgumentAttr batch).
+    pub fn needs_argument_attr(&self, _tree: TreeId) -> bool {
+        false
+    }
+
+    /// Java: protected Type check(final DiagnosticPosition pos, final Type
+    /// found) — chk.checkType(pos, found, pt, checkContext)
+    pub fn check(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        chk: &Check,
+        pos: i32,
+        found: TypeId,
+    ) -> TypeId {
+        let pt = match self.pt {
+            Some(pt) => pt,
+            None => crate::code::symtab::no_type_id(ctx),
+        };
+        chk.check_type(ctx, syms, pos, found, pt, &*self.check_context)
+    }
+
+    /// Java: public String toString() —
+    /// (pt != null ? pt.toString() : "")
+    pub fn to_string(&self, ctx: &CompilerContext) -> String {
+        match self.pt {
+            Some(pt) => type_display(ctx, pt),
+            None => String::new(),
+        }
     }
 
     /// Java: protected ResultInfo dup(Type newPt)
     pub fn dup(&self, new_pt: Option<TypeId>) -> ResultInfo {
-        ResultInfo {
-            pkind: self.pkind,
-            pt: new_pt,
-        }
+        ResultInfo::new_with_mode(
+            self.pkind,
+            new_pt,
+            Rc::clone(&self.check_context),
+            self.check_mode,
+        )
     }
 
-    /// Java: public String toString()
-    pub fn to_display(&self, ctx: &CompilerContext) -> String {
-        format!("ResultInfo({:?}, {})", self.pkind, match self.pt {
-            Some(pt) => type_display(ctx, pt),
-            None => "noType".to_string(),
-        })
+    /// Java: protected ResultInfo dup(CheckContext newContext)
+    pub fn dup_context(&self, new_context: Rc<dyn crate::comp::check::CheckContext>) -> ResultInfo {
+        ResultInfo::new_with_mode(
+            self.pkind,
+            self.pt,
+            new_context,
+            self.check_mode,
+        )
+    }
+
+    /// Java: protected ResultInfo dup(Type newPt, CheckContext newContext)
+    pub fn dup_pt_context(
+        &self,
+        new_pt: Option<TypeId>,
+        new_context: Rc<dyn crate::comp::check::CheckContext>,
+    ) -> ResultInfo {
+        ResultInfo::new_with_mode(self.pkind, new_pt, new_context, self.check_mode)
+    }
+
+    /// Java: protected ResultInfo dup(Type newPt, CheckContext newContext,
+    /// CheckMode newMode)
+    pub fn dup_pt_context_mode(
+        &self,
+        new_pt: Option<TypeId>,
+        new_context: Rc<dyn crate::comp::check::CheckContext>,
+        new_mode: crate::comp::check::CheckMode,
+    ) -> ResultInfo {
+        ResultInfo::new_with_mode(self.pkind, new_pt, new_context, new_mode)
+    }
+
+    /// Java: protected ResultInfo dup(CheckMode newMode)
+    pub fn dup_mode(&self, new_mode: crate::comp::check::CheckMode) -> ResultInfo {
+        ResultInfo::new_with_mode(
+            self.pkind,
+            self.pt,
+            Rc::clone(&self.check_context),
+            new_mode,
+        )
     }
 }
 
@@ -134,6 +228,9 @@ pub struct Attr {
     pub env: Option<Rc<Env<AttrContext>>>,
     /// Java: ResultInfo resultInfo (the current result info)
     pub result_info: Option<ResultInfo>,
+    /// Java: CheckContext basicHandler (chk.basicHandler; injected explicitly
+    /// like the other Check/Attr services, ADR 0001).
+    pub basic_handler: Rc<dyn crate::comp::check::CheckContext>,
     /// Java: Type result
     pub result: Option<TypeId>,
     /// Java: the predefined result infos (statInfo/unknownExprInfo/...)
@@ -160,6 +257,7 @@ impl Attr {
         deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
         type_envs: Rc<RefCell<TypeEnvs>>,
         dependencies: Rc<RefCell<dyn Dependencies>>,
+        basic_handler: Rc<dyn crate::comp::check::CheckContext>,
         source: crate::code::source::Source,
         options: &crate::util::options::Options,
         preview: &crate::code::preview::Preview,
@@ -201,11 +299,12 @@ impl Attr {
             env: None,
             result_info: None,
             result: None,
-            stat_info: ResultInfo::new(KindSelector::NIL, None),
-            var_assignment_info: ResultInfo::new(KindSelector::ASG, None),
-            unknown_expr_info: ResultInfo::new(KindSelector::VAL, None),
-            unknown_type_info: ResultInfo::new(KindSelector::TYP, None),
-            unknown_type_expr_info: ResultInfo::new(KindSelector::VAL_TYP, None),
+            basic_handler: Rc::clone(&basic_handler),
+            stat_info: ResultInfo::new(KindSelector::NIL, None, Rc::clone(&basic_handler)),
+            var_assignment_info: ResultInfo::new(KindSelector::ASG, None, Rc::clone(&basic_handler)),
+            unknown_expr_info: ResultInfo::new(KindSelector::VAL, None, Rc::clone(&basic_handler)),
+            unknown_type_info: ResultInfo::new(KindSelector::TYP, None, Rc::clone(&basic_handler)),
+            unknown_type_expr_info: ResultInfo::new(KindSelector::VAL_TYP, None, Rc::clone(&basic_handler)),
         }
     }
 
@@ -213,20 +312,52 @@ impl Attr {
     // Java: Attr.ResultInfo / the check pipeline (registered: Check batch).
     // ------------------------------------------------------------------
 
-    /// Java: Type check(JCTree tree, Type found, KindSelector ownkind,
-    /// ResultInfo resultInfo)
+    /// Java: Type check(final JCTree tree, final Type found, final KindSelector
+    /// ownkind, final ResultInfo resultInfo)
     fn check(
         &mut self,
-        _ctx: &mut CompilerContext,
-        _tree: TreeId,
-        _found: TypeId,
-        _ownkind: KindSelector,
-        _result_info: &ResultInfo,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        found: TypeId,
+        ownkind: KindSelector,
+        result_info: &ResultInfo,
     ) -> TypeId {
-        // TODO(Check/Infer batch): the upstream body needs the CheckContext
-        // (compatible/report), the InferenceContext free-type listeners and
-        // Types.createErrorType; registered.
-        unimplemented!("TODO(Check/Infer batch): Attr.check")
+        let inference_context = Rc::clone(result_info.check_context.inference_context());
+        let found_is_error = ctx.typ(found).has_tag(TypeTag::ERROR);
+        let pt_is_method_or_forall = result_info
+            .pt
+            .map(|pt| {
+                let tag = ctx.typ(pt).get_tag();
+                tag == TypeTag::METHOD || tag == TypeTag::FORALL
+            })
+            .unwrap_or(false);
+        let should_check = !found_is_error && !pt_is_method_or_forall;
+        let owntype = if should_check && !ownkind.subset(result_info.pkind) {
+            // TODO(KindNames/printing batch): log.error(tree.pos(),
+            //     Errors.UnexpectedType(resultInfo.pkind.kindNames(),
+            //     ownkind.kindNames())) — the ported DiagnosticArg has no
+            //     KindNameArg value constructor yet; registered.
+            unimplemented!("TODO(KindNames batch): Attr.check unexpected type")
+        } else if self.allow_poly
+            && inference_context.free(ctx, syms, &self.types, found)
+        {
+            // TODO(Infer batch): owntype = shouldCheck ? resultInfo.pt : found;
+            //     if (resultInfo.checkMode.installPostInferenceHook())
+            //     inferenceContext.addFreeTypeListener(...) { check(...) };
+            //     the listener recursion needs the mutable Attr reference;
+            //     registered.
+            unimplemented!("TODO(Infer batch): Attr.check free type listener")
+        } else if should_check {
+            let chk = self.chk.borrow();
+            result_info.check(ctx, syms, &chk, ctx.tree(tree).pos, found)
+        } else {
+            found
+        };
+        if result_info.check_mode.update_tree_type() {
+            ctx.tree_mut(tree).ty = Some(owntype);
+        }
+        owntype
     }
 
     // ------------------------------------------------------------------
@@ -245,9 +376,16 @@ impl Attr {
     ) -> Result<TypeId, CompletionFailure> {
         let prev_env = self.env.clone();
         let prev_result_info = self.result_info.clone();
+        let needs_argument_attr = result_info.needs_argument_attr(tree);
         self.env = Some(Rc::clone(env));
         self.result_info = Some(result_info);
-        let result = self.visit(ctx, syms, tree);
+        let result = if needs_argument_attr {
+            // TODO(ArgumentAttr batch): result = argumentAttr.attribArg(tree,
+            //     env) (Attr.java:674-676); registered.
+            unimplemented!("TODO(ArgumentAttr batch): Attr.attribTree argumentAttr.attribArg")
+        } else {
+            self.visit(ctx, syms, tree)
+        };
         // TODO(MatchBindingsComputer batch): matchBindings =
         //     matchBindingsComputer.finishBindings(tree, matchBindings);
         // TODO(DeferredAttr batch): if (tree == breakTree &&
@@ -276,7 +414,7 @@ impl Attr {
         tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
         match &ctx.tree(tree).tag {
-            Tag::LITERAL => self.visit_literal(ctx, tree),
+            Tag::LITERAL => self.visit_literal(ctx, syms, tree),
             Tag::IDENT => self.visit_ident(ctx, syms, tree),
             Tag::PARENS => self.visit_parens(ctx, syms, tree),
             Tag::TYPEIDENT => self.visit_type_ident(ctx, syms, tree),
@@ -296,31 +434,26 @@ impl Attr {
     fn visit_literal(
         &mut self,
         ctx: &mut CompilerContext,
+        syms: &mut Symtab,
         tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
         let (typetag, value) = match &ctx.tree(tree).kind {
             TreeKind::Literal { typetag, value } => (*typetag, value.clone()),
             _ => panic!("ClassCastException: JCLiteral expected"),
         };
-        let lit_type = self.lit_type(ctx, typetag);
+        let lit_type = self.lit_type(syms, typetag);
         let constant = ctx.type_const_type(lit_type, literal_value_to_constant(value));
         let result_info = self.result_info.clone().expect("resultInfo");
-        Ok(self.check(ctx, tree, constant, KindSelector::VAL, &result_info))
+        Ok(self.check(ctx, syms, tree, constant, KindSelector::VAL, &result_info))
     }
 
-    /// Java: Type litType(TypeTag tag)
-    fn lit_type(&self, ctx: &CompilerContext, tag: TypeTag) -> TypeId {
+    /// Java: Type litType(TypeTag tag) —
+    /// (tag == CLASS) ? syms.stringType : syms.typeOfTag[tag.ordinal()]
+    fn lit_type(&self, syms: &Symtab, tag: TypeTag) -> TypeId {
         if tag == TypeTag::CLASS {
-            return self.syms_type(ctx, "string_type");
+            return syms.string_type;
         }
-        self.syms_type(ctx, "type_of_tag")
-    }
-
-    // The Symtab is threaded explicitly in the port (ADR 0001); the litType
-    // helper needs the predefined types, therefore it is routed through
-    // syms_type at the call sites (see visit_literal with syms).
-    fn syms_type(&self, _ctx: &CompilerContext, _what: &str) -> TypeId {
-        unimplemented!("TODO(Symtab threading): Attr litType predefined types")
+        syms.type_of_tag[tag as usize].expect("predefined literal type")
     }
 
     /// Java: public void visitTypeIdent(JCPrimitiveTypeTree tree) (4899-4901)
@@ -336,7 +469,7 @@ impl Attr {
         };
         let predefined = syms.type_of_tag[typetag as usize].expect("predefined type");
         let result_info = self.result_info.clone().expect("resultInfo");
-        Ok(self.check(ctx, tree, predefined, KindSelector::TYP, &result_info))
+        Ok(self.check(ctx, syms, tree, predefined, KindSelector::TYP, &result_info))
     }
 
     /// Java: public void visitTypeArray(JCArrayTypeTree tree) (4903-4908)
@@ -355,19 +488,132 @@ impl Attr {
         let ty = Type::new_array_type(etype, syms.array_class);
         let array_type = ctx.alloc_type(ty);
         let result_info = self.result_info.clone().expect("resultInfo");
-        Ok(self.check(ctx, tree, array_type, KindSelector::TYP, &result_info))
+        Ok(self.check(ctx, syms, tree, array_type, KindSelector::TYP, &result_info))
     }
 
-    /// Java: public void visitTypeApply(JCTypeApply tree) (4913-...)
+    /// Java: public void visitTypeApply(JCTypeApply tree) (Attr.java:4913-4960)
     fn visit_type_apply(
         &mut self,
-        _ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
-        _tree: TreeId,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
-        // TODO(Check/Types batch): checkClassType/withTypeVar/checkExtends; the
-        // full visitTypeApply body is Attr batch A/C (registered).
-        unimplemented!("TODO(Check/Types batch): Attr.visitTypeApply")
+        use crate::code::type_::TypeKindData;
+        let owntype_error = self
+            .types
+            .create_error_type_original(ctx, ctx.tree(tree).ty, syms);
+
+        // Attribute functor part of application and make sure it's a class.
+        let clazz = type_apply_clazz(ctx, tree).expect("type apply clazz");
+        let env = self.env.clone().expect("env");
+        let clazz_type = self.attrib_type_use(ctx, syms, clazz, &env);
+        let clazz_pos = ctx.tree(clazz).pos;
+        let clazztype = self.chk.borrow().check_class_type(ctx, clazz_pos, clazz_type);
+
+        // Attribute type parameters
+        let arguments = type_apply_arguments(ctx, tree);
+        let mut actuals = self.attrib_types(ctx, syms, arguments, &env);
+
+        let mut owntype = owntype_error;
+        if ctx.typ(clazztype).has_tag(TypeTag::CLASS) {
+            let clazz_tsym = ctx.typ(clazztype).tsym.expect("class type symbol");
+            let clazz_sym_type = ctx.sym(clazz_tsym).ty.expect("class symbol type");
+            let formals = type_arguments(ctx, clazz_sym_type);
+            if actuals.is_empty() {
+                // diamond
+                actuals = formals.clone();
+            }
+            if actuals.length() == formals.length() {
+                let mut a = actuals.clone();
+                let mut f = formals.clone();
+                let mut actuals_vec: Vec<TypeId> = Vec::new();
+                while a.non_empty() {
+                    let a_head = *a.head();
+                    let f_head = *f.head();
+                    actuals_vec.push(self.types.with_type_var(ctx, a_head, f_head));
+                    a = a.tail();
+                    f = f.tail();
+                }
+                actuals = List::from_iterable(actuals_vec);
+                // Compute the proper generic outer
+                let mut clazz_outer = ctx.typ(clazztype).get_enclosing_type();
+                if let Some(outer) = clazz_outer
+                    .filter(|outer| ctx.typ(*outer).has_tag(TypeTag::CLASS))
+                {
+                    {
+                        let type_in = crate::tree::tree_info::type_in(ctx, clazz);
+                        let site = match &ctx.tree(type_in).tag {
+                            Tag::IDENT => {
+                                let encl_class = env.encl_class.expect("enclClass");
+                                let encl_sym = class_tree_symbol(ctx, encl_class).expect("enclClass sym");
+                                ctx.sym(encl_sym).ty.expect("enclClass type")
+                            }
+                            Tag::SELECT => match &ctx.tree(type_in).kind {
+                                TreeKind::FieldAccess { selected, .. } => {
+                                    let selected = selected.expect("select qualifier");
+                                    ctx.tree(selected).ty.expect("selected type")
+                                }
+                                _ => panic!("ClassCastException: JCFieldAccess expected"),
+                            },
+                            _ => panic!("AssertionError: {:?}", ctx.tree(type_in).tag),
+                        };
+                        if site != outer {
+                            let mut site = site;
+                            if ctx.typ(site).has_tag(TypeTag::CLASS) {
+                                let outer_tsym = ctx.typ(outer).tsym.expect("outer type symbol");
+                                site = match self.types.as_outer_super(ctx, syms, site, outer_tsym) {
+                                    Some(super_type) => super_type,
+                                    None => self.types.erasure(ctx, syms, outer),
+                                };
+                            }
+                            clazz_outer = Some(site);
+                        }
+                    }
+                }
+                let class_type = TypeKindData::ClassType {
+                    outer_field: clazz_outer,
+                    typarams_field: Some(actuals),
+                    allparams_field: None,
+                    supertype_field: None,
+                    interfaces_field: None,
+                    all_interfaces_field: None,
+                };
+                owntype = ctx.alloc_type(crate::code::type_::Type::new(
+                    TypeTag::CLASS,
+                    Some(clazz_tsym),
+                    class_type,
+                ));
+            } else {
+                // TODO(Check/Types + printing batch): log.error(tree.pos(),
+                //     Errors.WrongNumberTypeArgs(Integer.toString(formals.length())))
+                //     / Errors.TypeDoesntTakeParams(clazztype.tsym)); the
+                //     DiagnosticArg/SymbolArg mapping needs the printing layer;
+                //     registered. Keeps the upstream error type.
+                unimplemented!("TODO(Check/Types + printing batch): Attr.visitTypeApply wrong number of type args")
+            }
+        }
+        let result_info = self.result_info.clone().expect("resultInfo");
+        Ok(self.check(ctx, syms, tree, owntype, KindSelector::TYP, &result_info))
+    }
+
+    /// Java: List<Type> attribTypes(List<JCExpression> trees, Env<AttrContext>
+    /// env) (Attr.java:800-810)
+    fn attrib_types(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        trees: List<TreeId>,
+        env: &Rc<Env<AttrContext>>,
+    ) -> List<TypeId> {
+        let mut result: List<TypeId> = List::nil();
+        let mut current = trees;
+        while current.non_empty() {
+            let tree = *current.head();
+            let ty = self.attrib_type_use(ctx, syms, tree, env);
+            result = result.append(ty);
+            current = current.tail();
+        }
+        result
     }
 
     /// Java: public void visitWildcard(JCWildcard tree) (5099-5109)
@@ -400,7 +646,7 @@ impl Attr {
             None,
         ));
         let result_info = self.result_info.clone().expect("resultInfo");
-        Ok(self.check(ctx, tree, wildcard, KindSelector::TYP, &result_info))
+        Ok(self.check(ctx, syms, tree, wildcard, KindSelector::TYP, &result_info))
     }
 
     /// Java: public void visitTypeParameter(JCTypeParameter tree) (5017-5029)
@@ -457,7 +703,7 @@ impl Attr {
         while current.non_empty() {
             let err = *current.head();
             let env = self.env.clone().expect("env");
-            let error_info = ResultInfo::new(KindSelector::ERR, self.pt());
+            let error_info = ResultInfo::new(KindSelector::ERR, self.pt(), Rc::clone(&self.basic_handler));
             let _ = self.attrib_tree_with(ctx, syms, err, &env, error_info);
             current = current.tail();
         }
@@ -502,7 +748,7 @@ impl Attr {
                 self.no_type(ctx)
             }
         };
-        let info = ResultInfo::new(KindSelector::VAL, Some(pt));
+        let info = ResultInfo::new(KindSelector::VAL, Some(pt), Rc::clone(&self.basic_handler));
         self.attrib_tree_use(ctx, syms, tree, env, info)
     }
 
@@ -514,7 +760,6 @@ impl Attr {
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
-        self.no_type(ctx);
         let info = self.unknown_type_info.clone();
         self.attrib_tree_use(ctx, syms, tree, env, info)
     }
@@ -528,7 +773,7 @@ impl Attr {
         env: &Rc<Env<AttrContext>>,
         pt: Option<TypeId>,
     ) -> TypeId {
-        let info = ResultInfo::new(KindSelector::TYP, pt);
+        let info = ResultInfo::new(KindSelector::TYP, pt, Rc::clone(&self.basic_handler));
         self.attrib_tree_use(ctx, syms, tree, env, info)
     }
 
@@ -541,7 +786,14 @@ impl Attr {
         sym: SymbolId,
     ) -> TypeId {
         let env = self.type_envs.borrow().get(sym).expect("typeEnvs entry");
-        let local_env = env.dup_shared(Some(node));
+        // Java: Env<AttrContext> localEnv = env.dup(node, env.info.dup());
+        // The local AttrContext is a copy: modifications inside the local env
+        // must not leak into the class env (dup_shared would share info).
+        let info_copy = {
+            let info = env.info.borrow();
+            info.dup(info.scope)
+        };
+        let local_env = env.dup(Some(node), info_copy);
         let info = self.unknown_type_info.clone();
         self.attrib_tree_use(ctx, syms, node, &local_env, info)
     }
@@ -566,7 +818,7 @@ impl Attr {
         } else {
             KindSelector::TYP_PCK
         };
-        let info = ResultInfo::new(pkind, Some(self.no_type(ctx)));
+        let info = ResultInfo::new(pkind, Some(self.no_type(ctx)), Rc::clone(&self.basic_handler));
         self.attrib_tree_use(ctx, syms, selected, env, info)
     }
 
@@ -769,7 +1021,7 @@ impl Attr {
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
-        let info = ResultInfo::new(KindSelector::TYP, Some(self.no_type(ctx)));
+        let info = ResultInfo::new(KindSelector::TYP, Some(self.no_type(ctx)), Rc::clone(&self.basic_handler));
         self.attrib_tree_use(ctx, syms, tree, env, info)
     }
 
@@ -850,13 +1102,105 @@ fn _feature_allowed(feature: Feature, source: crate::code::source::Source) -> bo
 }
 
 
+/// Java: JCTypeApply.clazz
+fn type_apply_clazz(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
+    match &ctx.tree(tree).kind {
+        TreeKind::TypeApply { clazz, .. } => *clazz,
+        _ => None,
+    }
+}
+
+/// Java: JCTypeApply.arguments
+fn type_apply_arguments(ctx: &CompilerContext, tree: TreeId) -> List<TreeId> {
+    match &ctx.tree(tree).kind {
+        TreeKind::TypeApply { arguments, .. } => arguments.clone(),
+        _ => List::nil(),
+    }
+}
+
+/// Java: Type.getTypeArguments() for a class type (the ported ClassType stores
+/// Option<List<TypeId>>; Union/Intersection inherit the field).
+fn type_arguments(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
+    match &ctx.typ(t).kind {
+        TypeKindData::ClassType { typarams_field, .. }
+        | TypeKindData::UnionClassType { typarams_field, .. }
+        | TypeKindData::IntersectionClassType { typarams_field, .. } => {
+            typarams_field.clone().unwrap_or_else(List::nil)
+        }
+        _ => List::nil(),
+    }
+}
+
+fn class_tree_symbol(ctx: &CompilerContext, tree: TreeId) -> Option<SymbolId> {
+    match &ctx.tree(tree).kind {
+        TreeKind::ClassDecl { sym, .. } => *sym,
+        _ => None,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    struct TestCheckContext {
+        infer: Rc<crate::comp::infer::InferenceContext>,
+        deferred: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
+    }
+
+    impl crate::comp::check::CheckContext for TestCheckContext {
+        fn compatible(
+            &self,
+            _ctx: &mut CompilerContext,
+            _syms: &Symtab,
+            _types: &Types,
+            _found: TypeId,
+            _req: TypeId,
+            _warn: &mut crate::util::warner::Warner,
+        ) -> bool {
+            false
+        }
+
+        fn report(
+            &self,
+            _ctx: &mut CompilerContext,
+            _pos: i32,
+            _details: &crate::util::jc_diagnostic::JCDiagnostic,
+        ) {
+            unimplemented!("test check context report")
+        }
+
+        fn check_warner(
+            &self,
+            _ctx: &mut CompilerContext,
+            _syms: &Symtab,
+            _types: &Types,
+            _pos: i32,
+            _found: TypeId,
+            _req: TypeId,
+        ) -> crate::util::warner::Warner {
+            crate::util::warner::Warner::new(None)
+        }
+
+        fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
+            &self.infer
+        }
+
+        fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
+            &self.deferred
+        }
+    }
+
+    fn test_check_context() -> Rc<dyn crate::comp::check::CheckContext> {
+        Rc::new(TestCheckContext {
+            infer: crate::comp::infer::empty_context(),
+            deferred: Rc::new(crate::comp::deferred_attr::DeferredAttrContext::empty()),
+        })
+    }
+
     #[test]
     fn result_info_keep_pkind_and_pt_and_dup() {
-        let info = ResultInfo::new(KindSelector::TYP, Some(TypeId::new(3)));
+        let info = ResultInfo::new(KindSelector::TYP, Some(TypeId::new(3)), test_check_context());
         assert_eq!(info.pkind, KindSelector::TYP);
         assert_eq!(info.pt, Some(TypeId::new(3)));
         let dup = info.dup(Some(TypeId::new(4)));
@@ -864,6 +1208,8 @@ mod tests {
         assert_eq!(dup.pt, Some(TypeId::new(4)));
         let no_pt = info.dup(None);
         assert_eq!(no_pt.pt, None);
+        let mode_dup = info.dup_mode(crate::comp::check::CheckMode::NO_TREE_UPDATE);
+        assert_eq!(mode_dup.check_mode, crate::comp::check::CheckMode::NO_TREE_UPDATE);
     }
 
     #[test]
@@ -871,16 +1217,40 @@ mod tests {
         // The predefined ResultInfo kinds (Attr constructor): statInfo is NIL,
         // varAssignmentInfo is ASG, unknownExprInfo is VAL, unknownTypeInfo is
         // TYP, unknownTypeExprInfo is VAL_TYP.
-        let stat_info = ResultInfo::new(KindSelector::NIL, None);
+        let stat_info = ResultInfo::new(KindSelector::NIL, None, test_check_context());
         assert_eq!(stat_info.pkind, KindSelector::NIL);
-        let var_assignment = ResultInfo::new(KindSelector::ASG, None);
+        let var_assignment = ResultInfo::new(KindSelector::ASG, None, test_check_context());
         assert_eq!(var_assignment.pkind, KindSelector::ASG);
-        let expr = ResultInfo::new(KindSelector::VAL, None);
+        let expr = ResultInfo::new(KindSelector::VAL, None, test_check_context());
         assert_eq!(expr.pkind, KindSelector::VAL);
-        let ty = ResultInfo::new(KindSelector::TYP, None);
+        let ty = ResultInfo::new(KindSelector::TYP, None, test_check_context());
         assert_eq!(ty.pkind, KindSelector::TYP);
-        let val_typ = ResultInfo::new(KindSelector::VAL_TYP, None);
+        let val_typ = ResultInfo::new(KindSelector::VAL_TYP, None, test_check_context());
         assert_eq!(val_typ.pkind, KindSelector::VAL_TYP);
+    }
+
+    #[test]
+    fn result_info_to_string_matches_the_upstream_semantics() {
+        // Java: public String toString() { return pt != null ? pt.toString() : ""; }
+        let no_pt = ResultInfo::new(KindSelector::TYP, None, test_check_context());
+        assert_eq!(no_pt.to_string(&CompilerContext::new()), "");
+    }
+
+    #[test]
+    fn result_info_dup_overloads_keep_context_and_mode() {
+        let context = test_check_context();
+        let info = ResultInfo::new_with_mode(
+            KindSelector::TYP,
+            Some(TypeId::new(1)),
+            Rc::clone(&context),
+            crate::comp::check::CheckMode::NO_INFERENCE_HOOK,
+        );
+        let same_context = info.dup_context(Rc::clone(&context));
+        assert!(Rc::ptr_eq(&same_context.check_context, &context));
+        let new_pt = info.dup_pt_context(Some(TypeId::new(2)), Rc::clone(&context));
+        assert_eq!(new_pt.pt, Some(TypeId::new(2)));
+        let new_mode = info.dup_pt_context_mode(Some(TypeId::new(3)), context, crate::comp::check::CheckMode::NORMAL);
+        assert_eq!(new_mode.check_mode, crate::comp::check::CheckMode::NORMAL);
     }
 
     #[test]
