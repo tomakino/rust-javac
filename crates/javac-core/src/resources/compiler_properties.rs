@@ -8536,6 +8536,38 @@ mod p4_fragment_arguments {
     }
 
     #[test]
+    fn bad_constant_messages_match_javac_oracle() {
+        // Oracle (JDK 17, Locale.ENGLISH, JCDiagnostic.Factory.fragment):
+        // bad.constant.value(Integer 5, VarSymbol v, "String")
+        //   -> "bad constant value '5' for v, expected String"
+        // bad.constant.range(Integer 5, VarSymbol v, int)
+        //   -> "constant value '5' for v is outside the expected range for int"
+        use crate::resources::diagnostic_contract::{SymbolArg, TypeArg};
+        use crate::util::jc_diagnostic::{Factory, Fragment};
+        use crate::util::javac_messages::{JavacMessages, DEFAULT_BUNDLE_NAME};
+        let messages = Rc::new(JavacMessages::new(DEFAULT_BUNDLE_NAME));
+        let factory = Factory::new(messages, "compiler");
+        let value = factory.fragment(Fragment::from(fragments::bad_constant_value(
+            JavaString::from("5"),
+            SymbolArg::placeholder("v"),
+            JavaString::from("String"),
+        )));
+        assert_eq!(
+            value.get_message(None).to_string(),
+            "bad constant value '5' for v, expected String"
+        );
+        let range = factory.fragment(Fragment::from(fragments::bad_constant_range(
+            JavaString::from("5"),
+            SymbolArg::placeholder("v"),
+            TypeArg::placeholder("int"),
+        )));
+        assert_eq!(
+            range.get_message(None).to_string(),
+            "constant value '5' for v is outside the expected range for int"
+        );
+    }
+
+    #[test]
     fn wrong_version_takes_four_arguments() {
         let info = fragments::wrong_version(
             JavaString::from("61"),

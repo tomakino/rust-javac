@@ -1075,6 +1075,24 @@ fn push_annotations(
     }
 }
 
+/// The annotations string used by Type.appendAnnotationsString and by
+/// MethodSymbol.argtypes(varargs) for the annotated last parameter.
+pub(crate) fn annotation_mirrors_string(ctx: &CompilerContext, ty: TypeId) -> String {
+    let mut annotations = ctx.typ(ty).get_annotation_mirrors();
+    let mut sb = String::new();
+    let mut first = true;
+    while annotations.non_empty() {
+        if !first {
+            sb.push(',');
+        }
+        first = false;
+        let attribute = *annotations.head();
+        sb.push_str(&ctx.attr(attribute).to_string(ctx));
+        annotations = annotations.tail();
+    }
+    sb
+}
+
 /// Java: Type.toString(List<Type>) (Type.java:484-494).
 pub fn type_list_to_string(ctx: &CompilerContext, list: &List<TypeId>) -> String {
     let mut sb = String::new();
@@ -1155,7 +1173,9 @@ fn class_name(ctx: &CompilerContext, ty: TypeId, sym: SymbolId, longform: bool) 
         let mut sb = messages
             .get_localized_string("compiler.misc.anonymous.class", &[arg_text]);
         if more_info() {
-            sb.push_str(&stable_type_id(ty).to_string());
+            // Java: className anonymous branch appends sym.hashCode(); the port
+            // uses the symbol's stable arena identity (registered adapter).
+            sb.push_str(&i64::from(sym.index()).to_string());
         }
         sb
     } else if longform {

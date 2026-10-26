@@ -3323,7 +3323,8 @@ fn method_symbol_to_string(
                 );
             }
         }
-        if let Some((params, varargs)) = method_type_params(ctx, method_ty) {
+        if let Some(params) = method_type_params(ctx, method_ty) {
+            let varargs = (flags & i64::from(crate::code::flags::VARARGS)) != 0;
             result.push('(');
             result.push_str(&argtypes_to_string(ctx, &params, varargs));
             result.push(')');
@@ -3335,11 +3336,9 @@ fn method_symbol_to_string(
 fn method_type_params(
     ctx: &crate::compiler_context::CompilerContext,
     ty: crate::ids::TypeId,
-) -> Option<(crate::util::list::List<crate::ids::TypeId>, bool)> {
+) -> Option<crate::util::list::List<crate::ids::TypeId>> {
     match &ctx.typ(ty).kind {
-        crate::code::type_::TypeKindData::MethodType { argtypes, .. } => {
-            Some((argtypes.clone(), false))
-        }
+        crate::code::type_::TypeKindData::MethodType { argtypes, .. } => Some(argtypes.clone()),
         crate::code::type_::TypeKindData::ForAll { qtype: Some(qtype), .. } => {
             method_type_params(ctx, *qtype)
         }
@@ -3369,6 +3368,9 @@ fn argtypes_to_string(
                 &ctx.typ(last).kind
             {
                 result.push_str(&crate::code::type_::type_to_string(ctx, elemtype.clone()));
+                // Java: argtypes(varargs) appends the array type's annotations
+                // before the ellipsis (Type.java:532-534).
+                result.push_str(&crate::code::type_::annotation_mirrors_string(ctx, last));
             }
             result.push_str("...");
         } else {

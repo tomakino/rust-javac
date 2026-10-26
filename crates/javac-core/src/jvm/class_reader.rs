@@ -2982,7 +2982,7 @@ impl ClassReader {
         }
         let ty = ctx.sym(sym).ty.expect("variable type");
         let tag = ctx.typ(ty).get_tag();
-        let value_text = format!("{const_value:?}");
+        let value_text = Self::const_value_object_string(&const_value);
         let symbol_text = crate::code::symbol::symbol_to_string(ctx, sym);
         let bad_value = |clazz: &str| -> crate::code::symbol::CompletionFailure {
             let key = Fragment::from(
@@ -3041,7 +3041,9 @@ impl ClassReader {
                 if !is_string {
                     let key = Fragment::from(
                         crate::resources::compiler_properties::fragments::bad_constant_value_type(
-                            crate::resources::diagnostic_contract::TypeArg::placeholder("type"),
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::code::type_::type_to_string(ctx, ty),
+                            ),
                         ),
                     );
                     return Err(self.bad_class_file(key).failure);
@@ -3055,6 +3057,25 @@ impl ClassReader {
             _ => return Ok(()),
         }
         Ok(())
+    }
+
+    /// Java: the boxed ConstantValue's Object.toString (the
+    /// bad.constant.value/bad.constant.range {0} argument).
+    fn const_value_object_string(value: &crate::util::constants::ConstantValue) -> String {
+        use crate::util::constants::ConstantValue;
+        match value {
+            ConstantValue::Integer(value) => value.to_string(),
+            ConstantValue::Byte(value) => value.to_string(),
+            ConstantValue::Short(value) => value.to_string(),
+            ConstantValue::Long(value) => value.to_string(),
+            ConstantValue::Float(value) => javac_floating::to_java_string_float(*value),
+            ConstantValue::Double(value) => javac_floating::to_java_string_double(*value),
+            ConstantValue::Character(value) => {
+                char::from_u32(u32::from(*value)).unwrap_or('\u{0}').to_string()
+            }
+            ConstantValue::Boolean(value) => value.to_string(),
+            ConstantValue::String(value) => value.to_string_lossy().to_string(),
+        }
     }
 
     /// Java: Code readCode(Symbol owner) (ClassReader.java:1373-1390)
