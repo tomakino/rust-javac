@@ -555,7 +555,7 @@ impl Resolve {
     pub fn check_accessible_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         env: &Rc<Env<AttrContext>>,
         t: TypeId,
     ) {
@@ -577,11 +577,30 @@ impl Resolve {
                     current = current.tail();
                 }
                 let tsym = ctx.typ(t).tsym.expect("class type symbol");
-                if !self.is_accessible_class(ctx, syms, env, tsym, true) {
-                    // Java: accessBase(new AccessError(env, null, t.tsym),
-                    // env.tree.pos(), env.enclClass.sym, t, t.tsym.name, true);
-                    unimplemented!(
-                        "TODO(Resolve access stage): accessBase/logResolveError for AccessError"
+                // Java: Resolve.java:528-534 (AccessibilityChecker.visitClassType):
+                //   if (!isAccessible(env, t, true))
+                //       accessBase(new AccessError(env, null, t.tsym),
+                //                  env.tree.pos(), env.enclClass.sym, t, t.tsym.name, true);
+                if !self.is_accessible_type(ctx, &*syms, env, t, true) {
+                    let error = self.new_access_error(ctx, syms, env, None, tsym);
+                    let pos_tree = env.tree.expect("env.tree");
+                    let pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
+                        Some(Rc::new(
+                            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                                ctx.tree(pos_tree).pos,
+                            ),
+                        ));
+                    let location = env.encl_class.map(|tree| {
+                        match &ctx.tree(tree).kind {
+                            crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => {
+                                *sym
+                            }
+                            _ => panic!("ClassCastException: JCClassDecl expected"),
+                        }
+                    });
+                    let name = ctx.sym(tsym).name.clone();
+                    self.access_base(
+                        ctx, syms, error, pos, location, Some(t), &name, true,
                     );
                 }
             }
