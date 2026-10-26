@@ -5178,4 +5178,386 @@ impl Check {
             );
         }
     }
+}impl Check {
+    /// Java: void validateRepeatable(ClassSymbol s, Attribute.Compound a,
+    /// DiagnosticPosition pos) (Check.java:3100-3125).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - s: the annotation type symbol;
+    ///   - a: the @Repeatable annotation attribute.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:3100-3125.
+    pub fn validate_repeatable(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        s: SymbolId,
+        a: AttributeId,
+    ) {
+        let a_ty = ctx.attr(a).ty.expect("repeatable attribute type");
+        assert!(
+            self.types.is_same_type(ctx, syms, a_ty, syms.repeatable_type),
+            "AssertionError: @Repeatable annotation type"
+        );
+        let values = match &ctx.attr(a).kind {
+            crate::code::attribute::AttributeKind::Compound { values, .. } => values.clone(),
+            _ => return,
+        };
+        let mut t: Option<TypeId> = None;
+        if values.non_empty() {
+            let head = values.head().clone();
+            assert!(
+                ctx.sym(head.fst).name == self.names.value,
+                "AssertionError: @Repeatable value method"
+            );
+            t = match &ctx.attr(head.snd).kind {
+                crate::code::attribute::AttributeKind::Class { class_type } => *class_type,
+                _ => None,
+            };
+        }
+        let t = match t {
+            Some(t) => t,
+            None => return,
+        };
+        let t_tsym = match ctx.typ(t).tsym {
+            Some(tsym) => tsym,
+            None => return,
+        };
+        self.validate_repeatable_value(ctx, syms, t_tsym, s, pos);
+        self.validate_repeatable_retention(ctx, syms, t_tsym, s, pos);
+        self.validate_repeatable_documented(ctx, t_tsym, s, pos);
+        self.validate_repeatable_inherited(ctx, t_tsym, s, pos);
+        self.validate_repeatable_target(ctx, syms, t_tsym, s, pos);
+        self.validate_repeatable_default(ctx, t_tsym, pos);
+    }
+
+    /// Java: private void validateValue(TypeSymbol container, TypeSymbol
+    /// contained, DiagnosticPosition pos) (Check.java:3127-3140).
+    fn validate_repeatable_value(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        container: SymbolId,
+        contained: SymbolId,
+        pos: i32,
+    ) {
+        let members = match &ctx.sym(container).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+            _ => None,
+        };
+        let value_name = self.names.value.clone();
+        let sym = members.and_then(|members| {
+            ctx.scope_get_symbols_by_name(
+                members,
+                &value_name,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+            )
+            .first()
+            .copied()
+        });
+        let sym = match sym {
+            Some(sym) if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH => sym,
+            _ => {
+                let info = crate::resources::compiler_properties::errors::invalid_repeatable_annotation_no_value(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        crate::comp::resolve::symbol_display_name(ctx, container),
+                    ),
+                );
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+                return;
+            }
+        };
+        let method_ty = ctx.sym(sym).ty.expect("value method type");
+        let ret = self.types.get_return_type_public(ctx, method_ty);
+        let contained_ty = ctx.sym(contained).ty.expect("contained annotation type");
+        let expected_array = self.types.make_array_type(ctx, syms, contained_ty);
+        let ok = ctx.typ(ret).has_tag(crate::code::type_tag::TypeTag::ARRAY)
+            && {
+                let elem = match &ctx.typ(ret).kind {
+                    crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => *elemtype,
+                    _ => None,
+                };
+                elem.map(|elem| self.types.is_same_type(ctx, syms, elem, contained_ty))
+                    .unwrap_or(false)
+            };
+        if !ok {
+            let info = crate::resources::compiler_properties::errors::invalid_repeatable_annotation_value_return(
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                    crate::comp::resolve::symbol_display_name(ctx, container),
+                ),
+                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                    crate::comp::attr::type_display_of(ctx, ret),
+                ),
+                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                    crate::comp::attr::type_display_of(ctx, expected_array),
+                ),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+    }
+
+    /// Java: private void validateRetention(TypeSymbol container, TypeSymbol
+    /// contained, DiagnosticPosition pos) (Check.java:3142-3170).
+    #[allow(clippy::collapsible_match, clippy::if_same_then_else)]
+    fn validate_repeatable_retention(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        container: SymbolId,
+        contained: SymbolId,
+        pos: i32,
+    ) {
+        use crate::code::attribute::RetentionPolicy;
+        let container_retention = self.types.get_retention(ctx, syms, container);
+        let contained_retention = self.types.get_retention(ctx, syms, contained);
+        let mut error = false;
+        match contained_retention {
+            RetentionPolicy::RUNTIME => {
+                if container_retention != RetentionPolicy::RUNTIME {
+                    error = true;
+                }
+            }
+            RetentionPolicy::CLASS => {
+                if container_retention == RetentionPolicy::SOURCE {
+                    error = true;
+                }
+            }
+            _ => {}
+        }
+        if error {
+            let info = crate::resources::compiler_properties::errors::invalid_repeatable_annotation_retention(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, container),
+                ),
+                crate::util::java_string::JavaString::from(retention_name(container_retention)),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, contained),
+                ),
+                crate::util::java_string::JavaString::from(retention_name(contained_retention)),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+    }
+
+    /// Java: private void validateDocumented(Symbol container, Symbol contained,
+    /// DiagnosticPosition pos) (Check.java:3172-3178).
+    fn validate_repeatable_documented(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        container: SymbolId,
+        contained: SymbolId,
+        pos: i32,
+    ) {
+        let Some(documented_tsym) = ctx.typ(self.syms.borrow().documented_type).tsym else {
+            return;
+        };
+        if ctx.sym(contained).attribute(ctx, documented_tsym).is_some()
+            && ctx.sym(container).attribute(ctx, documented_tsym).is_none()
+        {
+            let info = crate::resources::compiler_properties::errors::invalid_repeatable_annotation_not_documented(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, container),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, contained),
+                ),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+    }
+
+    /// Java: private void validateInherited(Symbol container, Symbol contained,
+    /// DiagnosticPosition pos) (Check.java:3180-3186).
+    fn validate_repeatable_inherited(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        container: SymbolId,
+        contained: SymbolId,
+        pos: i32,
+    ) {
+        let Some(inherited_tsym) = ctx.typ(self.syms.borrow().inherited_type).tsym else {
+            return;
+        };
+        if ctx.sym(contained).attribute(ctx, inherited_tsym).is_some()
+            && ctx.sym(container).attribute(ctx, inherited_tsym).is_none()
+        {
+            let info = crate::resources::compiler_properties::errors::invalid_repeatable_annotation_not_inherited(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, container),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, contained),
+                ),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+    }
+
+    /// Java: private void validateTarget(TypeSymbol container, TypeSymbol
+    /// contained, DiagnosticPosition pos) (Check.java:3188-3230).
+    fn validate_repeatable_target(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        container: SymbolId,
+        contained: SymbolId,
+        pos: i32,
+    ) {
+        let container_targets = match self.get_attribute_target_attribute(ctx, container) {
+            Ok(Some(arr)) => self.target_set_from_array(ctx, arr),
+            _ => self.default_target_meta_info(),
+        };
+        let contained_targets = match self.get_attribute_target_attribute(ctx, contained) {
+            Ok(Some(arr)) => self.target_set_from_array(ctx, arr),
+            _ => self.default_target_meta_info(),
+        };
+        if !is_target_subset_of(&container_targets, &contained_targets, ctx, syms, &self.names) {
+            let info = crate::resources::compiler_properties::errors::invalid_repeatable_annotation_incompatible_target(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, container),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, contained),
+                ),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+    }
+
+    /// Adapter: the ElementType names of an Attribute.Array target attribute.
+    fn target_set_from_array(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        arr: AttributeId,
+    ) -> Vec<crate::util::name::Name> {
+        let values = match &ctx.attr(arr).kind {
+            crate::code::attribute::AttributeKind::Array { values } => values.clone(),
+            _ => return Vec::new(),
+        };
+        let mut targets: Vec<crate::util::name::Name> = Vec::new();
+        for value in values {
+            if let crate::code::attribute::AttributeKind::Enum { value: Some(enum_sym) } =
+                &ctx.attr(value).kind
+            {
+                targets.push(ctx.sym(*enum_sym).name.clone());
+            }
+        }
+        targets
+    }
+
+    /// Java: private void validateDefault(Symbol container, DiagnosticPosition pos)
+    /// (Check.java:3270-3285).
+    fn validate_repeatable_default(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        container: SymbolId,
+        pos: i32,
+    ) {
+        let members = match &ctx.sym(container).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+            _ => None,
+        };
+        let members = match members {
+            Some(members) => members,
+            None => return,
+        };
+        let symbols = ctx.scope_get_symbols(members, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true);
+        for elm in symbols {
+            if ctx.sym(elm).name != self.names.value && ctx.sym(elm).kind == crate::code::kinds::Kind::MTH {
+                let default_value = match &ctx.sym(elm).kind_data {
+                    crate::code::symbol::SymbolKind::MethodSymbol { default_value, .. } => *default_value,
+                    _ => None,
+                };
+                if default_value.is_none() {
+                    let info = crate::resources::compiler_properties::errors::invalid_repeatable_annotation_elem_nondefault(
+                        crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                            crate::comp::resolve::symbol_display_name(ctx, container),
+                        ),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            crate::comp::resolve::symbol_display_name(ctx, elm),
+                        ),
+                    );
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Adapter: RetentionPolicy name for the diagnostic text.
+fn retention_name(policy: crate::code::attribute::RetentionPolicy) -> &'static str {
+    match policy {
+        crate::code::attribute::RetentionPolicy::SOURCE => "SOURCE",
+        crate::code::attribute::RetentionPolicy::CLASS => "CLASS",
+        crate::code::attribute::RetentionPolicy::RUNTIME => "RUNTIME",
+    }
+}
+
+/// Java: private boolean isTargetSubsetOf(Set<Name> s, Set<Name> t)
+/// (Check.java:3245-3268).
+fn is_target_subset_of(
+    s: &[crate::util::name::Name],
+    t: &[crate::util::name::Name],
+    ctx: &mut crate::compiler_context::CompilerContext,
+    _syms: &mut crate::code::symtab::Symtab,
+    names: &crate::util::names::Names,
+) -> bool {
+    let _ = ctx;
+    for n2 in s {
+        let mut current_element_ok = false;
+        for n1 in t {
+            if n1 == n2
+                || (n1 == &names.TYPE && n2 == &names.ANNOTATION_TYPE)
+                || (n1 == &names.TYPE_USE
+                    && (n2 == &names.TYPE
+                        || n2 == &names.ANNOTATION_TYPE
+                        || n2 == &names.TYPE_PARAMETER))
+            {
+                current_element_ok = true;
+                break;
+            }
+        }
+        if !current_element_ok {
+            return false;
+        }
+    }
+    true
 }

@@ -9134,6 +9134,64 @@ impl Types {
         undef
     }
 }
+impl Types {
+    /// Java: public RetentionPolicy getRetention(TypeSymbol sym) (Types.java:5024-5040).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - sym: the annotation type symbol.
+    ///
+    /// # Returns
+    ///   - the retention policy (CLASS by default).
+    ///
+    /// # Panics
+    ///   - the Types names service must be installed.
+    ///
+    /// Upstream: Types.java:5024-5040.
+    pub fn get_retention(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: SymbolId,
+    ) -> crate::code::attribute::RetentionPolicy {
+        use crate::code::attribute::RetentionPolicy;
+        let mut vis = RetentionPolicy::CLASS;
+        let retention_tsym = match ctx.typ(syms.retention_type).tsym {
+            Some(tsym) => tsym,
+            None => return vis,
+        };
+        let compound = match ctx.sym(sym).attribute(ctx, retention_tsym) {
+            Some(attribute) => attribute,
+            None => return vis,
+        };
+        let names = self.names.as_ref().expect("Types names").clone();
+        let values = match &ctx.attr(compound).kind {
+            crate::code::attribute::AttributeKind::Compound { values, .. } => values.clone(),
+            _ => return vis,
+        };
+        let mut current = values;
+        while current.non_empty() {
+            let pair = current.head().clone();
+            current = current.tail();
+            if ctx.sym(pair.fst).name != names.value {
+                continue;
+            }
+            if let crate::code::attribute::AttributeKind::Enum { value: Some(enum_sym) } =
+                &ctx.attr(pair.snd).kind
+            {
+                let level = ctx.sym(*enum_sym).name.clone();
+                if level == names.SOURCE {
+                    vis = RetentionPolicy::SOURCE;
+                } else if level == names.CLASS {
+                    vis = RetentionPolicy::CLASS;
+                } else if level == names.RUNTIME {
+                    vis = RetentionPolicy::RUNTIME;
+                }
+            }
+        }
+        vis
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
