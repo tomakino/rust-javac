@@ -305,7 +305,7 @@ mod tests {
             false
         }
         fn get_original_type(&self, _error_type: &dyn ErrorType) -> Rc<dyn TypeMirror> {
-            panic!("AbstractMethodError: get_original_type: test fixture")
+            panic!("UnsupportedOperationException: get_original_type: test fixture")
         }
         fn print_message(
             &self,
@@ -316,7 +316,7 @@ mod tests {
         ) {
         }
         fn get_lub(&self, _tree: &dyn crate::tree::catch_tree::CatchTree) -> Rc<dyn TypeMirror> {
-            panic!("AbstractMethodError: get_lub: test fixture")
+            panic!("UnsupportedOperationException: get_lub: test fixture")
         }
     }
 

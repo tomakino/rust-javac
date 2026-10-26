@@ -2,12 +2,13 @@
 
 Scan: all workspace crates (crates/, tools/, xtask/), target/.git/reference excluded.
 
-## Counts (updated after A-class batch)
-- unimplemented: 106 (was 341 at batch start; project crates/)
-- todo: 0 (project crates/)
-- unreachable: 102 (unchanged, class C pending)
-- let _: 410 (class D pending)
-- #[allow(dead_code)]: 71 (class E pending)
+## Counts (A-class batch; reproducible scan: Get-ChildItem -Recurse -Filter *.rs crates,tools,xtask | Where-Object { $_.FullName -notmatch "\\target\\" } | Select-String -Pattern "unimplemented!")
+- unimplemented: 114 (all text lines; 105 non-comment lines)
+- todo!: 0
+- unreachable: 102
+- let _: 410
+- #[allow(dead_code)]: 71
+- A-class audit table: docs/AUDIT_PANIC_TABLE.md
 
 ## Status column legend
 - [replaced] the interface/abstract stub was replaced by an explicit AbstractMethodError/UnsupportedOperationException panic (A-class batch);

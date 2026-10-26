@@ -440,7 +440,7 @@ mod tests {
             Kind::IDENTIFIER
         }
         fn accept<R, D>(&self, _visitor: &mut dyn DocTreeVisitor<R, D>, _data: D) -> R {
-            panic!("AbstractMethodError: accept: test fixture accept")
+            panic!("UnsupportedOperationException: accept: test fixture accept")
         }
     }
 
@@ -457,7 +457,7 @@ mod tests {
             Kind::DOC_TYPE
         }
         fn accept<R, D>(&self, _visitor: &mut dyn DocTreeVisitor<R, D>, _data: D) -> R {
-            panic!("AbstractMethodError: accept: test fixture accept")
+            panic!("UnsupportedOperationException: accept: test fixture accept")
         }
     }
 

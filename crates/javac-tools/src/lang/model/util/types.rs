@@ -242,42 +242,42 @@ mod tests {
             Vec::new()
         }
         fn erasure(&self, _t: &dyn TypeMirror) -> Rc<dyn TypeMirror> {
-            panic!("AbstractMethodError: erasure: test fixture")
+            panic!("UnsupportedOperationException: erasure: test fixture")
         }
         fn boxed_class(&self, _p: &dyn PrimitiveType) -> Rc<dyn TypeElement> {
-            panic!("AbstractMethodError: boxed_class: test fixture")
+            panic!("UnsupportedOperationException: boxed_class: test fixture")
         }
         fn unboxed_type(&self, _t: &dyn TypeMirror) -> Rc<dyn PrimitiveType> {
-            panic!("AbstractMethodError: unboxed_type: test fixture")
+            panic!("UnsupportedOperationException: unboxed_type: test fixture")
         }
         fn capture(&self, _t: &dyn TypeMirror) -> Rc<dyn TypeMirror> {
-            panic!("AbstractMethodError: capture: test fixture")
+            panic!("UnsupportedOperationException: capture: test fixture")
         }
         fn get_primitive_type(&self, _kind: TypeKind) -> Rc<dyn PrimitiveType> {
-            panic!("AbstractMethodError: get_primitive_type: test fixture")
+            panic!("UnsupportedOperationException: get_primitive_type: test fixture")
         }
         fn get_null_type(&self) -> Rc<dyn NullType> {
-            panic!("AbstractMethodError: get_null_type: test fixture")
+            panic!("UnsupportedOperationException: get_null_type: test fixture")
         }
         fn get_no_type(&self, _kind: TypeKind) -> Rc<dyn NoType> {
-            panic!("AbstractMethodError: get_no_type: test fixture")
+            panic!("UnsupportedOperationException: get_no_type: test fixture")
         }
         fn get_array_type(&self, _component_type: &dyn TypeMirror) -> Rc<dyn ArrayType> {
-            panic!("AbstractMethodError: get_array_type: test fixture")
+            panic!("UnsupportedOperationException: get_array_type: test fixture")
         }
         fn get_wildcard_type(
             &self,
             _extends_bound: Option<&dyn TypeMirror>,
             _super_bound: Option<&dyn TypeMirror>,
         ) -> Rc<dyn WildcardType> {
-            panic!("AbstractMethodError: get_wildcard_type: test fixture")
+            panic!("UnsupportedOperationException: get_wildcard_type: test fixture")
         }
         fn get_declared_type(
             &self,
             _type_elem: &dyn TypeElement,
             _type_args: &[Rc<dyn TypeMirror>],
         ) -> Rc<dyn DeclaredType> {
-            panic!("AbstractMethodError: get_declared_type: test fixture")
+            panic!("UnsupportedOperationException: get_declared_type: test fixture")
         }
         fn get_declared_type_in(
             &self,
@@ -285,14 +285,14 @@ mod tests {
             _type_elem: &dyn TypeElement,
             _type_args: &[Rc<dyn TypeMirror>],
         ) -> Rc<dyn DeclaredType> {
-            panic!("AbstractMethodError: get_declared_type_in: test fixture")
+            panic!("UnsupportedOperationException: get_declared_type_in: test fixture")
         }
         fn as_member_of(
             &self,
             _containing: &dyn DeclaredType,
             _element: &dyn Element,
         ) -> Rc<dyn TypeMirror> {
-            panic!("AbstractMethodError: as_member_of: test fixture")
+            panic!("UnsupportedOperationException: as_member_of: test fixture")
         }
     }
 

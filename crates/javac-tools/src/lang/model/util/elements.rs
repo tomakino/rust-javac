@@ -473,7 +473,7 @@ mod tests {
             false
         }
         fn get_binary_name(&self, _type_: &dyn TypeElement) -> Rc<dyn Name> {
-            panic!("AbstractMethodError: get_binary_name: test fixture")
+            panic!("UnsupportedOperationException: get_binary_name: test fixture")
         }
         fn get_package_of(&self, _e: &dyn Element) -> Option<Rc<dyn PackageElement>> {
             None
@@ -499,11 +499,11 @@ mod tests {
             false
         }
         fn get_constant_expression(&self, _value: &Value) -> JavaString {
-            panic!("AbstractMethodError: get_constant_expression: test fixture")
+            panic!("UnsupportedOperationException: get_constant_expression: test fixture")
         }
         fn print_elements(&self, _w: &mut dyn Writer, _elements: &[Rc<dyn Element>]) {}
         fn get_name(&self, cs: &JavaString) -> Rc<dyn Name> {
-            panic!("AbstractMethodError: get_name")
+            panic!("UnsupportedOperationException: get_name")
         }
         fn is_functional_interface(&self, _type_: &dyn TypeElement) -> bool {
             false
@@ -611,7 +611,7 @@ mod tests {
 
     impl Element for DummyElement {
         fn as_type(&self) -> Rc<dyn crate::lang::model::type_::TypeMirror> {
-            panic!("AbstractMethodError: as_type: test fixture")
+            panic!("UnsupportedOperationException: as_type: test fixture")
         }
         fn get_kind(&self) -> crate::lang::model::element::ElementKind {
             crate::lang::model::element::ElementKind::OTHER
@@ -620,7 +620,7 @@ mod tests {
             Vec::new()
         }
         fn get_simple_name(&self) -> Rc<dyn Name> {
-            panic!("AbstractMethodError: get_simple_name: test fixture")
+            panic!("UnsupportedOperationException: get_simple_name: test fixture")
         }
         fn get_enclosing_element(&self) -> Option<Rc<dyn Element>> {
             None
@@ -633,7 +633,7 @@ mod tests {
             _v: &mut dyn crate::lang::model::element::ElementVisitor<R, P>,
             _p: P,
         ) -> R {
-            panic!("AbstractMethodError: accept: test fixture")
+            panic!("UnsupportedOperationException: accept: test fixture")
         }
     }
 
@@ -641,7 +641,7 @@ mod tests {
         fn get_annotation_type(
             &self,
         ) -> Rc<dyn crate::lang::model::type_::DeclaredType> {
-            panic!("AbstractMethodError: get_annotation_type: test fixture")
+            panic!("UnsupportedOperationException: get_annotation_type: test fixture")
         }
         fn get_element_values(
             &self,

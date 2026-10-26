@@ -3,12 +3,14 @@
 Generated scan of crates/javac-core/src (current HEAD). All entries must be repaid (user requirement).
 
 ## Summary (workspace scan, updated after A-class batch)
-- unimplemented! sites: 106 (was 341 before the A-class batch; javac-source/javac-tools interface stubs replaced with AbstractMethodError panics)
-- unreachable! sites: 102 (classification pending)
-- let _ = sites: 410 (audit pending, see the "let _ audit" section below)
-- #[allow(dead_code)] sites: 71 (wiring/deletion pending)
-- TODO comment sites: 148 (unchanged in this batch)
-- e2e: 2 tests #[ignore] (superseded by the debt-repayment sprint; no patches introduced)
+- unimplemented!: 114 (all text lines; 105 excluding lines whose first non-space char is '//')
+- unreachable!: 102
+- let _ =: 410
+- #[allow(dead_code)]: 71
+- TODO comment sites: 148 (unchanged)
+- e2e: 2 tests #[ignore] (debt-repayment sprint; no patches)
+- A-class panic audit table: docs/AUDIT_PANIC_TABLE.md (236 entries: 130 LEGAL interface/abstract no body, 2 LEGAL interface default UOE, 103 FIXTURE/MOCK UOE, 0 ILLEGAL)
+- reproducible scan (all workspace): Get-ChildItem -Recurse -Filter *.rs crates,tools,xtask | Where-Object { $_.FullName -notmatch "\\target\\" } | Select-String -Pattern "unimplemented!" | Measure-Object -Line
 
 ## unimplemented by file
 - 29  crates/javac-core/src/comp/type_enter.rs
