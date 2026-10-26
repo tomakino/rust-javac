@@ -70,6 +70,27 @@ impl<A> Env<A> {
         })
     }
 
+    /// Adapter for Attr.copyEnv: the upstream copyEnv assigns the copied
+    /// outer environment after dup (Env.java fields are mutable); the port
+    /// builds the Env with the copied outer directly.
+    pub fn dup_with_outer(
+        &self,
+        tree: Option<TreeId>,
+        info: A,
+        outer: Option<Rc<Env<A>>>,
+    ) -> Rc<Env<A>> {
+        Rc::new(Env {
+            next: None,
+            outer,
+            tree,
+            toplevel: self.toplevel,
+            encl_class: self.encl_class,
+            encl_method: self.encl_method,
+            info: Rc::new(RefCell::new(info)),
+            base_clause: self.base_clause,
+        })
+    }
+
     /// Java: public Env<A> dup(JCTree tree) — reuses this environment info.
     pub fn dup_shared(&self, tree: Option<TreeId>) -> Rc<Env<A>> {
         Rc::new(Env {

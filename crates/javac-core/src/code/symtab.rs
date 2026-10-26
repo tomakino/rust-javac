@@ -886,6 +886,10 @@ pub struct Symtab {
     pub unknown_symbol: SymbolId,
     pub err_type: TypeId,
     pub unknown_type: TypeId,
+    /// Java: Type.stuckType (a NONE type used as the type of stuck trees)
+    pub stuck_type: TypeId,
+    /// Java: Type.recoveryType (a NONE type used by recovery attribution)
+    pub recovery_type: TypeId,
     pub array_class: SymbolId,
     pub array_clone_method: SymbolId,
     pub bound_class: SymbolId,
@@ -1000,6 +1004,10 @@ impl Symtab {
 
         // Create the unknown type.
         let unknown_type = ctx.alloc_type(Type::new(TypeTag::UNKNOWN, None, TypeKindData::UnknownType));
+        // Java: Type.stuckType / Type.recoveryType (Type.java:108-120): both are
+        // JCNoType instances; their toString differs upstream (debug only).
+        let stuck_type = ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType));
+        let recovery_type = ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType));
 
         // TODO(MissingInfoHandler batch): MissingInfoHandler.instance(context) is
         // not ported; the root package is created without it.
@@ -1340,6 +1348,8 @@ impl Symtab {
                 unknown_symbol,
                 err_type,
                 unknown_type,
+                stuck_type,
+                recovery_type,
                 array_class,
                 array_clone_method,
                 bound_class,

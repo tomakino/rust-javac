@@ -420,6 +420,12 @@ impl Types {
             TypeKindData::UndetVar { .. } => {
                 self.is_same_type_visit_undet_var(ctx, syms, t, s)
             }
+            TypeKindData::Deferred { .. } => {
+                // Java: isSameTypeVisitor.visitType default branch throws
+                // AssertionError for DEFERRED (deferred types are mapped
+                // through DeferredTypeMap before a relation is computed).
+                panic!("AssertionError: isSameType DEFERRED")
+            }
         }
     }
 
@@ -2329,6 +2335,11 @@ impl Types {
             },
             TypeKindData::UndetVar { .. } => {
                 self.is_subtype_visit_undet_var(ctx, syms, t, s)
+            }
+            TypeKindData::Deferred { .. } => {
+                // Java: IsSubtype default branch throws AssertionError for
+                // DEFERRED (deferred types are mapped first).
+                panic!("AssertionError: isSubtype DEFERRED")
             }
             TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
                 let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");

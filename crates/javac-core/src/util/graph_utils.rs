@@ -279,6 +279,68 @@ impl<'a, D, N: TarjanNode<D, N> + PartialEq + 'a> Tarjan<'a, D, N> {
     }
 }
 
+
+/// Tarjan SCC over an index graph (§9 adapter): the ported generic tarjan above
+/// operates on &N references; the inference/deferred graphs keep their nodes in
+/// index arenas (stable node ids), so this faithful translation of the same
+/// algorithm (GraphUtils.java:171-235) works on dependency index lists.
+pub fn tarjan_scc_indexed(deps: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    let count = deps.len();
+    let mut index_counter = 0i32;
+    let mut stack: Vec<usize> = Vec::new();
+    let mut sccs: Vec<Vec<usize>> = Vec::new();
+    let mut index = vec![-1i32; count];
+    let mut lowlink = vec![0i32; count];
+    for start in 0..count {
+        if index[start] == -1 {
+            tarjan_scc_visit(
+                start,
+                deps,
+                &mut index_counter,
+                &mut index,
+                &mut lowlink,
+                &mut stack,
+                &mut sccs,
+            );
+        }
+    }
+    sccs
+}
+
+fn tarjan_scc_visit(
+    v: usize,
+    deps: &[Vec<usize>],
+    index_counter: &mut i32,
+    index: &mut [i32],
+    lowlink: &mut [i32],
+    stack: &mut Vec<usize>,
+    sccs: &mut Vec<Vec<usize>>,
+) {
+    index[v] = *index_counter;
+    lowlink[v] = *index_counter;
+    *index_counter += 1;
+    stack.push(v);
+    for &n in &deps[v] {
+        if index[n] == -1 {
+            tarjan_scc_visit(n, deps, index_counter, index, lowlink, stack, sccs);
+            lowlink[v] = lowlink[v].min(lowlink[n]);
+        } else if stack.contains(&n) {
+            lowlink[v] = lowlink[v].min(index[n]);
+        }
+    }
+    if lowlink[v] == index[v] {
+        let mut cycle: Vec<usize> = Vec::new();
+        loop {
+            let n = stack.pop().expect("java.util.NoSuchElementException");
+            cycle.push(n);
+            if n == v {
+                break;
+            }
+        }
+        sccs.push(cycle);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;

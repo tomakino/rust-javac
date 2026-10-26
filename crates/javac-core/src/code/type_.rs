@@ -126,7 +126,7 @@ impl InferenceBound {
 
 use crate::code::bound_kind::BoundKind;
 use crate::code::type_tag::TypeTag;
-use crate::ids::{SymbolId, TypeId};
+use crate::ids::{SymbolId, TreeId, TypeId};
 use crate::util::constants::ConstantValue;
 use crate::util::list::List;
 
@@ -609,6 +609,24 @@ pub enum TypeKindData {
         listener: Option<std::rc::Rc<dyn crate::comp::infer::UndetVarListener>>,
         /// The list of incorporation actions (used by the incorporation engine).
         incorporation_actions: std::collections::VecDeque<crate::comp::infer::IncorporationAction>,
+    },
+    /// Java: DeferredAttr.DeferredType (tag DEFERRED; the speculative
+    /// attribution state of the upstream DeferredType fields).
+    Deferred {
+        /// Java: JCExpression tree
+        tree: TreeId,
+        /// Java: Env<AttrContext> env
+        env: std::rc::Rc<
+            crate::comp::env::Env<crate::comp::attr_context::AttrContext>,
+        >,
+        /// Java: AttrMode mode
+        mode: Option<crate::comp::deferred_attr::AttrMode>,
+        /// Java: Set<Symbol> notPertinentToApplicability
+        not_pertinent: Vec<SymbolId>,
+        /// Java: SpeculativeCache speculativeCache
+        speculative_cache: std::rc::Rc<
+            std::cell::RefCell<crate::comp::deferred_attr::SpeculativeCache>,
+        >,
     },
 }
 

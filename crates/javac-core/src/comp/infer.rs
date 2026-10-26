@@ -2303,6 +2303,26 @@ impl InferenceGraph {
         graph
     }
 
+    /// Java: InferenceGraph.Node.closure() — the set of nodes reachable
+    /// through dependencies (used by DeferredAttr.canInfluence).
+    pub fn node_closure(&self, node: usize) -> Vec<usize> {
+        let mut closure: Vec<usize> = Vec::new();
+        self.collect_closure(node, &mut closure);
+        closure
+    }
+
+    fn collect_closure(&self, node: usize, closure: &mut Vec<usize>) {
+        if closure.contains(&node) {
+            return;
+        }
+        closure.push(node);
+        if let Some(data) = self.nodes.get(node).and_then(|n| n.as_ref()) {
+            for dep in &data.deps {
+                self.collect_closure(*dep, closure);
+            }
+        }
+    }
+
     /// Java: Node findNode(Type t)
     #[allow(clippy::collapsible_if)]
     pub fn find_node(&self, t: TypeId) -> Option<usize> {

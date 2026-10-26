@@ -1,0 +1,5 @@
+ORACLE deferred-attr
+EMPTY mode CHECK phase BOX msym null insideOverloadPhase false
+CHECK insideOverloadPhase false
+SPECULATIVE insideOverloadPhase true
+NESTED_CHECK insideOverloadPhase false

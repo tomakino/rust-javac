@@ -138,6 +138,15 @@ impl ResultInfo {
         }
     }
 
+    /// Java: protected ResultInfo dup(CheckContext newContext) — ResultInfo.dup
+    /// overload used by DeferredAttrNode.process (Attr.java:ResultInfo).
+    pub fn dup_check_context(
+        &self,
+        check_context: Rc<dyn crate::comp::check::CheckContext>,
+    ) -> ResultInfo {
+        ResultInfo::new_with_mode(self.pkind, self.pt, check_context, self.check_mode)
+    }
+
     /// Java: protected ResultInfo dup(Type newPt)
     pub fn dup(&self, new_pt: Option<TypeId>) -> ResultInfo {
         ResultInfo::new_with_mode(
@@ -402,6 +411,61 @@ impl Attr {
         };
         self.result = Some(value);
         Ok(value)
+    }
+
+    /// Java: Env<AttrContext> copyEnv(Env<AttrContext> env) (Attr.java:699-708)
+    pub fn copy_env(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &crate::code::types::Types,
+        env: &Rc<Env<AttrContext>>,
+    ) -> Rc<Env<AttrContext>> {
+        let (tree, info_scope) = {
+            let info = env.info.borrow();
+            (env.tree, info.scope)
+        };
+        let new_scope = self.copy_scope(ctx, syms, types, info_scope);
+        let new_info = env.info.borrow().dup(new_scope);
+        let new_outer = env
+            .outer
+            .as_ref()
+            .map(|outer| self.copy_env(ctx, syms, types, outer));
+        env.dup_with_outer(tree, new_info, new_outer)
+    }
+
+    /// Java: WriteableScope copyScope(WriteableScope sc) (Attr.java:710-718)
+    fn copy_scope(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &crate::code::types::Types,
+        scope: Option<crate::ids::ScopeId>,
+    ) -> Option<crate::ids::ScopeId> {
+        let scope_id = scope?;
+        // The upstream collects with prepend and then enters in list order,
+        // which reproduces the same shadowing chain; the port reverses the
+        // collected order before entering.
+        let symbols: Vec<crate::ids::SymbolId> = {
+            let scope_ref = ctx.scope(scope_id).clone();
+            scope_ref.get_symbols_full(
+                scope_id,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+                types,
+                syms,
+                ctx,
+            )
+        };
+        let owner = ctx.scope(scope_id).owner;
+        let new_scope_id = ctx.alloc_scope(crate::code::scope::Scope::new_scope_impl(owner));
+        for sym in symbols.into_iter().rev() {
+            let (scopes, symbols_arena) = (&mut ctx.scopes, &ctx.symbols);
+            scopes
+                .get_mut(new_scope_id.index())
+                .enter(new_scope_id, sym, symbols_arena);
+        }
+        Some(new_scope_id)
     }
 
     /// Java: the tree.accept(this) dispatch (JCTree.Visitor -> TreeKind match;
