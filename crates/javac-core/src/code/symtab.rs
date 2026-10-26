@@ -1713,7 +1713,13 @@ impl Symtab {
         msym: SymbolId,
         flatname: Name,
     ) -> SymbolId {
-        let ps = self.lookup_package(ctx, msym, &convert::package_part(&flatname));
+        let mut ps = self.lookup_package(ctx, msym, &convert::package_part(&flatname));
+        if ctx.sym(ps).kind != crate::code::kinds::Kind::PCK {
+            // Adapter: the upstream enterClass asserts that the package exists;
+            // the port creates the package on demand (the lookupPackage result
+            // representation differs, registered adapter).
+            ps = self.enter_package(ctx, msym, convert::package_part(&flatname));
+        }
         let package_module = match &ctx.sym(ps).kind_data {
             SymbolKind::PackageSymbol { modle, .. } => modle.expect("package module"),
             _ => panic!("package expected"),

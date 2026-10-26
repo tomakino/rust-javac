@@ -4044,7 +4044,7 @@ fn new_array_type(ctx: &mut CompilerContext, elemtype: TypeId, tsym: Option<Symb
 }
 
 /// Java: new Type.MethodType(argtypes, restype, thrown, tsym)
-fn new_method_type_2(
+pub(crate) fn new_method_type_2(
     ctx: &mut CompilerContext,
     argtypes: List<TypeId>,
     restype: Option<TypeId>,
@@ -4469,7 +4469,7 @@ impl Types {
 
     /// The shared Type.noType value (the arena has no global singleton; the
     /// port allocates a JCNoType value like Symtab.noTypeId).
-    fn no_type(&self, ctx: &mut CompilerContext) -> TypeId {
+    pub fn no_type(&self, ctx: &mut CompilerContext) -> TypeId {
         ctx.alloc_type(Type::new(
             crate::code::type_tag::TypeTag::NONE,
             None,

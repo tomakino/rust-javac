@@ -1218,6 +1218,10 @@ impl BaseFileManagerApi for JavacFileManager {
     fn flush_cache(&self, file: &PathFileObject) {
         self.base.borrow().flush_cache_object(file);
     }
+
+    fn jrt_read_resource(&self, path: &javac_fs::Path) -> Option<Vec<u8>> {
+        self.get_jrt_index().get_resource(path)
+    }
 }
 
 /// Java: protected static boolean isRelativeUri(String u) — the checks of the javadoc contract

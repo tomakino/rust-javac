@@ -1,0 +1,399 @@
+# TODO/unimplemented ledger
+
+Generated scan of crates/javac-core/src (current HEAD). All entries must be repaid (user requirement).
+
+## Summary
+- unimplemented! sites: 138
+- TODO comment sites: 148
+- #[allow(dead_code)] sites: 65
+
+## unimplemented by file
+- 29  crates/javac-core/src/comp/type_enter.rs
+- 16  crates/javac-core/src/comp/resolve.rs
+- 10  crates/javac-core/src/jvm/class_reader.rs
+- 8  crates/javac-core/src/comp/attr.rs
+- 6  crates/javac-core/src/code/preview.rs
+- 6  crates/javac-core/src/file/path_file_object.rs
+- 5  crates/javac-core/src/code/types.rs
+- 5  crates/javac-core/src/comp/flow.rs
+- 5  crates/javac-core/src/file/base_file_manager.rs
+- 5  crates/javac-core/src/parser/reference_parser.rs
+- 4  crates/javac-core/src/file/javac_file_manager.rs
+- 4  crates/javac-core/src/file/locations.rs
+- 4  crates/javac-core/src/tree/tree_maker.rs
+- 3  crates/javac-core/src/comp/check.rs
+- 3  crates/javac-core/src/parser/doc_comment_parser.rs
+- 3  crates/javac-core/src/platform/platform_description.rs
+- 3  crates/javac-core/src/tree/doc_tree_maker.rs
+- 2  crates/javac-core/src/code/attribute.rs
+- 2  crates/javac-core/src/code/scope.rs
+- 2  crates/javac-core/src/comp/enter.rs
+- 2  crates/javac-core/src/file/relative_path.rs
+- 1  crates/javac-core/src/code/class_finder.rs
+- 1  crates/javac-core/src/code/deferred_completion_failure_handler.rs
+- 1  crates/javac-core/src/code/symbol.rs
+- 1  crates/javac-core/src/comp/annotate.rs
+- 1  crates/javac-core/src/comp/argument_attr.rs
+- 1  crates/javac-core/src/file/cache_fs_info.rs
+- 1  crates/javac-core/src/file/fs_info.rs
+- 1  crates/javac-core/src/jvm/target.rs
+- 1  crates/javac-core/src/platform/jdk_platform_provider.rs
+- 1  crates/javac-core/src/platform/platform_provider.rs
+- 1  crates/javac-core/src/platform/platform_utils.rs
+
+## unimplemented full list
+- crates/javac-core/src/code/attribute.rs:356  unimplemented!("TODO(Types/Symbol printing batch): Type.toString")
+- crates/javac-core/src/code/attribute.rs:360  unimplemented!("TODO(Symbol printing batch): Symbol.toString")
+- crates/javac-core/src/code/class_finder.rs:213  unimplemented!("TODO(S3/JRTIndex): getSupplementaryFlags jrtIndex path")
+- crates/javac-core/src/code/deferred_completion_failure_handler.rs:319  unimplemented!("TODO(P3): isDeferredCompleter needs the completer trait downcast")
+- crates/javac-core/src/code/preview.rs:571  unimplemented!("test fixture")
+- crates/javac-core/src/code/preview.rs:577  unimplemented!("test fixture")
+- crates/javac-core/src/code/preview.rs:580  unimplemented!("test fixture")
+- crates/javac-core/src/code/preview.rs:586  unimplemented!("test fixture")
+- crates/javac-core/src/code/preview.rs:592  unimplemented!("test fixture")
+- crates/javac-core/src/code/preview.rs:597  unimplemented!("test fixture")
+- crates/javac-core/src/code/scope.rs:1320  unimplemented!(
+- crates/javac-core/src/code/scope.rs:1414  unimplemented!(
+- crates/javac-core/src/code/symbol.rs:448  unimplemented!("TODO(symbol arena batch): Symbol.initedMetadata (SymbolId of the symbol is required)")
+- crates/javac-core/src/code/types.rs:496  unimplemented!(
+- crates/javac-core/src/code/types.rs:1563  unimplemented!(
+- crates/javac-core/src/code/types.rs:5183  unimplemented!(
+- crates/javac-core/src/code/types.rs:5519  unimplemented!(
+- crates/javac-core/src/code/types.rs:6546  unimplemented!("TODO(Infer batch): BoundsChangeRecorder.varInstantiated");
+- crates/javac-core/src/comp/annotate.rs:453  unimplemented!(
+- crates/javac-core/src/comp/argument_attr.rs:1292  unimplemented!(
+- crates/javac-core/src/comp/attr.rs:1030  unimplemented!("TODO(Annotate/Types batch): Attr.visitTypeParameter")
+- crates/javac-core/src/comp/attr.rs:1544  // registered with unimplemented! + TODO at the exact call site.
+- crates/javac-core/src/comp/attr.rs:1895  unimplemented!(
+- crates/javac-core/src/comp/attr.rs:2627  unimplemented!("TODO(Types/Symbol printing batch): Type.toString")
+- crates/javac-core/src/comp/attr.rs:2646  unimplemented!("TODO(Symbol/Types batch): Symbol.isMemberOf")
+- crates/javac-core/src/comp/attr.rs:11267  unimplemented!("TODO(Modules batch): Attr.attribModule (Attr.java:5144-5146)")
+- crates/javac-core/src/comp/attr.rs:11270  unimplemented!("TODO(Modules batch): Attr.attribPackage (Attr.java:5147-5149)")
+- crates/javac-core/src/comp/attr.rs:14225  unimplemented!("test check context report")
+- crates/javac-core/src/comp/check.rs:1212  unimplemented!("TODO(Infer batch): Check.checkType free type listener");
+- crates/javac-core/src/comp/check.rs:1683  unimplemented!(
+- crates/javac-core/src/comp/check.rs:1834  unimplemented!(
+- crates/javac-core/src/comp/enter.rs:136  unimplemented!("TODO(Lint batch): Enter.getClassEnv lintEnv.augment")
+- crates/javac-core/src/comp/enter.rs:830  unimplemented!("TODO(Enter batch): Enter.unenter (UnenterScanner)");
+- crates/javac-core/src/comp/flow.rs:1562  unimplemented!(
+- crates/javac-core/src/comp/flow.rs:1575  unimplemented!(
+- crates/javac-core/src/comp/flow.rs:2936  unimplemented!(
+- crates/javac-core/src/comp/flow.rs:2971  unimplemented!(
+- crates/javac-core/src/comp/flow.rs:3065  unimplemented!(
+- crates/javac-core/src/comp/resolve.rs:40  //! NOT YET PORTED IN THIS FILE (registered; each with unimplemented! + TODO):
+- crates/javac-core/src/comp/resolve.rs:196  unimplemented!("TODO(Context registration batch): Resolve.instance")
+- crates/javac-core/src/comp/resolve.rs:583  unimplemented!(
+- crates/javac-core/src/comp/resolve.rs:1160  unimplemented!(
+- crates/javac-core/src/comp/resolve.rs:2374  unimplemented!(
+- crates/javac-core/src/comp/resolve.rs:2395  unimplemented!(
+- crates/javac-core/src/comp/resolve.rs:2481  unimplemented!("TODO(Modules batch): Resolve.lookupInvisibleSymbol")
+- crates/javac-core/src/comp/resolve.rs:2561  unimplemented!("TODO(Log batch): Resolve.checkRestrictedType warning")
+- crates/javac-core/src/comp/resolve.rs:2831  unimplemented!(
+- crates/javac-core/src/comp/resolve.rs:3757  unimplemented!(
+- crates/javac-core/src/comp/resolve.rs:4414  unimplemented!(
+- crates/javac-core/src/comp/resolve.rs:4567  unimplemented!(
+- crates/javac-core/src/comp/resolve.rs:4614  unimplemented!(
+- crates/javac-core/src/comp/resolve.rs:4963  unimplemented!(
+- crates/javac-core/src/comp/resolve.rs:5529  unimplemented!(
+- crates/javac-core/src/comp/resolve.rs:5592  unimplemented!(
+- crates/javac-core/src/comp/type_enter.rs:403  unimplemented!("TODO(File/Query batch): FatalError(Fragments.FatalErrNoJavaLang)")
+- crates/javac-core/src/comp/type_enter.rs:557  unimplemented!("TODO(Attr batch): ImportsPhase.attribImportType attr.attribType")
+- crates/javac-core/src/comp/type_enter.rs:567  unimplemented!("TODO(Attr batch): ImportsPhase.doImport attr.attribImportQualifier")
+- crates/javac-core/src/comp/type_enter.rs:748  unimplemented!("TODO(Attr batch): TypeEnter.markDeprecated Attr.attribAnnotationTypes")
+- crates/javac-core/src/comp/type_enter.rs:925  unimplemented!("TODO(Attr/Check batch): TypeEnter.hierarchyPhase.runPhase")
+- crates/javac-core/src/comp/type_enter.rs:937  unimplemented!("TODO(Attr batch): TypeEnter.attribSuperTypes (attr.attribBase/modelMissingTypes)")
+- crates/javac-core/src/comp/type_enter.rs:962  unimplemented!("TODO(Types/Symbol batch): TypeEnter.permitsPhase.runPhase (directSupertypes/isSealed/getEnv)")
+- crates/javac-core/src/comp/type_enter.rs:980  unimplemented!("TODO(Attr/Check/Annotate batch): TypeEnter.headerPhase.runPhase")
+- crates/javac-core/src/comp/type_enter.rs:1033  unimplemented!("TODO(Record batch): TypeEnter.recordPhase.runPhase")
+- crates/javac-core/src/comp/type_enter.rs:1046  unimplemented!("TODO(Attr/Check batch): TypeEnter.membersPhase.runPhase")
+- crates/javac-core/src/comp/type_enter.rs:1069  unimplemented!("TODO(Enum/Record/Annotate batch): TypeEnter.finishClass")
+- crates/javac-core/src/comp/type_enter.rs:1080  unimplemented!("TODO(Record batch): TypeEnter.addAccessor (TreeMaker/TreeCopier/RecordComponent)")
+- crates/javac-core/src/comp/type_enter.rs:1091  unimplemented!("TODO(Enum batch): TypeEnter.addEnumMembers (make.VarDef/Assign/flags)")
+- crates/javac-core/src/comp/type_enter.rs:1103  unimplemented!("TODO(Record batch): TypeEnter.addRecordMembersIfNeeded")
+- crates/javac-core/src/comp/type_enter.rs:1169  unimplemented!("TODO(TreeMaker/Attr batch): TypeEnter.defaultConstructor")
+- crates/javac-core/src/comp/type_enter.rs:1182  unimplemented!("TODO(Record/TreeMaker batch): TypeEnter.getDefaultConstructorHelper")
+- crates/javac-core/src/comp/type_enter.rs:1427  unimplemented!("TODO(Types batch): BasicConstructorHelper.constructorType")
+- crates/javac-core/src/comp/type_enter.rs:1430  unimplemented!("TODO(Types batch): BasicConstructorHelper.constructorSymbol")
+- crates/javac-core/src/comp/type_enter.rs:1433  unimplemented!("TODO(Types batch): BasicConstructorHelper.enclosingType")
+- crates/javac-core/src/comp/type_enter.rs:1439  unimplemented!("TODO(Types batch): BasicConstructorHelper.superArgs")
+- crates/javac-core/src/comp/type_enter.rs:1470  unimplemented!("TODO(Types batch): AnonClassConstructorHelper.constructorType")
+- crates/javac-core/src/comp/type_enter.rs:1473  unimplemented!("TODO(Types batch): AnonClassConstructorHelper.constructorSymbol")
+- crates/javac-core/src/comp/type_enter.rs:1476  unimplemented!("TODO(Types batch): AnonClassConstructorHelper.enclosingType")
+- crates/javac-core/src/comp/type_enter.rs:1482  unimplemented!("TODO(Types batch): AnonClassConstructorHelper.superArgs")
+- crates/javac-core/src/comp/type_enter.rs:1508  unimplemented!("TODO(Record batch): RecordConstructorHelper.constructorType")
+- crates/javac-core/src/comp/type_enter.rs:1511  unimplemented!("TODO(Record batch): RecordConstructorHelper.constructorSymbol")
+- crates/javac-core/src/comp/type_enter.rs:1514  unimplemented!("TODO(Record batch): RecordConstructorHelper.enclosingType")
+- crates/javac-core/src/comp/type_enter.rs:1520  unimplemented!("TODO(Record batch): RecordConstructorHelper.superArgs")
+- crates/javac-core/src/comp/type_enter.rs:1523  unimplemented!("TODO(Record batch): RecordConstructorHelper.finalAdjustment")
+- crates/javac-core/src/file/base_file_manager.rs:250  unimplemented!(
+- crates/javac-core/src/file/base_file_manager.rs:295  unimplemented!(
+- crates/javac-core/src/file/base_file_manager.rs:307  unimplemented!("TODO(charset batch): Charset.defaultCharset() is not ported")
+- crates/javac-core/src/file/base_file_manager.rs:331  Err(_) => unimplemented!(
+- crates/javac-core/src/file/base_file_manager.rs:354  Err(_) => unimplemented!(
+- crates/javac-core/src/file/cache_fs_info.rs:94  unimplemented!("TODO(P2): CacheFSInfo.getJarClassPath needs java.util.jar.JarFile/Manifest")
+- crates/javac-core/src/file/fs_info.rs:106  unimplemented!("TODO(P2): FSInfo.getJarClassPath needs java.util.jar.JarFile/Manifest")
+- crates/javac-core/src/file/javac_file_manager.rs:595  unimplemented!(
+- crates/javac-core/src/file/javac_file_manager.rs:886  unimplemented!(
+- crates/javac-core/src/file/javac_file_manager.rs:941  unimplemented!(
+- crates/javac-core/src/file/javac_file_manager.rs:1034  unimplemented!("TODO(P6): BaseFileManager.deferredClose (daemon thread/wait semantics)");
+- crates/javac-core/src/file/locations.rs:868  _ => unimplemented!(
+- crates/javac-core/src/file/locations.rs:904  unimplemented!(
+- crates/javac-core/src/file/locations.rs:1299  unimplemented!(
+- crates/javac-core/src/file/locations.rs:1383  unimplemented!(
+- crates/javac-core/src/file/path_file_object.rs:203  unimplemented!(
+- crates/javac-core/src/file/path_file_object.rs:444  unimplemented!(
+- crates/javac-core/src/file/path_file_object.rs:449  unimplemented!("TODO(P2): JRTFileObject.toUri needs the jrt FileSystem")
+- crates/javac-core/src/file/path_file_object.rs:484  unimplemented!(
+- crates/javac-core/src/file/path_file_object.rs:491  unimplemented!(
+- crates/javac-core/src/file/path_file_object.rs:498  unimplemented!(
+- crates/javac-core/src/file/relative_path.rs:89  unimplemented!(
+- crates/javac-core/src/file/relative_path.rs:250  unimplemented!("TODO(P2): RelativeFile.getZipEntry needs java.util.zip.ZipFile")
+- crates/javac-core/src/jvm/class_reader.rs:75  //! * NOT ported yet (unimplemented! with TODO below): readClass and the
+- crates/javac-core/src/jvm/class_reader.rs:1123  unimplemented!("TODO(P2/S2): readClassFile missingTypeVariables substitution (Types.subst/substBounds)");
+- crates/javac-core/src/jvm/class_reader.rs:1250  unimplemented!("TODO(P2/Log): log.warning(BigMajorVersion) needs a DiagnosticPosition-carrying Log adapter");
+- crates/javac-core/src/jvm/class_reader.rs:1263  unimplemented!("TODO(P2/Log): preview.disabledError(JavaFileObject,int) wiring is unimplemented (Log batch)");
+- crates/javac-core/src/jvm/class_reader.rs:1265  unimplemented!("TODO(P2/Log): preview.warnPreview(JavaFileObject,int) wiring is unimplemented (Log batch)");
+- crates/javac-core/src/jvm/class_reader.rs:1534  unimplemented!("TODO(P2/S2): readMethod this$n stripping (requires owner.members()/name checks and Code batch)");
+- crates/javac-core/src/jvm/class_reader.rs:1543  unimplemented!("TODO(P2/Code batch): initParameterNames (Code.width/LocalVariableTable)");
+- crates/javac-core/src/jvm/class_reader.rs:2005  unimplemented!("TODO(S2-B/ProxyType): ClassReader.ProxyType for module-info annotations");
+- crates/javac-core/src/jvm/class_reader.rs:2597  unimplemented!("TODO(P2/Log): FutureAttr classfile lint warning (Log/Lint batch)");
+- crates/javac-core/src/jvm/class_reader.rs:3290  unimplemented!("TODO(P2/S3): Fragments.BadEnclosingMethod(sym) accessor needs the Symbol argument (P4 contract)")
+- crates/javac-core/src/jvm/target.rs:272  unimplemented!(
+- crates/javac-core/src/parser/doc_comment_parser.rs:31  //!   diagSource, code), which is still unimplemented! in tree/doc_tree_maker.rs
+- crates/javac-core/src/parser/doc_comment_parser.rs:36  //!   ReferenceParser unimplemented! marker until parser S7 lands.
+- crates/javac-core/src/parser/doc_comment_parser.rs:929  // is still unimplemented! (the upstream diagnostic position is the node
+- crates/javac-core/src/parser/reference_parser.rs:18  //! check are left unimplemented! with TODO(parser S7) markers. No replacement
+- crates/javac-core/src/parser/reference_parser.rs:180  unimplemented!("TODO(parser S7): ReferenceParser::parseModule needs JavacParser")
+- crates/javac-core/src/parser/reference_parser.rs:186  unimplemented!("TODO(parser S7): ReferenceParser::parseType needs JavacParser")
+- crates/javac-core/src/parser/reference_parser.rs:192  unimplemented!("TODO(parser S7): ReferenceParser::parseMember needs JavacParser")
+- crates/javac-core/src/parser/reference_parser.rs:200  unimplemented!("TODO(parser S7): ReferenceParser::parseParams needs JavacParser")
+- crates/javac-core/src/platform/jdk_platform_provider.rs:331  unimplemented!(
+- crates/javac-core/src/platform/platform_description.rs:119  unimplemented!("test fixture")
+- crates/javac-core/src/platform/platform_description.rs:151  unimplemented!("test fixture")
+- crates/javac-core/src/platform/platform_description.rs:165  unimplemented!("test fixture")
+- crates/javac-core/src/platform/platform_provider.rs:88  unimplemented!("test fixture")
+- crates/javac-core/src/platform/platform_utils.rs:112  unimplemented!("test fixture")
+- crates/javac-core/src/tree/doc_tree_maker.rs:25  //!   unimplemented! (registered, no replacement algorithm is written);
+- crates/javac-core/src/tree/doc_tree_maker.rs:275  unimplemented!(
+- crates/javac-core/src/tree/doc_tree_maker.rs:399  unimplemented!("TODO(parser S8): newReferenceTree(String) needs ReferenceParser")
+- crates/javac-core/src/tree/tree_maker.rs:2341  unimplemented!(
+- crates/javac-core/src/tree/tree_maker.rs:2454  unimplemented!("TODO(literal value domain batch): Attribute.Constant Byte literal")
+- crates/javac-core/src/tree/tree_maker.rs:2457  unimplemented!("TODO(literal value domain batch): Attribute.Constant Short literal")
+- crates/javac-core/src/tree/tree_maker.rs:2639  ConstantValue::Byte(_) | ConstantValue::Short(_) => unimplemented!(
+
+## TODO full list
+- crates/javac-core/src/code/class_finder.rs:209  // TODO(S3/JRTIndex integration): the upstream checks
+- crates/javac-core/src/code/class_finder.rs:228  // TODO(Annotate): annotate.blockAnnotations();
+- crates/javac-core/src/code/class_finder.rs:234  // TODO(Annotate): annotate.unblockAnnotationsNoFlush();
+- crates/javac-core/src/code/class_finder.rs:241  // TODO(Annotate): if (!reader.filling) annotate.flush();
+- crates/javac-core/src/code/class_finder.rs:707  // TODO(S3/verbose): the upstream prints the source/class paths through
+- crates/javac-core/src/code/flags.rs:371  // TODO(P3): isStatic(Symbol), isEnum(Symbol), isConstant(Symbol.VarSymbol) are
+- crates/javac-core/src/code/lint.rs:61  // TODO(Attribute/Symtab): the AugmentVisitor needs Attribute.Compound and
+- crates/javac-core/src/code/lint.rs:76  /// TODO(Options): the constructor reads Options (-Xlint/-Xlint:all/none/
+- crates/javac-core/src/code/preview.rs:137  // TODO(Log/Lint/Options): the P6 wiring builds Preview from the ported
+- crates/javac-core/src/code/preview.rs:232  /// TODO(Log/Lint/Options): the constructor reads Options/Log/Lint; the
+- crates/javac-core/src/code/scope.rs:1317  // TODO(Resolve): the FilterImportScope query needs the
+- crates/javac-core/src/code/scope.rs:1413  // TODO(Resolve): see get_symbols; use get_symbols_by_name_full.
+- crates/javac-core/src/code/symbol.rs:474  // TODO(Annotate): SymbolMetadata is not ported yet; there is
+- crates/javac-core/src/code/symtab.rs:1062  // TODO(MissingInfoHandler): MissingInfoHandler.instance(context) is
+- crates/javac-core/src/code/types.rs:1204  // TODO); no approximation is done.
+- crates/javac-core/src/code/types.rs:3003  /// TODO(Types): the strict=false HasSameArgs variant is not ported.
+- crates/javac-core/src/code/types.rs:4116  /// TODO(Attr/Type.contains): not wired yet. Keep until that wires
+- crates/javac-core/src/comp/analyzer.rs:637  // TODO(ArgumentAttr): thread the local cache context into the speculative
+- crates/javac-core/src/comp/annotate.rs:450  /// TODO(Context integration): the Context-key based singleton needs the
+- crates/javac-core/src/comp/annotate.rs:1605  // TODO(TypeAnnotations): Check.isTypeAnnotation is not ported.
+- crates/javac-core/src/comp/attr.rs:635  // TODO(MatchBindingsComputer): matchBindings =
+- crates/javac-core/src/comp/attr.rs:637  // TODO(DeferredAttr): if (tree == breakTree &&
+- crates/javac-core/src/comp/attr.rs:1010  // TODO(Check): chk.checkRefType(tree.pos(), type)
+- crates/javac-core/src/comp/attr.rs:1028  // TODO(Annotate/Types): annotateTypeParameterSecondStage +
+- crates/javac-core/src/comp/attr.rs:1114  // TODO(Symbol/Types): sym.isMemberOf(symEnv.enclClass.sym,
+- crates/javac-core/src/comp/attr.rs:1283  // TODO(Lint/Resolve): chk.checkForBadAuxiliaryClassAccess(
+- crates/javac-core/src/comp/attr.rs:1474  // TODO(Check): chk.checkDeprecated/checkSunAPI/checkProfile/
+- crates/javac-core/src/comp/attr.rs:2344  // TODO(Check): chk.checkNonCyclic(tvar.pos(), (TypeVar)tvar.type)
+- crates/javac-core/src/comp/attr.rs:2638  /// TODO(Symbol/Types): isSubClass/isInheritedIn/hiddenIn are not ported;
+- crates/javac-core/src/comp/attr.rs:8223  // TODO(Preview): the source-level preview check is registered with the
+- crates/javac-core/src/comp/attr.rs:8293  // TODO(Preview): source-level CASE_NULL check registered with the
+- crates/javac-core/src/comp/attr.rs:8339  // TODO(Resolve): the Resolve LogResolveHelper swap is registered
+- crates/javac-core/src/comp/attr.rs:8748  // TODO(Check): the unchecked-cast warning in checkCastablePattern is
+- crates/javac-core/src/comp/check.rs:680  // TODO(Check): warnOnExplicitStrictfp uses the
+- crates/javac-core/src/comp/check.rs:777  // TODO(Check): warnOnExplicitStrictfp (DeferredLintHandler)
+- crates/javac-core/src/comp/check.rs:1208  // TODO(Infer): inferenceContext.addFreeTypeListener(List.of(req,
+- crates/javac-core/src/comp/check.rs:1675  /// TODO(TreeInfo): requires TreeInfo.containsTypeAnnotation
+- crates/javac-core/src/comp/check.rs:3595  // TODO(Check): checkDeprecated is not ported yet (Check.java:3520-3560,
+- crates/javac-core/src/comp/deferred_attr.rs:19  // TODO.
+- crates/javac-core/src/comp/enter.rs:66  /// TODO(TreeMaker): TreeMaker.ClassDef/Modifiers factories are not
+- crates/javac-core/src/comp/enter.rs:135  // TODO(Lint): lint.augment(sym) is not ported (Lint::augment).
+- crates/javac-core/src/comp/enter.rs:263  // TODO(Annotate): annotate.blockAnnotations();
+- crates/javac-core/src/comp/enter.rs:280  // TODO(Annotate): annotate.unblockAnnotations();
+- crates/javac-core/src/comp/enter.rs:347  // TODO(Modules): tree.modle.usesProvidesCompleter =
+- crates/javac-core/src/comp/enter.rs:379  // TODO(Modules): dependencyWithPackage / PackageInOtherModule
+- crates/javac-core/src/comp/enter.rs:639  // TODO(Annotate): c.clearAnnotationMetadata();
+- crates/javac-core/src/comp/enter.rs:676  // TODO(TypeEnter/MemberEnter): c.completer = typeEnter;
+- crates/javac-core/src/comp/enter.rs:757  // TODO(Modules): if (modules.isInModuleGraph(tree.sym))
+- crates/javac-core/src/comp/enter.rs:828  // TODO(Enter): UnenterScanner needs the JCTree.Visitor callback
+- crates/javac-core/src/comp/infer.rs:2790  // TODO(Lint): the deferred solve callback does not propagate the
+- crates/javac-core/src/comp/infer.rs:3267  // TODO(Attr): the CompletionFailure channel of
+- crates/javac-core/src/comp/infer.rs:3282  // TODO(Attr): the CompletionFailure channel of
+- crates/javac-core/src/comp/member_enter.rs:449  // TODO(Attr): localEnv.info.returnResult = attr.new ResultInfo(
+- crates/javac-core/src/comp/member_enter.rs:455  // TODO(Attr): localEnv.info.yieldResult = null;
+- crates/javac-core/src/comp/member_enter.rs:514  // TODO(Types): replace the plain array type with
+- crates/javac-core/src/comp/member_enter.rs:555  // TODO(Symbol/Attr): v.setLazyConstValue(initEnv(tree,
+- crates/javac-core/src/comp/member_enter.rs:608  /// TODO(Attr): the upstream call sites are checkReceiver's
+- crates/javac-core/src/comp/member_enter.rs:610  /// TODO until Attr is ported; the method is kept for that.
+- crates/javac-core/src/comp/member_enter.rs:835  // TODO(Lint): mEnv.info.lint = mEnv.info.lint.augment(tree.sym);
+- crates/javac-core/src/comp/resolve.rs:194  /// TODO(Context registration): needs the Context service registry.
+- crates/javac-core/src/comp/resolve.rs:371  // TODO(Types): t.isUnion() / UnionClassType alternative types.
+- crates/javac-core/src/comp/resolve.rs:1092  // TODO(Resolve diagnostics detail): the upstream creates a
+- crates/javac-core/src/comp/resolve.rs:2388  // TODO(ClassFinder): the BadClassFile distinction is not
+- crates/javac-core/src/comp/resolve.rs:2392  // TODO(Modules): doRecoveryLoadClass needs
+- crates/javac-core/src/comp/resolve.rs:2479  // TODO(Modules): lookupInvisibleSymbol (module scanning +
+- crates/javac-core/src/comp/resolve.rs:2558  // TODO(Log): log.warning(pos, Warnings.IllegalRefTo
+- crates/javac-core/src/comp/resolve.rs:3689  // TODO(Check diagnostics , ADR 0002 P4): the upstream reportMC builds
+- crates/javac-core/src/comp/resolve.rs:3771  // TODO(Lint/Check): the upstream returns the shared rsWarner; the
+- crates/javac-core/src/comp/resolve.rs:4137  // TODO(Attr): the CompletionFailure channel of
+- crates/javac-core/src/comp/resolve.rs:4728  // TODO(Scope/Resolve): upstream getSymbolsByName applies the
+- crates/javac-core/src/comp/resolve.rs:4959  // TODO(Check/Resolve isAccessible): the upstream body registers a
+- crates/javac-core/src/comp/resolve.rs:5760  // TODO(Check): FindConstructor also runs
+- crates/javac-core/src/comp/type_enter.rs:1  #![allow(dead_code)] // TODO(Attr/TreeMaker/Check batches): helpers waiting for their batches (registered in the file header).
+- crates/javac-core/src/comp/type_enter.rs:220  // TODO(TypeEnter/Completer): the completer registration is an
+- crates/javac-core/src/comp/type_enter.rs:348  // TODO(Lint): Lint prevLint = chk.setLint(lint);
+- crates/javac-core/src/comp/type_enter.rs:443  // TODO(Lint): chk.setLint(prevLint);
+- crates/javac-core/src/comp/type_enter.rs:471  // TODO(Modules): syms.lookupPackage(toplevel(&env).modle,
+- crates/javac-core/src/comp/type_enter.rs:519  // TODO(Check): chk.checkCanonical(imp.selected);
+- crates/javac-core/src/comp/type_enter.rs:528  // TODO(Check): chk.checkCanonical(imp.selected);
+- crates/javac-core/src/comp/type_enter.rs:538  // TODO(Check): chk.checkCanonical(imp);
+- crates/javac-core/src/comp/type_enter.rs:906  // TODO(Synthesizer): the local ErrorType modelType hook and the
+- crates/javac-core/src/comp/type_enter.rs:922  // TODO(Attr): supertypes processing (attribSuperTypes /
+- crates/javac-core/src/comp/type_enter.rs:976  // TODO(Attr/Check/Annotate): annotate.queueScanTreeAndTypeAnnotate/
+- crates/javac-core/src/comp/type_enter.rs:1031  // TODO(Record): TreeInfo.recordFields/findRecordComponentToRemove/
+- crates/javac-core/src/comp/type_enter.rs:1043  // TODO(Attr/Check/Annotate): checkDefaultConstructor/
+- crates/javac-core/src/comp/type_enter.rs:1065  // TODO(Enum/Record/Annotate): addEnumMembers/addRecordMembersIfNeeded/
+- crates/javac-core/src/comp/type_enter.rs:1124  // TODO(Record): compare the parameter count with the
+- crates/javac-core/src/comp/type_enter.rs:1152  // TODO(Types): compare with the synthetic
+- crates/javac-core/src/comp/type_enter.rs:1179  // TODO(Record/TreeMaker): BasicConstructorHelper/
+- crates/javac-core/src/comp/type_enter.rs:1386  /// TODO(TreeMaker/Attr): the helper method bodies need TreeMaker/Attr/
+- crates/javac-core/src/compiler_context.rs:302  // TODO for the Scope query).
+- crates/javac-core/src/file/base_file_manager.rs:75  /// TODO(S3b): set by setContext once Locations.update is ported.
+- crates/javac-core/src/file/base_file_manager.rs:111  /// TODO(main option restore): set by the MULTIRELEASE branch of handleOption(Option,String).
+- crates/javac-core/src/file/base_file_manager.rs:155  /// TODO(S3b): the body needs Locations.update(log, warn, FSInfo.instance(context)) and
+- crates/javac-core/src/file/base_file_manager.rs:228  // TODO(P6): java.net.URL/URLClassLoader and the reflective custom loader lookup are not
+- crates/javac-core/src/file/base_file_manager.rs:244  /// TODO(main/OptionHelper): needs Option.process/handleOption and main.OptionHelper.
+- crates/javac-core/src/file/base_file_manager.rs:292  /// TODO(Log): needs log.error(Errors.IllegalArgumentForOption(...)) — the Log error
+- crates/javac-core/src/file/base_file_manager.rs:302  /// TODO(charset): the javac-charset adapter does not implement
+- crates/javac-core/src/file/base_file_manager.rs:362  // TODO(charset): the streaming CharsetDecoder has no Rust form in the javac-charset
+- crates/javac-core/src/file/cache_fs_info.rs:91  /// TODO(P2): the base implementation needs java.util.jar.JarFile/Manifest
+- crates/javac-core/src/file/fs_info.rs:103  /// TODO(P2): needs java.util.jar.JarFile/Manifest and java.net.URL, which
+- crates/javac-core/src/file/fs_info.rs:109  // TODO(P2): the upstream getJarFSProvider() (FileSystemProvider lookup) and
+- crates/javac-core/src/file/jrt_index.rs:96  /// TODO(S3c): get_file is used by JavacFileManager once that lands.
+- crates/javac-core/src/file/jrt_index.rs:317  /// TODO(resources): the upstream reads the ResourceBundle
+- crates/javac-core/src/file/locations.rs:901  // TODO(S3b): the --module-source-path pattern form (wildcard/brace expansion and
+- crates/javac-core/src/file/locations.rs:1325  // TODO(S3c): the by-path lookup (ModuleTable.get(Path) with parent walking) is used by
+- crates/javac-core/src/file/path_file_object.rs:322  // TODO(P2): the macOS Normalizer.isNormalized branch is not ported.
+- crates/javac-core/src/jvm/class_file.rs:148  // TODO(P0+): internalize(Name) / externalize(Name) overloads are added together with
+- crates/javac-core/src/jvm/class_reader.rs:2366  // TODO(Annotate): attachTypeAnnotations(sym, proxies)
+- crates/javac-core/src/jvm/class_reader.rs:2889  /// TODO(P6/Code): jvm.Code is not ported, so the structure is read
+- crates/javac-core/src/jvm/class_reader.rs:3266  // TODO(P2/S3): parameterAnnotations/parameterNameIndices/parameterAccessFlags
+- crates/javac-core/src/jvm/pool_reader.rs:306  // TODO(P2): Symtab/currentModule are not ported; the port keeps the
+- crates/javac-core/src/jvm/pool_reader.rs:320  // TODO(P2): Type/sigToType is not ported; the raw descriptor Name is
+- crates/javac-core/src/jvm/pool_reader.rs:341  // TODO(P2): Symtab/currentModule are not ported; the port keeps the
+- crates/javac-core/src/jvm/pool_reader.rs:354  // TODO(P2): Symtab is not ported; the port keeps the name.
+- crates/javac-core/src/jvm/profile.rs:131  /// TODO(Options/Option): Options.instance/options.get and
+- crates/javac-core/src/jvm/target.rs:268  /// TODO(Options/Option): Options.instance/options.get and
+- crates/javac-core/src/main/option.rs:594  /// TODO(main/OptionHelper): the upstream (String, Throwable) constructor is
+- crates/javac-core/src/parser/doc_comment_parser.rs:928  // TODO(tree): DocTreeMaker.newErroneousTree(text, diagSource, code)
+- crates/javac-core/src/parser/javac_parser.rs:540  /// TODO(parser wiring): wire the remaining term3Rest/annotations call sites.
+- crates/javac-core/src/parser/javac_parser.rs:552  /// TODO(parser wiring).
+- crates/javac-core/src/parser/javac_parser.rs:559  /// TODO(parser wiring).
+- crates/javac-core/src/parser/javac_parser.rs:769  /// TODO(parser wiring).
+- crates/javac-core/src/parser/javac_parser.rs:1205  /// TODO(parser wiring).
+- crates/javac-core/src/parser/reference_parser.rs:85  // TODO(parser S7): private final ParserFactory fac; -- ParserFactory and
+- crates/javac-core/src/parser/reference_parser.rs:109  // TODO(parser S7/S8 wiring): ReferenceParser is not fully wired; the
+- crates/javac-core/src/parser/reference_parser.rs:169  // TODO(parser S7): upstream checks
+- crates/javac-core/src/parser/reference_parser.rs:178  // TODO(parser S7): needs fac.newParser(s, false, false, false) and
+- crates/javac-core/src/parser/reference_parser.rs:185  // TODO(parser S7): needs JavacParser.parseType().
+- crates/javac-core/src/parser/reference_parser.rs:191  // TODO(parser S7): needs JavacParser.ident().
+- crates/javac-core/src/parser/reference_parser.rs:197  // TODO(parser S7): needs JavacParser.parseType()/nextToken() and the
+- crates/javac-core/src/platform/jdk_platform_provider.rs:295  /// TODO(S3): read by getFileManager() (the ct.sym section lookup), which is not
+- crates/javac-core/src/platform/jdk_platform_provider.rs:300  // TODO(S3): the map is only filled by getFileManager(); no FileSystem handle is kept in
+- crates/javac-core/src/platform/jdk_platform_provider.rs:329  // TODO(S3): needs file.JavacFileManager/CacheFSInfo, util.Log, main.Option,
+- crates/javac-core/src/platform/jdk_platform_provider.rs:378  /// TODO(S3)), so the upstream loop over an empty map is the Ok(()) case here.  When S3
+- crates/javac-core/src/tree/doc_tree_maker.rs:65  // TODO(P6): trees: JavacTrees (used by getSentenceBreak)
+- crates/javac-core/src/tree/doc_tree_maker.rs:66  // TODO(parser S8): reference_parser: ReferenceParser (used by newReferenceTree)
+- crates/javac-core/src/tree/doc_tree_maker.rs:76  /// TODO(P6)/(parser S8), see the file header).
+- crates/javac-core/src/tree/doc_tree_maker.rs:264  /// TODO(parser S8/P4): the upstream constructor creates the diagnostic with
+- crates/javac-core/src/tree/doc_tree_maker.rs:395  /// TODO(parser S8): needs parser.ReferenceParser (not ported yet); upstream
+- crates/javac-core/src/tree/tree_info.rs:1473  // TODO: the constant value (Type.constValue) is not
+- crates/javac-core/src/tree/tree_maker.rs:2340  // TODO(Scope query)).
+- crates/javac-core/src/util/abstract_log.rs:88  // TODO(Log): pass the log itself as DiagnosticSourceLog once the
+- crates/javac-core/src/util/fatal_error.rs:33  // TODO(P0+): Java constructors FatalError(JCDiagnostic) and FatalError(JCDiagnostic, Throwable)
+- crates/javac-core/src/util/javac_messages.rs:207  // TODO(D5): the upstream Context constructor also initializes Options
+- crates/javac-core/src/util/jc_diagnostic.rs:792  /// TODO(Options): the upstream protected Factory(Context) initializes
+- crates/javac-core/src/util/list.rs:542  // TODO(P3): public static <T> List<T> convert(Class<T> klass, List<?> list)
+- crates/javac-core/src/util/log.rs:386  // TODO(Main): messages.add(Main.javacBundleName); (main/Main is
+
+## dead_code full list
+- crates/javac-core/src/code/preview.rs:140
+- crates/javac-core/src/code/types.rs:3861
+- crates/javac-core/src/code/types.rs:3974
+- crates/javac-core/src/code/types.rs:4070
+- crates/javac-core/src/code/types.rs:4089
+- crates/javac-core/src/code/types.rs:4118
+- crates/javac-core/src/comp/annotate.rs:2324
+- crates/javac-core/src/comp/attr.rs:4556
+- crates/javac-core/src/comp/attr.rs:4601
+- crates/javac-core/src/comp/attr.rs:4646
+- crates/javac-core/src/comp/attr.rs:4727
+- crates/javac-core/src/comp/attr.rs:4788
+- crates/javac-core/src/comp/attr.rs:4823
+- crates/javac-core/src/comp/attr.rs:4869
+- crates/javac-core/src/comp/attr.rs:4908
+- crates/javac-core/src/comp/attr.rs:10544
+- crates/javac-core/src/comp/deferred_attr.rs:1619
+- crates/javac-core/src/comp/deferred_attr.rs:2043
+- crates/javac-core/src/comp/flow.rs:1560
+- crates/javac-core/src/comp/flow.rs:2375
+- crates/javac-core/src/comp/flow.rs:4744
+- crates/javac-core/src/comp/lower.rs:4629
+- crates/javac-core/src/comp/member_enter.rs:611
+- crates/javac-core/src/comp/operators.rs:99
+- crates/javac-core/src/comp/operators.rs:110
+- crates/javac-core/src/comp/operators.rs:929
+- crates/javac-core/src/comp/trans_types.rs:433
+- crates/javac-core/src/file/base_file_manager.rs:76
+- crates/javac-core/src/file/base_file_manager.rs:85
+- crates/javac-core/src/file/base_file_manager.rs:89
+- crates/javac-core/src/file/base_file_manager.rs:93
+- crates/javac-core/src/file/base_file_manager.rs:106
+- crates/javac-core/src/file/base_file_manager.rs:112
+- crates/javac-core/src/file/base_file_manager.rs:127
+- crates/javac-core/src/file/base_file_manager.rs:148
+- crates/javac-core/src/file/base_file_manager.rs:188
+- crates/javac-core/src/file/base_file_manager.rs:305
+- crates/javac-core/src/file/base_file_manager.rs:464
+- crates/javac-core/src/file/jrt_index.rs:97
+- crates/javac-core/src/file/locations.rs:336
+- crates/javac-core/src/file/locations.rs:352
+- crates/javac-core/src/file/locations.rs:408
+- crates/javac-core/src/file/locations.rs:496
+- crates/javac-core/src/file/locations.rs:501
+- crates/javac-core/src/file/locations.rs:506
+- crates/javac-core/src/jvm/class_reader.rs:116
+- crates/javac-core/src/jvm/class_reader.rs:375
+- crates/javac-core/src/jvm/class_reader.rs:402
+- crates/javac-core/src/jvm/class_reader.rs:467
+- crates/javac-core/src/jvm/class_reader.rs:496
+- crates/javac-core/src/jvm/class_reader.rs:3285
+- crates/javac-core/src/jvm/class_reader.rs:3365
+- crates/javac-core/src/jvm/class_reader.rs:3381
+- crates/javac-core/src/jvm/pool_reader.rs:662
+- crates/javac-core/src/main/option.rs:688
+- crates/javac-core/src/parser/doc_comment_parser.rs:98
+- crates/javac-core/src/parser/javac_parser.rs:538
+- crates/javac-core/src/parser/javac_parser.rs:550
+- crates/javac-core/src/parser/javac_parser.rs:557
+- crates/javac-core/src/parser/javac_parser.rs:767
+- crates/javac-core/src/parser/javac_parser.rs:1197
+- crates/javac-core/src/parser/javac_parser.rs:1203
+- crates/javac-core/src/parser/parser_factory.rs:39
+- crates/javac-core/src/platform/jdk_platform_provider.rs:297
+- crates/javac-core/src/tree/doc_tree_maker.rs:683

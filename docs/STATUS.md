@@ -155,3 +155,5 @@ file/locations/classfinder 适配 helper、资源生成器。后续按优先级�
 - 批6 遗留(显式登记):TypeAnnotations.java(1453 行)未移植 → Attr.attribClass/attribClassBody/匿名类/sealed/visitNewClass 未写;visitModuleDef/Modules;resolve-b CALL/ERROR 与诊断 oracle 回放待 P4。B7 顺序:TypeMetadata/Symbol annotation metadata → TypeAnnotations → attribClass/attribClassBody/匿名类/visitNewClass → Modules → oracle 回放。
 - doc 质量规则(§26.1):仅约束**新写/重写代码**(四部分 100%);既有旧代码 doc 不重写、不改动(负责人明确要求)。
 - 注释方案(§26.2):官方语义注释保留;位置引用/抄签名/内部标记禁止;位置集中 docs/PORTING_MAP.md;示例 docs/DOC_STYLE_DEMO.md;仅新代码,旧代码不动。
+- 技术债清偿(§29):unimplemented 138 / TODO 148 / allow(dead_code) 65(清单 docs/TODO_LEDGER.md);全部偿还,目标 0,每批报告附剩余计数。
+- 红线(§30):禁止偏离原版实现;禁止未经 Lead 许可在上游实现上打补丁;确需适配先申请(上游位置/原因/影响/测试),批准后实施并登记。

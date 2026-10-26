@@ -41,6 +41,7 @@ use crate::tree::tree_scanner::{tree_scanner_visitor_delegate, TreeScannerVisito
 use crate::code::type_tag::TypeTag;
 use crate::code::types::Types;
 use crate::comp::deferred_attr::DeferredAttrContext;
+use crate::comp::enter::Enter;
 use crate::comp::env::Env;
 use crate::comp::infer::InferenceContext;
 use crate::ids::TypeId;
@@ -100,6 +101,9 @@ pub struct Check {
     pub source: crate::code::source::Source,
     /// Java: Feature.PRIVATE_SAFE_VARARGS.allowedInSource(source) (Check.java:970-977)
     pub private_safe_varargs: bool,
+    /// Java: private final Enter enter (Check.java:116) — injected at wiring
+    /// time to avoid the Check/Enter construction cycle.
+    pub enter: RefCell<Option<Rc<RefCell<Enter>>>>,
 }
 
 impl Check {
@@ -143,6 +147,7 @@ impl Check {
             type_annotations: Rc::new(RefCell::new(None)),
             method: None,
             warn_on_any_access_to_members: false,
+            enter: RefCell::new(None),
             source,
         }
     }
@@ -7620,9 +7625,8 @@ impl Check {
                 self.check_override_at(ctx, syms, tree, t, origin, m);
             }
             let interfaces = {
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
-                self.types.interfaces(ctx, &syms_borrow, t)
+                let syms_borrow: &crate::code::symtab::Symtab = &*syms;
+                self.types.interfaces(ctx, syms_borrow, t)
             };
             let mut list = interfaces;
             while list.non_empty() {
@@ -7631,9 +7635,8 @@ impl Check {
                 self.check_override_at(ctx, syms, tree, t2, origin, m);
             }
             let supertype = {
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
-                self.types.supertype(ctx, &syms_borrow, t)
+                let syms_borrow: &crate::code::symtab::Symtab = &*syms;
+                self.types.supertype(ctx, syms_borrow, t)
             };
             if supertype == t {
                 break;
@@ -8596,6 +8599,428 @@ impl Check {
                 let syms_borrow = syms_rc.borrow();
                 self.types.supertype(ctx, &syms_borrow, sup)
             };
+        }
+    }
+}
+
+impl Check {
+    /// Inject the Enter service (the upstream Check constructor receives it;
+    /// the local Check is created before Enter, so the wiring installs it).
+    ///
+    /// # Arguments
+    ///   - enter: the Enter service.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn set_enter(&self, enter: Rc<RefCell<Enter>>) {
+        *self.enter.borrow_mut() = Some(enter);
+    }
+
+    /// Report a repeated interface.
+    ///
+    /// # Arguments
+    ///   - pos: the diagnostic position;
+    ///   - it: the interface type;
+    ///   - its: the set of interfaces already seen.
+    ///
+    /// # Returns
+    ///   - none (diagnostics are reported).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn check_not_repeated(
+        &self,
+        pos: i32,
+        it: TypeId,
+        its: &mut std::collections::HashSet<TypeId>,
+    ) {
+        if its.contains(&it) {
+            self.log.borrow_mut().error_at(
+                pos,
+                crate::util::jc_diagnostic::Error::from(
+                    crate::resources::compiler_properties::errors::repeated_interface(),
+                ),
+            );
+        } else {
+            its.insert(it);
+        }
+    }
+
+    /// Check the class declarations of a compilation unit for cycles and mark
+    /// acyclic classes.
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the class declaration.
+    ///
+    /// # Returns
+    ///   - none (diagnostics are reported).
+    ///
+    /// # Panics
+    ///   - a class invariant is violated.
+    pub fn check_non_cyclic_decl(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        tree: TreeId,
+    ) {
+        let mut cc = CycleChecker {
+            seen_classes: std::collections::HashSet::new(),
+            error_found: false,
+            partial_check: false,
+            check: self,
+        };
+        crate::tree::jc_tree::accept(ctx, tree, &mut cc);
+        if !cc.error_found && !cc.partial_check {
+            let class_sym = match &ctx.tree(tree).kind {
+                crate::tree::jc_tree::TreeKind::ClassDecl { sym, .. } => *sym,
+                _ => None,
+            };
+            if let Some(sym) = class_sym {
+                ctx.sym_mut(sym).flags_field |= crate::code::flags::ACYCLIC as i64;
+            }
+        }
+        let _ = syms;
+    }
+}
+
+/// Java: Check.CycleChecker — the cycle checker used by checkNonCyclicDecl.
+struct CycleChecker<'a> {
+    seen_classes: std::collections::HashSet<SymbolId>,
+    error_found: bool,
+    partial_check: bool,
+    check: &'a Check,
+}
+
+impl CycleChecker<'_> {
+    fn check_symbol(&mut self, ctx: &mut CompilerContext, pos: i32, sym: Option<SymbolId>) {
+        let Some(sym) = sym else {
+            self.partial_check = true;
+            return;
+        };
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP {
+            let enter = self.check.enter.borrow().clone();
+            let class_env = enter.as_ref().and_then(|enter| enter.borrow().get_env(sym));
+            if let Some(class_env) = class_env {
+                let Some(toplevel) = class_env.toplevel else {
+                    self.partial_check = true;
+                    return;
+                };
+                let sourcefile = match &ctx.tree(toplevel).kind {
+                    crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => {
+                        sourcefile.clone()
+                    }
+                    _ => None,
+                };
+                let prev = crate::util::abstract_log::AbstractLog::use_source(
+                    &mut *self.check.log.borrow_mut(),
+                    sourcefile,
+                );
+                let env_tree = class_env.encl_class.expect("class env tree");
+                crate::tree::jc_tree::accept(ctx, env_tree, self);
+                crate::util::abstract_log::AbstractLog::use_source(
+                    &mut *self.check.log.borrow_mut(),
+                    prev,
+                );
+            } else {
+                self.check_class(ctx, Some(pos), sym, List::nil());
+            }
+        } else if ctx.sym(sym).kind != crate::code::kinds::Kind::PCK {
+            self.partial_check = true;
+        }
+    }
+
+    fn check_class(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: Option<i32>,
+        c: SymbolId,
+        supertypes: List<TreeId>,
+    ) {
+        use crate::code::flags;
+        if (ctx.sym(c).flags_field & flags::ACYCLIC as i64) != 0 {
+            return;
+        }
+        if self.seen_classes.contains(&c) {
+            self.error_found = true;
+            let syms_rc = Rc::clone(&self.check.syms);
+            let mut syms_borrow = syms_rc.borrow_mut();
+            self.check.note_cyclic(ctx, &mut syms_borrow, pos, c);
+            return;
+        }
+        let c_ty = match ctx.sym(c).ty {
+            Some(ty) => ty,
+            None => return,
+        };
+        if ctx
+            .typ(c_ty)
+            .has_tag(crate::code::type_tag::TypeTag::ERROR)
+        {
+            return;
+        }
+        self.seen_classes.insert(c);
+        if ctx.typ(c_ty).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            if supertypes.non_empty() {
+                let mut current = supertypes;
+                while current.non_empty() {
+                    let supertree = *current.head();
+                    current = current.tail();
+                    crate::tree::jc_tree::accept(ctx, supertree, self);
+                }
+            } else {
+                let (supertype_field, interfaces_field) = match &ctx.typ(c_ty).kind {
+                    crate::code::type_::TypeKindData::ClassType {
+                        supertype_field,
+                        interfaces_field,
+                        ..
+                    } => (*supertype_field, interfaces_field.clone()),
+                    _ => (None, None),
+                };
+                let (Some(supertype_field), Some(interfaces_field)) =
+                    (supertype_field, interfaces_field)
+                else {
+                    self.partial_check = true;
+                    self.seen_classes.remove(&c);
+                    return;
+                };
+                let super_tsym = ctx.typ(supertype_field).tsym;
+                self.check_symbol(ctx, pos.unwrap_or(crate::util::position::NOPOS), super_tsym);
+                let mut current = interfaces_field;
+                while current.non_empty() {
+                    let intf = *current.head();
+                    current = current.tail();
+                    let intf_tsym = ctx.typ(intf).tsym;
+                    self.check_symbol(ctx, pos.unwrap_or(crate::util::position::NOPOS), intf_tsym);
+                }
+            }
+            if let Some(owner) = ctx.sym(c).owner
+                && ctx.sym(owner).kind == crate::code::kinds::Kind::TYP
+            {
+                self.check_symbol(ctx, pos.unwrap_or(crate::util::position::NOPOS), Some(owner));
+            }
+        }
+        self.seen_classes.remove(&c);
+    }
+}
+
+impl crate::tree::tree_scanner::TreeScannerVisitor for CycleChecker<'_> {
+    /// Java: public void visitSelect(JCFieldAccess tree)
+    fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (selected, sym) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::FieldAccess { selected, sym, .. } => {
+                (*selected, *sym)
+            }
+            _ => (None, None),
+        };
+        if let Some(selected) = selected {
+            crate::tree::jc_tree::accept(ctx, selected, self);
+        }
+        let pos = ctx.tree(tree).pos;
+        self.check_symbol(ctx, pos, sym);
+    }
+
+    /// Java: public void visitIdent(JCIdent tree)
+    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let sym = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::Ident { sym, .. } => *sym,
+            _ => None,
+        };
+        let pos = ctx.tree(tree).pos;
+        self.check_symbol(ctx, pos, sym);
+    }
+
+    /// Java: public void visitTypeApply(JCTypeApply tree)
+    fn visit_type_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        if let crate::tree::jc_tree::TreeKind::TypeApply { clazz, .. } = &ctx.tree(tree).kind
+            && let Some(clazz) = *clazz
+        {
+            crate::tree::jc_tree::accept(ctx, clazz, self);
+        }
+    }
+
+    /// Java: public void visitTypeArray(JCArrayTypeTree tree)
+    fn visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        if let crate::tree::jc_tree::TreeKind::ArrayTypeTree { elemtype } = &ctx.tree(tree).kind
+            && let Some(elemtype) = *elemtype
+        {
+            crate::tree::jc_tree::accept(ctx, elemtype, self);
+        }
+    }
+
+    /// Java: public void visitClassDef(JCClassDecl tree)
+    fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (extending, implementing, sym) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl {
+                extending,
+                implementing,
+                sym,
+                ..
+            } => (*extending, implementing.clone(), *sym),
+            _ => return,
+        };
+        let mut supertypes: List<TreeId> = List::nil();
+        if let Some(extending) = extending {
+            supertypes = supertypes.prepend(extending);
+        }
+        let mut current = implementing;
+        while current.non_empty() {
+            let intf = *current.head();
+            current = current.tail();
+            supertypes = supertypes.prepend(intf);
+        }
+        let Some(sym) = sym else {
+            return;
+        };
+        let pos = ctx.tree(tree).pos;
+        self.check_class(ctx, Some(pos), sym, supertypes);
+    }
+}
+
+crate::tree::tree_scanner::tree_scanner_visitor_delegate!(CycleChecker<'_>);
+
+impl Check {
+    /// Check for a default constructor in an exported package (the
+    /// missing-explicit-ctor lint).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - pos: the class declaration position;
+    ///   - c: the class symbol.
+    ///
+    /// # Returns
+    ///   - none (a deferred lint warning may be scheduled).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn check_default_constructor(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        c: SymbolId,
+    ) {
+        use crate::code::flags;
+        if !self
+            .lint
+            .is_enabled(crate::code::lint::LintCategory::MISSING_EXPLICIT_CTOR)
+        {
+            return;
+        }
+        let c_flags = ctx.sym(c).flags_field;
+        if (c_flags & (flags::ENUM as i64 | flags::RECORD as i64)) != 0 {
+            return;
+        }
+        if ctx.sym(c).is_anonymous() {
+            return;
+        }
+        if (c_flags & (flags::PUBLIC as i64 | flags::PROTECTED as i64)) == 0 {
+            return;
+        }
+        if !crate::code::source::Feature::MODULES.allowed_in_source(self.source) {
+            return;
+        }
+        match ctx.sym(c).get_nesting_kind(ctx) {
+            crate::code::kinds::NestingKind::Anonymous
+            | crate::code::kinds::NestingKind::Local => return,
+            crate::code::kinds::NestingKind::TopLevel => {}
+            crate::code::kinds::NestingKind::Member => {
+                let mut owner = ctx.sym(c).owner;
+                while let Some(current) = owner
+                    && ctx.sym(current).kind == crate::code::kinds::Kind::TYP
+                {
+                    if (ctx.sym(current).flags_field
+                        & (flags::PUBLIC as i64 | flags::PROTECTED as i64))
+                        == 0
+                    {
+                        return;
+                    }
+                    owner = ctx.sym(current).owner;
+                }
+            }
+        }
+        let Some(packge) = crate::code::symbol::packge(ctx, c) else {
+            return;
+        };
+        let (pkg_fullname, pkg_modle) = match &ctx.sym(packge).kind_data {
+            crate::code::symbol::SymbolKind::PackageSymbol {
+                fullname, modle, ..
+            } => (fullname.clone(), *modle),
+            _ => return,
+        };
+        if pkg_fullname.is_empty() {
+            return;
+        }
+        let Some(modle) = pkg_modle else {
+            return;
+        };
+        let exports = match &ctx.sym(modle).kind_data {
+            crate::code::symbol::SymbolKind::ModuleSymbol { exports, .. } => exports.clone(),
+            _ => return,
+        };
+        let c_display = ctx
+            .sym(c)
+            .name
+            .to_java_string()
+            .to_string_lossy()
+            .to_string();
+        let pkg_display = pkg_fullname.to_java_string().to_string_lossy().to_string();
+        let mod_display = match &ctx.sym(modle).kind_data {
+            crate::code::symbol::SymbolKind::ModuleSymbol { .. } => ctx
+                .sym(modle)
+                .name
+                .to_java_string()
+                .to_string_lossy()
+                .to_string(),
+            _ => String::new(),
+        };
+        let mut current = exports;
+        while current.non_empty() {
+            let directive = *current.head();
+            current = current.tail();
+            if let crate::code::directive::Directive::Exports {
+                packge: Some(exported_packge),
+                modules,
+                ..
+            } = ctx.directive(directive)
+            {
+                if *exported_packge != packge {
+                    continue;
+                }
+                let unqualified = modules.as_ref().map(|m| m.is_empty()).unwrap_or(true);
+                if !unqualified {
+                    return;
+                }
+                let log = Rc::clone(&self.log);
+                let lint = Rc::clone(&self.lint);
+                let c_display = c_display.clone();
+                let pkg_display = pkg_display.clone();
+                let mod_display = mod_display.clone();
+                self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+                    if lint
+                        .is_enabled(crate::code::lint::LintCategory::MISSING_EXPLICIT_CTOR)
+                    {
+                        let info = crate::resources::compiler_properties::warnings::missing_explicit_ctor(
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                c_display.clone(),
+                            ),
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                pkg_display.clone(),
+                            ),
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                mod_display.clone(),
+                            ),
+                        );
+                        log.borrow_mut().warning(
+                            Some(crate::code::lint::LintCategory::MISSING_EXPLICIT_CTOR),
+                            Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
+                            warning_from_info(info),
+                        );
+                    }
+                }));
+                return;
+            }
         }
     }
 }

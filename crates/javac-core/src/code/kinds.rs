@@ -701,3 +701,19 @@ mod tests {
         assert_eq!(type_kind_name(ctx.typ(type_var), &ctx), KindName::BOUND);
     }
 }
+
+/// Java: javax.lang.model.element.NestingKind (the Element API enum).
+///
+/// Adapter: the Java enum is part of the javax.lang.model interface layer (P6);
+/// the internal Symbol.getNestingKind result is represented by this enum until
+/// the P6 api adapter is wired.
+pub enum NestingKind {
+    /// Java: TOP_LEVEL
+    TopLevel,
+    /// Java: MEMBER
+    Member,
+    /// Java: LOCAL
+    Local,
+    /// Java: ANONYMOUS
+    Anonymous,
+}

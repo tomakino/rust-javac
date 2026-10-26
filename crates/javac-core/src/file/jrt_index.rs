@@ -198,6 +198,26 @@ impl JRTIndex {
         })
     }
 
+    /// Read an image resource by its jrt: path ("/modules/<module>/<resource>").
+    ///
+    /// Adapter: the jrt: filesystem read is expressed through the javac-jimage
+    /// image handle (registered adapter).
+    ///
+    /// # Arguments
+    ///   - path: the jrt resource path.
+    ///
+    /// # Returns
+    ///   - the resource bytes, if the entry exists.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn get_resource(&self, path: &FsPath) -> Option<Vec<u8>> {
+        let path_text = path.to_java_string().to_string().replace('\\', "/");
+        let name = path_text.strip_prefix("/modules/").unwrap_or(&path_text);
+        self.image.find_resource(name)
+    }
+
+
     /// Java: public static boolean isAvailable() — whether the jrt: file system exists.
     pub fn is_available(java_home: &FsPath) -> bool {
         JRTIndex::open(java_home).is_ok()

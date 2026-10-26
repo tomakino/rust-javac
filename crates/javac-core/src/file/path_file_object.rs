@@ -585,6 +585,10 @@ mod tests {
         fn flush_cache(&self, _file: &PathFileObject) {
             self.calls.set(self.calls.get() + 1);
         }
+
+        fn jrt_read_resource(&self, _path: &FsPath) -> Option<Vec<u8>> {
+            None
+        }
     }
 
     fn manager() -> Rc<dyn BaseFileManagerApi> {

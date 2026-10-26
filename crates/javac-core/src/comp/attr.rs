@@ -13271,9 +13271,8 @@ impl Attr {
             }
         };
         let lint = {
-            let syms_rc = Rc::clone(&self.syms);
-            let syms_borrow = syms_rc.borrow();
-            base_lint.augment(ctx, &syms_borrow, ctx.sym(m))
+            let syms_borrow: &Symtab = &*syms;
+            base_lint.augment(ctx, syms_borrow, ctx.sym(m))
         };
         let lint_rc = Rc::new(lint);
         let prev_lint = self.chk.borrow_mut().set_lint(Rc::clone(&lint_rc));
@@ -13286,9 +13285,8 @@ impl Attr {
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
-            let syms_rc = Rc::clone(&self.syms);
-            let syms_borrow = syms_rc.borrow();
-            chk.check_deprecated_annotation(ctx, &syms_borrow, ctx.tree(tree).pos, m);
+            let syms_borrow: &Symtab = &*syms;
+            chk.check_deprecated_annotation(ctx, syms_borrow, ctx.tree(tree).pos, m);
         }
         let local_env = {
             let member_enter = Rc::clone(&self.member_enter);
@@ -13369,9 +13367,8 @@ impl Attr {
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
-            let syms_rc = Rc::clone(&self.syms);
-            let syms_borrow = syms_rc.borrow();
-            chk.check_varargs_method_decl(ctx, &syms_borrow, &local_env, tree);
+            let syms_borrow: &Symtab = &*syms;
+            chk.check_varargs_method_decl(ctx, syms_borrow, &local_env, tree);
         }
         {
             let chk_rc = Rc::clone(&self.chk);
@@ -13426,9 +13423,8 @@ impl Attr {
             {
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = chk_rc.borrow();
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
-                chk.validate_annotation_type_tree(ctx, &syms_borrow, restype);
+                let syms_borrow: &Symtab = &*syms;
+                chk.validate_annotation_type_tree(ctx, syms_borrow, restype);
             }
             {
                 let chk_rc = Rc::clone(&self.chk);
@@ -13444,12 +13440,11 @@ impl Attr {
                 let thrown_ty = ctx.tree(thrown_tree).ty.expect("thrown type");
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = chk_rc.borrow();
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
+                let syms_borrow: &Symtab = &*syms;
                 let throwable_ty = syms_borrow.throwable_type;
                 chk.check_type(
                     ctx,
-                    &syms_borrow,
+                    syms_borrow,
                     ctx.tree(thrown_tree).pos,
                     thrown_ty,
                     throwable_ty,
@@ -13569,6 +13564,7 @@ impl Attr {
 
     /// The record accessor/canonical-constructor checks of visitMethodDef.
     #[allow(clippy::too_many_arguments, clippy::collapsible_if)]
+    #[allow(clippy::too_many_arguments)]
     fn record_method_checks(
         &mut self,
         ctx: &mut CompilerContext,
@@ -13614,7 +13610,8 @@ impl Attr {
                 Some(ret) => {
                     let syms_rc = Rc::clone(&self.syms);
                     let syms_borrow = syms_rc.borrow();
-                    self.types.is_same_type(ctx, &syms_borrow, ret, component_ty)
+                    let syms_ref: &Symtab = &syms_borrow;
+                    self.types.is_same_type(ctx, syms_ref, ret, component_ty)
                 }
                 None => false,
             };
@@ -13704,7 +13701,7 @@ impl Attr {
             let stronger = {
                 let syms_rc = Rc::clone(&self.syms);
                 let syms_borrow = syms_rc.borrow();
-                let _ = &syms_borrow;
+                let _ = syms_borrow;
                 crate::comp::check::Check::protection(ctx.sym(m).flags_field)
                     > crate::comp::check::Check::protection(ctx.sym(origin).flags_field)
             };
@@ -13781,8 +13778,9 @@ impl Attr {
                     (Some(param_ty), Some(field_ty)) => {
                         let syms_rc = Rc::clone(&self.syms);
                         let syms_borrow = syms_rc.borrow();
+                        let syms_ref: &Symtab = &syms_borrow;
                         self.types
-                            .is_same_type(ctx, &syms_borrow, param_ty, *field_ty)
+                            .is_same_type(ctx, syms_ref, param_ty, *field_ty)
                     }
                     _ => false,
                 };
@@ -14064,9 +14062,8 @@ impl Attr {
             }
         };
         let lint = {
-            let syms_rc = Rc::clone(&self.syms);
-            let syms_borrow = syms_rc.borrow();
-            base_lint.augment(ctx, &syms_borrow, ctx.sym(v))
+            let syms_borrow: &Symtab = &*syms;
+            base_lint.augment(ctx, syms_borrow, ctx.sym(v))
         };
         let lint_rc = Rc::new(lint);
         let prev_lint = self.chk.borrow_mut().set_lint(Rc::clone(&lint_rc));
@@ -14095,9 +14092,8 @@ impl Attr {
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
-            let syms_rc = Rc::clone(&self.syms);
-            let syms_borrow = syms_rc.borrow();
-            chk.check_deprecated_annotation(ctx, &syms_borrow, ctx.tree(tree).pos, v);
+            let syms_borrow: &Symtab = &*syms;
+            chk.check_deprecated_annotation(ctx, syms_borrow, ctx.tree(tree).pos, v);
         }
         if let Some(init) = init
             && ((ctx.sym(v).flags_field & flags::FINAL as i64) == 0
@@ -14118,11 +14114,10 @@ impl Attr {
             if declared_using_var {
                 let init_ty = ctx.tree(init).ty.unwrap_or(v_ty);
                 let inferred = {
-                    let syms_rc = Rc::clone(&self.syms);
-                    let syms_borrow = syms_rc.borrow();
+                    let syms_borrow: &Symtab = &*syms;
                     self.chk.borrow().check_local_var_type(
                         ctx,
-                        &syms_borrow,
+                        syms_borrow,
                         start_pos,
                         init_ty,
                         name.clone(),
@@ -14133,9 +14128,8 @@ impl Attr {
         }
         if declared_using_var {
             let inferred = ctx.sym(v).ty.expect("inferred var type");
-            let syms_rc = Rc::clone(&self.syms);
-            let syms_borrow = syms_rc.borrow();
-            self.set_synthetic_variable_type(ctx, &syms_borrow, tree, inferred);
+            let syms_borrow: &Symtab = &*syms;
+            self.set_synthetic_variable_type(ctx, syms_borrow, tree, inferred);
         }
         {
             let chk_rc = Rc::clone(&self.chk);
@@ -15719,3 +15713,151 @@ class Sample {
 
 
 
+
+impl Attr {
+    /// Attribute a base clause (superclass/interface) type.
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the base clause tree;
+    ///   - env: the attribution environment;
+    ///   - class_expected: whether a class type is expected;
+    ///   - interface_expected: whether an interface type is expected;
+    ///   - check_extensible: whether the final/extensibility checks run.
+    ///
+    /// # Returns
+    ///   - the attributed base type.
+    ///
+    /// # Panics
+    ///   - a base clause invariant is violated.
+    pub fn attrib_base(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        class_expected: bool,
+        interface_expected: bool,
+        check_extensible: bool,
+    ) -> TypeId {
+        let t = match ctx.tree(tree).ty {
+            Some(ty) => ty,
+            None => self.attrib_type(ctx, syms, tree, env),
+        };
+        self.check_base(
+            ctx,
+            syms,
+            t,
+            tree,
+            class_expected,
+            interface_expected,
+            check_extensible,
+        )
+    }
+
+    /// Check an attributed base type (see attrib_base).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - t: the attributed base type;
+    ///   - tree: the base clause tree;
+    ///   - class_expected: whether a class type is expected;
+    ///   - interface_expected: whether an interface type is expected;
+    ///   - check_extensible: whether the final/extensibility checks run.
+    ///
+    /// # Returns
+    ///   - the checked base type (or an error type).
+    ///
+    /// # Panics
+    ///   - a base clause invariant is violated.
+    pub fn check_base(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+        tree: TreeId,
+        class_expected: bool,
+        interface_expected: bool,
+        check_extensible: bool,
+    ) -> TypeId {
+        use crate::code::flags;
+        let pos = if ctx
+            .tree(tree)
+            .has_tag(crate::tree::jc_tree::Tag::TYPEAPPLY)
+        {
+            match &ctx.tree(tree).kind {
+                TreeKind::TypeApply { clazz: Some(clazz), .. } => ctx.tree(*clazz).pos,
+                _ => ctx.tree(tree).pos,
+            }
+        } else {
+            ctx.tree(tree).pos
+        };
+        if let Some(tsym) = ctx.typ(t).tsym
+            && ctx.sym(tsym).is_anonymous()
+        {
+            let info = crate::resources::compiler_properties::errors::cant_inherit_from_anon();
+            self.log.borrow_mut().error_at(
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+            return self.types.create_error_type_original(ctx, Some(t), syms);
+        }
+        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::ERROR) {
+            return t;
+        }
+        let t = if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
+            && !class_expected
+            && !interface_expected
+        {
+            if ctx.typ(t).get_upper_bound().is_none() {
+                let info = crate::resources::compiler_properties::errors::illegal_forward_ref();
+                self.log.borrow_mut().error_at(
+                    pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+                return self.types.create_error_type_original(ctx, Some(t), syms);
+            }
+            t
+        } else {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_class_type(ctx, pos, t)
+        };
+        let Some(t_tsym) = ctx.typ(t).tsym else {
+            return t;
+        };
+        let t_flags = ctx.sym(t_tsym).flags_field;
+        if interface_expected && (t_flags & flags::INTERFACE as i64) == 0 {
+            let info = crate::resources::compiler_properties::errors::intf_expected_here();
+            self.log.borrow_mut().error_at(
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+            return self.types.create_error_type_original(ctx, Some(t), syms);
+        } else if check_extensible && class_expected && (t_flags & flags::INTERFACE as i64) != 0 {
+            let info = crate::resources::compiler_properties::errors::no_intf_expected_here();
+            self.log.borrow_mut().error_at(
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+            return self.types.create_error_type_original(ctx, Some(t), syms);
+        }
+        if check_extensible && (t_flags & flags::FINAL as i64) != 0 {
+            let info = crate::resources::compiler_properties::errors::cant_inherit_from_final(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    format!("{t_tsym:?}"),
+                ),
+            );
+            self.log.borrow_mut().error_at(
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_non_cyclic(ctx, syms, Some(pos), t);
+        }
+        t
+    }
+}

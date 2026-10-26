@@ -10,6 +10,7 @@
 //! Minimal BaseFileManager interface for PathFileObject.
 
 use crate::file::path_file_object::PathFileObject;
+use javac_fs::Path as FsPath;
 
 /// Minimal interface of the file manager used by [PathFileObject].
 ///
@@ -22,4 +23,11 @@ pub trait BaseFileManagerApi {
 
     /// Java: BaseFileManager.flushCache(JavaFileObject).
     fn flush_cache(&self, file: &PathFileObject);
+
+    /// Read a system-modules image resource for a JRTFileObject.
+    ///
+    /// Adapter: the upstream JRTFileObject reads the jrt: filesystem through
+    /// java.nio.file; the port reads the system modules image through the
+    /// JRTIndex (registered adapter).
+    fn jrt_read_resource(&self, path: &FsPath) -> Option<Vec<u8>>;
 }

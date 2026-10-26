@@ -1702,11 +1702,13 @@ impl Resolve {
         let c_type = ctx.sym(c).ty.expect("type symbol type");
         let members = ctx.sym(c).members();
         if let Some(members) = members {
-            let candidates = ctx.scope_get_symbols_by_name(
+            let candidates = ctx.scope_get_symbols_by_name_full(
                 members,
                 name,
                 crate::code::scope::LookupKind::RECURSIVE,
                 &|_| true,
+                &self.types,
+                &*syms,
             );
             for candidate in candidates {
                 if ctx.sym(candidate).kind == Kind::VAR
@@ -1763,11 +1765,13 @@ impl Resolve {
             let mut sym: Option<SymbolId> = None;
             let scope = env1.info.borrow().scope;
             if let Some(scope) = scope {
-                let candidates = ctx.scope_get_symbols_by_name(
+                let candidates = ctx.scope_get_symbols_by_name_full(
                     scope,
                     name,
                     crate::code::scope::LookupKind::RECURSIVE,
                     &|_| true,
+                    &self.types,
+                    &*syms,
                 );
                 for candidate in candidates {
                     if ctx.sym(candidate).kind == Kind::VAR
@@ -1833,11 +1837,13 @@ impl Resolve {
             let Some(import_scope) = import_scope else {
                 continue;
             };
-            let candidates = ctx.scope_get_symbols_by_name(
+            let candidates = ctx.scope_get_symbols_by_name_full(
                 import_scope,
                 name,
                 crate::code::scope::LookupKind::RECURSIVE,
                 &|_| true,
+                &self.types,
+                &*syms,
             );
             for current_symbol in candidates {
                 if ctx.sym(current_symbol).kind != Kind::VAR {
@@ -1901,11 +1907,13 @@ impl Resolve {
     ) -> SymbolId {
         let members = ctx.sym(c).members();
         if let Some(members) = members {
-            let candidates = ctx.scope_get_symbols_by_name(
+            let candidates = ctx.scope_get_symbols_by_name_full(
                 members,
                 name,
                 crate::code::scope::LookupKind::RECURSIVE,
                 &|_| true,
+                &self.types,
+                &*syms,
             );
             for candidate in candidates {
                 if ctx.sym(candidate).kind == Kind::TYP {
@@ -1989,11 +1997,13 @@ impl Resolve {
         let Some(scope) = scope else {
             return best_so_far;
         };
-        let candidates = ctx.scope_get_symbols_by_name(
+        let candidates = ctx.scope_get_symbols_by_name_full(
             scope,
             name,
             crate::code::scope::LookupKind::RECURSIVE,
             &|_| true,
+            &self.types,
+            &*syms,
         );
         for candidate in candidates {
             let flat_name = symbol_flat_name(ctx, candidate);
@@ -2433,11 +2443,13 @@ impl Resolve {
             return self.type_not_found;
         };
         let short = crate::util::convert::short_name(name);
-        let candidates = ctx.scope_get_symbols_by_name(
+        let candidates = ctx.scope_get_symbols_by_name_full(
             import_scope,
             &short,
             crate::code::scope::LookupKind::RECURSIVE,
             &|_| true,
+            &self.types,
+            _syms,
         );
         for existing in candidates {
             if ctx.sym(existing).kind == Kind::TYP && symbol_flat_name(ctx, existing) == *name {
@@ -6739,11 +6751,13 @@ impl Resolve {
         let sp_name = ctx.sym(sp_method).name.clone();
         let sp_owner = ctx.sym(sp_method).owner;
         let mut existing: Option<SymbolId> = None;
-        for sym in ctx.scope_get_symbols_by_name(
+        for sym in ctx.scope_get_symbols_by_name_full(
             scope,
             &sp_name,
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
+            &self.types,
+            &*syms,
         ) {
             let sym_type = ctx.sym(sym).ty;
             if let Some(sym_type) = sym_type {

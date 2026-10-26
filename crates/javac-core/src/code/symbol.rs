@@ -3593,3 +3593,113 @@ mod tests {
     }
 }
 
+
+
+impl Symbol {
+    /// Java: public NestingKind getNestingKind() (Symbol.java:1548-1560).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context.
+    ///
+    /// # Returns
+    ///   - the nesting kind.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn get_nesting_kind(&self, ctx: &CompilerContext) -> crate::code::kinds::NestingKind {
+        let Some(owner) = self.owner else {
+            return crate::code::kinds::NestingKind::TopLevel;
+        };
+        if ctx.sym(owner).kind == crate::code::kinds::Kind::PCK {
+            crate::code::kinds::NestingKind::TopLevel
+        } else if self.name.is_empty() {
+            crate::code::kinds::NestingKind::Anonymous
+        } else if ctx.sym(owner).kind == crate::code::kinds::Kind::MTH {
+            crate::code::kinds::NestingKind::Local
+        } else {
+            crate::code::kinds::NestingKind::Member
+        }
+    }
+
+    /// Java: public RecordComponent getRecordComponent(VarSymbol field)
+    /// (Symbol.java:1534-1541).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - field: the record component field.
+    ///
+    /// # Returns
+    ///   - the matching record component, if any.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn get_record_component(
+        &self,
+        ctx: &CompilerContext,
+        field: SymbolId,
+    ) -> Option<SymbolId> {
+        let crate::code::symbol::SymbolKind::ClassSymbol {
+            record_components, ..
+        } = &self.kind_data
+        else {
+            return None;
+        };
+        let field_name = ctx.sym(field).name.clone();
+        let mut current = record_components.clone();
+        while current.non_empty() {
+            let rc = *current.head();
+            current = current.tail();
+            if ctx.sym(rc).name == field_name {
+                return Some(rc);
+            }
+        }
+        None
+    }
+
+    /// Java: public RecordComponent findRecordComponentToRemove(JCVariableDecl var)
+    /// (Symbol.java:1506-1520).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - var: the record component field declaration tree.
+    ///
+    /// # Returns
+    ///   - the record component to replace, if any.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn find_record_component_to_remove(
+        &self,
+        ctx: &CompilerContext,
+        var: TreeId,
+    ) -> Option<SymbolId> {
+        let crate::code::symbol::SymbolKind::ClassSymbol {
+            record_components, ..
+        } = &self.kind_data
+        else {
+            return None;
+        };
+        let (name, pos) = match &ctx.tree(var).kind {
+            crate::tree::jc_tree::TreeKind::VariableDecl { name, .. } => {
+                (name.clone(), ctx.tree(var).pos)
+            }
+            _ => return None,
+        };
+        let mut to_remove: Option<SymbolId> = None;
+        let mut current = record_components.clone();
+        while current.non_empty() {
+            let rc = *current.head();
+            current = current.tail();
+            let (rc_pos, _rc_varargs) = match &ctx.sym(rc).kind_data {
+                crate::code::symbol::SymbolKind::RecordComponent { pos, is_varargs, .. } => {
+                    (*pos, *is_varargs)
+                }
+                _ => (crate::util::position::NOPOS, false),
+            };
+            if ctx.sym(rc).name == name && pos == rc_pos {
+                to_remove = Some(rc);
+            }
+        }
+        to_remove
+    }
+}

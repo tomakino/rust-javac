@@ -1094,11 +1094,6 @@ impl Scope {
         syms: &crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Vec<SymbolId> {
-        if !matches!(&self.data, ScopeData::FilterImportScope { .. }) {
-            let ctx_view: &crate::compiler_context::CompilerContext = ctx;
-            let symbols = &ctx_view.symbols_arena();
-            return self.get_symbols_by_name(self_id, name, lookup_kind, filter, symbols, ctx_view);
-        }
         match &self.data {
             ScopeData::ScopeImpl { .. } => {
                 let (_, entries) = self.table_and_entries();

@@ -278,6 +278,22 @@ impl CompilerContext {
         snapshot.get_symbols_by_name(scope, name, lookup_kind, filter, &self.symbols, self)
     }
 
+    /// Java: Scope.getSymbolsByName(Name, Predicate<Symbol>, LookupKind) with
+    /// the Types service needed by the import filter (the FilterImportScope
+    /// holder adapter; see the Scope import filter registration).
+    pub fn scope_get_symbols_by_name_full(
+        &mut self,
+        scope: ScopeId,
+        name: &Name,
+        lookup_kind: LookupKind,
+        filter: &dyn Fn(SymbolId) -> bool,
+        types: &crate::code::types::Types,
+        syms: &crate::code::symtab::Symtab,
+    ) -> Vec<SymbolId> {
+        let snapshot = self.scope(scope).clone();
+        snapshot.get_symbols_by_name_full(scope, name, lookup_kind, filter, types, syms, self)
+    }
+
     /// Java: Scope.isEmpty()
     pub fn scope_is_empty(&self, scope: ScopeId) -> bool {
         self.scope(scope).is_empty()
@@ -826,7 +842,7 @@ mod tests {
             name(&table, "x"),
             None,
             None,
-            SymbolKind::VarSymbol {
+            crate::code::symbol::SymbolKind::VarSymbol {
                 pos: 1,
                 adr: -1,
                 data_kind: None,
@@ -864,7 +880,7 @@ mod tests {
                 name(&table, text),
                 None,
                 None,
-                SymbolKind::VarSymbol {
+                crate::code::symbol::SymbolKind::VarSymbol {
                     pos: index as i32,
                     adr: -1,
                     data_kind: None,
@@ -890,3 +906,91 @@ mod tests {
     }
 }
 
+
+impl CompilerContext {
+    /// Java: ClassSymbol.createRecordComponent(RecordComponent existing,
+    /// JCVariableDecl var, List<JCAnnotation> annotations) (Symbol.java:1522-1532).
+    ///
+    /// Adapter: the symbol arena allocation needs the compiler context, so the
+    /// ClassSymbol method is expressed as this context operation.
+    ///
+    /// # Arguments
+    ///   - class: the record class symbol;
+    ///   - existing: the component to replace, if any;
+    ///   - var: the record component field symbol;
+    ///   - annotations: the (original) annotations of the new component.
+    ///
+    /// # Returns
+    ///   - the created record component symbol.
+    ///
+    /// # Panics
+    ///   - the symbol is not a class symbol.
+    pub fn create_record_component(
+        &mut self,
+        class: SymbolId,
+        existing: Option<SymbolId>,
+        var: SymbolId,
+        annotations: List<TreeId>,
+    ) -> SymbolId {
+        let var_name = self.sym(var).name.clone();
+        let var_ty = self.sym(var).ty.expect("record component type");
+        let (original_annos, is_varargs) = match existing {
+            Some(existing) => match &self.sym(existing).kind_data {
+                crate::code::symbol::SymbolKind::RecordComponent {
+                    original_annos,
+                    is_varargs,
+                    ..
+                } => (original_annos.clone(), *is_varargs),
+                _ => (List::nil(), false),
+            },
+            None => (annotations, false),
+        };
+        let pos = match &self.sym(var).kind_data {
+            crate::code::symbol::SymbolKind::VarSymbol { pos, .. } => *pos,
+            _ => crate::util::position::NOPOS,
+        };
+        let rc = self.alloc_symbol(Symbol::new(
+            crate::code::kinds::Kind::VAR,
+            crate::code::flags::PUBLIC as i64,
+            var_name,
+            Some(var_ty),
+            Some(class),
+            crate::code::symbol::SymbolKind::RecordComponent {
+                accessor: None,
+                accessor_meth: None,
+                original_annos,
+                pos,
+                is_varargs,
+            },
+        ));
+        if let Some(existing) = existing {
+            match &mut self.sym_mut(class).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol {
+                    record_components, ..
+                } => {
+                    let mut filtered: List<SymbolId> = List::nil();
+                    let mut current = record_components.clone();
+                    while current.non_empty() {
+                        let component = *current.head();
+                        current = current.tail();
+                        if component != existing {
+                            filtered = filtered.append(component);
+                        }
+                    }
+                    *record_components = filtered.append(rc);
+                }
+                _ => panic!("ClassCastException: not a class symbol"),
+            }
+        } else {
+            match &mut self.sym_mut(class).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol {
+                    record_components, ..
+                } => {
+                    *record_components = record_components.append(rc);
+                }
+                _ => panic!("ClassCastException: not a class symbol"),
+            }
+        }
+        rc
+    }
+}

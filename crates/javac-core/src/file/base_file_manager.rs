@@ -453,6 +453,10 @@ impl BaseFileManagerApi for BaseFileManager {
     fn flush_cache(&self, file: &PathFileObject) {
         BaseFileManager::flush_cache_object(self, file);
     }
+
+    fn jrt_read_resource(&self, _path: &javac_fs::Path) -> Option<Vec<u8>> {
+        None
+    }
 }
 
 /// Java: private static class ByteBufferCache.

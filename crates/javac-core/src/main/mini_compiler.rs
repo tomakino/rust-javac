@@ -43,6 +43,7 @@ use crate::comp::operators::Operators;
 use crate::comp::resolve::Resolve;
 use crate::comp::todo::Todo;
 use crate::comp::trans_types::TransTypes;
+use crate::code::type_annotations::TypeAnnotations;
 use crate::comp::type_enter::TypeEnter;
 use crate::comp::attr_context::AttrContext;
 use crate::comp::env::Env;
@@ -337,6 +338,20 @@ impl MiniCompiler {
             .clone()
             .expect("annotate service installed");
         *enter.borrow().annotate.borrow_mut() = Some(Rc::clone(&annotate));
+        let type_annotations = Rc::new(TypeAnnotations::new(
+            Rc::clone(&names),
+            Rc::clone(&log),
+            Rc::clone(&chk),
+            Rc::clone(&attr),
+            Rc::clone(&annotate),
+            Rc::clone(&types),
+            Rc::clone(&syms),
+            Rc::clone(&diags),
+        ));
+        type_enter.borrow().set_attr(Rc::clone(&attr));
+        type_enter
+            .borrow()
+            .set_type_annotations(Rc::clone(&type_annotations));
         let trans_types = Rc::new(RefCell::new(TransTypes::new(
             Rc::clone(&names),
             Rc::clone(&log),
