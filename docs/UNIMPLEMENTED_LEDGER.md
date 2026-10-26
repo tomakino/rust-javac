@@ -1,0 +1,467 @@
+# unimplemented/todo/unreachable ledger (workspace scan)
+
+Scan: all workspace crates (crates/, tools/, xtask/), target/.git/reference excluded.
+
+## Counts (updated after A-class batch)
+- unimplemented: 106 (was 341 at batch start; project crates/)
+- todo: 0 (project crates/)
+- unreachable: 102 (unchanged, class C pending)
+- let _: 410 (class D pending)
+- #[allow(dead_code)]: 71 (class E pending)
+
+## Status column legend
+- [replaced] the interface/abstract stub was replaced by an explicit AbstractMethodError/UnsupportedOperationException panic (A-class batch);
+- pending: still to be repaid (B/C/D/E/F classes).
+
+## Project entries (crates/)
+- [unimplemented] crates/javac-core/src/code/attribute.rs:356  unimplemented!("TODO(Types/Symbol printing batch): Type.toString")
+- [unimplemented] crates/javac-core/src/code/attribute.rs:360  unimplemented!("TODO(Symbol printing batch): Symbol.toString")
+- [unimplemented] crates/javac-core/src/code/class_finder.rs:213  unimplemented!("TODO(S3/JRTIndex): getSupplementaryFlags jrtIndex path")
+- [unreachable] crates/javac-core/src/code/class_finder.rs:546  let Some(existing) = c else { unreachable!() };
+- [unimplemented] crates/javac-core/src/code/deferred_completion_failure_handler.rs:319  unimplemented!("TODO(P3): isDeferredCompleter needs the completer trait downcast")
+- [unimplemented] crates/javac-core/src/code/preview.rs:571  unimplemented!("test fixture")
+- [unimplemented] crates/javac-core/src/code/preview.rs:577  unimplemented!("test fixture")
+- [unimplemented] crates/javac-core/src/code/preview.rs:580  unimplemented!("test fixture")
+- [unimplemented] crates/javac-core/src/code/preview.rs:586  unimplemented!("test fixture")
+- [unimplemented] crates/javac-core/src/code/preview.rs:592  unimplemented!("test fixture")
+- [unimplemented] crates/javac-core/src/code/preview.rs:597  unimplemented!("test fixture")
+- [unreachable] crates/javac-core/src/code/scope.rs:613  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/scope.rs:1000  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/scope.rs:1258  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/code/scope.rs:1321  unimplemented!(
+- [unimplemented] crates/javac-core/src/code/scope.rs:1415  unimplemented!(
+- [unreachable] crates/javac-core/src/code/scope.rs:1523  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/code/symbol.rs:448  unimplemented!("TODO(symbol arena batch): Symbol.initedMetadata (SymbolId of the symbol is required)")
+- [unimplemented] crates/javac-core/src/code/types.rs:496  unimplemented!(
+- [unreachable] crates/javac-core/src/code/types.rs:766  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:770  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:879  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:883  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:920  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:926  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:1152  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:1164  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:1183  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:1258  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:1306  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:1336  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:1433  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:1458  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:1481  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:1495  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:1514  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/code/types.rs:1563  unimplemented!(
+- [unreachable] crates/javac-core/src/code/types.rs:2202  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:2214  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:2234  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:2357  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:2645  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:2650  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:2810  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:2922  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:2959  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:2971  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:3426  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:3430  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:4628  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:4634  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/code/types.rs:5183  unimplemented!(
+- [unreachable] crates/javac-core/src/code/types.rs:5336  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:5342  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/code/types.rs:5352  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/code/types.rs:5519  unimplemented!(
+- [unimplemented] crates/javac-core/src/code/types.rs:6546  unimplemented!("TODO(Infer batch): BoundsChangeRecorder.varInstantiated");
+- [unreachable] crates/javac-core/src/code/types.rs:8907  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/comp/analyzer.rs:310  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/comp/annotate.rs:453  unimplemented!(
+- [unreachable] crates/javac-core/src/comp/argument_attr.rs:1252  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/comp/argument_attr.rs:1295  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/attr.rs:1030  unimplemented!("TODO(Annotate/Types batch): Attr.visitTypeParameter")
+- [unimplemented] crates/javac-core/src/comp/attr.rs:1544  // registered with unimplemented! + TODO at the exact call site.
+- [unimplemented] crates/javac-core/src/comp/attr.rs:1895  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/attr.rs:2631  unimplemented!("TODO(Types/Symbol printing batch): Type.toString")
+- [unimplemented] crates/javac-core/src/comp/attr.rs:2650  unimplemented!("TODO(Symbol/Types batch): Symbol.isMemberOf")
+- [unreachable] crates/javac-core/src/comp/attr.rs:3637  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/comp/attr.rs:3702  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/comp/attr.rs:11271  unimplemented!("TODO(Modules batch): Attr.attribModule (Attr.java:5144-5146)")
+- [unimplemented] crates/javac-core/src/comp/attr.rs:11274  unimplemented!("TODO(Modules batch): Attr.attribPackage (Attr.java:5147-5149)")
+- [unimplemented] crates/javac-core/src/comp/attr.rs:14223  unimplemented!("test check context report")
+- [unreachable] crates/javac-core/src/comp/attr.rs:15088  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/comp/attr.rs:15103  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/comp/attr_recover.rs:184  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/comp/attr_recover.rs:189  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/comp/check.rs:1217  unimplemented!("TODO(Infer batch): Check.checkType free type listener");
+- [unimplemented] crates/javac-core/src/comp/check.rs:1688  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/check.rs:1839  unimplemented!(
+- [unreachable] crates/javac-core/src/comp/deferred_attr.rs:1425  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/comp/deferred_attr.rs:1434  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/comp/enter.rs:136  unimplemented!("TODO(Lint batch): Enter.getClassEnv lintEnv.augment")
+- [unimplemented] crates/javac-core/src/comp/enter.rs:830  unimplemented!("TODO(Enter batch): Enter.unenter (UnenterScanner)");
+- [unimplemented] crates/javac-core/src/comp/flow.rs:1562  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/flow.rs:1575  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/flow.rs:2936  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/flow.rs:2971  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/flow.rs:3065  unimplemented!(
+- [unreachable] crates/javac-core/src/comp/lower.rs:5447  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:40  //! NOT YET PORTED IN THIS FILE (registered; each with unimplemented! + TODO):
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:196  unimplemented!("TODO(Context registration batch): Resolve.instance")
+- [unreachable] crates/javac-core/src/comp/resolve.rs:514  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:583  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:1160  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:2384  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:2405  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:2493  unimplemented!("TODO(Modules batch): Resolve.lookupInvisibleSymbol")
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:2573  unimplemented!("TODO(Log batch): Resolve.checkRestrictedType warning")
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:2843  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:3769  unimplemented!(
+- [unreachable] crates/javac-core/src/comp/resolve.rs:4024  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/comp/resolve.rs:4071  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:4426  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:4579  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:4626  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:4975  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:5541  unimplemented!(
+- [unimplemented] crates/javac-core/src/comp/resolve.rs:5604  unimplemented!(
+- [unreachable] crates/javac-core/src/comp/trans_types.rs:1015  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/file/base_file_manager.rs:250  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/base_file_manager.rs:295  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/base_file_manager.rs:307  unimplemented!("TODO(charset batch): Charset.defaultCharset() is not ported")
+- [unimplemented] crates/javac-core/src/file/base_file_manager.rs:331  Err(_) => unimplemented!(
+- [unimplemented] crates/javac-core/src/file/base_file_manager.rs:354  Err(_) => unimplemented!(
+- [unimplemented] crates/javac-core/src/file/cache_fs_info.rs:94  unimplemented!("TODO(P2): CacheFSInfo.getJarClassPath needs java.util.jar.JarFile/Manifest")
+- [unimplemented] crates/javac-core/src/file/fs_info.rs:106  unimplemented!("TODO(P2): FSInfo.getJarClassPath needs java.util.jar.JarFile/Manifest")
+- [unimplemented] crates/javac-core/src/file/javac_file_manager.rs:595  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/javac_file_manager.rs:886  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/javac_file_manager.rs:941  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/javac_file_manager.rs:1034  unimplemented!("TODO(P6): BaseFileManager.deferredClose (daemon thread/wait semantics)");
+- [unreachable] crates/javac-core/src/file/locations.rs:560  _ => unreachable!("PLATFORM_CLASS_PATH handler"),
+- [unimplemented] crates/javac-core/src/file/locations.rs:868  _ => unimplemented!(
+- [unimplemented] crates/javac-core/src/file/locations.rs:904  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/locations.rs:1299  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/locations.rs:1383  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/path_file_object.rs:203  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/path_file_object.rs:444  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/path_file_object.rs:449  unimplemented!("TODO(P2): JRTFileObject.toUri needs the jrt FileSystem")
+- [unimplemented] crates/javac-core/src/file/path_file_object.rs:484  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/path_file_object.rs:491  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/path_file_object.rs:498  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/relative_path.rs:89  unimplemented!(
+- [unimplemented] crates/javac-core/src/file/relative_path.rs:250  unimplemented!("TODO(P2): RelativeFile.getZipEntry needs java.util.zip.ZipFile")
+- [unimplemented] crates/javac-core/src/jvm/class_reader.rs:75  //! * NOT ported yet (unimplemented! with TODO below): readClass and the
+- [unreachable] crates/javac-core/src/jvm/class_reader.rs:395  Ok(_) => unreachable!("TagSet::Module accepted a non-module value"),
+- [unreachable] crates/javac-core/src/jvm/class_reader.rs:422  Ok(_) => unreachable!("TagSet::Package accepted a non-package value"),
+- [unreachable] crates/javac-core/src/jvm/class_reader.rs:448  Ok(_) => unreachable!("TagSet::Class accepted a non-class value"),
+- [unreachable] crates/javac-core/src/jvm/class_reader.rs:489  Ok(_) => unreachable!("TagSet::NameAndType accepted a non-nameandtype value"),
+- [unimplemented] crates/javac-core/src/jvm/class_reader.rs:1123  unimplemented!("TODO(P2/S2): readClassFile missingTypeVariables substitution (Types.subst/substBounds)");
+- [unimplemented] crates/javac-core/src/jvm/class_reader.rs:1250  unimplemented!("TODO(P2/Log): log.warning(BigMajorVersion) needs a DiagnosticPosition-carrying Log adapter");
+- [unimplemented] crates/javac-core/src/jvm/class_reader.rs:1263  unimplemented!("TODO(P2/Log): preview.disabledError(JavaFileObject,int) wiring is unimplemented (Log batch)");
+- [unimplemented] crates/javac-core/src/jvm/class_reader.rs:1265  unimplemented!("TODO(P2/Log): preview.warnPreview(JavaFileObject,int) wiring is unimplemented (Log batch)");
+- [unimplemented] crates/javac-core/src/jvm/class_reader.rs:1534  unimplemented!("TODO(P2/S2): readMethod this$n stripping (requires owner.members()/name checks and Code batch)");
+- [unimplemented] crates/javac-core/src/jvm/class_reader.rs:1543  unimplemented!("TODO(P2/Code batch): initParameterNames (Code.width/LocalVariableTable)");
+- [unimplemented] crates/javac-core/src/jvm/class_reader.rs:2005  unimplemented!("TODO(S2-B/ProxyType): ClassReader.ProxyType for module-info annotations");
+- [unimplemented] crates/javac-core/src/jvm/class_reader.rs:2597  unimplemented!("TODO(P2/Log): FutureAttr classfile lint warning (Log/Lint batch)");
+- [unimplemented] crates/javac-core/src/jvm/class_reader.rs:3290  unimplemented!("TODO(P2/S3): Fragments.BadEnclosingMethod(sym) accessor needs the Symbol argument (P4 contract)")
+- [unreachable] crates/javac-core/src/jvm/codegen.rs:1220  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/jvm/codegen.rs:1300  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/jvm/target.rs:272  unimplemented!(
+- [unimplemented] crates/javac-core/src/parser/doc_comment_parser.rs:31  //!   diagSource, code), which is still unimplemented! in tree/doc_tree_maker.rs
+- [unimplemented] crates/javac-core/src/parser/doc_comment_parser.rs:36  //!   ReferenceParser unimplemented! marker until parser S7 lands.
+- [unimplemented] crates/javac-core/src/parser/doc_comment_parser.rs:929  // is still unimplemented! (the upstream diagnostic position is the node
+- [unreachable] crates/javac-core/src/parser/javac_parser.rs:2017  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/parser/javac_parser.rs:2549  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/parser/javac_parser.rs:2659  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/parser/javac_parser.rs:2939  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/parser/javac_parser.rs:2959  _ => unreachable!(),
+- [unreachable] crates/javac-core/src/parser/javac_parser.rs:4061  _ => unreachable!(),
+- [unimplemented] crates/javac-core/src/parser/reference_parser.rs:18  //! check are left unimplemented! with TODO(parser S7) markers. No replacement
+- [unimplemented] crates/javac-core/src/parser/reference_parser.rs:180  unimplemented!("TODO(parser S7): ReferenceParser::parseModule needs JavacParser")
+- [unimplemented] crates/javac-core/src/parser/reference_parser.rs:186  unimplemented!("TODO(parser S7): ReferenceParser::parseType needs JavacParser")
+- [unimplemented] crates/javac-core/src/parser/reference_parser.rs:192  unimplemented!("TODO(parser S7): ReferenceParser::parseMember needs JavacParser")
+- [unimplemented] crates/javac-core/src/parser/reference_parser.rs:200  unimplemented!("TODO(parser S7): ReferenceParser::parseParams needs JavacParser")
+- [unimplemented] crates/javac-core/src/platform/jdk_platform_provider.rs:331  unimplemented!(
+- [unimplemented] crates/javac-core/src/platform/platform_description.rs:119  unimplemented!("test fixture")
+- [unimplemented] crates/javac-core/src/platform/platform_description.rs:151  unimplemented!("test fixture")
+- [unimplemented] crates/javac-core/src/platform/platform_description.rs:165  unimplemented!("test fixture")
+- [unimplemented] crates/javac-core/src/platform/platform_provider.rs:88  unimplemented!("test fixture")
+- [unimplemented] crates/javac-core/src/platform/platform_utils.rs:112  unimplemented!("test fixture")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:208  unreachable!("visitAttribute on a non-Attribute node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:234  unreachable!("visitAuthor on a non-Author node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:256  unreachable!("visitEndElement on a non-EndElement node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:267  unreachable!("visitEntity on a non-Entity node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:278  unreachable!("visitIdentifier on a non-Identifier node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:290  unreachable!("visitIndex on a non-Index node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:311  unreachable!("visitLink on a non-Link node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:329  unreachable!("visitLiteral on a non-Literal node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:335  unreachable!("DCLiteral body must be a DCText (Java: cast)")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:353  unreachable!("visitParam on a non-Param node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:380  unreachable!("visitProvides on a non-Provides node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:396  unreachable!("visitReference on a non-Reference node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:410  unreachable!("visitReturn on a non-Return node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:428  unreachable!("visitSee on a non-See node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:447  unreachable!("visitSerial on a non-Serial node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:460  unreachable!("visitSerialData on a non-SerialData node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:478  unreachable!("visitSerialField on a non-SerialField node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:497  unreachable!("visitSince on a non-Since node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:514  unreachable!("visitStartElement on a non-StartElement node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:541  unreachable!("visitSummary on a non-Summary node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:556  unreachable!("visitSystemProperty on a non-SystemProperty node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:572  unreachable!("visitThrows on a non-Throws node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:588  unreachable!("visitUnknownBlockTag on a non-UnknownBlockTag node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:601  unreachable!("visitUnknownInlineTag on a non-UnknownInlineTag node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:620  unreachable!("visitUses on a non-Uses node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:636  unreachable!("visitValue on a non-Value node")
+- [unreachable] crates/javac-core/src/tree/doc_pretty.rs:649  unreachable!("visitVersion on a non-Version node")
+- [unimplemented] crates/javac-core/src/tree/doc_tree_maker.rs:25  //!   unimplemented! (registered, no replacement algorithm is written);
+- [unimplemented] crates/javac-core/src/tree/doc_tree_maker.rs:275  unimplemented!(
+- [unimplemented] crates/javac-core/src/tree/doc_tree_maker.rs:399  unimplemented!("TODO(parser S8): newReferenceTree(String) needs ReferenceParser")
+- [unimplemented] crates/javac-core/src/tree/tree_maker.rs:2341  unimplemented!(
+- [unimplemented] crates/javac-core/src/tree/tree_maker.rs:2454  unimplemented!("TODO(literal value domain batch): Attribute.Constant Byte literal")
+- [unimplemented] crates/javac-core/src/tree/tree_maker.rs:2457  unimplemented!("TODO(literal value domain batch): Attribute.Constant Short literal")
+- [unimplemented] crates/javac-core/src/tree/tree_maker.rs:2639  ConstantValue::Byte(_) | ConstantValue::Short(_) => unimplemented!(
+- [unreachable] crates/javac-core/src/tree/tree_maker.rs:2904  unreachable!()
+- [unreachable] crates/javac-core/src/util/context.rs:211  _ => unreachable!("factory slot disappeared"),
+- [unreachable] crates/javac-core/src/util/context.rs:236  ContextValue::Factory { .. } => unreachable!("factory slot not taken"),
+- [unreachable] crates/javac-core/src/util/iterators.rs:116  CurrentIterator::Empty => unreachable!(),
+- [unreachable] crates/javac-core/src/util/list_buffer.rs:141  None => unreachable!(),
+- [unimplemented] crates/javac-floating/src/fdbig_integer.rs:1090  unimplemented!("TODO: java.math.BigInteger is not ported (FDBigInteger.toBigInteger)");
+- [unimplemented] crates/javac-floating/src/fdbig_integer.rs:1097  unimplemented!("TODO: java.math.BigInteger is not ported (FDBigInteger.toString)");
+- [unimplemented] crates/javac-floating/src/lib.rs:18  //!   corresponding methods are explicit `unimplemented!(TODO)`.
+- [unimplemented] crates/javac-source/src/doctree/doc_tree.rs:590  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:79  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:87  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:95  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:103  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:111  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:119  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:140  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:148  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:156  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:178  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:200  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:208  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:216  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:224  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:246  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:254  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:262  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:270  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:278  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:286  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:294  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:302  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:336  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:344  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:352  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:360  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:382  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:390  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:400  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:443  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/doctree/doc_tree_visitor.rs:460  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree.rs:1293  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:113  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:121  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:129  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:137  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:145  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:153  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:161  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:169  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:177  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:185  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:193  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:201  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:209  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:217  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:225  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:233  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:241  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:249  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:257  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:265  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:273  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:281  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:289  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:297  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:305  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:314  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:323  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:331  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:339  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:347  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:356  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:365  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:373  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:381  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:389  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:397  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:405  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:413  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:421  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:429  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:437  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:447  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:455  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:463  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:471  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:479  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:487  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:495  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:503  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:511  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:519  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:527  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:535  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:543  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:551  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:559  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:567  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:575  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:583  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:591  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:599  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:607  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:615  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:623  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:633  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:642  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/tree/tree_visitor.rs:682  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:452  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:471  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:522  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:526  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:530  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:534  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:538  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:546  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:556  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:560  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:564  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:568  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:572  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:580  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:588  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:592  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:596  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:604  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:608  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:616  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:624  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:628  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:637  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:645  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:649  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:659  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:663  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:667  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:676  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:680  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:689  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:696  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:709  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:717  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:725  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:733  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:737  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/doc_tree_factory.rs:741  unimplemented!("mock DocTreeFactory")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/test_support.rs:43  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/test_support.rs:66  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/test_support.rs:106  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/test_support.rs:120  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/test_support.rs:201  unimplemented!("test fixture has no uri")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/test_support.rs:207  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/test_support.rs:210  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/test_support.rs:216  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/test_support.rs:225  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/test_support.rs:265  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/test_support.rs:294  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/test_support.rs:344  unimplemented!("test fixture accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/trees.rs:308  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-source/src/util/trees.rs:319  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unreachable] crates/javac-tests/src/bin/diff_runner.rs:169  OracleKind::Baselines => unreachable!("validated above"),
+- [unreachable] crates/javac-tests/src/bin/diff_runner.rs:178  OracleKind::Diagnostics => unreachable!("validated above"),
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:53  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:64  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:75  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:86  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:97  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:108  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:119  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:130  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:141  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:152  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:163  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:174  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:185  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:196  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/annotation_value_visitor.rs:211  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/element_visitor.rs:63  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/element_visitor.rs:74  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/element_visitor.rs:85  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/element_visitor.rs:96  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/element_visitor.rs:107  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/element_visitor.rs:118  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/element_visitor.rs:134  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/element/module_element.rs:330  unimplemented!("test fixture has no module")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:52  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:63  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:74  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:85  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:96  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:107  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:118  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:129  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:140  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:151  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:166  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:179  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/type_/type_visitor.rs:192  unimplemented!("PORTING_RULES: visitor interface method not overridden")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/elements.rs:386  unimplemented!(  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/elements.rs:476  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/elements.rs:502  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/elements.rs:506  unimplemented!("test fixture: {:?}", cs)  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/elements.rs:614  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/elements.rs:623  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/elements.rs:636  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/elements.rs:644  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/element_filter.rs:380  unimplemented!("fixture has no type mirror")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/element_filter.rs:402  unimplemented!("fixture is not visited")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/element_filter.rs:469  unimplemented!("fixture has no type mirror")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/element_filter.rs:472  unimplemented!("fixture has no type mirror")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/element_filter.rs:495  unimplemented!("fixture has no type mirror")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/element_filter.rs:522  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/element_filter.rs:531  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/element_filter.rs:607  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/element_scanner6.rs:98  unimplemented!(  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:84  unimplemented!("fixture has no type mirror")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:102  unimplemented!("fixture is not visited through accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:167  unimplemented!("fixture has no type mirror")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:170  unimplemented!("fixture has no type mirror")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:191  unimplemented!("fixture has no type mirror")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:218  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:227  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:266  unimplemented!("fixture is not visited through accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:313  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:318  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:321  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:330  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:333  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:336  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:352  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:358  unimplemented!("fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/test_support.rs:395  unimplemented!("fixture is not visited through accept")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/types.rs:245  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/types.rs:248  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/types.rs:251  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/types.rs:254  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/types.rs:257  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/types.rs:260  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/types.rs:263  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/types.rs:266  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/types.rs:273  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/types.rs:280  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/types.rs:288  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/lang/model/util/types.rs:295  unimplemented!("test fixture")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/tools/java_compiler.rs:414  unimplemented!("test compiler does not provide a standard file manager")  [replaced: AbstractMethodError/UnsupportedOperationException panic]
+- [unimplemented] crates/javac-tools/src/tools/simple_java_file_object.rs:141  unimplemented!(  [pending B-class: real implementation]
+- [unimplemented] crates/javac-tools/src/tools/tool_provider.rs:68  unimplemented!(  [pending B-class: real implementation]

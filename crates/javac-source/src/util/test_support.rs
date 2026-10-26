@@ -40,7 +40,7 @@ impl Tree for IdentTree {
         Kind::IDENTIFIER
     }
     fn accept<R, D>(&self, _visitor: &mut dyn TreeVisitor<R, D>, _data: D) -> R {
-        unimplemented!("test fixture accept")
+        panic!("UnsupportedOperationException: accept: test fixture accept")
     }
     fn as_identifier_tree(&self) -> Option<&dyn IdentifierTree> {
         Some(self)
@@ -63,7 +63,7 @@ impl Tree for UnitTree {
         Kind::COMPILATION_UNIT
     }
     fn accept<R, D>(&self, _visitor: &mut dyn TreeVisitor<R, D>, _data: D) -> R {
-        unimplemented!("test fixture accept")
+        panic!("UnsupportedOperationException: accept: test fixture accept")
     }
     fn as_compilation_unit_tree(&self) -> Option<&dyn CompilationUnitTree> {
         Some(self)
@@ -103,7 +103,7 @@ impl DocTree for DocLeaf {
         DocKind::TEXT
     }
     fn accept<R, D>(&self, _visitor: &mut dyn DocTreeVisitor<R, D>, _data: D) -> R {
-        unimplemented!("test fixture accept")
+        panic!("UnsupportedOperationException: accept: test fixture accept")
     }
     fn as_text_tree(&self) -> Option<&dyn crate::doctree::text_tree::TextTree> {
         Some(self as &dyn crate::doctree::text_tree::TextTree)
@@ -117,7 +117,7 @@ impl DocTree for DocCommentLeaf {
         DocKind::DOC_COMMENT
     }
     fn accept<R, D>(&self, _visitor: &mut dyn DocTreeVisitor<R, D>, _data: D) -> R {
-        unimplemented!("test fixture accept")
+        panic!("UnsupportedOperationException: accept: test fixture accept")
     }
     fn as_doc_comment_tree(&self) -> Option<&dyn DocCommentTree> {
         Some(self)
@@ -198,22 +198,22 @@ pub struct TestJavaFileObject;
 
 impl javac_tools::tools::file_object::FileObject for TestJavaFileObject {
     fn to_uri(&self) -> javac_tools::uri::URI {
-        unimplemented!("test fixture has no uri")
+        panic!("UnsupportedOperationException: to_uri: test fixture has no uri")
     }
     fn get_name(&self) -> JavaString {
         JavaString::from("Test.java")
     }
     fn open_input_stream(&self) -> Result<Box<dyn std::io::Read>, javac_tools::error::Error> {
-        unimplemented!("test fixture")
+        panic!("UnsupportedOperationException: open_input_stream: test fixture")
     }
     fn open_output_stream(&self) -> Result<Box<dyn std::io::Write>, javac_tools::error::Error> {
-        unimplemented!("test fixture")
+        panic!("UnsupportedOperationException: open_output_stream: test fixture")
     }
     fn open_reader(
         &self,
         _ignore_encoding_errors: bool,
     ) -> Result<Box<dyn javac_tools::java_io::Reader>, javac_tools::error::Error> {
-        unimplemented!("test fixture")
+        panic!("UnsupportedOperationException: open_reader: test fixture")
     }
     fn get_char_content(
         &self,
@@ -222,7 +222,7 @@ impl javac_tools::tools::file_object::FileObject for TestJavaFileObject {
         Ok(None)
     }
     fn open_writer(&self) -> Result<Box<dyn javac_tools::java_io::Writer>, javac_tools::error::Error> {
-        unimplemented!("test fixture")
+        panic!("UnsupportedOperationException: open_writer: test fixture")
     }
     fn get_last_modified(&self) -> i64 {
         0
@@ -262,7 +262,7 @@ impl Tree for BinaryTreeFixture {
         Kind::MULTIPLY
     }
     fn accept<R, D>(&self, _visitor: &mut dyn TreeVisitor<R, D>, _data: D) -> R {
-        unimplemented!("test fixture accept")
+        panic!("UnsupportedOperationException: accept: test fixture accept")
     }
     fn as_binary_tree(&self) -> Option<&dyn crate::tree::binary_tree::BinaryTree> {
         Some(self)
@@ -291,7 +291,7 @@ impl Tree for UnitTreeWithDecls {
         Kind::COMPILATION_UNIT
     }
     fn accept<R, D>(&self, _visitor: &mut dyn TreeVisitor<R, D>, _data: D) -> R {
-        unimplemented!("test fixture accept")
+        panic!("UnsupportedOperationException: accept: test fixture accept")
     }
     fn as_compilation_unit_tree(&self) -> Option<&dyn CompilationUnitTree> {
         Some(self)
@@ -341,7 +341,7 @@ impl crate::doctree::doc_tree::DocTree for DocCommentWithBody {
         _visitor: &mut dyn crate::doctree::doc_tree_visitor::DocTreeVisitor<R, D>,
         _data: D,
     ) -> R {
-        unimplemented!("test fixture accept")
+        panic!("UnsupportedOperationException: accept: test fixture accept")
     }
     fn as_doc_comment_tree(&self) -> Option<&dyn DocCommentTree> {
         Some(self)

@@ -327,7 +327,7 @@ mod tests {
             false
         }
         fn get_dependency(&self) -> std::rc::Rc<dyn ModuleElement> {
-            unimplemented!("test fixture has no module")
+            panic!("AbstractMethodError: get_dependency: test fixture has no module")
         }
     }
 

@@ -81,7 +81,7 @@ impl AnnotatedConstruct for Fixture {
 
 impl Element for Fixture {
     fn as_type(&self) -> Rc<dyn TypeMirror> {
-        unimplemented!("fixture has no type mirror")
+        panic!("UnsupportedOperationException: as_type: fixture has no type mirror")
     }
     fn get_kind(&self) -> ElementKind {
         self.kind
@@ -99,7 +99,7 @@ impl Element for Fixture {
         self.enclosed.clone()
     }
     fn accept<R, P>(&self, _v: &mut dyn ElementVisitor<R, P>, _p: P) -> R {
-        unimplemented!("fixture is not visited through accept")
+        panic!("UnsupportedOperationException: accept: fixture is not visited through accept")
     }
     fn as_package_element(&self) -> Option<&dyn PackageElement> {
         (self.kind == ElementKind::PACKAGE).then_some(self as &dyn PackageElement)
@@ -164,10 +164,10 @@ impl ExecutableElement for Fixture {
         Vec::new()
     }
     fn get_return_type(&self) -> Rc<dyn TypeMirror> {
-        unimplemented!("fixture has no type mirror")
+        panic!("UnsupportedOperationException: get_return_type: fixture has no type mirror")
     }
     fn get_receiver_type(&self) -> Rc<dyn TypeMirror> {
-        unimplemented!("fixture has no type mirror")
+        panic!("UnsupportedOperationException: get_receiver_type: fixture has no type mirror")
     }
     fn is_var_args(&self) -> bool {
         false
@@ -188,7 +188,7 @@ impl TypeElement for Fixture {
         crate::lang::model::element::NestingKind::TOP_LEVEL
     }
     fn get_superclass(&self) -> Rc<dyn TypeMirror> {
-        unimplemented!("fixture has no type mirror")
+        panic!("UnsupportedOperationException: get_superclass: fixture has no type mirror")
     }
     fn get_interfaces(&self) -> Vec<Rc<dyn TypeMirror>> {
         Vec::new()
@@ -215,7 +215,7 @@ impl ModuleElement for Fixture {
 
 impl TypeParameterElement for Fixture {
     fn get_generic_element(&self) -> Rc<dyn Element> {
-        unimplemented!("fixture")
+        panic!("UnsupportedOperationException: get_generic_element: fixture")
     }
     fn get_bounds(&self) -> Vec<Rc<dyn TypeMirror>> {
         Vec::new()
@@ -224,7 +224,7 @@ impl TypeParameterElement for Fixture {
 
 impl RecordComponentElement for Fixture {
     fn get_accessor(&self) -> Rc<dyn ExecutableElement> {
-        unimplemented!("fixture")
+        panic!("UnsupportedOperationException: get_accessor: fixture")
     }
 }
 
@@ -263,7 +263,7 @@ impl TypeMirror for TypeFixture {
         self.kind
     }
     fn accept<R, P>(&self, _v: &mut dyn crate::lang::model::type_::TypeVisitor<R, P>, _p: P) -> R {
-        unimplemented!("fixture is not visited through accept")
+        panic!("UnsupportedOperationException: accept: fixture is not visited through accept")
     }
     fn as_primitive_type(&self) -> Option<&dyn PrimitiveType> {
         self.kind.is_primitive().then_some(self as &dyn PrimitiveType)
@@ -310,15 +310,15 @@ impl NullType for TypeFixture {}
 impl NoType for TypeFixture {}
 impl ArrayType for TypeFixture {
     fn get_component_type(&self) -> Rc<dyn TypeMirror> {
-        unimplemented!("fixture")
+        panic!("UnsupportedOperationException: get_component_type: fixture")
     }
 }
 impl DeclaredType for TypeFixture {
     fn as_element(&self) -> Rc<dyn Element> {
-        unimplemented!("fixture")
+        panic!("UnsupportedOperationException: as_element: fixture")
     }
     fn get_enclosing_type(&self) -> Rc<dyn TypeMirror> {
-        unimplemented!("fixture")
+        panic!("UnsupportedOperationException: get_enclosing_type: fixture")
     }
     fn get_type_arguments(&self) -> Vec<Rc<dyn TypeMirror>> {
         Vec::new()
@@ -327,13 +327,13 @@ impl DeclaredType for TypeFixture {
 impl ErrorType for TypeFixture {}
 impl TypeVariable for TypeFixture {
     fn as_element(&self) -> Rc<dyn Element> {
-        unimplemented!("fixture")
+        panic!("UnsupportedOperationException: as_element: fixture")
     }
     fn get_upper_bound(&self) -> Rc<dyn TypeMirror> {
-        unimplemented!("fixture")
+        panic!("UnsupportedOperationException: get_upper_bound: fixture")
     }
     fn get_lower_bound(&self) -> Rc<dyn TypeMirror> {
-        unimplemented!("fixture")
+        panic!("UnsupportedOperationException: get_lower_bound: fixture")
     }
 }
 impl WildcardType for TypeFixture {
@@ -349,13 +349,13 @@ impl ExecutableType for TypeFixture {
         Vec::new()
     }
     fn get_return_type(&self) -> Rc<dyn TypeMirror> {
-        unimplemented!("fixture")
+        panic!("UnsupportedOperationException: get_return_type: fixture")
     }
     fn get_parameter_types(&self) -> Vec<Rc<dyn TypeMirror>> {
         Vec::new()
     }
     fn get_receiver_type(&self) -> Rc<dyn TypeMirror> {
-        unimplemented!("fixture")
+        panic!("UnsupportedOperationException: get_receiver_type: fixture")
     }
     fn get_thrown_types(&self) -> Vec<Rc<dyn TypeMirror>> {
         Vec::new()
@@ -392,7 +392,7 @@ impl AnnotationValue for ValueFixture {
         _v: &mut dyn crate::lang::model::element::AnnotationValueVisitor<R, P>,
         _p: P,
     ) -> R {
-        unimplemented!("fixture is not visited through accept")
+        panic!("UnsupportedOperationException: accept: fixture is not visited through accept")
     }
 }
 

@@ -411,7 +411,7 @@ mod tests {
             _locale: Option<&JavaString>,
             _charset: Option<&JavaString>,
         ) -> Rc<dyn StandardJavaFileManager> {
-            unimplemented!("test compiler does not provide a standard file manager")
+            panic!("AbstractMethodError: get_standard_file_manager: test compiler does not provide a standard file manager")
         }
     }
 

@@ -7926,11 +7926,10 @@ impl Check {
                 if should_skip || ctx.sym(*candidate).is_constructor(&self.names) {
                     return false;
                 }
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
+                let syms_ref: &crate::code::symtab::Symtab = &*syms;
                 crate::code::symbol::is_inherited_in(
                     ctx,
-                    &syms_borrow,
+                    syms_ref,
                     &self.types,
                     *candidate,
                     site_tsym,

@@ -242,42 +242,42 @@ mod tests {
             Vec::new()
         }
         fn erasure(&self, _t: &dyn TypeMirror) -> Rc<dyn TypeMirror> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: erasure: test fixture")
         }
         fn boxed_class(&self, _p: &dyn PrimitiveType) -> Rc<dyn TypeElement> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: boxed_class: test fixture")
         }
         fn unboxed_type(&self, _t: &dyn TypeMirror) -> Rc<dyn PrimitiveType> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: unboxed_type: test fixture")
         }
         fn capture(&self, _t: &dyn TypeMirror) -> Rc<dyn TypeMirror> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: capture: test fixture")
         }
         fn get_primitive_type(&self, _kind: TypeKind) -> Rc<dyn PrimitiveType> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: get_primitive_type: test fixture")
         }
         fn get_null_type(&self) -> Rc<dyn NullType> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: get_null_type: test fixture")
         }
         fn get_no_type(&self, _kind: TypeKind) -> Rc<dyn NoType> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: get_no_type: test fixture")
         }
         fn get_array_type(&self, _component_type: &dyn TypeMirror) -> Rc<dyn ArrayType> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: get_array_type: test fixture")
         }
         fn get_wildcard_type(
             &self,
             _extends_bound: Option<&dyn TypeMirror>,
             _super_bound: Option<&dyn TypeMirror>,
         ) -> Rc<dyn WildcardType> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: get_wildcard_type: test fixture")
         }
         fn get_declared_type(
             &self,
             _type_elem: &dyn TypeElement,
             _type_args: &[Rc<dyn TypeMirror>],
         ) -> Rc<dyn DeclaredType> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: get_declared_type: test fixture")
         }
         fn get_declared_type_in(
             &self,
@@ -285,14 +285,14 @@ mod tests {
             _type_elem: &dyn TypeElement,
             _type_args: &[Rc<dyn TypeMirror>],
         ) -> Rc<dyn DeclaredType> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: get_declared_type_in: test fixture")
         }
         fn as_member_of(
             &self,
             _containing: &dyn DeclaredType,
             _element: &dyn Element,
         ) -> Rc<dyn TypeMirror> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: as_member_of: test fixture")
         }
     }
 

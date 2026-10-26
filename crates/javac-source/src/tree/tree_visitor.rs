@@ -110,7 +110,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_annotated_type(&mut self, _node: &dyn AnnotatedTypeTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_annotated_type: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an AnnotatedTree node.
@@ -118,7 +118,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_annotation(&mut self, _node: &dyn AnnotationTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_annotation: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a MethodInvocationTree node.
@@ -126,7 +126,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_method_invocation(&mut self, _node: &dyn MethodInvocationTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_method_invocation: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an AssertTree node.
@@ -134,7 +134,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_assert(&mut self, _node: &dyn AssertTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_assert: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an AssignmentTree node.
@@ -142,7 +142,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_assignment(&mut self, _node: &dyn AssignmentTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_assignment: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a CompoundAssignmentTree node.
@@ -150,7 +150,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_compound_assignment(&mut self, _node: &dyn CompoundAssignmentTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_compound_assignment: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a BinaryTree node.
@@ -158,7 +158,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_binary(&mut self, _node: &dyn BinaryTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_binary: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a BlockTree node.
@@ -166,7 +166,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_block(&mut self, _node: &dyn BlockTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_block: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a BreakTree node.
@@ -174,7 +174,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_break(&mut self, _node: &dyn BreakTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_break: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a CaseTree node.
@@ -182,7 +182,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_case(&mut self, _node: &dyn CaseTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_case: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a CatchTree node.
@@ -190,7 +190,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_catch(&mut self, _node: &dyn CatchTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_catch: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a ClassTree node.
@@ -198,7 +198,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_class(&mut self, _node: &dyn ClassTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_class: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a ConditionalExpressionTree node.
@@ -206,7 +206,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_conditional_expression(&mut self, _node: &dyn ConditionalExpressionTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_conditional_expression: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a ContinueTree node.
@@ -214,7 +214,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_continue(&mut self, _node: &dyn ContinueTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_continue: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a DoWhileTree node.
@@ -222,7 +222,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_do_while_loop(&mut self, _node: &dyn DoWhileLoopTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_do_while_loop: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an ErroneousTree node.
@@ -230,7 +230,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_erroneous(&mut self, _node: &dyn ErroneousTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_erroneous: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an ExpressionStatementTree node.
@@ -238,7 +238,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_expression_statement(&mut self, _node: &dyn ExpressionStatementTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_expression_statement: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an EnhancedForLoopTree node.
@@ -246,7 +246,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_enhanced_for_loop(&mut self, _node: &dyn EnhancedForLoopTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_enhanced_for_loop: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a ForLoopTree node.
@@ -254,7 +254,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_for_loop(&mut self, _node: &dyn ForLoopTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_for_loop: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an IdentifierTree node.
@@ -262,7 +262,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_identifier(&mut self, _node: &dyn IdentifierTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_identifier: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an IfTree node.
@@ -270,7 +270,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_if(&mut self, _node: &dyn IfTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_if: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an ImportTree node.
@@ -278,7 +278,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_import(&mut self, _node: &dyn ImportTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_import: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an ArrayAccessTree node.
@@ -286,7 +286,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_array_access(&mut self, _node: &dyn ArrayAccessTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_array_access: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a LabeledStatementTree node.
@@ -294,7 +294,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_labeled_statement(&mut self, _node: &dyn LabeledStatementTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_labeled_statement: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a LiteralTree node.
@@ -302,7 +302,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_literal(&mut self, _node: &dyn LiteralTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_literal: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an BindingPattern node.
@@ -311,7 +311,7 @@ pub trait TreeVisitor<R, P> {
     /// @return a result value
     /// @since 16
     fn visit_binding_pattern(&mut self, _node: &dyn BindingPatternTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_binding_pattern: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a DefaultCaseLabelTree node.
@@ -320,7 +320,7 @@ pub trait TreeVisitor<R, P> {
     /// @return a result value
     /// @since 17
     fn visit_default_case_label(&mut self, _node: &dyn DefaultCaseLabelTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_default_case_label: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a MethodTree node.
@@ -328,7 +328,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_method(&mut self, _node: &dyn MethodTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_method: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a ModifiersTree node.
@@ -336,7 +336,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_modifiers(&mut self, _node: &dyn ModifiersTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_modifiers: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a NewArrayTree node.
@@ -344,7 +344,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_new_array(&mut self, _node: &dyn NewArrayTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_new_array: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a GuardPatternTree node.
@@ -353,7 +353,7 @@ pub trait TreeVisitor<R, P> {
     /// @return a result value
     /// @since 17
     fn visit_guarded_pattern(&mut self, _node: &dyn GuardedPatternTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_guarded_pattern: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a ParenthesizedPatternTree node.
@@ -362,7 +362,7 @@ pub trait TreeVisitor<R, P> {
     /// @return a result value
     /// @since 17
     fn visit_parenthesized_pattern(&mut self, _node: &dyn ParenthesizedPatternTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_parenthesized_pattern: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a NewClassTree node.
@@ -370,7 +370,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_new_class(&mut self, _node: &dyn NewClassTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_new_class: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a LambdaExpressionTree node.
@@ -378,7 +378,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_lambda_expression(&mut self, _node: &dyn LambdaExpressionTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_lambda_expression: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a PackageTree node.
@@ -386,7 +386,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_package(&mut self, _node: &dyn PackageTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_package: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a ParenthesizedTree node.
@@ -394,7 +394,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_parenthesized(&mut self, _node: &dyn ParenthesizedTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_parenthesized: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a ReturnTree node.
@@ -402,7 +402,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_return(&mut self, _node: &dyn ReturnTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_return: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a MemberSelectTree node.
@@ -410,7 +410,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_member_select(&mut self, _node: &dyn MemberSelectTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_member_select: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a MemberReferenceTree node.
@@ -418,7 +418,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_member_reference(&mut self, _node: &dyn MemberReferenceTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_member_reference: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an EmptyStatementTree node.
@@ -426,7 +426,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_empty_statement(&mut self, _node: &dyn EmptyStatementTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_empty_statement: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a SwitchTree node.
@@ -434,7 +434,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_switch(&mut self, _node: &dyn SwitchTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_switch: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a SwitchExpressionTree node.
@@ -444,7 +444,7 @@ pub trait TreeVisitor<R, P> {
     /// @return a result value
     /// @since 12
     fn visit_switch_expression(&mut self, _node: &dyn SwitchExpressionTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_switch_expression: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a SynchronizedTree node.
@@ -452,7 +452,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_synchronized(&mut self, _node: &dyn SynchronizedTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_synchronized: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a ThrowTree node.
@@ -460,7 +460,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_throw(&mut self, _node: &dyn ThrowTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_throw: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a CompilationUnitTree node.
@@ -468,7 +468,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_compilation_unit(&mut self, _node: &dyn CompilationUnitTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_compilation_unit: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a TryTree node.
@@ -476,7 +476,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_try(&mut self, _node: &dyn TryTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_try: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a ParameterizedTypeTree node.
@@ -484,7 +484,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_parameterized_type(&mut self, _node: &dyn ParameterizedTypeTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_parameterized_type: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a UnionTypeTree node.
@@ -492,7 +492,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_union_type(&mut self, _node: &dyn UnionTypeTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_union_type: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an IntersectionTypeTree node.
@@ -500,7 +500,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_intersection_type(&mut self, _node: &dyn IntersectionTypeTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_intersection_type: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an ArrayTypeTree node.
@@ -508,7 +508,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_array_type(&mut self, _node: &dyn ArrayTypeTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_array_type: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a TypeCastTree node.
@@ -516,7 +516,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_type_cast(&mut self, _node: &dyn TypeCastTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_type_cast: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a PrimitiveTypeTree node.
@@ -524,7 +524,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_primitive_type(&mut self, _node: &dyn PrimitiveTypeTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_primitive_type: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a TypeParameterTree node.
@@ -532,7 +532,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_type_parameter(&mut self, _node: &dyn TypeParameterTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_type_parameter: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an InstanceOfTree node.
@@ -540,7 +540,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_instance_of(&mut self, _node: &dyn InstanceOfTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_instance_of: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a UnaryTree node.
@@ -548,7 +548,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_unary(&mut self, _node: &dyn UnaryTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_unary: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a VariableTree node.
@@ -556,7 +556,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_variable(&mut self, _node: &dyn VariableTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_variable: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a WhileLoopTree node.
@@ -564,7 +564,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_while_loop(&mut self, _node: &dyn WhileLoopTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_while_loop: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a WildcardTypeTree node.
@@ -572,7 +572,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_wildcard(&mut self, _node: &dyn WildcardTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_wildcard: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a ModuleTree node.
@@ -580,7 +580,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_module(&mut self, _node: &dyn ModuleTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_module: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an ExportsTree node.
@@ -588,7 +588,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_exports(&mut self, _node: &dyn ExportsTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_exports: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an OpensTree node.
@@ -596,7 +596,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_opens(&mut self, _node: &dyn OpensTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_opens: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a ProvidesTree node.
@@ -604,7 +604,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_provides(&mut self, _node: &dyn ProvidesTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_provides: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a RequiresTree node.
@@ -612,7 +612,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_requires(&mut self, _node: &dyn RequiresTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_requires: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a UsesTree node.
@@ -620,7 +620,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_uses(&mut self, _node: &dyn UsesTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_uses: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an unknown type of Tree node.
@@ -630,7 +630,7 @@ pub trait TreeVisitor<R, P> {
     /// @param p a parameter value
     /// @return a result value
     fn visit_other(&mut self, _node: &dyn Tree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_other: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a YieldTree node.
@@ -639,7 +639,7 @@ pub trait TreeVisitor<R, P> {
     /// @return a result value
     /// @since 13
     fn visit_yield(&mut self, _node: &dyn YieldTree, _p: P) -> R {
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_yield: PORTING_RULES: visitor interface method not overridden")
     }
 
 }
@@ -679,7 +679,7 @@ mod tests {
             Kind::IDENTIFIER
         }
         fn accept<R, D>(&self, _visitor: &mut dyn TreeVisitor<R, D>, _data: D) -> R {
-            unimplemented!("test fixture accept")
+            panic!("AbstractMethodError: accept: test fixture accept")
         }
     }
 

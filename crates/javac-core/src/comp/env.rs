@@ -92,16 +92,26 @@ impl<A> Env<A> {
     }
 
     /// Java: public Env<A> dup(JCTree tree) — reuses this environment info.
-    pub fn dup_shared(&self, tree: Option<TreeId>) -> Rc<Env<A>> {
+    ///
+    /// # Arguments
+    ///   - this: the environment to duplicate;
+    ///   - tree: the duplicated environment tree.
+    ///
+    /// # Returns
+    ///   - the duplicate environment (its next points at this environment).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn dup_shared(this: &Rc<Env<A>>, tree: Option<TreeId>) -> Rc<Env<A>> {
         Rc::new(Env {
-            next: None,
-            outer: self.outer.clone(),
+            next: Some(Rc::clone(this)),
+            outer: this.outer.clone(),
             tree,
-            toplevel: self.toplevel,
-            encl_class: self.encl_class,
-            encl_method: self.encl_method,
-            info: Rc::clone(&self.info),
-            base_clause: self.base_clause,
+            toplevel: this.toplevel,
+            encl_class: this.encl_class,
+            encl_method: this.encl_method,
+            info: Rc::clone(&this.info),
+            base_clause: this.base_clause,
         })
     }
 

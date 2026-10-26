@@ -49,7 +49,7 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a primitive type.
@@ -60,7 +60,7 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_primitive: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits the null type.
@@ -71,7 +71,7 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_null: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an array type.
@@ -82,7 +82,7 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_array: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a declared type.
@@ -93,7 +93,7 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_declared: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an error type.
@@ -104,7 +104,7 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_error: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a type variable.
@@ -115,7 +115,7 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_type_variable: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a wildcard type.
@@ -126,7 +126,7 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_wildcard: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an executable type.
@@ -137,7 +137,7 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_executable: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a {@link NoType} instance.
@@ -148,7 +148,7 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_no_type: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an unknown kind of type.
@@ -163,7 +163,7 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_unknown: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits a union type.
@@ -176,7 +176,7 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_union: PORTING_RULES: visitor interface method not overridden")
     }
 
     /// Visits an intersection type.
@@ -189,6 +189,6 @@ pub trait TypeVisitor<R, P> {
         // PORTING_RULES: the Java interface method is abstract; the Rust default
         // panics so that the visitor-class layers can supply the real default
         // implementations (registered language-shape difference).
-        unimplemented!("PORTING_RULES: visitor interface method not overridden")
+        panic!("AbstractMethodError: visit_intersection: PORTING_RULES: visitor interface method not overridden")
     }
 }

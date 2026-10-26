@@ -377,7 +377,7 @@ mod tests {
 
     impl Element for Fixture {
         fn as_type(&self) -> Rc<dyn TypeMirror> {
-            unimplemented!("fixture has no type mirror")
+            panic!("AbstractMethodError: as_type: fixture has no type mirror")
         }
         fn get_kind(&self) -> ElementKind {
             self.kind
@@ -399,7 +399,7 @@ mod tests {
             _v: &mut dyn crate::lang::model::element::ElementVisitor<R, P>,
             _p: P,
         ) -> R {
-            unimplemented!("fixture is not visited")
+            panic!("AbstractMethodError: accept: fixture is not visited")
         }
         fn as_package_element(&self) -> Option<&dyn PackageElement> {
             (self.kind == ElementKind::PACKAGE).then_some(self as &dyn PackageElement)
@@ -466,10 +466,10 @@ mod tests {
             Vec::new()
         }
         fn get_return_type(&self) -> Rc<dyn TypeMirror> {
-            unimplemented!("fixture has no type mirror")
+            panic!("AbstractMethodError: get_return_type: fixture has no type mirror")
         }
         fn get_receiver_type(&self) -> Rc<dyn TypeMirror> {
-            unimplemented!("fixture has no type mirror")
+            panic!("AbstractMethodError: get_receiver_type: fixture has no type mirror")
         }
         fn is_var_args(&self) -> bool {
             false
@@ -492,7 +492,7 @@ mod tests {
             NestingKind::TOP_LEVEL
         }
         fn get_superclass(&self) -> Rc<dyn TypeMirror> {
-            unimplemented!("fixture has no type mirror")
+            panic!("AbstractMethodError: get_superclass: fixture has no type mirror")
         }
         fn get_interfaces(&self) -> Vec<Rc<dyn TypeMirror>> {
             Vec::new()
@@ -519,7 +519,7 @@ mod tests {
 
     impl TypeParameterElement for Fixture {
         fn get_generic_element(&self) -> Rc<dyn Element> {
-            unimplemented!("fixture")
+            panic!("AbstractMethodError: get_generic_element: fixture")
         }
         fn get_bounds(&self) -> Vec<Rc<dyn TypeMirror>> {
             Vec::new()
@@ -528,7 +528,7 @@ mod tests {
 
     impl RecordComponentElement for Fixture {
         fn get_accessor(&self) -> Rc<dyn ExecutableElement> {
-            unimplemented!("fixture")
+            panic!("AbstractMethodError: get_accessor: fixture")
         }
     }
 
@@ -604,7 +604,7 @@ mod tests {
 
     impl ExportsDirective for FixtureDirective {
         fn get_package(&self) -> Rc<dyn PackageElement> {
-            unimplemented!("fixture")
+            panic!("AbstractMethodError: get_package: fixture")
         }
         fn get_target_modules(&self) -> Option<Vec<Rc<dyn ModuleElement>>> {
             None

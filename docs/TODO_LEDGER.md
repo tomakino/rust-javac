@@ -2,10 +2,13 @@
 
 Generated scan of crates/javac-core/src (current HEAD). All entries must be repaid (user requirement).
 
-## Summary
-- unimplemented! sites: 138
-- TODO comment sites: 148
-- #[allow(dead_code)] sites: 65
+## Summary (workspace scan, updated after A-class batch)
+- unimplemented! sites: 106 (was 341 before the A-class batch; javac-source/javac-tools interface stubs replaced with AbstractMethodError panics)
+- unreachable! sites: 102 (classification pending)
+- let _ = sites: 410 (audit pending, see the "let _ audit" section below)
+- #[allow(dead_code)] sites: 71 (wiring/deletion pending)
+- TODO comment sites: 148 (unchanged in this batch)
+- e2e: 2 tests #[ignore] (superseded by the debt-repayment sprint; no patches introduced)
 
 ## unimplemented by file
 - 29  crates/javac-core/src/comp/type_enter.rs

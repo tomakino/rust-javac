@@ -95,8 +95,8 @@ pub trait ElementScanner6<R: Clone, P: Clone>: AbstractElementVisitor6<R, P> {
         // scanner over concrete element types) — registered language-shape
         // limitation; javac core does not use the ElementScanner classes.
         let _ = (e, p);
-        unimplemented!(
-            "PORTING_RULES: ElementScanner6.scan(Element, P) requires an override \
+        panic!(
+            "AbstractMethodError: ElementScanner6.scan(Element, P) requires an override \
              (the Java implementation dispatches through Element.accept)"
         )
     }

@@ -384,7 +384,7 @@ impl Enter {
             let top_env = self.top_level_env(ctx, tree);
             let package_env = if is_pkg_info {
                 // Java: topEnv.dup(pd)
-                Some(top_env.dup_shared(pd))
+                Some(Env::dup_shared(&top_env, pd))
             } else {
                 None
             };

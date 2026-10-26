@@ -305,7 +305,7 @@ mod tests {
             false
         }
         fn get_original_type(&self, _error_type: &dyn ErrorType) -> Rc<dyn TypeMirror> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: get_original_type: test fixture")
         }
         fn print_message(
             &self,
@@ -316,7 +316,7 @@ mod tests {
         ) {
         }
         fn get_lub(&self, _tree: &dyn crate::tree::catch_tree::CatchTree) -> Rc<dyn TypeMirror> {
-            unimplemented!("test fixture")
+            panic!("AbstractMethodError: get_lub: test fixture")
         }
     }
 

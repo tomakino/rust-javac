@@ -449,7 +449,7 @@ mod tests {
             Kind::TEXT
         }
         fn accept<R, D>(&self, _visitor: &mut dyn DocTreeVisitor<R, D>, _data: D) -> R {
-            unimplemented!("test fixture accept")
+            panic!("UnsupportedOperationException: accept: test fixture accept")
         }
     }
 
@@ -468,7 +468,7 @@ mod tests {
             Kind::RETURN
         }
         fn accept<R, D>(&self, _visitor: &mut dyn DocTreeVisitor<R, D>, _data: D) -> R {
-            unimplemented!("test fixture accept")
+            panic!("UnsupportedOperationException: accept: test fixture accept")
         }
     }
 
@@ -519,23 +519,23 @@ mod tests {
             _vkind: ValueKind,
             _value: &[Rc<dyn DocTree>],
         ) -> Rc<dyn AttributeTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_attribute_tree: mock DocTreeFactory")
         }
 
         fn new_author_tree(&self, _name: &[Rc<dyn DocTree>]) -> Rc<dyn AuthorTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_author_tree: mock DocTreeFactory")
         }
 
         fn new_code_tree(&self, _text: Rc<dyn TextTree>) -> Rc<dyn LiteralTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_code_tree: mock DocTreeFactory")
         }
 
         fn new_comment_tree(&self, _text: &JavaString) -> Rc<dyn CommentTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_comment_tree: mock DocTreeFactory")
         }
 
         fn new_deprecated_tree(&self, _text: &[Rc<dyn DocTree>]) -> Rc<dyn DeprecatedTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_deprecated_tree: mock DocTreeFactory")
         }
 
         fn new_doc_comment_tree(
@@ -543,7 +543,7 @@ mod tests {
             _full_body: &[Rc<dyn DocTree>],
             _tags: &[Rc<dyn DocTree>],
         ) -> Rc<dyn DocCommentTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_doc_comment_tree: mock DocTreeFactory")
         }
 
         fn new_doc_comment_tree_with_preamble(
@@ -553,23 +553,23 @@ mod tests {
             _preamble: &[Rc<dyn DocTree>],
             _postamble: &[Rc<dyn DocTree>],
         ) -> Rc<dyn DocCommentTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_doc_comment_tree_with_preamble: mock DocTreeFactory")
         }
 
         fn new_doc_root_tree(&self) -> Rc<dyn DocRootTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_doc_root_tree: mock DocTreeFactory")
         }
 
         fn new_doc_type_tree(&self, _text: &JavaString) -> Rc<dyn DocTypeTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_doc_type_tree: mock DocTreeFactory")
         }
 
         fn new_end_element_tree(&self, _name: Rc<dyn Name>) -> Rc<dyn EndElementTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_end_element_tree: mock DocTreeFactory")
         }
 
         fn new_entity_tree(&self, _name: Rc<dyn Name>) -> Rc<dyn EntityTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_entity_tree: mock DocTreeFactory")
         }
 
         fn new_erroneous_tree(
@@ -577,7 +577,7 @@ mod tests {
             _text: &JavaString,
             _diag: Option<Rc<dyn Diagnostic<JavaFileObjectRef>>>,
         ) -> Rc<dyn ErroneousTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_erroneous_tree: mock DocTreeFactory")
         }
 
         fn new_exception_tree(
@@ -585,15 +585,15 @@ mod tests {
             _name: Rc<dyn ReferenceTree>,
             _description: &[Rc<dyn DocTree>],
         ) -> Rc<dyn ThrowsTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_exception_tree: mock DocTreeFactory")
         }
 
         fn new_hidden_tree(&self, _text: &[Rc<dyn DocTree>]) -> Rc<dyn HiddenTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_hidden_tree: mock DocTreeFactory")
         }
 
         fn new_identifier_tree(&self, _name: Rc<dyn Name>) -> Rc<dyn IdentifierTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_identifier_tree: mock DocTreeFactory")
         }
 
         fn new_index_tree(
@@ -601,11 +601,11 @@ mod tests {
             _term: Rc<dyn DocTree>,
             _description: &[Rc<dyn DocTree>],
         ) -> Rc<dyn IndexTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_index_tree: mock DocTreeFactory")
         }
 
         fn new_inherit_doc_tree(&self) -> Rc<dyn InheritDocTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_inherit_doc_tree: mock DocTreeFactory")
         }
 
         fn new_link_tree(
@@ -613,7 +613,7 @@ mod tests {
             _ref_: Rc<dyn ReferenceTree>,
             _label: &[Rc<dyn DocTree>],
         ) -> Rc<dyn LinkTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_link_tree: mock DocTreeFactory")
         }
 
         fn new_link_plain_tree(
@@ -621,11 +621,11 @@ mod tests {
             _ref_: Rc<dyn ReferenceTree>,
             _label: &[Rc<dyn DocTree>],
         ) -> Rc<dyn LinkTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_link_plain_tree: mock DocTreeFactory")
         }
 
         fn new_literal_tree(&self, _text: Rc<dyn TextTree>) -> Rc<dyn LiteralTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_literal_tree: mock DocTreeFactory")
         }
 
         fn new_param_tree(
@@ -634,7 +634,7 @@ mod tests {
             _name: Rc<dyn IdentifierTree>,
             _description: &[Rc<dyn DocTree>],
         ) -> Rc<dyn ParamTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_param_tree: mock DocTreeFactory")
         }
 
         fn new_provides_tree(
@@ -642,11 +642,11 @@ mod tests {
             _name: Rc<dyn ReferenceTree>,
             _description: &[Rc<dyn DocTree>],
         ) -> Rc<dyn ProvidesTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_provides_tree: mock DocTreeFactory")
         }
 
         fn new_reference_tree(&self, _signature: &JavaString) -> Rc<dyn ReferenceTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_reference_tree: mock DocTreeFactory")
         }
 
         fn new_return_tree(&self, _description: &[Rc<dyn DocTree>]) -> Rc<dyn ReturnTree> {
@@ -656,15 +656,15 @@ mod tests {
         }
 
         fn new_see_tree(&self, _reference: &[Rc<dyn DocTree>]) -> Rc<dyn SeeTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_see_tree: mock DocTreeFactory")
         }
 
         fn new_serial_tree(&self, _description: &[Rc<dyn DocTree>]) -> Rc<dyn SerialTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_serial_tree: mock DocTreeFactory")
         }
 
         fn new_serial_data_tree(&self, _description: &[Rc<dyn DocTree>]) -> Rc<dyn SerialDataTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_serial_data_tree: mock DocTreeFactory")
         }
 
         fn new_serial_field_tree(
@@ -673,11 +673,11 @@ mod tests {
             _type_: Rc<dyn ReferenceTree>,
             _description: &[Rc<dyn DocTree>],
         ) -> Rc<dyn SerialFieldTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_serial_field_tree: mock DocTreeFactory")
         }
 
         fn new_since_tree(&self, _text: &[Rc<dyn DocTree>]) -> Rc<dyn SinceTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_since_tree: mock DocTreeFactory")
         }
 
         fn new_start_element_tree(
@@ -686,14 +686,14 @@ mod tests {
             _attrs: &[Rc<dyn DocTree>],
             _self_closing: bool,
         ) -> Rc<dyn StartElementTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_start_element_tree: mock DocTreeFactory")
         }
 
         fn new_system_property_tree(
             &self,
             _property_name: Rc<dyn Name>,
         ) -> Rc<dyn SystemPropertyTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_system_property_tree: mock DocTreeFactory")
         }
 
         fn new_text_tree(&self, _text: &JavaString) -> Rc<dyn TextTree> {
@@ -706,7 +706,7 @@ mod tests {
             _name: Rc<dyn ReferenceTree>,
             _description: &[Rc<dyn DocTree>],
         ) -> Rc<dyn ThrowsTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_throws_tree: mock DocTreeFactory")
         }
 
         fn new_unknown_block_tag_tree(
@@ -714,7 +714,7 @@ mod tests {
             _name: Rc<dyn Name>,
             _content: &[Rc<dyn DocTree>],
         ) -> Rc<dyn UnknownBlockTagTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_unknown_block_tag_tree: mock DocTreeFactory")
         }
 
         fn new_unknown_inline_tag_tree(
@@ -722,7 +722,7 @@ mod tests {
             _name: Rc<dyn Name>,
             _content: &[Rc<dyn DocTree>],
         ) -> Rc<dyn UnknownInlineTagTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_unknown_inline_tag_tree: mock DocTreeFactory")
         }
 
         fn new_uses_tree(
@@ -730,15 +730,15 @@ mod tests {
             _name: Rc<dyn ReferenceTree>,
             _description: &[Rc<dyn DocTree>],
         ) -> Rc<dyn UsesTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_uses_tree: mock DocTreeFactory")
         }
 
         fn new_value_tree(&self, _ref_: Rc<dyn ReferenceTree>) -> Rc<dyn ValueTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_value_tree: mock DocTreeFactory")
         }
 
         fn new_version_tree(&self, _text: &[Rc<dyn DocTree>]) -> Rc<dyn VersionTree> {
-            unimplemented!("mock DocTreeFactory")
+            panic!("UnsupportedOperationException: new_version_tree: mock DocTreeFactory")
         }
 
         fn at(&self, pos: i32) {

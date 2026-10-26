@@ -157,3 +157,8 @@ file/locations/classfinder 适配 helper、资源生成器。后续按优先级�
 - 注释方案(§26.2):官方语义注释保留;位置引用/抄签名/内部标记禁止;位置集中 docs/PORTING_MAP.md;示例 docs/DOC_STYLE_DEMO.md;仅新代码,旧代码不动。
 - 技术债清偿(§29):unimplemented 138 / TODO 148 / allow(dead_code) 65(清单 docs/TODO_LEDGER.md);全部偿还,目标 0,每批报告附剩余计数。
 - 红线(§30):禁止偏离原版实现;禁止未经 Lead 许可在上游实现上打补丁;确需适配先申请(上游位置/原因/影响/测试),批准后实施并登记。
+## 债务偿还冲刺(负责人指令,立即生效)
+- **停止 e2e 调试**:暂停 HelloWorld/Simple e2e 根因修复(测试保持 ignored,不删除/不放宽);
+- 全力偿还全部债务,顺序:A 接口/抽象桩(349 中大部)→ B javac-core 真实缺失 109 → C unreachable 102 → D let _ 300 逐项审计 → E allow(dead_code) 65 接线/删除 → F 近似实现(as_flag_set 等)与登记适配补全;
+- 验收标准(全部达成才算完成):全 workspace `unimplemented!`=0、`unreachable!`=0、`let _ =` 逐项审计处置完毕、`#[allow(dead_code)]`=0、无 TODO/FIXME 债务标记、无未登记近似实现;每批报告附全 workspace 计数(单调下降);
+- e2e 恢复需负责人另行指示;恢复前不得以 e2e 失败为由修改/放宽测试或引入补丁。

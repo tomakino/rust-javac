@@ -814,3 +814,10 @@ Lead 对执行者的任何汇报持零信任态度:汇报中的断言、数字�
 - 若确因语言/借用模型等无法直接 1:1,必须**先向 Lead 提交补丁申请**(上游位置、差异原因、拟用适配、影响范围、测试方案),
   仅在批准后实施,并在报告 §3/§9 标注『已批准补丁/适配』。未经许可的补丁视为红线违规,Lead 可要求返工。
 - 已存在的适配/补丁需在报告中标注状态(已批准/待申请);自查发现的未批准补丁须补充申请或重构。
+
+## 31. unimplemented→panic(AbstractMethodError)的合法性边界(强制)
+
+- **合法**:仅当上游 Java 方法是**接口/抽象方法(官方本来没有方法体)**,未覆盖调用的官方行为就是抛 `AbstractMethodError`/`UnsupportedOperationException` 时,可用 `panic!("AbstractMethodError: ...")` 等价表达;必须逐项登记(§9/§30)并附上游声明证据。
+- **不合法(红线)**:任何上游**有实现体**的方法(例如 ClassReader.readClass、Resolve.accessBase、Attr.visitTypeParameter、file/platform 方法、业务逻辑)把 unimplemented! 改成 panic! 而不实现官方逻辑 = 假清零,禁止;按 §29 必须真实实现。
+- 测试 fixture/mock 的 unimplemented 必须改为真实最小实现或测试代码内的合理断言;不得用生产桩混过计数。
+- 每次替换必须在报告 §3 列出:本地文件:行 → 上游声明(接口/抽象,无 body)→ 错误语义(AbstractMethodError)→ 测试证据;Lead 逐项复核。

@@ -538,7 +538,7 @@ impl TypeEnter {
         let env = self.imports_env.clone().expect("imports env");
         // Create a local environment pointing to this tree to disable effects of
         // other imports in Resolve.findGlobalType
-        let local_env = env.dup_shared(Some(tree));
+        let local_env = Env::dup_shared(&env, Some(tree));
         // Java: TypeSymbol p = attr.attribImportQualifier(tree, localEnv).tsym;
         let p = self.attrib_import_qualifier(ctx, syms, tree, &local_env);
         if name.to_java_string() == self.names.asterisk.to_java_string() {

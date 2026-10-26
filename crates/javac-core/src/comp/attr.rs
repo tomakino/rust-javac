@@ -727,6 +727,7 @@ impl Attr {
             Tag::BINDINGPATTERN => self.visit_binding_pattern(ctx, syms, tree),
             Tag::PARENTHESIZEDPATTERN => self.visit_parenthesized_pattern(ctx, syms, tree),
             Tag::GUARDPATTERN => self.visit_guard_pattern(ctx, syms, tree),
+            Tag::IF => self.visit_if(ctx, syms, tree),
             Tag::SWITCH => self.visit_switch(ctx, syms, tree),
             Tag::SWITCH_EXPRESSION => self.visit_switch_expression(ctx, syms, tree),
             Tag::LAMBDA => self.visit_lambda(ctx, syms, tree),
@@ -1715,7 +1716,7 @@ impl Attr {
         };
         let env = self.env.clone().expect("env");
         // Java: Env<AttrContext> localEnv = env.dup(tree); (shares env.info)
-        let local_env = env.dup_shared(Some(tree));
+        let local_env = Env::dup_shared(&env, Some(tree));
         self.attrib_expr(ctx, syms, expr, &local_env);
         Ok(self.no_type(ctx))
     }
@@ -1845,7 +1846,7 @@ impl Attr {
                 None => break,
             }
         }
-        let body_env = env.dup_shared(Some(tree));
+        let body_env = Env::dup_shared(&env, Some(tree));
         if let Some(body) = body {
             self.attrib_stat(ctx, syms, body, &body_env);
         }
@@ -2025,7 +2026,7 @@ impl Attr {
             _ => panic!("ClassCastException: JCAssign expected"),
         };
         let env = self.env.clone().expect("env");
-        let lhs_env = env.dup_shared(Some(tree));
+        let lhs_env = Env::dup_shared(&env, Some(tree));
         let assignment_info = self.var_assignment_info.clone();
         let owntype = self.attrib_tree_with(ctx, syms, lhs, &lhs_env, assignment_info);
         let captured = self.types.capture(ctx, syms, owntype);
@@ -2154,8 +2155,12 @@ impl Attr {
     }
 
     /// Java: public void visitTree(JCTree tree) (default: assert error)
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) -> Result<TypeId, CompletionFailure> {
-        panic!("AssertionError")
+    fn visit_tree(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> Result<TypeId, CompletionFailure> {
+        panic!(
+            "AssertionError: unported Attr visitor for tag {:?} at pos {}",
+            ctx.tree(tree).tag,
+            ctx.tree(tree).pos
+        )
     }
 
     // ------------------------------------------------------------------
@@ -7095,6 +7100,121 @@ impl Attr {
         env.dup(tree, info)
     }
 
+    /// Java: public void visitIf(JCIf tree) (Attr.java:2197-2244).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - tree: the if statement tree.
+    ///
+    /// # Returns
+    ///   - the no-type result (an if statement has no type).
+    ///
+    /// # Panics
+    ///   - the tree is not a JCIf.
+    fn visit_if(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
+            TreeKind::If {
+                cond: Some(cond),
+                thenpart: Some(thenpart),
+                elsepart,
+            } => (*cond, *thenpart, *elsepart),
+            _ => panic!("ClassCastException: JCIf expected"),
+        };
+        self.attrib_expr_with_type(ctx, syms, cond, &env, Some(syms.boolean_type));
+        let cond_bindings = self.match_bindings.clone();
+        let then_env = self.binding_env(
+            ctx,
+            &*syms,
+            &env,
+            cond_bindings.bindings_when_true.clone(),
+        );
+        self.attrib_stat(ctx, syms, thenpart, &then_env);
+        if let Some(scope) = then_env.info.borrow().scope {
+            ctx.scope_leave(scope);
+        }
+        {
+            let recover_rc = self.attr_recover.borrow().clone();
+            let rs_rc = self.rs.borrow().clone();
+            let chk_rc = Rc::clone(&self.chk);
+            if let (Some(rs_rc), Some(recover_rc)) = (rs_rc, recover_rc) {
+                let mut rs = rs_rc.borrow_mut();
+                let mut recover = recover_rc.borrow_mut();
+                let chk = chk_rc.borrow();
+                let infer_rc = Rc::clone(&self.infer);
+                let diags = Rc::clone(&self.diags);
+                self.pre_flow(ctx, syms, &mut recover, &mut rs, &infer_rc, &chk, &diags, &env, thenpart);
+            }
+        }
+        let alive_after_then = {
+            let flow_rc = self
+                .flow
+                .borrow()
+                .clone()
+                .expect("AssertionError: flow service must be installed");
+            let make = Rc::clone(&self.make);
+            flow_rc.alive_after(ctx, &env, thenpart, &make)
+        };
+        let alive_after_else = if let Some(elsepart) = elsepart {
+            let else_env = self.binding_env(
+                ctx,
+                &*syms,
+                &env,
+                cond_bindings.bindings_when_false.clone(),
+            );
+            self.attrib_stat(ctx, syms, elsepart, &else_env);
+            if let Some(scope) = else_env.info.borrow().scope {
+                ctx.scope_leave(scope);
+            }
+            {
+                let recover_rc = self.attr_recover.borrow().clone();
+                let rs_rc = self.rs.borrow().clone();
+                let chk_rc = Rc::clone(&self.chk);
+                if let (Some(rs_rc), Some(recover_rc)) = (rs_rc, recover_rc) {
+                    let mut rs = rs_rc.borrow_mut();
+                    let mut recover = recover_rc.borrow_mut();
+                    let chk = chk_rc.borrow();
+                    let infer_rc = Rc::clone(&self.infer);
+                    let diags = Rc::clone(&self.diags);
+                    self.pre_flow(ctx, syms, &mut recover, &mut rs, &infer_rc, &chk, &diags, &env, elsepart);
+                }
+            }
+            let flow_rc = self
+                .flow
+                .borrow()
+                .clone()
+                .expect("AssertionError: flow service must be installed");
+            let make = Rc::clone(&self.make);
+            flow_rc.alive_after(ctx, &env, elsepart, &make)
+        } else {
+            true
+        };
+        self.chk.borrow().check_empty_if(ctx, tree);
+        let after_if_bindings = if alive_after_then && !alive_after_else {
+            cond_bindings.bindings_when_true.clone()
+        } else if alive_after_else && !alive_after_then {
+            cond_bindings.bindings_when_false.clone()
+        } else {
+            List::nil()
+        };
+        if let Some(scope) = env.info.borrow().scope {
+            let mut current = after_if_bindings;
+            while current.non_empty() {
+                let binding = *current.head();
+                ctx.scope_enter(scope, binding);
+                crate::code::symbol::binding_symbol_preserve(ctx, binding);
+                current = current.tail();
+            }
+        }
+        Ok(self.no_type(ctx))
+    }
+
     /// Java: public void visitBlock(JCBlock tree) (Attr.java:1424-1464).
     ///
     /// # Arguments
@@ -9715,7 +9835,7 @@ impl Attr {
             _ => panic!("ClassCastException: JCMemberReference expected"),
         };
         let typeargs = typeargs_opt.unwrap_or_else(List::nil);
-        let local_env = env.dup_shared(Some(that));
+        let local_env = Env::dup_shared(&env, Some(that));
         // attribute the member reference qualifier - if this is a constructor
         // reference, the expected kind must be a type
         let qualifier_info = self.member_reference_qualifier_result(ctx, &env, that);
@@ -13496,7 +13616,7 @@ impl Attr {
                     crate::util::jc_diagnostic::Error::from(info),
                 );
             }
-            if ctx.sym(m).name == self.names.init && ctx.sym(origin).ty != Some(self.syms.borrow().object_type) {
+            if ctx.sym(m).name == self.names.init && ctx.sym(origin).ty != Some(syms.object_type) {
                 let body_stats = match &ctx.tree(body).kind {
                     TreeKind::Block { stats, .. } => stats.clone(),
                     _ => List::nil(),
