@@ -784,6 +784,9 @@ pub enum ResolveErrorData {
     Access {
         env: ResolveEnvSnapshot,
         site: Option<TypeId>,
+        /// Java: AccessError.this.site != null && !isAccessible(env, this.site)
+        /// frozen at construction (the diagnostic reads it later).
+        site_inaccessible: bool,
         sym: SymbolId,
     },
     /// Resolve.InvisibleSymbolError

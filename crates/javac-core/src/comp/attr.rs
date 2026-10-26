@@ -2296,4 +2296,152 @@ mod tests {
         assert!(crate::code::symbol::symbol_resolve_error_data(&harness.ctx, not_found).is_some());
     }
 
+
+    /// The development-time Resolve error-key oracle
+    /// (tools/gen-resolve-error-oracle).
+    const RESOLVE_ERROR_ORACLE: &str =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/resolve-error-oracle.txt"));
+
+    #[test]
+    fn resolve_error_keys_match_the_javac_oracle() {
+        use crate::code::kinds::KindSelector;
+        use crate::comp::resolve::Resolve;
+        use crate::util::jc_diagnostic::DiagnosticType;
+        let mut harness = build_attr_harness_with_source(RESOLVE_SAMPLE_SOURCE);
+        enter_member_fields(&mut harness);
+        let class_sym = class_tree_symbol(&harness.ctx, harness.class_tree).expect("class symbol");
+        let class_type = harness.ctx.sym(class_sym).ty.expect("class type");
+        let mut resolve = Resolve::new(
+            &mut harness.ctx,
+            Rc::clone(&harness.names),
+            Rc::clone(&harness.log),
+            Rc::clone(&harness.attr.types),
+            Rc::clone(&harness.diags),
+            Source::JDK17,
+            Rc::clone(&harness.options),
+            None,
+        );
+        let unknown_var = harness.names.from_utf(b"unknownVar");
+        let unknown_type = harness.names.from_utf(b"UnknownType");
+        // E1: unknown variable (SymbolNotFoundError, ABSENT_VAR).
+        let e1 = resolve
+            .resolve_error_diagnostic(
+                &mut harness.ctx,
+                &harness.syms,
+                resolve.var_not_found,
+                DiagnosticType::ERROR,
+                None,
+                Some(class_sym),
+                Some(class_type),
+                Some(&unknown_var),
+                None,
+                None,
+            )
+            .expect("E1 diagnostic");
+        // E2: unknown type (SymbolNotFoundError, ABSENT_TYP).
+        let e2 = resolve
+            .resolve_error_diagnostic(
+                &mut harness.ctx,
+                &harness.syms,
+                resolve.type_not_found,
+                DiagnosticType::ERROR,
+                None,
+                Some(class_sym),
+                Some(class_type),
+                Some(&unknown_type),
+                None,
+                None,
+            )
+            .expect("E2 diagnostic");
+        // E3: instance field referenced from a static context (StaticError).
+        let f1_name = harness.names.from_utf(b"f1");
+        let members = harness.ctx.sym(class_sym).members().expect("class members");
+        let f1 = harness
+            .ctx
+            .scope_get_symbols_by_name(
+                members,
+                &f1_name,
+                crate::code::scope::LookupKind::RECURSIVE,
+                &|_| true,
+            )
+            .into_iter()
+            .next()
+            .expect("f1 symbol");
+        let static_error = crate::code::symbol::symbol_new_resolve_error(
+            &mut harness.ctx,
+            crate::code::kinds::Kind::STATICERR,
+            harness.names.empty.clone(),
+            "static error",
+            crate::code::symbol::ResolveErrorData::Static { sym: f1 },
+        );
+        let e3 = resolve
+            .resolve_error_diagnostic(
+                &mut harness.ctx,
+                &harness.syms,
+                static_error,
+                DiagnosticType::ERROR,
+                None,
+                None,
+                Some(class_type),
+                Some(&f1_name),
+                None,
+                None,
+            )
+            .expect("E3 diagnostic");
+        // E4: private field access (AccessError -> report.access).
+        let private_field = harness.ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::VAR,
+            crate::code::flags::PRIVATE as i64,
+            harness.names.from_utf(b"secret"),
+            harness.ctx.sym(class_sym).ty,
+            Some(class_sym),
+            crate::code::symbol::SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+            },
+        ));
+        let env_snapshot = crate::comp::resolve::resolve_env_snapshot(&harness.ctx, &harness.env);
+        let access_error = crate::code::symbol::symbol_new_resolve_error(
+            &mut harness.ctx,
+            crate::code::kinds::Kind::HIDDEN,
+            harness.names.empty.clone(),
+            "access error",
+            crate::code::symbol::ResolveErrorData::Access {
+                env: env_snapshot,
+                site: Some(class_type),
+                site_inaccessible: false,
+                sym: private_field,
+            },
+        );
+        let secret_name = harness.names.from_utf(b"secret");
+        let e4 = resolve
+            .resolve_error_diagnostic(
+                &mut harness.ctx,
+                &harness.syms,
+                access_error,
+                DiagnosticType::ERROR,
+                None,
+                Some(class_sym),
+                Some(class_type),
+                Some(&secret_name),
+                None,
+                None,
+            )
+            .expect("E4 diagnostic");
+        let actual = vec![
+            format!("E1 {}", e1.get_diagnostic_info().key()),
+            format!("E2 {}", e2.get_diagnostic_info().key()),
+            format!("E3 {}", e3.get_diagnostic_info().key()),
+            format!("E4 {}", e4.get_diagnostic_info().key()),
+        ];
+        let expected: Vec<String> = RESOLVE_ERROR_ORACLE
+            .lines()
+            .filter(|line| line.starts_with("ERR "))
+            .map(|line| line.replace("ERR ", ""))
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
 }

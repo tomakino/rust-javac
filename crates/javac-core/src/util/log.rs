@@ -461,6 +461,11 @@ impl Log {
         source.set_end_pos_table(end_pos_table);
     }
 
+    /// Java: public DiagnosticSource currentSource()
+    pub fn current_source(&self) -> Option<Rc<DiagnosticSource>> {
+        self.source.clone()
+    }
+
     /// Return current sourcefile.
     ///
     /// Java: public JavaFileObject currentSourceFile()
