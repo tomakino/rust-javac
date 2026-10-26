@@ -85,10 +85,19 @@ impl RelativePath {
 
     /// Java: public Path resolveAgainst(FileSystem fs) — TODO(P2): java.nio.file
     /// FileSystem is not ported (the P2 file layer has no FileSystem object).
-    pub fn resolve_against_fs(&self) -> Result<FsPath, javac_fs::Error> {
-        unimplemented!(
-            "TODO(P2): RelativePath.resolveAgainst(FileSystem) needs java.nio.file.FileSystem"
-        )
+    /// Java: public Path resolveAgainst(FileSystem fs) throws InvalidPathException.
+    ///
+    /// PORTING_RULES: java.nio.file.FileSystem is not ported; the caller supplies
+    /// the root directory and separator (Java: fs.getRootDirectories().iterator().next()
+    /// and fs.getSeparator()).  The resolution algorithm is the upstream one.
+    pub fn resolve_against_fs(
+        &self,
+        fs_root: &FsPath,
+        separator: char,
+    ) -> Result<FsPath, javac_fs::Error> {
+        let relative = self.path.replace_char('/' as u16, separator as u16);
+        let relative = FsPath::new(&relative.to_string_lossy())?;
+        Ok(fs_root.resolve(&relative))
     }
 }
 
@@ -246,8 +255,13 @@ impl RelativeFile {
 
     /// Java: ZipEntry getZipEntry(ZipFile zip) — TODO(P2): java.util.zip.ZipFile/
     /// ZipEntry are not ported (javac-zip works on ZipArchive/entry names).
-    pub fn get_zip_entry(&self) -> Option<Vec<u8>> {
-        unimplemented!("TODO(P2): RelativeFile.getZipEntry needs java.util.zip.ZipFile")
+    /// Java: public ZipEntry getZipEntry(ZipFile zip) { return zip.getEntry(path); }
+    ///
+    /// PORTING_RULES: java.util.zip.ZipEntry is not ported; the archive entry lookup
+    /// returns the entry contents through javac-zip (registered adapter: the
+    /// upstream ZipEntry object is replaced by its data).
+    pub fn get_zip_entry(&self, archive: &javac_zip::ZipArchive) -> std::option::Option<Vec<u8>> {
+        archive.get_entry(&self.base.path.to_string_lossy())
     }
 
     /// The base RelativePath view (Java's inherited identity).
@@ -331,3 +345,20 @@ fn file_basename(path: &JavaString) -> JavaString {
     let start = (sep + 1) as usize;
     path.substring(start, path.len())
 }
+
+#[cfg(test)]
+mod resolve_against_fs_tests {
+    use super::*;
+
+    #[test]
+    fn resolve_against_fs_uses_the_root_and_separator() {
+        let directory = RelativeDirectory::new(&JavaString::from("pkg/sub/"));
+        let root = FsPath::new("/root").expect("root path");
+        let resolved = directory
+            .as_relative_path()
+            .resolve_against_fs(&root, '/')
+            .expect("resolve");
+        assert_eq!(resolved, FsPath::new("/root/pkg/sub/").expect("expected path"));
+    }
+}
+

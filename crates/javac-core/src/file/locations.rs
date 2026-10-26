@@ -115,10 +115,17 @@ use crate::main::option::Option as JavacOption;
 fn path_separator() -> char {
     if cfg!(windows) { ';' } else { ':' }
 }
+/// Java: ModuleSourcePathLocationHandler.isSeparator(char): both separators on
+/// Windows, the platform separator and '/'.
+fn is_separator_char(ch: char) -> bool {
+    ch == std::path::MAIN_SEPARATOR || ch == '/'
+}
 
 /// The shared context used by the handler helpers (Java: the outer Locations fields).
 struct LocationCtx<'a> {
     fs_info: &'a CacheFSInfo,
+    /// Java: outer Locations.log (for path/option warnings).
+    log: StdOption<&'a Rc<std::cell::RefCell<crate::util::log::Log>>>,
     java_home: &'a FsPath,
 }
 
@@ -723,6 +730,7 @@ impl Locations {
         let ctx = LocationCtx {
             fs_info,
             java_home: &self.java_home,
+            log: self.log.as_ref(),
         };
         match &mut self.handlers[index].kind {
             HandlerKind::BootClassPath(state) => {
@@ -765,6 +773,7 @@ impl Locations {
         let ctx = LocationCtx {
             fs_info,
             java_home: &self.java_home,
+            log: self.log.as_ref(),
         };
         match &mut self.handlers[index].kind {
             HandlerKind::BootClassPath(_) => false,
@@ -847,6 +856,178 @@ impl<'a> LocationCtx<'a> {
         }
     }
 
+    /// Java: ModuleSourcePathLocationHandler.initFromPattern
+    /// (Locations.java:1594-1635).
+    fn module_source_path_pattern_init(&self, state: &mut ModuleSourcePathState, value: &str) {
+        let mut segments: Vec<String> = Vec::new();
+        for segment in value.split(path_separator()) {
+            self.expand_braces(segment, &mut segments);
+        }
+        let mut map: Vec<(String, Vec<FsPath>)> = Vec::new();
+        let mut no_suffix_paths: Vec<FsPath> = Vec::new();
+        let mut any_suffix = false;
+        const MARKER: char = '*';
+        for segment in &segments {
+            let mark_start = segment.find(MARKER);
+            let Some(mark_start) = mark_start else {
+                let path = self.get_path(segment);
+                self.module_source_path_add_path(&mut map, &path, StdOption::None);
+                no_suffix_paths.push(path);
+                continue;
+            };
+            if mark_start == 0
+                || !is_separator_char(segment.as_bytes()[mark_start - 1] as char)
+            {
+                panic!("java.lang.IllegalArgumentException: illegal use of {MARKER} in {segment}");
+            }
+            let prefix = self.get_path(&segment[..mark_start - 1]);
+            let mark_end = mark_start + 1;
+            let suffix = if mark_end == segment.len() {
+                StdOption::None
+            } else if !is_separator_char(segment.as_bytes()[mark_end] as char)
+                || segment[mark_end + 1..].contains(MARKER)
+            {
+                panic!("java.lang.IllegalArgumentException: illegal use of {MARKER} in {segment}");
+            } else {
+                any_suffix = true;
+                StdOption::Some(self.get_path(&segment[mark_end + 1..]))
+            };
+            self.module_source_path_add_path(&mut map, &prefix, suffix.as_ref());
+            if suffix.is_none() {
+                no_suffix_paths.push(prefix);
+            }
+        }
+        // Java: initModuleTable(map): keep the modules with a module-info.java.
+        let mut table = ModuleTable::new();
+        let parent = JavaString::from("MODULE_SOURCE_PATH");
+        for (module_name, paths) in map {
+            let module_info = self.get_path("module-info.java");
+            let has_module_info = paths
+                .iter()
+                .any(|path| self.fs_info.exists(&path.resolve(&module_info)));
+            if has_module_info {
+                let name = format!("MODULE_SOURCE_PATH[{module_name}]");
+                table.add(ModuleLocation::new(
+                    &parent,
+                    JavaString::from(name.as_str()),
+                    &module_name,
+                    paths,
+                    false,
+                ));
+            }
+        }
+        state.module_table = StdOption::Some(table);
+        // Java: paths = anySuffix ? null : noSuffixPaths;
+        state.paths = if any_suffix {
+            StdOption::None
+        } else {
+            StdOption::Some(no_suffix_paths)
+        };
+    }
+
+    /// Java: ModuleSourcePathLocationHandler.add(Map, Path prefix, Path suffix)
+    /// (Locations.java:1659-1684).
+    fn module_source_path_add_path(
+        &self,
+        map: &mut Vec<(String, Vec<FsPath>)>,
+        prefix: &FsPath,
+        suffix: StdOption<&FsPath>,
+    ) {
+        if !self.fs_info.is_directory(prefix) {
+            // Java: warn(DirPathElementNotDirectory/DirPathElementNotFound);
+            // path warnings are registered as TODO(Log) in this file.
+            return;
+        }
+        let entries = match Files::list_directory(prefix) {
+            Ok(entries) => entries,
+            Err(_) => return,
+        };
+        for entry in entries {
+            if !self.fs_info.is_directory(&entry) {
+                continue;
+            }
+            let path = match suffix {
+                StdOption::Some(suffix) => entry.resolve(suffix),
+                StdOption::None => entry.clone(),
+            };
+            if !self.fs_info.is_directory(&path) {
+                continue;
+            }
+            let name = entry
+                .file_name()
+                .map(|name| name.to_java_string())
+                .unwrap_or_default();
+            match map.iter_mut().find(|(existing, _)| *existing == name) {
+                StdOption::Some((_, paths)) => paths.push(path),
+                StdOption::None => map.push((name, vec![path])),
+            }
+        }
+    }
+
+    /// Java: ModuleSourcePathLocationHandler.expandBraces(String, Collection)
+    /// (Locations.java:1686-1729).
+    fn expand_braces(&self, value: &str, results: &mut Vec<String>) {
+        let mut depth = 0i32;
+        let mut start = -1i32;
+        let mut prefix = "";
+        let mut suffix = "";
+        let bytes = value.as_bytes();
+        for (i, byte) in bytes.iter().enumerate() {
+            match *byte {
+                b'{' => {
+                    depth += 1;
+                    if depth == 1 {
+                        prefix = &value[..i];
+                        suffix = &value[self.get_matching_brace(value, i) + 1..];
+                        start = i as i32 + 1;
+                    }
+                }
+                b',' => {
+                    if depth == 1 {
+                        let element = &value[start as usize..i];
+                        self.expand_braces(&format!("{prefix}{element}{suffix}"), results);
+                        start = i as i32 + 1;
+                    }
+                }
+                b'}' => match depth {
+                    0 => panic!("java.lang.IllegalArgumentException: mismatched braces"),
+                    1 => {
+                        let element = &value[start as usize..i];
+                        self.expand_braces(&format!("{prefix}{element}{suffix}"), results);
+                        return;
+                    }
+                    _ => depth -= 1,
+                },
+                _ => {}
+            }
+        }
+        if depth > 0 {
+            panic!("java.lang.IllegalArgumentException: mismatched braces");
+        }
+        results.push(value.to_string());
+    }
+
+    /// Java: ModuleSourcePathLocationHandler.getMatchingBrace(String, int)
+    /// (Locations.java:1731-1746).
+    fn get_matching_brace(&self, value: &str, offset: usize) -> usize {
+        let mut depth = 1i32;
+        let bytes = value.as_bytes();
+        for (i, byte) in bytes.iter().enumerate().skip(offset + 1) {
+            match *byte {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return i;
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("java.lang.IllegalArgumentException: mismatched braces");
+    }
+
+
     /// Java: PatchModulesLocationHandler.handleOption.
     fn patch_modules_init(&self, state: &mut PatchModulesState, value: &str) {
         state.module_table.clear();
@@ -865,9 +1046,21 @@ impl<'a> LocationCtx<'a> {
                         false,
                     ));
                 }
-                _ => unimplemented!(
-                    "TODO(Log batch): PatchModulesLocationHandler invalid --patch-module argument reporting"
-                ),
+                _ => {
+                    // Java: log.error(Errors.LocnInvalidArgForXpatch(value)); the
+                    // should-not-get-here branch of PatchModulesLocationHandler.
+                    if let Some(log) = &self.log {
+                        use crate::util::abstract_log::AbstractLog;
+                        log.borrow_mut().error_pos(
+                            None,
+                            crate::util::jc_diagnostic::Error::from(
+                                crate::resources::compiler_properties::errors::locn_invalid_arg_for_xpatch(
+                                    JavaString::from(value),
+                                ),
+                            ),
+                        );
+                    }
+                }
             }
         }
     }
@@ -897,13 +1090,25 @@ impl<'a> LocationCtx<'a> {
                 pattern = Some(entry);
             }
         }
-        if pattern.is_some() {
-            // TODO(S3b): the --module-source-path pattern form (wildcard/brace expansion and
-            // the root/dirs/*/suffix layout) needs the upstream expansion algorithm and
-            // java.util.regex; not ported (reported).
-            unimplemented!(
-                "TODO(S3b): --module-source-path pattern form needs the upstream expansion algorithm and java.util.regex"
-            );
+        if let Some(pattern_entry) = pattern {
+            // Java: initFromPattern(modulePattern), then the module-specific
+            // initForModule overrides (ModuleSourcePathLocationHandler.init).
+            self.module_source_path_pattern_init(state, pattern_entry);
+            if !module_paths.is_empty() {
+                let table = state.module_table.get_or_insert_with(ModuleTable::new);
+                let parent = JavaString::from("MODULE_SOURCE_PATH");
+                for (module_name, paths) in module_paths {
+                    let name = format!("MODULE_SOURCE_PATH[{module_name}]");
+                    table.add(ModuleLocation::new(
+                        &parent,
+                        JavaString::from(name.as_str()),
+                        &module_name,
+                        paths,
+                        false,
+                    ));
+                }
+            }
+            return;
         }
         let mut table = ModuleTable::new();
         let parent = JavaString::from("MODULE_SOURCE_PATH");
@@ -1113,6 +1318,7 @@ impl Locations {
         let ctx = LocationCtx {
             fs_info,
             java_home: &self.java_home,
+            log: self.log.as_ref(),
         };
         match &mut self.handlers[index].kind {
             HandlerKind::BootClassPath(state) => {
@@ -1184,6 +1390,7 @@ impl Locations {
         let ctx = LocationCtx {
             fs_info,
             java_home: &self.java_home,
+            log: self.log.as_ref(),
         };
         let index = match self.handler_index(location) {
             Some(index) => index,
@@ -1270,6 +1477,7 @@ impl Locations {
         let ctx = LocationCtx {
             fs_info,
             java_home: &self.java_home,
+            log: self.log.as_ref(),
         };
         let parent = self.handlers[index].location.clone();
         let result: StdOption<Rc<ModuleLocation>> = match &mut self.handlers[index].kind {
@@ -1343,6 +1551,7 @@ impl Locations {
         let ctx = LocationCtx {
             fs_info,
             java_home: &self.java_home,
+            log: self.log.as_ref(),
         };
         let parent = self.handlers[index].location.clone();
         let result = match &mut self.handlers[index].kind {
@@ -1419,6 +1628,7 @@ impl Locations {
         let ctx = LocationCtx {
             fs_info,
             java_home: &self.java_home,
+            log: self.log.as_ref(),
         };
         if let Some(module) = self.find_module_location(&location.get_name().to_string_lossy()) {
             return Ok(ctx.contains_paths(&module.search_path(), file));
@@ -1726,6 +1936,7 @@ mod tests {
         let ctx = LocationCtx {
             fs_info: &fs_info,
             java_home: &home,
+            log: None,
         };
         let separator = if cfg!(windows) { ';' } else { ':' };
         let value = format!("a{separator}b");
@@ -1736,3 +1947,32 @@ mod tests {
         assert_eq!(entries.len(), 3);
     }
 }
+
+#[cfg(test)]
+mod module_source_path_pattern_tests {
+    use super::*;
+
+    fn ctx() -> (CacheFSInfo, FsPath) {
+        (CacheFSInfo::new(), FsPath::from_path_buf(std::env::temp_dir()))
+    }
+
+    #[test]
+    fn expand_braces_matches_the_upstream_algorithm() {
+        let (fs_info, home) = ctx();
+        let ctx = LocationCtx {
+            fs_info: &fs_info,
+            log: None,
+            java_home: &home,
+        };
+        let mut results = Vec::new();
+        ctx.expand_braces("a{b,c}d", &mut results);
+        assert_eq!(results, vec!["abd".to_string(), "acd".to_string()]);
+        let mut nested = Vec::new();
+        ctx.expand_braces("x{a{b,c},d}y", &mut nested);
+        assert_eq!(
+            nested,
+            vec!["xaby".to_string(), "xacy".to_string(), "xdy".to_string()]
+        );
+    }
+}
+

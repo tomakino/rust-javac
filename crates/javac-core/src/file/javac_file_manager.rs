@@ -293,6 +293,180 @@ impl Container for DirectoryContainer {
     }
 }
 
+/// Java: private final class JavacFileManager.ArchiveContainer
+/// (JavacFileManager.java:557-672): a read-only container over a jar/zip/jmod
+/// archive. The upstream uses the java.nio zip/jmod FileSystem; the port walks
+/// the archive through javac-zip and keeps the same package index (registered
+/// adapter).
+struct ArchiveContainer {
+    /// Java: private final Path archivePath;
+    archive_path: FsPath,
+    /// Java: private final Map<RelativeDirectory, Path> packages; the port keeps
+    /// the valid package directories and the file entries (jar paths).
+    files: Vec<String>,
+    packages: Vec<String>,
+}
+
+impl ArchiveContainer {
+    /// Java: ArchiveContainer(Path archivePath) throws IOException,
+    /// ProviderNotFoundException, SecurityException.
+    fn new(archive_path: &FsPath) -> Result<ArchiveContainer, Error> {
+        let archive = javac_zip::ZipArchive::open(&archive_path.to_path_buf()).map_err(|error| {
+            Error::io(JavaString::from(error.to_string().as_str()))
+        })?;
+        let mut files: Vec<String> = Vec::new();
+        let mut packages: Vec<String> = Vec::new();
+        let mut seen_packages: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for entry in archive.entries() {
+            let name = entry.name().to_string();
+            if entry.is_directory() {
+                continue;
+            }
+            let dirname = match name.rfind('/') {
+                Some(index) => &name[..index],
+                None => "",
+            };
+            // Java: walkFileTree preVisitDirectory with isValid(fileName); a
+            // non-identifier directory skips its whole subtree.
+            let valid = dirname
+                .split('/')
+                .all(|segment| segment.is_empty() || is_identifier(segment));
+            if !valid {
+                continue;
+            }
+            let mut current = dirname;
+            loop {
+                if seen_packages.insert(current.to_string()) {
+                    packages.push(current.to_string());
+                }
+                match current.rfind('/') {
+                    Some(index) => current = &current[..index],
+                    None => break,
+                }
+            }
+            if seen_packages.insert(String::new()) {
+                packages.push(String::new());
+            }
+            files.push(name);
+        }
+        Ok(ArchiveContainer {
+            archive_path: archive_path.clone(),
+            files,
+            packages,
+        })
+    }
+
+    /// Java: list(Path userPath, RelativeDirectory subdirectory,
+    /// Set<Kind>, boolean recurse, ListBuffer<JavaFileObject>)
+    /// (JavacFileManager.java:597-631).
+    fn list(
+        &self,
+        manager: &JavacFileManager,
+        _user_path: &FsPath,
+        subdirectory: &RelativeDirectory,
+        kinds: &[Kind],
+        recurse: bool,
+        results: &mut Vec<JavaFileObjectRef>,
+    ) -> Result<(), Error> {
+        let prefix = subdirectory.as_relative_path().get_path().to_string_lossy();
+        if !self.packages.iter().any(|package| package == &prefix) {
+            return Ok(());
+        }
+        for name in &self.files {
+            let Some(rest) = name.strip_prefix(&prefix) else {
+                continue;
+            };
+            if !recurse && rest.contains('/') {
+                continue;
+            }
+            let entry_path = FsPath::new(&format!("/{name}"))
+                .map_err(|error| Error::io(JavaString::from(error.to_string().as_str())))?;
+            if manager.kind_in(kinds, &entry_path) {
+                let fo = PathFileObject::for_jar_path(
+                    manager.manager_api(),
+                    &entry_path,
+                    &self.archive_path,
+                );
+                manager.register(&fo);
+                results.push(fo as JavaFileObjectRef);
+            }
+        }
+        Ok(())
+    }
+
+    /// Java: getFileObject(Path userPath, RelativeFile name)
+    /// (JavacFileManager.java:646-656).
+    fn get_file_object(
+        &self,
+        manager: &JavacFileManager,
+        user_path: &FsPath,
+        name: &RelativeFile,
+    ) -> Result<StdOption<JavaFileObjectRef>, Error> {
+        let dirname = name.dirname().as_relative_path().get_path().to_string_lossy();
+        let basename = name.basename().to_string_lossy();
+        let entry = format!("{dirname}{basename}");
+        if !self.files.iter().any(|candidate| candidate == &entry) {
+            return Ok(None);
+        }
+        let entry_path = FsPath::new(&format!("/{entry}"))
+            .map_err(|error| Error::io(JavaString::from(error.to_string().as_str())))?;
+        let fo = PathFileObject::for_jar_path(manager.manager_api(), &entry_path, user_path);
+        Ok(Some(fo as JavaFileObjectRef))
+    }
+
+    fn close(&self) -> Result<(), Error> {
+        // Java: fileSystem.close(); the ported archive reader owns no FileSystem.
+        Ok(())
+    }
+
+    fn maintains_directory_index(&self) -> bool {
+        true
+    }
+
+    fn indexed_directories(&self) -> Vec<RelativeDirectory> {
+        self.packages
+            .iter()
+            .map(|package| RelativeDirectory::new(&JavaString::from(package.as_str())))
+            .collect()
+    }
+}
+
+impl Container for ArchiveContainer {
+    fn list(
+        &self,
+        manager: &JavacFileManager,
+        user_path: &FsPath,
+        subdirectory: &RelativeDirectory,
+        kinds: &[Kind],
+        recurse: bool,
+        results: &mut Vec<JavaFileObjectRef>,
+    ) -> Result<(), Error> {
+        ArchiveContainer::list(self, manager, user_path, subdirectory, kinds, recurse, results)
+    }
+
+    fn get_file_object(
+        &self,
+        manager: &JavacFileManager,
+        user_path: &FsPath,
+        name: &RelativeFile,
+    ) -> Result<StdOption<JavaFileObjectRef>, Error> {
+        ArchiveContainer::get_file_object(self, manager, user_path, name)
+    }
+
+    fn close(&self) -> Result<(), Error> {
+        ArchiveContainer::close(self)
+    }
+
+    fn maintains_directory_index(&self) -> bool {
+        ArchiveContainer::maintains_directory_index(self)
+    }
+
+    fn indexed_directories(&self) -> Vec<RelativeDirectory> {
+        ArchiveContainer::indexed_directories(self)
+    }
+}
+
+
 /// Java: private final class JRTImageContainer (the system modules image via JRTIndex).
 struct JRTImageContainer;
 
@@ -592,10 +766,7 @@ impl JavacFileManager {
                 directory: real_path.clone(),
             })
         } else {
-            unimplemented!(
-                "TODO(S3c batch 2): ArchiveContainer (java.nio jar/zip/jmod FileSystem) for {}",
-                real_path.to_java_string()
-            )
+            Rc::new(ArchiveContainer::new(&real_path)?)
         };
         self.containers
             .borrow_mut()
