@@ -9103,7 +9103,7 @@ impl Attr {
             let mut non_proper_current = non_proper_as_undet.clone();
             while non_proper_current.non_empty() {
                 let non_proper = *non_proper_current.head();
-                let _ = self.types.is_subtype(ctx, syms, checked_ex, non_proper);
+                self.types.is_subtype(ctx, syms, checked_ex, non_proper);
                 non_proper_current = non_proper_current.tail();
             }
             uncaught_current = uncaught_current.tail();

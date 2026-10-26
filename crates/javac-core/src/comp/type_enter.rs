@@ -371,7 +371,6 @@ impl TypeEnter {
         let prev_env = self.imports_env.clone();
         self.imports_env = Some(Rc::clone(env));
         let packge = compilation_unit_package(ctx, tree);
-        let names = Rc::clone(&self.names);
         let chk = Rc::clone(&self.chk);
         let types = Rc::clone(&self.types);
         let packge_symbol = packge.expect("package symbol");
@@ -468,7 +467,6 @@ impl TypeEnter {
         self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint_pos);
         self.static_import_filter = prev_static;
         self.type_import_filter = prev_type;
-        let _ = (packge, names, chk, types);
     }
 
     /// Java: ImportsPhase.checkClassPackageClash(JCPackageDecl tree)
@@ -491,7 +489,14 @@ impl TypeEnter {
                     }
                     if let Some(owner) = owner {
                         // Java: p.owner.complete(); enter all class members of p
-                        let _ = ctx.complete_symbol(syms, owner);
+                        if let Err(failure) = ctx.complete_symbol(syms, owner) {
+                            self.chk.borrow().completion_error(
+                                ctx,
+                                ctx.tree(toplevel(env)).pos,
+                                &failure,
+                                syms,
+                            );
+                        }
                         // TODO(Modules): syms.lookupPackage(toplevel(&env).modle,
                         // p.owner.getQualifiedName()) + syms.getClass(...) +
                         // Errors.PkgClashesWithClassOfSameName(p);
@@ -540,7 +545,9 @@ impl TypeEnter {
         let p = self.attrib_import_qualifier(ctx, syms, tree, &local_env);
         if name.to_java_string() == self.names.asterisk.to_java_string() {
             // Import on demand.
-            // TODO(Check): chk.checkCanonical(imp.selected);
+            if let Some(selected) = selected {
+                self.chk.borrow().check_canonical(ctx, selected);
+            }
             if import_static_import(ctx, tree) {
                 self.import_static_all(ctx, tree, p, &env);
             } else {
@@ -549,7 +556,9 @@ impl TypeEnter {
         } else if import_static_import(ctx, tree) {
             // Named static import.
             self.import_named_static(ctx, syms, tree, p, name, &local_env);
-            // TODO(Check): chk.checkCanonical(imp.selected);
+            if let Some(selected) = selected {
+                self.chk.borrow().check_canonical(ctx, selected);
+            }
         } else {
             // Named type import.
             let imported_type = self.attrib_import_type(ctx, syms, qualid, &local_env);
@@ -564,7 +573,6 @@ impl TypeEnter {
                 self.import_named(ctx, syms, ctx.tree(tree).pos, c, &env, tree);
             }
         }
-        let _ = (selected, syms);
     }
 
     /// Java: ImportsPhase.attribImportType(JCTree tree, Env<AttrContext> env)
@@ -636,8 +644,6 @@ impl TypeEnter {
         let star_scope = compilation_unit_star_import_scope(ctx, toplevel(env)).expect("star scope");
         // Java: tsym.members() (works for packages and classes).
         let origin = ctx.sym(tsym).members().expect("type members");
-        let filter = self.static_import_filter.clone();
-        let _ = filter;
         // Java: toplevel(&env).starImportScope.importAll(types, tsym.members(),
         // typeImportFilter, imp, cfHandler);
         let type_filter = self.type_import_filter.clone();
@@ -1138,11 +1144,8 @@ impl TypeEnter {
         } else {
             syms.object_type
         };
-        let supertype = {
-            let attr = self.attr.borrow().clone();
-            let _ = attr;
-            self.model_missing_types(ctx, base_env, supertype, extending.unwrap_or(tree), false)
-        };
+        let supertype =
+            self.model_missing_types(ctx, base_env, supertype, extending.unwrap_or(tree), false);
         // Determine interfaces.
         let mut interfaces: List<TypeId> = List::nil();
         let mut all_interfaces: Option<List<TypeId>> = None;
@@ -1637,10 +1640,8 @@ impl TypeEnter {
         syms: &mut Symtab,
         env: &Rc<Env<AttrContext>>,
     ) {
-        use crate::code::flags;
         let tree = env.encl_class.expect("class tree");
         let sym = class_tree_symbol(ctx, tree).expect("class symbol");
-        let sym_ty = ctx.sym(sym).ty.expect("class type");
         let mut default_constructor: Option<TreeId> = None;
         let mut helper = self.get_default_constructor_helper(ctx, syms, env);
         if let Some(mut helper) = helper {
@@ -1681,7 +1682,6 @@ impl TypeEnter {
                 type_annotations.validate_type_annotations_signatures(env, tree);
             }
         }
-        let _ = flags::PUBLIC as i64;
     }
 
     // ------------------------------------------------------------------
@@ -2047,7 +2047,6 @@ impl TypeEnter {
     ) {
         use crate::code::flags;
         let sym = class_tree_symbol(ctx, tree).expect("record symbol");
-        let sym_ty = ctx.sym(sym).ty.expect("record type");
         let make_no_arg = |this: &mut TypeEnter, ctx: &mut CompilerContext, syms: &Symtab, name: crate::util::name::Name, ret: TypeId| {
             let mut make = this.make.borrow_mut();
             make.at(ctx.tree(tree).pos);
@@ -2168,11 +2167,7 @@ impl TypeEnter {
             ctx.sym_mut(field_sym).flags_field &= !(flags::VARARGS);
         }
         // add the accessors.
-        let object_sym = {
-            let syms_borrow = &*syms;
-            let _ = syms_borrow;
-            ctx.typ(syms.object_type).tsym.expect("object symbol")
-        };
+        let object_sym = ctx.typ(syms.object_type).tsym.expect("object symbol");
         let mut current = record_fields;
         while current.non_empty() {
             let field = *current.head();
@@ -2761,7 +2756,7 @@ impl DefaultConstructorHelper for BasicConstructorHelper {
         &mut self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
-        types: &crate::code::types::Types,
+        _types: &crate::code::types::Types,
         _names: &Names,
     ) -> Option<TypeId> {
         if self.constructor_type.is_none() {
@@ -2772,7 +2767,6 @@ impl DefaultConstructorHelper for BasicConstructorHelper {
                 List::nil(),
                 Some(syms.method_class),
             );
-            let _ = types;
             self.constructor_type = Some(method_type);
         }
         self.constructor_type
@@ -2880,7 +2874,7 @@ impl DefaultConstructorHelper for AnonClassConstructorHelper {
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         types: &crate::code::types::Types,
-        names: &Names,
+        _names: &Names,
     ) -> Option<TypeId> {
         if self.base.constructor_type.is_none() {
             let owner_ty = ctx.sym(self.base.owner).ty.expect("owner type");
@@ -2897,7 +2891,6 @@ impl DefaultConstructorHelper for AnonClassConstructorHelper {
                 );
                 self.based = true;
             }
-            let _ = names;
             self.base.constructor_type = Some(ctype);
         }
         self.base.constructor_type
@@ -3062,7 +3055,7 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         types: &crate::code::types::Types,
-        names: &Names,
+        _names: &Names,
     ) -> Option<TypeId> {
         if self.base.constructor_type.is_none() {
             let mut argtypes: List<TypeId> = List::nil();
@@ -3092,7 +3085,6 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
                 List::nil(),
                 Some(syms.method_class),
             );
-            let _ = names;
             self.base.constructor_type = Some(method_type);
         }
         self.base.constructor_type
@@ -3184,7 +3176,6 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
         _names: &Names,
         method: TreeId,
     ) -> TreeId {
-        use crate::code::flags;
         let owner = self.base.owner;
         let mut field_decls = self.record_field_decls.clone();
         let params = match &ctx.tree(method).kind {
@@ -3250,7 +3241,6 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
                     }
                 }
             }
-            let _ = flags::RECORD;
         }
         method
     }

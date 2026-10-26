@@ -3729,6 +3729,7 @@ impl Check {
     ) {
         let c = ctx.typ(site).tsym.expect("site type symbol");
         let name = ctx.sym(m).name.clone();
+        self.complete_for_members(ctx, syms, c);
         let members = ctx.sym(c).members().expect("site members");
         let symbols = ctx.scope_get_symbols_by_name(
             members,
@@ -7275,6 +7276,7 @@ impl Check {
             let mut processed: Vec<SymbolId> = Vec::new();
             if !self.check_type_contains_importable_element(
                 ctx,
+                syms,
                 site,
                 site,
                 packge,
@@ -7302,6 +7304,7 @@ impl Check {
     fn check_type_contains_importable_element(
         &self,
         ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
         tsym: SymbolId,
         origin: SymbolId,
         packge: SymbolId,
@@ -7315,16 +7318,22 @@ impl Check {
         let Some(ty) = ctx.sym(tsym).ty else {
             return false;
         };
-        let supertype = self.types.supertype(ctx, &self.syms.borrow(), ty);
+        let supertype = {
+            let syms_ref: &crate::code::symtab::Symtab = syms;
+            self.types.supertype(ctx, syms_ref, ty)
+        };
         if let Some(super_tsym) = ctx.typ(supertype).tsym
             && super_tsym != tsym
             && self.check_type_contains_importable_element(
-                ctx, super_tsym, origin, packge, name, processed,
+                ctx, syms, super_tsym, origin, packge, name, processed,
             )
         {
             return true;
         }
-        let interfaces = self.types.interfaces(ctx, &self.syms.borrow(), ty);
+        let interfaces = {
+            let syms_ref: &crate::code::symtab::Symtab = syms;
+            self.types.interfaces(ctx, syms_ref, ty)
+        };
         let mut interface_list = interfaces;
         while interface_list.non_empty() {
             let interface_ty = *interface_list.head();
@@ -7333,6 +7342,7 @@ impl Check {
                 && interface_tsym != tsym
                 && self.check_type_contains_importable_element(
                     ctx,
+                    syms,
                     interface_tsym,
                     origin,
                     packge,
@@ -7353,9 +7363,8 @@ impl Check {
             if ctx.sym(sym).is_static(ctx)
                 && self.import_accessible(ctx, sym, packge)
                 && {
-                    let syms_rc = Rc::clone(&self.syms);
-                    let syms = syms_rc.borrow();
-                    crate::code::symbol::is_member_of(ctx, &syms, &self.types, sym, origin)
+                    let syms_ref: &crate::code::symtab::Symtab = syms;
+                    crate::code::symbol::is_member_of(ctx, syms_ref, &self.types, sym, origin)
                 }
             {
                 return true;
@@ -7616,10 +7625,14 @@ impl Check {
             }
         }
         let origin_ty = ctx.sym(origin).ty.expect("origin type");
+        self.complete_for_members(ctx, syms, origin);
         let mut t = origin_ty;
         loop {
             if !ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS) {
                 break;
+            }
+            if let Some(t_tsym) = ctx.typ(t).tsym {
+                self.complete_for_members(ctx, syms, t_tsym);
             }
             if t != origin_ty {
                 self.check_override_at(ctx, syms, tree, t, origin, m);
@@ -9021,6 +9034,128 @@ impl Check {
                 }));
                 return;
             }
+        }
+    }
+}
+
+impl Check {
+    /// Check that a qualified name is in canonical form (for import
+    /// declarations) and report ImportRequiresCanonical otherwise.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - tree: the qualified name tree.
+    ///
+    /// # Returns
+    ///   - none (diagnostics are reported).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn check_canonical(&self, ctx: &mut CompilerContext, tree: TreeId) {
+        if !self.is_canonical(ctx, tree) {
+            let symbol = crate::tree::tree_info::symbol(ctx, tree);
+            let display = symbol
+                .map(|symbol| {
+                    ctx.sym(symbol)
+                        .name
+                        .to_java_string()
+                        .to_string_lossy()
+                        .to_string()
+                })
+                .unwrap_or_default();
+            self.log.borrow_mut().error_at(
+                ctx.tree(tree).pos,
+                crate::util::jc_diagnostic::Error::from(
+                    crate::resources::compiler_properties::errors::import_requires_canonical(
+                        SymbolArg::placeholder(display),
+                    ),
+                ),
+            );
+        }
+    }
+
+    /// Java: private boolean isCanonical(JCTree tree) (Check.java:3875-3888).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - tree: the qualified name tree.
+    ///
+    /// # Returns
+    ///   - whether the qualified name is canonical.
+    ///
+    /// # Panics
+    ///   - none.
+    fn is_canonical(&self, ctx: &CompilerContext, tree: TreeId) -> bool {
+        let mut current = tree;
+        loop {
+            let (selected, sym) = match &ctx.tree(current).kind {
+                crate::tree::jc_tree::TreeKind::FieldAccess {
+                    selected: Some(selected),
+                    sym: Some(sym),
+                    ..
+                } => (*selected, *sym),
+                _ => return true,
+            };
+            let owner_name = ctx
+                .sym(sym)
+                .owner
+                .map(|owner| ctx.sym(owner).get_qualified_name().to_java_string());
+            let selected_sym = crate::tree::tree_info::symbol(ctx, selected);
+            let selected_name = selected_sym
+                .map(|selected_sym| ctx.sym(selected_sym).get_qualified_name().to_java_string());
+            if owner_name != selected_name {
+                return false;
+            }
+            current = selected;
+        }
+    }
+}
+
+impl Check {
+    /// Ensure a class symbol has been completed before its members are read.
+    ///
+    /// Adapter: upstream ClassSymbol.members() calls complete() implicitly
+    /// (Symbol.java:1335-1338); the port expresses the completion at the
+    /// accessor call sites because the local members() cannot take the
+    /// compiler services. Completion failures are reported and the access
+    /// continues with the (empty) members scope, mirroring the upstream
+    /// error-recovery scope.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - sym: the symbol to complete (only class symbols are completed).
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    fn complete_for_members(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) {
+        if ctx.sym(sym).kind != crate::code::kinds::Kind::TYP {
+            return;
+        }
+        if ctx.sym(sym).members().is_some() {
+            return;
+        }
+        if let Err(failure) = ctx.complete_class_symbol(syms, sym) {
+            eprintln!(
+                "DEBUG complete failure sym={sym:?} name={:?} failure={failure:?} flags=0x{:x}",
+                ctx.sym(sym).name.to_java_string().to_string_lossy(),
+                ctx.sym(sym).flags_field
+            );
+            self.completion_error(ctx, crate::util::position::NOPOS, &failure, syms);
+        } else {
+            eprintln!(
+                "DEBUG completed sym={sym:?} name={:?} members={:?}",
+                ctx.sym(sym).name.to_java_string().to_string_lossy(),
+                ctx.sym(sym).members().is_some()
+            );
         }
     }
 }
