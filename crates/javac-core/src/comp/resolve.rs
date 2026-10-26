@@ -164,6 +164,7 @@ impl Resolve {
                 diags: Rc::clone(&diags),
                 check_varargs_access_after_resolution:
                     Feature::POST_APPLICABILITY_VARARGS_ACCESS_CHECK.allowed_in_source(source),
+                allow_modules,
             }));
         Resolve {
             var_not_found,
@@ -232,125 +233,20 @@ impl Resolve {
         c: SymbolId,
         check_inner: bool,
     ) -> bool {
-        // 15.9.5.1: the signature of the anonymous constructor can refer to an
-        // inaccessible type.
-        if env
-            .encl_method
-            .map(|encl_method| method_decl_flags(ctx, encl_method))
-            .is_some_and(|flags_value| (flags_value & flags::ANONCONSTR as i64) != 0)
-        {
-            return true;
-        }
-
-        if env.info.borrow().visiting_service_implementation {
-            let toplevel_module = env_toplevel_module(ctx, env);
-            let class_module = package_module(ctx, symbol_packge(ctx, c).expect("class package"));
-            if toplevel_module.is_some() && toplevel_module == class_module {
-                return true;
-            }
-        }
-
-        let access = ctx.sym(c).flags_field & flags::AccessFlags as i64;
-        let is_accessible;
-        if access == flags::PRIVATE as i64 {
-            let encl_sym = env
-                .encl_class
-                .and_then(|class_tree| class_decl_symbol(ctx, class_tree))
-                .expect("enclClass symbol");
-            is_accessible = symbol_outermost_class(ctx, encl_sym)
-                == ctx
-                    .sym(c)
-                    .owner
-                    .and_then(|owner| symbol_outermost_class(ctx, owner));
-        } else if access == 0 {
-            let toplevel_package = env_toplevel_package(ctx, env);
-            is_accessible = toplevel_package == ctx.sym(c).owner
-                || toplevel_package == symbol_packge(ctx, c);
-        } else if access == flags::PUBLIC as i64 {
-            if self.allow_modules {
-                let curr_module = env_toplevel_module(ctx, env).expect("toplevel module");
-                // Java: currModule.complete() — the ported symbol complete is a
-                // no-op for entered symbols (Completer registered).
-                let package = symbol_packge(ctx, c).expect("class package");
-                let package_module = package_module(ctx, package);
-                let visible = match &ctx.sym(curr_module).kind_data {
-                    crate::code::symbol::SymbolKind::ModuleSymbol {
-                        visible_packages, ..
-                    } => package_fullname(ctx, package)
-                        .and_then(|fullname| visible_packages.get(&fullname).copied())
-                        == Some(package),
-                    _ => false,
-                };
-                let reads = match &ctx.sym(curr_module).kind_data {
-                    crate::code::symbol::SymbolKind::ModuleSymbol { read_modules, .. } => {
-                        read_modules.clone()
-                    }
-                    _ => Vec::new(),
-                };
-                // Java: currModule.complete() — TODO(Completer): the
-                // completer chain is not ported; entered modules are complete.
-                is_accessible = package_module == Some(curr_module)
-                    || visible
-                    || package == syms.root_package
-                    || (package_module == Some(syms.unnamed_module)
-                        && package_module.map(|module| reads.contains(&module)).unwrap_or(false));
-            } else {
-                is_accessible = true;
-            }
-        } else if access == flags::PROTECTED as i64 {
-            let toplevel_package = env_toplevel_package(ctx, env);
-            let owner = ctx.sym(c).owner.expect("class owner");
-            is_accessible = toplevel_package == Some(owner)
-                || toplevel_package == symbol_packge(ctx, c)
-                || {
-                    let encl_sym = env
-                        .encl_class
-                        .and_then(|class_tree| {
-                            class_decl_symbol(ctx, class_tree)
-                        })
-                        .expect("enclClass symbol");
-                    self.is_inner_sub_class(ctx, syms, encl_sym, owner)
-                };
-        } else {
-            // error recovery
-            is_accessible = true;
-        }
-
-        let class_type = ctx.sym(c).ty.expect("class symbol type");
-        let no_type = crate::code::symtab::no_type_id(ctx);
-        let enclosing = ctx.typ(class_type).get_enclosing_type();
-        if !check_inner {
-            return is_accessible;
-        }
-        match enclosing {
-            None => is_accessible,
-            Some(enclosing) if enclosing == no_type => is_accessible,
-            Some(enclosing) => {
-                is_accessible && self.is_accessible_type(ctx, syms, env, enclosing, check_inner)
-            }
-        }
+        is_accessible_class_free(&self.types, self.allow_modules, ctx, syms, env, c, check_inner)
     }
 
     /// Java: private boolean isInnerSubClass(ClassSymbol c, Symbol base)
     /// (Resolve.java:376)
-    fn is_inner_sub_class(
+    pub fn is_inner_sub_class(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
+        env: &Rc<Env<AttrContext>>,
         c: SymbolId,
         base: SymbolId,
     ) -> bool {
-        let mut current: Option<SymbolId> = Some(c);
-        while let Some(class) = current {
-            if symbol_is_sub_class(ctx, &self.types, syms, class, base) {
-                return true;
-            }
-            current = ctx
-                .sym(class)
-                .owner
-                .and_then(|owner| symbols_encl_class(ctx, owner));
-        }
-        false
+        is_inner_sub_class_free(&self.types, ctx, syms, c, base)
     }
 
     /// Java: boolean isAccessible(Env<AttrContext> env, Type t)
@@ -363,19 +259,7 @@ impl Resolve {
         t: TypeId,
         check_inner: bool,
     ) -> bool {
-        if ctx.typ(t).has_tag(TypeTag::ARRAY) {
-            let elemtype = self.types.elemtype(ctx, syms, t);
-            let bound = self.types.cvar_upper_bound(ctx, elemtype);
-            return self.is_accessible_type(ctx, syms, env, bound, check_inner);
-        }
-        // TODO(Types): t.isUnion() / UnionClassType alternative types.
-        // Java: isAccessible(env, (Symbol) t.tsym, checkInner) returns true for
-        // a null symbol (e.g. the no-type has no tsym).
-        let tsym = match ctx.typ(t).tsym {
-            Some(tsym) => tsym,
-            None => return true,
-        };
-        self.is_accessible_class(ctx, syms, env, tsym, check_inner)
+        is_accessible_type_free(&self.types, self.allow_modules, ctx, syms, env, t, check_inner)
     }
 
     /// Java: public boolean isAccessible(Env<AttrContext> env, Type site,
@@ -3428,6 +3312,82 @@ impl MethodResolutionContext {
     }
 }
 
+thread_local! {
+    /// Diagnostics for the inapplicable-method panics currently unwinding on
+    /// this thread (the Java exception payload is not Send, so the diagnostic
+    /// travels in a thread-local stack and the panic payload is a marker;
+    /// registered adapter for the throw/catch control flow).
+    static INAPPLICABLE_DIAGNOSTICS: std::cell::RefCell<Vec<crate::util::jc_diagnostic::JCDiagnostic>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// Inference exceptions currently unwinding on this thread (same adapter).
+    static INFERENCE_EXCEPTIONS: std::cell::RefCell<Vec<crate::comp::infer::InferenceException>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The panic payload of a Java InapplicableMethodException throw (Resolve.java).
+#[derive(Debug)]
+pub struct InapplicableMethodExceptionPayload;
+
+/// The panic payload of a Java InferenceException throw (Infer.java).
+#[derive(Debug)]
+pub struct InferenceExceptionPayload;
+
+/// Java: throw new InapplicableMethodException(details) (Resolve.java:1040-1042).
+pub fn throw_inapplicable_method_exception(details: &crate::util::jc_diagnostic::JCDiagnostic) -> ! {
+    INAPPLICABLE_DIAGNOSTICS.with(|stack| stack.borrow_mut().push(details.clone()));
+    std::panic::panic_any(InapplicableMethodExceptionPayload);
+}
+
+/// Java: throw new InferenceException(...) (Infer.java): carries the exception
+/// through the thread-local stack for the inference failure throw.
+pub fn throw_inference_exception(exception: crate::comp::infer::InferenceException) -> ! {
+    INFERENCE_EXCEPTIONS.with(|stack| stack.borrow_mut().push(exception));
+    std::panic::panic_any(InferenceExceptionPayload);
+}
+
+/// Java catch (InapplicableMethodException ex): runs `body` and converts the
+/// inapplicable-method panic into the ported error value; other panics are
+/// resumed unchanged.
+pub fn catch_inapplicable_method_exception<R>(
+    body: impl FnOnce() -> R,
+) -> Result<R, MethodCheckFailure> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(value) => Ok(value),
+        Err(payload) => {
+            if payload.is::<InapplicableMethodExceptionPayload>() {
+                let diagnostic = INAPPLICABLE_DIAGNOSTICS
+                    .with(|stack| stack.borrow_mut().pop())
+                    .expect("inapplicable diagnostic payload");
+                Err(MethodCheckFailure::Inapplicable(
+                    InapplicableMethodException::new(diagnostic),
+                ))
+            } else {
+                std::panic::resume_unwind(payload)
+            }
+        }
+    }
+}
+
+/// Java catch (InferenceException ex): runs `body` and converts the inference
+/// panic into the ported error value; other panics are resumed unchanged.
+pub fn catch_inference_exception<R>(
+    body: impl FnOnce() -> R,
+) -> Result<R, crate::comp::infer::InferenceException> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(value) => Ok(value),
+        Err(payload) => {
+            if payload.is::<InferenceExceptionPayload>() {
+                let exception = INFERENCE_EXCEPTIONS
+                    .with(|stack| stack.borrow_mut().pop())
+                    .expect("inference exception payload");
+                Err(exception)
+            } else {
+                std::panic::resume_unwind(payload)
+            }
+        }
+    }
+}
+
 /// Java: public static class InapplicableMethodException extends
 /// RuntimeException (Resolve.java:1398-1411)
 #[derive(Clone, Debug)]
@@ -3764,14 +3724,10 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         &self,
         _ctx: &mut crate::compiler_context::CompilerContext,
         _pos: i32,
-        _details: &crate::util::jc_diagnostic::JCDiagnostic,
+        details: &crate::util::jc_diagnostic::JCDiagnostic,
     ) {
-        // Java: throw new InapplicableMethodException(details); the ported
-        // method-check path reports failures as MethodCheckFailure values
-        // (MethodResultInfo.check), so this callback is not reached; registered.
-        unimplemented!(
-            "TODO(Check diagnostics batch): MethodCheckContext.report (Resolve.java:1040-1042)"
-        )
+        // Java: throw new InapplicableMethodException(details) (Resolve.java:1040-1042).
+        throw_inapplicable_method_exception(details);
     }
 
     fn check_warner(
@@ -4247,7 +4203,7 @@ impl Resolve {
         resolve_context: &mut MethodResolutionContext,
         warn: &mut crate::util::warner::Warner,
     ) -> Option<TypeId> {
-        match self.raw_instantiate(
+        let raw_result = catch_inapplicable_method_exception(|| self.raw_instantiate(
             ctx,
             syms,
             types,
@@ -4264,7 +4220,12 @@ impl Resolve {
             use_varargs,
             resolve_context,
             warn,
-        ) {
+        ));
+        let inner_result = match raw_result {
+            Ok(inner) => inner,
+            Err(failure) => Err(failure),
+        };
+        match inner_result {
             Ok(t) => Some(t),
             Err(MethodCheckFailure::Inapplicable(_)) => None,
             Err(MethodCheckFailure::Inference(_)) => None,
@@ -4346,7 +4307,7 @@ impl Resolve {
             "AssertionError: !sym.kind.isResolutionError()"
         );
         let mut warn = crate::util::warner::Warner::new(None);
-        match self.raw_instantiate(
+        let raw_result = catch_inapplicable_method_exception(|| self.raw_instantiate(
             ctx,
             syms,
             types,
@@ -4363,7 +4324,12 @@ impl Resolve {
             use_varargs,
             resolve_context,
             &mut warn,
-        ) {
+        ));
+        let inner_result = match raw_result {
+            Ok(inner) => inner,
+            Err(failure) => Err(failure),
+        };
+        match inner_result {
             Ok(mt) => resolve_context.add_applicable_candidate(sym, mt),
             Err(MethodCheckFailure::Inapplicable(ex)) => {
                 resolve_context.add_inapplicable_candidate(sym, Some(ex.get_diagnostic().clone()));
@@ -4422,13 +4388,11 @@ impl Resolve {
                     _ => return best_so_far,
                 }
             }
-            Err(MethodCheckFailure::Inference(_)) => {
-                // Java: InferenceException propagates out of selectBest; the
-                // ported selectBest returns a Symbol and the inference failure
-                // channel is registered with the Infer/Attr.
-                unimplemented!(
-                    "TODO(Resolve/Infer batch): selectBest InferenceException propagation (Resolve.java:1592-1593)"
-                )
+Err(MethodCheckFailure::Inference(exception)) => {
+                // Java: InferenceException propagates out of selectBest (Resolve.java:1580-1609
+                // catches only InapplicableMethodException); the port throws the
+                // inference exception through the panic channel and Infer catches it.
+                throw_inference_exception(exception);
             }
         }
         if !self.is_accessible(ctx, syms, types, env, site, sym) {
@@ -4933,6 +4897,8 @@ pub struct ResolveMethodCheck {
     pub diags: Rc<crate::util::jc_diagnostic::Factory>,
     /// Java: Resolve.checkVarargsAccessAfterResolution
     pub check_varargs_access_after_resolution: bool,
+    /// Java: outer Resolve.allowModules.
+    pub allow_modules: bool,
 }
 
 impl AbstractMethodCheck for ResolveMethodCheck {
@@ -5013,7 +4979,9 @@ impl MethodCheck for ResolveMethodCheck {
                 ctx,
                 syms,
                 types,
-                deferred_attr_context.inference_context.clone(),
+                env,
+                self.allow_modules,
+                &deferred_attr_context.inference_context,
                 elt,
                 &self.diags,
             )?;
@@ -5029,20 +4997,102 @@ impl MethodCheck for ResolveMethodCheck {
 /// Java: ResolveMethodCheck.varargsAccessible(Env, Type, InferenceContext)
 /// (Resolve.java:880-900)
 fn varargs_accessible(
-    _ctx: &mut crate::compiler_context::CompilerContext,
-    _syms: &mut crate::code::symtab::Symtab,
-    _types: &crate::code::types::Types,
-    _inference_context: Rc<crate::comp::infer::InferenceContext>,
-    _t: TypeId,
-    _diags: &crate::util::jc_diagnostic::Factory,
+    ctx: &mut crate::compiler_context::CompilerContext,
+    syms: &mut crate::code::symtab::Symtab,
+    types: &crate::code::types::Types,
+    env: &Rc<Env<AttrContext>>,
+    allow_modules: bool,
+    inference_context: &crate::comp::infer::InferenceContext,
+    t: TypeId,
+    diags: &Rc<crate::util::jc_diagnostic::Factory>,
 ) -> Result<(), MethodCheckFailure> {
-    // TODO(Check/Resolve isAccessible): the upstream body registers a
-    // free-type listener and checks isAccessible(env, types.erasure(t)); the
-    // isAccessible(Env,Type) and reportMC diagnostics are registered for the
-    // Check, so the accessibility check is registered here.
-    unimplemented!(
-        "TODO(Check batch): Resolve.resolveMethodCheck.varargsAccessible (Resolve.java:880-900)"
-    )
+    // Java: ResolveMethodCheck.varargsAccessible (Resolve.java:880-900)
+    if inference_context.free(ctx, syms, types, t) {
+        struct VarargsAccessibilityListener {
+            env: Rc<Env<AttrContext>>,
+            t: TypeId,
+            diags: Rc<crate::util::jc_diagnostic::Factory>,
+            allow_modules: bool,
+        }
+        impl crate::comp::infer::FreeTypeListener for VarargsAccessibilityListener {
+            fn types_inferred(
+                &self,
+                ctx: &mut crate::compiler_context::CompilerContext,
+                syms: &mut crate::code::symtab::Symtab,
+                types: &crate::code::types::Types,
+                inference_context: &crate::comp::infer::InferenceContext,
+            ) -> Result<(), crate::comp::infer::InferenceException> {
+                match varargs_accessible(
+                    ctx,
+                    syms,
+                    types,
+                    &self.env,
+                    self.allow_modules,
+                    inference_context,
+                    self.t,
+                    &self.diags,
+                ) {
+                    Ok(()) => Ok(()),
+                    Err(MethodCheckFailure::Inference(exception)) => Err(exception),
+                    Err(MethodCheckFailure::Inapplicable(exception)) => {
+                        throw_inapplicable_method_exception(exception.get_diagnostic())
+                    }
+                }
+            }
+        }
+        inference_context.add_free_type_listener(
+            ctx,
+            syms,
+            types,
+            crate::util::list::List::of(t),
+            Rc::new(VarargsAccessibilityListener {
+                env: Rc::clone(env),
+                t,
+                diags: Rc::clone(diags),
+                allow_modules,
+            }),
+        );
+        Ok(())
+    } else {
+        let erasure = types.erasure(ctx, syms, t);
+        if is_accessible_type_free(types, allow_modules, ctx, syms, env, erasure, true) {
+            return Ok(());
+        }
+        // Java: reportMC(env.tree, MethodCheckDiag.INACCESSIBLE_VARARGS,
+        // inferenceContext, t, Kinds.kindName(location), location)
+        let location = env
+            .encl_class
+            .and_then(|tree| class_decl_symbol(ctx, tree))
+            .expect("enclClass symbol");
+        let kind = crate::code::kinds::kind_name(ctx.sym(location), ctx);
+        let kind_text = crate::util::javac_messages::JavacMessages::new(
+            crate::util::javac_messages::DEFAULT_BUNDLE_NAME,
+        )
+        .get_localized_string(&format!("compiler.misc.{}", kind.name()), &[]);
+        let fragment = crate::resources::compiler_properties::fragments::inaccessible_varargs_type(
+            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                crate::comp::attr::type_display_of(ctx, t),
+            ),
+            crate::resources::diagnostic_contract::SymbolKindArg::placeholder(kind_text),
+            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                crate::comp::resolve::symbol_display_name(ctx, location),
+            ),
+        );
+        let pos = env.tree.map(|tree| ctx.tree(tree).pos).unwrap_or(crate::util::position::NOPOS);
+        let info = crate::util::jc_diagnostic::Fragment::from(fragment).into_info();
+        let diag = diags.create(
+            crate::util::jc_diagnostic::DiagnosticType::FRAGMENT,
+            None,
+            Some(Rc::new(
+                crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+            )),
+            &info.code,
+            info.args,
+        );
+        Err(MethodCheckFailure::Inapplicable(
+            InapplicableMethodException::new(diag),
+        ))
+    }
 }
 
 /// Java: class Resolve.MostSpecificCheck (Resolve.java:1122-1200): the
@@ -8880,4 +8930,195 @@ mod tests {
 
 }
 
+#[cfg(test)]
+mod check_channel_tests {
+    use super::*;
+    use crate::util::javac_messages::{DEFAULT_BUNDLE_NAME, JavacMessages};
 
+    fn diagnostic() -> crate::util::jc_diagnostic::JCDiagnostic {
+        let messages = Rc::new(JavacMessages::new(DEFAULT_BUNDLE_NAME));
+        let factory = crate::util::jc_diagnostic::Factory::new(messages, "compiler");
+        factory.fragment(crate::util::jc_diagnostic::Fragment::from(
+            crate::resources::compiler_properties::fragments::stat_expr_expected(),
+        ))
+    }
+
+    #[test]
+    fn inapplicable_panic_is_caught_at_the_boundary() {
+        let diag = diagnostic();
+        let result =
+            catch_inapplicable_method_exception(|| throw_inapplicable_method_exception(&diag));
+        match result {
+            Err(MethodCheckFailure::Inapplicable(exception)) => {
+                assert_eq!(
+                    exception.get_diagnostic().get_message(None).to_string_lossy(),
+                    diag.get_message(None).to_string_lossy()
+                );
+            }
+            _ => panic!("expected the inapplicable failure"),
+        }
+    }
+
+    #[test]
+    fn non_inapplicable_panic_propagates_unchanged() {
+        let outer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            catch_inapplicable_method_exception(|| panic!("unrelated bug"))
+        }));
+        let payload = outer.err().expect("the unrelated panic must propagate");
+        assert!(
+            payload.downcast_ref::<&str>().is_some() || payload.downcast_ref::<String>().is_some()
+        );
+    }
+}
+
+
+
+    fn is_accessible_class_free(
+        types: &crate::code::types::Types, allow_modules: bool,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &Symtab,
+        env: &Rc<Env<AttrContext>>,
+        c: SymbolId,
+        check_inner: bool,
+    ) -> bool {
+        // 15.9.5.1: the signature of the anonymous constructor can refer to an
+        // inaccessible type.
+        if env
+            .encl_method
+            .map(|encl_method| method_decl_flags(ctx, encl_method))
+            .is_some_and(|flags_value| (flags_value & flags::ANONCONSTR as i64) != 0)
+        {
+            return true;
+        }
+
+        if env.info.borrow().visiting_service_implementation {
+            let toplevel_module = env_toplevel_module(ctx, env);
+            let class_module = package_module(ctx, symbol_packge(ctx, c).expect("class package"));
+            if toplevel_module.is_some() && toplevel_module == class_module {
+                return true;
+            }
+        }
+
+        let access = ctx.sym(c).flags_field & flags::AccessFlags as i64;
+        let is_accessible;
+        if access == flags::PRIVATE as i64 {
+            let encl_sym = env
+                .encl_class
+                .and_then(|class_tree| class_decl_symbol(ctx, class_tree))
+                .expect("enclClass symbol");
+            is_accessible = symbol_outermost_class(ctx, encl_sym)
+                == ctx
+                    .sym(c)
+                    .owner
+                    .and_then(|owner| symbol_outermost_class(ctx, owner));
+        } else if access == 0 {
+            let toplevel_package = env_toplevel_package(ctx, env);
+            is_accessible = toplevel_package == ctx.sym(c).owner
+                || toplevel_package == symbol_packge(ctx, c);
+        } else if access == flags::PUBLIC as i64 {
+            if allow_modules {
+                let curr_module = env_toplevel_module(ctx, env).expect("toplevel module");
+                // Java: currModule.complete() — the ported symbol complete is a
+                // no-op for entered symbols (Completer registered).
+                let package = symbol_packge(ctx, c).expect("class package");
+                let package_module = package_module(ctx, package);
+                let visible = match &ctx.sym(curr_module).kind_data {
+                    crate::code::symbol::SymbolKind::ModuleSymbol {
+                        visible_packages, ..
+                    } => package_fullname(ctx, package)
+                        .and_then(|fullname| visible_packages.get(&fullname).copied())
+                        == Some(package),
+                    _ => false,
+                };
+                let reads = match &ctx.sym(curr_module).kind_data {
+                    crate::code::symbol::SymbolKind::ModuleSymbol { read_modules, .. } => {
+                        read_modules.clone()
+                    }
+                    _ => Vec::new(),
+                };
+                // Java: currModule.complete() — TODO(Completer): the
+                // completer chain is not ported; entered modules are complete.
+                is_accessible = package_module == Some(curr_module)
+                    || visible
+                    || package == syms.root_package
+                    || (package_module == Some(syms.unnamed_module)
+                        && package_module.map(|module| reads.contains(&module)).unwrap_or(false));
+            } else {
+                is_accessible = true;
+            }
+        } else if access == flags::PROTECTED as i64 {
+            let toplevel_package = env_toplevel_package(ctx, env);
+            let owner = ctx.sym(c).owner.expect("class owner");
+            is_accessible = toplevel_package == Some(owner)
+                || toplevel_package == symbol_packge(ctx, c)
+                || {
+                    let encl_sym = env
+                        .encl_class
+                        .and_then(|class_tree| {
+                            class_decl_symbol(ctx, class_tree)
+                        })
+                        .expect("enclClass symbol");
+                    is_inner_sub_class_free(types, ctx, syms, encl_sym, owner)
+                };
+        } else {
+            // error recovery
+            is_accessible = true;
+        }
+
+        let class_type = ctx.sym(c).ty.expect("class symbol type");
+        let no_type = crate::code::symtab::no_type_id(ctx);
+        let enclosing = ctx.typ(class_type).get_enclosing_type();
+        if !check_inner {
+            return is_accessible;
+        }
+        match enclosing {
+            None => is_accessible,
+            Some(enclosing) if enclosing == no_type => is_accessible,
+            Some(enclosing) => {
+                is_accessible && is_accessible_type_free(types, allow_modules, ctx, syms, env, enclosing, check_inner)
+            }
+        }
+    }
+
+    fn is_inner_sub_class_free(
+        types: &crate::code::types::Types,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &Symtab,
+        c: SymbolId,
+        base: SymbolId,
+    ) -> bool {
+        let mut current: Option<SymbolId> = Some(c);
+        while let Some(class) = current {
+            if symbol_is_sub_class(ctx, &types, syms, class, base) {
+                return true;
+            }
+            current = ctx
+                .sym(class)
+                .owner
+                .and_then(|owner| symbols_encl_class(ctx, owner));
+        }
+        false
+    }
+
+    fn is_accessible_type_free(
+        types: &crate::code::types::Types, allow_modules: bool,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &Symtab,
+        env: &Rc<Env<AttrContext>>,
+        t: TypeId,
+        check_inner: bool,
+    ) -> bool {
+        if ctx.typ(t).has_tag(TypeTag::ARRAY) {
+            let elemtype = types.elemtype(ctx, syms, t);
+            let bound = types.cvar_upper_bound(ctx, elemtype);
+            return is_accessible_type_free(types, allow_modules, ctx, syms, env, bound, check_inner);
+        }
+        // TODO(Types): t.isUnion() / UnionClassType alternative types.
+        // Java: isAccessible(env, (Symbol) t.tsym, checkInner) returns true for
+        // a null symbol (e.g. the no-type has no tsym).
+        let tsym = match ctx.typ(t).tsym {
+            Some(tsym) => tsym,
+            None => return true,
+        };
+        is_accessible_class_free(types, allow_modules, ctx, syms, env, tsym, check_inner)
+    }

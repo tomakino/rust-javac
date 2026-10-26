@@ -3147,7 +3147,69 @@ impl Infer {
 ///
 /// Upstream: Infer.java:1800-1900.
 ///
+    /// Java: Type instantiateMethod(...) (Infer.java:1800-1900).
+    ///
+    /// The upstream method catches InferenceException and reports it through the
+    /// result info check context (Infer.java:348-351); the ported throw channel is
+    /// the panic channel, so the catch is modelled here.
+    #[allow(clippy::too_many_arguments)]
     pub fn instantiate_method(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        attr: &mut crate::comp::attr::Attr,
+        chk: &crate::comp::check::Check,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        tvars: List<TypeId>,
+        mt: TypeId,
+        result_info: Option<&crate::comp::attr::ResultInfo>,
+        msym: SymbolId,
+        argtypes: List<TypeId>,
+        allow_boxing: bool,
+        use_varargs: bool,
+        resolve_context: &mut crate::comp::resolve::MethodResolutionContext,
+        warn: &mut Warner,
+    ) -> Result<TypeId, InferenceException> {
+        let outcome = crate::comp::resolve::catch_inference_exception(|| {
+            self.instantiate_method_inner(
+                ctx,
+                syms,
+                types,
+                attr,
+                chk,
+                env,
+                tvars,
+                mt,
+                result_info,
+                msym,
+                argtypes,
+                allow_boxing,
+                use_varargs,
+                resolve_context,
+                warn,
+            )
+        });
+        match outcome {
+            Ok(result) => result,
+            Err(exception) => {
+                // Java: resultInfo.checkContext.report(null, ex.getDiagnostic());
+                // Assert.error();
+                if let Some(result_info) = result_info
+                    && let Some(diagnostic) = exception.get_diagnostic()
+                {
+                    let pos = env
+                        .tree
+                        .map(|tree| ctx.tree(tree).pos)
+                        .unwrap_or(crate::util::position::NOPOS);
+                    result_info.check_context.report(ctx, pos, &diagnostic);
+                }
+                panic!("AssertionError: cannot get here (the report above throws)");
+            }
+        }
+    }
+
+    fn instantiate_method_inner(
         &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
