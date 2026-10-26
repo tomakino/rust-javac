@@ -266,13 +266,15 @@ pub enum ScopeData {
         /// Java: private final Name filterName (null for star imports)
         filter_name: Option<Name>,
         /// Java: private final ImportFilter filter (null for named imports)
-        filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+        #[allow(clippy::type_complexity)]
+    filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
         /// Java: private final JCImport imp (arena tree id)
         imp: Option<TreeId>,
         /// Java: private final boolean staticImport
         static_import: bool,
         /// Java: private final BiConsumer<JCImport, CompletionFailure> cfHandler
-        cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
+        #[allow(clippy::type_complexity)]
+    cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
     },
 }
 
@@ -393,6 +395,7 @@ impl Scope {
     /// ImportFilter filter, JCImport imp, boolean staticImport,
     /// BiConsumer<JCImport, CompletionFailure> cfHandler)
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
     pub fn new_filter_import_scope(
         owner: Option<SymbolId>,
         origin: ScopeId,

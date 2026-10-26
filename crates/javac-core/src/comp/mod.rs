@@ -1,5 +1,6 @@
 //! com.sun.tools.javac.comp
 
+pub mod attr;
 pub mod attr_context;
 pub mod check;
 pub mod deferred_attr;

@@ -2949,7 +2949,7 @@ mod tests {
     fn attribute_annotation_trees_and_literal_object() {
         use crate::code::attribute::{Attribute, AttributeKind};
         use crate::util::constants::ConstantValue;
-        let (mut ctx, mut syms, _types, mut maker) = new_maker_with_syms();
+        let (mut ctx, syms, _types, mut maker) = new_maker_with_syms();
         // Java: Literal(Object) — the constant type is attached to the tree.
         let literal = maker.literal_constant(&mut ctx, &syms, ConstantValue::Integer(7));
         assert_eq!(ctx.tree(literal).tag, Tag::LITERAL);
