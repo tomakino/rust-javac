@@ -14,6 +14,8 @@
 
 use javac_strings::JavaString;
 
+use crate::ids::{SymbolId, TypeId};
+
 /// Gen/PoolWriter batch).
 #[derive(Clone, Debug, PartialEq)]
 pub enum PoolKey {
@@ -22,6 +24,12 @@ pub enum PoolKey {
     Long(i64),
     Double(u64),
     String(JavaString),
+    /// A class-type loadable constant (Java: ClassType pool key).
+    Class(TypeId),
+    /// A method-handle loadable constant.
+    MethodHandle(SymbolId),
+    /// A dynamic (invokedynamic/constant dynamic) loadable constant.
+    Dynamic(SymbolId),
 }
 
 pub trait PoolConstant {
@@ -173,3 +181,53 @@ impl PoolConstant for BasicConstant {
 }
 
 impl LoadableConstant for BasicConstant {}
+
+/// The element type of a loadable constant array.
+///
+/// The upstream LoadableConstant[] holds interface references; the ported code
+/// stores the concrete producers in this enum so the array can live inside a
+/// symbol (trait objects cannot be cloned into the arena) while keeping every
+/// Java producer (BasicConstant, ClassType, MethodHandleSymbol, dynamic
+/// symbols) individually recognizable.
+#[derive(Clone, Debug)]
+pub enum LoadableConstantRef {
+    /// A basic constant (int/float/long/double/String).
+    Basic(BasicConstant),
+    /// A class type (Java: ClassType implements LoadableConstant).
+    Class(TypeId),
+    /// A method handle symbol.
+    MethodHandle(SymbolId),
+    /// A dynamic symbol (invokedynamic/constant dynamic).
+    Dynamic(SymbolId),
+}
+
+impl PoolConstant for LoadableConstantRef {
+    fn pool_key(&self) -> PoolKey {
+        match self {
+            LoadableConstantRef::Basic(basic) => basic.pool_key(),
+            LoadableConstantRef::Class(ty) => PoolKey::Class(*ty),
+            LoadableConstantRef::MethodHandle(sym) => PoolKey::MethodHandle(*sym),
+            LoadableConstantRef::Dynamic(sym) => PoolKey::Dynamic(*sym),
+        }
+    }
+
+    fn pool_tag(&self) -> i32 {
+        match self {
+            LoadableConstantRef::Basic(basic) => basic.pool_tag(),
+            LoadableConstantRef::Class(ty) => {
+                let _ = ty;
+                crate::jvm::class_file::CONSTANT_CLASS
+            }
+            LoadableConstantRef::MethodHandle(sym) => {
+                let _ = sym;
+                crate::jvm::class_file::CONSTANT_METHODHANDLE
+            }
+            LoadableConstantRef::Dynamic(sym) => {
+                let _ = sym;
+                crate::jvm::class_file::CONSTANT_INVOKEDYNAMIC
+            }
+        }
+    }
+}
+
+impl LoadableConstant for LoadableConstantRef {}

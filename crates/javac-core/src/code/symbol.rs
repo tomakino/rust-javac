@@ -957,6 +957,17 @@ pub enum SymbolKind {
         /// Whether this is a getter handle (private field getter).
         getter: bool,
     },
+    /// Java: Symbol.DynamicMethodSymbol (an invokedynamic method symbol).
+    ///
+    /// The symbol carries its bootstrap method handle and the static argument
+    /// constants; the ported loadable-constant array is an enum so it can live
+    /// inside the arena.
+    DynamicMethodSymbol {
+        /// The bootstrap method handle.
+        bsm: SymbolId,
+        /// The static arguments passed to the bootstrap method.
+        static_args: Vec<crate::jvm::pool_constant::LoadableConstantRef>,
+    },
     /// Java: Symbol.OperatorSymbol
     OperatorSymbol {
         /// The operator opcode (a JCTree.Tag ordinal in the upstream code).
@@ -2824,6 +2835,80 @@ pub fn external_type(
     }
 }
 
+
+/// Build a method-handle symbol for an accessed symbol.
+///
+/// The Java helper is VarSymbol.asMethodHandle(boolean) / MethodSymbol
+/// equivalents; the handle kind and getter flag are recorded on the symbol so
+/// the class writer can emit the reference kind.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - sym: the referenced symbol;
+///   - getter: whether this handle reads a field.
+///
+/// # Returns
+///   - the fresh method-handle symbol.
+///
+/// # Panics
+///   - the referenced symbol has no type.
+pub fn as_method_handle(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+    getter: bool,
+) -> SymbolId {
+    let referenced = ctx.sym(sym).clone();
+    let flags = referenced.flags_field;
+    let name = referenced.name.clone();
+    let ty = referenced.ty.expect("referenced symbol type");
+    let owner = referenced.owner.unwrap_or(sym);
+    let symbol = Symbol::new(
+        Kind::MTH,
+        flags,
+        name,
+        Some(ty),
+        Some(owner),
+        SymbolKind::MethodHandleSymbol {
+            ref_sym: Some(sym),
+            getter,
+        },
+    );
+    ctx.alloc_symbol(symbol)
+}
+
+/// Build an invokedynamic method symbol.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - name: the invokedynamic method name;
+///   - owner: the described symbol owner;
+///   - bsm: the bootstrap method handle;
+///   - ty: the method type;
+///   - static_args: the bootstrap static arguments.
+///
+/// # Returns
+///   - the fresh dynamic method symbol.
+///
+/// # Panics
+///   - none.
+pub fn new_dynamic_method_symbol(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    name: Name,
+    owner: SymbolId,
+    bsm: SymbolId,
+    ty: crate::ids::TypeId,
+    static_args: Vec<crate::jvm::pool_constant::LoadableConstantRef>,
+) -> SymbolId {
+    let symbol = Symbol::new(
+        Kind::MTH,
+        0,
+        name,
+        Some(ty),
+        Some(owner),
+        SymbolKind::DynamicMethodSymbol { bsm, static_args },
+    );
+    ctx.alloc_symbol(symbol)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
