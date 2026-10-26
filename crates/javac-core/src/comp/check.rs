@@ -5561,3 +5561,604 @@ fn is_target_subset_of(
     }
     true
 }
+impl Check {
+    /// Java: public void checkCompatibleConcretes(DiagnosticPosition pos, Type site)
+    /// (Check.java:1928-1980).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - site: the class type to check.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:1928-1980.
+    #[allow(clippy::too_many_lines)]
+    pub fn check_compatible_concretes(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        site: TypeId,
+    ) {
+        let sup = self.types.supertype(ctx, syms, site);
+        if !ctx.typ(sup).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            return;
+        }
+        let site_tsym = ctx.typ(site).tsym.expect("site symbol");
+        let mut t1 = sup;
+        while ctx.typ(t1).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            let t1_tsym = ctx.typ(t1).tsym.expect("t1 symbol");
+            let t1_tsym_ty = ctx.sym(t1_tsym).ty.expect("t1 symbol type");
+            if !self.types.is_parameterized_type_of(ctx, t1_tsym_ty) {
+                break;
+            }
+            let t1_members = match &ctx.sym(t1_tsym).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+                _ => None,
+            };
+            if let Some(t1_members) = t1_members {
+                let s1_symbols = ctx.scope_get_symbols(t1_members, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true);
+                for s1 in s1_symbols {
+                    let s1_flags = ctx.sym(s1).flags_field;
+                    let skip_flags = crate::code::flags::STATIC as i64
+                        | crate::code::flags::SYNTHETIC as i64
+                        | crate::code::flags::BRIDGE;
+                    if ctx.sym(s1).kind != crate::code::kinds::Kind::MTH
+                        || (s1_flags & skip_flags) != 0
+                        || !crate::code::symbol::is_inherited_in(ctx, syms, &self.types, s1, site_tsym)
+                    {
+                        continue;
+                    }
+                    let implementation = crate::code::symbol::implementation(ctx, syms, &self.types, s1, site_tsym, true);
+                    if implementation != Some(s1) {
+                        continue;
+                    }
+                    let st1 = self.types.member_type(ctx, syms, t1, s1);
+                    let s1_args_length = list_length(self.types.get_parameter_types_public(ctx, st1));
+                    if st1 == ctx.sym(s1).ty.expect("s1 type") {
+                        continue;
+                    }
+                    let mut t2 = sup;
+                    while ctx.typ(t2).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+                        let t2_tsym = ctx.typ(t2).tsym.expect("t2 symbol");
+                        let t2_members = match &ctx.sym(t2_tsym).kind_data {
+                            crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+                            _ => None,
+                        };
+                        if let Some(t2_members) = t2_members {
+                            let s1_name = ctx.sym(s1).name.clone();
+                            let s2_symbols = ctx.scope_get_symbols_by_name(t2_members, &s1_name, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true);
+                            for s2 in s2_symbols {
+                                let s2_flags = ctx.sym(s2).flags_field;
+                                if s2 == s1
+                                    || ctx.sym(s2).kind != crate::code::kinds::Kind::MTH
+                                    || (s2_flags & skip_flags) != 0
+                                {
+                                    continue;
+                                }
+                                let s2_ty = ctx.sym(s2).ty.expect("s2 type");
+                                if list_length(self.types.get_parameter_types_public(ctx, s2_ty)) != s1_args_length {
+                                    continue;
+                                }
+                                if !crate::code::symbol::is_inherited_in(ctx, syms, &self.types, s2, site_tsym) {
+                                    continue;
+                                }
+                                if crate::code::symbol::implementation(ctx, syms, &self.types, s2, site_tsym, true) != Some(s2) {
+                                    continue;
+                                }
+                                let st2 = self.types.member_type(ctx, syms, t2, s2);
+                                if self.types.override_equivalent(ctx, syms, st1, st2) {
+                                    let info = crate::resources::compiler_properties::errors::concrete_inheritance_conflict(
+                                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                            crate::comp::resolve::symbol_display_name(ctx, s1),
+                                        ),
+                                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                            crate::comp::attr::type_display_of(ctx, t1),
+                                        ),
+                                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                            crate::comp::resolve::symbol_display_name(ctx, s2),
+                                        ),
+                                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                            crate::comp::attr::type_display_of(ctx, t2),
+                                        ),
+                                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                            crate::comp::attr::type_display_of(ctx, sup),
+                                        ),
+                                    );
+                                    crate::util::abstract_log::AbstractLog::error_at(
+                                        &mut *self.log.borrow_mut(),
+                                        pos,
+                                        crate::util::jc_diagnostic::Error::from(info),
+                                    );
+                                }
+                            }
+                        }
+                        t2 = self.types.supertype(ctx, syms, t2);
+                    }
+                }
+            }
+            t1 = self.types.supertype(ctx, syms, t1);
+        }
+    }
+
+    /// Java: public boolean checkCompatibleAbstracts(DiagnosticPosition pos,
+    /// Type t1, Type t2, Type site) (Check.java:1988-1999).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - t1/t2: the supertypes;
+    ///   - site: the most derived type.
+    ///
+    /// # Returns
+    ///   - true when the abstract methods are compatible.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:1988-1999.
+    pub fn check_compatible_abstracts(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        t1: TypeId,
+        t2: TypeId,
+        site: TypeId,
+    ) -> bool {
+        let site_tsym = ctx.typ(site).tsym.expect("site symbol");
+        let site_flags = ctx.sym(site_tsym).flags_field;
+        let (mut t1, mut t2) = (t1, t2);
+        if (site_flags & crate::code::flags::COMPOUND as i64) != 0 {
+            t1 = self.types.capture(ctx, syms, t1);
+            t2 = self.types.capture(ctx, syms, t2);
+        }
+        self.first_incompatibility(ctx, syms, pos, t1, t2, site).is_none()
+    }
+
+    /// Java: private Symbol firstIncompatibility(DiagnosticPosition pos, Type t1,
+    /// Type t2, Type site) (Check.java:2005-2020).
+    fn first_incompatibility(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        t1: TypeId,
+        t2: TypeId,
+        site: TypeId,
+    ) -> Option<SymbolId> {
+        let mut interfaces1: std::collections::HashMap<SymbolId, TypeId> = std::collections::HashMap::new();
+        self.closure(ctx, syms, t1, &mut interfaces1);
+        let mut interfaces2: std::collections::HashMap<SymbolId, TypeId> = std::collections::HashMap::new();
+        if t1 != t2 {
+            self.closure_skip(ctx, syms, t2, &interfaces1, &mut interfaces2);
+        }
+        let ifaces2: std::collections::HashMap<SymbolId, TypeId> = if t1 == t2 {
+            interfaces1.clone()
+        } else {
+            interfaces2
+        };
+        let ifaces1: Vec<TypeId> = interfaces1.values().copied().collect();
+        let ifaces2: Vec<TypeId> = ifaces2.values().copied().collect();
+        for t3 in ifaces1 {
+            for t4 in &ifaces2 {
+                if let Some(sym) = self.first_direct_incompatibility(ctx, syms, pos, t3, *t4, site) {
+                    return Some(sym);
+                }
+            }
+        }
+        None
+    }
+
+    /// Java: private void closure(Type t, Map<TypeSymbol,Type> typeMap)
+    /// (Check.java:2022-2029).
+    fn closure(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        t: TypeId,
+        type_map: &mut std::collections::HashMap<SymbolId, TypeId>,
+    ) {
+        if !ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            return;
+        }
+        let tsym = ctx.typ(t).tsym.expect("closure symbol");
+        if type_map.insert(tsym, t).is_none() {
+            let sup = self.types.supertype(ctx, syms, t);
+            self.closure(ctx, syms, sup, type_map);
+            let interfaces = self.types.interfaces(ctx, syms, t);
+            let mut current = interfaces;
+            while current.non_empty() {
+                self.closure(ctx, syms, *current.head(), type_map);
+                current = current.tail();
+            }
+        }
+    }
+
+    /// Java: private void closure(Type t, Map<TypeSymbol,Type> typesSkip,
+    /// Map<TypeSymbol,Type> typeMap) (Check.java:2032-2042).
+    fn closure_skip(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        t: TypeId,
+        types_skip: &std::collections::HashMap<SymbolId, TypeId>,
+        type_map: &mut std::collections::HashMap<SymbolId, TypeId>,
+    ) {
+        if !ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            return;
+        }
+        let tsym = ctx.typ(t).tsym.expect("closure symbol");
+        if types_skip.contains_key(&tsym) {
+            return;
+        }
+        if type_map.insert(tsym, t).is_none() {
+            let sup = self.types.supertype(ctx, syms, t);
+            self.closure_skip(ctx, syms, sup, types_skip, type_map);
+            let interfaces = self.types.interfaces(ctx, syms, t);
+            let mut current = interfaces;
+            while current.non_empty() {
+                self.closure_skip(ctx, syms, *current.head(), types_skip, type_map);
+                current = current.tail();
+            }
+        }
+    }
+
+    /// Java: private Symbol firstDirectIncompatibility(DiagnosticPosition pos,
+    /// Type t1, Type t2, Type site) (Check.java:2107-2165).
+    #[allow(clippy::too_many_lines, clippy::collapsible_if)]
+    fn first_direct_incompatibility(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        t1: TypeId,
+        t2: TypeId,
+        site: TypeId,
+    ) -> Option<SymbolId> {
+        let site_tsym = ctx.typ(site).tsym.expect("site symbol");
+        let t1_tsym = ctx.typ(t1).tsym.expect("t1 symbol");
+        let t2_tsym = ctx.typ(t2).tsym.expect("t2 symbol");
+        let t1_members = match &ctx.sym(t1_tsym).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+            _ => None,
+        };
+        let t1_symbols = match t1_members {
+            Some(members) => ctx.scope_get_symbols(members, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true),
+            None => Vec::new(),
+        };
+        for s1 in t1_symbols {
+            let s1_flags = ctx.sym(s1).flags_field;
+            if ctx.sym(s1).kind != crate::code::kinds::Kind::MTH
+                || !crate::code::symbol::is_inherited_in(ctx, syms, &self.types, s1, site_tsym)
+                || (s1_flags & crate::code::flags::SYNTHETIC as i64) != 0
+            {
+                continue;
+            }
+            let implementation = crate::code::symbol::implementation(ctx, syms, &self.types, s1, site_tsym, false);
+            if let Some(impl_sym) = implementation {
+                if (ctx.sym(impl_sym).flags_field & crate::code::flags::ABSTRACT as i64) == 0 {
+                    continue;
+                }
+            }
+            let mut st1: Option<TypeId> = None;
+            let s1_name = ctx.sym(s1).name.clone();
+            let t2_members = match &ctx.sym(t2_tsym).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+                _ => None,
+            };
+            if let Some(t2_members) = t2_members {
+                let s2_symbols = ctx.scope_get_symbols_by_name(t2_members, &s1_name, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true);
+                for s2 in s2_symbols {
+                    if s1 == s2 {
+                        continue;
+                    }
+                    let s2_flags = ctx.sym(s2).flags_field;
+                    if ctx.sym(s2).kind != crate::code::kinds::Kind::MTH
+                        || !crate::code::symbol::is_inherited_in(ctx, syms, &self.types, s2, site_tsym)
+                        || (s2_flags & crate::code::flags::SYNTHETIC as i64) != 0
+                    {
+                        continue;
+                    }
+                    if st1.is_none() {
+                        st1 = Some(self.types.member_type(ctx, syms, t1, s1));
+                    }
+                    let st1_value = st1.expect("st1");
+                    let st2 = self.types.member_type(ctx, syms, t2, s2);
+                    if self.types.override_equivalent(ctx, syms, st1_value, st2) {
+                        let tvars1 = crate::code::types::get_type_arguments(ctx, st1_value);
+                        let tvars2 = crate::code::types::get_type_arguments(ctx, st2);
+                        let rt1 = self.types.get_return_type_public(ctx, st1_value);
+                        let rt2_unsubst = self.types.get_return_type_public(ctx, st2);
+                        let rt2 = {
+                            let substituted = self.types.subst(ctx, syms, &List::of(rt2_unsubst), &tvars2, &tvars1);
+                            *substituted.head()
+                        };
+                        let rt1_prim = ctx.typ(rt1).is_primitive_or_void();
+                        let rt2_prim = ctx.typ(rt2).is_primitive_or_void();
+                        let mut no_warnings = crate::util::warner::Warner::new(None);
+                        let compat = self.types.is_same_type(ctx, syms, rt1, rt2)
+                            || (!rt1_prim
+                                && !rt2_prim
+                                && (self.types.covariant_return_type(ctx, syms, rt1, rt2, &mut no_warnings)
+                                    || self.types.covariant_return_type(ctx, syms, rt2, rt1, &mut no_warnings)))
+                            || self.check_common_overrider_in(ctx, syms, s1, s2, site);
+                        if !compat {
+                            let params = self.types.get_parameter_types_public(ctx, st2);
+                            let params_args: Vec<crate::resources::diagnostic_contract::TypeArg> = params
+                                .iter()
+                                .map(|p| crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, p)))
+                                .collect();
+                            let details = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                                crate::resources::compiler_properties::fragments::incompatible_diff_ret(
+                                    ctx.sym(s2).name.clone(),
+                                    params_args,
+                                ),
+                            ));
+                            let info = crate::resources::compiler_properties::errors::types_incompatible(
+                                crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, t1)),
+                                crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, t2)),
+                                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(details)),
+                            );
+                            crate::util::abstract_log::AbstractLog::error_at(&mut *self.log.borrow_mut(), pos, crate::util::jc_diagnostic::Error::from(info));
+                            return Some(s2);
+                        }
+                    } else if self.check_name_clash(ctx, syms, site_tsym, s1, s2)
+                        && !self.check_common_overrider_in(ctx, syms, s1, s2, site)
+                    {
+                        let st1_member = self.types.member_type(ctx, syms, site, s1);
+                        let st2_member = self.types.member_type(ctx, syms, site, s2);
+                        let params1: Vec<crate::resources::diagnostic_contract::TypeArg> = self.types.get_parameter_types_public(ctx, st1_member)
+                            .iter().map(|p| crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, p))).collect();
+                        let params2: Vec<crate::resources::diagnostic_contract::TypeArg> = self.types.get_parameter_types_public(ctx, st2_member)
+                            .iter().map(|p| crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, p))).collect();
+                        let loc1 = ctx.sym(s1).location();
+                        let loc2 = ctx.sym(s2).location();
+                        let info = crate::resources::compiler_properties::errors::name_clash_same_erasure_no_override(
+                            ctx.sym(s1).name.clone(),
+                            params1,
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(match loc1 {
+                                Some(loc) => crate::comp::resolve::symbol_display_name(ctx, loc),
+                                None => String::new(),
+                            }),
+                            ctx.sym(s2).name.clone(),
+                            params2,
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(match loc2 {
+                                Some(loc) => crate::comp::resolve::symbol_display_name(ctx, loc),
+                                None => String::new(),
+                            }),
+                        );
+                        crate::util::abstract_log::AbstractLog::error_at(&mut *self.log.borrow_mut(), pos, crate::util::jc_diagnostic::Error::from(info));
+                        return Some(s2);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Java: boolean checkCommonOverriderIn(Symbol s1, Symbol s2, Type site)
+    /// (Check.java:2072-2090).
+    fn check_common_overrider_in(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        s1: SymbolId,
+        s2: SymbolId,
+        site: TypeId,
+    ) -> bool {
+        let mut supertypes: std::collections::HashMap<SymbolId, TypeId> = std::collections::HashMap::new();
+        let st1 = self.types.member_type(ctx, syms, site, s1);
+        let st2 = self.types.member_type(ctx, syms, site, s2);
+        self.closure(ctx, syms, site, &mut supertypes);
+        let s1_name = ctx.sym(s1).name.clone();
+        let values: Vec<TypeId> = supertypes.values().copied().collect();
+        for t in values {
+            let t_tsym = match ctx.typ(t).tsym {
+                Some(tsym) => tsym,
+                None => continue,
+            };
+            let members = match &ctx.sym(t_tsym).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+                _ => None,
+            };
+            let members = match members {
+                Some(members) => members,
+                None => continue,
+            };
+            let s3_symbols = ctx.scope_get_symbols_by_name(members, &s1_name, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true);
+            for s3 in s3_symbols {
+                let s3_flags = ctx.sym(s3).flags_field;
+                if s3 == s1 || s3 == s2 || ctx.sym(s3).kind != crate::code::kinds::Kind::MTH
+                    || (s3_flags & (crate::code::flags::BRIDGE | crate::code::flags::SYNTHETIC as i64)) != 0
+                {
+                    continue;
+                }
+                let st3 = self.types.member_type(ctx, syms, site, s3);
+                if self.types.override_equivalent(ctx, syms, st3, st1)
+                    && self.types.override_equivalent(ctx, syms, st3, st2)
+                    && self.types.return_type_substitutable(ctx, syms, st3, st1)
+                    && self.types.return_type_substitutable(ctx, syms, st3, st2)
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Java: private boolean checkNameClash(ClassSymbol origin, Symbol s1, Symbol s2)
+    /// (Check.java:2250-2256).
+    fn check_name_clash(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        origin: SymbolId,
+        s1: SymbolId,
+        s2: SymbolId,
+    ) -> bool {
+        self.clash_filter_test(ctx, syms, origin, s1)
+            && self.clash_filter_test(ctx, syms, origin, s2)
+            && {
+                let origin_ty = ctx.sym(origin).ty.expect("origin type");
+                let e1 = self.types.erasure(ctx, syms, ctx.sym(s1).ty.expect("s1 type"));
+                let e2 = self.types.erasure(ctx, syms, ctx.sym(s2).ty.expect("s2 type"));
+                let _ = origin_ty;
+                self.types.has_same_args(ctx, syms, e1, e2)
+            }
+    }
+
+    /// Java: Check.ClashFilter.test(Symbol) (Check.java:2607-2635).
+    fn clash_filter_test(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        site_tsym: SymbolId,
+        s: SymbolId,
+    ) -> bool {
+        let flags_value = ctx.sym(s).flags_field;
+        let should_skip = (flags_value & crate::code::flags::CLASH) != 0
+            && ctx.sym(s).owner == Some(site_tsym);
+        ctx.sym(s).kind == crate::code::kinds::Kind::MTH
+            && (flags_value & crate::code::flags::SYNTHETIC as i64) == 0
+            && !should_skip
+            && crate::code::symbol::is_inherited_in(ctx, syms, &self.types, s, site_tsym)
+            && !ctx.sym(s).is_constructor(&self.names)
+    }
+}
+/// Adapter: List<T> length (the cons list has no len).
+fn list_length<T: Clone>(list: List<T>) -> usize {
+    let mut count = 0usize;
+    let mut current = list;
+    while current.non_empty() {
+        count += 1;
+        current = current.tail();
+    }
+    count
+}
+impl Check {
+    /// Java: void checkDefaultMethodClashes(DiagnosticPosition pos, Type site)
+    /// (Check.java:2640-2685).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - site: the class type to check.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:2640-2685.
+    pub fn check_default_method_clashes(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        site: TypeId,
+    ) {
+        // The filter needs the site symbol and the inherited check; iterate the
+        // closure symbols and apply DefaultMethodClashFilter.test explicitly.
+        let members = self.types.members_closure(ctx, syms, site);
+        let symbols = ctx.scope_get_symbols(members, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true);
+        let site_tsym = ctx.typ(site).tsym.expect("site symbol");
+        for m in symbols {
+            let flags_value = ctx.sym(m).flags_field;
+            let is_default = ctx.sym(m).kind == crate::code::kinds::Kind::MTH
+                && (flags_value & crate::code::flags::DEFAULT) != 0
+                && crate::code::symbol::is_inherited_in(ctx, syms, &self.types, m, site_tsym)
+                && !ctx.sym(m).is_constructor(&self.names);
+            if !is_default {
+                continue;
+            }
+            let prov = self.types.interface_candidates(ctx, syms, site, m);
+            if prov.len() > 1 {
+                let mut defaults: Vec<SymbolId> = Vec::new();
+                let mut abstracts: Vec<SymbolId> = Vec::new();
+                for prov_sym in prov {
+                    let prov_flags = ctx.sym(prov_sym).flags_field;
+                    if (prov_flags & crate::code::flags::DEFAULT) != 0 {
+                        defaults.push(prov_sym);
+                    } else if (prov_flags & crate::code::flags::ABSTRACT as i64) != 0 {
+                        abstracts.push(prov_sym);
+                    }
+                    if !defaults.is_empty() && defaults.len() + abstracts.len() >= 2 {
+                        let s1 = defaults[0];
+                        let (s2, diag_key, is_unrelated) = if defaults.len() > 1 {
+                            (defaults[1], self.incompatible_defaults_fragment(ctx, syms, site, site_tsym, m, s1, defaults[1], true), true)
+                        } else {
+                            (abstracts[0], self.incompatible_defaults_fragment(ctx, syms, site, site_tsym, m, s1, abstracts[0], false), false)
+                        };
+                        let _ = is_unrelated;
+                        let loc1 = ctx.sym(s1).location().unwrap_or(s1);
+                        let loc2 = ctx.sym(s2).location().unwrap_or(s2);
+                        let loc1_ty = ctx.sym(loc1).ty.unwrap_or_else(|| ctx.sym(s1).ty.expect("s1 type"));
+                        let loc2_ty = ctx.sym(loc2).ty.unwrap_or_else(|| ctx.sym(s2).ty.expect("s2 type"));
+                        let info = crate::resources::compiler_properties::errors::types_incompatible(
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, loc1_ty)),
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, loc2_ty)),
+                            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(diag_key)),
+                        );
+                        crate::util::abstract_log::AbstractLog::error_at(&mut *self.log.borrow_mut(), pos, crate::util::jc_diagnostic::Error::from(info));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Adapter: the IncompatibleUnrelatedDefaults/IncompatibleAbstractDefault
+    /// fragment (Fragments.java).
+    #[allow(clippy::too_many_arguments)]
+    fn incompatible_defaults_fragment(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        site: TypeId,
+        site_tsym: SymbolId,
+        m: SymbolId,
+        s1: SymbolId,
+        s2: SymbolId,
+        unrelated: bool,
+    ) -> crate::util::jc_diagnostic::JCDiagnostic {
+        let kind = crate::code::kinds::kind_name(ctx.sym(site_tsym), ctx);
+        let m_ty = self.types.member_type(ctx, syms, site, m);
+        let params: Vec<crate::resources::diagnostic_contract::TypeArg> = self
+            .types
+            .get_parameter_types_public(ctx, m_ty)
+            .iter()
+            .map(|p| crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, p)))
+            .collect();
+        let s1_loc = ctx.sym(s1).location().unwrap_or(s1);
+        let s2_loc = ctx.sym(s2).location().unwrap_or(s2);
+        let s1_arg = crate::resources::diagnostic_contract::SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, s1_loc));
+        let s2_arg = crate::resources::diagnostic_contract::SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, s2_loc));
+        let info = if unrelated {
+            crate::resources::compiler_properties::fragments::incompatible_unrelated_defaults(
+                crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
+                crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, site)),
+                ctx.sym(m).name.clone(),
+                params,
+                s1_arg,
+                s2_arg,
+            )
+        } else {
+            crate::resources::compiler_properties::fragments::incompatible_abstract_default(
+                crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
+                crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, site)),
+                ctx.sym(m).name.clone(),
+                params,
+                s1_arg,
+                s2_arg,
+            )
+        };
+        self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(info))
+    }
+}

@@ -10386,6 +10386,181 @@ pub fn wire_attr_services(
     }
 }
 
+impl Attr {
+    /// Java: getDiagnosticPosition(JCClassDecl tree, Type t) (Attr.java:5455-5470):
+    /// the position of the matching annotation, if present.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - tree: the class declaration;
+    ///   - t: the annotation type.
+    ///
+    /// # Returns
+    ///   - the diagnostic position of the matching annotation.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:5455-5470.
+    #[allow(dead_code, clippy::collapsible_if)]
+    fn get_diagnostic_position(
+        &self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        t: TypeId,
+    ) -> Option<i32> {
+        let mods = match &ctx.tree(tree).kind {
+            TreeKind::ClassDecl { mods, .. } => *mods,
+            _ => None,
+        };
+        let mods = mods?;
+        let annotations = match &ctx.tree(mods).kind {
+            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+            _ => List::nil(),
+        };
+        let mut current = annotations;
+        while current.non_empty() {
+            let anno = *current.head();
+            current = current.tail();
+            let anno_type = match &ctx.tree(anno).kind {
+                TreeKind::Annotation { annotation_type: Some(annotation_type), .. } => {
+                    ctx.tree(*annotation_type).ty
+                }
+                _ => None,
+            };
+            if let Some(anno_type) = anno_type {
+                if self.types.is_same_type(ctx, &self.syms.borrow(), anno_type, t) {
+                    return Some(ctx.tree(anno).pos);
+                }
+            }
+        }
+        None
+    }
+
+    /// Java: checkSerialVersionUID(JCClassDecl tree, ClassSymbol c, Env<AttrContext>
+    /// env) (Attr.java:5495-5545).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the class declaration;
+    ///   - c: the class symbol;
+    ///   - env: the attribution environment.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:5495-5545.
+    #[allow(dead_code)]
+    fn check_serial_version_uid(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        c: SymbolId,
+        env: &Rc<Env<AttrContext>>,
+    ) {
+        let members = match &ctx.sym(c).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+            _ => None,
+        };
+        let members = match members {
+            Some(members) => members,
+            None => return,
+        };
+        let serial_name = self.names.serialVersionUID.clone();
+        let candidates = ctx.scope_get_symbols_by_name(
+            members,
+            &serial_name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        let mut svuid: Option<SymbolId> = None;
+        for candidate in candidates {
+            if ctx.sym(candidate).kind == crate::code::kinds::Kind::VAR {
+                svuid = Some(candidate);
+                break;
+            }
+        }
+        let c_display = crate::comp::resolve::symbol_display_name(ctx, c);
+        let svuid = match svuid {
+            Some(svuid) => svuid,
+            None => {
+                if !ctx.sym(c).is_record() {
+                    let warning = crate::util::jc_diagnostic::Warning::from(
+                        crate::resources::compiler_properties::warnings::missing_s_v_u_i_d(
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(c_display),
+                        ),
+                    );
+                    crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                        &mut *self.log.borrow_mut(),
+                        Some(crate::code::lint::LintCategory::SERIAL),
+                        Some(std::rc::Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                            ctx.tree(tree).pos,
+                        ))),
+                        warning,
+                    );
+                }
+                return;
+            }
+        };
+        // Java: Lint lint = env.info.lint.augment(svuid);
+        let lint = env.info.borrow().lint.clone();
+        if let Some(lint) = lint {
+            let augmented = lint.augment(ctx, syms, ctx.sym(svuid));
+            if augmented.is_suppressed(crate::code::lint::LintCategory::SERIAL) {
+                return;
+            }
+        }
+        let flags_value = ctx.sym(svuid).flags_field;
+        let pos = crate::tree::tree_info::diagnostic_position_for(ctx, svuid, tree);
+        let static_final = (crate::code::flags::STATIC as i64) | (crate::code::flags::FINAL as i64);
+        if (flags_value & static_final) != static_final {
+            let warning = crate::util::jc_diagnostic::Warning::from(
+                crate::resources::compiler_properties::warnings::improper_s_v_u_i_d(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(c_display),
+                ),
+            );
+            crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                &mut *self.log.borrow_mut(),
+                Some(crate::code::lint::LintCategory::SERIAL),
+                Some(std::rc::Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
+                warning,
+            );
+        } else if !ctx
+            .sym(svuid)
+            .ty
+            .map(|ty| ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::LONG))
+            .unwrap_or(false)
+        {
+            let warning = crate::util::jc_diagnostic::Warning::from(
+                crate::resources::compiler_properties::warnings::long_s_v_u_i_d(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(c_display),
+                ),
+            );
+            crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                &mut *self.log.borrow_mut(),
+                Some(crate::code::lint::LintCategory::SERIAL),
+                Some(std::rc::Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
+                warning,
+            );
+        } else if ctx.sym(svuid).get_const_value().is_none() {
+            let warning = crate::util::jc_diagnostic::Warning::from(
+                crate::resources::compiler_properties::warnings::constant_s_v_u_i_d(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(c_display),
+                ),
+            );
+            crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                &mut *self.log.borrow_mut(),
+                Some(crate::code::lint::LintCategory::SERIAL),
+                Some(std::rc::Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
+                warning,
+            );
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
