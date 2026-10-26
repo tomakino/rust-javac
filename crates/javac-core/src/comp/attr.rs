@@ -12435,8 +12435,13 @@ impl Attr {
     ///   - the registered services must be installed.
     ///
     /// Upstream: Attr.java:2881-3010.
+    /// Java: private void visitAnonymousClassDefinition(JCNewClass tree, JCExpression
+    /// clazz, Type clazztype, JCClassDecl cdef, Env<AttrContext> localEnv,
+    /// List<Type> argtypes, List<Type> typeargtypes, KindSelector pkind)
+    /// (Attr.java:2881-3010) — the non-listener body shared by the normal path
+    /// and the inference listener replay (Approach A: state snapshot).
     #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::too_many_arguments)]
-    fn visit_anonymous_class_definition(
+    fn anonymous_class_definition_body(
         &mut self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
@@ -12450,33 +12455,7 @@ impl Attr {
         pkind: KindSelector,
     ) -> Result<TypeId, CompletionFailure> {
         let result_info = self.result_info.clone().expect("resultInfo");
-        let inference_context = Rc::clone(result_info.check_context.inference_context());
         let is_diamond = crate::tree::tree_info::is_diamond(ctx, tree);
-        let constructor_type = match &ctx.tree(tree).kind {
-            TreeKind::NewClass { constructor_type, .. } => *constructor_type,
-            _ => None,
-        };
-        let clazz_ty = ctx.tree(clazz).ty;
-        let needs_listener = is_diamond
-            && (constructor_type
-                .map(|constructor_type| {
-                    inference_context.free(ctx, syms, &self.types, constructor_type)
-                })
-                .unwrap_or(false)
-                || clazz_ty
-                    .map(|clazz_ty| inference_context.free(ctx, syms, &self.types, clazz_ty))
-                    .unwrap_or(false));
-        if needs_listener {
-            // Java: the Attr.visitAnonymousClassDefinition re-entrant listener
-            // (Attr.java:2898-2920) needs the outer attribute state (an inner-class
-            // capture in Java). The ported Attr is borrowed mutably by the whole
-            // attribution stack, so re-entering it from an inference listener is
-            // not representable without an architecture change (registered as a
-            // dependency; the non-diamond paths are complete).
-            unimplemented!(
-                "TODO(Attr re-entrant listener): Attr.visitAnonymousClassDefinition diamond listener (Attr.java:2898-2920)"
-            )
-        }
         let mut clazztype = clazztype;
         if is_diamond && ctx.typ(clazztype).has_tag(TypeTag::CLASS) {
             let invalid = {
@@ -12717,6 +12696,228 @@ impl Attr {
         } else {
             t
         }
+    }
+}
+
+impl Attr {
+    /// Java: private void visitAnonymousClassDefinition(JCNewClass tree, JCExpression
+    /// clazz, Type clazztype, JCClassDecl cdef, Env<AttrContext> localEnv,
+    /// List<Type> argtypes, List<Type> typeargtypes, KindSelector pkind)
+    /// (Attr.java:2881-3010): the inference-listener registration branch plus the
+    /// normal (non-listener) path (Approach A state-snapshot design).
+    #[allow(clippy::too_many_arguments)]
+    fn visit_anonymous_class_definition(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        clazz: TreeId,
+        clazztype: TypeId,
+        cdef: TreeId,
+        local_env: &Rc<Env<AttrContext>>,
+        argtypes: List<TypeId>,
+        typeargtypes: List<TypeId>,
+        pkind: KindSelector,
+    ) -> Result<TypeId, CompletionFailure> {
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let inference_context = Rc::clone(result_info.check_context.inference_context());
+        let is_diamond = crate::tree::tree_info::is_diamond(ctx, tree);
+        let constructor_type = match &ctx.tree(tree).kind {
+            TreeKind::NewClass { constructor_type, .. } => *constructor_type,
+            _ => None,
+        };
+        let clazz_ty = ctx.tree(clazz).ty;
+        let needs_listener = is_diamond
+            && (constructor_type
+                .map(|constructor_type| {
+                    inference_context.free(ctx, syms, &self.types, constructor_type)
+                })
+                .unwrap_or(false)
+                || clazz_ty
+                    .map(|clazz_ty| inference_context.free(ctx, syms, &self.types, clazz_ty))
+                    .unwrap_or(false));
+        if needs_listener {
+            let listener = Rc::new(AnonymousClassDiamondListener {
+                attr: RefCell::new(Some(self.snapshot_for_anonymous_class())),
+                tree,
+                clazz,
+                result_info: result_info.clone(),
+                local_env: Rc::clone(local_env),
+                argtypes: argtypes.clone(),
+                typeargtypes: typeargtypes.clone(),
+                pkind,
+            });
+            let no_type = self.no_type(ctx);
+            let listen_types = List::of(constructor_type.unwrap_or(no_type))
+                .prepend(clazz_ty.unwrap_or(no_type));
+            inference_context.add_free_type_listener(
+                ctx,
+                syms,
+                &self.types,
+                listen_types,
+                listener,
+            );
+            // The listener re-runs the body once inference completes; the visible
+            // result until then is the recovery error type (upstream returns from
+            // visitNewClass after registering the listener).
+            let error = self.types.create_error_type_original(ctx, ctx.tree(tree).ty, syms);
+            ctx.tree_mut(tree).ty = Some(error);
+            self.result = Some(error);
+            return Ok(error);
+        }
+        self.anonymous_class_definition_body(
+            ctx,
+            syms,
+            tree,
+            clazz,
+            clazztype,
+            cdef,
+            local_env,
+            argtypes,
+            typeargtypes,
+            pkind,
+        )
+    }
+
+    /// Approach A adapter: the state snapshot captured when the anonymous-class
+    /// diamond inference listener is registered (Attr.java:2898-2920). The
+    /// snapshot shares every service handle (Rc) and clones the mutable
+    /// attribution state; see the batch report for the per-field table.
+    fn snapshot_for_anonymous_class(&self) -> Attr {
+        Attr {
+            names: Rc::clone(&self.names),
+            log: Rc::clone(&self.log),
+            chk: Rc::clone(&self.chk),
+            member_enter: Rc::clone(&self.member_enter),
+            type_enter: Rc::clone(&self.type_enter),
+            make: Rc::clone(&self.make),
+            enter: Rc::clone(&self.enter),
+            types: Rc::clone(&self.types),
+            diags: Rc::clone(&self.diags),
+            deferred_lint_handler: Rc::clone(&self.deferred_lint_handler),
+            type_envs: Rc::clone(&self.type_envs),
+            dependencies: Rc::clone(&self.dependencies),
+            allow_poly: self.allow_poly,
+            allow_type_annos: self.allow_type_annos,
+            allow_lambda: self.allow_lambda,
+            allow_default_methods: self.allow_default_methods,
+            allow_static_interface_methods: self.allow_static_interface_methods,
+            allow_reifiable_types_in_instanceof: self.allow_reifiable_types_in_instanceof,
+            allow_records: self.allow_records,
+            allow_pattern_switch: self.allow_pattern_switch,
+            use_before_declaration_warning: self.use_before_declaration_warning,
+            source_name: self.source_name.clone(),
+            env: self.env.clone(),
+            result_info: self.result_info.clone(),
+            basic_handler: Rc::clone(&self.basic_handler),
+            result: self.result,
+            break_tree: self.break_tree,
+            break_attr_env: self.break_attr_env.clone(),
+            stat_info: self.stat_info.clone(),
+            var_assignment_info: self.var_assignment_info.clone(),
+            unknown_expr_info: self.unknown_expr_info.clone(),
+            unknown_type_info: self.unknown_type_info.clone(),
+            unknown_type_expr_info: self.unknown_type_expr_info.clone(),
+            method_attr_info: self.method_attr_info.clone(),
+            recovery_info: self.recovery_info.clone(),
+            clinits: RefCell::new(self.clinits.borrow().clone()),
+            attr_recover: Rc::clone(&self.attr_recover),
+            syms: Rc::clone(&self.syms),
+            infer: Rc::clone(&self.infer),
+            rs: Rc::clone(&self.rs),
+            argument_attr: Rc::clone(&self.argument_attr),
+            deferred_attr: Rc::clone(&self.deferred_attr),
+            match_bindings: self.match_bindings.clone(),
+            match_bindings_computer: crate::comp::match_bindings::MatchBindingsComputer::new(
+                Rc::clone(&self.log),
+                Rc::clone(&self.diags),
+            ),
+            operators: Rc::clone(&self.operators),
+            cfolder: Rc::clone(&self.cfolder),
+            analyzer: Rc::clone(&self.analyzer),
+            flow: Rc::clone(&self.flow),
+            annotate: Rc::clone(&self.annotate),
+            type_annotations: Rc::clone(&self.type_annotations),
+        }
+    }
+}
+
+/// Java: the inference listener registered by visitAnonymousClassDefinition
+/// (Attr.java:2898-2920) — the callback replays the non-listener body with an
+/// Attr state snapshot (services shared, mutable state cloned).
+pub struct AnonymousClassDiamondListener {
+    /// The Attr state snapshot (taken by RefCell so the &self callback can
+    /// execute the body exactly once).
+    pub attr: RefCell<Option<Attr>>,
+    /// Java: JCNewClass tree.
+    pub tree: TreeId,
+    /// Java: JCExpression clazz.
+    pub clazz: TreeId,
+    /// Java: the saved resultInfoForClassDefinition.
+    pub result_info: ResultInfo,
+    /// Java: Env<AttrContext> localEnv.
+    pub local_env: Rc<Env<AttrContext>>,
+    /// Java: List<Type> argtypes.
+    pub argtypes: List<TypeId>,
+    /// Java: List<Type> typeargtypes.
+    pub typeargtypes: List<TypeId>,
+    /// Java: KindSelector pkind.
+    pub pkind: KindSelector,
+}
+
+impl crate::comp::infer::FreeTypeListener for AnonymousClassDiamondListener {
+    /// Java: the listener body (Attr.java:2898-2920).
+    fn types_inferred(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        inference_context: &crate::comp::infer::InferenceContext,
+    ) -> Result<(), crate::comp::infer::InferenceException> {
+        let mut snapshot = self.attr.borrow_mut().take().expect("listener executed once");
+        // Java: tree.constructorType = instantiatedContext.asInstType(tree.constructorType);
+        let constructor_type = match &ctx.tree(self.tree).kind {
+            TreeKind::NewClass { constructor_type, .. } => *constructor_type,
+            _ => None,
+        };
+        let inst_constructor_type = constructor_type
+            .map(|constructor_type| inference_context.as_inst_type(ctx, syms, types, constructor_type));
+        if let TreeKind::NewClass { constructor_type: slot, .. } = &mut ctx.tree_mut(self.tree).kind {
+            *slot = inst_constructor_type;
+        }
+        // Java: tree.clazz.type = clazz.type = instantiatedContext.asInstType(clazz.type);
+        let clazz_ty = ctx.tree(self.clazz).ty;
+        let inst_clazz_ty = clazz_ty
+            .map(|clazz_ty| inference_context.as_inst_type(ctx, syms, types, clazz_ty));
+        ctx.tree_mut(self.clazz).ty = inst_clazz_ty;
+        let clazz_ty = match inst_clazz_ty {
+            Some(clazz_ty) => clazz_ty,
+            None => return Ok(()),
+        };
+        let prev_result_info = snapshot.result_info.clone();
+        snapshot.result_info = Some(self.result_info.clone());
+        let cdef = match &ctx.tree(self.tree).kind {
+            TreeKind::NewClass { def: Some(def), .. } => *def,
+            _ => return Ok(()),
+        };
+        let result = snapshot.anonymous_class_definition_body(
+            ctx,
+            syms,
+            self.tree,
+            self.clazz,
+            clazz_ty,
+            cdef,
+            &self.local_env,
+            self.argtypes.clone(),
+            self.typeargtypes.clone(),
+            self.pkind,
+        );
+        snapshot.result_info = prev_result_info;
+        // The listener result is visible through the shared tree/context writes;
+        // the snapshot is discarded here (the outer Attr is not reachable while
+        // it is mutably borrowed by the attribution stack).
+        let _ = result;
+        Ok(())
     }
 }
 
