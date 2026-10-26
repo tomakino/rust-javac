@@ -41,6 +41,7 @@ use crate::code::symbol::{CompletionFailure, Symbol, SymbolKind};
 use crate::code::symtab::Symtab;
 use crate::code::type_::{Type, TypeKindData};
 use crate::code::types::Types;
+use crate::comp::annotate::Annotate;
 use crate::comp::attr_context::AttrContext;
 use crate::comp::check::Check;
 use crate::comp::enter::Enter;
@@ -64,6 +65,11 @@ pub struct MemberEnter {
     pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
     /// Java: protected Env<AttrContext> env;
     pub env: Option<Rc<Env<AttrContext>>>,
+    /// Java: Annotate annotate = Annotate.instance(context) — explicit
+    /// injection adapter (ADR 0001): the cell is filled after Annotate is
+    /// constructed (Rc cycle MemberEnter/TypeEnter -> Annotate -> Attr ->
+    /// MemberEnter/TypeEnter; registered in the batch report).
+    pub annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
 }
 
 impl MemberEnter {
@@ -74,6 +80,7 @@ impl MemberEnter {
         chk: Rc<RefCell<Check>>,
         types: Rc<Types>,
         deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
+        annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
     ) -> MemberEnter {
         MemberEnter {
             enter,
@@ -82,6 +89,7 @@ impl MemberEnter {
             types,
             deferred_lint_handler,
             env: None,
+            annotate,
         }
     }
 
@@ -360,14 +368,42 @@ impl MemberEnter {
         if unique {
             ctx.scope_enter(encl_scope, m);
         }
-        // TODO(Annotate batch): annotate.annotateLater(tree.mods.annotations,
-        //     localEnv, m, tree.pos());
-        // TODO(Annotate batch): annotate.queueScanTreeAndTypeAnnotate(tree,
-        //     localEnv, m, tree.pos());
-        // TODO(Annotate batch): if (tree.defaultValue != null) { m.defaultValue =
-        //     annotate.unfinishedDefaultValue();
-        //     annotate.annotateDefaultValueLater(tree.defaultValue, localEnv, m,
-        //     tree.pos()); }
+        let annotate = self
+            .annotate
+            .borrow()
+            .clone()
+            .expect("MemberEnter.annotate must be injected");
+        annotate.annotate_later(
+            ctx,
+            method_decl_mods_annotations(ctx, tree),
+            Rc::clone(&local_env),
+            m,
+            Some(ctx.tree(tree).pos),
+        );
+        // Visit the signature of the method. Note that TypeAnnotate doesn't
+        // descend into the body.
+        annotate.services.queue_scan_tree_and_type_annotate(
+            tree,
+            &local_env,
+            m,
+            ctx.tree(tree).pos,
+        );
+        if let Some(default_value) = method_decl_default_value(ctx, tree) {
+            // m.defaultValue = annotate.unfinishedDefaultValue(); (temporary
+            // sentinel for now)
+            if let crate::code::symbol::SymbolKind::MethodSymbol { default_value: slot, .. } =
+                &mut ctx.sym_mut(m).kind_data
+            {
+                *slot = Some(annotate.unfinished_default_value());
+            }
+            annotate.annotate_default_value_later(
+                ctx,
+                default_value,
+                Rc::clone(&local_env),
+                m,
+                Some(ctx.tree(tree).pos),
+            );
+        }
         Ok(())
     }
 
@@ -515,11 +551,26 @@ impl MemberEnter {
             // enter it
             ctx.scope_enter(encl_scope, v);
         }
-        // TODO(Annotate batch): annotate.annotateLater(tree.mods.annotations,
-        //     localEnv, v, tree.pos());
-        // TODO(Annotate batch): if (!tree.isImplicitlyTyped())
-        //     annotate.queueScanTreeAndTypeAnnotate(tree.vartype, localEnv, v,
-        //     tree.pos());
+        let annotate = self
+            .annotate
+            .borrow()
+            .clone()
+            .expect("MemberEnter.annotate must be injected");
+        annotate.annotate_later(
+            ctx,
+            var_decl_mods_annotations(ctx, tree),
+            Rc::clone(&local_env),
+            v,
+            Some(ctx.tree(tree).pos),
+        );
+        if let Some(vartype) = var_decl_vartype(ctx, tree) {
+            annotate.services.queue_scan_tree_and_type_annotate(
+                vartype,
+                &local_env,
+                v,
+                ctx.tree(tree).pos,
+            );
+        }
         let pos = ctx.tree(tree).pos;
         set_var_symbol_pos(ctx, v, pos);
         Ok(())
@@ -921,6 +972,47 @@ fn modifiers_flags(ctx: &CompilerContext, mods: TreeId) -> i64 {
 
 fn set_tree_type(ctx: &mut CompilerContext, tree: TreeId, ty: TypeId) {
     ctx.tree_mut(tree).ty = Some(ty);
+}
+
+
+// ---------------------------------------------------------------------------
+// Tree accessors used by the Annotate call sites (local tree/arena adapters).
+// ---------------------------------------------------------------------------
+
+fn modifiers_annotations(ctx: &CompilerContext, mods: Option<TreeId>) -> List<TreeId> {
+    match mods.map(|mods| &ctx.tree(mods).kind) {
+        Some(TreeKind::Modifiers { annotations, .. }) => annotations.clone(),
+        _ => List::nil(),
+    }
+}
+
+fn method_decl_mods(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
+    match &ctx.tree(tree).kind {
+        TreeKind::MethodDecl { mods, .. } => *mods,
+        _ => None,
+    }
+}
+
+fn method_decl_mods_annotations(ctx: &CompilerContext, tree: TreeId) -> List<TreeId> {
+    modifiers_annotations(ctx, method_decl_mods(ctx, tree))
+}
+
+fn method_decl_default_value(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
+    match &ctx.tree(tree).kind {
+        TreeKind::MethodDecl { default_value, .. } => *default_value,
+        _ => None,
+    }
+}
+
+fn var_decl_mods(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
+    match &ctx.tree(tree).kind {
+        TreeKind::VariableDecl { mods, .. } => *mods,
+        _ => None,
+    }
+}
+
+fn var_decl_mods_annotations(ctx: &CompilerContext, tree: TreeId) -> List<TreeId> {
+    modifiers_annotations(ctx, var_decl_mods(ctx, tree))
 }
 
 #[cfg(test)]

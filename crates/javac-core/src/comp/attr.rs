@@ -2504,6 +2504,7 @@ mod tests {
             Rc::clone(&chk),
             Rc::clone(&types),
             Rc::clone(&deferred),
+            Rc::new(RefCell::new(None)),
         )));
         let type_enter = Rc::new(RefCell::new(TypeEnter::new(
             Rc::clone(&names),
@@ -2517,6 +2518,7 @@ mod tests {
             None,
             Rc::clone(&type_envs),
             Rc::clone(&dependencies),
+            Rc::new(RefCell::new(None)),
         )));
         let preview = Preview::new(false, false);
         let basic_handler = Rc::clone(&chk.borrow().basic_handler);

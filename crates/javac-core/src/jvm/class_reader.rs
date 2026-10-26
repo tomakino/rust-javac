@@ -88,6 +88,9 @@ use javac_tools::tools::java_file_object::JavaFileObject;
 use crate::code::class_finder::BadClassFile;
 use crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler;
 use crate::code::flags;
+use crate::comp::annotate::{
+    Annotate, AnnotationTypeCompleter, AnnotationTypeMetadata,
+};
 use crate::code::preview::Preview;
 use crate::code::source::{Feature, Source};
 use crate::compiler_context::CompilerContext;
@@ -97,7 +100,9 @@ use crate::jvm::pool_reader::PoolReader;
 use crate::jvm::profile::Profile;
 use crate::util::byte_buffer::ByteBuffer;
 use crate::util::jc_diagnostic::{Factory, Fragment};
+use crate::util::abstract_log::AbstractLog;
 use crate::util::list::List;
+use crate::util::pair::Pair;
 use crate::util::log::Log;
 use crate::util::name::Name;
 use crate::util::names::Names;
@@ -204,6 +209,13 @@ pub struct ClassReader {
     pending_annotation_defaults: Vec<(SymbolId, AnnotationValue)>,
     /// Pending Runtime[In]visibleTypeAnnotations values (TypeAnnotationProxy).
     pending_type_annotations: Vec<(SymbolId, List<TypeAnnotationProxy>)>,
+    /// Java: CompoundAnnotationProxy target (ClassReader.java:1435)
+    target: Option<AnnotationValue>,
+    /// Java: CompoundAnnotationProxy repeatable (ClassReader.java:1436)
+    repeatable: Option<AnnotationValue>,
+    /// Java: private final Annotate annotate = Annotate.instance(context) —
+    /// explicit injection adapter (ADR 0001; see MemberEnter.annotate).
+    annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
     /// Java: Type.noType (syms.noType). Symtab does not expose the singleton yet,
     /// so the ClassReader caches the NONE-tag type it uses for absent supertypes
     /// (registered representation adapter; tag-based comparisons are unchanged).
@@ -231,6 +243,7 @@ impl ClassReader {
         profile: Rc<Profile>,
         options: &Options,
         source: Source,
+        annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
     ) -> ClassReader {
         let verbose = options.is_set_option(crate::main::option::Option::VERBOSE);
         let save_parameter_names =
@@ -284,6 +297,9 @@ impl ClassReader {
             pending_parameter_annotations: Vec::new(),
             pending_annotation_defaults: Vec::new(),
             pending_type_annotations: Vec::new(),
+            target: None,
+            repeatable: None,
+            annotate,
             no_type: None,
         };
         reader.init_attribute_readers();
@@ -1115,19 +1131,23 @@ impl ClassReader {
             return Err(self.bad_class_file(key).failure);
         }
 
-        // Java: if ((c.flags_field & Flags.ANNOTATION) != 0) c.setAnnotationTypeMetadata(...)
+        // Java: if ((c.flags_field & Flags.ANNOTATION) != 0) c.setAnnotationTypeMetadata(
+        //           new AnnotationTypeMetadata(c, new CompleterDeproxy(c, target, repeatable)));
         //       else c.setAnnotationTypeMetadata(AnnotationTypeMetadata.notAnAnnotationType());
-        // TODO(P2/S3): AnnotationTypeMetadata is not ported yet (annotation batch);
-        // no metadata state exists locally, so the not-an-annotation-type value
-        // has no representation (registered gap, not an approximation).
-        if (ctx.sym(c).flags_field & crate::code::flags::ANNOTATION as i64) != 0 {
-            // TODO(Annotate batch): c.setAnnotationTypeMetadata(new AnnotationTypeMetadata(
-            //     c, new CompleterDeproxy(c, target, repeatable))). AnnotationTypeMetadata
-            // and the annotate machinery are not ported yet; no metadata state is
-            // created (registered structural gap, no substitute).
+        // (ClassReader.java:2988-2995)
+        if (ctx.sym(c).flags_field & flags::ANNOTATION as i64) != 0 {
+            let completer: Rc<RefCell<dyn AnnotationTypeCompleter>> =
+                Rc::new(RefCell::new(CompleterDeproxy::new(
+                    c,
+                    self.target.clone(),
+                    self.repeatable.clone(),
+                    Rc::clone(&self.names),
+                )));
+            ctx.sym_mut(c)
+                .set_annotation_type_metadata(AnnotationTypeMetadata::new(c, Some(completer)));
         } else {
-            // TODO(Annotate batch): c.setAnnotationTypeMetadata(
-            //     AnnotationTypeMetadata.notAnAnnotationType()). Same gap as above.
+            ctx.sym_mut(c)
+                .set_annotation_type_metadata(AnnotationTypeMetadata::not_an_annotation_type());
         }
 
         // Java: if (c == currentModule.module_info) {
@@ -1266,6 +1286,9 @@ impl ClassReader {
         syms: &mut crate::code::symtab::Symtab,
         c: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        // Java: target = null; repeatable = null; (ClassReader.readClass)
+        self.target = None;
+        self.repeatable = None;
         // ClassType ct = (ClassType)c.type;
         let ct = ctx.sym(c).ty.expect("class symbol type");
         // allocate scope for members
@@ -2077,13 +2100,8 @@ impl ClassReader {
         Ok(AnnotationValue::Constant { ty, value })
     }
 
-    /// Java: void attachAnnotations(Symbol sym)
-    ///
-    /// The annotation read path stores the raw proxies; attaching them to the
-    /// Symbol goes through Annotate (not ported yet), so the attach part and the
-    /// flag-only annotation handling (proprietary/profile/preview/deprecated/
-    /// repeatable/target/value-based) are registered as TODOs for the Annotate
-    /// batch. No substitute attachment is performed.
+    /// Java: void attachAnnotations(Symbol sym) / void attachAnnotations(Symbol sym,
+    /// List<CompoundAnnotationProxy> annotations) (ClassReader.java:1430-1495)
     fn attach_annotations(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2094,9 +2112,154 @@ impl ClassReader {
         if annotations.is_empty() {
             return Ok(());
         }
-        // TODO(Annotate batch): flags-only annotation handling and
-        // annotate.normal(new AnnotationCompleter(sym, proxies));
-        self.pending_annotations.push((sym, annotations));
+        let original = annotations.clone();
+        let boolean_type = syms.boolean_type;
+        let mut proxies: List<AnnotationValue> = List::nil();
+        let mut current = annotations;
+        while current.non_empty() {
+            let proxy = current.head().clone();
+            let proxy_ty = match &proxy {
+                AnnotationValue::Compound { ty, .. } => *ty,
+                _ => panic!("CompoundAnnotationProxy expected"),
+            };
+            let proxy_tsym = ctx.typ(proxy_ty).tsym;
+            if internal_type_matches(ctx, syms.proprietary_type, proxy_tsym) {
+                ctx.sym_mut(sym).flags_field |= flags::PROPRIETARY;
+            } else if internal_type_matches(ctx, syms.profile_type, proxy_tsym) {
+                if *self.profile != Profile::DEFAULT {
+                    for (name, value) in proxy_values(&proxy) {
+                        if name.to_java_string() == self.names.value.to_java_string()
+                            && let AnnotationValue::Constant {
+                                value: crate::code::attribute::ConstValue::Integer(v),
+                                ..
+                            } = value
+                        {
+                            let profile_value = match *self.profile {
+                                Profile::COMPACT1 => 1,
+                                Profile::COMPACT2 => 2,
+                                Profile::COMPACT3 => 3,
+                                Profile::DEFAULT => 0,
+                            };
+                            if v > profile_value {
+                                ctx.sym_mut(sym).flags_field |= flags::NOT_IN_PROFILE;
+                            }
+                        }
+                    }
+                }
+            } else if internal_type_matches(ctx, syms.preview_feature_internal_type, proxy_tsym) {
+                ctx.sym_mut(sym).flags_field |= flags::PREVIEW_API;
+                if set_flag_if_attribute_true(
+                    ctx,
+                    &proxy,
+                    &self.names.reflective,
+                    boolean_type,
+                ) {
+                    ctx.sym_mut(sym).flags_field |= flags::PREVIEW_REFLECTIVE;
+                }
+            } else if internal_type_matches(ctx, syms.value_based_internal_type, proxy_tsym) {
+                assert!(
+                    ctx.sym(sym).kind == crate::code::kinds::Kind::TYP,
+                    "AssertionError: value-based internal annotation on a non-type"
+                );
+                ctx.sym_mut(sym).flags_field |= flags::VALUE_BASED;
+            } else {
+                let target_tsym = ctx.typ(syms.annotation_target_type).tsym;
+                let repeatable_tsym = ctx.typ(syms.repeatable_type).tsym;
+                let deprecated_tsym = ctx.typ(syms.deprecated_type).tsym;
+                let preview_tsym = ctx.typ(syms.preview_feature_type).tsym;
+                let value_based_tsym = ctx.typ(syms.value_based_type).tsym;
+                if proxy_tsym == target_tsym {
+                    self.target = Some(proxy.clone());
+                } else if proxy_tsym == repeatable_tsym {
+                    self.repeatable = Some(proxy.clone());
+                } else if proxy_tsym == deprecated_tsym {
+                    ctx.sym_mut(sym).flags_field |= flags::DEPRECATED as i64;
+                    ctx.sym_mut(sym).flags_field |= flags::DEPRECATED_ANNOTATION;
+                    if set_flag_if_attribute_true(
+                        ctx,
+                        &proxy,
+                        &self.names.from_string(&javac_strings::JavaString::from("forRemoval")),
+                        boolean_type,
+                    ) {
+                        ctx.sym_mut(sym).flags_field |= flags::DEPRECATED_REMOVAL;
+                    }
+                } else if proxy_tsym == preview_tsym {
+                    ctx.sym_mut(sym).flags_field |= flags::PREVIEW_API;
+                    if set_flag_if_attribute_true(
+                        ctx,
+                        &proxy,
+                        &self.names.reflective,
+                        boolean_type,
+                    ) {
+                        ctx.sym_mut(sym).flags_field |= flags::PREVIEW_REFLECTIVE;
+                    }
+                } else if proxy_tsym == value_based_tsym
+                    && ctx.sym(sym).kind == crate::code::kinds::Kind::TYP
+                {
+                    ctx.sym_mut(sym).flags_field |= flags::VALUE_BASED;
+                }
+                proxies = proxies.append(proxy);
+            }
+            current = current.tail();
+        }
+        // Java: annotate.normal(new AnnotationCompleter(sym, proxies.toList()));
+        // The queued closure runs AnnotationCompleter.run (deproxy + deprecated
+        // flags + setDeclarationAttributes/appendAttributes). §9 adapter: when
+        // the Annotate service is not injected yet the raw proxies are kept in
+        // pending_annotations for the Annotate-assembly batch.
+        let annotate = self.annotate.borrow().clone();
+        match annotate {
+            Some(annotate) => {
+                let services = Rc::clone(&annotate.services);
+                let class_file = self.current_class_file.clone();
+                annotate.normal(Box::new(move |ctx: &mut CompilerContext| {
+                    let syms_rc = Rc::clone(&services.syms);
+                    let mut syms_guard = syms_rc.borrow_mut();
+                    let syms = &mut *syms_guard;
+                    let prev_source = services.log.borrow_mut().use_source(class_file.clone());
+                    let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
+                        let types = Rc::clone(&services.types);
+                        let new_list = deproxy_compound_list(
+                            ctx,
+                            syms,
+                            &types,
+                            &services.names,
+                            &proxies,
+                        )?;
+                        let deprecated_ty = syms.deprecated_type;
+                        for attr in new_list.iter() {
+                            if ctx.attr(attr).ty == Some(deprecated_ty) {
+                                ctx.sym_mut(sym).flags_field |= flags::DEPRECATED as i64;
+                                ctx.sym_mut(sym).flags_field |= flags::DEPRECATED_ANNOTATION;
+                                let for_removal = services
+                                    .names
+                                    .from_string(&javac_strings::JavaString::from("forRemoval"));
+                                if let Some(for_removal_attr) =
+                                    ctx.attr(attr).member(ctx, &for_removal)
+                                    && let crate::code::attribute::AttributeKind::Constant {
+                                        value: crate::code::attribute::ConstValue::Integer(v),
+                                    } = &ctx.attr(for_removal_attr).kind
+                                    && *v != 0
+                                {
+                                    ctx.sym_mut(sym).flags_field |= flags::DEPRECATED_REMOVAL;
+                                }
+                            }
+                        }
+                        if ctx.sym(sym).annotations_pending_completion() {
+                            ctx.sym_mut(sym).set_declaration_attributes(new_list);
+                        } else {
+                            ctx.sym_mut(sym).append_attributes(new_list);
+                        }
+                        Ok(())
+                    })();
+                    services.log.borrow_mut().use_source(prev_source);
+                    result
+                }));
+            }
+            None => {
+                self.pending_annotations.push((sym, original));
+            }
+        }
         Ok(())
     }
 
@@ -2124,11 +2287,63 @@ impl ClassReader {
         sym: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let value = self.read_attribute_value(ctx, syms)?;
-        // TODO(Annotate batch): meth.defaultValue = value; and
-        // annotate.normal(new AnnotationDefaultCompleter(meth, value));
-        self.pending_annotation_defaults.push((sym, value));
+        // Java: meth.defaultValue = value (temporary sentinel) + annotate.normal(
+        // new AnnotationDefaultCompleter(meth, value));
+        let annotate = self.annotate.borrow().clone();
+        match annotate {
+            Some(annotate) => {
+                let sentinel = annotate.unfinished_default_value();
+                if let crate::code::symbol::SymbolKind::MethodSymbol {
+                    default_value: slot,
+                    ..
+                } = &mut ctx.sym_mut(sym).kind_data
+                {
+                    *slot = Some(sentinel);
+                }
+                let services = Rc::clone(&annotate.services);
+                let class_file = self.current_class_file.clone();
+                annotate.normal(Box::new(move |ctx: &mut CompilerContext| {
+                    let syms_rc = Rc::clone(&services.syms);
+                    let mut syms_guard = syms_rc.borrow_mut();
+                    let syms = &mut *syms_guard;
+                    let prev_source = services.log.borrow_mut().use_source(class_file.clone());
+                    let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
+                        let types = Rc::clone(&services.types);
+                        let meth_ty = ctx.sym(sym).ty.expect("annotation method type");
+                        let restype = match &ctx.typ(meth_ty).kind {
+                            crate::code::type_::TypeKindData::MethodType { restype, .. } => {
+                                restype.expect("method return type")
+                            }
+                            _ => panic!("MethodType expected"),
+                        };
+                        let attr = deproxy_value(
+                            ctx,
+                            syms,
+                            &types,
+                            &services.names,
+                            restype,
+                            &value,
+                        )?;
+                        if let crate::code::symbol::SymbolKind::MethodSymbol {
+                            default_value: slot,
+                            ..
+                        } = &mut ctx.sym_mut(sym).kind_data
+                        {
+                            *slot = Some(attr);
+                        }
+                        Ok(())
+                    })();
+                    services.log.borrow_mut().use_source(prev_source);
+                    result
+                }));
+            }
+            None => {
+                self.pending_annotation_defaults.push((sym, value));
+            }
+        }
         Ok(())
     }
+
     // ------------------------------------------------------------------
     // Type annotation reading (ClassReader.java:1505-1690)
     // ------------------------------------------------------------------
@@ -3273,6 +3488,307 @@ fn class_file_of(
 
 }
 
+
+// ---------------------------------------------------------------------------
+// Annotation deproxying (ClassReader.java:1900-2100, 3159-3200).
+// The upstream Attribute.Visitor proxy classes are expressed as matches on the
+// read AnnotationValue enum (registered §9 adapter: same values, same output
+// Attribute kinds; ProxyType is not ported, so resolvePossibleProxyType is the
+// identity until the module-annotation batch).
+// ---------------------------------------------------------------------------
+
+/// Java: ClassReader.CompleterDeproxy (ClassReader.java:3159-3200)
+pub(crate) struct CompleterDeproxy {
+    proxy_on: SymbolId,
+    target: Option<AnnotationValue>,
+    repeatable: Option<AnnotationValue>,
+    names: Rc<Names>,
+}
+
+impl CompleterDeproxy {
+    pub(crate) fn new(
+        proxy_on: SymbolId,
+        target: Option<AnnotationValue>,
+        repeatable: Option<AnnotationValue>,
+        names: Rc<Names>,
+    ) -> CompleterDeproxy {
+        CompleterDeproxy {
+            proxy_on,
+            target,
+            repeatable,
+            names,
+        }
+    }
+}
+
+impl AnnotationTypeCompleter for CompleterDeproxy {
+    fn complete(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        assert_eq!(self.proxy_on, sym, "AssertionError: proxyOn == sym");
+        // §9 adapter: Types is value-held by ClassReader; the completer builds an
+        // equivalent Types instance from the same Names service (Types has no
+        // per-instance mutable state; see Types::with_names).
+        let types = crate::code::types::Types::with_names(Rc::clone(&self.names));
+        let mut the_target: Option<crate::ids::AttributeId> = None;
+        let mut the_repeatable: Option<crate::ids::AttributeId> = None;
+        if let Some(target) = self.target.clone() {
+            the_target = Some(deproxy_compound(ctx, syms, &types, &self.names, &target)?);
+        }
+        if let Some(repeatable) = self.repeatable.clone() {
+            the_repeatable = Some(deproxy_compound(ctx, syms, &types, &self.names, &repeatable)?);
+        }
+        if let Some(metadata) = ctx.sym_mut(sym).get_annotation_type_metadata_mut() {
+            metadata.set_target(the_target);
+            metadata.set_repeatable(the_repeatable);
+        }
+        Ok(())
+    }
+}
+
+/// Java: AnnotationDeproxy.deproxyCompoundList (ClassReader.java:1917-1924)
+fn deproxy_compound_list(
+    ctx: &mut CompilerContext,
+    syms: &mut crate::code::symtab::Symtab,
+    types: &crate::code::types::Types,
+    names: &Names,
+    pl: &List<AnnotationValue>,
+) -> Result<List<crate::ids::AttributeId>, crate::code::symbol::CompletionFailure> {
+    let mut buf: List<crate::ids::AttributeId> = List::nil();
+    let mut current = pl.clone();
+    while current.non_empty() {
+        let proxy = current.head();
+        buf = buf.append(deproxy_compound(ctx, syms, types, names, proxy)?);
+        current = current.tail();
+    }
+    Ok(buf)
+}
+
+/// Java: AnnotationDeproxy.deproxyCompound (ClassReader.java:1926-1934)
+fn deproxy_compound(
+    ctx: &mut CompilerContext,
+    syms: &mut crate::code::symtab::Symtab,
+    types: &crate::code::types::Types,
+    names: &Names,
+    proxy: &AnnotationValue,
+) -> Result<crate::ids::AttributeId, crate::code::symbol::CompletionFailure> {
+    let (ty, values) = match proxy {
+        AnnotationValue::Compound { ty, values } => (*ty, values.clone()),
+        _ => panic!("CompoundAnnotationProxy expected"),
+    };
+    let mut pairs: List<Pair<SymbolId, crate::ids::AttributeId>> = List::nil();
+    let mut current = values;
+    while current.non_empty() {
+        let (name, value) = current.head().clone();
+        let meth = find_access_method(ctx, syms, ty, &name)?;
+        let meth_ty = ctx.sym(meth).ty.expect("annotation value method type");
+        let restype = match &ctx.typ(meth_ty).kind {
+            crate::code::type_::TypeKindData::MethodType { restype, .. } => {
+                restype.expect("method return type")
+            }
+            _ => panic!("MethodType expected"),
+        };
+        let attr = deproxy_value(ctx, syms, types, names, restype, &value)?;
+        pairs = pairs.append(Pair::new(meth, attr));
+        current = current.tail();
+    }
+    let _ = names;
+    Ok(ctx.alloc_attribute(crate::code::attribute::Attribute::new_compound(
+        Some(ty),
+        pairs,
+    )))
+}
+
+/// Java: AnnotationDeproxy.deproxy + the proxy visitors (ClassReader.java:1976-2075)
+fn deproxy_value(
+    ctx: &mut CompilerContext,
+    syms: &mut crate::code::symtab::Symtab,
+    types: &crate::code::types::Types,
+    names: &Names,
+    expected_ty: TypeId,
+    value: &AnnotationValue,
+) -> Result<crate::ids::AttributeId, crate::code::symbol::CompletionFailure> {
+    let _ = names;
+    let attribute = match value {
+        AnnotationValue::Constant { ty, value } => {
+            crate::code::attribute::Attribute::new_constant(Some(*ty), value.clone())
+        }
+        AnnotationValue::Enum {
+            enum_type,
+            enumerator,
+        } => {
+            let enum_ty = *enum_type;
+            let enumerator_sym = find_enum_constant(ctx, syms, enum_ty, enumerator)?;
+            crate::code::attribute::Attribute::new_enum(Some(enum_ty), enumerator_sym)
+        }
+        AnnotationValue::Class { class_type } => crate::code::attribute::Attribute::new_class(
+            ctx, syms, types, *class_type,
+        ),
+        AnnotationValue::Array { values } => {
+            let elemtype = types.elemtype(ctx, syms, expected_ty);
+            let mut elems: Vec<crate::ids::AttributeId> = Vec::new();
+            let mut current = values.clone();
+            while current.non_empty() {
+                let elem = current.head();
+                elems.push(deproxy_value(ctx, syms, types, names, elemtype, elem)?);
+                current = current.tail();
+            }
+            crate::code::attribute::Attribute::new_array(Some(expected_ty), elems)
+        }
+        AnnotationValue::Compound { .. } => {
+            return deproxy_compound(ctx, syms, types, names, value);
+        }
+    };
+    Ok(ctx.alloc_attribute(attribute))
+}
+
+/// Java: AnnotationDeproxy.findAccessMethod (ClassReader.java:1936-1974)
+fn find_access_method(
+    ctx: &mut CompilerContext,
+    syms: &mut crate::code::symtab::Symtab,
+    container: TypeId,
+    name: &Name,
+) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
+    let container_tsym = ctx.typ(container).tsym.expect("annotation type symbol");
+    let members = match &ctx.sym(container_tsym).kind_data {
+        crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+        _ => None,
+    };
+    if let Some(members) = members {
+        let candidates = ctx.scope_get_symbols_by_name(
+            members,
+            name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        for sym in candidates {
+            if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH {
+                let method_ty = ctx.sym(sym).ty.expect("annotation method type");
+                let has_no_params = match &ctx.typ(method_ty).kind {
+                    crate::code::type_::TypeKindData::MethodType { argtypes, .. } => {
+                        argtypes.is_empty()
+                    }
+                    _ => false,
+                };
+                if has_no_params {
+                    return Ok(sym);
+                }
+            }
+        }
+    }
+    // Java: the method wasn't found: emit a warning (lintClassfile only) and
+    // recover with a synthetic method whose return type is bottomType.
+    let bot_type = syms.bot_type;
+    let method_class = syms.method_class;
+    let mt = ctx.alloc_type(crate::code::type_::Type::new_method_type(
+        List::nil(),
+        bot_type,
+        List::nil(),
+        method_class,
+    ));
+    Ok(ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+        crate::code::kinds::Kind::MTH,
+        (flags::PUBLIC | flags::ABSTRACT) as i64,
+        name.clone(),
+        Some(mt),
+        Some(container_tsym),
+        crate::code::symbol::SymbolKind::MethodSymbol {
+            extra_params: List::nil(),
+            captured_locals: List::nil(),
+            params: List::nil(),
+            default_value: None,
+        },
+    )))
+}
+
+/// The enum-constant lookup of AnnotationDeproxy.visitEnumAttributeProxy
+/// (ClassReader.java:2015-2050).
+fn find_enum_constant(
+    ctx: &mut CompilerContext,
+    syms: &mut crate::code::symtab::Symtab,
+    enum_ty: TypeId,
+    enumerator: &Name,
+) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
+    let enum_tsym = ctx.typ(enum_ty).tsym.expect("enum type symbol");
+    let members = match &ctx.sym(enum_tsym).kind_data {
+        crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+        _ => None,
+    };
+    if let Some(members) = members {
+        let candidates = ctx.scope_get_symbols_by_name(
+            members,
+            enumerator,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        for sym in candidates {
+            if ctx.sym(sym).kind == crate::code::kinds::Kind::VAR {
+                return Ok(sym);
+            }
+        }
+    }
+    // Java: new VarSymbol(0, proxy.enumerator, syms.botType, enumTypeSym)
+    let bot_type = syms.bot_type;
+    Ok(ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+        crate::code::kinds::Kind::VAR,
+        0,
+        enumerator.clone(),
+        Some(bot_type),
+        Some(enum_tsym),
+        crate::code::symbol::SymbolKind::VarSymbol {
+            pos: 0,
+            adr: -1,
+            data_kind: None,
+            data: None,
+        },
+    )))
+}
+
+/// Java: proxy.type.tsym.flatName() == syms.<internalType>.tsym.flatName()
+/// (the port compares the type symbols; equal symbols imply equal flat names).
+fn internal_type_matches(
+    ctx: &CompilerContext,
+    internal: Option<TypeId>,
+    proxy_tsym: Option<SymbolId>,
+) -> bool {
+    matches!(
+        internal.and_then(|internal| ctx.typ(internal).tsym),
+        Some(internal) if Some(internal) == proxy_tsym
+    )
+}
+
+/// Java: CompoundAnnotationProxy.values
+fn proxy_values(proxy: &AnnotationValue) -> Vec<(Name, AnnotationValue)> {
+    match proxy {
+        AnnotationValue::Compound { values, .. } => values.to_vec(),
+        _ => Vec::new(),
+    }
+}
+
+/// Java: ClassReader.setFlagIfAttributeTrue (ClassReader.java:1495-1503)
+fn set_flag_if_attribute_true(
+    ctx: &CompilerContext,
+    proxy: &AnnotationValue,
+    attribute: &Name,
+    boolean_type: TypeId,
+) -> bool {
+    for (name, value) in proxy_values(proxy) {
+        if name.to_java_string() == attribute.to_java_string()
+            && let AnnotationValue::Constant { ty, value } = value
+            && ty == boolean_type
+            && let crate::code::attribute::ConstValue::Integer(v) = value
+            && v != 0
+        {
+            return true;
+        }
+    }
+    let _ = ctx;
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use crate::code::symtab::Symtab;
@@ -3490,6 +4006,7 @@ mod tests {
             profile,
             &options,
             source,
+            Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
@@ -3694,6 +4211,7 @@ mod tests {
             profile,
             &options,
             source,
+            Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
@@ -3811,6 +4329,7 @@ mod tests {
             profile,
             &options,
             source,
+            Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
@@ -3907,6 +4426,7 @@ mod tests {
             profile,
             &options,
             source,
+            Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
@@ -4011,6 +4531,7 @@ mod tests {
             profile,
             &options,
             source,
+            Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
@@ -4105,6 +4626,7 @@ mod tests {
             profile,
             &options,
             source,
+            Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
@@ -4206,6 +4728,126 @@ mod tests {
         }
     }
 
+    #[test]
+    fn fixture_annotation_type_metadata_installed() {
+        // ClassReader.readClass installs AnnotationTypeMetadata with a
+        // CompleterDeproxy for annotation types (ClassReader.java:2988-2995);
+        // attachAnnotations collected the @Target/@Retention proxies.
+        let mut context = Context::new();
+        let log = Log::instance(&mut context);
+        let names = Rc::new(Names::new(false));
+        let messages = crate::util::javac_messages::JavacMessages::instance(&mut context);
+        let factory = Rc::new(Factory::new(messages, "compiler"));
+        let dcfh = DeferredCompletionFailureHandler::instance();
+        let preview = Rc::new(Preview::new(false, false));
+        let profile = Profile::instance(&mut context);
+        let options = Options::instance(&mut context);
+        let source = Source::JDK17;
+        let mut reader = ClassReader::new(
+            log,
+            Rc::clone(&names),
+            factory,
+            dcfh,
+            preview,
+            profile,
+            &options,
+            source,
+            Rc::new(RefCell::new(None)),
+        );
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let java_base = syms.java_base;
+        let class_name = names.from_string(&javac_strings::JavaString::from("MyAnno"));
+        let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
+        let file = Rc::new(ClassBytesFile {
+            name: javac_strings::JavaString::from("MyAnno.class"),
+            bytes: fixture_bytes("MyAnno.class"),
+        });
+        if let crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } =
+            &mut ctx.sym_mut(c).kind_data
+        {
+            *classfile = Some(file);
+        }
+        reader
+            .read_class_file(&mut ctx, &mut syms, c)
+            .expect("MyAnno readClassFile");
+        assert!(
+            ctx.sym(c).is_annotation_type(),
+            "MyAnno must be entered as an annotation type"
+        );
+        let metadata = ctx
+            .sym(c)
+            .get_annotation_type_metadata()
+            .expect("annotation type metadata");
+        assert!(
+            metadata.is_metadata_for_annotation_type(),
+            "AnnotationTypeMetadata installed for MyAnno"
+        );
+        assert!(
+            reader.target.is_some(),
+            "attachAnnotations must collect the @Target proxy"
+        );
+        // MyAnno carries @Target (collected into reader.target); the upstream
+        // 'repeatable' field only holds a @Repeatable proxy, which MyAnno does
+        // not declare (the @Retention attribute is not tracked by this field).
+        assert!(
+            reader.repeatable.is_none(),
+            "MyAnno declares no @Repeatable, so no repeatable proxy is collected"
+        );
+    }
+
+    #[test]
+    fn deproxy_compound_builds_attribute_compounds() {
+        // AnnotationDeproxy.deproxyCompoundList/deproxyCompound/deproxy path:
+        // classfile proxies become Attribute.Compound/Constant values (the
+        // "attributes" half of the annotation end-to-end path).
+        let mut _context = Context::new();
+        let names = Rc::new(Names::new(false));
+        let source = Source::JDK17;
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let types = crate::code::types::Types::with_names(Rc::clone(&names));
+        let value_name = names.value.clone();
+        let proxy = AnnotationValue::Compound {
+            ty: syms.annotation_type,
+            values: List::of((
+                value_name.clone(),
+                AnnotationValue::Constant {
+                    ty: syms.string_type,
+                    value: crate::code::attribute::ConstValue::String(
+                        javac_strings::JavaString::from("x"),
+                    ),
+                },
+            )),
+        };
+        let list = List::of(proxy);
+        let attributes = deproxy_compound_list(&mut ctx, &mut syms, &types, &names, &list)
+            .expect("deproxy");
+        assert_eq!(attributes.length(), 1);
+        let attr = *attributes.head();
+        let values = match &ctx.attr(attr).kind {
+            crate::code::attribute::AttributeKind::Compound { values, .. } => values.clone(),
+            _other => panic!("Compound attribute expected"),
+        };
+        assert_eq!(values.length(), 1);
+        let pair = values.head().clone();
+        assert_eq!(
+            ctx.sym(pair.fst).name.to_java_string(),
+            value_name.to_java_string()
+        );
+        match &ctx.attr(pair.snd).kind {
+            crate::code::attribute::AttributeKind::Constant { value } => {
+                assert_eq!(
+                    value,
+                    &crate::code::attribute::ConstValue::String(
+                        javac_strings::JavaString::from("x")
+                    )
+                );
+            }
+            _other => panic!("Constant attribute expected"),
+        }
+    }
+
     fn annotation_constant(value: &AnnotationValue) -> Option<&crate::code::attribute::ConstValue> {
         match value {
             AnnotationValue::Constant { value, .. } => Some(value),
@@ -4244,6 +4886,7 @@ mod tests {
             profile,
             &options,
             source,
+            Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
@@ -4334,6 +4977,7 @@ mod tests {
             profile,
             &options,
             source,
+            Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
@@ -4414,6 +5058,7 @@ mod tests {
             profile,
             &options,
             source,
+            Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
@@ -4543,6 +5188,7 @@ mod tests {
             profile,
             &options,
             source,
+            Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
@@ -4677,7 +5323,17 @@ mod tests {
         let preview = Rc::new(Preview::new(false, false));
         let profile = Rc::new(Profile::values()[0]);
         let options = Options::instance(&mut context);
-        ClassReader::new(log, names, factory, dcfh, preview, profile, &options, source)
+        ClassReader::new(
+        log,
+        names,
+        factory,
+        dcfh,
+        preview,
+        profile,
+        &options,
+        source,
+        Rc::new(RefCell::new(None)),
+    )
     }
 
     #[test]

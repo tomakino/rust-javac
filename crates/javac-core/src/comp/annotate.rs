@@ -123,6 +123,18 @@ impl AnnotationTypeMetadata {
         }
         if let Some(completer) = self.annotation_type_completer.take() {
             completer.borrow_mut().complete(ctx, syms, meta_data_for)?;
+            // §9 adapter: the upstream completer mutates the shared metadata
+            // object through ClassSymbol.getAnnotationTypeMetadata(); the port
+            // clones the metadata (Rust borrow rules, see Check), so mirror the
+            // completer-written fields into this copy.
+            if let Some(real) = ctx.sym(meta_data_for).get_annotation_type_metadata() {
+                if real.target.is_some() {
+                    self.target = real.target;
+                }
+                if real.repeatable.is_some() {
+                    self.repeatable = real.repeatable;
+                }
+            }
         }
         Ok(())
     }
@@ -142,10 +154,12 @@ impl AnnotationTypeMetadata {
         Ok(self.repeatable)
     }
 
-    /// Java: public void setRepeatable(Compound repeatable)
-    pub fn set_repeatable(&mut self, repeatable: AttributeId) {
+    /// Java: public void setRepeatable(Compound repeatable) — the upstream setter
+    /// is also called with null (CompleterDeproxy.complete), so the port takes
+    /// an Option<AttributeId> (registered §9 adapter).
+    pub fn set_repeatable(&mut self, repeatable: Option<AttributeId>) {
         assert!(self.repeatable.is_none(), "AssertionError: repeatable already set");
-        self.repeatable = Some(repeatable);
+        self.repeatable = repeatable;
     }
 
     /// Java: public Compound getTarget()
@@ -158,10 +172,11 @@ impl AnnotationTypeMetadata {
         Ok(self.target)
     }
 
-    /// Java: public void setTarget(Compound target)
-    pub fn set_target(&mut self, target: AttributeId) {
+    /// Java: public void setTarget(Compound target) — may be null (see
+    /// set_repeatable; registered §9 adapter).
+    pub fn set_target(&mut self, target: Option<AttributeId>) {
         assert!(self.target.is_none(), "AssertionError: target already set");
-        self.target = Some(target);
+        self.target = target;
     }
 
     /// Java: public Set<MethodSymbol> getAnnotationElements()
@@ -2176,12 +2191,8 @@ impl AnnotateServices {
         let target = visitor.target;
         let repeatable = visitor.repeatable;
         if let Some(metadata) = ctx.sym_mut(sym).get_annotation_type_metadata_mut() {
-            if let Some(repeatable) = repeatable {
-                metadata.set_repeatable(repeatable);
-            }
-            if let Some(target) = target {
-                metadata.set_target(target);
-            }
+            metadata.set_repeatable(repeatable);
+            metadata.set_target(target);
         }
         self.log.borrow_mut().use_source(prev);
         Ok(())
@@ -2313,7 +2324,7 @@ struct UnusedFileManager;
     #[allow(dead_code)]
     struct AnnotateHarness {
         ctx: CompilerContext,
-        annotate: Annotate,
+        annotate: Rc<Annotate>,
         make: Rc<RefCell<TreeMaker>>,
         syms: Rc<RefCell<Symtab>>,
         types: Rc<Types>,
@@ -2362,12 +2373,14 @@ struct UnusedFileManager;
             manager,
             &options,
         )));
+        let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
         let member_enter = Rc::new(RefCell::new(MemberEnter::new(
             Rc::clone(&enter),
             Rc::clone(&log),
             Rc::clone(&check),
             Rc::clone(&types),
             Rc::clone(&deferred),
+            Rc::clone(&annotate_cell),
         )));
         let type_enter = Rc::new(RefCell::new(TypeEnter::new(
             Rc::clone(&names),
@@ -2381,6 +2394,7 @@ struct UnusedFileManager;
             None,
             Rc::clone(&type_envs),
             Rc::clone(&dependencies),
+            Rc::clone(&annotate_cell),
         )));
         let basic_handler = Rc::clone(&check.borrow().basic_handler);
         let attr = Rc::new(RefCell::new(Attr::new(
@@ -2412,7 +2426,7 @@ struct UnusedFileManager;
             None,
         )));
         let cfolder = Rc::new(ConstFold::new());
-        let annotate = Annotate::new(
+        let annotate = Rc::new(Annotate::new(
             &mut ctx,
             names,
             Rc::clone(&log),
@@ -2429,7 +2443,8 @@ struct UnusedFileManager;
             Rc::clone(&type_envs),
             Rc::clone(&diags),
             Source::JDK17,
-        );
+        ));
+        *annotate_cell.borrow_mut() = Some(Rc::clone(&annotate));
         AnnotateHarness {
             ctx,
             annotate,

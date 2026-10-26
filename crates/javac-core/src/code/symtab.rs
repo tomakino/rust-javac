@@ -697,6 +697,48 @@ fn enter_class_named(
     ctx.sym(class).ty.expect("class symbol type")
 }
 
+/// Java: ClassSymbol enterSyntheticAnnotation(String name) (Symtab.java:355-380)
+/// Synthesizes an annotation class (no class file) for the internal
+/// proprietary/profile/preview/value-based annotations.
+fn enter_synthetic_annotation(
+    ctx: &mut CompilerContext,
+    names: &Names,
+    maps: &mut SymtabMaps,
+    java_base: SymbolId,
+    annotation_type: TypeId,
+    text: &str,
+) -> TypeId {
+    let ty = enter_class_named(ctx, names, maps, java_base, text);
+    let sym = ctx.typ(ty).tsym.expect("synthetic annotation symbol");
+    {
+        let symbol = ctx.sym_mut(sym);
+        // Java: sym.completer = Completer.NULL_COMPLETER; (None == completed in
+        // the port, see CompilerContext::complete_symbol)
+        symbol.completer = None;
+        symbol.flags_field =
+            (flags::PUBLIC | flags::ACYCLIC | flags::ANNOTATION | flags::INTERFACE) as i64;
+        symbol.erasure_field = Some(ty);
+    }
+    let members = ctx.alloc_scope(Scope::new_scope_impl(Some(sym)));
+    if let SymbolKind::ClassSymbol { members_field, .. } = &mut ctx.sym_mut(sym).kind_data {
+        *members_field = Some(members);
+    }
+    if let TypeKindData::ClassType {
+        typarams_field,
+        allparams_field,
+        supertype_field,
+        interfaces_field,
+        ..
+    } = &mut ctx.typ_mut(ty).kind
+    {
+        *typarams_field = Some(List::nil());
+        *allparams_field = Some(List::nil());
+        *supertype_field = Some(annotation_type);
+        *interfaces_field = Some(List::nil());
+    }
+    ty
+}
+
 /// Java: private PackageSymbol lookupPackage(ModuleSymbol msym, Name flatname,
 /// boolean onlyExisting)
 // The extra parameters are the ported Symtab state (unnamed/no module) passed
@@ -1292,7 +1334,61 @@ impl Symtab {
         let string_concat_factory = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.invoke.StringConcatFactory");
         let functional_interface_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.FunctionalInterface");
         let preview_feature_type = enter_class_named(ctx, &names, &mut maps, java_base, "jdk.internal.javac.PreviewFeature");
-        // NOT PORTED: previewFeatureInternalType = enterSyntheticAnnotation(...)
+        // Java: Symtab constructor:
+        //   previewFeatureInternalType = enterSyntheticAnnotation("jdk.internal.PreviewFeature+Annotation");
+        //   valueBasedInternalType = enterSyntheticAnnotation("jdk.internal.ValueBased+Annotation");
+        //   proprietaryType = enterSyntheticAnnotation("sun.Proprietary+Annotation");
+        //   profileType = enterSyntheticAnnotation("jdk.Profile+Annotation") (+ the
+        //   synthetic public abstract int value() member).
+        let preview_feature_internal_type = enter_synthetic_annotation(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            annotation_type,
+            "jdk.internal.PreviewFeature+Annotation",
+        );
+        let value_based_internal_type = enter_synthetic_annotation(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            annotation_type,
+            "jdk.internal.ValueBased+Annotation",
+        );
+        let proprietary_type = enter_synthetic_annotation(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            annotation_type,
+            "sun.Proprietary+Annotation",
+        );
+        let profile_type = enter_synthetic_annotation(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            annotation_type,
+            "jdk.Profile+Annotation",
+        );
+        {
+            let profile_tsym = ctx.typ(profile_type).tsym.expect("profile type symbol");
+            let members = match &ctx.sym(profile_tsym).kind_data {
+                SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+                _ => None,
+            };
+            let scope = members.expect("profile type members");
+            let value_name = names.value.clone();
+            let value_method = new_method_symbol(
+                ctx,
+                (flags::PUBLIC | flags::ABSTRACT) as i64,
+                value_name,
+                Some(int_type),
+                Some(profile_tsym),
+            );
+            ctx.scope_enter(scope, value_method);
+        }
         let type_descriptor_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.invoke.TypeDescriptor");
         let record_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Record");
         let switch_bootstraps_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.runtime.SwitchBootstraps");
@@ -1426,8 +1522,8 @@ impl Symtab {
                 suppress_warnings_type,
                 supplier_type,
                 inherited_type,
-                profile_type: None,
-                proprietary_type: None,
+                profile_type: Some(profile_type),
+                proprietary_type: Some(proprietary_type),
                 system_type,
                 auto_closeable_type,
                 trust_me_type,
@@ -1438,12 +1534,12 @@ impl Symtab {
                 element_type_type,
                 functional_interface_type,
                 preview_feature_type,
-                preview_feature_internal_type: None,
+                preview_feature_internal_type: Some(preview_feature_internal_type),
                 type_descriptor_type,
                 record_type,
                 switch_bootstraps_type,
                 value_based_type,
-                value_based_internal_type: None,
+                value_based_internal_type: Some(value_based_internal_type),
                 length_var,
                 enum_final_finalize,
                 auto_closeable_close,

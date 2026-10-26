@@ -52,6 +52,7 @@ use crate::code::symtab::Symtab;
 use crate::code::type_tag::TypeTag;
 use crate::code::type_::TypeKindData;
 use crate::code::types::Types;
+use crate::comp::annotate::Annotate;
 use crate::comp::attr_context::AttrContext;
 use crate::comp::check::Check;
 use crate::comp::enter::Enter;
@@ -96,6 +97,10 @@ pub struct TypeEnter {
     pub imports_env: Option<Rc<Env<AttrContext>>>,
     pub static_import_filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
     pub type_import_filter: Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+    /// Java: private final Annotate annotate = Annotate.instance(context) —
+    /// explicit injection adapter (ADR 0001; Rc cycle broken by a cell, see
+    /// MemberEnter.annotate).
+    pub annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
 }
 
 /// Java: TypeEnter.Phase (the inner subclasses are expressed as TypeEnter phase
@@ -121,6 +126,7 @@ impl TypeEnter {
         lint: Option<Rc<crate::code::lint::Lint>>,
         type_envs: Rc<RefCell<TypeEnvs>>,
         dependencies: Rc<RefCell<dyn Dependencies>>,
+        annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
     ) -> TypeEnter {
         TypeEnter {
             names,
@@ -141,6 +147,7 @@ impl TypeEnter {
             imports_env: None,
             static_import_filter: None,
             type_import_filter: None,
+            annotate,
         }
     }
 
@@ -209,7 +216,12 @@ impl TypeEnter {
             // complete_symbol); registered.
             return;
         }
-        // TODO(Annotate batch): annotate.blockAnnotations();
+        let annotate = self
+            .annotate
+            .borrow()
+            .clone()
+            .expect("TypeEnter.annotate must be injected");
+        annotate.block_annotations();
         ctx.sym_mut(sym).flags_field |= flags::UNATTRIBUTED as i64;
         self.dependencies
             .borrow_mut()
@@ -236,7 +248,9 @@ impl TypeEnter {
                 }
             }
         }
-        // TODO(Annotate batch): annotate.unblockAnnotations();
+        annotate
+            .unblock_annotations(ctx)
+            .expect("unblockAnnotations flush");
     }
 
     // ------------------------------------------------------------------
@@ -377,8 +391,22 @@ impl TypeEnter {
             if let Some(sym) = sym {
                 self.mark_deprecated(ctx, syms, sym, annotations);
             }
-            // TODO(Annotate batch): annotate.annotateLater(decl.mods.annotations,
-            //     env, toplevel(&env).modle, null);
+            // process module annotations
+            let annotate = self
+                .annotate
+                .borrow()
+                .clone()
+                .expect("TypeEnter.annotate must be injected");
+            let modle = compilation_unit_module(ctx, toplevel(env));
+            if let Some(modle) = modle {
+                annotate.annotate_later(
+                    ctx,
+                    module_decl_annotations(ctx, decl),
+                    Rc::clone(env),
+                    modle,
+                    None,
+                );
+            }
         }
         self.imports_env = prev_env;
         // TODO(Lint batch): chk.setLint(prevLint);
@@ -416,8 +444,24 @@ impl TypeEnter {
                     p = owner.unwrap();
                 }
             }
-            // TODO(Annotate batch): annotate.annotateLater(tree.annotations, env,
-            //     toplevel(&env).packge, null);
+        // process package annotations (TypeEnter.java:405)
+        let annotate = self
+            .annotate
+            .borrow()
+            .clone()
+            .expect("TypeEnter.annotate must be injected");
+        if let Some(package_decl) = compilation_unit_package_decl(ctx, toplevel(env))
+            && package_decl_is_non_null(ctx, package_decl)
+        {
+            let package_annotations = match &ctx.tree(package_decl).kind {
+                TreeKind::PackageDecl { annotations, .. } => annotations.clone(),
+                _ => List::nil(),
+            };
+            if package_annotations.non_empty() {
+                let packge = compilation_unit_package(ctx, toplevel(env)).expect("packge");
+                annotate.annotate_later(ctx, package_annotations, Rc::clone(env), packge, None);
+            }
+        }
     }
 
     /// Java: ImportsPhase.doImport(JCImport tree)
@@ -1118,6 +1162,13 @@ fn compilation_unit_sourcefile(
     }
 }
 
+fn compilation_unit_module(ctx: &CompilerContext, unit: TreeId) -> Option<SymbolId> {
+    match &ctx.tree(unit).kind {
+        TreeKind::CompilationUnit { modle, .. } => *modle,
+        _ => None,
+    }
+}
+
 fn compilation_unit_package(ctx: &CompilerContext, unit: TreeId) -> Option<SymbolId> {
     match &ctx.tree(unit).kind {
         TreeKind::CompilationUnit { packge, .. } => *packge,
@@ -1703,12 +1754,14 @@ mod tests {
             manager,
             &options,
         )));
+        let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
         let member_enter = Rc::new(RefCell::new(MemberEnter::new(
             Rc::clone(&enter),
             Rc::clone(&log),
             Rc::clone(&chk),
             Rc::clone(&types),
             Rc::clone(&deferred),
+            Rc::clone(&annotate_cell),
         )));
         let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
         let dependencies: Rc<RefCell<dyn Dependencies>> =
@@ -1728,6 +1781,7 @@ mod tests {
             None,
             type_envs,
             dependencies,
+            annotate_cell,
         );
         Harness {
             ctx,

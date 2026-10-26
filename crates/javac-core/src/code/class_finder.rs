@@ -1382,6 +1382,7 @@ mod tests {
             Rc::clone(&profile),
             &options,
             source,
+            Rc::new(RefCell::new(None)),
         )));
         let mut ctx = CompilerContext::new();
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
