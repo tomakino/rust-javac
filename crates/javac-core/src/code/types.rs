@@ -9735,6 +9735,55 @@ fn class_flatname(
     }
 }
 
+
+impl Types {
+    /// Create a copy of a method type with a different parameter list.
+    ///
+    /// The original type may be a for-all type wrapping a method type; in that
+    /// case the qualifier type is copied recursively while the type variables
+    /// are preserved. Any other type is rejected with a panic, matching the
+    /// upstream IllegalArgumentException in the parameters visitor.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - original: the method (or for-all) type;
+    ///   - new_params: the replacement parameter types.
+    ///
+    /// # Returns
+    ///   - the rebuilt method type.
+    ///
+    /// # Panics
+    ///   - the original type is neither a method type nor a for-all type.
+    pub fn create_method_type_with_parameters(
+        &self,
+        ctx: &mut CompilerContext,
+        original: TypeId,
+        new_params: List<TypeId>,
+    ) -> TypeId {
+        match &ctx.typ(original).kind {
+            TypeKindData::MethodType { .. } => {
+                let mut mt = ctx.typ(original).clone();
+                if let TypeKindData::MethodType { argtypes, .. } = &mut mt.kind {
+                    *argtypes = new_params;
+                }
+                ctx.alloc_type(mt)
+            }
+            TypeKindData::ForAll { tvars, qtype } => {
+                let tvars = tvars.clone();
+                let inner = qtype.expect("for-all qualifier type");
+                let new_inner = self.create_method_type_with_parameters(ctx, inner, new_params);
+                let forall = ctx.typ(original).clone();
+                let mut forall = forall;
+                if let TypeKindData::ForAll { qtype, .. } = &mut forall.kind {
+                    *qtype = Some(new_inner);
+                    let _ = &tvars;
+                }
+                ctx.alloc_type(forall)
+            }
+            _ => panic!("IllegalArgumentException: not a method type"),
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

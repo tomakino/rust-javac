@@ -2769,6 +2769,61 @@ impl Symbol {
         new_code
     }
 }
+
+/// Return the external erased type of a symbol.
+///
+/// Constructors of inner classes gain the enclosing instance class as their
+/// first parameter; every other symbol uses its erased type. The helper is the
+/// Rust form of Symbol.externalType, which the access-constructor synthesis
+/// needs to describe the synthesized constructor.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - types: the type relations service;
+///   - syms: the symbol table;
+///   - names: the name table (for the constructor name);
+///   - sym: the symbol whose external type is computed.
+///
+/// # Returns
+///   - the erased external type.
+///
+/// # Panics
+///   - the symbol or its owner has no type.
+pub fn external_type(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    types: &crate::code::types::Types,
+    syms: &crate::code::symtab::Symtab,
+    names: &crate::util::names::Names,
+    sym: SymbolId,
+) -> crate::ids::TypeId {
+    let sym_ty = ctx.sym(sym).ty.expect("symbol type");
+    let erased = types.erasure(ctx, syms, sym_ty);
+    let is_init = ctx.sym(sym).name == names.init;
+    let owner_has_outer = ctx
+        .sym(sym)
+        .owner
+        .map(|owner| ctx.sym(owner).has_outer_instance(ctx))
+        .unwrap_or(false);
+    if is_init && owner_has_outer {
+        let owner = ctx.sym(sym).owner.expect("constructor owner");
+        let owner_ty = ctx.sym(owner).ty.expect("owner type");
+        let enclosing = ctx
+            .typ(owner_ty)
+            .get_enclosing_type()
+            .expect("enclosing type");
+        let outer_this_type = types.erasure(ctx, syms, enclosing);
+        let mut method_ty = ctx.typ(erased).clone();
+        if let crate::code::type_::TypeKindData::MethodType { argtypes, .. } =
+            &mut method_ty.kind
+        {
+            *argtypes = argtypes.prepend(outer_this_type);
+        }
+        ctx.alloc_type(method_ty)
+    } else {
+        erased
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -16,7 +16,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::code::flags;
 use crate::code::kinds::Kind;
 use crate::code::symbol::{Symbol, SymbolKind};
 use crate::code::symtab::Symtab;
@@ -35,7 +34,7 @@ use crate::compiler_context::CompilerContext;
 use crate::ids::{ScopeId, SymbolId, TreeId, TypeId};
 use crate::jvm::target::Target;
 use crate::tree::end_pos_table::EndPosTable;
-use crate::tree::jc_tree::{Tag, TreeKind, TreeVisitor};
+use crate::tree::jc_tree::{Tag, TreeKind};
 use crate::tree::tree_info;
 use crate::tree::tree_scanner::TreeScannerVisitor;
 use crate::tree::tree_maker::{TreeFactory, TreeMaker};
@@ -96,7 +95,7 @@ pub struct Lower {
     /// The attribution environment of the current top-level class.
     pub attr_env: Option<Rc<Env<AttrContext>>>,
     /// The end-position table of the current compilation unit (when present).
-    pub end_pos_table: Option<Rc<RefCell<dyn EndPosTable>>>,
+    pub end_pos_table: Option<Rc<dyn EndPosTable>>,
     /// Local class symbols to their class declaration trees.
     pub classdefs: HashMap<SymbolId, TreeId>,
     /// Local class symbols to their pruned trees.
@@ -116,7 +115,7 @@ pub struct Lower {
     /// Local class symbols to the free variables they capture.
     pub freevar_cache: HashMap<SymbolId, List<SymbolId>>,
     /// Enum switch helper maps, per enum symbol.
-    pub enum_switch_map: HashMap<SymbolId, Rc<RefCell<EnumMapping>>>,
+    enum_switch_map: HashMap<SymbolId, Rc<RefCell<EnumMapping>>>,
     /// Per-symbol access numbering for synthesized access methods.
     pub access_nums: HashMap<SymbolId, i32>,
     /// Per-symbol access method cache, indexed by access code.
@@ -139,6 +138,8 @@ pub struct Lower {
     pub result: Option<TreeId>,
     /// The prototype type of the current translation (when any).
     pub pt: Option<TypeId>,
+    /// The closest enclosing operator node of the tree being translated.
+    pub encl_op: Option<TreeId>,
 }
 
 impl Lower {
@@ -228,6 +229,7 @@ impl Lower {
             assertions_disabled_class_cache: None,
             result: None,
             pt: None,
+            encl_op: None,
         }
     }
 
@@ -688,11 +690,11 @@ impl Lower {
         }
         ctx.tree_mut(cdef).ty = Some(ctype);
         ctx.tree_mut(cdef).pos = odef_pos;
-        if add_to_defs {
-            if let TreeKind::ClassDecl { defs, .. } = &mut ctx.tree_mut(odef).kind {
-                let new_defs = defs.prepend(cdef);
-                *defs = new_defs;
-            }
+        if add_to_defs
+            && let TreeKind::ClassDecl { defs, .. } = &mut ctx.tree_mut(odef).kind
+        {
+            let new_defs = defs.prepend(cdef);
+            *defs = new_defs;
         }
         cdef
     }
@@ -831,7 +833,2476 @@ impl Lower {
         }
     }
 
+
+    /// Compute the access code of a tree use relative to its enclosing
+    /// operator node.
+    ///
+    /// The code identifies how the value is used (plain dereference, assignment,
+    /// increment/decrement or a compound assignment) and drives which accessor
+    /// method the accessor synthesis selects.
+    fn access_code(&self, ctx: &CompilerContext, tree: TreeId, encl_op: Option<TreeId>) -> i32 {
+        let Some(encl_op) = encl_op else {
+            return crate::code::symbol::AccessCode::DEREF.code();
+        };
+        let encl_tag = ctx.tree(encl_op).get_tag();
+        if encl_tag == Tag::ASSIGN
+            && let TreeKind::Assign { lhs: Some(lhs), .. } = &ctx.tree(encl_op).kind
+            && tree == tree_info::skip_parens(ctx, *lhs)
+        {
+            return crate::code::symbol::AccessCode::ASSIGN.code();
+        }
+        if (encl_tag.is_inc_or_dec_unary_op() || encl_tag.is_assignop())
+            && let Some(operand) = Self::operator_operand_left(ctx, encl_op)
+            && tree == tree_info::skip_parens(ctx, operand)
+        {
+            let operator = match &ctx.tree(encl_op).kind {
+                TreeKind::Unary { operator, .. } | TreeKind::AssignOp { operator, .. } => {
+                    *operator
+                }
+                _ => None,
+            };
+            if let Some(operator) = operator {
+                let mut operator_symbol = ctx.sym(operator).clone();
+                return operator_symbol.get_access_code(encl_tag);
+            }
+        }
+        crate::code::symbol::AccessCode::DEREF.code()
+    }
+
+    /// Return the left operand of an operator expression tree.
+    ///
+    /// Unary operators have their operand in arg and compound assignments in
+    /// lhs; the helper is the Rust form of getOperand(LEFT).
+    fn operator_operand_left(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
+        match &ctx.tree(tree).kind {
+            TreeKind::Unary { arg, .. } => *arg,
+            TreeKind::AssignOp { lhs, .. } => *lhs,
+            TreeKind::Binary { lhs, .. } => *lhs,
+            _ => None,
+        }
+    }
+
+    /// Return the binary operator matching an access code and tag.
+    ///
+    /// The access code comparison uses the non-cached AccessCode.from value,
+    /// which is observably equivalent to the cached getAccessCode result because
+    /// the cache only memoizes the same computation.
+    fn binary_access_operator(&mut self, ctx: &mut CompilerContext, acode: i32, tag: Tag) -> SymbolId {
+        let operators = self.operators();
+        let mut syms = self.syms.borrow_mut();
+        let found = operators.lookup_binary_op(ctx, &mut syms, &self.types, &|ctx, _syms, sym| {
+            let access = match &ctx.sym(sym).kind_data {
+                SymbolKind::OperatorSymbol { opcode, .. } => {
+                    crate::code::symbol::AccessCode::from(tag, *opcode)
+                }
+                _ => crate::code::symbol::AccessCode::DEREF.code(),
+            };
+            access == acode
+        });
+        found.expect("binary access operator")
+    }
+
+    /// Return the tree tag of the compound assignment corresponding to a
+    /// binary operator.
+    ///
+    /// The mapping follows the backend opcode stored on the operator symbol, as
+    /// the upstream treeTag helper does.
+    fn tree_tag(operator: SymbolId, ctx: &CompilerContext) -> Tag {
+        use crate::jvm::byte_codes as bc;
+        let opcode = match &ctx.sym(operator).kind_data {
+            SymbolKind::OperatorSymbol { opcode, .. } => *opcode,
+            _ => panic!("AssertionError: operator symbol expected"),
+        };
+        match opcode {
+            bc::IOR | bc::LOR => Tag::BITOR_ASG,
+            bc::IXOR | bc::LXOR => Tag::BITXOR_ASG,
+            bc::IAND | bc::LAND => Tag::BITAND_ASG,
+            bc::ISHL | bc::LSHL | bc::ISHLL | bc::LSHLL => Tag::SL_ASG,
+            bc::ISHR | bc::LSHR | bc::ISHRL | bc::LSHRL => Tag::SR_ASG,
+            bc::IUSHR | bc::LUSHR | bc::IUSHRL | bc::LUSHRL => Tag::USR_ASG,
+            bc::IADD | bc::LADD | bc::FADD | bc::DADD | bc::STRING_ADD => Tag::PLUS_ASG,
+            bc::ISUB | bc::LSUB | bc::FSUB | bc::DSUB => Tag::MINUS_ASG,
+            bc::IMUL | bc::LMUL | bc::FMUL | bc::DMUL => Tag::MUL_ASG,
+            bc::IDIV | bc::LDIV | bc::FDIV | bc::DDIV => Tag::DIV_ASG,
+            bc::IMOD | bc::LMOD | bc::FMOD | bc::DMOD => Tag::MOD_ASG,
+            _ => panic!("AssertionError: unexpected operator opcode"),
+        }
+    }
+
+    /// Return the name of the access method with the given number and code.
+    ///
+    /// The name embeds both numbers so that the synthesized methods can be
+    /// recognized in stack traces while staying unique per symbol and code.
+    fn access_name(&self, anum: i32, acode: i32) -> Name {
+        let text = format!(
+            "access{}{}{}{}",
+            self.target.synthetic_name_char(),
+            anum,
+            acode / 10,
+            acode % 10
+        );
+        self.names
+            .from_string(&javac_strings::JavaString::from(text.as_str()))
+    }
+
+    /// Clone a symbol with a different owner.
+    ///
+    /// The upstream Symbol.clone(Symbol) copies flags, name and type while
+    /// replacing the owner; the ported clone/alloc pair preserves exactly that
+    /// state and registers the mapping to the actual symbol.
+    fn clone_symbol_with_owner(
+        &mut self,
+        ctx: &mut CompilerContext,
+        sym: SymbolId,
+        owner: SymbolId,
+        actual_symbols: &mut HashMap<SymbolId, SymbolId>,
+    ) -> SymbolId {
+        let mut cloned = ctx.sym(sym).clone();
+        cloned.owner = Some(owner);
+        let cloned_id = ctx.alloc_symbol(cloned);
+        actual_symbols.insert(cloned_id, sym);
+        cloned_id
+    }
+
+    /// Find or create the access method for a private or protected symbol.
+    ///
+    /// The access number and the access method table are kept per (possibly
+    /// re-owned) symbol; the method type is derived from the symbol kind and the
+    /// access code, exactly as the upstream accessSymbol helper computes it.
+    fn access_symbol(
+        &mut self,
+        ctx: &mut CompilerContext,
+        sym: SymbolId,
+        tree: TreeId,
+        encl_op: Option<TreeId>,
+        prot_access: bool,
+        ref_super: bool,
+    ) -> SymbolId {
+        let acc_owner = if ref_super && prot_access {
+            match &ctx.tree(tree).kind {
+                TreeKind::FieldAccess {
+                    selected: Some(selected),
+                    ..
+                } => ctx
+                    .tree(*selected)
+                    .ty
+                    .and_then(|ty| ctx.typ(ty).tsym)
+                    .expect("access owner symbol"),
+                _ => panic!("AssertionError: qualified super access expected"),
+            }
+        } else {
+            self.access_class(ctx, sym, prot_access, tree)
+        };
+        let vsym = if ctx.sym(sym).owner == Some(acc_owner) {
+            sym
+        } else {
+            let mut actual = std::mem::take(&mut self.actual_symbols);
+            let cloned = self.clone_symbol_with_owner(ctx, sym, acc_owner, &mut actual);
+            self.actual_symbols = actual;
+            cloned
+        };
+        let anum = match self.access_nums.get(&vsym) {
+            Some(anum) => *anum,
+            None => {
+                let anum = self.accessed.len() as i32;
+                self.access_nums.insert(vsym, anum);
+                self.access_syms
+                    .insert(vsym, vec![None; crate::code::symbol::AccessCode::number_of_access_codes() as usize]);
+                self.accessed.push(vsym);
+                anum
+            }
+        };
+        let vsym_kind = ctx.sym(vsym).kind;
+        let vsym_ty = ctx.sym(vsym).ty.expect("access symbol type");
+        let expanded = self.types.erasure(ctx, &self.syms.borrow(), vsym_ty);
+        let (mut acode, argtypes, restype, thrown) = match vsym_kind {
+            Kind::VAR => {
+                let code = self.access_code(ctx, tree, encl_op);
+                let argtypes = if code >= crate::code::symbol::AccessCode::FIRSTASGOP.code() {
+                    let tag = ctx
+                        .tree(encl_op.expect("assignop access needs the operator"))
+                        .get_tag();
+                    let operator = self.binary_access_operator(ctx, code, tag);
+                    let opcode = match &ctx.sym(operator).kind_data {
+                        SymbolKind::OperatorSymbol { opcode, .. } => *opcode,
+                        _ => panic!("AssertionError: operator symbol expected"),
+                    };
+                    if opcode == crate::jvm::byte_codes::STRING_ADD {
+                        List::of(self.syms.borrow().object_type)
+                    } else {
+                        let operator_ty = ctx.sym(operator).ty.expect("operator type");
+                        let params = self.types.get_parameter_types_public(ctx, operator_ty);
+                        params.tail()
+                    }
+                } else if code == crate::code::symbol::AccessCode::ASSIGN.code() {
+                    List::of(self.types.erasure(ctx, &self.syms.borrow(), vsym_ty))
+                } else {
+                    List::nil()
+                };
+                (code, argtypes, expanded, List::nil())
+            }
+            Kind::MTH => {
+                let params = self.types.get_parameter_types_public(ctx, expanded);
+                let restype = self.types.get_return_type_public(ctx, expanded);
+                let thrown = ctx.typ(vsym_ty).get_thrown_types(ctx);
+                (
+                    crate::code::symbol::AccessCode::DEREF.code(),
+                    params,
+                    restype,
+                    thrown,
+                )
+            }
+            _ => panic!("AssertionError: unexpected access symbol kind"),
+        };
+        if prot_access && ref_super {
+            acode += 1;
+        }
+        let mut argtypes = argtypes;
+        if (ctx.sym(vsym).flags_field & crate::code::flags::STATIC as i64) == 0 {
+            let owner = ctx.sym(vsym).owner.expect("access symbol owner");
+            let owner_ty = ctx.sym(owner).ty.expect("access symbol owner type");
+            let owner_erasure = self.types.erasure(ctx, &self.syms.borrow(), owner_ty);
+            argtypes = argtypes.prepend(owner_erasure);
+        }
+        let index = acode as usize;
+        if let Some(cached) = self
+            .access_syms
+            .get(&vsym)
+            .and_then(|accessors| accessors.get(index).copied().flatten())
+        {
+            return cached;
+        }
+        let acc_owner_interface = ctx.sym(acc_owner).is_interface();
+        let mut flags = crate::code::flags::STATIC | crate::code::flags::SYNTHETIC;
+        if acc_owner_interface {
+            flags |= crate::code::flags::PUBLIC;
+        }
+        let name = self.access_name(anum, acode);
+        let method_class = self.syms.borrow().method_class;
+        let method_ty = ctx.alloc_type(Type::new(
+            TypeTag::METHOD,
+            Some(method_class),
+            TypeKindData::MethodType {
+                argtypes,
+                restype: Some(restype),
+                thrown,
+                recvtype: None,
+            },
+        ));
+        let accessor_symbol = Symbol::new_method_symbol(flags as i64, name, method_ty, acc_owner);
+        let accessor = ctx.alloc_symbol(accessor_symbol);
+        if let Some(accessors) = self.access_syms.get_mut(&vsym) {
+            accessors[index] = Some(accessor);
+        }
+        let members = ctx.sym(acc_owner).members().expect("access owner members");
+        self.enter_synthetic(ctx, accessor, members);
+        accessor
+    }
+
+    /// Return the class in which the access method for a symbol goes.
+    ///
+    /// For protected cross-package accesses the method is placed in the nearest
+    /// enclosing subclass of the symbol owner; private accesses are placed in
+    /// the owner's enclosing class.
+    fn access_class(
+        &mut self,
+        ctx: &mut CompilerContext,
+        sym: SymbolId,
+        prot_access: bool,
+        tree: TreeId,
+    ) -> SymbolId {
+        if prot_access {
+            let mut c = self.current_class.expect("current class");
+            if ctx.tree(tree).has_tag(Tag::SELECT)
+                && (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) == 0
+            {
+                let qualifier = match &ctx.tree(tree).kind {
+                    TreeKind::FieldAccess {
+                        selected: Some(selected),
+                        ..
+                    } => ctx
+                        .tree(*selected)
+                        .ty
+                        .and_then(|ty| ctx.typ(ty).tsym)
+                        .expect("qualifier symbol"),
+                    _ => panic!("AssertionError: qualified access expected"),
+                };
+                loop {
+                    let is_sub = {
+                        let syms = self.syms.borrow();
+                        crate::code::symbol::symbol_is_sub_class(
+                            ctx, &self.types, &syms, qualifier, c,
+                        )
+                    };
+                    if is_sub {
+                        return c;
+                    }
+                    let owner = ctx.sym(c).owner.expect("class owner");
+                    c = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+                }
+            } else {
+                let sym_owner = ctx.sym(sym).owner.expect("symbol owner");
+                loop {
+                    let is_sub = {
+                        let syms = self.syms.borrow();
+                        crate::code::symbol::symbol_is_sub_class(
+                            ctx, &self.types, &syms, c, sym_owner,
+                        )
+                    };
+                    if is_sub {
+                        return c;
+                    }
+                    let owner = ctx.sym(c).owner.expect("class owner");
+                    c = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+                }
+            }
+        } else {
+            let owner = ctx.sym(sym).owner.expect("symbol owner");
+            crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class")
+        }
+    }
+
+
+    /// Ensure a tree accesses its symbol through the required access path.
+    ///
+    /// The tree is rewritten according to the symbol kind: free variables are
+    /// replaced by their proxies (or constant values), type identifiers are
+    /// flattened, and private/protected or outer-class member accesses are
+    /// routed through synthesized access methods or qualified receivers.
+    fn access(
+        &mut self,
+        ctx: &mut CompilerContext,
+        sym: SymbolId,
+        tree: TreeId,
+        encl_op: Option<TreeId>,
+        ref_super: bool,
+    ) -> TreeId {
+        let mut sym = sym;
+        let mut tree = tree;
+        let current_class = self.current_class.expect("current class");
+        loop {
+            if ctx.sym(sym).kind != Kind::VAR {
+                break;
+            }
+            let owner = ctx.sym(sym).owner.expect("free variable owner");
+            if ctx.sym(owner).kind != Kind::MTH {
+                break;
+            }
+            let owner_encl = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+            if Some(owner_encl) == Some(current_class) {
+                break;
+            }
+            if let Some(constant) = ctx.sym(sym).get_const_value() {
+                let sym_ty = ctx.sym(sym).ty.expect("variable type");
+                return self.make_lit(ctx, sym_ty, &constant);
+            }
+            if let Some(translation) = &self.lambda_translation_map
+                && let Some(translated) = translation.get(&sym).copied()
+            {
+                return self.make.borrow_mut().ident_symbol(ctx, translated);
+            }
+            let proxy = match self.proxies.get(&sym) {
+                Some(proxy) => *proxy,
+                None => break,
+            };
+            assert!(
+                (ctx.sym(proxy).flags_field & crate::code::flags::FINAL as i64) != 0,
+                "AssertionError: proxy is not final"
+            );
+            sym = proxy;
+            tree = self.make.borrow_mut().ident_symbol(ctx, sym);
+        }
+        let base = match &ctx.tree(tree).kind {
+            TreeKind::FieldAccess { selected, .. } => *selected,
+            _ => None,
+        };
+        let sym_kind = ctx.sym(sym).kind;
+        match sym_kind {
+            Kind::TYP => {
+                let owner = ctx.sym(sym).owner.expect("type owner");
+                if ctx.sym(owner).kind != Kind::PCK {
+                    let flatname = ctx.sym(sym).flat_name();
+                    let shortname = crate::util::convert::short_name(&flatname);
+                    let mut base = base;
+                    while let Some(current_base) = base {
+                        if let Some(base_sym) = tree_info::symbol(ctx, current_base)
+                            && ctx.sym(base_sym).kind != Kind::PCK
+                        {
+                            base = match &ctx.tree(current_base).kind {
+                                TreeKind::FieldAccess { selected, .. } => *selected,
+                                _ => None,
+                            };
+                        } else {
+                            break;
+                        }
+                    }
+                    match &mut ctx.tree_mut(tree).kind {
+                        TreeKind::Ident { name, .. } => {
+                            *name = shortname;
+                        }
+                        TreeKind::FieldAccess { name, .. } => {
+                            *name = shortname;
+                        }
+                        _ => {
+                            if base.is_none() {
+                                tree = self.make.borrow_mut().ident_symbol(ctx, sym);
+                                if let TreeKind::Ident { name, .. } = &mut ctx.tree_mut(tree).kind {
+                                    *name = shortname;
+                                }
+                            } else if let Some(base) = base
+                                && let TreeKind::FieldAccess { selected, name, .. } =
+                                    &mut ctx.tree_mut(tree).kind
+                            {
+                                *selected = Some(base);
+                                *name = shortname;
+                            }
+                        }
+                    }
+                }
+                tree
+            }
+            Kind::MTH | Kind::VAR => {
+                let owner = ctx.sym(sym).owner.expect("member owner");
+                if ctx.sym(owner).kind == Kind::TYP {
+                    let prot_access = (ref_super && !self.needs_private_access(ctx, sym))
+                        || self.needs_protected_access(ctx, sym, tree);
+                    let acc_req = prot_access || self.needs_private_access(ctx, sym);
+                    let predef_class = self.syms.borrow().predef_class;
+                    let base_req = base.is_none()
+                        && Some(owner) != Some(predef_class)
+                        && !{
+                            let syms = self.syms.borrow();
+                            crate::code::symbol::symbol_is_member_of(
+                                ctx, &self.types, &syms, sym, current_class,
+                            )
+                        };
+                    if acc_req || base_req {
+                        if ctx.sym(sym).kind == Kind::VAR
+                            && let Some(constant) = ctx.sym(sym).get_const_value()
+                        {
+                            self.add_pruned_info(tree);
+                            let sym_ty = ctx.sym(sym).ty.expect("variable type");
+                            return self.make_lit(ctx, sym_ty, &constant);
+                        }
+                        if acc_req {
+                            let mut args = List::nil();
+                            let mut base = base;
+                            if (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) == 0 {
+                                if base.is_none() {
+                                    base = Some(self.make_owner_this(ctx, ctx.tree(tree).pos, sym, true));
+                                }
+                                args = args.prepend(base.expect("access base"));
+                                base = None;
+                            }
+                            let access = self.access_symbol(
+                                ctx, sym, tree, encl_op, prot_access, ref_super,
+                            );
+                            let access_owner = ctx.sym(access).owner.expect("access owner");
+                            let receiver = if let Some(base) = base {
+                                self.select_symbol(ctx, base, access)
+                            } else {
+                                let qual = {
+                                    let syms = self.syms.borrow();
+                                    self.make.borrow_mut().qual_ident(ctx, &syms, access_owner)
+                                };
+                                self.select_symbol(ctx, qual, access)
+                            };
+                            return self.make.borrow_mut().app_with_args(ctx, receiver, args);
+                        } else if base_req {
+                            let tree_pos = ctx.tree(tree).pos;
+                            let pos: Rc<dyn DiagnosticPosition> = Rc::new(
+                                crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(tree_pos),
+                            );
+                            let base = self.access_base(ctx, &pos, sym);
+                            let selected = self.select_symbol(ctx, base, sym);
+                            if let Some(ty) = ctx.tree(tree).ty {
+                                ctx.tree_mut(selected).ty = Some(ty);
+                            }
+                            return selected;
+                        }
+                    }
+                } else if ctx.sym(owner).kind == Kind::MTH
+                    && let Some(translation) = &self.lambda_translation_map
+                {
+                    let base_sym = crate::code::symbol::base_symbol(ctx, sym);
+                    if let Some(translated) = translation.get(&base_sym).copied() {
+                        tree = self.make.borrow_mut().ident_symbol(ctx, translated);
+                    }
+                }
+                tree
+            }
+            _ => tree,
+        }
+    }
+
+    /// Return the qualifier used to access a symbol of an outer class.
+    ///
+    /// Static symbols are qualified by the owner class; instance symbols by the
+    /// synthesized (or implicit) outer-this chain.
+    fn access_base(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: &Rc<dyn DiagnosticPosition>,
+        sym: SymbolId,
+    ) -> TreeId {
+        if (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) != 0 {
+            let owner = ctx.sym(sym).owner.expect("symbol owner");
+            let qual = {
+                let syms = self.syms.borrow();
+                self.make.borrow_mut().qual_ident(ctx, &syms, owner)
+            };
+            self.access(ctx, sym, qual, None, false)
+        } else {
+            self.make_owner_this_diag(ctx, pos, sym, true)
+        }
+    }
+
+    /// Determine whether a symbol needs an access method for private access.
+    ///
+    /// Trusted targets with nestmate support never need one; private members of
+    /// the current class and private constructors of directly or indirectly
+    /// local classes are relaxed to package access and do not need one either.
+    fn needs_private_access(&mut self, ctx: &mut CompilerContext, sym: SymbolId) -> bool {
+        if self.target.has_nestmate_access() {
+            return false;
+        }
+        let current_class = self.current_class.expect("current class");
+        if (ctx.sym(sym).flags_field & crate::code::flags::PRIVATE as i64) == 0
+            || ctx.sym(sym).owner == Some(current_class)
+        {
+            return false;
+        }
+        let is_init = ctx.sym(sym).name == self.names.init;
+        let owner = ctx.sym(sym).owner.expect("symbol owner");
+        if is_init && Symbol::is_directly_or_indirectly_local(ctx, owner) {
+            ctx.sym_mut(sym).flags_field &= !(crate::code::flags::PRIVATE as i64);
+            return false;
+        }
+        true
+    }
+
+    /// Determine whether a symbol needs an access method for protected access
+    /// from another package.
+    fn needs_protected_access(&mut self, ctx: &mut CompilerContext, sym: SymbolId, tree: TreeId) -> bool {
+        if self.disable_protected_accessors {
+            return false;
+        }
+        if (ctx.sym(sym).flags_field & crate::code::flags::PROTECTED as i64) == 0 {
+            return false;
+        }
+        let current_class = self.current_class.expect("current class");
+        let owner = ctx.sym(sym).owner.expect("symbol owner");
+        let current_owner = ctx.sym(current_class).owner;
+        if ctx.sym(owner).owner == current_owner {
+            return false;
+        }
+        let sym_packge = crate::code::symbol::packge(ctx, sym);
+        let current_packge = crate::code::symbol::packge(ctx, current_class);
+        if sym_packge == current_packge {
+            return false;
+        }
+        let is_sub = {
+            let syms = self.syms.borrow();
+            crate::code::symbol::symbol_is_sub_class(ctx, &self.types, &syms, current_class, owner)
+        };
+        if !is_sub {
+            return true;
+        }
+        if (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) != 0
+            || !ctx.tree(tree).has_tag(Tag::SELECT)
+        {
+            return false;
+        }
+        let selected = match &ctx.tree(tree).kind {
+            TreeKind::FieldAccess {
+                selected: Some(selected),
+                ..
+            } => *selected,
+            _ => return false,
+        };
+        if tree_info::name(ctx, selected) == Some(self.names._super.clone()) {
+            return false;
+        }
+        let selected_tsym = ctx
+            .tree(selected)
+            .ty
+            .and_then(|ty| ctx.typ(ty).tsym);
+        match selected_tsym {
+            Some(selected_tsym) => {
+                let syms = self.syms.borrow();
+                !crate::code::symbol::symbol_is_sub_class(
+                    ctx, &self.types, &syms, selected_tsym, current_class,
+                )
+            }
+            None => false,
+        }
+    }
+
+
+    /// Construct a tree simulating the expression C.this.
+    ///
+    /// If the qualifier class is the current class the ordinary this expression
+    /// is used; otherwise the tree is built through the this$n chain.
+    fn make_this(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: &Rc<dyn DiagnosticPosition>,
+        c: SymbolId,
+    ) -> TreeId {
+        if self.current_class == Some(c) {
+            let c_ty = ctx.sym(c).ty.expect("qualifier type");
+            let erasure = {
+                let syms = self.syms.borrow();
+                self.types.erasure(ctx, &syms, c_ty)
+            };
+            self.make.borrow_mut().this_expr(ctx, erasure)
+        } else {
+            self.make_outer_this(ctx, pos, c)
+        }
+    }
+
+    /// Construct a tree representing the outer instance of the given class.
+    ///
+    /// The outer-this chain is walked until the requested class is reached; an
+    /// empty chain means the attribution stage failed to catch a missing outer
+    /// instance, which is reported and turned into the assertion failure the
+    /// upstream helper raises.
+    fn make_outer_this(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: &Rc<dyn DiagnosticPosition>,
+        c: SymbolId,
+    ) -> TreeId {
+        let mut ots = self.outer_this_stack.clone();
+        if ots.is_empty() {
+            self.report_no_outer_instance(ctx, pos, c);
+            panic!("AssertionError: no outer instance in scope");
+        }
+        let mut ot = ots[0];
+        let ident = self.make.borrow_mut().ident_symbol(ctx, ot);
+        let mut tree = self.access(ctx, ot, ident, None, false);
+        let mut otc = ctx
+            .sym(ot)
+            .ty
+            .and_then(|ty| ctx.typ(ty).tsym)
+            .expect("outer this type symbol");
+        while otc != c {
+            loop {
+                ots.remove(0);
+                if ots.is_empty() {
+                    self.report_no_outer_instance(ctx, pos, c);
+                    return tree;
+                }
+                ot = ots[0];
+                if ctx.sym(ot).owner == Some(otc) {
+                    break;
+                }
+            }
+            let owner_kind = ctx.sym(otc).owner.map(|owner| ctx.sym(owner).kind);
+            if owner_kind != Some(Kind::PCK) && !ctx.sym(otc).has_outer_instance(ctx) {
+                self.chk.borrow().early_ref_error(
+                    ctx,
+                    &self.log,
+                    pos.get_preferred_position(),
+                    c,
+                );
+                panic!("AssertionError: class has no outer instance");
+            }
+            let select = self.select_symbol(ctx, tree, ot);
+            tree = self.access(ctx, ot, select, None, false);
+            otc = ctx
+                .sym(ot)
+                .ty
+                .and_then(|ty| ctx.typ(ty).tsym)
+                .expect("outer this type symbol");
+        }
+        tree
+    }
+
+    /// Construct a tree for the closest outer instance such that the symbol is
+    /// a member of it (precise match) or of a subtype of its owner.
+    fn make_owner_this(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree_pos: i32,
+        sym: SymbolId,
+        precise_match: bool,
+    ) -> TreeId {
+        let pos: Rc<dyn DiagnosticPosition> = Rc::new(
+            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(tree_pos),
+        );
+        self.make_owner_this_diag(ctx, &pos, sym, precise_match)
+    }
+
+    /// Construct an owner-this tree using an existing diagnostic position.
+    fn make_owner_this_diag(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: &Rc<dyn DiagnosticPosition>,
+        sym: SymbolId,
+        precise_match: bool,
+    ) -> TreeId {
+        let sym_owner = ctx.sym(sym).owner.expect("symbol owner");
+        let current_class = self.current_class.expect("current class");
+        let matches = if precise_match {
+            let syms = self.syms.borrow();
+            crate::code::symbol::symbol_is_member_of(ctx, &self.types, &syms, sym, current_class)
+        } else {
+            let syms = self.syms.borrow();
+            crate::code::symbol::symbol_is_sub_class(
+                ctx, &self.types, &syms, current_class, sym_owner,
+            )
+        };
+        if matches {
+            let owner_ty = ctx.sym(sym_owner).ty.expect("symbol owner type");
+            let erasure = {
+                let syms = self.syms.borrow();
+                self.types.erasure(ctx, &syms, owner_ty)
+            };
+            self.make.borrow_mut().this_expr(ctx, erasure)
+        } else {
+            self.make_owner_this_n(ctx, pos, sym, precise_match)
+        }
+    }
+
+    /// Construct an owner-this tree that never picks the current this.
+    ///
+    /// The outer-this chain is walked until an instance whose class contains
+    /// the symbol (precise match) or is a subclass of the symbol owner is
+    /// reached.
+    fn make_owner_this_n(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: &Rc<dyn DiagnosticPosition>,
+        sym: SymbolId,
+        precise_match: bool,
+    ) -> TreeId {
+        let sym_owner = ctx.sym(sym).owner.expect("symbol owner");
+        let mut ots = self.outer_this_stack.clone();
+        if ots.is_empty() {
+            self.report_no_outer_instance(ctx, pos, sym_owner);
+            panic!("AssertionError: no outer instance in scope");
+        }
+        let mut ot = ots[0];
+        let ident = self.make.borrow_mut().ident_symbol(ctx, ot);
+        let mut tree = self.access(ctx, ot, ident, None, false);
+        let mut otc = ctx
+            .sym(ot)
+            .ty
+            .and_then(|ty| ctx.typ(ty).tsym)
+            .expect("outer this type symbol");
+        loop {
+            let matched = if precise_match {
+                let syms = self.syms.borrow();
+                crate::code::symbol::symbol_is_member_of(ctx, &self.types, &syms, sym, otc)
+            } else {
+                let syms = self.syms.borrow();
+                crate::code::symbol::symbol_is_sub_class(
+                    ctx, &self.types, &syms, otc, sym_owner,
+                )
+            };
+            if matched {
+                return tree;
+            }
+            loop {
+                ots.remove(0);
+                if ots.is_empty() {
+                    self.report_no_outer_instance(ctx, pos, sym_owner);
+                    return tree;
+                }
+                ot = ots[0];
+                if ctx.sym(ot).owner == Some(otc) {
+                    break;
+                }
+            }
+            let select = self.select_symbol(ctx, tree, ot);
+            tree = self.access(ctx, ot, select, None, false);
+            otc = ctx
+                .sym(ot)
+                .ty
+                .and_then(|ty| ctx.typ(ty).tsym)
+                .expect("outer this type symbol");
+        }
+    }
+
+    /// Report a missing enclosing instance of the requested class.
+    fn report_no_outer_instance(
+        &self,
+        ctx: &CompilerContext,
+        pos: &Rc<dyn DiagnosticPosition>,
+        c: SymbolId,
+    ) {
+        let info = crate::resources::compiler_properties::errors::no_encl_instance_of_type_in_scope(
+            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                ctx.sym(c).name.to_java_string().to_string_lossy().to_string(),
+            ),
+        );
+        crate::util::abstract_log::AbstractLog::error_at(
+            &mut *self.log.borrow_mut(),
+            pos.get_preferred_position(),
+            crate::util::jc_diagnostic::Error::from(info),
+        );
+    }
+
+
+    /// Build a type tree for an attributed type.
+    ///
+    /// The maker needs the symbol table to qualify class names; the borrow is
+    /// kept local so callers can continue using the context afterwards.
+    fn type_tree(&mut self, ctx: &mut CompilerContext, t: TypeId) -> TreeId {
+        let syms = self.syms.borrow();
+        self.make.borrow_mut().type_from_type(ctx, &syms, t)
+    }
+
+    /// Build a variable declaration tree for a variable symbol.
+    ///
+    /// The declaration takes its modifiers from the symbol flags, its type from
+    /// the symbol type and the provided initializer; the symbol is attached to
+    /// the tree so later phases can resolve it directly.
+    fn var_def_for_symbol(
+        &mut self,
+        ctx: &mut CompilerContext,
+        sym: SymbolId,
+        init: Option<TreeId>,
+    ) -> TreeId {
+        let flags = ctx.sym(sym).flags_field;
+        let name = ctx.sym(sym).name.clone();
+        let vartype = ctx.sym(sym).ty.expect("variable type");
+        let mods = self.make.borrow_mut().modifiers(ctx, flags);
+        let type_tree = self.type_tree(ctx, vartype);
+        let tree = self.make.borrow_mut().var_def(
+            ctx,
+            mods,
+            name,
+            Some(type_tree),
+            init,
+        );
+        if let TreeKind::VariableDecl { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(sym);
+        }
+        ctx.tree_mut(tree).ty = Some(vartype);
+        tree
+    }
+
+    /// Build a parameter declaration tree for an argument type.
+    ///
+    /// An existing parameter symbol is reused when its type list matches the
+    /// argument list; otherwise a fresh parameter symbol named x&lt;i&gt; is
+    /// created, exactly as the upstream Params helper does.
+    fn param_def(
+        &mut self,
+        ctx: &mut CompilerContext,
+        owner: Option<SymbolId>,
+        index: usize,
+        argtype: TypeId,
+        existing: Option<SymbolId>,
+    ) -> TreeId {
+        let param = match existing {
+            Some(param) => param,
+            None => {
+                let name = self.make.borrow_mut().param_name(index as i32);
+                let owner = owner.expect("parameter owner");
+                let flags = crate::code::flags::PARAMETER as i64;
+                let symbol = Symbol::new_var_symbol(flags, name, argtype, owner);
+                ctx.alloc_symbol(symbol)
+            }
+        };
+        self.var_def_for_symbol(ctx, param, None)
+    }
+
+    /// Build a method declaration tree from a method symbol and body.
+    ///
+    /// The declaration mirrors what TreeMaker.MethodDef(MethodSymbol, JCBlock)
+    /// produces for a synthetic symbol: modifiers from the symbol flags, the
+    /// return type unless the name is the constructor name, existing parameter
+    /// symbols, the thrown types and the supplied body.
+    fn method_def_for_symbol(
+        &mut self,
+        ctx: &mut CompilerContext,
+        m: SymbolId,
+        mtype: TypeId,
+        body: Option<TreeId>,
+    ) -> TreeId {
+        let flags = ctx.sym(m).flags_field;
+        let name = ctx.sym(m).name.clone();
+        let is_init = name == self.names.init;
+        let argtypes = self.types.get_parameter_types_public(ctx, mtype);
+        let params_symbols = match &ctx.sym(m).kind_data {
+            SymbolKind::MethodSymbol { params, .. } => params.clone(),
+            _ => List::nil(),
+        };
+        let arg_count = {
+            let mut count = 0usize;
+            let mut current = argtypes.clone();
+            while current.non_empty() {
+                count += 1;
+                current = current.tail();
+            }
+            count
+        };
+        let mut params_count = 0usize;
+        let mut params_current = params_symbols.clone();
+        while params_current.non_empty() {
+            params_count += 1;
+            params_current = params_current.tail();
+        }
+        let use_existing = params_count > 0 && params_count == arg_count;
+        let mut params: List<TreeId> = List::nil();
+        let mut args_current = argtypes.clone();
+        let mut args_index = 0usize;
+        let mut symbols_current = params_symbols.clone();
+        while args_current.non_empty() {
+            let argtype = *args_current.head();
+            let existing = if use_existing {
+                let symbol = *symbols_current.head();
+                symbols_current = symbols_current.tail();
+                Some(symbol)
+            } else {
+                None
+            };
+            let param = self.param_def(ctx, Some(m), args_index, argtype, existing);
+            params = params.append(param);
+            args_index += 1;
+            args_current = args_current.tail();
+        }
+        let restype = if is_init {
+            None
+        } else {
+            let return_ty = self.types.get_return_type_public(ctx, mtype);
+            Some(self.type_tree(ctx, return_ty))
+        };
+        let thrown_types = ctx.typ(mtype).get_thrown_types(ctx);
+        let mut thrown: List<TreeId> = List::nil();
+        let mut thrown_current = thrown_types;
+        while thrown_current.non_empty() {
+            let tree = self.type_tree(ctx, *thrown_current.head());
+            thrown = thrown.append(tree);
+            thrown_current = thrown_current.tail();
+        }
+        let mods = self.make.borrow_mut().modifiers(ctx, flags);
+        let tree = self.make.borrow_mut().method_def(
+            ctx,
+            mods,
+            name,
+            restype,
+            List::nil(),
+            None,
+            params,
+            thrown,
+            body,
+            None,
+        );
+        if let TreeKind::MethodDecl { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(m);
+        }
+        ctx.tree_mut(tree).ty = Some(mtype);
+        tree
+    }
+
+
+    /// Return the name of the proxy variable for a free variable.
+    ///
+    /// The name embeds the source name and, when a duplicate would arise, a
+    /// disambiguating index, matching the upstream proxyName helper.
+    fn proxy_name(&self, name: &Name, index: i32) -> Name {
+        let text = format!(
+            "val{}{}",
+            self.target.synthetic_name_char(),
+            name.to_java_string()
+        );
+        let text = if index > 0 {
+            format!("{}{}{}", text, self.target.synthetic_name_char(), index)
+        } else {
+            text
+        };
+        self.names
+            .from_string(&javac_strings::JavaString::from(text.as_str()))
+    }
+
+    /// Create proxy definitions for all free variables in the given order.
+    ///
+    /// Each proxy is a final synthetic variable in the class owner; the proxy
+    /// map records the replacement so later accesses are rewritten, and the
+    /// definitions are prepended so the list ends up in the upstream order.
+    fn freevar_defs(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        freevars: List<SymbolId>,
+        owner: SymbolId,
+        additional_flags: i64,
+    ) -> List<TreeId> {
+        let flags = (crate::code::flags::FINAL | crate::code::flags::SYNTHETIC) as i64
+            | additional_flags;
+        let mut defs: List<TreeId> = List::nil();
+        let mut proxy_names: Vec<Name> = Vec::new();
+        let mut current = freevars;
+        self.make.borrow_mut().at(pos);
+        while current.non_empty() {
+            let v = *current.head();
+            let mut index = 0;
+            let mut proxy_name = self.proxy_name(&ctx.sym(v).name.clone(), index);
+            index += 1;
+            while proxy_names.iter().any(|n| n == &proxy_name) {
+                proxy_name = self.proxy_name(&ctx.sym(v).name.clone(), index);
+                index += 1;
+            }
+            proxy_names.push(proxy_name.clone());
+            let v_ty = ctx.sym(v).ty.expect("free variable type");
+            let erasure = {
+                let syms = self.syms.borrow();
+                self.types.erasure(ctx, &syms, v_ty)
+            };
+            let symbol = Symbol::new_var_symbol(flags, proxy_name, erasure, owner);
+            let proxy = ctx.alloc_symbol(symbol);
+            self.proxies.insert(v, proxy);
+            let vd = self.var_def_for_symbol(ctx, proxy, None);
+            let vartype = match &ctx.tree(vd).kind {
+                TreeKind::VariableDecl { vartype, .. } => *vartype,
+                _ => None,
+            };
+            if let Some(vartype) = vartype {
+                let accessed = self.access(ctx, v, vartype, None, false);
+                if let TreeKind::VariableDecl { vartype, .. } = &mut ctx.tree_mut(vd).kind {
+                    *vartype = Some(accessed);
+                }
+            }
+            defs = defs.prepend(vd);
+            current = current.tail();
+        }
+        defs
+    }
+
+    /// Return the name of a synthetic outer-this field.
+    ///
+    /// The nesting level of the enclosing type decides the numeric suffix; an
+    /// existing member with the same name causes the synthetic character to be
+    /// appended until the name is free.
+    fn outer_this_name(&mut self, ctx: &mut CompilerContext, ty: TypeId, owner: SymbolId) -> Name {
+        let mut current = ctx.typ(ty).get_enclosing_type();
+        let mut nesting_level = 0;
+        while let Some(enclosing) = current {
+            if ctx.typ(enclosing).has_tag(TypeTag::CLASS) {
+                current = ctx.typ(enclosing).get_enclosing_type();
+                nesting_level += 1;
+            } else {
+                break;
+            }
+        }
+        let text = format!("this{}{}", self.target.synthetic_name_char(), nesting_level);
+        let mut result = self
+            .names
+            .from_string(&javac_strings::JavaString::from(text.as_str()));
+        while ctx.sym(owner).kind == Kind::TYP {
+            let members = ctx.sym(owner).members().expect("class members");
+            let arena = ctx.symbols_arena();
+            let found = ctx
+                .scope(members)
+                .find_first(&result, &|_| true, arena)
+                .is_some();
+            if !found {
+                break;
+            }
+            let next = format!("{}{}", result.to_java_string(), self.target.synthetic_name_char());
+            result = self
+                .names
+                .from_string(&javac_strings::JavaString::from(next.as_str()));
+        }
+        result
+    }
+
+    /// Create the symbol of a synthetic outer-this variable.
+    ///
+    /// The erasure of the enclosing type of the owner class becomes the
+    /// variable type; the symbol is pushed on the outer-this stack so
+    /// subsequent owner-this lookups see it.
+    fn make_outer_this_var_symbol(
+        &mut self,
+        ctx: &mut CompilerContext,
+        owner: SymbolId,
+        flags: i64,
+    ) -> SymbolId {
+        let encl = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+        let encl_ty = ctx.sym(encl).ty.expect("enclosing class type");
+        let enclosing = ctx
+            .typ(encl_ty)
+            .get_enclosing_type()
+            .expect("class has no enclosing type");
+        let target = {
+            let syms = self.syms.borrow();
+            self.types.erasure(ctx, &syms, enclosing)
+        };
+        let name = self.outer_this_name(ctx, target, owner);
+        let symbol = Symbol::new_var_symbol(flags, name, target, owner);
+        let outer_this = ctx.alloc_symbol(symbol);
+        self.outer_this_stack.insert(0, outer_this);
+        outer_this
+    }
+
+    /// Create the declaration of a synthetic outer-this variable.
+    fn make_outer_this_var_decl(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        sym: SymbolId,
+    ) -> TreeId {
+        self.make.borrow_mut().at(pos);
+        let vd = self.var_def_for_symbol(ctx, sym, None);
+        let vartype = match &ctx.tree(vd).kind {
+            TreeKind::VariableDecl { vartype, .. } => *vartype,
+            _ => None,
+        };
+        if let Some(vartype) = vartype {
+            let owner = ctx.sym(sym).owner.expect("outer this owner");
+            let accessed = self.access(ctx, owner, vartype, None, false);
+            if let TreeKind::VariableDecl { vartype, .. } = &mut ctx.tree_mut(vd).kind {
+                *vartype = Some(accessed);
+            }
+        }
+        vd
+    }
+
+    /// Create the outer-this definition for a method or class owner.
+    ///
+    /// Constructors of anonymous classes and non-private inner member classes
+    /// carry the mandated flag; the definition is an extra parameter of the
+    /// method or a synthetic field of the class.
+    fn outer_this_def(&mut self, ctx: &mut CompilerContext, pos: i32, owner: SymbolId) -> TreeId {
+        let owner_is_method = ctx.sym(owner).kind == Kind::MTH;
+        let encl = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+        let is_mandated = if owner_is_method {
+            let is_constructor = ctx.sym(owner).name == self.names.init;
+            let is_anonymous = ctx.sym(owner).name == self.names.empty
+                && ctx.sym(encl).is_anonymous();
+            let c = encl;
+            let inner = ctx.sym(c).has_outer_instance(ctx);
+            let private = crate::code::symbol::Symbol::is_private(ctx.sym(c));
+            let static_flag = (ctx.sym(c).flags_field & crate::code::flags::STATIC as i64) != 0;
+            (is_constructor && is_anonymous) || (is_constructor && inner && !private && !static_flag)
+        } else {
+            false
+        };
+        let flags = (crate::code::flags::FINAL as i64)
+            | (crate::code::flags::PARAMETER as i64)
+            | if is_mandated {
+                crate::code::flags::MANDATED as i64
+            } else {
+                crate::code::flags::SYNTHETIC as i64
+            };
+        let outer_this = self.make_outer_this_var_symbol(ctx, owner, flags);
+        if owner_is_method {
+            if let SymbolKind::MethodSymbol { extra_params, .. } = &mut ctx.sym_mut(owner).kind_data {
+                *extra_params = extra_params.prepend(outer_this);
+            }
+        }
+        self.make_outer_this_var_decl(ctx, pos, outer_this)
+    }
+
+    /// Return the trees that load the given free variables, in reverse order.
+    fn load_freevars(&mut self, ctx: &mut CompilerContext, pos: i32, freevars: List<SymbolId>) -> List<TreeId> {
+        let mut args: List<TreeId> = List::nil();
+        let mut current = freevars;
+        while current.non_empty() {
+            let v = *current.head();
+            self.make.borrow_mut().at(pos);
+            let ident = self.make.borrow_mut().ident_symbol(ctx, v);
+            let loaded = self.access(ctx, v, ident, None, false);
+            args = args.prepend(loaded);
+            current = current.tail();
+        }
+        args
+    }
+
+    /// Create the assignment this.name = name used to initialize a captured
+    /// field of an inner class from the corresponding constructor parameter.
+    fn init_field(&mut self, ctx: &mut CompilerContext, pos: i32, rhs: SymbolId, lhs: SymbolId) -> TreeId {
+        self.make.borrow_mut().at(pos);
+        let lhs_owner = ctx.sym(lhs).owner.expect("field owner");
+        let lhs_owner_ty = ctx.sym(lhs_owner).ty.expect("field owner type");
+        let owner_erasure = {
+            let syms = self.syms.borrow();
+            self.types.erasure(ctx, &syms, lhs_owner_ty)
+        };
+        let this = self.make.borrow_mut().this_expr(ctx, owner_erasure);
+        let field = self.select_symbol(ctx, this, lhs);
+        let value = self.make.borrow_mut().ident_symbol(ctx, rhs);
+        let assign = self.make.borrow_mut().assign(ctx, field, value);
+        let lhs_erasure = {
+            let syms = self.syms.borrow();
+            let lhs_ty = ctx.sym(lhs).ty.expect("field type");
+            self.types.erasure(ctx, &syms, lhs_ty)
+        };
+        ctx.tree_mut(assign).ty = Some(lhs_erasure);
+        self.make.borrow_mut().exec(ctx, assign)
+    }
+
+    /// Create the assignment this.this$n = this$n for nested classes.
+    fn init_outer_this(&mut self, ctx: &mut CompilerContext, pos: i32) -> TreeId {
+        let rhs = self.outer_this_stack.first().copied().expect("outer this");
+        let lhs = self.outer_this_stack.get(1).copied().expect("outer this field");
+        self.init_field(ctx, pos, rhs, lhs)
+    }
+
+    /// Build an attributed call left.name(args) by resolving the method first.
+    fn make_call(&mut self, ctx: &mut CompilerContext, left: TreeId, name: Name, args: List<TreeId>) -> TreeId {
+        assert!(ctx.tree(left).ty.is_some(), "AssertionError: left has no type");
+        let left_ty = ctx.tree(left).ty.expect("left type");
+        let argtypes = self.tree_types(ctx, &args);
+        let pos = self.make_pos.clone();
+        let funcsym = self.lookup_method(ctx, pos, name, left_ty, argtypes);
+        let select = self.select_symbol(ctx, left, funcsym);
+        self.make.borrow_mut().app_with_args(ctx, select, args)
+    }
+
+
+    /// Return the access constructor for a private constructor, or the
+    /// constructor itself when no access constructor is needed.
+    ///
+    /// The access constructor takes the original parameters plus the access
+    /// constructor tag; enum constructors additionally receive the name and
+    /// ordinal parameters.
+    fn access_constructor(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: &Rc<dyn DiagnosticPosition>,
+        constr: SymbolId,
+    ) -> SymbolId {
+        if !self.needs_private_access(ctx, constr) {
+            return constr;
+        }
+        let owner = ctx.sym(constr).owner.expect("constructor owner");
+        let acc_owner = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+        if let Some(access) = self.access_constrs.get(&constr) {
+            return *access;
+        }
+        let constr_ty = ctx.sym(constr).ty.expect("constructor type");
+        let mut argtypes = self.types.get_parameter_types_public(ctx, constr_ty);
+        if (ctx.sym(acc_owner).flags_field & crate::code::flags::ENUM as i64) != 0 {
+            let string_type = self.syms.borrow().string_type;
+            let int_type = self.syms.borrow().int_type;
+            argtypes = argtypes.prepend(int_type).prepend(string_type);
+        }
+        let tag = self.access_constructor_tag(ctx);
+        let tag_erasure = {
+            let syms = self.syms.borrow();
+            let tag_ty = ctx.sym(tag).ty.expect("tag type");
+            self.types.erasure(ctx, &syms, tag_ty)
+        };
+        let restype = self.types.get_return_type_public(ctx, constr_ty);
+        let thrown = ctx.typ(constr_ty).get_thrown_types(ctx);
+        let method_class = self.syms.borrow().method_class;
+        let method_ty = ctx.alloc_type(Type::new(
+            TypeTag::METHOD,
+            Some(method_class),
+            TypeKindData::MethodType {
+                argtypes: argtypes.append(tag_erasure),
+                restype: Some(restype),
+                thrown,
+                recvtype: None,
+            },
+        ));
+        let init_name = self.names.init.clone();
+        let flags = crate::code::flags::SYNTHETIC as i64;
+        let accessor_symbol = Symbol::new_method_symbol(flags, init_name, method_ty, acc_owner);
+        let accessor = ctx.alloc_symbol(accessor_symbol);
+        let members = ctx.sym(acc_owner).members().expect("access owner members");
+        self.enter_synthetic(ctx, accessor, members);
+        self.access_constrs.insert(constr, accessor);
+        self.accessed.push(constr);
+        accessor
+    }
+
+    /// Return an anonymous class nested in this top-level class, used as the
+    /// tag type of access constructors.
+    fn access_constructor_tag(&mut self, ctx: &mut CompilerContext) -> SymbolId {
+        let current_class = self.current_class.expect("current class");
+        let top_class =
+            crate::code::symbol::symbol_outermost_class(ctx, current_class).expect("top level class");
+        let top_modle = crate::code::symbol::packge(ctx, top_class)
+            .and_then(|packge| match &ctx.sym(packge).kind_data {
+                SymbolKind::PackageSymbol { modle, .. } => *modle,
+                _ => None,
+            })
+            .expect("top level module");
+        let mut i = 1;
+        loop {
+            let text = format!(
+                "{}{}{}",
+                ctx.sym(top_class).get_qualified_name().to_java_string(),
+                self.target.synthetic_name_char(),
+                i
+            );
+            let flatname = self
+                .names
+                .from_string(&javac_strings::JavaString::from(text.as_str()));
+            let found = self.chk.borrow().get_compiled_by(top_modle, &flatname);
+            let ctag = match found {
+                None => {
+                    let flags =
+                        (crate::code::flags::STATIC | crate::code::flags::SYNTHETIC) as i64;
+                    let cdef = self.make_empty_class(ctx, flags, top_class, None, true);
+                    match &ctx.tree(cdef).kind {
+                        TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+                        _ => panic!("class declaration expected"),
+                    }
+                }
+                Some(ctag) => {
+                    if !ctx.sym(ctag).is_anonymous() {
+                        i += 1;
+                        continue;
+                    }
+                    ctag
+                }
+            };
+            self.access_constr_tags.insert(0, ctag);
+            return ctag;
+        }
+    }
+
+    /// Verify that all synthesized access constructor tags are generated.
+    ///
+    /// A tag hidden in dead code is not translated, so an empty class is created
+    /// here and the accessor signatures are rewritten to reference it.
+    fn check_access_constructor_tags(&mut self, ctx: &mut CompilerContext) {
+        let tags = self.access_constr_tags.clone();
+        for c in tags {
+            if self.is_translated_class_available(ctx, c) {
+                continue;
+            }
+            let outer = crate::code::symbol::symbol_outermost_class(ctx, c).expect("outermost class");
+            let flatname = match &ctx.sym(c).kind_data {
+                SymbolKind::ClassSymbol { flatname, .. } => flatname.clone(),
+                _ => panic!("class symbol expected"),
+            };
+            let flags = (crate::code::flags::STATIC | crate::code::flags::SYNTHETIC) as i64;
+            let cdef = self.make_empty_class(ctx, flags, outer, Some(flatname), false);
+            let new_ctag = match &ctx.tree(cdef).kind {
+                TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+                _ => panic!("class declaration expected"),
+            };
+            self.swap_access_constructor_tag(ctx, c, new_ctag);
+            self.translated.push(cdef);
+        }
+    }
+
+    /// Check whether a translated class declaration for the symbol exists.
+    fn is_translated_class_available(&self, ctx: &CompilerContext, c: SymbolId) -> bool {
+        for tree in &self.translated {
+            if ctx.tree(*tree).has_tag(Tag::CLASSDEF)
+                && let TreeKind::ClassDecl { sym: Some(sym), .. } = &ctx.tree(*tree).kind
+                && *sym == c
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Rewrite access constructor signatures to reference a newly created tag.
+    fn swap_access_constructor_tag(&mut self, ctx: &mut CompilerContext, old_ctag: SymbolId, new_ctag: SymbolId) {
+        let constructors: Vec<SymbolId> = self.access_constrs.values().copied().collect();
+        for constr in constructors {
+            let constr_ty = ctx.sym(constr).ty.expect("constructor type");
+            assert!(
+                ctx.typ(constr_ty).has_tag(TypeTag::METHOD),
+                "AssertionError: class constructor is not a method"
+            );
+            let params = self.types.get_parameter_types_public(ctx, constr_ty);
+            let first = *params.head();
+            let first_tsym = ctx.typ(first).tsym;
+            if first_tsym != Some(old_ctag) {
+                continue;
+            }
+            let new_erasure = {
+                let syms = self.syms.borrow();
+                let new_ty = ctx.sym(new_ctag).ty.expect("tag type");
+                self.types.erasure(ctx, &syms, new_ty)
+            };
+            let dropped = params.tail();
+            let new_params = dropped.prepend(new_erasure);
+            let new_ty = self
+                .types
+                .create_method_type_with_parameters(ctx, constr_ty, new_params);
+            ctx.sym_mut(constr).ty = Some(new_ty);
+        }
+    }
+
+    /// Add all required access methods for a private symbol to its enclosing
+    /// class.
+    fn make_accessible(&mut self, ctx: &mut CompilerContext, sym: SymbolId) {
+        let owner = ctx.sym(sym).owner.expect("symbol owner");
+        let encl = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+        let cdef = self.class_def(ctx, encl).expect("class definition");
+        let cdef_pos = ctx.tree(cdef).pos;
+        let is_init = ctx.sym(sym).name == self.names.init;
+        if is_init {
+            let accessor = self.access_constrs.get(&sym).copied();
+            if let Some(accessor) = accessor {
+                let def = self.access_constructor_def(ctx, cdef_pos, sym, accessor);
+                if let TreeKind::ClassDecl { defs, .. } = &mut ctx.tree_mut(cdef).kind {
+                    let new_defs = defs.prepend(def);
+                    *defs = new_defs;
+                }
+            }
+        } else {
+            let accessors = self.access_syms.get(&sym).cloned();
+            if let Some(accessors) = accessors {
+                for (i, accessor) in accessors.iter().enumerate() {
+                    if let Some(accessor) = accessor {
+                        let def = self.access_def(ctx, cdef_pos, sym, *accessor, i as i32);
+                        if let TreeKind::ClassDecl { defs, .. } = &mut ctx.tree_mut(cdef).kind {
+                            let new_defs = defs.prepend(def);
+                            *defs = new_defs;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Construct the definition of an access method.
+    ///
+    /// The method body reads, writes or updates the symbol through its
+    /// reference and returns the value where the access code requires it.
+    fn access_def(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        vsym: SymbolId,
+        accessor: SymbolId,
+        acode: i32,
+    ) -> TreeId {
+        let vsym_owner = ctx.sym(vsym).owner.expect("access symbol owner");
+        let current_class =
+            crate::code::symbol::symbol_encl_class(ctx, vsym_owner).expect("enclosing class");
+        self.current_class = Some(current_class);
+        self.make.borrow_mut().at(pos);
+        let accessor_ty = ctx.sym(accessor).ty.expect("accessor type");
+        let md = self.method_def_for_symbol(ctx, accessor, accessor_ty, None);
+        let params = match &ctx.tree(md).kind {
+            TreeKind::MethodDecl { params, .. } => params.clone(),
+            _ => panic!("method declaration expected"),
+        };
+        let sym = self.actual_symbols.get(&vsym).copied().unwrap_or(vsym);
+        let is_static = (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) != 0;
+        let (reference, args) = if is_static {
+            let ident = self.make.borrow_mut().ident_symbol(ctx, sym);
+            let args = self.make.borrow_mut().idents(ctx, params.clone());
+            (ident, args)
+        } else {
+            let first = *params.head();
+            let first_sym = Self::param_sym(ctx, first);
+            let site = self.make.borrow_mut().ident_symbol(ctx, first_sym);
+            if acode % 2 != 0 {
+                let owner = ctx.sym(vsym).owner.expect("access owner");
+                let encl = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+                let encl_ty = ctx.sym(encl).ty.expect("enclosing type");
+                let super_ty = {
+                    let syms = self.syms.borrow();
+                    self.types.supertype(ctx, &syms, encl_ty)
+                };
+                let erasure = {
+                    let syms = self.syms.borrow();
+                    self.types.erasure(ctx, &syms, super_ty)
+                };
+                ctx.tree_mut(site).ty = Some(erasure);
+            }
+            let reference = self.select_symbol(ctx, site, sym);
+            let tail = params.tail();
+            let args = self.make.borrow_mut().idents(ctx, tail);
+            (reference, args)
+        };
+        let sym_kind = ctx.sym(sym).kind;
+        let stat = if sym_kind == Kind::VAR {
+            let acode1 = acode - (acode & 1);
+            let a_code = crate::code::symbol::AccessCode::get_from_code(acode1);
+            let expr = match a_code {
+                crate::code::symbol::AccessCode::DEREF => reference,
+                crate::code::symbol::AccessCode::ASSIGN => {
+                    let rhs = *args.head();
+                    self.make.borrow_mut().assign(ctx, reference, rhs)
+                }
+                crate::code::symbol::AccessCode::PREINC
+                | crate::code::symbol::AccessCode::POSTINC
+                | crate::code::symbol::AccessCode::PREDEC
+                | crate::code::symbol::AccessCode::POSTDEC => {
+                    let tag = a_code.tag();
+                    self.make_unary(ctx, tag, reference)
+                }
+                _ => {
+                    let tag = Tag::NO_TAG;
+                    let operator = self.binary_access_operator(ctx, acode1, tag);
+                    let tree_tag = Self::tree_tag(operator, ctx);
+                    let rhs = *args.head();
+                    let expr = self.make_assignop(ctx, tree_tag, reference, rhs);
+                    if let TreeKind::AssignOp { operator: slot, .. } = &mut ctx.tree_mut(expr).kind {
+                        *slot = Some(operator);
+                    }
+                    expr
+                }
+            };
+            let sym_ty = ctx.sym(sym).ty.expect("accessed variable type");
+            ctx.tree_mut(expr).ty = Some(sym_ty);
+            self.make.borrow_mut().return_(ctx, Some(expr))
+        } else {
+            let apply = self.make.borrow_mut().app_with_args(ctx, reference, args.clone());
+            self.make.borrow_mut().call_statement(ctx, apply)
+        };
+        let body = self.make.borrow_mut().block(ctx, 0, List::of(stat));
+        if let TreeKind::MethodDecl { body: body_slot, .. } = &mut ctx.tree_mut(md).kind {
+            *body_slot = Some(body);
+        }
+        let params = match &ctx.tree(md).kind {
+            TreeKind::MethodDecl { params, .. } => params.clone(),
+            _ => panic!("method declaration expected"),
+        };
+        let mut current = params;
+        while current.non_empty() {
+            let param = *current.head();
+            let vartype = match &ctx.tree(param).kind {
+                TreeKind::VariableDecl { vartype, .. } => *vartype,
+                _ => None,
+            };
+            if let Some(vartype) = vartype {
+                let param_sym = Self::param_sym(ctx, param);
+                let accessed = self.access(ctx, param_sym, vartype, None, false);
+                if let TreeKind::VariableDecl { vartype, .. } = &mut ctx.tree_mut(param).kind {
+                    *vartype = Some(accessed);
+                }
+            }
+            current = current.tail();
+        }
+        {
+            let restype = match &ctx.tree(md).kind {
+                TreeKind::MethodDecl { restype, .. } => *restype,
+                _ => None,
+            };
+            if let Some(restype) = restype {
+                let owner = ctx.sym(accessor).owner.expect("accessor owner");
+                let accessed = self.access(ctx, owner, restype, None, false);
+                if let TreeKind::MethodDecl { restype, .. } = &mut ctx.tree_mut(md).kind {
+                    *restype = Some(accessed);
+                }
+            }
+        }
+        {
+            let thrown = match &ctx.tree(md).kind {
+                TreeKind::MethodDecl { thrown, .. } => thrown.clone(),
+                _ => List::nil(),
+            };
+            let mut new_thrown: List<TreeId> = List::nil();
+            let mut current = thrown;
+            while current.non_empty() {
+                let tree = *current.head();
+                let owner = ctx.sym(accessor).owner.expect("accessor owner");
+                let accessed = self.access(ctx, owner, tree, None, false);
+                new_thrown = new_thrown.append(accessed);
+                current = current.tail();
+            }
+            if let TreeKind::MethodDecl { thrown, .. } = &mut ctx.tree_mut(md).kind {
+                *thrown = new_thrown;
+            }
+        }
+        md
+    }
+
+    /// Return the symbol of a variable declaration tree.
+    fn param_sym(ctx: &CompilerContext, tree: TreeId) -> SymbolId {
+        match &ctx.tree(tree).kind {
+            TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
+            _ => panic!("variable declaration expected"),
+        }
+    }
+
+    /// Construct the definition of an access constructor.
+    ///
+    /// The constructor body delegates to the private constructor, forwarding
+    /// every parameter except the trailing access constructor tag.
+    fn access_constructor_def(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        constr: SymbolId,
+        accessor: SymbolId,
+    ) -> TreeId {
+        self.make.borrow_mut().at(pos);
+        let external = {
+            let syms = self.syms.borrow();
+            crate::code::symbol::external_type(ctx, &self.types, &syms, &self.names, accessor)
+        };
+        let md = self.method_def_for_symbol(ctx, accessor, external, None);
+        let params = match &ctx.tree(md).kind {
+            TreeKind::MethodDecl { params, .. } => params.clone(),
+            _ => panic!("method declaration expected"),
+        };
+        let this_name = self.names._this.clone();
+        let callee = self.make.borrow_mut().ident(ctx, this_name);
+        if let TreeKind::Ident {
+            sym: sym_slot,
+            ..
+        } = &mut ctx.tree_mut(callee).kind
+        {
+            *sym_slot = Some(constr);
+        }
+        let constr_ty = ctx.sym(constr).ty.expect("constructor type");
+        ctx.tree_mut(callee).ty = Some(constr_ty);
+        let forwarded = params.reverse().tail().reverse();
+        let args = self.make.borrow_mut().idents(ctx, forwarded);
+        let apply = self.make.borrow_mut().app_with_args(ctx, callee, args);
+        let call = self.make.borrow_mut().call_statement(ctx, apply);
+        let body = self.make.borrow_mut().block(ctx, 0, List::of(call));
+        if let TreeKind::MethodDecl { body: body_slot, .. } = &mut ctx.tree_mut(md).kind {
+            *body_slot = Some(body);
+        }
+        md
+    }
+
+
+    /// Translate a whole top-level class and return all translated classes.
+    ///
+    /// The pass state is reset for the unit, the class is translated through the
+    /// visitor framework, and the queued accessors, enum switch maps and
+    /// conflict checks are completed before the translated classes are returned.
+    pub fn translate_top_level_class(
+        &mut self,
+        ctx: &mut CompilerContext,
+        env: Rc<Env<AttrContext>>,
+        cdef: TreeId,
+        make: Rc<RefCell<TreeMaker>>,
+    ) -> List<TreeId> {
+        self.attr_env = Some(env.clone());
+        self.make = make;
+        self.end_pos_table = env
+            .toplevel
+            .and_then(|cu| match &ctx.tree(cu).kind {
+                TreeKind::CompilationUnit { end_positions, .. } => end_positions.clone(),
+                _ => None,
+            });
+        self.current_class = None;
+        self.current_method_def = None;
+        self.outermost_class_def = if ctx.tree(cdef).has_tag(Tag::CLASSDEF) {
+            Some(cdef)
+        } else {
+            None
+        };
+        self.outermost_member_def = None;
+        self.translated = Vec::new();
+        self.classdefs = HashMap::new();
+        self.actual_symbols = HashMap::new();
+        self.freevar_cache = HashMap::new();
+        self.proxies = HashMap::new();
+        self.twr_vars = Some(ctx.alloc_scope(crate::code::scope::Scope::new_scope_impl(
+            Some(self.syms.borrow().no_symbol),
+        )));
+        self.outer_this_stack = Vec::new();
+        self.access_nums = HashMap::new();
+        self.access_syms = HashMap::new();
+        self.access_constrs = HashMap::new();
+        self.access_constr_tags = Vec::new();
+        self.accessed = Vec::new();
+        self.encl_op = None;
+        let _ = self.translate(ctx, Some(cdef));
+        let accessed = self.accessed.clone();
+        for sym in accessed {
+            self.make_accessible(ctx, sym);
+        }
+        let maps: Vec<Rc<RefCell<EnumMapping>>> = self.enum_switch_map.values().cloned().collect();
+        for map in maps {
+            let mut mapping = map.borrow_mut();
+            mapping.translate(self, ctx);
+        }
+        let translated = self.translated.clone();
+        self.check_conflicts(ctx, &translated);
+        self.check_access_constructor_tags(ctx);
+        let result = List::from_iterable(self.translated.clone());
+        self.attr_env = None;
+        self.end_pos_table = None;
+        self.current_class = None;
+        self.current_method_def = None;
+        self.outermost_class_def = None;
+        self.outermost_member_def = None;
+        self.translated = Vec::new();
+        self.classdefs = HashMap::new();
+        self.actual_symbols = HashMap::new();
+        self.freevar_cache = HashMap::new();
+        self.proxies = HashMap::new();
+        self.outer_this_stack = Vec::new();
+        self.access_nums = HashMap::new();
+        self.access_syms = HashMap::new();
+        self.access_constrs = HashMap::new();
+        self.access_constr_tags = Vec::new();
+        self.accessed = Vec::new();
+        self.enum_switch_map.clear();
+        self.assertions_disabled_class_cache = None;
+        result
+    }
+
+    /// Check that synthesized names do not conflict with user declared
+    /// symbols in the translated classes.
+    fn check_conflicts(&mut self, ctx: &mut CompilerContext, translated: &[TreeId]) {
+        let mut checker = ConflictsChecker {
+            current_class: None,
+            types: Rc::clone(&self.types),
+            syms: Rc::clone(&self.syms),
+            conflicts: Vec::new(),
+        };
+        for tree in translated {
+            crate::tree::jc_tree::accept(ctx, *tree, &mut checker);
+        }
+        let conflicts = checker.conflicts;
+        for (tree, sym) in conflicts {
+            self.synthetic_error(ctx, tree, sym);
+        }
+    }
+
+    /// Report one synthetic name conflict diagnostic.
+    fn synthetic_error(&mut self, ctx: &mut CompilerContext, tree: TreeId, sym: SymbolId) {
+        let sym_ty = ctx.sym(sym).ty.expect("symbol type");
+        if ctx.typ(sym_ty).has_tag(TypeTag::ERROR) {
+            return;
+        }
+        let location = ctx
+            .sym(sym)
+            .get_qualified_name()
+            .to_java_string()
+            .to_string_lossy()
+            .to_string();
+        let info = crate::resources::compiler_properties::errors::cannot_generate_class(
+            crate::resources::diagnostic_contract::SymbolArg::placeholder(location.clone()),
+            crate::resources::diagnostic_contract::DiagnosticArg::Text(location),
+        );
+        crate::util::abstract_log::AbstractLog::error_at(
+            &mut *self.log.borrow_mut(),
+            ctx.tree(tree).pos,
+            crate::util::jc_diagnostic::Error::from(info),
+        );
+    }
+
+
+    /// Translate a single tree through the visitor.
+    ///
+    /// The tree position becomes the maker position, the visitor runs with a
+    /// fresh result slot, and the result is returned; a null tree translates to
+    /// a null result.
+    fn translate(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) -> Option<TreeId> {
+        let tree = tree?;
+        let saved_result = self.result.take();
+        self.result = None;
+        let pos = ctx.tree(tree).pos;
+        self.make.borrow_mut().at(pos);
+        crate::tree::jc_tree::accept(ctx, tree, self);
+        let result = self.result.take().or(Some(tree));
+        self.result = saved_result;
+        result
+    }
+
+    /// Translate a tree and box or unbox it to the given prototype type.
+    fn translate_with_type(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: Option<TreeId>,
+        ty: TypeId,
+    ) -> Option<TreeId> {
+        let translated = self.translate(ctx, tree)?;
+        Some(self.box_if_needed(ctx, translated, ty))
+    }
+
+    /// Translate a tree with the given closest enclosing operator node.
+    fn translate_with_encl_op(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: Option<TreeId>,
+        encl_op: Option<TreeId>,
+    ) -> Option<TreeId> {
+        let previous = self.encl_op;
+        self.encl_op = encl_op;
+        let result = self.translate(ctx, tree);
+        self.encl_op = previous;
+        result
+    }
+
+    /// Translate a list of trees, preserving the list order.
+    fn translate_list(&mut self, ctx: &mut CompilerContext, mut trees: List<TreeId>) -> List<TreeId> {
+        let mut out: List<TreeId> = List::nil();
+        while trees.non_empty() {
+            let tree = *trees.head();
+            let translated = self.translate(ctx, Some(tree)).expect("translated tree");
+            out = out.append(translated);
+            trees = trees.tail();
+        }
+        out
+    }
+
+    /// Translate a list of trees with a prototype type for each element.
+    fn translate_list_with_type(
+        &mut self,
+        ctx: &mut CompilerContext,
+        mut trees: List<TreeId>,
+        ty: TypeId,
+    ) -> List<TreeId> {
+        let mut out: List<TreeId> = List::nil();
+        while trees.non_empty() {
+            let tree = *trees.head();
+            let translated = self
+                .translate_with_type(ctx, Some(tree), ty)
+                .expect("translated tree");
+            out = out.append(translated);
+            trees = trees.tail();
+        }
+        out
+    }
+
+
+    /// Return the flags of a modifiers tree (zero when the tree is absent).
+    fn mods_flags(ctx: &CompilerContext, mods: Option<TreeId>) -> i64 {
+        match mods {
+            Some(mods) => match &ctx.tree(mods).kind {
+                TreeKind::Modifiers { flags, .. } => *flags,
+                _ => panic!("expected modifiers"),
+            },
+            None => 0,
+        }
+    }
+
+    /// Replace the flags of a modifiers tree.
+    fn set_mods_flags(ctx: &mut CompilerContext, mods: Option<TreeId>, flags: i64) {
+        if let Some(mods) = mods
+            && let TreeKind::Modifiers { flags: slot, .. } = &mut ctx.tree_mut(mods).kind
+        {
+            *slot = flags;
+        }
+    }
+
+    /// Return the type parameters of the current class for a method body.
+    fn make_translation_map(&mut self, ctx: &CompilerContext, tree: TreeId) -> HashMap<SymbolId, SymbolId> {
+        let params = match &ctx.tree(tree).kind {
+            TreeKind::MethodDecl { params, .. } => params.clone(),
+            _ => panic!("expected a method declaration"),
+        };
+        let mut translation_map: HashMap<SymbolId, SymbolId> = HashMap::new();
+        let mut current = params;
+        while current.non_empty() {
+            let vd = *current.head();
+            if let TreeKind::VariableDecl { sym: Some(p), .. } = &ctx.tree(vd).kind {
+                let base = crate::code::symbol::base_symbol(ctx, *p);
+                if base != *p {
+                    translation_map.insert(base, *p);
+                }
+            }
+            current = current.tail();
+        }
+        translation_map
+    }
+
+    /// Translate a class declaration and queue it as a translated class.
+    fn lower_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (mods, extending, implementing, sym) = match &ctx.tree(tree).kind {
+            TreeKind::ClassDecl {
+                mods,
+                extending,
+                implementing,
+                sym,
+                ..
+            } => (*mods, *extending, implementing.clone(), *sym),
+            _ => panic!("expected a class declaration"),
+        };
+        let tree_sym = sym.expect("class symbol");
+        let prev_attr_env = self.attr_env.clone();
+        let prev_class = self.current_class;
+        let prev_method_sym = self.current_method_sym;
+        self.current_class = Some(tree_sym);
+        self.current_method_sym = None;
+        let removed = self.type_envs.borrow_mut().remove(tree_sym);
+        self.attr_env = Some(match removed {
+            Some(env) => env,
+            None => prev_attr_env.clone().expect("attribution environment"),
+        });
+        self.classdefs.insert(tree_sym, tree);
+        let prev_proxies = std::mem::take(&mut self.proxies);
+        self.proxies = prev_proxies.clone();
+        let prev_outer_this_stack = std::mem::take(&mut self.outer_this_stack);
+        self.outer_this_stack = prev_outer_this_stack.clone();
+        let pos = ctx.tree(tree).pos;
+        let flags = Self::mods_flags(ctx, mods);
+        let tree_ty = ctx.sym(tree_sym).ty.expect("class type");
+        let super_tsym = self
+            .types
+            .supertype(ctx, &mut *self.syms.borrow_mut(), tree_ty);
+        let super_is_enum = ctx
+            .typ(super_tsym)
+            .tsym
+            .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::ENUM as i64) != 0)
+            .unwrap_or(false);
+        if (flags & crate::code::flags::ENUM as i64) != 0 && !super_is_enum {
+            self.visit_enum_def(ctx, tree);
+        }
+        if (flags & crate::code::flags::RECORD as i64) != 0 {
+            self.visit_record_def(ctx, tree);
+        }
+        let mut outer_this_def: Option<TreeId> = None;
+        if ctx.sym(tree_sym).has_outer_instance(ctx) {
+            outer_this_def = Some(self.outer_this_def(ctx, pos, tree_sym));
+        }
+        let freevars = self.freevars(ctx, tree_sym).unwrap_or_else(List::nil);
+        let freevar_defs = self.freevar_defs(ctx, pos, freevars, tree_sym, 0);
+        let extending = self.translate(ctx, extending);
+        let implementing = self.translate_list(ctx, implementing);
+        if let TreeKind::ClassDecl { extending: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = extending;
+        }
+        if let TreeKind::ClassDecl { implementing: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = implementing;
+        }
+        if Symbol::is_directly_or_indirectly_local(ctx, tree_sym) {
+            let owner = ctx.sym(tree_sym).owner.expect("class owner");
+            let encl = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+            if let SymbolKind::ClassSymbol { trans_local, .. } = &mut ctx.sym_mut(encl).kind_data {
+                *trans_local = trans_local.prepend(tree_sym);
+            }
+        }
+        // Translate the members, re-reading the definition list because the
+        // translation may prepend synthetic members to it.
+        let mut seen_len: i32 = 0;
+        loop {
+            let defs = match &ctx.tree(tree).kind {
+                TreeKind::ClassDecl { defs, .. } => defs.clone(),
+                _ => panic!("expected a class declaration"),
+            };
+            let total = defs.length();
+            let new_count = total - seen_len;
+            if new_count <= 0 {
+                break;
+            }
+            let mut current = defs;
+            let previous_outermost_member = self.outermost_member_def;
+            for index in 0..new_count {
+                let member = *current.head();
+                if index == 0 && previous_outermost_member.is_none() {
+                    self.outermost_member_def = Some(member);
+                }
+                self.translate(ctx, Some(member));
+                current = current.tail();
+            }
+            self.outermost_member_def = previous_outermost_member;
+            seen_len = total;
+        }
+        // Convert the protected modifier to public and mask class flags.
+        let mut mods_flags = Self::mods_flags(ctx, mods);
+        if (mods_flags & crate::code::flags::PROTECTED as i64) != 0 {
+            mods_flags |= crate::code::flags::PUBLIC as i64;
+        }
+        mods_flags &= crate::code::flags::ClassFlags as i64;
+        Self::set_mods_flags(ctx, mods, mods_flags);
+        let flatname = ctx.sym(tree_sym).flat_name();
+        let shortname = crate::util::convert::short_name(&flatname);
+        if let TreeKind::ClassDecl { name, .. } = &mut ctx.tree_mut(tree).kind {
+            *name = shortname;
+        }
+        let members = ctx.sym(tree_sym).members().expect("class members");
+        let mut current_fv = freevar_defs;
+        while current_fv.non_empty() {
+            let def = *current_fv.head();
+            if let TreeKind::ClassDecl { defs, .. } = &mut ctx.tree_mut(tree).kind {
+                let new_defs = defs.prepend(def);
+                *defs = new_defs;
+            }
+            let def_sym = Self::param_sym(ctx, def);
+            self.enter_synthetic(ctx, def_sym, members);
+            current_fv = current_fv.tail();
+        }
+        if ctx.sym(tree_sym).has_outer_instance(ctx)
+            && let Some(outer_this_def) = outer_this_def
+        {
+            if let TreeKind::ClassDecl { defs, .. } = &mut ctx.tree_mut(tree).kind {
+                let new_defs = defs.prepend(outer_this_def);
+                *defs = new_defs;
+            }
+            let def_sym = Self::param_sym(ctx, outer_this_def);
+            self.enter_synthetic(ctx, def_sym, members);
+        }
+        self.proxies = prev_proxies;
+        self.outer_this_stack = prev_outer_this_stack;
+        self.translated.push(tree);
+        self.attr_env = prev_attr_env;
+        self.current_class = prev_class;
+        self.current_method_sym = prev_method_sym;
+        let empty = self.make.borrow_mut().block(ctx, crate::code::flags::SYNTHETIC as i64, List::nil());
+        self.result = Some(empty);
+    }
+
+    /// Translate a method declaration, adding enum constructor parameters when
+    /// needed.
+    fn lower_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (name, sym, params) = match &ctx.tree(tree).kind {
+            TreeKind::MethodDecl {
+                name, sym, params, ..
+            } => (name.clone(), *sym, params.clone()),
+            _ => panic!("expected a method declaration"),
+        };
+        let current_class = self.current_class.expect("current class");
+        if name == self.names.init
+            && (ctx.sym(current_class).flags_field & crate::code::flags::ENUM as i64) != 0
+        {
+            let tree_sym = sym.expect("method symbol");
+            let pos = ctx.tree(tree).pos;
+            let name_param = self.make_named_param(ctx, pos, "enum$name", true, tree_sym);
+            let ord_param = self.make_named_param(ctx, pos, "enum$ordinal", false, tree_sym);
+            let name_param_mods = match &ctx.tree(name_param).kind {
+                TreeKind::VariableDecl { mods, .. } => *mods,
+                _ => None,
+            };
+            let name_param_sym = Self::param_sym(ctx, name_param);
+            let mut flags = Self::mods_flags(ctx, name_param_mods);
+            flags |= crate::code::flags::SYNTHETIC as i64;
+            Self::set_mods_flags(ctx, name_param_mods, flags);
+            ctx.sym_mut(name_param_sym).flags_field |= crate::code::flags::SYNTHETIC as i64;
+            let ord_param_mods = match &ctx.tree(ord_param).kind {
+                TreeKind::VariableDecl { mods, .. } => *mods,
+                _ => None,
+            };
+            let ord_param_sym = Self::param_sym(ctx, ord_param);
+            let mut flags = Self::mods_flags(ctx, ord_param_mods);
+            flags |= crate::code::flags::SYNTHETIC as i64;
+            Self::set_mods_flags(ctx, ord_param_mods, flags);
+            ctx.sym_mut(ord_param_sym).flags_field |= crate::code::flags::SYNTHETIC as i64;
+            let new_params = params.prepend(ord_param).prepend(name_param);
+            if let TreeKind::MethodDecl { params: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                *slot = new_params;
+            }
+            let name_sym = Self::param_sym(ctx, name_param);
+            let ord_sym = Self::param_sym(ctx, ord_param);
+            if let SymbolKind::MethodSymbol { extra_params, .. } = &mut ctx.sym_mut(tree_sym).kind_data {
+                *extra_params = extra_params.prepend(ord_sym).prepend(name_sym);
+            }
+            let old_erasure = {
+                let method_ty = ctx.sym(tree_sym).ty.expect("method type");
+                let mut syms = self.syms.borrow_mut();
+                self.types.erasure(ctx, &mut syms, method_ty)
+            };
+            let string_type = self.syms.borrow().string_type;
+            let int_type = self.syms.borrow().int_type;
+            let params = self.types.get_parameter_types_public(ctx, old_erasure);
+            let restype = self.types.get_return_type_public(ctx, old_erasure);
+            let thrown = ctx.typ(old_erasure).get_thrown_types(ctx);
+            let method_class = self.syms.borrow().method_class;
+            let new_erasure = ctx.alloc_type(Type::new(
+                TypeTag::METHOD,
+                Some(method_class),
+                TypeKindData::MethodType {
+                    argtypes: params.prepend(int_type).prepend(string_type),
+                    restype: Some(restype),
+                    thrown,
+                    recvtype: None,
+                },
+            ));
+            ctx.sym_mut(tree_sym).ty = Some(new_erasure);
+        }
+        let prev_method_def = self.current_method_def;
+        let prev_method_sym = self.current_method_sym;
+        self.current_method_def = Some(tree);
+        self.current_method_sym = sym;
+        self.lower_method_def_internal(ctx, tree);
+        self.current_method_def = prev_method_def;
+        self.current_method_sym = prev_method_sym;
+    }
+
+    /// Create a parameter declaration with an explicit name and type.
+    fn make_named_param(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        base_name: &str,
+        is_string: bool,
+        owner: SymbolId,
+    ) -> TreeId {
+        let text = format!(
+            "{}{}{}",
+            self.target.synthetic_name_char(),
+            base_name,
+            self.target.synthetic_name_char()
+        );
+        let name = self.names.from_string(&javac_strings::JavaString::from(
+            text.replace("enum$", "enum").as_str(),
+        ));
+        let ty = if is_string {
+            self.syms.borrow().string_type
+        } else {
+            self.syms.borrow().int_type
+        };
+        let flags = crate::code::flags::PARAMETER as i64;
+        let symbol = Symbol::new_var_symbol(flags, name, ty, owner);
+        let param = ctx.alloc_symbol(symbol);
+        self.make.borrow_mut().at(pos);
+        self.var_def_for_symbol(ctx, param, None)
+    }
+
+    /// Translate the body of a method declaration, handling inner-class
+    /// constructors specially.
+    fn lower_method_def_internal(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (name, sym, params, body) = match &ctx.tree(tree).kind {
+            TreeKind::MethodDecl {
+                name,
+                sym,
+                params,
+                body,
+                ..
+            } => (name.clone(), *sym, params.clone(), *body),
+            _ => panic!("expected a method declaration"),
+        };
+        let current_class = self.current_class.expect("current class");
+        let is_ctor = name == self.names.init;
+        let sym = sym.expect("method symbol");
+        let is_inner = ctx.sym(current_class).has_outer_instance(ctx)
+            || Symbol::is_directly_or_indirectly_local(ctx, current_class);
+        if is_ctor && is_inner {
+            let pos = ctx.tree(tree).pos;
+            let prev_proxies = std::mem::take(&mut self.proxies);
+            self.proxies = prev_proxies.clone();
+            let prev_outer_this_stack = std::mem::take(&mut self.outer_this_stack);
+            self.outer_this_stack = prev_outer_this_stack.clone();
+            let freevars = self.freevars(ctx, current_class).unwrap_or_else(List::nil);
+            let mut outer_this_def: Option<TreeId> = None;
+            if ctx.sym(current_class).has_outer_instance(ctx) {
+                outer_this_def = Some(self.outer_this_def(ctx, pos, sym));
+            }
+            let flags = crate::code::flags::PARAMETER as i64;
+            let freevar_defs = self.freevar_defs(ctx, pos, freevars.clone(), sym, flags);
+            let restype = match &ctx.tree(tree).kind {
+                TreeKind::MethodDecl { restype, .. } => *restype,
+                _ => None,
+            };
+            let restype = self.translate(ctx, restype);
+            let params = self.translate_list(ctx, params);
+            let thrown = match &ctx.tree(tree).kind {
+                TreeKind::MethodDecl { thrown, .. } => thrown.clone(),
+                _ => List::nil(),
+            };
+            let thrown = self.translate_list(ctx, thrown);
+            if let TreeKind::MethodDecl {
+                restype: r, params: p, thrown: t, ..
+            } = &mut ctx.tree_mut(tree).kind
+            {
+                *r = restype;
+                *p = params.clone();
+                *t = thrown;
+            }
+            let Some(body) = body else {
+                self.result = Some(tree);
+                return;
+            };
+            let mut new_params = params.append_list(&freevar_defs);
+            if ctx.sym(current_class).has_outer_instance(ctx)
+                && let Some(outer_this_def) = outer_this_def
+            {
+                new_params = new_params.prepend(outer_this_def);
+            }
+            let body_stats = match &ctx.tree(body).kind {
+                TreeKind::Block { stats, .. } => stats.clone(),
+                _ => panic!("expected a block"),
+            };
+            let self_call = self
+                .translate(ctx, Some(*body_stats.head()))
+                .expect("translated super call");
+            let mut added: List<TreeId> = List::nil();
+            let is_initial_ctor = tree_info::is_initial_constructor(ctx, tree);
+            if freevars.non_empty() {
+                let mut added_argtypes: List<TypeId> = List::nil();
+                let mut current = freevars;
+                while current.non_empty() {
+                    let v = *current.head();
+                    let proxy = self.proxies.get(&v).copied().expect("proxy");
+                    if let SymbolKind::MethodSymbol { captured_locals, .. } =
+                        &mut ctx.sym_mut(sym).kind_data
+                    {
+                        *captured_locals = captured_locals.prepend(proxy);
+                    }
+                    if is_initial_ctor {
+                        let prev_proxy = prev_proxies.get(&v).copied().expect("previous proxy");
+                        let init = self.init_field(ctx, ctx.tree(body).pos, proxy, prev_proxy);
+                        added = added.prepend(init);
+                    }
+                    let v_ty = ctx.sym(v).ty.expect("free variable type");
+                    let erasure = {
+                        let mut syms = self.syms.borrow_mut();
+                        self.types.erasure(ctx, &mut syms, v_ty)
+                    };
+                    added_argtypes = added_argtypes.prepend(erasure);
+                    current = current.tail();
+                }
+                let old_erasure = {
+                    let method_ty = ctx.sym(sym).ty.expect("method type");
+                    let mut syms = self.syms.borrow_mut();
+                    self.types.erasure(ctx, &mut syms, method_ty)
+                };
+                let params = self.types.get_parameter_types_public(ctx, old_erasure);
+                let restype = self.types.get_return_type_public(ctx, old_erasure);
+                let thrown = ctx.typ(old_erasure).get_thrown_types(ctx);
+                let method_class = self.syms.borrow().method_class;
+                let new_erasure = ctx.alloc_type(Type::new(
+                    TypeTag::METHOD,
+                    Some(method_class),
+                    TypeKindData::MethodType {
+                        argtypes: params.append_list(&added_argtypes),
+                        restype: Some(restype),
+                        thrown,
+                        recvtype: None,
+                    },
+                ));
+                ctx.sym_mut(sym).ty = Some(new_erasure);
+            }
+            if ctx.sym(current_class).has_outer_instance(ctx) && is_initial_ctor {
+                let init = self.init_outer_this(ctx, ctx.tree(body).pos);
+                added = added.prepend(init);
+            }
+            self.proxies = prev_proxies;
+            let stats = self.translate_list(ctx, body_stats.tail());
+            let mut new_stats = stats.prepend(self_call);
+            let mut added_rev = added;
+            let mut accumulated: List<TreeId> = new_stats;
+            let mut added_vec: Vec<TreeId> = Vec::new();
+            while added_rev.non_empty() {
+                added_vec.push(*added_rev.head());
+                added_rev = added_rev.tail();
+            }
+            for def in added_vec.into_iter().rev() {
+                accumulated = accumulated.prepend(def);
+            }
+            new_stats = accumulated;
+            if let TreeKind::Block { stats: slot, .. } = &mut ctx.tree_mut(body).kind {
+                *slot = new_stats;
+            }
+            if let TreeKind::MethodDecl { params: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                *slot = new_params;
+            }
+            self.outer_this_stack = prev_outer_this_stack;
+        } else {
+            let prev_lambda_map = self.lambda_translation_map.take();
+            let is_synthetic = (ctx.sym(sym).flags_field & crate::code::flags::SYNTHETIC as i64) != 0;
+            let is_lambda = is_synthetic && ctx.sym(sym).name.starts_with(&self.names.lambda);
+            if is_lambda {
+                self.lambda_translation_map = Some(self.make_translation_map(ctx, tree));
+            }
+            self.visit_method_def_default(ctx, tree);
+            self.lambda_translation_map = prev_lambda_map;
+        }
+        if name == self.names.init
+            && (ctx.sym(sym).flags_field & crate::code::flags::COMPACT_RECORD_CONSTRUCTOR as i64) != 0
+        {
+            self.lower_compact_record_ctor(ctx, tree);
+        }
+        self.result = Some(tree);
+    }
+
+
+    /// Box or unbox a tree when the primitive-ness differs from the prototype.
+    ///
+    /// A primitive value is boxed through the wrapper class valueOf method; a
+    /// reference value is unboxed through the primitive-value accessor. When both
+    /// sides agree the tree is returned unchanged.
+    fn box_if_needed(&mut self, ctx: &mut CompilerContext, tree: TreeId, ty: TypeId) -> TreeId {
+        let tree_ty = ctx.tree(tree).ty.expect("tree type");
+        let have_primitive = ctx.typ(tree_ty).is_primitive();
+        let want_primitive = ctx.typ(ty).is_primitive();
+        if have_primitive == want_primitive {
+            return tree;
+        }
+        if have_primitive {
+            let unboxed = {
+                let syms = self.syms.borrow();
+                self.types.unboxed_type_ro(ctx, &syms, ty)
+            };
+            if !ctx.typ(unboxed).has_tag(TypeTag::NONE) {
+                let is_sub = {
+                    let syms = self.syms.borrow();
+                    self.types.is_subtype(ctx, &syms, tree_ty, unboxed)
+                };
+                if !is_sub {
+                    let const_value = ctx.typ(tree_ty).const_value().cloned();
+                    if let Some(const_value) = const_value {
+                        let new_ty = ctx.typ(unboxed).const_type(const_value);
+                        let new_ty = ctx.alloc_type(new_ty);
+                        ctx.tree_mut(tree).ty = Some(new_ty);
+                    }
+                }
+                let wrapper = {
+                    let mut syms = self.syms.borrow_mut();
+                    self.types.erasure(ctx, &mut syms, ty)
+                };
+                self.box_primitive(ctx, tree, wrapper)
+            } else {
+                self.box_primitive_auto(ctx, tree)
+            }
+        } else {
+            self.unbox(ctx, tree, ty)
+        }
+    }
+
+    /// Box a primitive expression into the wrapper of its own type.
+    fn box_primitive_auto(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
+        let tree_ty = ctx.tree(tree).ty.expect("tree type");
+        let boxed = {
+            let mut syms = self.syms.borrow_mut();
+            self.types.boxed_class(ctx, &mut syms, tree_ty)
+        };
+        let wrapper = ctx.sym(boxed).ty.expect("boxed type");
+        self.box_primitive(ctx, tree, wrapper)
+    }
+
+    /// Box a primitive expression into the given wrapper class valueOf method.
+    fn box_primitive(&mut self, ctx: &mut CompilerContext, tree: TreeId, wrapper: TypeId) -> TreeId {
+        let pos = ctx.tree(tree).pos;
+        let tree_ty = ctx.tree(tree).ty.expect("tree type");
+        let diagnostic_pos: Rc<dyn DiagnosticPosition> = Rc::new(
+            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+        );
+        let value_of = self.names.valueOf.clone();
+        let value_of_sym = self.lookup_method(
+            ctx,
+            Some(diagnostic_pos),
+            value_of,
+            wrapper,
+            List::of(tree_ty),
+        );
+        let qual = {
+            let syms = self.syms.borrow();
+            self.make.borrow_mut().qual_ident(ctx, &syms, value_of_sym)
+        };
+        self.make.borrow_mut().app_with_args(ctx, qual, List::of(tree))
+    }
+
+    /// Unbox an object expression to the given primitive type.
+    fn unbox(&mut self, ctx: &mut CompilerContext, tree: TreeId, primitive: TypeId) -> TreeId {
+        let tree_ty = ctx.tree(tree).ty.expect("tree type");
+        let mut unboxed = {
+            let syms = self.syms.borrow();
+            self.types.unboxed_type_ro(ctx, &syms, tree_ty)
+        };
+        let mut tree = tree;
+        if ctx.typ(unboxed).has_tag(TypeTag::NONE) {
+            unboxed = primitive;
+            if !ctx.typ(unboxed).is_primitive() {
+                panic!("AssertionError: unboxed type is not primitive");
+            }
+            let boxed = {
+                let mut syms = self.syms.borrow_mut();
+                self.types.boxed_class(ctx, &mut syms, unboxed)
+            };
+            let boxed_ty = ctx.sym(boxed).ty.expect("boxed type");
+            let pos = ctx.tree(tree).pos;
+            self.make.borrow_mut().at(pos);
+            let clazz = self.type_tree(ctx, boxed_ty);
+            tree = self.make.borrow_mut().type_cast(ctx, clazz, tree);
+            let tree_ty = ctx.tree(tree).ty.expect("tree type");
+            let _ = tree_ty;
+        } else {
+            let is_sub = {
+                let syms = self.syms.borrow();
+                self.types.is_subtype(ctx, &syms, unboxed, primitive)
+            };
+            if !is_sub {
+                panic!("AssertionError: unboxed type is not a subtype of the primitive");
+            }
+        }
+        let pos = ctx.tree(tree).pos;
+        self.make.borrow_mut().at(pos);
+        let tree_ty = ctx.tree(tree).ty.expect("tree type");
+        let unboxed_tsym = ctx.typ(unboxed).tsym.expect("unboxed type symbol");
+        let method_name = {
+            let base = ctx.sym(unboxed_tsym).name.clone();
+            base.append(&self.names.Value)
+        };
+        let accessor = self.lookup_method(ctx, None, method_name, tree_ty, List::nil());
+        let select = self.select_symbol(ctx, tree, accessor);
+        self.make.borrow_mut().app(ctx, select)
+    }
+
+    /// Translate a method declaration through the default TreeTranslator
+    /// navigation (return type, parameters, thrown types and body).
+    fn visit_method_def_default(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (mods, restype, typarams, recvparam, params, thrown, default_value, body) =
+            match &ctx.tree(tree).kind {
+                TreeKind::MethodDecl {
+                    mods,
+                    restype,
+                    typarams,
+                    recvparam,
+                    params,
+                    thrown,
+                    default_value,
+                    body,
+                    ..
+                } => (
+                    *mods,
+                    *restype,
+                    typarams.clone(),
+                    *recvparam,
+                    params.clone(),
+                    thrown.clone(),
+                    *default_value,
+                    *body,
+                ),
+                _ => panic!("expected a method declaration"),
+            };
+        let mods = self.translate(ctx, mods);
+        let restype = self.translate(ctx, restype);
+        let typarams = self.translate_list(ctx, typarams);
+        let recvparam = self.translate(ctx, recvparam);
+        let params = self.translate_list(ctx, params);
+        let thrown = self.translate_list(ctx, thrown);
+        let default_value = self.translate(ctx, default_value);
+        let body = self.translate(ctx, body);
+        if let TreeKind::MethodDecl {
+            mods: m,
+            restype: r,
+            typarams: t,
+            recvparam: rv,
+            params: p,
+            thrown: th,
+            default_value: d,
+            body: b,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
+            *m = mods;
+            *r = restype;
+            *t = typarams;
+            *rv = recvparam;
+            *p = params;
+            *th = thrown;
+            *d = default_value;
+            *b = body;
+        }
+        self.result = Some(tree);
+    }
+
+    /// Translate an enum class body (implemented with the enum translation
+    /// helpers in a later step of this pass).
+    fn visit_enum_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): enum class translation is not ported yet")
+    }
+
+    /// Translate a record class body (implemented with the record translation
+    /// helpers in a later step of this pass).
+    fn visit_record_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): record class translation is not ported yet")
+    }
+
+    /// Insert field initializers into a compact record constructor.
+    fn lower_compact_record_ctor(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): compact record constructor lowering is not ported yet")
+    }
+
     // __LOWER_REST__
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -973,11 +3444,7 @@ impl EnumMapping {
             let syms = lower.syms.borrow();
             lower.make.borrow_mut().type_from_type(ctx, &syms, int_type)
         };
-        let map_var_ident = {
-            let syms = lower.syms.borrow();
-            lower.make.borrow_mut().qual_ident(ctx, &syms, self.map_var)
-        };
-        let mut map_var_init = lower.make.borrow_mut().new_array(
+        let map_var_init = lower.make.borrow_mut().new_array(
             ctx,
             Some(type_tree),
             List::of(size),
@@ -1201,10 +3668,10 @@ impl FreeVarCollector {
                 if ctx.sym(sym).get_const_value().is_none() {
                     self.add_free_var(sym);
                 }
-            } else if let Some(head) = self.outer_this_stack.first().copied() {
-                if head != original {
-                    self.visit_symbol(ctx, head);
-                }
+            } else if let Some(head) = self.outer_this_stack.first().copied()
+                && head != original
+            {
+                self.visit_symbol(ctx, head);
             }
         }
     }
@@ -1308,5 +3775,461 @@ impl FreeVarCollector {
     /// Return the name of the super pseudo-identifier.
     fn super_name(&self, _ctx: &CompilerContext) -> Name {
         self.names._super.clone()
+    }
+}
+
+
+/// Collects (tree, symbol) pairs that may conflict with user declarations.
+///
+/// The scanner walks class bodies remembering the current class; it reports the
+/// members whose name and erased type collide with another member of the same
+/// kind when exactly one of them is synthetic. Diagnostics are emitted by the
+/// lowering pass after the scan so the scanner stays free of logging services.
+struct ConflictsChecker {
+    /// The class currently being scanned.
+    current_class: Option<SymbolId>,
+    /// The type relations service.
+    types: Rc<Types>,
+    /// The symbol table.
+    syms: Rc<RefCell<Symtab>>,
+    /// The collected conflicts, as (tree, reported symbol) pairs.
+    conflicts: Vec<(TreeId, SymbolId)>,
+}
+
+crate::tree::tree_scanner::tree_scanner_visitor_delegate!(ConflictsChecker);
+
+impl crate::tree::tree_scanner::TreeScannerVisitor for ConflictsChecker {
+    fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let previous = self.current_class;
+        let (mods, typarams, extending, implementing, permitting, defs, sym) =
+            match &ctx.tree(tree).kind {
+                TreeKind::ClassDecl {
+                    mods,
+                    typarams,
+                    extending,
+                    implementing,
+                    permitting,
+                    defs,
+                    sym,
+                    ..
+                } => (
+                    *mods,
+                    typarams.clone(),
+                    *extending,
+                    implementing.clone(),
+                    permitting.clone(),
+                    defs.clone(),
+                    *sym,
+                ),
+                _ => panic!("expected a class declaration"),
+            };
+        self.current_class = sym;
+        self.scan(ctx, mods);
+        self.scan_list(ctx, &typarams);
+        self.scan(ctx, extending);
+        self.scan_list(ctx, &implementing);
+        self.scan_list(ctx, &permitting);
+        self.scan_list(ctx, &defs);
+        self.current_class = previous;
+    }
+
+    fn visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (mods, restype, typarams, recvparam, params, thrown, default_value, body, sym) =
+            match &ctx.tree(tree).kind {
+                TreeKind::MethodDecl {
+                    mods,
+                    restype,
+                    typarams,
+                    recvparam,
+                    params,
+                    thrown,
+                    default_value,
+                    body,
+                    sym,
+                    ..
+                } => (
+                    *mods,
+                    *restype,
+                    typarams.clone(),
+                    *recvparam,
+                    params.clone(),
+                    thrown.clone(),
+                    *default_value,
+                    *body,
+                    *sym,
+                ),
+                _ => panic!("expected a method declaration"),
+            };
+        if let Some(sym) = sym {
+            self.check_symbol(ctx, tree, sym);
+        }
+        self.scan(ctx, mods);
+        self.scan(ctx, restype);
+        self.scan_list(ctx, &typarams);
+        self.scan(ctx, recvparam);
+        self.scan_list(ctx, &params);
+        self.scan_list(ctx, &thrown);
+        self.scan(ctx, default_value);
+        self.scan(ctx, body);
+    }
+
+    fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (mods, nameexpr, vartype, init, sym) = match &ctx.tree(tree).kind {
+            TreeKind::VariableDecl {
+                mods,
+                nameexpr,
+                vartype,
+                init,
+                sym,
+                ..
+            } => (*mods, *nameexpr, *vartype, *init, *sym),
+            _ => panic!("expected a variable declaration"),
+        };
+        if let Some(sym) = sym
+            && let Some(owner) = ctx.sym(sym).owner
+            && ctx.sym(owner).kind == Kind::TYP
+        {
+            self.check_symbol(ctx, tree, sym);
+        }
+        self.scan(ctx, mods);
+        self.scan(ctx, nameexpr);
+        self.scan(ctx, vartype);
+        self.scan(ctx, init);
+    }
+}
+
+impl ConflictsChecker {
+    /// Test the symbol against the members of the current class hierarchy.
+    fn check_symbol(&mut self, ctx: &mut CompilerContext, tree: TreeId, sym: SymbolId) {
+        let current_class = match self.current_class {
+            Some(current_class) => current_class,
+            None => return,
+        };
+        let no_type = crate::code::symtab::no_type_id(ctx);
+        let mut ct = ctx.sym(current_class).ty.expect("class type");
+        while ct != no_type {
+            let tsym = match ctx.typ(ct).tsym {
+                Some(tsym) => tsym,
+                None => break,
+            };
+            let members = match ctx.sym(tsym).members() {
+                Some(members) => members,
+                None => break,
+            };
+            let name = ctx.sym(sym).name.clone();
+            let arena = ctx.symbols_arena();
+            let candidates = ctx.scope(members).get_symbols_by_name(
+                members,
+                &name,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+                arena,
+                ctx,
+            );
+            for sym2 in candidates {
+                if self.is_conflict(ctx, sym, sym2) {
+                    let synthetic2 =
+                        (ctx.sym(sym2).flags_field & crate::code::flags::SYNTHETIC as i64) != 0;
+                    let reported = if !synthetic2 { sym2 } else { sym };
+                    self.conflicts.push((tree, reported));
+                    return;
+                }
+            }
+            let mut syms = self.syms.borrow_mut();
+            ct = self.types.supertype(ctx, &mut syms, ct);
+        }
+    }
+
+    /// Test whether two symbols conflict under the synthetic-name rules.
+    fn is_conflict(&mut self, ctx: &mut CompilerContext, sym: SymbolId, sym2: SymbolId) -> bool {
+        if ctx.sym(sym).kind != ctx.sym(sym2).kind || sym == sym2 {
+            return false;
+        }
+        let (sym_ty, sym2_ty) = match (ctx.sym(sym).ty, ctx.sym(sym2).ty) {
+            (Some(a), Some(b)) => (a, b),
+            _ => return false,
+        };
+        let synthetic1 =
+            (ctx.sym(sym).flags_field & crate::code::flags::SYNTHETIC as i64) != 0;
+        let synthetic2 =
+            (ctx.sym(sym2).flags_field & crate::code::flags::SYNTHETIC as i64) != 0;
+        if synthetic1 == synthetic2 {
+            return false;
+        }
+        let bridge1 = (ctx.sym(sym).flags_field & crate::code::flags::BRIDGE as i64) != 0;
+        let bridge2 = (ctx.sym(sym2).flags_field & crate::code::flags::BRIDGE as i64) != 0;
+        if bridge1 || bridge2 {
+            return false;
+        }
+        let mut syms = self.syms.borrow_mut();
+        let e1 = self.types.erasure(ctx, &syms, sym_ty);
+        let e2 = self.types.erasure(ctx, &syms, sym2_ty);
+        self.types.is_same_type(ctx, &syms, e1, e2)
+    }
+}
+
+/// Visitor implementation for the lowering pass.
+///
+/// Only the class and method entries are wired here; the remaining entries are
+/// pending the per-node translation methods and currently fail explicitly.
+impl crate::tree::jc_tree::TreeVisitor for Lower {
+    fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        self.lower_class_def(ctx, tree);
+    }
+
+    fn visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        self.lower_method_def(ctx, tree);
+    }
+
+    fn visit_top_level(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_top_level translation is not ported yet")
+    }
+
+    fn visit_package_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_package_def translation is not ported yet")
+    }
+
+    fn visit_module_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_module_def translation is not ported yet")
+    }
+
+    fn visit_exports(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_exports translation is not ported yet")
+    }
+
+    fn visit_opens(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_opens translation is not ported yet")
+    }
+
+    fn visit_provides(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_provides translation is not ported yet")
+    }
+
+    fn visit_requires(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_requires translation is not ported yet")
+    }
+
+    fn visit_uses(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_uses translation is not ported yet")
+    }
+
+    fn visit_import(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_import translation is not ported yet")
+    }
+
+    fn visit_skip(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_skip translation is not ported yet")
+    }
+
+    fn visit_block(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_block translation is not ported yet")
+    }
+
+    fn visit_do_loop(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_do_loop translation is not ported yet")
+    }
+
+    fn visit_while_loop(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_while_loop translation is not ported yet")
+    }
+
+    fn visit_for_loop(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_for_loop translation is not ported yet")
+    }
+
+    fn visit_foreach_loop(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_foreach_loop translation is not ported yet")
+    }
+
+    fn visit_labelled(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_labelled translation is not ported yet")
+    }
+
+    fn visit_switch(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_switch translation is not ported yet")
+    }
+
+    fn visit_case(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_case translation is not ported yet")
+    }
+
+    fn visit_switch_expression(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_switch_expression translation is not ported yet")
+    }
+
+    fn visit_synchronized(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_synchronized translation is not ported yet")
+    }
+
+    fn visit_try(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_try translation is not ported yet")
+    }
+
+    fn visit_catch(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_catch translation is not ported yet")
+    }
+
+    fn visit_conditional(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_conditional translation is not ported yet")
+    }
+
+    fn visit_if(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_if translation is not ported yet")
+    }
+
+    fn visit_exec(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_exec translation is not ported yet")
+    }
+
+    fn visit_break(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_break translation is not ported yet")
+    }
+
+    fn visit_yield(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_yield translation is not ported yet")
+    }
+
+    fn visit_continue(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_continue translation is not ported yet")
+    }
+
+    fn visit_return(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_return translation is not ported yet")
+    }
+
+    fn visit_throw(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_throw translation is not ported yet")
+    }
+
+    fn visit_assert(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_assert translation is not ported yet")
+    }
+
+    fn visit_apply(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_apply translation is not ported yet")
+    }
+
+    fn visit_new_class(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_new_class translation is not ported yet")
+    }
+
+    fn visit_new_array(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_new_array translation is not ported yet")
+    }
+
+    fn visit_lambda(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_lambda translation is not ported yet")
+    }
+
+    fn visit_parens(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_parens translation is not ported yet")
+    }
+
+    fn visit_assign(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_assign translation is not ported yet")
+    }
+
+    fn visit_assignop(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_assignop translation is not ported yet")
+    }
+
+    fn visit_type_cast(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_type_cast translation is not ported yet")
+    }
+
+    fn visit_type_test(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_type_test translation is not ported yet")
+    }
+
+    fn visit_indexed(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_indexed translation is not ported yet")
+    }
+
+    fn visit_select(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_select translation is not ported yet")
+    }
+
+    fn visit_reference(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_reference translation is not ported yet")
+    }
+
+    fn visit_ident(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_ident translation is not ported yet")
+    }
+
+    fn visit_literal(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_literal translation is not ported yet")
+    }
+
+    fn visit_type_ident(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_type_ident translation is not ported yet")
+    }
+
+    fn visit_type_array(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_type_array translation is not ported yet")
+    }
+
+    fn visit_type_apply(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_type_apply translation is not ported yet")
+    }
+
+    fn visit_type_union(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_type_union translation is not ported yet")
+    }
+
+    fn visit_type_intersection(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_type_intersection translation is not ported yet")
+    }
+
+    fn visit_type_parameter(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_type_parameter translation is not ported yet")
+    }
+
+    fn visit_wildcard(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_wildcard translation is not ported yet")
+    }
+
+    fn visit_type_bound_kind(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_type_bound_kind translation is not ported yet")
+    }
+
+    fn visit_annotation(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_annotation translation is not ported yet")
+    }
+
+    fn visit_modifiers(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_modifiers translation is not ported yet")
+    }
+
+    fn visit_annotated_type(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_annotated_type translation is not ported yet")
+    }
+
+    fn visit_erroneous(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_erroneous translation is not ported yet")
+    }
+
+    fn visit_let_expr(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_let_expr translation is not ported yet")
+    }
+
+    fn visit_binding_pattern(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_binding_pattern translation is not ported yet")
+    }
+
+    fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_default_case_label translation is not ported yet")
+    }
+
+    fn visit_parenthesized_pattern(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_parenthesized_pattern translation is not ported yet")
+    }
+
+    fn visit_guard_pattern(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_guard_pattern translation is not ported yet")
+    }
+
+    fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
+        unimplemented!("TODO(batch3b): visit_tree translation is not ported yet")
     }
 }
