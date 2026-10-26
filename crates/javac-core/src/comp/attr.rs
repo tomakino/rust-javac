@@ -379,6 +379,11 @@ pub struct Attr {
     pub argument_attr: Rc<RefCell<Option<Rc<RefCell<crate::comp::argument_attr::ArgumentAttr>>>>>,
     /// Java: final DeferredAttr deferredAttr (§9 cell, installed by the wiring).
     pub deferred_attr: Rc<RefCell<Option<Rc<RefCell<crate::comp::deferred_attr::DeferredAttrService>>>>>,
+    /// Java: MatchBindings matchBindings (Attr.java:451) — the current flow
+    /// bindings, rewritten by the pattern-matching visitors.
+    pub match_bindings: crate::comp::match_bindings::MatchBindings,
+    /// Java: final MatchBindingsComputer matchBindingsComputer (Attr.java:632).
+    pub match_bindings_computer: crate::comp::match_bindings::MatchBindingsComputer,
 }
 
 impl Attr {
@@ -416,6 +421,8 @@ impl Attr {
         let allow_pattern_switch = (preview.is_enabled() || !preview.is_preview(Feature::PATTERN_SWITCH))
             && Feature::PATTERN_SWITCH.allowed_in_source(source);
         let recovery_type = syms.borrow().recovery_type;
+        let mb_log = Rc::clone(&log);
+        let mb_diags = Rc::clone(&diags);
         Attr {
             names,
             log,
@@ -463,6 +470,10 @@ impl Attr {
             rs: Rc::new(RefCell::new(None)),
             argument_attr: Rc::new(RefCell::new(None)),
             deferred_attr: Rc::new(RefCell::new(None)),
+            match_bindings: crate::comp::match_bindings::MatchBindings::empty(),
+            match_bindings_computer: crate::comp::match_bindings::MatchBindingsComputer::new(
+                mb_log, mb_diags,
+            ),
             attr_recover: Rc::new(RefCell::new(None)),
             syms,
             infer,
@@ -685,6 +696,9 @@ impl Attr {
             Tag::ASSIGN => self.visit_assign(ctx, syms, tree),
             Tag::APPLY => self.visit_apply(ctx, syms, tree),
             Tag::SELECT => self.visit_select(ctx, syms, tree),
+            Tag::NEWARRAY => self.visit_new_array(ctx, syms, tree),
+            Tag::CONDEXPR => self.visit_conditional(ctx, syms, tree),
+            Tag::ASSERT => self.visit_assert(ctx, syms, tree),
             Tag::LABELLED => self.visit_labeled(ctx, syms, tree),
             other => {
                 let _ = other;
@@ -5925,6 +5939,532 @@ impl Attr {
             }
         }
     }
+}
+
+impl Attr {
+    /// Java: public void visitNewArray(JCNewArray tree) (Attr.java:3034-3075).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the array creation tree.
+    ///
+    /// # Returns
+    ///   - the attributed array type.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:3034-3075.
+    fn visit_new_array(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let (elemtype_tree, dims, elems) = match &ctx.tree(tree).kind {
+            TreeKind::NewArray {
+                elemtype, dims, elems, ..
+            } => (*elemtype, dims.clone(), elems.clone()),
+            _ => panic!("ClassCastException: JCNewArray expected"),
+        };
+        let mut owntype = self
+            .types
+            .create_error_type_original(ctx, ctx.tree(tree).ty, syms);
+        let env = self.env.clone().expect("env");
+        let local_env = env.dup(Some(tree), env.info.borrow().dup(env.info.borrow().scope));
+        let elemtype: TypeId;
+        if let Some(elemtype_tree) = elemtype_tree {
+            elemtype = self.attrib_type_use(ctx, syms, elemtype_tree, &local_env);
+            // Java: chk.validate(tree.elemtype, localEnv);
+            // NOT PORTED: Check.validate/Validator (Check.java:1397-1525, Check batch);
+            // registered.
+            owntype = elemtype;
+            let mut l = dims.clone();
+            while l.non_empty() {
+                let dim = *l.head();
+                self.attrib_expr_with_type(ctx, syms, dim, &local_env, Some(syms.int_type));
+                owntype = ctx.alloc_type(crate::code::type_::Type::new_array_type(
+                    owntype,
+                    syms.array_class,
+                ));
+                l = l.tail();
+            }
+        } else {
+            // we are seeing an untyped aggregate { ... }
+            // this is allowed only if the prototype is an array
+            let pt = self.pt().unwrap_or_else(|| self.no_type(ctx));
+            if ctx.typ(pt).has_tag(TypeTag::ARRAY) {
+                elemtype = self.types.elemtype(ctx, syms, pt);
+            } else {
+                let encl_var_ok = {
+                    let info = env.info.borrow();
+                    match info.encl_var {
+                        None => true,
+                        Some(encl_var) => {
+                            let encl_type = ctx.sym(encl_var).ty;
+                            !encl_type
+                                .map(|t| ctx.typ(t).has_tag(TypeTag::ERROR))
+                                .unwrap_or(false)
+                        }
+                    }
+                };
+                if !ctx.typ(pt).has_tag(TypeTag::ERROR) && encl_var_ok {
+                    self.attr_error(
+                        ctx.tree(tree).pos,
+                        crate::resources::compiler_properties::errors::illegal_initializer_for_type(
+                            Self::type_arg_placeholder(ctx, pt),
+                        ),
+                    );
+                }
+                elemtype = self
+                    .types
+                    .create_error_type_original(ctx, Some(pt), syms);
+            }
+        }
+        if let Some(elems) = elems {
+            self.attrib_exprs(ctx, syms, elems, &local_env, Some(elemtype));
+            owntype = ctx.alloc_type(crate::code::type_::Type::new_array_type(
+                elemtype,
+                syms.array_class,
+            ));
+        }
+        if !self.types.is_reifiable(ctx, syms, elemtype) {
+            self.attr_error(
+                ctx.tree(tree).pos,
+                crate::resources::compiler_properties::errors::generic_array_creation(),
+            );
+        }
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &result_info);
+        self.result = Some(result);
+        Ok(result)
+    }
+
+    /// Java: public void visitAssert(JCAssert tree) (Attr.java:2453-2459).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the assert statement.
+    ///
+    /// # Returns
+    ///   - Type.noType (statement result).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:2453-2459.
+    fn visit_assert(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let (cond, detail) = match &ctx.tree(tree).kind {
+            TreeKind::Assert { cond, detail } => (*cond, *detail),
+            _ => panic!("ClassCastException: JCAssert expected"),
+        };
+        let env = self.env.clone().expect("env");
+        if let Some(cond) = cond {
+            self.attrib_expr_with_type(ctx, syms, cond, &env, Some(syms.boolean_type));
+        }
+        if let Some(detail) = detail {
+            let detail_type = self.attrib_expr(ctx, syms, detail, &env);
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_non_void(ctx, ctx.tree(detail).pos, detail_type);
+        }
+        Ok(self.no_type(ctx))
+    }
+}
+
+impl Attr {
+    /// Java: public void visitConditional(JCConditional tree) (Attr.java:1985-2053).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the conditional expression.
+    ///
+    /// # Returns
+    ///   - the conditional type.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:1985-2053.
+    fn visit_conditional(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
+            TreeKind::Conditional {
+                cond, truepart, falsepart, ..
+            } => (
+                cond.expect("conditional cond"),
+                truepart.expect("conditional truepart"),
+                falsepart.expect("conditional falsepart"),
+            ),
+            _ => panic!("ClassCastException: JCConditional expected"),
+        };
+        let env = self.env.clone().expect("env");
+        self.attrib_expr_with_type(ctx, syms, cond, &env, Some(syms.boolean_type));
+        let cond_bindings = self.match_bindings.clone();
+        let pt = self.pt().unwrap_or_else(|| self.no_type(ctx));
+        let recovery_type = syms.recovery_type;
+        let any_poly = self.infer.any_poly;
+        let poly_kind = if !self.allow_poly
+            || (ctx.typ(pt).has_tag(TypeTag::NONE)
+                && pt != recovery_type
+                && pt != any_poly)
+            || self.is_boolean_or_numeric(ctx, syms, tree)
+        {
+            crate::tree::jc_tree::PolyKind::STANDALONE
+        } else {
+            crate::tree::jc_tree::PolyKind::POLY
+        };
+        if let TreeKind::Conditional { poly_kind: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = poly_kind;
+        }
+        let result_info = self.result_info.clone().expect("resultInfo");
+        if poly_kind == crate::tree::jc_tree::PolyKind::POLY
+            && ctx.typ(pt).has_tag(TypeTag::VOID)
+        {
+            // this means we are returning a poly conditional from a
+            // void-compatible lambda expression
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::conditional_target_cant_be_void(),
+            ));
+            result_info.check_context.report(ctx, ctx.tree(tree).pos, &fragment);
+            let error = self.types.create_error_type_original(ctx, Some(pt), syms);
+            ctx.tree_mut(tree).ty = Some(error);
+            self.result = Some(error);
+            return Ok(error);
+        }
+        let cond_info = if poly_kind == crate::tree::jc_tree::PolyKind::STANDALONE {
+            self.unknown_expr_info.clone()
+        } else {
+            result_info.dup_context(self.conditional_context())
+        };
+        let cond_bindings_true = cond_bindings.bindings_when_true.clone();
+        let cond_bindings_false = cond_bindings.bindings_when_false.clone();
+        let true_env = self.binding_env(ctx, syms, &env, cond_bindings_true);
+        let truetype = self.attrib_tree_use(ctx, syms, truepart, &true_env, cond_info.clone());
+        let true_bindings = self.match_bindings.clone();
+        let false_env = self.binding_env(ctx, syms, &env, cond_bindings_false);
+        let falsetype = self.attrib_tree_use(ctx, syms, falsepart, &false_env, cond_info);
+        let false_bindings = self.match_bindings.clone();
+        let mut owntype = if poly_kind == crate::tree::jc_tree::PolyKind::STANDALONE {
+            self.cond_type(
+                ctx,
+                syms,
+                &[ctx.tree(truepart).pos, ctx.tree(falsepart).pos],
+                &[truetype, falsetype],
+            )
+        } else {
+            pt
+        };
+        // Java: constant folding (condtype/truetype/falsetype const values)
+        let cond_tree_type = ctx.tree(cond).ty;
+        let cond_tree_type = cond_tree_type.unwrap_or_else(|| self.no_type(ctx));
+        let cond_const = ctx.typ(cond_tree_type).const_value().cloned();
+        let true_const = ctx.typ(truetype).const_value().cloned();
+        let false_const = ctx.typ(falsetype).const_value().cloned();
+        if cond_const.is_some()
+            && true_const.is_some()
+            && false_const.is_some()
+            && !ctx.typ(owntype).has_tag(TypeTag::NONE)
+        {
+            let cond_type = ctx.tree(cond).ty.unwrap_or_else(|| self.no_type(ctx));
+            let chosen = if ctx.typ(cond_type).is_true() { truetype } else { falsetype };
+            let cfolder = crate::comp::const_fold::ConstFold::new();
+            owntype = cfolder.coerce(ctx, syms, chosen, owntype);
+        }
+        let result_info2 = self.result_info.clone().expect("resultInfo");
+        let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &result_info2);
+        self.result = Some(result);
+        self.match_bindings = self.match_bindings_computer.conditional(
+            ctx,
+            ctx.tree(tree).pos,
+            &cond_bindings,
+            &true_bindings,
+            &false_bindings,
+        );
+        Ok(result)
+    }
+
+    /// Java: private boolean isBooleanOrNumeric(Env<AttrContext> env,
+    /// JCExpression tree) (Attr.java:2055-2091).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the conditional tree.
+    ///
+    /// # Returns
+    ///   - true when the condition and both arms are boolean/numeric.
+    ///
+    /// # Panics
+    ///   - speculative attribution failures propagate as panics (upstream
+    ///     unchecked CompletionFailure).
+    ///
+    /// Upstream: Attr.java:2055-2091.
+    fn is_boolean_or_numeric(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> bool {
+        let env = self.env.clone().expect("env");
+        match ctx.tree(tree).tag {
+            Tag::LITERAL => {
+                let typetag = match &ctx.tree(tree).kind {
+                    TreeKind::Literal { typetag, .. } => *typetag,
+                    _ => return false,
+                };
+                typetag.is_sub_range_of(TypeTag::DOUBLE)
+                    || typetag == TypeTag::BOOLEAN
+                    || typetag == TypeTag::BOT
+            }
+            Tag::LAMBDA | Tag::REFERENCE => false,
+            Tag::PARENS => {
+                let expr = match &ctx.tree(tree).kind {
+                    TreeKind::Parens { expr } => expr.expect("parens expr"),
+                    _ => return false,
+                };
+                self.is_boolean_or_numeric(ctx, syms, expr)
+            }
+            Tag::CONDEXPR => {
+                let (truepart, falsepart) = match &ctx.tree(tree).kind {
+                    TreeKind::Conditional { truepart, falsepart, .. } => (
+                        truepart.expect("conditional truepart"),
+                        falsepart.expect("conditional falsepart"),
+                    ),
+                    _ => return false,
+                };
+                self.is_boolean_or_numeric(ctx, syms, truepart)
+                    && self.is_boolean_or_numeric(ctx, syms, falsepart)
+            }
+            Tag::APPLY => {
+                let speculative = self.attrib_speculative_for_boolean(ctx, syms, tree, &env);
+                let meth = match &ctx.tree(speculative).kind {
+                    TreeKind::MethodInvocation { meth, .. } => {
+                        meth.expect("speculative meth")
+                    }
+                    _ => return false,
+                };
+                let msym = match crate::tree::tree_info::symbol(ctx, meth) {
+                    Some(msym) => msym,
+                    None => return false,
+                };
+                let receiver_type = if ctx.tree(meth).tag == Tag::IDENT {
+                    let encl_class = env.encl_class.expect("enclClass");
+                    let encl_sym = class_tree_symbol(ctx, encl_class).expect("enclClass sym");
+                    ctx.sym(encl_sym).ty.expect("enclClass type")
+                } else {
+                    let selected = match &ctx.tree(meth).kind {
+                        TreeKind::FieldAccess { selected, .. } => selected.expect("selected"),
+                        _ => return false,
+                    };
+                    ctx.tree(selected).ty.unwrap_or_else(|| self.no_type(ctx))
+                };
+                let member_type = self.types.member_type(ctx, syms, receiver_type, msym);
+                let owntype = self.types.get_return_type_public(ctx, member_type);
+                self.primitive_or_boxed(ctx, syms, owntype)
+            }
+            Tag::NEWCLASS => {
+                let clazz = match &ctx.tree(tree).kind {
+                    TreeKind::NewClass { clazz, .. } => clazz.expect("new class clazz"),
+                    _ => return false,
+                };
+                let class_name = remove_class_params(ctx, clazz);
+                let speculative = {
+                    let deferred = self.deferred_attr.borrow().clone().expect("deferred attr service");
+                    let mut deferred = deferred.borrow_mut();
+                    let unknown_type = self.unknown_type_info.clone();
+                    match deferred.attrib_speculative(ctx, syms, self, class_name, &env, &unknown_type) {
+                        Ok(t) => t,
+                        Err(_) => return false,
+                    }
+                };
+                let speculative_type = ctx.tree(speculative).ty.unwrap_or_else(|| self.no_type(ctx));
+                self.primitive_or_boxed(ctx, syms, speculative_type)
+            }
+            _ => {
+                let speculative = self.attrib_speculative_for_boolean(ctx, syms, tree, &env);
+                let speculative_type = ctx.tree(speculative).ty.unwrap_or_else(|| self.no_type(ctx));
+                self.primitive_or_boxed(ctx, syms, speculative_type)
+            }
+        }
+    }
+
+    /// §9 helper: speculative attribution for isBooleanOrNumeric.
+    fn attrib_speculative_for_boolean(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+    ) -> TreeId {
+        let deferred = self.deferred_attr.borrow().clone().expect("deferred attr service");
+        let mut deferred = deferred.borrow_mut();
+        let unknown = self.unknown_expr_info.clone();
+        deferred
+            .attrib_speculative(ctx, syms, self, tree, env, &unknown)
+            .map_err(|failure| match failure {
+                crate::comp::deferred_attr::DeferredAttrFailure::Completion(failure) => failure,
+                other => panic!("unexpected speculative attribution failure: {:?}", other),
+            })
+            .expect("speculative attribution result")
+    }
+
+    /// Java: boolean primitiveOrBoxed(Type t) (Attr.java:2082-2084).
+    fn primitive_or_boxed(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+    ) -> bool {
+        !ctx.typ(t).has_tag(TypeTag::TYPEVAR)
+            && !ctx.typ(t).has_tag(TypeTag::ERROR)
+            && {
+                let unboxed = self.types.unboxed_type_or_type(ctx, syms, t);
+                ctx.typ(unboxed).is_primitive()
+            }
+    }
+
+    /// Java: Env<AttrContext> bindingEnv(Env, List<BindingSymbol>)
+    /// (Attr.java:2190-2199).
+    fn binding_env(
+        &self,
+        ctx: &mut CompilerContext,
+        _syms: &Symtab,
+        env: &Rc<Env<AttrContext>>,
+        bindings: List<SymbolId>,
+    ) -> Rc<Env<AttrContext>> {
+        let new_scope = ctx.scope_dup(env.info.borrow().scope.expect("env scope"), None);
+        let info = env.info.borrow().dup(Some(new_scope));
+        let env1 = env.dup(env.tree, info);
+        let mut current = bindings;
+        while current.non_empty() {
+            ctx.scope_enter(new_scope, *current.head());
+            current = current.tail();
+        }
+        env1
+    }
+
+    /// Java: Type condType(List<DiagnosticPosition> positions,
+    /// List<Type> condTypes) (Attr.java:2100-2170).
+    fn cond_type(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        positions: &[i32],
+        cond_types: &[TypeId],
+    ) -> TypeId {
+        if cond_types.is_empty() {
+            return syms.object_type;
+        }
+        let first = cond_types[0];
+        let mut all_same = true;
+        for t in &cond_types[1..] {
+            if !self.types.is_same_type(ctx, syms, first, *t) {
+                all_same = false;
+                break;
+            }
+        }
+        if all_same {
+            return first;
+        }
+        let unboxed: Vec<TypeId> = cond_types
+            .iter()
+            .map(|t| {
+                if ctx.typ(*t).is_primitive() {
+                    *t
+                } else {
+                    self.types.unboxed_type_ro(ctx, syms, *t)
+                }
+            })
+            .collect();
+        if unboxed.iter().all(|t| ctx.typ(*t).is_primitive()) {
+            for t in &unboxed {
+                let tag = ctx.typ(*t).get_tag();
+                if !tag.is_strict_sub_range_of(TypeTag::INT) {
+                    continue;
+                }
+                let all_ok = unboxed.iter().filter(|o| *o != t).all(|o| {
+                    ctx.typ(*o).get_tag() == TypeTag::INT
+                        && self.types.is_assignable(ctx, syms, *o, *t)
+                });
+                if all_ok {
+                    return *t;
+                }
+            }
+            for tag in [TypeTag::BYTE, TypeTag::CHAR, TypeTag::SHORT, TypeTag::INT, TypeTag::LONG, TypeTag::FLOAT, TypeTag::DOUBLE, TypeTag::BOOLEAN] {
+                let candidate = syms.type_of_tag[tag as usize].expect("predefined type");
+                if unboxed
+                    .iter()
+                    .all(|t| self.types.is_subtype(ctx, syms, *t, candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+        let boxed: Vec<TypeId> = cond_types
+            .iter()
+            .map(|t| {
+                if ctx.typ(*t).is_primitive() {
+                    let boxed_sym = self.types.boxed_class(ctx, syms, *t);
+                    ctx.sym(boxed_sym).ty.expect("boxed type")
+                } else {
+                    *t
+                }
+            })
+            .collect();
+        for t in &boxed {
+            let all_ok = boxed.iter().filter(|o| *o != t).all(|o| {
+                self.types.is_assignable(ctx, syms, *o, *t)
+            });
+            if all_ok {
+                return *t;
+            }
+        }
+        let mut checked: Vec<TypeId> = Vec::new();
+        for (index, t) in boxed.iter().enumerate() {
+            let pos = positions.get(index).copied().unwrap_or(0);
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            checked.push(chk.check_non_void(ctx, pos, *t));
+        }
+        let mut lub_types: List<TypeId> = List::nil();
+        for t in checked {
+            if !ctx.typ(t).has_tag(TypeTag::BOT) {
+                lub_types = lub_types.append(t);
+            }
+        }
+        let lub_vec: Vec<TypeId> = {
+            let mut v = Vec::new();
+            let mut current = lub_types;
+            while current.non_empty() {
+                v.push(*current.head());
+                current = current.tail();
+            }
+            v
+        };
+        self.types.lub(ctx, syms, &self.names, &lub_vec)
+    }
+}
+
+/// §9 helper: TreeTranslator removeClassParams (Attr.java:2090-2095):
+/// translate a type-apply to its clazz.
+fn remove_class_params(ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
+    if ctx.tree(tree).tag == Tag::TYPEAPPLY {
+        let clazz = match &ctx.tree(tree).kind {
+            TreeKind::TypeApply { clazz, .. } => clazz.expect("type apply clazz"),
+            _ => tree,
+        };
+        return remove_class_params(ctx, clazz);
+    }
+    tree
 }
 
 #[cfg(test)]
