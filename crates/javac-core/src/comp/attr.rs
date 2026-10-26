@@ -962,18 +962,49 @@ impl Attr {
             })
             .unwrap_or(false)
         {
-            // TODO(Resolve batch): rs.resolveMethod(tree.pos(), env, tree.name,
+            // Java: env.info.pendingResolutionPhase = null;
+            // sym = rs.resolveMethod(tree.pos(), env, tree.name,
             //     pt().getParameterTypes(), pt().getTypeArguments());
-            unimplemented!("TODO(Resolve batch): Attr.visitIdent rs.resolveMethod")
+            env.info.borrow_mut().pending_resolution_phase = None;
+            let pt = pt.expect("method prototype");
+            let argtypes = self.types.get_parameter_types_public(ctx, pt);
+            let typeargtypes = self.types.get_type_arguments_public(ctx, pt);
+            let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+            let mut rs = rs_rc.borrow_mut();
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            let infer_rc = Rc::clone(&self.infer);
+            let types_rc = Rc::clone(&self.types);
+            let pos = simple_diag_pos(ctx.tree(tree).pos);
+            sym = rs.resolve_method(
+                ctx,
+                syms,
+                &types_rc,
+                self,
+                &chk,
+                &infer_rc,
+                pos,
+                &env,
+                name.clone(),
+                argtypes,
+                Some(typeargtypes),
+            );
         } else if let Some(tree_sym) = ident_symbol(ctx, tree) {
             if ctx.sym(tree_sym).kind != Kind::VAR {
                 sym = tree_sym;
             } else {
-                unimplemented!("TODO(Resolve batch): Attr.visitIdent rs.resolveIdent (VAR)")
+                // Java: sym = rs.resolveIdent(tree.pos(), env, tree.name, pkind());
+                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                let mut rs = rs_rc.borrow_mut();
+                let pos = simple_diag_pos(ctx.tree(tree).pos);
+                sym = rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind());
             }
         } else {
-            let _ = name;
-            unimplemented!("TODO(Resolve batch): Attr.visitIdent rs.resolveIdent")
+            // Java: sym = rs.resolveIdent(tree.pos(), env, tree.name, pkind());
+            let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+            let mut rs = rs_rc.borrow_mut();
+            let pos = simple_diag_pos(ctx.tree(tree).pos);
+            sym = rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind());
         }
         set_ident_symbol(ctx, tree, sym);
         let sym_kind = ctx.sym(sym).kind;
@@ -1008,7 +1039,12 @@ impl Attr {
             }
         }
         if sym_kind == Kind::VAR {
-            unimplemented!("TODO(Resolve batch): Attr.visitIdent variable checks")
+            // Java: checkInit(tree, env, v, false);
+            self.check_init(ctx, syms, tree, &env, sym, false);
+            // Java: if (KindSelector.ASG.subset(pkind())) checkAssignable(tree.pos(), v, null, env);
+            if crate::code::kinds::KindSelector::ASG.subset(self.pkind()) {
+                self.check_assignable(ctx, &env, ctx.tree(tree).pos, sym, None);
+            }
         }
         let sym_owner = ctx.sym(sym).owner;
         let sym_owner_is_typ = sym_owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::TYP);
@@ -1018,21 +1054,50 @@ impl Attr {
             && sym_owner_is_typ
             && !sym_is_static
         {
-            unimplemented!("TODO(Check batch): Attr.visitIdent early ref error")
+            // Java: chk.earlyRefError(tree.pos(), sym.kind == VAR ? sym :
+            //     thisSym(tree.pos(), env));
+            let err_sym = if sym_kind == Kind::VAR {
+                sym
+            } else {
+                self.this_sym(ctx, syms, ctx.tree(tree).pos, &env)
+            };
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.early_ref_error(ctx, &self.log, ctx.tree(tree).pos, err_sym);
         }
-        let env1 = Rc::clone(&env);
+        let mut env1 = Rc::clone(&env);
         if sym_kind != Kind::ERR
             && sym_kind != Kind::TYP
             && sym_owner.is_some()
             && sym_owner != Some(encl_sym)
         {
-            unimplemented!("TODO(Resolve batch): Attr.visitIdent rs.isAccessible")
+            // If the found symbol is inaccessible, then it is accessed through
+            // an enclosing instance. Locate this enclosing instance.
+            loop {
+                if env1.outer.is_none() {
+                    break;
+                }
+                let encl1 = env1.encl_class.expect("env1 enclClass");
+                let encl1_sym = class_tree_symbol(ctx, encl1).expect("env1 enclClass sym");
+                let site1 = ctx.sym(encl1_sym).ty.expect("env1 enclClass type");
+                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                let mut rs = rs_rc.borrow_mut();
+                if rs.is_accessible_member(ctx, syms, &env, site1, sym, false) {
+                    break;
+                }
+                env1 = Rc::clone(env1.outer.as_ref().expect("env1 outer"));
+            }
         }
         if env.info.borrow().is_serializable {
-            unimplemented!("TODO(Check batch): Attr.visitIdent serializable access")
+            // NOT PORTED: chk.checkAccessFromSerializableElement(tree,
+            // env.info.isSerializableLambda) (Check.java:2745-2800, lint/serial
+            // batch); registered.
         }
-        let site = ctx.sym(encl_sym).ty.expect("enclClass type");
-        let _ = &env1;
+        let site = env1
+            .encl_class
+            .and_then(|encl| class_tree_symbol(ctx, encl))
+            .and_then(|encl_sym| ctx.sym(encl_sym).ty)
+            .expect("env1 enclClass type");
         let result_info = self.result_info.clone().expect("resultInfo");
         Ok(self.check_id(ctx, syms, tree, site, sym, &env, &result_info))
     }
@@ -1953,7 +2018,7 @@ impl Attr {
 
     /// Java: public void visitTree(JCTree tree) (default: assert error)
     fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) -> Result<TypeId, CompletionFailure> {
-        unimplemented!("TODO(Attr batch B/C): Attr.visitTree default")
+        panic!("AssertionError")
     }
 
     // ------------------------------------------------------------------
@@ -4419,6 +4484,358 @@ fn list_len_type(list: &List<TypeId>) -> usize {
     }
     n
 }
+impl Attr {
+    /// Java: Env<AttrContext> enclosingInitEnv(Env<AttrContext> env)
+    /// (Attr.java:4692-4718).
+    ///
+    /// # Arguments
+    ///   - env: the current attribution environment.
+    ///
+    /// # Returns
+    ///   - the enclosing field/initializer environment, or None.
+    ///
+    /// # Panics
+    ///   - the enclosing environment chain is asserted non-null (upstream Assert).
+    ///
+    /// Upstream: Attr.java:4692-4718.
+    #[allow(dead_code)]
+    fn enclosing_init_env(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        env: &Rc<Env<AttrContext>>,
+    ) -> Option<Rc<Env<AttrContext>>> {
+        let mut current = Rc::clone(env);
+        loop {
+            let tag = current.tree.map(|tree| ctx.tree(tree).tag);
+            match tag {
+                Some(crate::tree::jc_tree::Tag::VARDEF) => {
+                    // field?
+                    let tree = current.tree.expect("vardef tree");
+                    let sym = match &ctx.tree(tree).kind {
+                        crate::tree::jc_tree::TreeKind::VariableDecl { sym, .. } => *sym,
+                        _ => None,
+                    };
+                    let is_field = sym
+                        .and_then(|sym| ctx.sym(sym).owner)
+                        .map(|owner| ctx.sym(owner).kind == crate::code::kinds::Kind::TYP)
+                        .unwrap_or(false);
+                    if is_field {
+                        return Some(Rc::clone(&current));
+                    }
+                }
+                Some(crate::tree::jc_tree::Tag::BLOCK) => {
+                    let next_is_class = current
+                        .next
+                        .as_ref()
+                        .and_then(|next| next.tree)
+                        .map(|tree| ctx.tree(tree).tag == crate::tree::jc_tree::Tag::CLASSDEF)
+                        .unwrap_or(false);
+                    if next_is_class {
+                        return Some(Rc::clone(&current));
+                    }
+                }
+                Some(crate::tree::jc_tree::Tag::METHODDEF)
+                | Some(crate::tree::jc_tree::Tag::CLASSDEF)
+                | Some(crate::tree::jc_tree::Tag::TOPLEVEL) => return None,
+                _ => {}
+            }
+            current = match current.next.as_ref() {
+                Some(next) => Rc::clone(next),
+                None => panic!("AssertionError: env.next"),
+            };
+        }
+    }
+
+    /// Java: private boolean isStaticEnumField(VarSymbol v) (Attr.java:4764-4770).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - v: the variable.
+    ///
+    /// # Returns
+    ///   - true when v is a static non-constant enum field.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:4764-4770.
+    #[allow(dead_code)]
+    fn is_static_enum_field(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        v: SymbolId,
+    ) -> bool {
+        let owner = ctx.sym(v).owner;
+        let data_is_some = match &ctx.sym(v).kind_data {
+            crate::code::symbol::SymbolKind::VarSymbol { data, .. } => data.is_some(),
+            _ => false,
+        };
+        owner
+            .map(|owner| ctx.sym(owner).flags_field & (crate::code::flags::ENUM as i64) != 0)
+            .unwrap_or(false)
+            && ctx.sym(v).flags_field & (crate::code::flags::STATIC as i64) != 0
+            && !(ctx.sym(v).flags_field & (crate::code::flags::FINAL as i64) != 0 && data_is_some)
+            && ctx.sym(v).name != self.names._class
+    }
+
+    /// Java: private void checkEnumInitializer(JCTree tree, Env<AttrContext> env,
+    /// VarSymbol v) (Attr.java:4728-4762).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - env: the attribution environment;
+    ///   - tree: the reference tree;
+    ///   - v: the referenced variable.
+    ///
+    /// # Returns
+    ///   - none (errors are reported).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:4728-4762.
+    #[allow(dead_code)]
+    fn check_enum_initializer(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        env: &Rc<Env<AttrContext>>,
+        tree: TreeId,
+        v: SymbolId,
+    ) {
+        if !self.is_static_enum_field(ctx, v) {
+            return;
+        }
+        let encl_class = env
+            .info
+            .borrow()
+            .scope
+            .and_then(|scope| ctx.scope(scope).owner)
+            .and_then(|owner| crate::code::symbol::symbol_encl_class(ctx, owner));
+        let Some(encl_class) = encl_class else {
+            return;
+        };
+        if ctx.sym(encl_class).owner.is_none() {
+            return;
+        }
+        let v_owner = ctx.sym(v).owner.expect("variable owner");
+        let encl_type = ctx.sym(encl_class).ty.expect("enclosing class type");
+        let v_owner_type = ctx.sym(v_owner).ty.expect("owner type");
+        if v_owner != encl_class
+            && !self
+                .types
+                .is_subtype(ctx, syms, encl_type, v_owner_type)
+        {
+            return;
+        }
+        if !self.resolve_is_initializer(ctx, env) {
+            return;
+        }
+        let info = crate::resources::compiler_properties::errors::illegal_enum_static_ref();
+        crate::util::abstract_log::AbstractLog::error_at(
+            &mut *self.log.borrow_mut(),
+            ctx.tree(tree).pos,
+            crate::util::jc_diagnostic::Error::from(info),
+        );
+    }
+
+    /// §9 helper: Resolve.isInitializer(env) without a Resolve instance.
+    #[allow(dead_code)]
+    fn resolve_is_initializer(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        env: &Rc<Env<AttrContext>>,
+    ) -> bool {
+        let scope = env.info.borrow().scope.expect("env scope");
+        let owner = ctx.scope(scope).owner.expect("scope owner");
+        let owner_kind = ctx.sym(owner).kind;
+        let owner_flags = ctx.sym(owner).flags_field;
+        let owner_owner_kind = ctx
+            .sym(owner)
+            .owner
+            .map(|owner| ctx.sym(owner).kind)
+            .expect("symbol owner");
+        ctx.sym(owner).is_constructor(&self.names)
+            || (owner_owner_kind == crate::code::kinds::Kind::TYP
+                && (owner_kind == crate::code::kinds::Kind::VAR
+                    || (owner_kind == crate::code::kinds::Kind::MTH
+                        && (owner_flags & (crate::code::flags::BLOCK as i64)) != 0))
+                && (owner_flags & (crate::code::flags::STATIC as i64)) == 0)
+    }
+
+    /// Java: private void checkInit(JCTree tree, Env<AttrContext> env,
+    /// VarSymbol v, boolean onlyWarning) (Attr.java:4653-4690).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree/env: the reference context;
+    ///   - v: the referenced variable;
+    ///   - only_warning: the warning-only variant.
+    ///
+    /// # Returns
+    ///   - none (errors/warnings are reported).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:4653-4690.
+    #[allow(dead_code)]
+    fn check_init(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        v: SymbolId,
+        only_warning: bool,
+    ) {
+        let init_env = self.enclosing_init_env(ctx, env);
+        let v_pos = match &ctx.sym(v).kind_data {
+            crate::code::symbol::SymbolKind::VarSymbol { pos, .. } => *pos,
+            _ => 0,
+        };
+        let tree_pos = ctx.tree(tree).pos;
+        if let Some(init_env) = init_env {
+            let encl_var = init_env.info.borrow().encl_var;
+            let v_owner = ctx.sym(v).owner;
+            let owner_is_class = v_owner
+                .map(|owner| ctx.sym(owner).kind == crate::code::kinds::Kind::TYP)
+                .unwrap_or(false);
+            let scope_owner = env
+                .info
+                .borrow()
+                .scope
+                .and_then(|scope| ctx.scope(scope).owner);
+            let scope_owner_encl = scope_owner
+                .and_then(|owner| crate::code::symbol::symbol_encl_class(ctx, owner));
+            let same_staticness = (ctx.sym(v).flags_field & (crate::code::flags::STATIC as i64) != 0)
+                == self.resolve_is_static(ctx, env);
+            let assign_lhs_ok = if let Some(env_tree) = env.tree {
+                if ctx.tree(env_tree).tag == crate::tree::jc_tree::Tag::ASSIGN {
+                    let lhs = match &ctx.tree(env_tree).kind {
+                        crate::tree::jc_tree::TreeKind::Assign { lhs, .. } => *lhs,
+                        _ => None,
+                    };
+                    lhs.map(|lhs| crate::tree::tree_info::skip_parens(ctx, lhs) != tree)
+                        .unwrap_or(true)
+                } else {
+                    true
+                }
+            } else {
+                true
+            };
+            if (encl_var == Some(v) || v_pos > tree_pos)
+                && owner_is_class
+                && v_owner == scope_owner_encl
+                && same_staticness
+                && assign_lhs_ok
+            {
+                let is_self_ref = encl_var == Some(v);
+                if !only_warning || self.is_static_enum_field(ctx, v) {
+                    let info = if is_self_ref {
+                        crate::resources::compiler_properties::errors::illegal_self_ref()
+                    } else {
+                        crate::resources::compiler_properties::errors::illegal_forward_ref()
+                    };
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        tree_pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                } else if self.use_before_declaration_warning {
+                    // Java: log.warning(tree.pos(), Warnings.SelfRef(v)/ForwardRef(v));
+                    let warning = if is_self_ref {
+                        crate::resources::compiler_properties::warnings::self_ref(
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                ctx.sym(v).name.to_java_string().to_string_lossy().to_string(),
+                            ),
+                        )
+                    } else {
+                        crate::resources::compiler_properties::warnings::forward_ref(
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                ctx.sym(v).name.to_java_string().to_string_lossy().to_string(),
+                            ),
+                        )
+                    };
+                    self.chk.borrow().warn_unchecked(tree_pos, warning);
+                }
+            }
+        }
+        // NOT PORTED: v.getConstValue() (Symbol.java:1759, ConstValue batch);
+        // the constant-value evaluation side effect is registered.
+        self.check_enum_initializer(ctx, syms, env, tree, v);
+    }
+}
+
+
+impl Attr {
+    /// Java: KindSelector pkind() — the current result-info kind selector.
+    ///
+    /// # Arguments
+    ///   - (none).
+    ///
+    /// # Returns
+    ///   - the current ResultInfo.pkind.
+    ///
+    /// # Panics
+    ///   - resultInfo must be installed (upstream field access).
+    ///
+    /// Upstream: Attr.java:4130-4135 (ResultInfo.pkind accessor use).
+    fn pkind(&self) -> crate::code::kinds::KindSelector {
+        self.result_info
+            .as_ref()
+            .expect("AssertionError: resultInfo")
+            .pkind
+    }
+
+    /// Java: Symbol thisSym(DiagnosticPosition pos, Env<AttrContext> env)
+    /// (Attr.java:349-352).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - env: the attribution environment.
+    ///
+    /// # Returns
+    ///   - the current this symbol.
+    ///
+    /// # Panics
+    ///   - the enclosing class must be present (upstream cast).
+    ///
+    /// Upstream: Attr.java:349-352.
+    fn this_sym(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        pos: i32,
+        env: &Rc<Env<AttrContext>>,
+    ) -> SymbolId {
+        let encl_class = env.encl_class.expect("AssertionError: enclClass");
+        let encl_sym = class_tree_symbol(ctx, encl_class).expect("AssertionError: enclClass sym");
+        let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+        let mut rs = rs_rc.borrow_mut();
+        let types_rc = Rc::clone(&self.types);
+        rs.resolve_self(
+            ctx,
+            syms,
+            &types_rc,
+            simple_diag_pos(pos),
+            env,
+            encl_sym,
+            self.names._this.clone(),
+        )
+    }
+}
+
+/// §9 helper: a simple DiagnosticPosition for a source offset.
+fn simple_diag_pos(
+    pos: i32,
+) -> Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> {
+    Some(std::rc::Rc::new(
+        crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -8575,6 +8575,42 @@ impl Types {
     }
 }
 
+impl Types {
+    /// Java: public boolean isDirectSuperInterface(TypeSymbol isym,
+    /// TypeSymbol origin) (Types.java:2659-2665).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - isym: the interface symbol;
+    ///   - origin: the class symbol whose direct interfaces are checked.
+    ///
+    /// # Returns
+    ///   - true when isym is a direct super interface of origin.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:2659-2665.
+    pub fn is_direct_super_interface(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        isym: crate::ids::SymbolId,
+        origin: crate::ids::SymbolId,
+    ) -> bool {
+        let origin_type = ctx.sym(origin).ty.expect("origin class type");
+        let mut interfaces = self.interfaces(ctx, syms, origin_type);
+        while interfaces.non_empty() {
+            let i = *interfaces.head();
+            if ctx.typ(i).tsym == Some(isym) {
+                return true;
+            }
+            interfaces = interfaces.tail();
+        }
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

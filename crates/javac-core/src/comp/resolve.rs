@@ -7970,6 +7970,191 @@ impl Resolve {
 
 }
 
+impl Resolve {
+    /// Java: Symbol resolveSelf(DiagnosticPosition pos, Env<AttrContext> env,
+    /// TypeSymbol c, Name name) (Resolve.java:3724-3775).
+    ///
+    /// # Arguments
+    ///   - ctx/syms/types: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - env: the attribution environment;
+    ///   - c: the qualifier type symbol;
+    ///   - name: this or super.
+    ///
+    /// # Returns
+    ///   - the this/super symbol (or a resolve error).
+    ///
+    /// # Panics
+    ///   - the environment chain is asserted as in the upstream code.
+    ///
+    /// Upstream: Resolve.java:3724-3775.
+    #[allow(clippy::too_many_arguments)]
+    pub fn resolve_self(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
+        env: &Rc<Env<AttrContext>>,
+        c: SymbolId,
+        name: crate::util::name::Name,
+    ) -> SymbolId {
+        let mut env1 = Rc::clone(env);
+        let mut static_only = false;
+        while env1.outer.is_some() {
+            if self.is_static(&env1) {
+                static_only = true;
+            }
+            if let Some(encl_tree) = env1.encl_class {
+                if let Some(encl_sym) = crate::tree::tree_info::symbol(ctx, encl_tree) {
+                    if encl_sym == c {
+                        let scope = env1.info.borrow().scope;
+                        if let Some(scope) = scope {
+                            if let Some(sym) = ctx.scope_find_first(scope, &name, &|_| true) {
+                                let sym = if static_only {
+                                    self.new_static_error(ctx, sym)
+                                } else {
+                                    sym
+                                };
+                                let encl_sym = crate::tree::tree_info::symbol(ctx, env.encl_class.expect("enclClass"))
+                                    .expect("enclClass sym");
+                                let encl_type = ctx.sym(encl_sym).ty;
+                                return self.access_base(
+                                    ctx, syms, sym, pos, None, encl_type, &name, true,
+                                );
+                            }
+                        }
+                    }
+                    if ctx.sym(encl_sym).flags_field & (crate::code::flags::STATIC as i64) != 0 {
+                        static_only = true;
+                    }
+                }
+            }
+            env1 = Rc::clone(env1.outer.as_ref().expect("env outer"));
+        }
+        let encl_class = crate::tree::tree_info::symbol(ctx, env.encl_class.expect("enclClass"))
+            .expect("enclClass sym");
+        let is_interface = ctx.sym(c).flags_field & (crate::code::flags::INTERFACE as i64) != 0;
+        if is_interface
+            && name == self.names._super
+            && !self.is_static(env)
+            && types.is_direct_super_interface(ctx, syms, c, encl_class)
+        {
+            let encl_type = ctx.sym(encl_class).ty.expect("encl class type");
+            let mut pruned = self.prune_interfaces(ctx, syms, types, encl_type);
+            while pruned.non_empty() {
+                let t = *pruned.head();
+                if ctx.typ(t).tsym == Some(c) {
+                    env.info.borrow_mut().default_super_call_site = Some(t);
+                    let super_type = types.as_super(ctx, syms, encl_type, c);
+                    return ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+                        crate::code::kinds::Kind::VAR,
+                        0,
+                        self.names._super.clone(),
+                        super_type,
+                        Some(encl_class),
+                        crate::code::symbol::SymbolKind::VarSymbol {
+                            pos: 0,
+                            adr: 0,
+                            data_kind: None,
+                            data: None,
+                        },
+                    ));
+                }
+                pruned = pruned.tail();
+            }
+            let mut supers = types.direct_supertypes(ctx, syms, encl_type);
+            while supers.non_empty() {
+                let i = *supers.head();
+                let i_tsym = ctx.typ(i).tsym.expect("direct super type symbol");
+                if crate::code::symbol::is_sub_class(ctx, syms, types, i_tsym, c) && i_tsym != c {
+                    let redundant = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::redundant_supertype(
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                ctx.sym(c).name.to_java_string().to_string_lossy().to_string(),
+                            ),
+                            crate::resources::diagnostic_contract::DiagnosticArg::Text(
+                                ctx.typ(i).tsym.map(|tsym| ctx.sym(tsym).name.to_java_string().to_string_lossy().to_string()).unwrap_or_default(),
+                            ),
+                        ),
+                    ));
+                    let info = crate::resources::compiler_properties::errors::illegal_default_super_call(
+                        crate::resources::diagnostic_contract::DiagnosticArg::Text(
+                            ctx.sym(c).name.to_java_string().to_string_lossy().to_string(),
+                        ),
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                            std::rc::Rc::new(redundant),
+                        ),
+                    );
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        pos.as_ref().map(|pos| pos.get_start_position()).unwrap_or(0),
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                    return syms.err_symbol;
+                }
+                supers = supers.tail();
+            }
+            panic!("AssertionError");
+        }
+        let info = crate::resources::compiler_properties::errors::not_encl_class(
+            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                ctx.sym(c).name.to_java_string().to_string_lossy().to_string(),
+            ),
+        );
+        crate::util::abstract_log::AbstractLog::error_at(
+            &mut *self.log.borrow_mut(),
+            pos.as_ref().map(|pos| pos.get_start_position()).unwrap_or(0),
+            crate::util::jc_diagnostic::Error::from(info),
+        );
+        syms.err_symbol
+    }
+
+    /// Java: private List<Type> pruneInterfaces(Type t) (Resolve.java:3777-3790).
+    ///
+    /// # Arguments
+    ///   - ctx/syms/types: explicit services;
+    ///   - t: the class type whose interfaces are pruned.
+    ///
+    /// # Returns
+    ///   - the direct interfaces not overridden by a direct supertype.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Resolve.java:3777-3790.
+    fn prune_interfaces(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        t: TypeId,
+    ) -> crate::util::list::List<TypeId> {
+        let mut result: crate::util::list::List<TypeId> = crate::util::list::List::nil();
+        let mut interfaces = types.interfaces(ctx, syms, t);
+        while interfaces.non_empty() {
+            let t1 = *interfaces.head();
+            let mut should_add = true;
+            let mut supers = types.direct_supertypes(ctx, syms, t);
+            while supers.non_empty() {
+                let t2 = *supers.head();
+                if t1 != t2
+                    && !ctx.typ(t2).has_tag(crate::code::type_tag::TypeTag::ERROR)
+                    && types.is_subtype_no_capture(ctx, syms, t2, t1)
+                {
+                    should_add = false;
+                }
+                supers = supers.tail();
+            }
+            if should_add {
+                result = result.append(t1);
+            }
+            interfaces = interfaces.tail();
+        }
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
