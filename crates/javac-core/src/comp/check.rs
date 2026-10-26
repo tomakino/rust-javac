@@ -88,6 +88,9 @@ pub struct Check {
     /// Java: the Symtab service (Symtab.instance(context)); explicit service
     /// per ADR 0001.
     pub syms: Rc<RefCell<Symtab>>,
+    /// Java: final TypeAnnotations typeAnnotations (service cell, installed by
+    /// the wiring; required by validateTypeAnnotation).
+    pub type_annotations: Rc<RefCell<Option<Rc<crate::code::type_annotations::TypeAnnotations>>>>,
     /// Java: final boolean warnOnAnyAccessToMembers (from -Xlint options);
     /// injected through the setter at wiring time (Adapter).
     pub warn_on_any_access_to_members: bool,
@@ -133,6 +136,7 @@ impl Check {
             private_safe_varargs: crate::code::source::Feature::PRIVATE_SAFE_VARARGS
                 .allowed_in_source(source),
             syms,
+            type_annotations: Rc::new(RefCell::new(None)),
             warn_on_any_access_to_members: false,
         }
     }
@@ -1752,12 +1756,12 @@ impl Check {
 
     /// Java: void validateAnnotationTree(JCTree tree) (Check.java:2857-2873)
     pub fn validate_annotation_tree(&self, ctx: &mut CompilerContext, tree: TreeId) {
-        struct AnnotationValidator {
-            root: TreeId,
+        struct AnnotationValidator<'a> {
+            chk: &'a Check,
         }
         // Java: class AnnotationValidator extends TreeScanner { visitAnnotation }
-        tree_scanner_visitor_delegate!(AnnotationValidator);
-        impl TreeScannerVisitor for AnnotationValidator {
+        tree_scanner_visitor_delegate!(AnnotationValidator<'a>, 'a);
+        impl<'a> TreeScannerVisitor for AnnotationValidator<'a> {
             fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 let annotation_type_ty = match &ctx.tree(tree).kind {
                     TreeKind::Annotation { annotation_type, .. } => *annotation_type,
@@ -1775,17 +1779,13 @@ impl Check {
                 }
                 if !is_erroneous && is_annotation_type {
                     <Self as TreeScannerVisitor>::visit_annotation(self, ctx, tree);
-                    let _ = self.root;
+                    let _ = self.chk.validate_annotation_values(ctx, tree);
                 }
             }
         }
-        let mut validator = AnnotationValidator { root: tree };
+        let mut validator = AnnotationValidator { chk: self };
         validator.scan(ctx, Some(tree));
-        let _ = &self.lint;
-        let _ = &self.syms;
-        let _ = &self.deferred_lint_handler;
     }
-
     /// Java: public void validateAnnotations(List<JCAnnotation> annotations,
     /// JCTree declarationTree, Symbol s) (Check.java:2919-2923)
     pub fn validate_annotations(
@@ -6624,4 +6624,139 @@ fn find_export(
         }
     }
     None
+}
+impl Check {
+    /// Java: public void validateTypeAnnotations(List<JCAnnotation> annotations,
+    /// boolean isTypeParameter) (Check.java:2926-2930).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - annotations: the annotations to validate;
+    ///   - is_type_parameter: whether the annotations are on a type parameter.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:2926-2930.
+    pub fn validate_type_annotations(
+        &self,
+        ctx: &mut CompilerContext,
+        annotations: &List<TreeId>,
+        is_type_parameter: bool,
+    ) {
+        for annotation in annotations.iter() {
+            self.validate_type_annotation(ctx, annotation, is_type_parameter);
+        }
+    }
+
+    /// Java: public void validateTypeAnnotation(JCAnnotation a, boolean
+    /// isTypeParameter) (Check.java:3087-3098).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - a: the annotation tree;
+    ///   - is_type_parameter: whether the annotation is on a type parameter.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:3087-3098.
+    pub fn validate_type_annotation(
+        &self,
+        ctx: &mut CompilerContext,
+        a: TreeId,
+        is_type_parameter: bool,
+    ) {
+        assert!(ctx.tree(a).ty.is_some(), "AssertionError: annotation type");
+        self.validate_annotation_tree(ctx, a);
+        let is_type_annotation_tag = ctx.tree(a).tag == crate::tree::jc_tree::Tag::TYPE_ANNOTATION;
+        let annotation_type_erroneous = match &ctx.tree(a).kind {
+            crate::tree::jc_tree::TreeKind::Annotation { annotation_type, .. } => {
+                annotation_type
+                    .and_then(|annotation_type| ctx.tree(annotation_type).ty)
+                    .map(|ty| ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::ERROR))
+                    .unwrap_or(false)
+            }
+            _ => false,
+        };
+        if is_type_annotation_tag
+            && !annotation_type_erroneous
+            && !self.is_type_annotation_tree(ctx, a, is_type_parameter)
+        {
+            let annotation_ty = ctx.tree(a).ty.expect("annotation type");
+            let info = crate::resources::compiler_properties::errors::annotation_type_not_applicable_to_type(
+                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                    crate::comp::attr::type_display_of(ctx, annotation_ty),
+                ),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                ctx.tree(a).pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+    }
+
+    /// Java: boolean isTypeAnnotation(JCAnnotation a, boolean isTypeParameter)
+    /// (Check.java:3290-3296).
+    fn is_type_annotation_tree(
+        &self,
+        ctx: &mut CompilerContext,
+        a: TreeId,
+        is_type_parameter: bool,
+    ) -> bool {
+        let annotation_type_ty = match &ctx.tree(a).kind {
+            crate::tree::jc_tree::TreeKind::Annotation { annotation_type, .. } => *annotation_type,
+            _ => return false,
+        };
+        let tsym = match annotation_type_ty
+            .and_then(|annotation_type| ctx.tree(annotation_type).ty)
+            .and_then(|ty| ctx.typ(ty).tsym)
+        {
+            Some(tsym) => tsym,
+            None => return false,
+        };
+        let ta_rc = self.type_annotations.borrow().clone();
+        let ta_rc = match ta_rc {
+            Some(ta) => ta,
+            None => return false,
+        };
+        let targets = ta_rc.annotation_targets(ctx, &mut self.syms.borrow_mut(), tsym);
+        let targets = match targets {
+            Some(targets) => targets,
+            None => return false,
+        };
+        let mut current = targets;
+        while current.non_empty() {
+            let attr = *current.head();
+            if self.is_type_annotation_attr(ctx, attr, is_type_parameter) {
+                return true;
+            }
+            current = current.tail();
+        }
+        false
+    }
+
+    /// Java: boolean isTypeAnnotation(Attribute a, boolean isTypeParameter)
+    /// (Check.java:3297-3302).
+    fn is_type_annotation_attr(
+        &self,
+        ctx: &mut CompilerContext,
+        a: AttributeId,
+        is_type_parameter: bool,
+    ) -> bool {
+        let enum_sym = match &ctx.attr(a).kind {
+            crate::code::attribute::AttributeKind::Enum { value: Some(value) } => *value,
+            _ => return false,
+        };
+        let name = ctx.sym(enum_sym).name.clone();
+        name == self.names.TYPE_USE
+            || (is_type_parameter && name == self.names.TYPE_PARAMETER)
+    }
 }

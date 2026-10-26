@@ -399,6 +399,9 @@ pub struct Attr {
     pub flow: Rc<RefCell<Option<Rc<crate::comp::flow::Flow>>>>,
     /// Java: final Annotate annotate (service cell: installed by the wiring).
     pub annotate: Rc<RefCell<Option<Rc<crate::comp::annotate::Annotate>>>>,
+    /// Java: final TypeAnnotations typeAnnotations (service cell: installed by
+    /// the wiring).
+    pub type_annotations: Rc<RefCell<Option<Rc<crate::code::type_annotations::TypeAnnotations>>>>,
 }
 
 impl Attr {
@@ -495,6 +498,7 @@ impl Attr {
             analyzer: Rc::new(RefCell::new(None)),
             flow: Rc::new(RefCell::new(None)),
             annotate: Rc::new(RefCell::new(None)),
+            type_annotations: Rc::new(RefCell::new(None)),
             attr_recover: Rc::new(RefCell::new(None)),
             syms,
             infer,
@@ -10197,6 +10201,20 @@ fn check_after_inference(
     owntype
 }
 
+
+impl Attr {
+    /// Adapter: the modifier annotations of a VariableDecl/ClassDecl/MethodDecl.
+    fn modifiers_annotations(
+        &self,
+        ctx: &CompilerContext,
+        mods: Option<TreeId>,
+    ) -> List<TreeId> {
+        match mods.map(|mods| &ctx.tree(mods).kind) {
+            Some(TreeKind::Modifiers { annotations, .. }) => annotations.clone(),
+            _ => List::nil(),
+        }
+    }
+}
 /// Adapter: the service wiring for Attr (the Java Context-lazy construction of
 /// Resolve/Operators/AttrRecover/ArgumentAttr/DeferredAttr/Flow/Analyzer/Annotate,
 /// ADR 0001 explicit services). The caller owns the Rc-wrapped Attr and the
@@ -10559,6 +10577,508 @@ impl Attr {
                 warning,
             );
         }
+    }
+}
+impl Attr {
+    /// Java: public void validateTypeAnnotations(JCTree tree, boolean sigOnly)
+    /// (Attr.java:5585-5587) and class TypeAnnotationsValidator (Attr.java:5589-5870).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - tree: the tree to validate;
+    ///   - sig_only: whether only signatures are validated.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the registered services must be installed.
+    ///
+    /// Upstream: Attr.java:5585-5870.
+    pub fn validate_type_annotations(
+        &self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        sig_only: bool,
+    ) {
+        struct TypeAnnotationsValidator<'a> {
+            attr: &'a Attr,
+            sig_only: bool,
+        }
+        tree_scanner_visitor_delegate!(TypeAnnotationsValidator<'a>, 'a);
+        impl<'a> TreeScannerVisitor for TypeAnnotationsValidator<'a> {
+            /// Java: public void visitAnnotation(JCAnnotation tree) (Attr.java:5596-5599).
+            fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                {
+                    let chk_rc = Rc::clone(&self.attr.chk);
+                    let chk = chk_rc.borrow();
+                    chk.validate_type_annotation(ctx, tree, false);
+                }
+                <Self as TreeScannerVisitor>::visit_annotation(self, ctx, tree);
+            }
+
+            /// Java: public void visitAnnotatedType(JCAnnotatedType tree) (Attr.java:5600-5604).
+            fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let underlying = match &ctx.tree(tree).kind {
+                    TreeKind::AnnotatedType { underlying_type, .. } => *underlying_type,
+                    _ => None,
+                };
+                let has_error = underlying
+                    .and_then(|underlying| ctx.tree(underlying).ty)
+                    .map(|ty| ctx.typ(ty).has_tag(TypeTag::ERROR))
+                    .unwrap_or(false);
+                if !has_error {
+                    <Self as TreeScannerVisitor>::visit_annotated_type(self, ctx, tree);
+                }
+            }
+
+            /// Java: public void visitTypeParameter(JCTypeParameter tree) (Attr.java:5605-5613).
+            fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let (annotations, bounds) = match &ctx.tree(tree).kind {
+                    TreeKind::TypeParameter { annotations, bounds, .. } => {
+                        (annotations.clone(), bounds.clone())
+                    }
+                    _ => return,
+                };
+                {
+                    let chk_rc = Rc::clone(&self.attr.chk);
+                    let chk = chk_rc.borrow();
+                    chk.validate_type_annotations(ctx, &annotations, true);
+                }
+                self.scan_list(ctx, &bounds);
+            }
+
+            /// Java: public void visitMethodDef(JCMethodDecl tree) (Attr.java:5614-5637).
+            fn visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let (mods, restype, typarams, recvparam, params, thrown, body, default_value) =
+                    match &ctx.tree(tree).kind {
+                        TreeKind::MethodDecl {
+                            mods,
+                            restype,
+                            typarams,
+                            recvparam,
+                            params,
+                            thrown,
+                            body,
+                            default_value,
+                            ..
+                        } => (
+                            *mods,
+                            *restype,
+                            typarams.clone(),
+                            *recvparam,
+                            params.clone(),
+                            thrown.clone(),
+                            *body,
+                            *default_value,
+                        ),
+                        _ => return,
+                    };
+                if let Some(recvparam) = recvparam {
+                    let recv_vartype = match &ctx.tree(recvparam).kind {
+                        TreeKind::VariableDecl { vartype, .. } => *vartype,
+                        _ => None,
+                    };
+                    let recv_error = recv_vartype
+                        .and_then(|vartype| ctx.tree(vartype).ty)
+                        .map(|ty| ctx.typ(ty).has_tag(TypeTag::ERROR))
+                        .unwrap_or(true);
+                    if !recv_error {
+                        let (annotations, sym) = match &ctx.tree(recvparam).kind {
+                            TreeKind::VariableDecl { mods, sym, .. } => {
+                                let annotations = self.attr.modifiers_annotations(ctx, *mods);
+                                (*mods, *sym)
+                                ;
+                                (annotations, *sym)
+                            }
+                            _ => return,
+                        };
+                        if let Some(sym) = sym {
+                            self.check_for_declaration_annotations(ctx, &annotations, sym);
+                        }
+                    }
+                }
+                if let Some(restype) = restype {
+                    if let Some(restype_ty) = ctx.tree(restype).ty {
+                        self.validate_annotated_type(ctx, restype, restype_ty);
+                    }
+                }
+                if self.sig_only {
+                    self.scan(ctx, mods);
+                    self.scan(ctx, restype);
+                    self.scan_list(ctx, &typarams);
+                    self.scan(ctx, recvparam);
+                    self.scan_list(ctx, &params);
+                    self.scan_list(ctx, &thrown);
+                } else {
+                    self.scan(ctx, default_value);
+                    self.scan(ctx, body);
+                }
+            }
+
+            /// Java: public void visitVarDef(JCVariableDecl tree) (Attr.java:5638-5648).
+            fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let (mods, vartype, init, sym) = match &ctx.tree(tree).kind {
+                    TreeKind::VariableDecl { mods, vartype, init, sym, .. } => {
+                        (*mods, *vartype, *init, *sym)
+                    }
+                    _ => return,
+                };
+                if let (Some(vartype), Some(sym), Some(sym_ty)) = (vartype, sym, sym.and_then(|sym| ctx.sym(sym).ty)) {
+                    if ctx.tree(vartype).ty.is_some() {
+                        self.validate_annotated_type(ctx, vartype, sym_ty);
+                    }
+                }
+                self.scan(ctx, mods);
+                self.scan(ctx, vartype);
+                if !self.sig_only {
+                    self.scan(ctx, init);
+                }
+            }
+
+            /// Java: public void visitTypeCast(JCTypeCast tree) (Attr.java:5650-5654).
+            fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let clazz = match &ctx.tree(tree).kind {
+                    TreeKind::TypeCast { clazz, .. } => *clazz,
+                    _ => None,
+                };
+                if let Some(clazz) = clazz {
+                    if let Some(clazz_ty) = ctx.tree(clazz).ty {
+                        self.validate_annotated_type(ctx, clazz, clazz_ty);
+                    }
+                }
+                <Self as TreeScannerVisitor>::visit_type_cast(self, ctx, tree);
+            }
+
+            /// Java: public void visitTypeTest(JCInstanceOf tree) (Attr.java:5655-5660).
+            fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let pattern = match &ctx.tree(tree).kind {
+                    TreeKind::InstanceOf { pattern, .. } => *pattern,
+                    _ => None,
+                };
+                if let Some(pattern) = pattern {
+                    let is_pattern = ctx.tree(pattern).tag == Tag::BINDINGPATTERN;
+                    if !is_pattern {
+                        if let Some(pattern_ty) = ctx.tree(pattern).ty {
+                            self.validate_annotated_type(ctx, pattern, pattern_ty);
+                        }
+                    }
+                }
+                <Self as TreeScannerVisitor>::visit_type_test(self, ctx, tree);
+            }
+
+            /// Java: public void visitNewClass(JCNewClass tree) (Attr.java:5661-5676).
+            fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let (clazz, def) = match &ctx.tree(tree).kind {
+                    TreeKind::NewClass { clazz, def, .. } => (*clazz, *def),
+                    _ => return,
+                };
+                if let Some(clazz) = clazz {
+                    if let Some(clazz_ty) = ctx.tree(clazz).ty {
+                        let clazz_annotations = match &ctx.tree(clazz).kind {
+                            TreeKind::AnnotatedType { annotations, .. } => annotations.clone(),
+                            _ => List::nil(),
+                        };
+                        if !clazz_annotations.is_empty() {
+                            if let Some(clazz_tsym) = ctx.typ(clazz_ty).tsym {
+                                self.check_for_declaration_annotations(ctx, &clazz_annotations, clazz_tsym);
+                            }
+                        }
+                        if let Some(def) = def {
+                            let def_mods = match &ctx.tree(def).kind {
+                                TreeKind::ClassDecl { mods, .. } => *mods,
+                                _ => None,
+                            };
+                            let def_annotations = self.attr.modifiers_annotations(ctx, def_mods);
+                            if let Some(clazz_tsym) = ctx.typ(clazz_ty).tsym {
+                                self.check_for_declaration_annotations(ctx, &def_annotations, clazz_tsym);
+                            }
+                        }
+                        self.validate_annotated_type(ctx, clazz, clazz_ty);
+                    }
+                }
+                <Self as TreeScannerVisitor>::visit_new_class(self, ctx, tree);
+            }
+
+            /// Java: public void visitNewArray(JCNewArray tree) (Attr.java:5677-5686).
+            fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let elemtype = match &ctx.tree(tree).kind {
+                    TreeKind::NewArray { elemtype, .. } => *elemtype,
+                    _ => None,
+                };
+                if let Some(elemtype) = elemtype {
+                    if let Some(elem_ty) = ctx.tree(elemtype).ty {
+                        let elem_annotations = match &ctx.tree(elemtype).kind {
+                            TreeKind::AnnotatedType { annotations, .. } => annotations.clone(),
+                            _ => List::nil(),
+                        };
+                        if !elem_annotations.is_empty() {
+                            if let Some(elem_tsym) = ctx.typ(elem_ty).tsym {
+                                self.check_for_declaration_annotations(ctx, &elem_annotations, elem_tsym);
+                            }
+                        }
+                        self.validate_annotated_type(ctx, elemtype, elem_ty);
+                    }
+                }
+                <Self as TreeScannerVisitor>::visit_new_array(self, ctx, tree);
+            }
+
+            /// Java: public void visitClassDef(JCClassDecl tree) (Attr.java:5687-5703).
+            fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let (mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
+                    TreeKind::ClassDecl { mods, typarams, extending, implementing, defs, .. } => {
+                        (*mods, typarams.clone(), *extending, implementing.clone(), defs.clone())
+                    }
+                    _ => return,
+                };
+                if self.sig_only {
+                    self.scan(ctx, mods);
+                    self.scan_list(ctx, &typarams);
+                    self.scan(ctx, extending);
+                    self.scan_list(ctx, &implementing);
+                }
+                let mut current = defs;
+                while current.non_empty() {
+                    let member = *current.head();
+                    current = current.tail();
+                    if ctx.tree(member).has_tag(Tag::CLASSDEF) {
+                        continue;
+                    }
+                    self.scan(ctx, Some(member));
+                }
+            }
+
+            /// Java: public void visitBlock(JCBlock tree) (Attr.java:5704-5708).
+            fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                if !self.sig_only {
+                    let stats = match &ctx.tree(tree).kind {
+                        TreeKind::Block { stats, .. } => stats.clone(),
+                        _ => List::nil(),
+                    };
+                    self.scan_list(ctx, &stats);
+                }
+            }
+
+        }
+
+        impl<'a> TypeAnnotationsValidator<'a> {
+            /// Java: private void checkForDeclarationAnnotations(List<? extends
+            /// JCAnnotation> annotations, Symbol sym) (Attr.java:5795-5806).
+            fn check_for_declaration_annotations(
+                &self,
+                ctx: &mut CompilerContext,
+                annotations: &List<TreeId>,
+                sym: SymbolId,
+            ) {
+                for annotation in annotations.iter() {
+                    let annotation_ty = ctx.tree(annotation).ty;
+                    let erroneous = annotation_ty
+                        .map(|ty| ctx.typ(ty).has_tag(TypeTag::ERROR))
+                        .unwrap_or(true);
+                    if erroneous {
+                        continue;
+                    }
+                    let attribute = match &ctx.tree(annotation).kind {
+                        TreeKind::Annotation { attribute, .. } => *attribute,
+                        _ => None,
+                    };
+                    let Some(attribute) = attribute else { continue };
+                    let ta_rc = self.attr.type_annotations.borrow().clone();
+                    let target = match ta_rc {
+                        Some(ta_rc) => {
+                            let mut syms = self.attr.syms.borrow_mut();
+                            ta_rc.annotation_target_type(ctx, &mut syms, attribute, sym)
+                        }
+                        None => return,
+                    };
+                    if target == crate::code::type_annotations::AnnotationType::DECLARATION {
+                        let annotation_ty = annotation_ty.expect("annotation type");
+                        let info = crate::resources::compiler_properties::errors::annotation_type_not_applicable_to_type(
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::comp::attr::type_display_of(ctx, annotation_ty),
+                            ),
+                        );
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.attr.log.borrow_mut(),
+                            ctx.tree(annotation).pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
+                    }
+                }
+            }
+
+            /// Java: private void validateAnnotatedType(JCTree errtree, Type type)
+            /// (Attr.java:5710-5794).
+            #[allow(clippy::too_many_lines)]
+            fn validate_annotated_type(
+                &self,
+                ctx: &mut CompilerContext,
+                errtree: TreeId,
+                ty: TypeId,
+            ) {
+                if ctx.typ(ty).is_primitive_or_void() {
+                    return;
+                }
+                let mut encl_tr = errtree;
+                let mut encl_ty: Option<TypeId> = Some(ty);
+                let mut repeat = true;
+                while repeat {
+                    if ctx.tree(encl_tr).tag == Tag::TYPEAPPLY {
+                        let (tyargs, trargs, clazz) = match &ctx.tree(encl_tr).kind {
+                            TreeKind::TypeApply { clazz, arguments } => {
+                                let tyargs = encl_ty
+                                    .map(|encl_ty| crate::code::types::get_type_arguments(ctx, encl_ty))
+                                    .unwrap_or_else(List::nil);
+                                (tyargs, arguments.clone(), *clazz)
+                            }
+                            _ => (List::nil(), List::nil(), None),
+                        };
+                        if trargs.length() > 0 && tyargs.length() == trargs.length() {
+                            let mut tyargs_current = tyargs;
+                            let mut trargs_current = trargs;
+                            while tyargs_current.non_empty() && trargs_current.non_empty() {
+                                let tyarg = *tyargs_current.head();
+                                let trarg = *trargs_current.head();
+                                self.validate_annotated_type(ctx, trarg, tyarg);
+                                tyargs_current = tyargs_current.tail();
+                                trargs_current = trargs_current.tail();
+                            }
+                        }
+                        if let Some(clazz) = clazz {
+                            encl_tr = clazz;
+                        }
+                    }
+                    if ctx.tree(encl_tr).tag == Tag::SELECT {
+                        let selected = match &ctx.tree(encl_tr).kind {
+                            TreeKind::FieldAccess { selected, .. } => *selected,
+                            _ => None,
+                        };
+                        if let Some(selected) = selected {
+                            encl_tr = selected;
+                        }
+                        if let Some(encl_ty_value) = encl_ty {
+                            if !ctx.typ(encl_ty_value).has_tag(TypeTag::NONE) {
+                                encl_ty = ctx.typ(encl_ty_value).get_enclosing_type();
+                            }
+                        }
+                    } else if ctx.tree(encl_tr).tag == Tag::ANNOTATED_TYPE {
+                        let (annotations, underlying) = match &ctx.tree(encl_tr).kind {
+                            TreeKind::AnnotatedType { annotations, underlying_type } => {
+                                (annotations.clone(), *underlying_type)
+                            }
+                            _ => (List::nil(), None),
+                        };
+                        let encl_none = encl_ty
+                            .map(|encl_ty| ctx.typ(encl_ty).has_tag(TypeTag::NONE))
+                            .unwrap_or(true);
+                        if encl_none {
+                            let count = annotations.length();
+                            if count == 1 {
+                                let info = crate::resources::compiler_properties::errors::cant_type_annotate_scoping(vec![
+                                    crate::resources::diagnostic_contract::AnnotationArg::placeholder("type annotation"),
+                                ]);
+                                crate::util::abstract_log::AbstractLog::error_at(
+                                    &mut *self.attr.log.borrow_mut(),
+                                    underlying.map(|underlying| ctx.tree(underlying).pos).unwrap_or(ctx.tree(encl_tr).pos),
+                                    crate::util::jc_diagnostic::Error::from(info),
+                                );
+                            } else {
+                                let mut args: Vec<crate::resources::diagnostic_contract::AnnotationArg> = Vec::new();
+                                for annotation in annotations.iter() {
+                                    let ty = ctx.tree(annotation).ty;
+                                    args.push(crate::resources::diagnostic_contract::AnnotationArg::placeholder(
+                                        ty.map(|ty| crate::comp::attr::type_display_of(ctx, ty)).unwrap_or_default(),
+                                    ));
+                                }
+                                let info = crate::resources::compiler_properties::errors::cant_type_annotate_scoping(args);
+                                crate::util::abstract_log::AbstractLog::error_at(
+                                    &mut *self.attr.log.borrow_mut(),
+                                    underlying.map(|underlying| ctx.tree(underlying).pos).unwrap_or(ctx.tree(encl_tr).pos),
+                                    crate::util::jc_diagnostic::Error::from(info),
+                                );
+                            }
+                            repeat = false;
+                        }
+                        if let Some(underlying) = underlying {
+                            encl_tr = underlying;
+                        } else {
+                            repeat = false;
+                        }
+                    } else if ctx.tree(encl_tr).tag == Tag::IDENT {
+                        repeat = false;
+                    } else if ctx.tree(encl_tr).tag == Tag::WILDCARD {
+                        let (kind, bound) = match &ctx.tree(encl_tr).kind {
+                            TreeKind::Wildcard { kind, inner } => (*kind, *inner),
+                            _ => (None, None),
+                        };
+                        let bound_kind = kind.and_then(|kind| match &ctx.tree(kind).kind {
+                            TreeKind::TypeBoundKind { kind } => Some(*kind),
+                            _ => None,
+                        });
+                        let is_extends_or_super = matches!(
+                            bound_kind,
+                            Some(crate::code::bound_kind::BoundKind::EXTENDS)
+                                | Some(crate::code::bound_kind::BoundKind::SUPER)
+                        );
+                        if is_extends_or_super {
+                            if let Some(bound) = bound {
+                                if let Some(bound_ty) = ctx.tree(bound).ty {
+                                    self.validate_annotated_type(ctx, bound, bound_ty);
+                                }
+                            }
+                        }
+                        repeat = false;
+                    } else if ctx.tree(encl_tr).tag == Tag::TYPEARRAY {
+                        let elemtype = match &ctx.tree(encl_tr).kind {
+                            TreeKind::ArrayTypeTree { elemtype } => *elemtype,
+                            _ => None,
+                        };
+                        if let Some(elemtype) = elemtype {
+                            if let Some(elem_ty) = ctx.tree(elemtype).ty {
+                                self.validate_annotated_type(ctx, elemtype, elem_ty);
+                            }
+                        }
+                        repeat = false;
+                    } else if ctx.tree(encl_tr).tag == Tag::TYPEUNION {
+                        let alternatives = match &ctx.tree(encl_tr).kind {
+                            TreeKind::TypeUnion { alternatives } => alternatives.clone(),
+                            _ => List::nil(),
+                        };
+                        let mut current = alternatives;
+                        while current.non_empty() {
+                            let alternative = *current.head();
+                            current = current.tail();
+                            if let Some(alternative_ty) = ctx.tree(alternative).ty {
+                                self.validate_annotated_type(ctx, alternative, alternative_ty);
+                            }
+                        }
+                        repeat = false;
+                    } else if ctx.tree(encl_tr).tag == Tag::TYPEINTERSECTION {
+                        let bounds = match &ctx.tree(encl_tr).kind {
+                            TreeKind::TypeIntersection { bounds } => bounds.clone(),
+                            _ => List::nil(),
+                        };
+                        let mut current = bounds;
+                        while current.non_empty() {
+                            let bound = *current.head();
+                            current = current.tail();
+                            if let Some(bound_ty) = ctx.tree(bound).ty {
+                                self.validate_annotated_type(ctx, bound, bound_ty);
+                            }
+                        }
+                        repeat = false;
+                    } else if ctx.tree(encl_tr).tag == Tag::TYPEIDENT
+                        || ctx.tree(encl_tr).tag == Tag::ERRONEOUS
+                    {
+                        repeat = false;
+                    } else {
+                        panic!("AssertionError: Unexpected tree in validateAnnotatedType");
+                    }
+                }
+            }
+        }
+        let mut validator = TypeAnnotationsValidator { attr: self, sig_only };
+        validator.scan(ctx, Some(tree));
     }
 }
 #[cfg(test)]
