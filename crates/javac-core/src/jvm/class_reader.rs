@@ -3087,12 +3087,11 @@ impl ClassReader {
         let self_flags = ctx.sym(self_class).flags_field;
         let m = self.find_method(ctx, c_members.expect("members"), nt.as_ref(), self_flags);
         if nt.is_some() && m.is_none() {
-            let key = Fragment::from(
-                crate::resources::compiler_properties::fragments::bad_enclosing_method(
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder("symbol"),
-                ),
-            );
-            return Err(self.bad_class_file(key).failure);
+            // Java: ClassReader.java:1268-1270
+            //   MethodSymbol m = findMethod(nt, c.members_field, self.flags());
+            //   if (nt != null && m == null) throw badEnclosingMethod(self);
+            let attr = self.bad_enclosing_method(ctx, self_class);
+            return Err(attr.bad_class_file.failure);
         }
         let self_flat = ctx.sym(self_class).flat_name();
         let c_flat = ctx.sym(c).flat_name();
@@ -3153,7 +3152,9 @@ impl ClassReader {
         } else {
             let key = Fragment::from(
                 crate::resources::compiler_properties::fragments::bad_enclosing_method(
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder("symbol"),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        self_str.clone(),
+                    ),
                 ),
             );
             return Err(self.bad_class_file(key).failure);
@@ -3161,7 +3162,9 @@ impl ClassReader {
         if simple.is_empty() || !simple.starts_with('$') {
             let key = Fragment::from(
                 crate::resources::compiler_properties::fragments::bad_enclosing_method(
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder("symbol"),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        self_str.clone(),
+                    ),
                 ),
             );
             return Err(self.bad_class_file(key).failure);
@@ -3385,12 +3388,45 @@ impl ClassReader {
     }
 
     /// Java: public ClassFinder.BadEnclosingMethodAttr badEnclosingMethod(Symbol sym)
-    #[allow(dead_code)]
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context (to resolve the enclosing class chain);
+    ///   - sym: the symbol passed to the Fragments.BadEnclosingMethod(sym) fragment.
+    ///
+    /// # Returns
+    ///   - the BadEnclosingMethodAttr built from currentOwner.enclClass() and
+    ///     currentClassFile (ClassReader.java:323-330).
+    ///
+    /// # Panics
+    ///   - the reader has no current class file (upstream invariant: completing a symbol).
     pub fn bad_enclosing_method(
         &self,
-        _sym: SymbolId,
+        ctx: &crate::compiler_context::CompilerContext,
+        sym: SymbolId,
     ) -> crate::code::class_finder::BadEnclosingMethodAttr {
-        unimplemented!("TODO(P2/S3): Fragments.BadEnclosingMethod(sym) accessor needs the Symbol argument (P4 contract)")
+        let file = self
+            .current_class_file
+            .clone()
+            .expect("ClassSymbol.classfile (upstream: non-null when completing)");
+        let owner = self.current_owner.expect("currentOwner");
+        let enclosing =
+            crate::code::symbol::symbol_encl_class(ctx, owner).unwrap_or(owner);
+        // Java: diagFactory.fragment(Fragments.BadEnclosingMethod(sym)) — the
+        // generated accessor carries the symbol name as diagnostic text until
+        // the P4 Symbol argument lands.
+        let display = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+        let diag = self.diag_factory.fragment(Fragment::from(
+            crate::resources::compiler_properties::fragments::bad_enclosing_method(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(display),
+            ),
+        ));
+        crate::code::class_finder::BadEnclosingMethodAttr::new(
+            Some(enclosing),
+            file,
+            diag,
+            Rc::clone(&self.diag_factory),
+            Some(Rc::clone(&self.dcfh)),
+        )
     }
 
 
