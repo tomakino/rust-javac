@@ -4329,6 +4329,7 @@ impl Types {
                 interfaces_field: None,
                 all_interfaces_field: None,
                 original_type: Some(original),
+                candidate_symbol: None,
             },
         ))
     }
@@ -4352,6 +4353,7 @@ impl Types {
                 interfaces_field: None,
                 all_interfaces_field: None,
                 original_type: Some(original_type.unwrap_or(no_type)),
+                candidate_symbol: None,
             },
         ));
         ctx.sym_mut(class).ty = Some(error_type);

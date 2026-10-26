@@ -704,6 +704,10 @@ pub enum TypeKindData {
         all_interfaces_field: Option<List<TypeId>>,
         /// The original type (originalType).
         original_type: Option<TypeId>,
+        /// Java: AttrRecover.RecoveryErrorType.candidateSymbol (§9: the upstream
+        /// ErrorType subclass is expressed by this field; None for plain error
+        /// types).
+        candidate_symbol: Option<SymbolId>,
     },
     /// Java: Infer.PartiallyInferredMethodType (a MethodType that can be
     /// checked against several targets; tag METHOD, isPartial=true)
@@ -1066,6 +1070,7 @@ mod tests {
                     interfaces_field: None,
                     all_interfaces_field: None,
                     original_type: None,
+                    candidate_symbol: None,
                 },
             )
             .is_reference()
@@ -1293,6 +1298,7 @@ mod tests {
                 interfaces_field: None,
                 all_interfaces_field: None,
                 original_type: Some(TypeId::new(1)),
+                candidate_symbol: None,
             },
         );
         assert!(error.is_partial());

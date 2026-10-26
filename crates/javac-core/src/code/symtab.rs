@@ -576,6 +576,7 @@ pub(crate) fn new_error_type_for_class(ctx: &mut CompilerContext, tsym: SymbolId
             interfaces_field: None,
             all_interfaces_field: None,
             original_type: Some(no_type),
+            candidate_symbol: None,
         },
     ))
 }
@@ -1108,6 +1109,7 @@ impl Symtab {
                 interfaces_field: None,
                 all_interfaces_field: None,
                 original_type: Some(no_type),
+                candidate_symbol: None,
             },
         ));
         let unknown_symbol = new_class_symbol_with_type(
