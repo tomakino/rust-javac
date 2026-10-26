@@ -786,6 +786,13 @@ pub enum TypeKindData {
             >,
         >,
     },
+    /// Java: ClassReader.ProxyType (ClassReader.java:3199-3227): a placeholder
+    /// type for module-info annotation values (tag NONE); resolve decodes the
+    /// classfile signature name on deproxy.
+    ProxyType {
+        /// The classfile signature name (constant pool UTF8).
+        name: crate::util::name::Name,
+    },
 }
 
 

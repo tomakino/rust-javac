@@ -611,6 +611,7 @@ impl Types {
                 self.is_same_type_visit_class(ctx, syms, t, s)
             }
             // Java: isSameTypeVisitor.visitErrorType -> true
+            TypeKindData::ProxyType { .. } => t == s,
             TypeKindData::ErrorType { .. } => true,
             TypeKindData::WildcardType { .. } => {
                 self.is_same_type_visit_wildcard(ctx, syms, t, s)
@@ -2570,6 +2571,9 @@ impl Types {
         s: TypeId,
     ) -> bool {
         match &ctx.typ(t).kind {
+            // Java: isSubtypeVisitor.visitType case NONE -> false
+            TypeKindData::ProxyType { .. } => false,
+
             TypeKindData::JCPrimitiveType
             | TypeKindData::JCVoidType
             | TypeKindData::BottomType

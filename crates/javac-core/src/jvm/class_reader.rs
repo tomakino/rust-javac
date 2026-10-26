@@ -156,6 +156,9 @@ pub struct ClassReader {
     pub current_owner: Option<SymbolId>,
     /// Java: protected ModuleSymbol currentModule = null
     pub current_module: Option<SymbolId>,
+    /// Java: the outer ClassReader captured by the inner classes (ProxyType/
+    /// CompleterDeproxy/AnnotationDeproxy); the port passes the owning Rc.
+    pub(crate) reader_handle: Option<Rc<RefCell<ClassReader>>>,
     /// Java: ByteBuffer buf = new ByteBuffer(INITIAL_BUFFER_SIZE)
     buf: ByteBuffer,
     /// Java: protected int bp
@@ -273,6 +276,7 @@ impl ClassReader {
             current_class_file: None,
             current_owner: None,
             current_module: None,
+            reader_handle: None,
             buf: ByteBuffer::with_initial_size(ClassReader::INITIAL_BUFFER_SIZE),
             bp: 0,
             pool_reader: None,
@@ -1194,6 +1198,7 @@ impl ClassReader {
                     self.target.clone(),
                     self.repeatable.clone(),
                     Rc::clone(&self.names),
+                    self.reader_handle.clone(),
                 )));
             ctx.sym_mut(c)
                 .set_annotation_type_metadata(AnnotationTypeMetadata::new(c, Some(completer)));
@@ -2052,6 +2057,35 @@ impl ClassReader {
     // Annotation reading (ClassReader.java:1429-1490, 1955-2100)
     // ------------------------------------------------------------------
 
+    /// Java: ClassReader.ProxyType.resolve() (ClassReader.java:3218-3220)
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler services;
+    ///   - t: the type that may be a ProxyType.
+    ///
+    /// # Returns
+    ///   - the resolved signature type for ProxyType values, t otherwise.
+    ///
+    /// # Panics
+    ///   - none.
+    fn resolve_possible_proxy_type(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        t: TypeId,
+    ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
+        let name = match &ctx.typ(t).kind {
+            crate::code::type_::TypeKindData::ProxyType { name } => name.clone(),
+            _ => return Ok(t),
+        };
+        // Java: name.map(ClassReader.this::sigToType) — NameMapper over the
+        // name UTF-8 byte array (sigToType(byte[], offset, len)).
+        let sig = name.get_byte_array();
+        let offset = name.get_byte_offset();
+        let len = name.get_byte_length();
+        self.sig_to_type_bytes(ctx, syms, sig, offset, len)
+    }
+
     /// Java: List<CompoundAnnotationProxy> readAnnotations()
     fn read_annotations(
         &mut self,
@@ -2078,9 +2112,16 @@ impl ClassReader {
             _ => None,
         });
         if module_info == self.current_owner {
-            // Java: return new ProxyType(i); — ProxyType is not ported yet (module
-            // annotation); registered TODO.
-            unimplemented!("TODO(S2-B/ProxyType): ClassReader.ProxyType for module-info annotations");
+            // Java: ClassReader.java:1537-1543
+            //   if (currentModule.module_info == currentOwner) return new ProxyType(i);
+            // ProxyType: name = poolReader.getName(index), tag NONE, noSymbol.
+            let name = self.get_name(index)?;
+            let ty = ctx.alloc_type(crate::code::type_::Type::new(
+                crate::code::type_tag::TypeTag::NONE,
+                None,
+                crate::code::type_::TypeKindData::ProxyType { name },
+            ));
+            return Ok(ty);
         }
         self.get_type(ctx, syms, index)
     }
@@ -2290,12 +2331,18 @@ impl ClassReader {
             Some(annotate) => {
                 let services = Rc::clone(&annotate.services);
                 let class_file = self.current_class_file.clone();
+                let reader_handle = self.reader_handle.clone();
+                let reader_handle = self.reader_handle.clone();
                 annotate.normal(Box::new(move |ctx: &mut CompilerContext| {
                     let syms_rc = Rc::clone(&services.syms);
                     let mut syms_guard = syms_rc.borrow_mut();
                     let syms = &mut *syms_guard;
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
+                        let mut reader_guard =
+                            reader_handle.as_ref().map(|rc| rc.borrow_mut());
+                        let mut reader_guard =
+                            reader_handle.as_ref().map(|rc| rc.borrow_mut());
                         let types = Rc::clone(&services.types);
                         let new_list = deproxy_compound_list(
                             ctx,
@@ -2303,6 +2350,7 @@ impl ClassReader {
                             &types,
                             &services.names,
                             &proxies,
+                            reader_guard.as_mut().map(|guard| &mut **guard),
                         )?;
                         let deprecated_ty = syms.deprecated_type;
                         for attr in new_list.iter() {
@@ -2380,12 +2428,15 @@ impl ClassReader {
                 }
                 let services = Rc::clone(&annotate.services);
                 let class_file = self.current_class_file.clone();
+                let reader_handle = self.reader_handle.clone();
                 annotate.normal(Box::new(move |ctx: &mut CompilerContext| {
                     let syms_rc = Rc::clone(&services.syms);
                     let mut syms_guard = syms_rc.borrow_mut();
                     let syms = &mut *syms_guard;
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
+                        let mut reader_guard =
+                            reader_handle.as_ref().map(|rc| rc.borrow_mut());
                         let types = Rc::clone(&services.types);
                         let meth_ty = ctx.sym(sym).ty.expect("annotation method type");
                         let restype = match &ctx.typ(meth_ty).kind {
@@ -2401,6 +2452,7 @@ impl ClassReader {
                             &services.names,
                             restype,
                             &value,
+                            reader_guard.as_mut().map(|guard| &mut **guard),
                         )?;
                         if let crate::code::symbol::SymbolKind::MethodSymbol {
                             default_value: slot,
@@ -3632,9 +3684,8 @@ fn class_file_of(
 // Annotation deproxying (ClassReader.java:1900-2100, 3159-3200).
 // The upstream Attribute.Visitor proxy classes are expressed as matches on the
 // read AnnotationValue enum (registered adapter adapter: same values, same output
-// Attribute kinds; ProxyType is not ported, so resolvePossibleProxyType is the
-// identity until the module-annotation).
-// ---------------------------------------------------------------------------
+// Java: ProxyType is ported in code/type_.rs and resolved by
+// ClassReader.resolve_possible_proxy_type (ClassReader.java:2070-2075).
 
 /// Java: ClassReader.CompleterDeproxy (ClassReader.java:3159-3200)
 pub(crate) struct CompleterDeproxy {
@@ -3642,6 +3693,7 @@ pub(crate) struct CompleterDeproxy {
     target: Option<AnnotationValue>,
     repeatable: Option<AnnotationValue>,
     names: Rc<Names>,
+    reader: Option<Rc<RefCell<ClassReader>>>,
 }
 
 impl CompleterDeproxy {
@@ -3650,8 +3702,10 @@ impl CompleterDeproxy {
         target: Option<AnnotationValue>,
         repeatable: Option<AnnotationValue>,
         names: Rc<Names>,
+        reader: Option<Rc<RefCell<ClassReader>>>,
     ) -> CompleterDeproxy {
         CompleterDeproxy {
+            reader,
             proxy_on,
             target,
             repeatable,
@@ -3671,14 +3725,29 @@ impl AnnotationTypeCompleter for CompleterDeproxy {
         // adapter adapter: Types is value-held by ClassReader; the completer builds an
         // equivalent Types instance from the same Names service (Types has no
         // per-instance mutable state; see Types::with_names).
+        let mut reader_guard = self.reader.as_ref().map(|rc| rc.borrow_mut());
         let types = crate::code::types::Types::with_names(Rc::clone(&self.names));
         let mut the_target: Option<crate::ids::AttributeId> = None;
         let mut the_repeatable: Option<crate::ids::AttributeId> = None;
         if let Some(target) = self.target.clone() {
-            the_target = Some(deproxy_compound(ctx, syms, &types, &self.names, &target)?);
+            the_target = Some(deproxy_compound(
+                ctx,
+                syms,
+                &types,
+                &self.names,
+                &target,
+                reader_guard.as_mut().map(|guard| &mut **guard),
+            )?);
         }
         if let Some(repeatable) = self.repeatable.clone() {
-            the_repeatable = Some(deproxy_compound(ctx, syms, &types, &self.names, &repeatable)?);
+            the_repeatable = Some(deproxy_compound(
+                ctx,
+                syms,
+                &types,
+                &self.names,
+                &repeatable,
+                reader_guard.as_mut().map(|guard| &mut **guard),
+            )?);
         }
         if let Some(metadata) = ctx.sym_mut(sym).get_annotation_type_metadata_mut() {
             metadata.set_target(the_target);
@@ -3695,12 +3764,20 @@ fn deproxy_compound_list(
     types: &crate::code::types::Types,
     names: &Names,
     pl: &List<AnnotationValue>,
+    mut reader: Option<&mut ClassReader>,
 ) -> Result<List<crate::ids::AttributeId>, crate::code::symbol::CompletionFailure> {
     let mut buf: List<crate::ids::AttributeId> = List::nil();
     let mut current = pl.clone();
     while current.non_empty() {
         let proxy = current.head();
-        buf = buf.append(deproxy_compound(ctx, syms, types, names, proxy)?);
+        buf = buf.append(deproxy_compound(
+            ctx,
+            syms,
+            types,
+            names,
+            proxy,
+            reader.as_mut().map(|r| &mut **r),
+        )?);
         current = current.tail();
     }
     Ok(buf)
@@ -3713,10 +3790,15 @@ fn deproxy_compound(
     types: &crate::code::types::Types,
     names: &Names,
     proxy: &AnnotationValue,
+    mut reader: Option<&mut ClassReader>,
 ) -> Result<crate::ids::AttributeId, crate::code::symbol::CompletionFailure> {
     let (ty, values) = match proxy {
         AnnotationValue::Compound { ty, values } => (*ty, values.clone()),
         _ => panic!("CompoundAnnotationProxy expected"),
+    };
+    let ty = match reader.as_mut() {
+        Some(reader) => reader.resolve_possible_proxy_type(ctx, syms, ty)?,
+        None => ty,
     };
     let mut pairs: List<Pair<SymbolId, crate::ids::AttributeId>> = List::nil();
     let mut current = values;
@@ -3730,7 +3812,15 @@ fn deproxy_compound(
             }
             _ => panic!("MethodType expected"),
         };
-        let attr = deproxy_value(ctx, syms, types, names, restype, &value)?;
+        let attr = deproxy_value(
+            ctx,
+            syms,
+            types,
+            names,
+            restype,
+            &value,
+            reader.as_mut().map(|r| &mut **r),
+        )?;
         pairs = pairs.append(Pair::new(meth, attr));
         current = current.tail();
     }
@@ -3749,6 +3839,7 @@ fn deproxy_value(
     names: &Names,
     expected_ty: TypeId,
     value: &AnnotationValue,
+    mut reader: Option<&mut ClassReader>,
 ) -> Result<crate::ids::AttributeId, crate::code::symbol::CompletionFailure> {
     let _ = names;
     let attribute = match value {
@@ -3759,26 +3850,48 @@ fn deproxy_value(
             enum_type,
             enumerator,
         } => {
-            let enum_ty = *enum_type;
+            let enum_ty = match reader.as_mut() {
+                Some(reader) => reader.resolve_possible_proxy_type(ctx, syms, *enum_type)?,
+                None => *enum_type,
+            };
             let enumerator_sym = find_enum_constant(ctx, syms, enum_ty, enumerator)?;
             crate::code::attribute::Attribute::new_enum(Some(enum_ty), enumerator_sym)
         }
-        AnnotationValue::Class { class_type } => crate::code::attribute::Attribute::new_class(
-            ctx, syms, types, *class_type,
-        ),
+        AnnotationValue::Class { class_type } => {
+            let class_ty = match reader.as_mut() {
+                Some(reader) => reader.resolve_possible_proxy_type(ctx, syms, *class_type)?,
+                None => *class_type,
+            };
+            crate::code::attribute::Attribute::new_class(ctx, syms, types, class_ty)
+        }
         AnnotationValue::Array { values } => {
             let elemtype = types.elemtype(ctx, syms, expected_ty);
             let mut elems: Vec<crate::ids::AttributeId> = Vec::new();
             let mut current = values.clone();
             while current.non_empty() {
                 let elem = current.head();
-                elems.push(deproxy_value(ctx, syms, types, names, elemtype, elem)?);
+                elems.push(deproxy_value(
+                    ctx,
+                    syms,
+                    types,
+                    names,
+                    elemtype,
+                    elem,
+                    reader.as_mut().map(|r| &mut **r),
+                )?);
                 current = current.tail();
             }
             crate::code::attribute::Attribute::new_array(Some(expected_ty), elems)
         }
         AnnotationValue::Compound { .. } => {
-            return deproxy_compound(ctx, syms, types, names, value);
+            return deproxy_compound(
+                ctx,
+                syms,
+                types,
+                names,
+                value,
+                reader,
+            );
         }
     };
     Ok(ctx.alloc_attribute(attribute))
@@ -4960,7 +5073,7 @@ mod tests {
             )),
         };
         let list = List::of(proxy);
-        let attributes = deproxy_compound_list(&mut ctx, &mut syms, &types, &names, &list)
+        let attributes = deproxy_compound_list(&mut ctx, &mut syms, &types, &names, &list, None)
             .expect("deproxy");
         assert_eq!(attributes.length(), 1);
         let attr = *attributes.head();
@@ -5492,6 +5605,38 @@ mod tests {
             flags::VARARGS
         );
         assert_eq!(reader.adjust_field_flags(0x0001), 0x0001);
+    }
+
+    #[test]
+    fn proxy_type_resolves_signature_name() {
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut reader = reader();
+        let names = Rc::clone(&reader.names);
+        let mut syms = crate::code::symtab::Symtab::new(
+            &mut ctx,
+            Rc::clone(&names),
+            crate::jvm::target::Target::JDK1_17,
+            crate::code::source::Source::JDK17,
+        );
+        reader.current_module = Some(syms.java_base);
+        let sig = names.from_string(&javac_strings::JavaString::from("Ljava/lang/Object;"));
+        let proxy = ctx.alloc_type(crate::code::type_::Type::new(
+            crate::code::type_tag::TypeTag::NONE,
+            None,
+            crate::code::type_::TypeKindData::ProxyType { name: sig },
+        ));
+        let resolved = reader
+            .resolve_possible_proxy_type(&mut ctx, &mut syms, proxy)
+            .expect("ProxyType.resolve");
+        assert_eq!(
+            ctx.typ(resolved).get_tag(),
+            crate::code::type_tag::TypeTag::CLASS
+        );
+        let tsym = ctx.typ(resolved).tsym.expect("Object symbol");
+        assert_eq!(
+            ctx.sym(tsym).name.to_java_string(),
+            javac_strings::JavaString::from("Object")
+        );
     }
 
     #[test]

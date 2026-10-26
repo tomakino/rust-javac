@@ -151,6 +151,9 @@ impl ClassFinder {
         } else {
             None
         };
+        // Java: the inner annotation/proxy classes capture ClassReader.this
+        // (ClassReader.java:3199/3159); the port stores the owning Rc.
+        reader.borrow_mut().reader_handle = Some(Rc::clone(&reader));
         Rc::new_cyclic(|weak| ClassFinder {
             reader,
             verbose,
