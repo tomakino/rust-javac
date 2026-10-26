@@ -3020,3 +3020,101 @@ impl Check {
         self.types.base_type_of(ctx, upward)
     }
 }
+
+impl Check {
+    /// Java: void checkSwitchCaseStructure(List<JCCase> cases) (Check.java:4262-4330).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - cases: the switch cases.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:4262-4330.
+    pub fn check_switch_case_structure(&self, ctx: &mut crate::compiler_context::CompilerContext, cases: crate::util::list::List<TreeId>) {
+        let mut was_constant = false;
+        let mut was_default = false;
+        let mut was_null_pattern = false;
+        let mut was_pattern = false;
+        let mut was_type_pattern = false;
+        let mut was_non_empty_fall_through = false;
+        let mut current = cases;
+        while current.non_empty() {
+            let case = *current.head();
+            let (labels, case_kind, stats, completes_normally) = match &ctx.tree(case).kind {
+                crate::tree::jc_tree::TreeKind::Case { labels, case_kind, stats, completes_normally, .. } => {
+                    (labels.clone(), *case_kind, stats.clone(), *completes_normally)
+                }
+                _ => { current = current.tail(); continue; }
+            };
+            let mut label_current = labels;
+            while label_current.non_empty() {
+                let pat = *label_current.head();
+                let is_expression = !ctx.tree(pat).has_tag(crate::tree::jc_tree::Tag::DEFAULTCASELABEL)
+                    && !ctx.tree(pat).has_tag(crate::tree::jc_tree::Tag::BINDINGPATTERN)
+                    && !ctx.tree(pat).has_tag(crate::tree::jc_tree::Tag::PARENTHESIZEDPATTERN)
+                    && !ctx.tree(pat).has_tag(crate::tree::jc_tree::Tag::GUARDPATTERN);
+                if is_expression {
+                    let is_null = crate::tree::tree_info::is_null(ctx, pat);
+                    if is_null {
+                        if was_pattern && !was_type_pattern && !was_non_empty_fall_through {
+                            self.report_flows_through_from_pattern(ctx, pat);
+                        }
+                        was_null_pattern = true;
+                    } else {
+                        if was_pattern && !was_non_empty_fall_through {
+                            self.report_flows_through_from_pattern(ctx, pat);
+                        }
+                        was_constant = true;
+                    }
+                } else if ctx.tree(pat).has_tag(crate::tree::jc_tree::Tag::DEFAULTCASELABEL) {
+                    if was_pattern && !was_non_empty_fall_through {
+                        self.report_flows_through_from_pattern(ctx, pat);
+                    }
+                    was_default = true;
+                } else {
+                    let is_type_pattern = ctx.tree(pat).has_tag(crate::tree::jc_tree::Tag::BINDINGPATTERN);
+                    if was_pattern || was_constant || was_default
+                        || (was_null_pattern && (!is_type_pattern || was_non_empty_fall_through)) {
+                        let info = crate::resources::compiler_properties::errors::flows_through_to_pattern();
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            ctx.tree(pat).pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
+                    }
+                    was_pattern = true;
+                    was_type_pattern = is_type_pattern;
+                }
+                label_current = label_current.tail();
+            }
+            let completes = case_kind == javac_source::tree::case_tree::CaseKind::STATEMENT && completes_normally;
+            if !stats.is_empty() {
+                was_constant = false;
+                was_default = false;
+                was_null_pattern = was_null_pattern && completes;
+                was_pattern = was_pattern && completes;
+                was_type_pattern = was_type_pattern && completes;
+            }
+            was_non_empty_fall_through = !stats.is_empty() && completes;
+            current = current.tail();
+        }
+    }
+
+    fn report_flows_through_from_pattern(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        pat: TreeId,
+    ) {
+        let info = crate::resources::compiler_properties::errors::flows_through_from_pattern();
+        crate::util::abstract_log::AbstractLog::error_at(
+            &mut *self.log.borrow_mut(),
+            ctx.tree(pat).pos,
+            crate::util::jc_diagnostic::Error::from(info),
+        );
+    }
+}

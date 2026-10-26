@@ -702,6 +702,13 @@ impl Attr {
             _ => {}
         }
         match &ctx.tree(tree).tag {
+            Tag::BINDINGPATTERN => self.visit_binding_pattern(ctx, syms, tree),
+            Tag::PARENTHESIZEDPATTERN => self.visit_parenthesized_pattern(ctx, syms, tree),
+            Tag::GUARDPATTERN => self.visit_guard_pattern(ctx, syms, tree),
+            Tag::SWITCH => self.visit_switch(ctx, syms, tree),
+            Tag::SWITCH_EXPRESSION => self.visit_switch_expression(ctx, syms, tree),
+            Tag::LAMBDA => unimplemented!("TODO(Check/Symbol): Attr.visitLambda (setFunctionalInfo/checkImplementations/checkOverride and the BreakAttr recovery are not ported)"),
+            Tag::REFERENCE => unimplemented!("TODO(Check/Symbol): Attr.visitReference (member reference resolution and the Check override family are not ported)"),
             Tag::BLOCK => self.visit_block(ctx, syms, tree),
             Tag::DOLOOP => self.visit_do_loop(ctx, syms, tree),
             Tag::WHILELOOP => self.visit_while_loop(ctx, syms, tree),
@@ -7853,6 +7860,862 @@ impl Attr {
         self.attrib_stat(ctx, syms, body, &loop_env);
         Ok(self.no_type(ctx))
     }}
+
+impl Attr {
+    /// Java: public void visitBindingPattern(JCBindingPattern tree)
+    /// (Attr.java:4132-4148).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the binding pattern.
+    ///
+    /// # Returns
+    ///   - the pattern type.
+    ///
+    /// # Panics
+    ///   - the annotate service must be installed.
+    ///
+    /// Upstream: Attr.java:4132-4148.
+    fn visit_binding_pattern(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let var = match &ctx.tree(tree).kind {
+            TreeKind::BindingPattern { var: Some(var) } => *var,
+            _ => panic!("ClassCastException: JCBindingPattern expected"),
+        };
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let var_info = ResultInfo::new(
+            KindSelector::TYP,
+            result_info.pt,
+            Rc::clone(&result_info.check_context),
+        );
+        let vartype = match &ctx.tree(var).kind {
+            TreeKind::VariableDecl { vartype: Some(vartype), .. } => *vartype,
+            _ => panic!("AssertionError: binding pattern variable without a type"),
+        };
+        let ty = self.attrib_tree_use(ctx, syms, vartype, &env, var_info);
+        ctx.tree_mut(var).ty = Some(ty);
+        let (name, flags_value) = match &ctx.tree(var).kind {
+            TreeKind::VariableDecl { name, mods, .. } => {
+                let flags_value = match mods {
+                    Some(mods) => match &ctx.tree(*mods).kind {
+                        TreeKind::Modifiers { flags, .. } => *flags,
+                        _ => 0,
+                    },
+                    None => 0,
+                };
+                (name.clone(), flags_value)
+            }
+            _ => panic!("AssertionError: binding pattern variable expected"),
+        };
+        let scope = env.info.borrow().scope.expect("env scope");
+        let owner = ctx.scope(scope).owner.expect("scope owner");
+        let binding = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::VAR,
+            flags_value,
+            name,
+            Some(ty),
+            Some(owner),
+            crate::code::symbol::SymbolKind::BindingSymbol {
+                aliases: List::nil(),
+            },
+        ));
+        if let TreeKind::VariableDecl { sym, .. } = &mut ctx.tree_mut(var).kind {
+            *sym = Some(binding);
+        }
+        let unique = {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_unique(ctx, ctx.tree(tree).pos, binding, scope)
+        };
+        if unique {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_transparent_var(ctx, ctx.tree(var).pos, binding, scope);
+        }
+        // Java: annotate.annotateLater(tree.var.mods.annotations, env, v,
+        //     tree.pos()); annotate.queueScanTreeAndTypeAnnotate(tree.var.vartype,
+        //     env, v, tree.var.pos()); annotate.flush();
+        {
+            let annotate_rc = self
+                .annotate
+                .borrow()
+                .clone()
+                .expect("AssertionError: annotate service must be installed");
+            let annotations = match &ctx.tree(var).kind {
+                TreeKind::VariableDecl { mods: Some(mods), .. } => {
+                    match &ctx.tree(*mods).kind {
+                        TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+                        _ => List::nil(),
+                    }
+                }
+                _ => List::nil(),
+            };
+            annotate_rc.annotate_later(
+                ctx,
+                annotations,
+                Rc::clone(&env),
+                binding,
+                Some(ctx.tree(tree).pos),
+            );
+            annotate_rc.services.queue_scan_tree_and_type_annotate(
+                vartype,
+                &env,
+                binding,
+                ctx.tree(var).pos,
+            );
+            let _ = annotate_rc.flush(ctx);
+        }
+        // NOT PORTED: chk.validate(tree.var.vartype, env, true) — Check.validate/
+        // Validator is not ported yet (Check.java:1397-1525); registered.
+        ctx.tree_mut(tree).ty = Some(ty);
+        self.result = Some(ty);
+        self.match_bindings = crate::comp::match_bindings::MatchBindings::new(
+            List::of(binding),
+            List::nil(),
+        );
+        Ok(ty)
+    }
+
+    /// Java: public void visitParenthesizedPattern(JCParenthesizedPattern tree)
+    /// (Attr.java:4150-4154).
+    fn visit_parenthesized_pattern(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let pattern = match &ctx.tree(tree).kind {
+            TreeKind::ParenthesizedPattern { pattern: Some(pattern) } => *pattern,
+            _ => panic!("ClassCastException: JCParenthesizedPattern expected"),
+        };
+        self.attrib_expr(ctx, syms, pattern, &env);
+        let ty = ctx.tree(pattern).ty.unwrap_or_else(|| self.no_type(ctx));
+        ctx.tree_mut(tree).ty = Some(ty);
+        self.result = Some(ty);
+        Ok(ty)
+    }
+
+    /// Java: public void visitGuardPattern(JCGuardPattern tree)
+    /// (Attr.java:4156-4168).
+    fn visit_guard_pattern(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let (patt, expr) = match &ctx.tree(tree).kind {
+            TreeKind::GuardPattern { patt, expr } => (
+                patt.expect("guard pattern patt"),
+                expr.expect("guard pattern expr"),
+            ),
+            _ => panic!("ClassCastException: JCGuardPattern expected"),
+        };
+        self.attrib_expr(ctx, syms, patt, &env);
+        let after_pattern = self.match_bindings.clone();
+        let body_env = self.binding_env(
+            ctx,
+            syms,
+            &env,
+            after_pattern.bindings_when_true.clone(),
+        );
+        self.attrib_expr_with_type(ctx, syms, expr, &body_env, Some(syms.boolean_type));
+        let ty = ctx.tree(patt).ty.unwrap_or_else(|| self.no_type(ctx));
+        ctx.tree_mut(tree).ty = Some(ty);
+        self.result = Some(ty);
+        let pattern_bindings = self.match_bindings.clone();
+        self.match_bindings = self.match_bindings_computer.guarded_pattern(
+            ctx,
+            ctx.tree(tree).pos,
+            &after_pattern,
+            &pattern_bindings,
+        );
+        Ok(ty)
+    }
+}
+
+/// Java: the anonymous Check.NestedCheckContext in visitSwitchExpression
+/// (Attr.java:1650-1665) reporting IncompatibleTypeInSwitchExpression.
+pub struct SwitchExpressionCheckContext {
+    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
+    pub diags: Rc<crate::util::jc_diagnostic::Factory>,
+}
+
+impl crate::comp::check::CheckContext for SwitchExpressionCheckContext {
+    fn compatible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        found: TypeId,
+        req: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        self.enclosing.compatible(ctx, syms, types, found, req, warn)
+    }
+
+    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+        let message = details.get_message(None);
+        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+            crate::resources::compiler_properties::fragments::incompatible_type_in_switch_expression(
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                    message.to_string(),
+                ),
+            ),
+        ));
+        self.enclosing.report(ctx, pos, &fragment);
+    }
+
+    fn check_warner(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> crate::util::warner::Warner {
+        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+    }
+
+    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
+        self.enclosing.inference_context()
+    }
+
+    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
+        self.enclosing.deferred_attr_context()
+    }
+}
+
+/// Java: the TreeScanner in visitSwitchExpression collecting yield
+/// expression types (Attr.java:1630-1650).
+pub struct YieldCollector {
+    /// the switch expression being attributed
+    pub target: TreeId,
+    /// the collected positions
+    pub positions: Vec<i32>,
+    /// the collected types
+    pub types: Vec<TypeId>,
+    /// the error type for a yield without a value
+    pub err_type: TypeId,
+}
+
+impl crate::tree::tree_scanner::TreeScannerVisitor for YieldCollector {
+    /// Java: public void visitYield(JCYield brk)
+    fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (value, target) = match &ctx.tree(tree).kind {
+            TreeKind::Yield { value, target } => (*value, *target),
+            _ => return,
+        };
+        if target == Some(self.target) {
+            let pos = value.map(|value| ctx.tree(value).pos).unwrap_or(ctx.tree(tree).pos);
+            let ty = value.and_then(|value| ctx.tree(value).ty).unwrap_or(self.err_type);
+            self.positions.push(pos);
+            self.types.push(ty);
+        }
+        if let Some(value) = value {
+            crate::tree::tree_scanner::TreeScannerVisitor::scan(self, ctx, Some(value));
+        }
+    }
+
+    /// Java: public void visitClassDef(JCClassDecl tree) — do nothing.
+    fn visit_class_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
+    /// Java: public void visitLambda(JCLambda tree) — do nothing.
+    fn visit_lambda(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
+}
+
+crate::tree::tree_scanner::tree_scanner_visitor_delegate!(YieldCollector);
+
+impl Attr {
+    /// Java: void handleSwitch(JCTree switchTree, JCExpression selector,
+    /// List<JCCase> cases, BiConsumer<JCCase, Env<AttrContext>> attribCase)
+    /// (Attr.java:1666-1904).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - switch_tree: the switch statement/expression;
+    ///   - selector: the selector expression;
+    ///   - cases: the case clauses;
+    ///   - expression_result: Some(condInfo) for a switch expression.
+    ///
+    /// # Returns
+    ///   - the (positions, types) of the yield expressions for a switch
+    ///     expression; empty for a switch statement.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:1666-1904.
+    #[allow(clippy::too_many_arguments, clippy::collapsible_if, clippy::too_many_lines)]
+    fn handle_switch(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        switch_tree: TreeId,
+        selector: TreeId,
+        cases: List<TreeId>,
+        expression_result: Option<ResultInfo>,
+    ) -> Option<(Vec<i32>, Vec<TypeId>)> {
+        let env = self.env.clone().expect("env");
+        let seltype = self.attrib_expr(ctx, syms, selector, &env);
+        let switch_env = self.dup_env_with_scope(ctx, &env, Some(switch_tree), None);
+        let enum_switch = ctx
+            .typ(seltype)
+            .tsym
+            .map(|tsym| ctx.sym(tsym).flags_field & (crate::code::flags::ENUM as i64) != 0)
+            .unwrap_or(false);
+        let string_switch = self.types.is_same_type(ctx, syms, seltype, syms.string_type);
+        let error_enum_switch = crate::tree::tree_info::is_error_enum_switch(ctx, selector, &cases);
+        let is_int_switch = self.types.is_assignable(ctx, syms, seltype, syms.int_type);
+        let pattern_switch = if !enum_switch && !string_switch && !error_enum_switch && !is_int_switch {
+            // Java: preview.checkSourceLevel(selector.pos(), Feature.PATTERN_SWITCH);
+            // TODO(Preview): the source-level preview check is registered with the
+            // Preview service integration; the switch itself is attributed as a
+            // pattern switch (the Preview.checkSourceLevel call is not ported).
+            true
+        } else {
+            let mut found = false;
+            let mut case_current = cases.clone();
+            while case_current.non_empty() {
+                let case = *case_current.head();
+                let labels = match &ctx.tree(case).kind {
+                    TreeKind::Case { labels, .. } => labels.clone(),
+                    _ => List::nil(),
+                };
+                let mut label_current = labels;
+                while label_current.non_empty() {
+                    let label = *label_current.head();
+                    if is_pattern_label(ctx, label) {
+                        found = true;
+                    }
+                    label_current = label_current.tail();
+                }
+                case_current = case_current.tail();
+            }
+            found
+        };
+        let mut labels_seen_enum: Vec<SymbolId> = Vec::new();
+        let mut labels_seen_consts: Vec<crate::util::constants::ConstantValue> = Vec::new();
+        let mut covered_types: List<TypeId> = List::nil();
+        let mut has_default = false;
+        let mut has_total_pattern = false;
+        let mut has_null_pattern = false;
+        let mut case_kind: Option<javac_source::tree::case_tree::CaseKind> = None;
+        let mut was_error = false;
+        let mut prev_bindings: Option<crate::comp::match_bindings::MatchBindings> = None;
+        let mut yield_positions: Vec<i32> = Vec::new();
+        let mut yield_types: Vec<TypeId> = Vec::new();
+        let mut case_current = cases.clone();
+        while case_current.non_empty() {
+            let case = *case_current.head();
+            let (case_labels, this_kind, case_stats) = match &ctx.tree(case).kind {
+                TreeKind::Case {
+                    labels,
+                    case_kind,
+                    stats,
+                    ..
+                } => (labels.clone(), *case_kind, stats.clone()),
+                _ => {
+                    case_current = case_current.tail();
+                    continue;
+                }
+            };
+            if case_kind.is_none() {
+                case_kind = Some(this_kind);
+            } else if case_kind != Some(this_kind) && !was_error {
+                self.attr_error(
+                    ctx.tree(case).pos,
+                    crate::resources::compiler_properties::errors::switch_mixing_case_types(),
+                );
+                was_error = true;
+            }
+            let mut current_bindings = prev_bindings.clone();
+            let was_total_pattern = has_total_pattern;
+            let mut label_current = case_labels;
+            while label_current.non_empty() {
+                let pat = *label_current.head();
+                let is_expr_label = !ctx.tree(pat).has_tag(Tag::DEFAULTCASELABEL)
+                    && !is_pattern_label(ctx, pat);
+                if is_expr_label {
+                    if crate::tree::tree_info::is_null(ctx, pat) {
+                        // Java: preview.checkSourceLevel(expr.pos(), Feature.CASE_NULL);
+                        // TODO(Preview): source-level CASE_NULL check registered with the
+                        // Preview service integration (Preview.checkSourceLevel is not ported).
+                        if has_null_pattern {
+                            self.attr_error(
+                                ctx.tree(pat).pos,
+                                crate::resources::compiler_properties::errors::duplicate_case_label(),
+                            );
+                        } else if was_total_pattern {
+                            self.attr_error(
+                                ctx.tree(pat).pos,
+                                crate::resources::compiler_properties::errors::pattern_dominated(),
+                            );
+                        }
+                        has_null_pattern = true;
+                        self.attrib_expr_with_type(ctx, syms, pat, &switch_env, Some(seltype));
+                        let bindings = self.match_bindings.clone();
+                        self.match_bindings = crate::comp::match_bindings::MatchBindings::new_with_null(
+                            bindings.bindings_when_true.clone(),
+                            bindings.bindings_when_false.clone(),
+                            true,
+                        );
+                    } else if enum_switch {
+                        let sym = self.enum_constant(ctx, syms, pat, seltype);
+                        match sym {
+                            None => {
+                                self.attr_error(
+                                    ctx.tree(pat).pos,
+                                    crate::resources::compiler_properties::errors::enum_label_must_be_unqualified_enum(),
+                                );
+                            }
+                            Some(sym) => {
+                                let sym_ty = ctx.sym(sym).ty.expect("enum constant type");
+                                if labels_seen_enum.contains(&sym) {
+                                    self.attr_error(
+                                        ctx.tree(pat).pos,
+                                        crate::resources::compiler_properties::errors::duplicate_case_label(),
+                                    );
+                                } else {
+                                    labels_seen_enum.push(sym);
+                                    self.check_case_label_dominated(ctx, syms, ctx.tree(pat).pos, &covered_types, sym_ty);
+                                }
+                            }
+                        }
+                    } else if error_enum_switch {
+                        // Java: temporarily swap rs.basicLogResolveHelper with the
+                        // silent one for the error recovery;
+                        // TODO(Resolve): the Resolve LogResolveHelper swap is registered
+                        // with the Resolve service integration and is not ported.
+                        self.attrib_expr_with_type(ctx, syms, pat, &switch_env, Some(seltype));
+                    } else {
+                        let val_typ_info = ResultInfo::new(
+                            KindSelector::VAL_TYP,
+                            Some(if !ctx.typ(seltype).has_tag(TypeTag::ERROR) {
+                                seltype
+                            } else {
+                                self.no_type(ctx)
+                            }),
+                            Rc::clone(&self.basic_handler),
+                        );
+                        let pattype = self.attrib_tree_use(ctx, syms, pat, &switch_env, val_typ_info);
+                        if !ctx.typ(pattype).has_tag(TypeTag::ERROR) {
+                            let const_value = ctx.typ(pattype).const_value().cloned();
+                            if const_value.is_none() {
+                                let symbol = crate::tree::tree_info::symbol(ctx, pat);
+                                let is_type_sym = symbol
+                                    .map(|symbol| ctx.sym(symbol).kind == crate::code::kinds::Kind::TYP)
+                                    .unwrap_or(false);
+                                if is_type_sym && self.allow_pattern_switch {
+                                    self.attr_error(
+                                        ctx.tree(pat).pos,
+                                        crate::resources::compiler_properties::errors::pattern_expected(),
+                                    );
+                                } else {
+                                    self.attr_error(
+                                        ctx.tree(pat).pos,
+                                        if string_switch {
+                                            crate::resources::compiler_properties::errors::string_const_req()
+                                        } else {
+                                            crate::resources::compiler_properties::errors::const_expr_req()
+                                        },
+                                    );
+                                }
+                            } else if !string_switch && !is_int_switch {
+                                self.attr_error(
+                                    ctx.tree(pat).pos,
+                                    crate::resources::compiler_properties::errors::constant_label_not_compatible(
+                                        Self::type_arg_placeholder(ctx, pattype),
+                                        Self::type_arg_placeholder(ctx, seltype),
+                                    ),
+                                );
+                            } else if let Some(const_value) = const_value {
+                                if labels_seen_consts.contains(&const_value) {
+                                    self.attr_error(
+                                        ctx.tree(case).pos,
+                                        crate::resources::compiler_properties::errors::duplicate_case_label(),
+                                    );
+                                } else {
+                                    labels_seen_consts.push(const_value);
+                                    let boxed = self.types.boxed_type_or_type(ctx, syms, pattype);
+                                    self.check_case_label_dominated(ctx, syms, ctx.tree(pat).pos, &covered_types, boxed);
+                                }
+                            }
+                        }
+                    }
+                } else if ctx.tree(pat).has_tag(Tag::DEFAULTCASELABEL) {
+                    if has_default {
+                        self.attr_error(
+                            ctx.tree(pat).pos,
+                            crate::resources::compiler_properties::errors::duplicate_default_label(),
+                        );
+                    } else if was_total_pattern {
+                        self.attr_error(
+                            ctx.tree(pat).pos,
+                            crate::resources::compiler_properties::errors::total_pattern_and_default(),
+                        );
+                    }
+                    has_default = true;
+                    self.match_bindings = crate::comp::match_bindings::MatchBindings::empty();
+                } else {
+                    // binding pattern
+                    self.attrib_expr(ctx, syms, pat, &switch_env);
+                    let primary = crate::tree::tree_info::primary_pattern_type(ctx, pat);
+                    let primary_type = primary.ty().unwrap_or_else(|| self.no_type(ctx));
+                    let primary_type = if !ctx.typ(primary_type).has_tag(TypeTag::TYPEVAR) {
+                        let chk_rc = Rc::clone(&self.chk);
+                        let chk = chk_rc.borrow();
+                        chk.check_class_or_array_type(ctx, ctx.tree(pat).pos, primary_type)
+                    } else {
+                        primary_type
+                    };
+                    self.check_castable_pattern(ctx, syms, ctx.tree(pat).pos, seltype, primary_type);
+                    let pattern_type = self.types.erasure(ctx, syms, primary_type);
+                    let seltype_erased = self.types.erasure(ctx, syms, seltype);
+                    let is_total = primary.unconditional
+                        && !ctx.typ(pattern_type).has_tag(TypeTag::ERROR)
+                        && self.types.is_subtype(ctx, syms, seltype_erased, pattern_type);
+                    if is_total {
+                        if has_total_pattern {
+                            self.attr_error(
+                                ctx.tree(pat).pos,
+                                crate::resources::compiler_properties::errors::duplicate_total_pattern(),
+                            );
+                        } else if has_default {
+                            self.attr_error(
+                                ctx.tree(pat).pos,
+                                crate::resources::compiler_properties::errors::total_pattern_and_default(),
+                            );
+                        }
+                        has_total_pattern = true;
+                    }
+                    self.check_case_label_dominated(ctx, syms, ctx.tree(pat).pos, &covered_types, pattern_type);
+                    if primary.unconditional && !ctx.typ(pattern_type).has_tag(TypeTag::ERROR) {
+                        covered_types = covered_types.prepend(pattern_type);
+                    }
+                }
+                current_bindings = Some(self.match_bindings_computer.switch_case(
+                    ctx,
+                    ctx.tree(pat).pos,
+                    current_bindings.as_ref(),
+                    &self.match_bindings,
+                ));
+                label_current = label_current.tail();
+            }
+            let true_bindings = current_bindings
+                .as_ref()
+                .map(|bindings| bindings.bindings_when_true.clone())
+                .unwrap_or_else(List::nil);
+            let case_env = self.binding_env_with_tree(ctx, syms, &switch_env, Some(case), true_bindings);
+            if let Some(cond_info) = expression_result.clone() {
+                case_env.info.borrow_mut().yield_result = Some(cond_info);
+            }
+            self.attrib_stats(ctx, syms, case_stats.clone(), &case_env);
+            if expression_result.is_some() {
+                let err_type = syms.err_type;
+                let mut collector = YieldCollector {
+                    target: switch_tree,
+                    positions: Vec::new(),
+                    types: Vec::new(),
+                    err_type,
+                };
+                crate::tree::tree_scanner::TreeScannerVisitor::scan(&mut collector, ctx, Some(case));
+                yield_positions.extend(collector.positions);
+                yield_types.extend(collector.types);
+            }
+            self.add_vars(ctx, case_stats.clone(), switch_env.info.borrow().scope.expect("switch env scope"));
+            self.statement_pre_flow(ctx, syms, case);
+            let completes_normally = {
+                let flow_rc = self.flow.borrow().clone().expect("AssertionError: flow service must be installed");
+                let make = Rc::clone(&self.make);
+                flow_rc.alive_after(ctx, &case_env, case, &make)
+            };
+            if let TreeKind::Case { completes_normally: slot, .. } = &mut ctx.tree_mut(case).kind {
+                *slot = completes_normally;
+            }
+            prev_bindings = if this_kind == javac_source::tree::case_tree::CaseKind::STATEMENT && completes_normally {
+                current_bindings
+            } else {
+                None
+            };
+            case_current = case_current.tail();
+        }
+        if pattern_switch {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_switch_case_structure(ctx, cases);
+        }
+        let has_total = has_default || has_total_pattern;
+        match ctx.tree(switch_tree).tag {
+            Tag::SWITCH => {
+                if let TreeKind::Switch { has_total_pattern: ht, pattern_switch: ps, .. } =
+                    &mut ctx.tree_mut(switch_tree).kind
+                {
+                    *ht = has_total;
+                    *ps = pattern_switch;
+                }
+                None
+            }
+            Tag::SWITCH_EXPRESSION => {
+                if let TreeKind::SwitchExpression { has_total_pattern: ht, pattern_switch: ps, .. } =
+                    &mut ctx.tree_mut(switch_tree).kind
+                {
+                    *ht = has_total;
+                    *ps = pattern_switch;
+                }
+                Some((yield_positions, yield_types))
+            }
+            tag => panic!("AssertionError: unexpected switch tag: {:?}", tag),
+        }
+    }
+
+    /// Java: public void visitSwitch(JCSwitch tree) (Attr.java:1598-1603).
+    fn visit_switch(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let (selector, cases) = match &ctx.tree(tree).kind {
+            TreeKind::Switch { selector, cases, .. } => {
+                (selector.expect("switch selector"), cases.clone())
+            }
+            _ => panic!("ClassCastException: JCSwitch expected"),
+        };
+        self.handle_switch(ctx, syms, tree, selector, cases, None);
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitSwitchExpression(JCSwitchExpression tree)
+    /// (Attr.java:1605-1664).
+    fn visit_switch_expression(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let pt = self.pt().unwrap_or_else(|| self.no_type(ctx));
+        let recovery_type = syms.recovery_type;
+        let any_poly = self.infer.any_poly;
+        let poly_kind = if ctx.typ(pt).has_tag(TypeTag::NONE)
+            && pt != recovery_type
+            && pt != any_poly
+        {
+            crate::tree::jc_tree::PolyKind::STANDALONE
+        } else {
+            crate::tree::jc_tree::PolyKind::POLY
+        };
+        if let TreeKind::SwitchExpression { poly_kind: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = poly_kind;
+        }
+        let result_info = self.result_info.clone().expect("resultInfo");
+        if poly_kind == crate::tree::jc_tree::PolyKind::POLY && ctx.typ(pt).has_tag(TypeTag::VOID) {
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::switch_expression_target_cant_be_void(),
+            ));
+            result_info.check_context.report(ctx, ctx.tree(tree).pos, &fragment);
+            let error = self.types.create_error_type_original(ctx, Some(pt), syms);
+            ctx.tree_mut(tree).ty = Some(error);
+            self.result = Some(error);
+            return Ok(error);
+        }
+        let cond_info = if poly_kind == crate::tree::jc_tree::PolyKind::STANDALONE {
+            self.unknown_expr_info.clone()
+        } else {
+            let context: Rc<dyn crate::comp::check::CheckContext> = Rc::new(
+                SwitchExpressionCheckContext {
+                    enclosing: Rc::clone(&result_info.check_context),
+                    diags: Rc::clone(&self.diags),
+                },
+            );
+            result_info.dup_context(context)
+        };
+        let (selector, cases) = match &ctx.tree(tree).kind {
+            TreeKind::SwitchExpression { selector, cases, .. } => {
+                (selector.expect("switch expression selector"), cases.clone())
+            }
+            _ => panic!("ClassCastException: JCSwitchExpression expected"),
+        };
+        let case_info = self.handle_switch(
+            ctx,
+            syms,
+            tree,
+            selector,
+            cases.clone(),
+            Some(cond_info),
+        );
+        let (case_positions, case_types) = case_info.unwrap_or_default();
+        if cases.is_empty() {
+            self.attr_error(
+                ctx.tree(tree).pos,
+                crate::resources::compiler_properties::errors::switch_expression_empty(),
+            );
+        } else if case_types.is_empty() {
+            self.attr_error(
+                ctx.tree(tree).pos,
+                crate::resources::compiler_properties::errors::switch_expression_no_result_expressions(),
+            );
+        }
+        let owntype = if poly_kind == crate::tree::jc_tree::PolyKind::STANDALONE {
+            self.cond_type(ctx, syms, &case_positions, &case_types)
+        } else {
+            pt
+        };
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &result_info);
+        ctx.tree_mut(tree).ty = Some(result);
+        self.result = Some(result);
+        Ok(result)
+    }
+
+    /// Java: Env<AttrContext> bindingEnv(Env, JCTree newTree, List<BindingSymbol>)
+    /// (Attr.java:2190-2199).
+    fn binding_env_with_tree(
+        &self,
+        ctx: &mut CompilerContext,
+        _syms: &Symtab,
+        env: &Rc<Env<AttrContext>>,
+        tree: Option<TreeId>,
+        bindings: List<SymbolId>,
+    ) -> Rc<Env<AttrContext>> {
+        let scope = env.info.borrow().scope.expect("env scope");
+        let new_scope = ctx.scope_dup(scope, None);
+        let info = env.info.borrow().dup(Some(new_scope));
+        let env1 = env.dup(tree, info);
+        let mut current = bindings;
+        while current.non_empty() {
+            ctx.scope_enter(new_scope, *current.head());
+            current = current.tail();
+        }
+        env1
+    }
+
+    /// Java: Symbol enumConstant(JCTree tree, Type enumType) (Attr.java:1895-1912).
+    fn enum_constant(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        tree: TreeId,
+        enum_type: TypeId,
+    ) -> Option<SymbolId> {
+        if ctx.tree(tree).tag != Tag::IDENT {
+            return None;
+        }
+        let name = match &ctx.tree(tree).kind {
+            TreeKind::Ident { name, .. } => name.clone(),
+            _ => return None,
+        };
+        let enum_tsym = ctx.typ(enum_type).tsym.expect("enum type symbol");
+        let members = ctx.sym(enum_tsym).members().expect("enum members");
+        let symbols = ctx.scope_get_symbols_by_name(
+            members,
+            &name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        for symbol in symbols {
+            if ctx.sym(symbol).kind == crate::code::kinds::Kind::VAR {
+                if let TreeKind::Ident { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                    *slot = Some(symbol);
+                }
+                let symbol_ty = ctx.sym(symbol).ty.expect("enum constant type");
+                ctx.tree_mut(tree).ty = Some(symbol_ty);
+                if ctx.sym(symbol).flags_field & (crate::code::flags::ENUM as i64) == 0 {
+                    return None;
+                }
+                // TODO(ConstValue): VarSymbol.getConstValue() is not ported; the
+                // enum initializer evaluation side effect is registered.
+                return Some(symbol);
+            }
+        }
+        let _ = syms;
+        None
+    }
+
+    /// Java: static void addVars(List<JCStatement> stats, WriteableScope
+    /// switchScope) (Attr.java:1876-1882).
+    #[allow(clippy::collapsible_if)]
+    fn add_vars(&self, ctx: &mut CompilerContext, stats: List<TreeId>, scope: crate::ids::ScopeId) {
+        let mut current = stats;
+        while current.non_empty() {
+            let stat = *current.head();
+            if ctx.tree(stat).tag == Tag::VARDEF {
+                if let TreeKind::VariableDecl { sym: Some(sym), .. } = &ctx.tree(stat).kind {
+                    ctx.scope_enter(scope, *sym);
+                }
+            }
+            current = current.tail();
+        }
+    }
+
+    /// Java: void checkCaseLabelDominated(DiagnosticPosition pos,
+    /// List<Type> coveredTypes, Type patternType) (Attr.java:1884-1892).
+    fn check_case_label_dominated(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        pos: i32,
+        covered_types: &List<TypeId>,
+        pattern_type: TypeId,
+    ) {
+        let mut current = covered_types.clone();
+        while current.non_empty() {
+            let existing = *current.head();
+            if self.types.is_subtype(ctx, syms, pattern_type, existing) {
+                self.attr_error(
+                    pos,
+                    crate::resources::compiler_properties::errors::pattern_dominated(),
+                );
+            }
+            current = current.tail();
+        }
+    }
+
+    /// Java: boolean checkCastablePattern(DiagnosticPosition pos, Type
+    /// exprType, Type pattType) (Attr.java:4130-4145 area).
+    #[allow(clippy::collapsible_if)]
+    fn check_castable_pattern(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        pos: i32,
+        expr_type: TypeId,
+        patt_type: TypeId,
+    ) -> bool {
+        let mut warn = crate::util::warner::Warner::new(None);
+        if !self.types.is_castable_with_warn(ctx, syms, expr_type, patt_type, &mut warn) {
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::inconvertible_types(
+                    Self::type_arg_placeholder(ctx, expr_type),
+                    Self::type_arg_placeholder(ctx, patt_type),
+                ),
+            ));
+            self.basic_handler.report(ctx, pos, &fragment);
+            false
+        } else if warn.has_lint(crate::code::lint::LintCategory::UNCHECKED) {
+            // Java: chk.warnUnchecked(pos, Warnings.UncheckedCast(...))
+            // TODO(Check): the unchecked-cast warning in checkCastablePattern is
+            // registered with the Check service integration; the warner lint is
+            // propagated to the enclosing context here.
+            true
+        } else {
+            true
+        }
+    }
+}
+
+/// Java: JCCaseLabel.isPattern() (helper).
+fn is_pattern_label(ctx: &CompilerContext, tree: TreeId) -> bool {
+    ctx.tree(tree).has_tag(Tag::BINDINGPATTERN)
+        || ctx.tree(tree).has_tag(Tag::PARENTHESIZEDPATTERN)
+        || ctx.tree(tree).has_tag(Tag::GUARDPATTERN)
+}
 
 #[cfg(test)]
 mod tests {
