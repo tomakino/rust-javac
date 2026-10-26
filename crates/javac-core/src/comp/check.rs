@@ -895,17 +895,59 @@ impl Check {
             if ctx.sym(sym).name.to_java_string() == self.names.error.to_java_string() {
                 continue;
             }
-            let same_kind_check = if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH {
-                // TODO(Check/Types batch): types.hasSameArgs / erasure checks
-                // are not ported (Types batch); registered.
-                unimplemented!("TODO(Check/Types batch): checkUnique MTH hasSameArgs")
+            let is_method = ctx.sym(sym).kind == crate::code::kinds::Kind::MTH;
+            let same_kind_check = if is_method {
+                let sym_ty = ctx.sym(sym).ty.expect("method type");
+                let other_ty = ctx.sym(by_name).ty.expect("method type");
+                let types = crate::code::types::Types::with_names(Rc::clone(&self.names));
+                let syms = self.syms.borrow();
+                types.has_same_args(ctx, &syms, sym_ty, other_ty)
+                    || {
+                        let sym_erasure = types.erasure(ctx, &syms, sym_ty);
+                        let other_erasure = types.erasure(ctx, &syms, other_ty);
+                        types.has_same_args(ctx, &syms, sym_erasure, other_erasure)
+                    }
             } else {
                 true
             };
             if same_kind_check {
-                // The remaining branches are all MTH-specific upstream.
-                if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH {
-                    unimplemented!("TODO(Check/Types batch): checkUnique MTH varargs/erasure branches")
+                let sym_varargs = (ctx.sym(sym).flags_field & crate::code::flags::VARARGS) != 0;
+                let other_varargs =
+                    (ctx.sym(by_name).flags_field & crate::code::flags::VARARGS) != 0;
+                if sym_varargs != other_varargs {
+                    ctx.sym_mut(sym).flags_field |= crate::code::flags::CLASH;
+                    self.varargs_duplicate_error(ctx, pos, sym, by_name);
+                    return true;
+                } else if is_method {
+                    let sym_ty = ctx.sym(sym).ty.expect("method type");
+                    let other_ty = ctx.sym(by_name).ty.expect("method type");
+                    let types = crate::code::types::Types::with_names(Rc::clone(&self.names));
+                    let syms = self.syms.borrow();
+                    if !types.has_same_args_strict(ctx, &syms, sym_ty, other_ty, false) {
+                        self.duplicate_erasure_error(ctx, pos, sym, by_name);
+                        ctx.sym_mut(sym).flags_field |= crate::code::flags::CLASH;
+                        return true;
+                    }
+                }
+                if (ctx.sym(sym).flags_field & crate::code::flags::MATCH_BINDING) != 0
+                    && (ctx.sym(by_name).flags_field & crate::code::flags::MATCH_BINDING) != 0
+                    && (ctx.sym(by_name).flags_field & crate::code::flags::MATCH_BINDING_TO_OUTER) == 0
+                {
+                    let erroneous = ctx
+                        .sym(sym)
+                        .ty
+                        .map(|ty| {
+                            matches!(
+                                &ctx.typ(ty).kind,
+                                crate::code::type_::TypeKindData::ErrorType { .. }
+                            )
+                        })
+                        .unwrap_or(false);
+                    if !erroneous {
+                        self.report_error(pos, errors::match_binding_exists());
+                        ctx.sym_mut(sym).flags_field |= crate::code::flags::CLASH;
+                    }
+                    return false;
                 }
                 self.duplicate_error(ctx, pos, by_name);
                 return false;
@@ -1162,16 +1204,40 @@ impl Check {
             return found;
         }
         if ctx.typ(found).is_numeric() && ctx.typ(req).is_numeric() {
-            // TODO(Check/Types + printing batch): checkContext.report(pos,
-            //     diags.fragment(Fragments.PossibleLossOfPrecision(found, req)))
-            //     needs the Type argument printing (DiagnosticArg.TypeArg) and
-            //     types.createErrorType(found); registered, no substitute text.
-            unimplemented!("TODO(Check/Types + printing batch): Check.checkType possible loss of precision");
+            // Java: checkContext.report(pos,
+            //     diags.fragment(Fragments.PossibleLossOfPrecision(found, req)));
+            //     return types.createErrorType(found);
+            let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::possible_loss_of_precision(
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                        self.type_display(ctx, found),
+                    ),
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                        self.type_display(ctx, req),
+                    ),
+                ),
+            ));
+            check_context.report(ctx, pos, &diag);
+            return self
+                .types
+                .create_error_type_original(ctx, Some(found), syms);
         }
-        // TODO(Check/Types + printing batch): checkContext.report(pos,
-        //     diags.fragment(Fragments.InconvertibleTypes(found, req))) + the
-        //     error type; registered, no substitute text.
-        unimplemented!("TODO(Check/Types + printing batch): Check.checkType inconvertible types")
+        // Java: checkContext.report(pos, diags.fragment(
+        //     Fragments.InconvertibleTypes(found, req)));
+        //     return types.createErrorType(found);
+        let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+            crate::resources::compiler_properties::fragments::inconvertible_types(
+                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                    self.type_display(ctx, found),
+                ),
+                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                    self.type_display(ctx, req),
+                ),
+            ),
+        ));
+        check_context.report(ctx, pos, &diag);
+        self.types
+            .create_error_type_original(ctx, Some(found), syms)
     }
 
     /// Java: Type checkRefType(DiagnosticPosition pos, Type t)
@@ -1318,23 +1384,33 @@ pub struct BasicCheckContext {
 impl CheckContext for BasicCheckContext {
     fn compatible(
         &self,
-        _ctx: &mut CompilerContext,
-        _syms: &Symtab,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
         _types: &Types,
-        _found: TypeId,
-        _req: TypeId,
-        _warn: &mut Warner,
+        found: TypeId,
+        req: TypeId,
+        warn: &mut Warner,
     ) -> bool {
-        // TODO(Types batch): types.isAssignable(found, req, warn) is not ported.
-        unimplemented!("TODO(Types batch): Check.basicHandler compatible (Types.isAssignable)")
+        // Java: return types.isAssignable(found, req, warn);
+        self.types
+            .is_assignable_with_warn(ctx, syms, found, req, warn)
     }
 
-    fn report(&self, _ctx: &mut CompilerContext, _pos: i32, _details: &JCDiagnostic) {
-        // TODO(Check/Types + printing batch): log.error(pos,
-        //     Errors.ProbFoundReq(details)) needs the JCDiagnostic diagnostic
-        //     argument mapping (DiagnosticArg has no JCDiagnostic variant in the
-        //     port yet).
-        unimplemented!("TODO(Check/Types + printing batch): Check.basicHandler report")
+    fn report(&self, _ctx: &mut CompilerContext, pos: i32, details: &JCDiagnostic) {
+        // Java: log.error(pos, Errors.ProbFoundReq(details));
+        // ADR 0002 P4: the JCDiagnostic argument is mapped to its message text
+        // (DiagnosticArg has no JCDiagnostic variant); registered adapter.
+        let message = details.get_message(None);
+        self.log.borrow_mut().error_at(
+            pos,
+            crate::util::jc_diagnostic::Error::from(
+                crate::resources::compiler_properties::errors::prob_found_req(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        message.to_string(),
+                    ),
+                ),
+            ),
+        );
     }
 
     fn check_warner(
@@ -1342,12 +1418,14 @@ impl CheckContext for BasicCheckContext {
         _ctx: &mut CompilerContext,
         _syms: &Symtab,
         _types: &Types,
-        _pos: i32,
+        pos: i32,
         _found: TypeId,
         _req: TypeId,
     ) -> Warner {
-        // TODO(Check batch): convertWarner(pos, found, req) is not ported.
-        unimplemented!("TODO(Check batch): Check.basicHandler checkWarner (convertWarner)")
+        // Java: return convertWarner(pos, found, req);
+        // §9 adapter (same as cast_warner): ConversionWarner is expressed as a
+        // plain Warner; the unchecked/UNCHECKED lint is recorded by isAssignable.
+        Warner::new(Some(Rc::new(SimpleDiagnosticPosition::new(pos))))
     }
 
     fn inference_context(&self) -> &Rc<InferenceContext> {
@@ -1571,26 +1649,6 @@ impl Check {
                 ),
             );
         }
-    }
-
-    /// Java: Type checkCastable(DiagnosticPosition pos, Type found, Type req)
-    /// (Check.java:632-645)
-    ///
-    /// TODO(Types batch): the upstream passes castWarner(pos, found, req) to
-    /// types.isCastable so the unchecked-cast warning is reported through the
-    /// ConversionWarner; the ported Types.isCastable has no Warner parameter.
-    /// Registered (no substitute warning path).
-    pub fn check_castable(
-        &self,
-        _ctx: &mut CompilerContext,
-        _pos: i32,
-        _found: TypeId,
-        _req: TypeId,
-        _check_context: &dyn crate::comp::check::CheckContext,
-    ) -> TypeId {
-        unimplemented!(
-            "TODO(Types batch): Check.checkCastable needs Types.isCastable(Type, Type, Warner) (Check.java:632-645)"
-        )
     }
 
     /// Java: public void checkRedundantCast(Env<AttrContext> env,
@@ -2257,3 +2315,266 @@ impl Check {
         is_valid
     }
 }
+
+// ---------------------------------------------------------------------------
+// Check batch 4: checkCastable (Check.java:632-645), checkValidGenericType
+// (Check.java:1076-1162), castWarner/ConversionWarner adapter, checkExtends.
+// ---------------------------------------------------------------------------
+
+impl Check {
+    /// Java: void warnUnchecked(DiagnosticPosition pos, Warning warnKey)
+    /// (Check.java:262-268)
+    fn warn_unchecked(&self, pos: i32, warn_key: crate::resources::diagnostic_contract::WarningInfo) {
+        if !self.lint.is_suppressed(LintCategory::UNCHECKED) {
+            self.log.borrow_mut().warning(
+                Some(LintCategory::UNCHECKED),
+                Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
+                warning_from_info(warn_key),
+            );
+        }
+    }
+
+    /// Java: public Warner castWarner(DiagnosticPosition pos, Type found,
+    /// Type expected) (Check.java:3970-3972).
+    ///
+    /// PORTING_RULES §9 adapter: the upstream ConversionWarner subclass overrides
+    /// warn() to emit the detected unchecked warning immediately; Rust has no
+    /// subclassing, so checkCastable records the lint on the plain Warner and
+    /// reports it after isCastable returns (same single warning).
+    pub fn cast_warner(&self, pos: i32) -> Warner {
+        Warner::new(Some(Rc::new(SimpleDiagnosticPosition::new(pos))))
+    }
+
+    /// Java: Type checkCastable(DiagnosticPosition pos, Type found, Type req)
+    /// (Check.java:630-632)
+    pub fn check_castable(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> TypeId {
+        let basic_handler = Rc::clone(&self.basic_handler);
+        self.check_castable_with_context(ctx, syms, pos, found, req, &*basic_handler)
+    }
+
+    /// Java: Type checkCastable(DiagnosticPosition pos, Type found, Type req,
+    /// CheckContext checkContext) (Check.java:634-641)
+    pub fn check_castable_with_context(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+        check_context: &dyn crate::comp::check::CheckContext,
+    ) -> TypeId {
+        let mut warn = self.cast_warner(pos);
+        if self
+            .types
+            .is_castable_with_warn(ctx, syms, found, req, &mut warn)
+        {
+            if warn.has_lint(LintCategory::UNCHECKED) {
+                self.warn_unchecked(
+                    pos,
+                    warnings::prob_found_req(
+                        crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                            "unchecked.cast.to.type",
+                        ),
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            self.type_display(ctx, found),
+                        ),
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            self.type_display(ctx, req),
+                        ),
+                    ),
+                );
+            }
+            req
+        } else {
+            let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::inconvertible_types(
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                        self.type_display(ctx, found),
+                    ),
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                        self.type_display(ctx, req),
+                    ),
+                ),
+            ));
+            check_context.report(ctx, pos, &diag);
+            self.types
+                .create_error_type_original(ctx, Some(found), syms)
+        }
+    }
+
+    /// The display text used for the ADR 0002 P4 TypeArg placeholders.
+    fn type_display(&self, ctx: &CompilerContext, t: TypeId) -> String {
+        match ctx.typ(t).tsym {
+            Some(tsym) => crate::comp::resolve::symbol_display_name(ctx, tsym),
+            None => format!("{:?}", ctx.typ(t).get_tag()),
+        }
+    }
+
+    /// Java: public boolean checkValidGenericType(Type t) (Check.java:1076-1078)
+    pub fn check_valid_generic_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+    ) -> bool {
+        self.first_incompatible_type_arg(ctx, syms, t).is_none()
+    }
+
+    /// Java: private Type firstIncompatibleTypeArg(Type type)
+    /// (Check.java:1080-1162)
+    fn first_incompatible_type_arg(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+    ) -> Option<TypeId> {
+        use crate::code::type_::TypeKindData;
+        let tsym = ctx.typ(t).tsym;
+        let formals = tsym
+            .and_then(|tsym| ctx.sym(tsym).ty)
+            .map(|tsym_ty| crate::code::types::allparams_of(ctx, tsym_ty))
+            .unwrap_or_else(List::nil);
+        let actuals = crate::code::types::allparams_of(ctx, t);
+        let args = crate::code::types::get_type_arguments(ctx, t);
+        let forms = tsym
+            .and_then(|tsym| ctx.sym(tsym).ty)
+            .map(|tsym_ty| crate::code::types::get_type_arguments(ctx, tsym_ty))
+            .unwrap_or_else(List::nil);
+        let mut bounds_buf: Vec<TypeId> = Vec::new();
+        let mut args_iter = args.clone();
+        let mut forms_iter = forms;
+        while args_iter.non_empty() && forms_iter.non_empty() {
+            let form = *forms_iter.head();
+            let upper = ctx
+                .typ(form)
+                .get_upper_bound()
+                .expect("type variable upper bound");
+            let subst_list =
+                self.types
+                    .subst(ctx, syms, &List::of(upper), &formals, &actuals);
+            bounds_buf.push(*subst_list.head());
+            args_iter = args_iter.tail();
+            forms_iter = forms_iter.tail();
+        }
+        let mut args_iter = args.clone();
+        let capture = self.types.capture(ctx, syms, t);
+        let capture_allparams = crate::code::types::allparams_of(ctx, capture);
+        let mut tvars_cap = self
+            .types
+            .subst_bounds(ctx, syms, &formals, &formals, &capture_allparams);
+        while args_iter.non_empty() && tvars_cap.non_empty() {
+            let arg = *args_iter.head();
+            let tv = *tvars_cap.head();
+            if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(arg).kind {
+                *bound = Some(tv);
+            }
+            args_iter = args_iter.tail();
+            tvars_cap = tvars_cap.tail();
+        }
+        let mut args_iter = args.clone();
+        let mut bounds = List::from_iterable(bounds_buf.clone());
+        while args_iter.non_empty() && bounds.non_empty() {
+            let actual = *args_iter.head();
+            let bound = *bounds.head();
+            if !self.is_type_arg_erroneous(ctx, syms, actual)
+                && !self.types.is_erroneous(ctx, syms, bound)
+                && !self.check_extends(ctx, syms, actual, bound)
+            {
+                return Some(actual);
+            }
+            args_iter = args_iter.tail();
+            bounds = bounds.tail();
+        }
+        let mut args_iter = args.clone();
+        let mut bounds = List::from_iterable(bounds_buf);
+        let captured = self.types.capture(ctx, syms, t);
+        let mut captured_args = crate::code::types::get_type_arguments(ctx, captured);
+        while captured_args.non_empty() && bounds.non_empty() && args_iter.non_empty() {
+            let arg = *captured_args.head();
+            let bound = *bounds.head();
+            if ctx.typ(arg).has_tag(TypeTag::TYPEVAR)
+                && self.types.is_erroneous(
+                    ctx,
+                    syms,
+                    ctx.typ(arg)
+                        .get_upper_bound()
+                        .expect("captured type variable upper bound"),
+                )
+                && !self.types.is_erroneous(ctx, syms, bound)
+                && !self.is_type_arg_erroneous(ctx, syms, *args_iter.head())
+            {
+                return Some(*args_iter.head());
+            }
+            captured_args = captured_args.tail();
+            bounds = bounds.tail();
+            args_iter = args_iter.tail();
+        }
+        None
+    }
+
+    /// Java: boolean isTypeArgErroneous(Type t) / the isTypeArgErroneous
+    /// UnaryVisitor (Check.java:1128-1162)
+    fn is_type_arg_erroneous(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> bool {
+        use crate::code::type_::TypeKindData;
+        match &ctx.typ(t).kind {
+            TypeKindData::TypeVar { .. } => {
+                let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+                self.is_type_arg_erroneous(ctx, syms, upper)
+            }
+            TypeKindData::CapturedType { .. } => {
+                let upper = ctx.typ(t).get_upper_bound().expect("captured upper bound");
+                if self.is_type_arg_erroneous(ctx, syms, upper) {
+                    return true;
+                }
+                let lower = ctx.typ(t).get_lower_bound().expect("captured lower bound");
+                self.is_type_arg_erroneous(ctx, syms, lower)
+            }
+            TypeKindData::WildcardType { type_, .. } => type_
+                .map(|type_| self.is_type_arg_erroneous(ctx, syms, type_))
+                .unwrap_or(false),
+            _ => self.types.is_erroneous(ctx, syms, t),
+        }
+    }
+
+    /// Java: private boolean checkExtends(Type a, Type bound) (Check.java:682-698)
+    fn check_extends(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        a: TypeId,
+        bound: TypeId,
+    ) -> bool {
+        if ctx.typ(a).is_unbound() {
+            return true;
+        }
+        if !ctx.typ(a).has_tag(TypeTag::WILDCARD) {
+            let a = self.types.cvar_upper_bound(ctx, a);
+            return self.types.is_subtype(ctx, syms, a, bound);
+        }
+        if ctx.typ(a).is_extends_bound() {
+            let mut no_warnings = Warner::new(None);
+            let wild_upper = self.types.wild_upper_bound(ctx, syms, a);
+            return self
+                .types
+                .is_castable_with_warn(ctx, syms, bound, wild_upper, &mut no_warnings);
+        }
+        if ctx.typ(a).is_super_bound() {
+            let wild_lower = self.types.wild_lower_bound(ctx, syms, a);
+            return !self.types.not_soft_subtype(ctx, syms, wild_lower, bound);
+        }
+        true
+    }
+}
+

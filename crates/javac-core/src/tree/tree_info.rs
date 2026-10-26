@@ -1500,6 +1500,62 @@ pub fn primary_pattern_tree(ctx: &CompilerContext, pat: TreeId) -> TreeId {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// TreeInfo.containsTypeAnnotation / TypeAnnotationFinder (TreeInfo.java:1304-1322)
+// ---------------------------------------------------------------------------
+
+/// Java: private static class TreeInfo.TypeAnnotationFinder extends TreeScanner
+/// (TreeInfo.java:1304-1317).
+pub struct TypeAnnotationFinder {
+    pub found_type_anno: bool,
+}
+
+impl TypeAnnotationFinder {
+    pub fn new() -> TypeAnnotationFinder {
+        TypeAnnotationFinder {
+            found_type_anno: false,
+        }
+    }
+}
+
+impl Default for TypeAnnotationFinder {
+    fn default() -> Self {
+        TypeAnnotationFinder::new()
+    }
+}
+
+tree_scanner_visitor_delegate!(TypeAnnotationFinder);
+
+impl crate::tree::tree_scanner::TreeScannerVisitor for TypeAnnotationFinder {
+    fn scan(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) {
+        if self.found_type_anno || tree.is_none() {
+            return;
+        }
+        if let Some(tree) = tree {
+            crate::tree::jc_tree::accept(ctx, tree, self);
+        }
+    }
+
+    fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let _ = ctx;
+        self.found_type_anno = self.found_type_anno || tree_has_tag(ctx, tree, Tag::TYPE_ANNOTATION);
+    }
+}
+
+fn tree_has_tag(ctx: &CompilerContext, tree: TreeId, tag: Tag) -> bool {
+    ctx.tree(tree).has_tag(tag)
+}
+
+/// Java: public static boolean containsTypeAnnotation(JCTree e)
+/// (TreeInfo.java:1319-1323)
+pub fn contains_type_annotation(ctx: &mut CompilerContext, e: TreeId) -> bool {
+    let mut finder = TypeAnnotationFinder::new();
+    use crate::tree::tree_scanner::TreeScannerVisitor;
+    finder.scan(ctx, Some(e));
+    finder.found_type_anno
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1948,4 +2004,47 @@ pub fn declaration_for(
     let mut scanner = DeclScanner::new(sym);
     scanner.decl_scan(ctx, Some(tree));
     scanner.result
+}
+
+#[cfg(test)]
+mod type_annotation_finder_tests {
+    use super::*;
+    use crate::tree::jc_tree::{JCTree, Tag, TreeKind};
+
+    #[test]
+    fn contains_type_annotation_finds_type_use_annotations() {
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let annotation = ctx.alloc_tree(JCTree {
+            pos: 0,
+            ty: None,
+            tag: Tag::ANNOTATION,
+            kind: TreeKind::Annotation {
+                annotation_type: None,
+                args: List::nil(),
+                attribute: None,
+            },
+        });
+        assert!(!contains_type_annotation(&mut ctx, annotation));
+        let type_annotation = ctx.alloc_tree(JCTree {
+            pos: 0,
+            ty: None,
+            tag: Tag::TYPE_ANNOTATION,
+            kind: TreeKind::Annotation {
+                annotation_type: None,
+                args: List::nil(),
+                attribute: None,
+            },
+        });
+        assert!(contains_type_annotation(&mut ctx, type_annotation));
+        let annotated_type = ctx.alloc_tree(JCTree {
+            pos: 0,
+            ty: None,
+            tag: Tag::ANNOTATED_TYPE,
+            kind: TreeKind::AnnotatedType {
+                annotations: List::of(type_annotation),
+                underlying_type: Some(annotation),
+            },
+        });
+        assert!(contains_type_annotation(&mut ctx, annotated_type));
+    }
 }

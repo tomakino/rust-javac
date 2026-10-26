@@ -1,3 +1,6 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::type_complexity)]
+
 // Origin: com/sun/tools/javac/code/Types.java @ 982d53c (jdk-17.0.19-ga)
 // PORTING_RULES §19 gap registration supplement (method-level audit):
 // Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
@@ -243,6 +246,117 @@ pub struct Types {
     /// Java: final boolean mapCapturesToBounds (Types.java:97; set from
     /// Feature.MAP_CAPTURES_TO_BOUNDS for the configured source level).
     map_captures_to_bounds: bool,
+    /// Java: DescriptorCache._map (Types.java:665) / Entry cache.
+    descriptor_cache: std::cell::RefCell<std::collections::HashMap<SymbolId, DescriptorEntry>>,
+    /// Java: ImplementationCache._map (Types.java:2934).
+    implementation_cache: std::cell::RefCell<
+        std::collections::HashMap<
+            SymbolId,
+            std::collections::HashMap<SymbolId, ImplementationEntry>,
+        >,
+    >,
+    /// Java: MembersClosureCache._map (Types.java:3012).
+    members_closure_cache: std::cell::RefCell<
+        std::collections::HashMap<SymbolId, crate::ids::ScopeId>,
+    >,
+    /// Java: MembersClosureCache.seenTypes (Types.java:3014).
+    members_closure_seen: std::cell::RefCell<std::collections::HashSet<SymbolId>>,
+    /// Java: CandidatesCache.cache (Types.java:3151); the upstream Entry
+    /// equality uses isSameType(site) + symbol identity, the port keys by the
+    /// nominal TypeId (a cache-miss-only difference, registered §9).
+    candidates_cache: std::cell::RefCell<
+        std::collections::HashMap<(TypeId, SymbolId), Vec<SymbolId>>,
+    >,
+}
+
+/// Java: ImplementationCache.Entry (Types.java:2936-2958).
+#[derive(Clone)]
+pub struct ImplementationEntry {
+    pub cached_impl: Option<SymbolId>,
+    pub check_result: bool,
+    pub prev_mark: i32,
+}
+
+/// Java: DescriptorCache.Entry (Types.java:703-720).
+#[derive(Clone)]
+pub struct DescriptorEntry {
+    pub cached_desc_res: crate::code::types::FunctionDescriptor,
+    pub prev_mark: i32,
+}
+
+/// Java: Types.FunctionDescriptorLookupError (Types.java:640-658) — the port
+/// carries the diagnostic.
+#[derive(Clone, Debug, Default)]
+pub struct FunctionDescriptorLookupError {
+    pub diagnostic: Option<crate::util::jc_diagnostic::JCDiagnostic>,
+}
+
+impl FunctionDescriptorLookupError {
+    pub fn new() -> FunctionDescriptorLookupError {
+        FunctionDescriptorLookupError { diagnostic: None }
+    }
+
+    pub fn set_message(mut self, diag: crate::util::jc_diagnostic::JCDiagnostic) -> Self {
+        self.diagnostic = Some(diag);
+        self
+    }
+
+    pub fn get_diagnostic(&self) -> Option<&crate::util::jc_diagnostic::JCDiagnostic> {
+        self.diagnostic.as_ref()
+    }
+}
+
+/// Java: DescriptorCache.FunctionDescriptor (Types.java:667-700); the merged
+/// descriptor (FunctionDescriptor.getType override) is expressed by the
+/// optional merged_symbols/thrown override.
+#[derive(Clone, Debug)]
+pub struct FunctionDescriptor {
+    pub desc_sym: SymbolId,
+    /// Java: the anonymous FunctionDescriptor override in mergeDescriptors
+    /// returns createMethodTypeWithThrown(memberType, bestSoFar.thrown); None
+    /// means the plain getSymbol()::memberType path.
+    pub merge: Option<FunctionDescriptorMerge>,
+}
+
+/// Java: DescriptorCache.mergeDescriptors' anonymous override payload
+/// (Types.java:793-802).
+#[derive(Clone, Debug)]
+pub struct FunctionDescriptorMerge {
+    pub best_so_far: SymbolId,
+}
+
+impl FunctionDescriptor {
+    pub fn new(desc_sym: SymbolId) -> FunctionDescriptor {
+        FunctionDescriptor {
+            desc_sym,
+            merge: None,
+        }
+    }
+
+    pub fn get_symbol(&self) -> SymbolId {
+        self.desc_sym
+    }
+}
+
+fn init_new_types_fields() -> (
+    std::cell::RefCell<std::collections::HashMap<SymbolId, DescriptorEntry>>,
+    std::cell::RefCell<
+        std::collections::HashMap<
+            SymbolId,
+            std::collections::HashMap<SymbolId, ImplementationEntry>,
+        >,
+    >,
+    std::cell::RefCell<std::collections::HashMap<SymbolId, crate::ids::ScopeId>>,
+    std::cell::RefCell<std::collections::HashSet<SymbolId>>,
+    std::cell::RefCell<std::collections::HashMap<(TypeId, SymbolId), Vec<SymbolId>>>,
+) {
+    (
+        std::cell::RefCell::new(std::collections::HashMap::new()),
+        std::cell::RefCell::new(std::collections::HashMap::new()),
+        std::cell::RefCell::new(std::collections::HashMap::new()),
+        std::cell::RefCell::new(std::collections::HashSet::new()),
+        std::cell::RefCell::new(std::collections::HashMap::new()),
+    )
 }
 
 impl Types {
@@ -252,18 +366,42 @@ impl Types {
     /// Rust Types keeps only the Names service (wired by the services that
     /// need capture(); see with_names).
     pub fn new() -> Types {
+        let (
+            descriptor_cache,
+            implementation_cache,
+            members_closure_cache,
+            members_closure_seen,
+            candidates_cache,
+        ) = init_new_types_fields();
         Types {
             names: None,
             map_captures_to_bounds: false,
+            descriptor_cache,
+            implementation_cache,
+            members_closure_cache,
+            members_closure_seen,
+            candidates_cache,
         }
     }
 
     /// Wires the Names service (the ported service construction; the upstream
     /// constructor reads Names.instance(context)).
     pub fn with_names(names: std::rc::Rc<crate::util::names::Names>) -> Types {
+        let (
+            descriptor_cache,
+            implementation_cache,
+            members_closure_cache,
+            members_closure_seen,
+            candidates_cache,
+        ) = init_new_types_fields();
         Types {
             names: Some(names),
             map_captures_to_bounds: false,
+            descriptor_cache,
+            implementation_cache,
+            members_closure_cache,
+            members_closure_seen,
+            candidates_cache,
         }
     }
 
@@ -274,10 +412,22 @@ impl Types {
         names: std::rc::Rc<crate::util::names::Names>,
         source: crate::code::source::Source,
     ) -> Types {
+        let (
+            descriptor_cache,
+            implementation_cache,
+            members_closure_cache,
+            members_closure_seen,
+            candidates_cache,
+        ) = init_new_types_fields();
         Types {
             names: Some(names),
             map_captures_to_bounds:
                 crate::code::source::Feature::MAP_CAPTURES_TO_BOUNDS.allowed_in_source(source),
+            descriptor_cache,
+            implementation_cache,
+            members_closure_cache,
+            members_closure_seen,
+            candidates_cache,
         }
     }
 
@@ -1441,7 +1591,7 @@ impl Types {
 
     /// Java: public List<Type> substBounds(List<Type> tvars, List<Type> from,
     /// List<Type> to) (Types.java:3407-3445)
-    fn subst_bounds(
+    pub(crate) fn subst_bounds(
         &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
@@ -2706,7 +2856,7 @@ impl Types {
     }
 
     /// Java: HasSameArgs(strict).visit(t, s) (Types.java:2810-2860)
-    fn has_same_args_strict(
+    pub fn has_same_args_strict(
         &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
@@ -3058,13 +3208,33 @@ impl Types {
         site
     }
 
-    /// Java: public boolean isCastable(Type t, Type s)
+    /// Java: public boolean isCastable(Type t, Type s) (Types.java:1631-1633)
     pub fn is_castable(
         &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         t: TypeId,
         s: TypeId,
+    ) -> bool {
+        let mut no_warnings = crate::util::warner::Warner::new(None);
+        self.is_castable_with_warn(ctx, syms, t, s, &mut no_warnings)
+    }
+
+    /// Java: public boolean isCastable(Type t, Type s, Warner warn)
+    /// (Types.java:1640-1670)
+    ///
+    /// PORTING_RULES §9 adapter: the upstream TypeRelation.warnStack (a stack
+    /// pushed around visit) is expressed by passing the Warner explicitly; the
+    /// recursive calls that upstream makes with noWarnings construct a local
+    /// Warner (noWarnings has no observable state). checkUnsafeVarargsConversion
+    /// (Types.java:1663) is not ported yet (Varargs batch, registered).
+    pub fn is_castable_with_warn(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+        s: TypeId,
+        warn: &mut crate::util::warner::Warner,
     ) -> bool {
         if t == s {
             return true;
@@ -3081,7 +3251,9 @@ impl Types {
             }
             return false;
         }
-        let result = self.is_castable_visit(ctx, syms, t, s);
+        // Java: if (warn != warnStack.head) { push; checkUnsafeVarargsConversion;
+        //       result = isCastable.visit(t,s); pop; } else visit(t,s)
+        let result = self.is_castable_visit(ctx, syms, t, s, warn);
         if result && ctx.typ(t).has_tag(TypeTag::CLASS) && ctx.typ(s).has_tag(TypeTag::CLASS) {
             let tsym = ctx.typ(t).tsym.expect("class type symbol");
             let ssym = ctx.typ(s).tsym.expect("class type symbol");
@@ -3103,6 +3275,7 @@ impl Types {
         syms: &mut Symtab,
         t: TypeId,
         s: TypeId,
+        warn: &mut crate::util::warner::Warner,
     ) -> bool {
         match &ctx.typ(t).kind {
             TypeKindData::JCPrimitiveType
@@ -3129,7 +3302,7 @@ impl Types {
             }
             TypeKindData::WildcardType { .. } => {
                 let upper = self.wild_upper_bound(ctx, syms, t);
-                self.is_castable(ctx, syms, upper, s)
+                self.is_castable_with_warn(ctx, syms, upper, s, warn)
             }
             TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
                 let tag = ctx.typ(s).get_tag();
@@ -3141,9 +3314,15 @@ impl Types {
                     if self.is_subtype(ctx, syms, t, s) {
                         return true;
                     }
-                    return self.is_castable(ctx, syms, upper, s);
+                    // Java: isCastable(t.getUpperBound(), s, noWarnings) then warn.
+                    let mut no_warnings = crate::util::warner::Warner::new(None);
+                    if self.is_castable_with_warn(ctx, syms, upper, s, &mut no_warnings) {
+                        warn.warn(crate::code::lint::LintCategory::UNCHECKED);
+                        return true;
+                    }
+                    return false;
                 }
-                self.is_castable(ctx, syms, upper, s)
+                self.is_castable_with_warn(ctx, syms, upper, s, warn)
             }
             TypeKindData::ArrayType { .. } => {
                 let tag = ctx.typ(s).get_tag();
@@ -3151,7 +3330,13 @@ impl Types {
                     return true;
                 }
                 if tag == TypeTag::TYPEVAR {
-                    return self.is_castable(ctx, syms, s, t);
+                    // Java: isCastable(s, t, noWarnings) then warn.
+                    let mut no_warnings = crate::util::warner::Warner::new(None);
+                    if self.is_castable_with_warn(ctx, syms, s, t, &mut no_warnings) {
+                        warn.warn(crate::code::lint::LintCategory::UNCHECKED);
+                        return true;
+                    }
+                    return false;
                 }
                 if tag == TypeTag::CLASS {
                     return self.is_subtype(ctx, syms, t, s);
@@ -3168,7 +3353,7 @@ impl Types {
                     if ctx.typ(t_elem).is_primitive() || ctx.typ(s_elem).is_primitive() {
                         return ctx.typ(t_elem).has_tag(ctx.typ(s_elem).get_tag());
                     }
-                    return self.is_castable_visit(ctx, syms, t_elem, s_elem);
+                    return self.is_castable_visit(ctx, syms, t_elem, s_elem, warn);
                 }
                 false
             }
@@ -3181,14 +3366,21 @@ impl Types {
                     return true;
                 }
                 if tag == TypeTag::TYPEVAR {
+                    // Java: if (isCastable(t, s.getUpperBound(), noWarnings)) {
+                    //   warnStack.head.warn(UNCHECKED); return true; } else false;
                     let upper = ctx.typ(s).get_upper_bound().expect("type var upper bound");
-                    return self.is_castable(ctx, syms, t, upper);
+                    let mut no_warnings = crate::util::warner::Warner::new(None);
+                    if self.is_castable_with_warn(ctx, syms, t, upper, &mut no_warnings) {
+                        warn.warn(crate::code::lint::LintCategory::UNCHECKED);
+                        return true;
+                    }
+                    return false;
                 }
                 if self.is_compound(ctx, t) || self.is_compound(ctx, s) {
                     return if !self.is_compound(ctx, t) {
-                        self.visit_compound_type(ctx, syms, s, t, true)
+                        self.visit_compound_type(ctx, syms, s, t, true, warn)
                     } else {
-                        self.visit_compound_type(ctx, syms, t, s, false)
+                        self.visit_compound_type(ctx, syms, t, s, false, warn)
                     };
                 }
                 if tag == TypeTag::CLASS || tag == TypeTag::ARRAY {
@@ -3197,12 +3389,16 @@ impl Types {
                     let upcast = self.is_subtype(ctx, syms, t_erasure, s_erasure);
                     if upcast || self.is_subtype(ctx, syms, s_erasure, t_erasure) {
                         if !upcast && tag == TypeTag::ARRAY {
-                            // TODO(Lint batch): warn UNCHECKED when !isReifiable(s)
+                            if !self.is_reifiable(ctx, syms, s) {
+                                warn.warn(crate::code::lint::LintCategory::UNCHECKED);
+                            }
                             return true;
                         } else if is_raw_type(ctx, s) {
                             return true;
                         } else if is_raw_type(ctx, t) {
-                            // TODO(Lint batch): warn UNCHECKED when !isUnbounded(s)
+                            if !self.is_unbounded(ctx, syms, s) {
+                                warn.warn(crate::code::lint::LintCategory::UNCHECKED);
+                            }
                             return true;
                         }
                         let (a, b) = if upcast { (t, s) } else { (s, t) };
@@ -3218,13 +3414,11 @@ impl Types {
                         let mut b_low =
                             self.rewrite_quantifiers(ctx, syms, b, low, no_rewrite);
                         let mut low_sub = {
-                            let a_low_tsym =
-                                ctx.typ(a_low).tsym.expect("rewritten symbol");
+                            let a_low_tsym = ctx.typ(a_low).tsym.expect("rewritten symbol");
                             self.as_sub(ctx, &*syms, b_low, a_low_tsym)
                         };
                         let mut high_sub = low_sub.and_then(|low_sub| {
-                            let a_high_tsym =
-                                ctx.typ(a_high).tsym.expect("rewritten symbol");
+                            let a_high_tsym = ctx.typ(a_high).tsym.expect("rewritten symbol");
                             let _ = low_sub;
                             self.as_sub(ctx, &*syms, b_high, a_high_tsym)
                         });
@@ -3235,13 +3429,11 @@ impl Types {
                             b_high = self.rewrite_quantifiers(ctx, syms, b, high, rewrite);
                             b_low = self.rewrite_quantifiers(ctx, syms, b, low, rewrite);
                             low_sub = {
-                                let a_low_tsym =
-                                    ctx.typ(a_low).tsym.expect("rewritten symbol");
+                                let a_low_tsym = ctx.typ(a_low).tsym.expect("rewritten symbol");
                                 self.as_sub(ctx, &*syms, b_low, a_low_tsym)
                             };
                             high_sub = low_sub.and_then(|_unused| {
-                                let a_high_tsym =
-                                    ctx.typ(a_high).tsym.expect("rewritten symbol");
+                                let a_high_tsym = ctx.typ(a_high).tsym.expect("rewritten symbol");
                                 self.as_sub(ctx, &*syms, b_high, a_high_tsym)
                             });
                         }
@@ -3272,37 +3464,50 @@ impl Types {
                                 low_params,
                             );
                             if !disjoint {
-                                // TODO(Lint batch): warn UNCHECKED on
-                                // giveWarning(a, b) / giveWarning(b, a)
+                                let give_warning = if upcast {
+                                    self.give_warning(ctx, syms, a, b)
+                                } else {
+                                    self.give_warning(ctx, syms, b, a)
+                                };
+                                if give_warning {
+                                    warn.warn(crate::code::lint::LintCategory::UNCHECKED);
+                                }
                                 return true;
                             }
                         }
-                        // TODO(Lint batch): isReifiable warning branch
+                        if self.is_reifiable(ctx, syms, s) {
+                            return self.is_subtype_unchecked(ctx, syms, a, b);
+                        }
+                        // Java: isSubtypeUnchecked(a, b, warn) — the warn parameter
+                        // is registered with the Varargs batch (checkUnsafeVarargsConversion
+                        // is not ported yet); the boolean relation is unchanged.
                         return self.is_subtype_unchecked(ctx, syms, a, b);
                     }
                     // Sidecast
                     if tag == TypeTag::CLASS {
                         let s_tsym = ctx.typ(s).tsym.expect("cast target symbol");
                         let t_tsym = ctx.typ(t).tsym.expect("cast source symbol");
-                        let s_flags = ctx.sym(s_tsym).flags_field;
-                        let t_flags = ctx.sym(t_tsym).flags_field;
                         let s_interface =
-                            (s_flags & crate::code::flags::INTERFACE as i64) != 0;
+                            (ctx.sym(s_tsym).flags_field & crate::code::flags::INTERFACE as i64)
+                                != 0;
                         let t_interface =
-                            (t_flags & crate::code::flags::INTERFACE as i64) != 0;
-                        let s_final = (s_flags & crate::code::flags::FINAL as i64) != 0;
-                        let t_final = (t_flags & crate::code::flags::FINAL as i64) != 0;
+                            (ctx.sym(t_tsym).flags_field & crate::code::flags::INTERFACE as i64)
+                                != 0;
+                        let s_final =
+                            (ctx.sym(s_tsym).flags_field & crate::code::flags::FINAL as i64) != 0;
+                        let t_final =
+                            (ctx.sym(t_tsym).flags_field & crate::code::flags::FINAL as i64) != 0;
                         if s_interface {
                             return if !t_final {
-                                self.side_cast(ctx, syms, t, s)
+                                self.side_cast(ctx, syms, t, s, warn)
                             } else {
-                                self.side_cast_final(ctx, syms, t, s)
+                                self.side_cast_final(ctx, syms, t, s, warn)
                             };
                         } else if t_interface {
                             return if !s_final {
-                                self.side_cast(ctx, syms, t, s)
+                                self.side_cast(ctx, syms, t, s, warn)
                             } else {
-                                self.side_cast_final(ctx, syms, t, s)
+                                self.side_cast_final(ctx, syms, t, s, warn)
                             };
                         }
                         return false;
@@ -3319,6 +3524,7 @@ impl Types {
     }
 
     /// Java: boolean visitCompoundType(ClassType ct, Type s, boolean reverse)
+    /// (Types.java:1790-1803)
     fn visit_compound_type(
         &self,
         ctx: &mut CompilerContext,
@@ -3326,16 +3532,23 @@ impl Types {
         ct: TypeId,
         s: TypeId,
         reverse: bool,
+        warn: &mut crate::util::warner::Warner,
     ) -> bool {
+        // Java: Warner warn = noWarnings; (per-component cleared)
+        let mut compound_warn = crate::util::warner::Warner::new(None);
         for c in self.direct_supertypes(ctx, syms, ct).iter() {
+            compound_warn.clear();
             let ok = if reverse {
-                self.is_castable(ctx, syms, s, c)
+                self.is_castable_with_warn(ctx, syms, s, c, &mut compound_warn)
             } else {
-                self.is_castable(ctx, syms, c, s)
+                self.is_castable_with_warn(ctx, syms, c, s, &mut compound_warn)
             };
             if !ok {
                 return false;
             }
+        }
+        if compound_warn.has_lint(crate::code::lint::LintCategory::UNCHECKED) {
+            warn.warn(crate::code::lint::LintCategory::UNCHECKED);
         }
         true
     }
@@ -3420,7 +3633,7 @@ fn get_enclosing_type(ctx: &CompilerContext, t: TypeId) -> Option<TypeId> {
 /// PORTING_RULES: the upstream ClassType.getTypeArguments() calls complete()
 /// before defaulting typarams_field to List.nil(); the Symbol completer is not
 /// ported, so the nil default is used (TODO Symbol batch; registered).
-fn get_type_arguments(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
+pub(crate) fn get_type_arguments(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::ClassType { typarams_field, .. }
         | TypeKindData::ErasedClassType { typarams_field, .. }
@@ -3477,7 +3690,7 @@ fn no_type_of(ctx: &CompilerContext, syms: &Symtab) -> TypeId {
 /// Java: Type.allparams() (ClassType: getTypeArguments().prependList(
 /// getEnclosingType().allparams()); ArrayType: elemtype.allparams(); other
 /// types: List.nil()).
-fn allparams_of(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
+pub(crate) fn allparams_of(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::ClassType { outer_field, .. }
         | TypeKindData::ErasedClassType { outer_field, .. }
@@ -5496,6 +5709,7 @@ impl Types {
         syms: &mut Symtab,
         from: TypeId,
         to: TypeId,
+        warn: &mut crate::util::warner::Warner,
     ) -> bool {
         let mut reverse = false;
         let mut from = from;
@@ -5536,7 +5750,9 @@ impl Types {
             }
             common_supers = common_supers.tail();
         }
-        let _ = give_warning; // the unchecked warning is a Lint batch item
+        if give_warning {
+            warn.warn(crate::code::lint::LintCategory::UNCHECKED);
+        }
         true
     }
 
@@ -5548,6 +5764,7 @@ impl Types {
         syms: &mut Symtab,
         from: TypeId,
         to: TypeId,
+        warn: &mut crate::util::warner::Warner,
     ) -> bool {
         let mut reverse = false;
         let mut from = from;
@@ -5579,7 +5796,12 @@ impl Types {
         if self.disjoint_types(ctx, syms, t1_args, t2_args) {
             return false;
         }
-        let _ = (reverse, target); // the unchecked warning is a Lint batch item
+        // Java: if (giveWarning(t2, t1) || giveWarning(t1, t2))
+        //           warn.warn(LintCategory.UNCHECKED); return true;
+        let _ = (reverse, target);
+        if self.give_warning(ctx, syms, t2, t1) || self.give_warning(ctx, syms, t1, t2) {
+            warn.warn(crate::code::lint::LintCategory::UNCHECKED);
+        }
         true
     }
 
@@ -5615,7 +5837,7 @@ impl Types {
     /// Java: public boolean isErroneous() (Type.java:564/1111/1377/1493/1811/
     /// 1850/2397)
     #[allow(clippy::only_used_in_recursion)]
-    fn is_erroneous(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
+    pub(crate) fn is_erroneous(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
         let kind = ctx.typ(t).kind.clone();
         let tsym_opt = ctx.typ(t).tsym;
         match &kind {
@@ -6792,6 +7014,1405 @@ impl Types {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Types batch 4: isAssignable/covariantReturnType/resultSubtype/
+// returnTypeSubstitutable/isDerivedRaw/overrideEquivalent/overridesObjectMethod
+// (Types.java:2338-2365, 2670-2700, 2810-2832, 4249-4300), 1:1.
+// ---------------------------------------------------------------------------
+impl Types {
+    /// Java: public boolean isAssignable(Type t, Type s) (Types.java:2338-2340)
+    pub fn is_assignable(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+    ) -> bool {
+        let mut no_warnings = crate::util::warner::Warner::new(None);
+        self.is_assignable_with_warn(ctx, syms, t, s, &mut no_warnings)
+    }
+
+    /// Java: public boolean isAssignable(Type t, Type s, Warner warn)
+    /// (Types.java:2348-2365)
+    pub fn is_assignable_with_warn(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        if ctx.typ(t).has_tag(TypeTag::ERROR) {
+            return true;
+        }
+        let t_tag = ctx.typ(t).get_tag();
+        if t_tag.is_sub_range_of(TypeTag::INT)
+            && let Some(const_value) = ctx.typ(t).const_value()
+        {
+            let value = match const_value {
+                crate::util::constants::ConstantValue::Integer(v) => *v,
+                crate::util::constants::ConstantValue::Character(v) => *v as i32,
+                crate::util::constants::ConstantValue::Short(v) => *v as i32,
+                crate::util::constants::ConstantValue::Byte(v) => *v as i32,
+                _ => 0,
+            };
+            match ctx.typ(s).get_tag() {
+                TypeTag::BYTE | TypeTag::CHAR | TypeTag::SHORT | TypeTag::INT => {
+                    if ctx.typ(s).get_tag().check_range(value) {
+                        return true;
+                    }
+                }
+                TypeTag::CLASS => {
+                    // Java: unboxedType(s) — read-only variant (unboxed_type_ro
+                    // returns noType when there is no unboxed type).
+                    let unboxed = self.unboxed_type_ro(ctx, syms, s);
+                    let unboxed = if ctx
+                        .typ(unboxed)
+                        .has_tag(crate::code::type_tag::TypeTag::NONE)
+                    {
+                        s
+                    } else {
+                        unboxed
+                    };
+                    match ctx.typ(unboxed).get_tag() {
+                        TypeTag::BYTE | TypeTag::CHAR | TypeTag::SHORT => {
+                            return self.is_assignable_with_warn(ctx, syms, t, unboxed, warn);
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Java: isConvertible(t, s, warn) — the warn parameter is not yet wired
+        // in the ported isConvertible (Lint batch, registered); the boolean
+        // relation is unchanged.
+        let _ = warn;
+        self.is_convertible(ctx, syms, t, s)
+    }
+
+    /// Java: public boolean covariantReturnType(Type t, Type s, Warner warner)
+    /// (Types.java:4296-4303)
+    pub fn covariant_return_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+        s: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        self.is_same_type(ctx, syms, t, s)
+            || (!ctx.typ(t).is_primitive()
+                && !ctx.typ(s).is_primitive()
+                && self.is_assignable_with_warn(ctx, syms, t, s, warn))
+    }
+
+    /// Java: public boolean resultSubtype(Type t, Type s, Warner warner)
+    /// (Types.java:4249-4257)
+    pub fn result_subtype(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+        s: TypeId,
+        warner: &mut crate::util::warner::Warner,
+    ) -> bool {
+        let tvars = crate::code::types::get_type_arguments(ctx, t);
+        let svars = crate::code::types::get_type_arguments(ctx, s);
+        let tres = method_return_type(ctx, t);
+        let sres_full = method_return_type(ctx, s);
+        let sres = {
+            let substituted = self.subst(ctx, syms, &List::of(sres_full), &svars, &tvars);
+            *substituted.head()
+        };
+        self.covariant_return_type(ctx, syms, tres, sres, warner)
+    }
+
+    /// Java: public boolean returnTypeSubstitutable(Type r1, Type r2)
+    /// (Types.java:4261-4270)
+    pub fn return_type_substitutable(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        r1: TypeId,
+        r2: TypeId,
+    ) -> bool {
+        let mut no_warnings = crate::util::warner::Warner::new(None);
+        if self.has_same_args(ctx, syms, r1, r2) {
+            self.result_subtype(ctx, syms, r1, r2, &mut no_warnings)
+        } else {
+            let r1_res = method_return_type(ctx, r1);
+            let r2_erasure = {
+                let r2_res = method_return_type(ctx, r2);
+                self.erasure(ctx, syms, r2_res)
+            };
+            self.covariant_return_type(ctx, syms, r1_res, r2_erasure, &mut no_warnings)
+        }
+    }
+
+    /// Java: public Type returnTypeSubstitutable(Type r1, Type r2, Type r2res,
+    /// Warner warner) (Types.java:4272-4290)
+    pub fn return_type_substitutable_with(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        r1: TypeId,
+        r2: TypeId,
+        r2res: TypeId,
+        warner: &mut crate::util::warner::Warner,
+    ) -> bool {
+        let r1_res = method_return_type(ctx, r1);
+        if self.is_same_type(ctx, syms, r1_res, r2res) {
+            return true;
+        }
+        if ctx.typ(r1_res).is_primitive() || ctx.typ(r2res).is_primitive() {
+            return false;
+        }
+        if self.has_same_args(ctx, syms, r1, r2) {
+            return self.covariant_return_type(ctx, syms, r1_res, r2res, warner);
+        }
+        // Java: isSubtypeUnchecked(r1.getReturnType(), r2res, warner) — the warn
+        // parameter is registered with the Varargs batch (see is_castable_with_warn).
+        if self.is_subtype_unchecked(ctx, syms, r1_res, r2res) {
+            return true;
+        }
+        let r2_erasure = self.erasure(ctx, syms, r2res);
+        if !self.is_subtype(ctx, syms, r1_res, r2_erasure) {
+            return false;
+        }
+        warner.warn(crate::code::lint::LintCategory::UNCHECKED);
+        true
+    }
+
+    /// Java: public boolean isDerivedRaw(Type t) (Types.java:2670-2700)
+    pub fn is_derived_raw(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+    ) -> bool {
+        if self.is_erroneous(ctx, syms, t) {
+            return false;
+        }
+        if is_raw_type(ctx, t) {
+            return true;
+        }
+        let super_type = self.supertype(ctx, syms, t);
+        let no_type = ctx.sym(syms.no_symbol).ty.expect("no type");
+        if super_type != no_type && self.is_derived_raw(ctx, syms, super_type) {
+            return true;
+        }
+        let mut interfaces = self.interfaces(ctx, syms, t);
+        while interfaces.non_empty() {
+            let interface = *interfaces.head();
+            if self.is_derived_raw(ctx, syms, interface) {
+                return true;
+            }
+            interfaces = interfaces.tail();
+        }
+        false
+    }
+
+    /// Java: public boolean overrideEquivalent(Type t, Type s) (Types.java:2816-2820)
+    pub fn override_equivalent(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+        s: TypeId,
+    ) -> bool {
+        if self.has_same_args(ctx, syms, t, s) {
+            return true;
+        }
+        let s_erasure = self.erasure(ctx, syms, s);
+        if self.has_same_args(ctx, syms, t, s_erasure) {
+            return true;
+        }
+        let t_erasure = self.erasure(ctx, syms, t);
+        self.has_same_args(ctx, syms, t_erasure, s)
+    }
+
+    /// Java: public boolean overridesObjectMethod(TypeSymbol origin, Symbol msym)
+    /// (Types.java:2822-2830)
+    pub fn overrides_object_method(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        origin: SymbolId,
+        msym: SymbolId,
+    ) -> bool {
+        let object_tsym = ctx.typ(syms.object_type).tsym.expect("object type symbol");
+        let members = match &ctx.sym(object_tsym).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+            _ => None,
+        };
+        if let Some(members) = members {
+            let name = ctx.sym(msym).name.clone();
+            let found = ctx.scope_get_symbols_by_name(
+                members,
+                &name,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+            );
+            for sym in found {
+                if crate::code::symbol::overrides(ctx, syms, self, msym, sym, origin, true) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
+/// Java: Type.getReturnType() for method types (Types.java:4253/4266/4279).
+fn method_return_type(ctx: &CompilerContext, t: TypeId) -> TypeId {
+    match &ctx.typ(t).kind {
+        TypeKindData::MethodType { restype, .. } => restype.expect("method return type"),
+        TypeKindData::ForAll { qtype, .. } => {
+            let qtype = qtype.expect("forall qtype");
+            method_return_type(ctx, qtype)
+        }
+        _ => panic!("IllegalArgumentException: Not a method type"),
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// Types batch 4: membersClosure/MembersClosureCache/implementation/
+// ImplementationCache/interfaceCandidates/prune (Types.java:2931-3095,
+// 3150-3260), 1:1. The auxiliary Java inner classes are expressed as methods +
+// explicit caches on the Types value (registered §9).
+// ---------------------------------------------------------------------------
+impl Types {
+    /// Java: public CompoundScope membersClosure(Type site, boolean skipInterface)
+    /// (Types.java:3091-3095).
+    ///
+    /// PORTING_RULES §9 adapter: the upstream MembersScope view (which filters
+    /// out interface-owned members for skipInterface) is expressed by passing the
+    /// filter to the scope query at the call sites (implementationInternal).
+    pub fn members_closure(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        site: TypeId,
+    ) -> crate::ids::ScopeId {
+        self.members_closure_visit(ctx, syms, site)
+    }
+
+    /// Java: MembersClosureCache.visit (Types.java:3040-3089)
+    fn members_closure_visit(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+    ) -> crate::ids::ScopeId {
+        use crate::code::type_::TypeKindData;
+        match &ctx.typ(t).kind {
+            TypeKindData::ClassType { .. }
+            | TypeKindData::ErasedClassType { .. }
+            | TypeKindData::UnionClassType { .. }
+            | TypeKindData::IntersectionClassType { .. } => {
+                let tsym = ctx.typ(t).tsym.expect("class symbol");
+                if !self.members_closure_seen.borrow_mut().insert(tsym) {
+                    // Java: return new CompoundScope(t.tsym); (empty scope for a
+                    // circle/multi-path visit)
+                    let scope = ctx.alloc_scope(crate::code::scope::Scope::new_compound_scope(Some(tsym)));
+                    return scope;
+                }
+                let cached = self.members_closure_cache.borrow().get(&tsym).copied();
+                if let Some(cached) = cached {
+                    self.members_closure_seen.borrow_mut().remove(&tsym);
+                    return cached;
+                }
+                let closure_scope =
+                    ctx.alloc_scope(crate::code::scope::Scope::new_compound_scope(Some(tsym)));
+                let interfaces = self.interfaces(ctx, syms, t);
+                let mut current = interfaces;
+                while current.non_empty() {
+                    let iface = *current.head();
+                    let sub = self.members_closure_visit(ctx, syms, iface);
+                    ctx.scope_prepend_sub_scope(closure_scope, sub);
+                    current = current.tail();
+                }
+                let super_type = self.supertype(ctx, syms, t);
+                let super_scope = self.members_closure_visit(ctx, syms, super_type);
+                ctx.scope_prepend_sub_scope(closure_scope, super_scope);
+                let members = match &ctx.sym(tsym).kind_data {
+                    crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => {
+                        *members_field
+                    }
+                    _ => None,
+                };
+                if let Some(members) = members {
+                    ctx.scope_prepend_sub_scope(closure_scope, members);
+                }
+                self.members_closure_cache
+                    .borrow_mut()
+                    .insert(tsym, closure_scope);
+                self.members_closure_seen.borrow_mut().remove(&tsym);
+                closure_scope
+            }
+            TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
+                let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+                self.members_closure_visit(ctx, syms, upper)
+            }
+            _ => {
+                let no_symbol = syms.no_symbol;
+                ctx.alloc_scope(crate::code::scope::Scope::new_compound_scope(Some(no_symbol)))
+            }
+        }
+    }
+
+    /// Java: public MethodSymbol implementation(MethodSymbol ms, TypeSymbol
+    /// origin, boolean checkResult, Predicate<Symbol> implFilter)
+    /// (Types.java:3003-3005).
+    ///
+    /// PORTING_RULES §9 adapter: the only upstream implFilter is
+    /// MethodSymbol.implementation_filter (non-synthetic methods), so the port
+    /// applies that filter directly (see implementation_internal).
+    pub fn implementation(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        ms: SymbolId,
+        origin: SymbolId,
+        check_result: bool,
+    ) -> Option<SymbolId> {
+        self.implementation_filtered(ctx, syms, ms, origin, check_result)
+    }
+
+    /// Java: ImplementationCache.get/implementationInternal
+    /// (Types.java:2960-3001)
+    pub fn implementation_filtered(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        ms: SymbolId,
+        origin: SymbolId,
+        check_result: bool,
+    ) -> Option<SymbolId> {
+        let origin_ty = ctx.sym(origin).ty.expect("origin type");
+        let members = self.members_closure(ctx, syms, origin_ty);
+        let mark = ctx.scope_get_mark(members);
+        if let Some(entry) = self
+            .implementation_cache
+            .borrow()
+            .get(&ms)
+            .and_then(|per_origin| per_origin.get(&origin))
+            .cloned()
+            && entry.check_result == check_result
+            && entry.prev_mark == mark
+        {
+            return entry.cached_impl;
+        }
+        let result = self.implementation_internal(ctx, syms, ms, origin, check_result);
+        self.implementation_cache
+            .borrow_mut()
+            .entry(ms)
+            .or_default()
+            .insert(
+                origin,
+                ImplementationEntry {
+                    cached_impl: result,
+                    check_result,
+                    prev_mark: mark,
+                },
+            );
+        result
+    }
+
+    /// Java: ImplementationCache.implementationInternal (Types.java:2980-3001)
+    fn implementation_internal(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        ms: SymbolId,
+        origin: SymbolId,
+        check_result: bool,
+    ) -> Option<SymbolId> {
+        let ms_name = ctx.sym(ms).name.clone();
+        let synthetic_flag = crate::code::flags::SYNTHETIC as i64;
+        let mut t = ctx.sym(origin).ty.expect("origin type");
+        loop {
+            let tag = ctx.typ(t).get_tag();
+            if tag != crate::code::type_tag::TypeTag::CLASS
+                && tag != crate::code::type_tag::TypeTag::TYPEVAR
+            {
+                break;
+            }
+            t = self.skip_type_vars(ctx, t);
+            let c = ctx.typ(t).tsym.expect("class symbol");
+            let members = match &ctx.sym(c).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+                _ => None,
+            };
+            let mut best_so_far: Option<SymbolId> = None;
+            if let Some(members) = members {
+                let found = ctx.scope_get_symbols_by_name(
+                    members,
+                    &ms_name,
+                    crate::code::scope::LookupKind::NON_RECURSIVE,
+                    &|sym| (ctx.sym(sym).flags_field & synthetic_flag) == 0,
+                );
+                for sym in found {
+                    if crate::code::symbol::overrides(ctx, syms, self, sym, ms, origin, check_result) {
+                        best_so_far = Some(sym);
+                        let abstract_flag = crate::code::flags::ABSTRACT as i64;
+                        if (ctx.sym(sym).flags_field & abstract_flag) == 0 {
+                            break;
+                        }
+                    }
+                }
+            }
+            if best_so_far.is_some() {
+                return best_so_far;
+            }
+            let super_type = self.supertype(ctx, syms, t);
+            t = super_type;
+        }
+        None
+    }
+
+    /// Java: public List<MethodSymbol> interfaceCandidates(Type site, MethodSymbol ms)
+    /// (Types.java:3187-3202)
+    pub fn interface_candidates(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        site: TypeId,
+        ms: SymbolId,
+    ) -> Vec<SymbolId> {
+        if let Some(cached) = self.candidates_cache.borrow().get(&(site, ms)) {
+            return cached.clone();
+        }
+        let site_tsym = ctx.typ(site).tsym.expect("site symbol");
+        let ms_name = ctx.sym(ms).name.clone();
+        let synthetic_flag = crate::code::flags::SYNTHETIC as i64;
+        let mut candidates2: Vec<SymbolId> = Vec::new();
+        let members = self.members_closure(ctx, syms, site);
+        let filter = |ctx: &mut CompilerContext, syms2: &mut Symtab, s: SymbolId| -> bool {
+            if ctx.sym(s).kind != crate::code::kinds::Kind::MTH
+                || ctx.sym(s).name.to_java_string() != ms_name.to_java_string()
+                || (ctx.sym(s).flags_field & synthetic_flag) != 0
+            {
+                return false;
+            }
+            if !crate::code::symbol::is_inherited_in(ctx, syms2, self, s, site_tsym) {
+                return false;
+            }
+            let s_ty = ctx.sym(s).ty.expect("method type");
+            let ms_ty = ctx.sym(ms).ty.expect("method type");
+            let s_mt = self.member_type(ctx, syms2, site, s);
+            let ms_mt = self.member_type(ctx, syms2, site, ms);
+            let _ = (s_ty, ms_ty);
+            self.override_equivalent(ctx, syms2, s_mt, ms_mt)
+        };
+        // Java: for (Symbol s : membersClosure(site, false).getSymbols(filter))
+        // The closure filter needs &mut ctx; collect candidates by iterating the
+        // closure symbols through the context query.
+        let all = ctx.scope_get_symbols(
+            members,
+            crate::code::scope::LookupKind::RECURSIVE,
+            &|_| true,
+        );
+        for s in all {
+            if !filter(ctx, syms, s) {
+                continue;
+            }
+            if ctx.typ(site).tsym.map(|sym| sym != site_tsym).unwrap_or(true) {
+                let _ = site_tsym;
+            }
+            let site_is_interface =
+                (ctx.sym(site_tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0;
+            let owner_is_interface = ctx
+                .sym(s)
+                .owner
+                .map(|owner| (ctx.sym(owner).flags_field & crate::code::flags::INTERFACE as i64) != 0)
+                .unwrap_or(false);
+            if !site_is_interface && !owner_is_interface {
+                let result = vec![s];
+                self.candidates_cache
+                    .borrow_mut()
+                    .insert((site, ms), result.clone());
+                return result;
+            }
+            if !candidates2.contains(&s) {
+                candidates2.insert(0, s);
+            }
+        }
+        let result = self.prune(ctx, syms, candidates2);
+        self.candidates_cache
+            .borrow_mut()
+            .insert((site, ms), result.clone());
+        result
+    }
+
+    /// Java: public List<MethodSymbol> prune(List<MethodSymbol> methods)
+    /// (Types.java:3205-3219)
+    pub fn prune(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        methods: Vec<SymbolId>,
+    ) -> Vec<SymbolId> {
+        let mut methods_min: Vec<SymbolId> = Vec::new();
+        for m1 in methods.iter() {
+            let m1_owner = ctx.sym(*m1).owner.expect("method owner");
+            let mut is_min_m1 = true;
+            for m2 in methods.iter() {
+                if m1 == m2 {
+                    continue;
+                }
+                let m2_owner = ctx.sym(*m2).owner.expect("method owner");
+                if m2_owner != m1_owner {
+                    let m2_owner_ty = ctx.sym(m2_owner).ty.expect("owner type");
+                    if self.as_super(ctx, syms, m2_owner_ty, m1_owner).is_some() {
+                        is_min_m1 = false;
+                        break;
+                    }
+                }
+            }
+            if is_min_m1 {
+                methods_min.push(*m1);
+            }
+        }
+        methods_min
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// Types batch 4: createMethodTypeWithThrown / MostSpecificReturnCheck /
+// mergeAbstracts (Types.java:2834-2930, 3519-3535), 1:1.
+// §9 adapters: Types has no Check service field in the port (explicit services,
+// ADR 0001) so mergeAbstracts takes the Check; the merged MethodSymbol's
+// anonymous baseSymbol() override is carried as MergeAbstractsResult.base_symbol.
+// ---------------------------------------------------------------------------
+
+/// Java: Types.MostSpecificReturnCheck (Types.java:2834-2870).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MostSpecificReturnCheck {
+    BASIC,
+    RTS,
+}
+
+impl MostSpecificReturnCheck {
+    /// Java: MostSpecificReturnCheck.test(Type mt1, Type mt2, Types types)
+    pub fn test(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        mt1: TypeId,
+        mt2: TypeId,
+    ) -> bool {
+        match self {
+            MostSpecificReturnCheck::BASIC => {
+                let tvars = crate::code::types::get_type_arguments(ctx, mt1);
+                let svars = crate::code::types::get_type_arguments(ctx, mt2);
+                let t = method_return_type(ctx, mt1);
+                let sres = method_return_type(ctx, mt2);
+                let s = {
+                    let substituted = types.subst(ctx, syms, &List::of(sres), &svars, &tvars);
+                    *substituted.head()
+                };
+                types.is_same_type(ctx, syms, t, s)
+                    || (!ctx.typ(t).is_primitive()
+                        && !ctx.typ(s).is_primitive()
+                        && types.is_subtype(ctx, syms, t, s))
+            }
+            MostSpecificReturnCheck::RTS => {
+                types.return_type_substitutable(ctx, syms, mt1, mt2)
+            }
+        }
+    }
+}
+
+/// Java: Optional<Symbol> mergeAbstracts(...) result. base_symbol is the
+/// upstream anonymous MethodSymbol.baseSymbol() override (see §9 note above).
+#[derive(Clone, Debug)]
+pub struct MergeAbstractsResult {
+    pub symbol: SymbolId,
+    pub base_symbol: SymbolId,
+    pub thrown: List<TypeId>,
+}
+
+impl Types {
+    /// Java: public Type createMethodTypeWithThrown(Type original,
+    /// List<Type> newThrown) (Types.java:3519-3535)
+    pub fn create_method_type_with_thrown(
+        &self,
+        ctx: &mut CompilerContext,
+        original: TypeId,
+        new_thrown: List<TypeId>,
+    ) -> TypeId {
+        match &ctx.typ(original).kind {
+            TypeKindData::MethodType {
+                argtypes, restype, ..
+            } => {
+                let argtypes = argtypes.clone();
+                let restype = restype.expect("method return type");
+                let method_class = ctx.typ(original).tsym.expect("method class");
+                let mt = crate::code::type_::Type::new_method_type(
+                    argtypes,
+                    restype,
+                    new_thrown,
+                    method_class,
+                );
+                ctx.alloc_type(mt)
+            }
+            TypeKindData::ForAll { tvars, qtype } => {
+                let tvars = tvars.clone();
+                let qtype = qtype.expect("forall qtype");
+                let inner = self.create_method_type_with_thrown(ctx, qtype, new_thrown);
+                ctx.alloc_type(crate::code::type_::Type::new_for_all(tvars, inner))
+            }
+            _ => panic!("IllegalArgumentException: Not a method type"),
+        }
+    }
+
+    /// Java: public Optional<Symbol> mergeAbstracts(List<Symbol> ambiguousInOrder,
+    /// Type site, boolean sigCheck) (Types.java:2874-2930)
+    pub fn merge_abstracts(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        chk: &crate::comp::check::Check,
+        ambiguous_in_order: &[SymbolId],
+        site: TypeId,
+        sig_check: bool,
+    ) -> Option<MergeAbstractsResult> {
+        let head = *ambiguous_in_order.first().expect("ambiguous methods");
+        let head_ty = ctx.sym(head).ty.expect("method type");
+        let head_erasure = self.erasure(ctx, syms, head_ty);
+        let erased_params = crate::code::types::get_parameter_types(ctx, head_erasure);
+        let mut should_erase = false;
+        for s in ambiguous_in_order.iter() {
+            let s_ty = ctx.sym(*s).ty.expect("method type");
+            let s_erasure = self.erasure(ctx, syms, s_ty);
+            let s_params = crate::code::types::get_parameter_types(ctx, s_erasure);
+            if (ctx.sym(*s).flags_field & crate::code::flags::ABSTRACT as i64) == 0
+                || (sig_check && !self.is_same_types(ctx, syms, &erased_params, &s_params))
+            {
+                return None;
+            }
+            if ctx
+                .typ(s_ty)
+                .has_tag(crate::code::type_tag::TypeTag::FORALL)
+            {
+                should_erase = true;
+            }
+        }
+        for msc in [MostSpecificReturnCheck::BASIC, MostSpecificReturnCheck::RTS] {
+            'outer: for s in ambiguous_in_order.iter() {
+                let s_ty = ctx.sym(*s).ty.expect("method type");
+                let mt = self.member_type(ctx, syms, site, *s);
+                let mut all_thrown = crate::code::types::get_thrown_types(ctx, mt);
+                for s2 in ambiguous_in_order.iter() {
+                    if s != s2 {
+                        let mt2 = self.member_type(ctx, syms, site, *s2);
+                        if !self.is_sub_signature(ctx, syms, mt, mt2)
+                            || !msc.test(ctx, syms, self, mt, mt2)
+                        {
+                            continue 'outer;
+                        }
+                        let mut thrown2 = crate::code::types::get_thrown_types(ctx, mt2);
+                        if !ctx
+                            .typ(mt)
+                            .has_tag(crate::code::type_tag::TypeTag::FORALL)
+                            && should_erase
+                        {
+                            thrown2 = self.erasure_list(ctx, syms, &thrown2);
+                        } else if ctx
+                            .typ(mt)
+                            .has_tag(crate::code::type_tag::TypeTag::FORALL)
+                        {
+                            assert!(
+                                ctx.typ(mt2)
+                                    .has_tag(crate::code::type_tag::TypeTag::FORALL),
+                                "AssertionError: generic merge"
+                            );
+                            let mt2_args = crate::code::types::get_type_arguments(ctx, mt2);
+                            let mt_args = crate::code::types::get_type_arguments(ctx, mt);
+                            thrown2 = self.subst(ctx, syms, &thrown2, &mt2_args, &mt_args);
+                        }
+                        all_thrown = chk.intersect(ctx, syms, &all_thrown, &thrown2);
+                    }
+                }
+                if all_thrown == crate::code::types::get_thrown_types(ctx, mt) {
+                    return Some(MergeAbstractsResult {
+                        symbol: *s,
+                        base_symbol: *s,
+                        thrown: all_thrown,
+                    });
+                }
+                // Java: new MethodSymbol(s.flags(), s.name,
+                // createMethodTypeWithThrown(s.type, allThrown), s.owner)
+                // { baseSymbol() { return s; } }
+                let flags = ctx.sym(*s).flags_field;
+                let name = ctx.sym(*s).name.clone();
+                let owner = ctx.sym(*s).owner;
+                let new_ty = self.create_method_type_with_thrown(ctx, s_ty, all_thrown.clone());
+                let merged = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+                    crate::code::kinds::Kind::MTH,
+                    flags,
+                    name,
+                    Some(new_ty),
+                    owner,
+                    crate::code::symbol::SymbolKind::MethodSymbol {
+                        extra_params: List::nil(),
+                        captured_locals: List::nil(),
+                        params: List::nil(),
+                        default_value: None,
+                    },
+                ));
+                let _ = (s, s_ty);
+                return Some(MergeAbstractsResult {
+                    symbol: merged,
+                    base_symbol: *s,
+                    thrown: all_thrown,
+                });
+            }
+        }
+        None
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// Types batch 4: DescriptorCache/DescriptorFilter/findDescriptorSymbol/
+// findDescriptorType/isFunctionalInterface/removeWildcards
+// (Types.java:640-885, 984-1010), 1:1. §9 adapters: the facade services
+// (diags/chk/enter) are explicit parameters (ADR 0001); the upstream
+// FunctionDescriptor.getType inner override is carried by
+// FunctionDescriptorMerge (see mergeDescriptors).
+// ---------------------------------------------------------------------------
+impl Types {
+    /// Java: private FunctionDescriptorLookupError failure(String msg, Object...)
+    /// / failure(JCDiagnostic) (Types.java:804-810)
+    fn descriptor_failure(
+        &self,
+        diags: &crate::util::jc_diagnostic::Factory,
+        fragment: crate::resources::diagnostic_contract::FragmentInfo,
+    ) -> FunctionDescriptorLookupError {
+        let diag = diags.fragment(crate::util::jc_diagnostic::Fragment::from(fragment));
+        FunctionDescriptorLookupError::new().set_message(diag)
+    }
+
+    /// Symbol display placeholder for the ADR 0002 P4 args.
+    fn symbol_arg_for(
+        &self,
+        ctx: &CompilerContext,
+        sym: SymbolId,
+    ) -> crate::resources::diagnostic_contract::SymbolArg {
+        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+            crate::comp::resolve::symbol_display_name(ctx, sym),
+        )
+    }
+
+    /// Java: class DescriptorFilter implements Predicate<Symbol>
+    /// (Types.java:984-1000)
+    fn descriptor_filter(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        origin: SymbolId,
+        sym: SymbolId,
+    ) -> bool {
+        if ctx.sym(sym).kind != crate::code::kinds::Kind::MTH {
+            return false;
+        }
+        let flags_field = ctx.sym(sym).flags_field;
+        let abstract_flag = crate::code::flags::ABSTRACT as i64;
+        let default_flag = crate::code::flags::DEFAULT;
+        if (flags_field & (abstract_flag | default_flag)) != abstract_flag {
+            return false;
+        }
+        if self.overrides_object_method(ctx, syms, origin, sym) {
+            return false;
+        }
+        let origin_ty = ctx.sym(origin).ty.expect("interface type");
+        let candidates = self.interface_candidates(ctx, syms, origin_ty, sym);
+        if candidates.is_empty() {
+            return true;
+        }
+        let head = candidates[0];
+        (ctx.sym(head).flags_field & default_flag) == 0
+    }
+
+    /// Java: DescriptorCache.get(TypeSymbol origin) (Types.java:715-730)
+    pub fn desc_cache_get(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        diags: &crate::util::jc_diagnostic::Factory,
+        chk: &crate::comp::check::Check,
+        origin: SymbolId,
+    ) -> Result<FunctionDescriptor, FunctionDescriptorLookupError> {
+        let origin_ty = ctx.sym(origin).ty.expect("type symbol type");
+        let members = self.members_closure(ctx, syms, origin_ty);
+        let mark = ctx.scope_get_mark(members);
+        if let Some(entry) = self.descriptor_cache.borrow().get(&origin).cloned()
+            && entry.prev_mark == mark
+        {
+            return Ok(entry.cached_desc_res);
+        }
+        let desc_res = self.find_descriptor_internal(ctx, syms, diags, chk, origin, members)?;
+        self.descriptor_cache.borrow_mut().insert(
+            origin,
+            DescriptorEntry {
+                cached_desc_res: desc_res.clone(),
+                prev_mark: mark,
+            },
+        );
+        Ok(desc_res)
+    }
+
+    /// Java: DescriptorCache.findDescriptorInternal(TypeSymbol origin,
+    /// CompoundScope membersCache) (Types.java:732-790)
+    #[allow(clippy::too_many_arguments)]
+    pub fn find_descriptor_internal(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        diags: &crate::util::jc_diagnostic::Factory,
+        chk: &crate::comp::check::Check,
+        origin: SymbolId,
+        members: crate::ids::ScopeId,
+    ) -> Result<FunctionDescriptor, FunctionDescriptorLookupError> {
+        let origin_flags = ctx.sym(origin).flags_field;
+        let is_interface = (origin_flags & crate::code::flags::INTERFACE as i64) != 0;
+        let is_annotation = (origin_flags & crate::code::flags::ANNOTATION as i64) != 0;
+        let is_sealed = is_interface && (origin_flags & crate::code::flags::SEALED) != 0;
+        if !is_interface || is_annotation || is_sealed {
+            // Java: throw failure("not.a.functional.intf", origin);
+            return Err(self.descriptor_failure(
+                diags,
+                crate::resources::compiler_properties::fragments::not_a_functional_intf(
+                    self.symbol_arg_for(ctx, origin),
+                ),
+            ));
+        }
+        let mut abstracts: Vec<SymbolId> = Vec::new();
+        let origin_ty = ctx.sym(origin).ty.expect("interface type");
+        let all = ctx.scope_get_symbols(
+            members,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        for sym in all {
+            if !self.descriptor_filter(ctx, syms, origin, sym) {
+                continue;
+            }
+            let mtype = self.member_type(ctx, syms, origin_ty, sym);
+            if abstracts.is_empty() {
+                abstracts.push(sym);
+            } else {
+                let first = abstracts[0];
+                let first_mtype = self.member_type(ctx, syms, origin_ty, first);
+                if ctx.sym(sym).name.to_java_string()
+                    == ctx.sym(first).name.to_java_string()
+                    && self.override_equivalent(ctx, syms, mtype, first_mtype)
+                {
+                    // Java: if (!abstracts.stream().filter(msym ->
+                    //     msym.owner.isSubClass(sym.enclClass(), Types.this))
+                    //     .map(...).anyMatch(abstractMType -> isSubSignature(...)))
+                    let sym_encl = crate::code::symbol::symbol_encl_class(ctx, sym)
+                        .or_else(|| ctx.sym(sym).owner)
+                        .expect("enclosing class");
+                    let mut found_sub = false;
+                    for msym in abstracts.iter() {
+                        let msym_owner = ctx.sym(*msym).owner.expect("method owner");
+                        if crate::code::symbol::is_sub_class(ctx, syms, self, msym_owner, sym_encl) {
+                            let abstract_m_type =
+                                self.member_type(ctx, syms, origin_ty, *msym);
+                            if self.is_sub_signature(ctx, syms, abstract_m_type, mtype) {
+                                found_sub = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !found_sub {
+                        abstracts.push(sym);
+                    }
+                } else {
+                    // Java: throw failure("not.a.functional.intf.1", origin,
+                    // diags.fragment(Fragments.IncompatibleAbstracts(...)))
+                    let kind_name = crate::code::kinds::kind_name(ctx.sym(origin), ctx); 
+                    let fragment =
+                        crate::resources::compiler_properties::fragments::incompatible_abstracts(
+                            crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                                format!("{kind_name:?}"),
+                            ),
+                            self.symbol_arg_for(ctx, origin),
+                        );
+                    let diag = diags.fragment(crate::util::jc_diagnostic::Fragment::from(fragment));
+                    return Err(FunctionDescriptorLookupError::new().set_message(diag));
+                }
+            }
+        }
+        if abstracts.is_empty() {
+            // Java: throw failure("not.a.functional.intf.1", origin,
+            // diags.fragment(Fragments.NoAbstracts(...)))
+            let kind_name = crate::code::kinds::kind_name(ctx.sym(origin), ctx);
+            let fragment =
+                crate::resources::compiler_properties::fragments::no_abstracts(
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(format!(
+                        "{kind_name:?}"
+                    )),
+                    self.symbol_arg_for(ctx, origin),
+                );
+            let diag = diags.fragment(crate::util::jc_diagnostic::Fragment::from(fragment));
+            return Err(FunctionDescriptorLookupError::new().set_message(diag));
+        }
+        if abstracts.len() == 1 {
+            return Ok(FunctionDescriptor::new(abstracts[0]));
+        }
+        // Java: mergeDescriptors (Types.java:793-802 + 2930 note): the merged
+        // descriptor uses baseSymbol() as its symbol and overrides getType to
+        // reuse bestSoFar's thrown types (see FunctionDescriptorMerge).
+        match self.merge_descriptors(ctx, syms, chk, origin, &abstracts) {
+            Some(merge) => Ok(FunctionDescriptor {
+                desc_sym: merge.base_symbol,
+                merge: Some(FunctionDescriptorMerge {
+                    best_so_far: merge.symbol,
+                }),
+            }),
+            None => {
+                // Java: build IncompatibleDescsInFunctionalIntf with the
+                // descriptor.throws/descriptor fragment lines (JCDiagnostic.
+                // MultilineDiagnostic). The ported JCDiagnostic has no
+                // MultiLine form yet (registered §9): the error is reported with
+                // the primary diagnostic only, same key.
+                let kind_name = crate::code::kinds::kind_name(ctx.sym(origin), ctx);
+                let fragment =
+                    crate::resources::compiler_properties::fragments::incompatible_descs_in_functional_intf(
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(format!(
+                            "{kind_name:?}"
+                        )),
+                        self.symbol_arg_for(ctx, origin),
+                    );
+                Err(self.descriptor_failure(diags, fragment))
+            }
+        }
+    }
+
+    /// Java: DescriptorCache.mergeDescriptors(TypeSymbol origin,
+    /// List<Symbol> methodSyms) (Types.java:793-802)
+    fn merge_descriptors(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        chk: &crate::comp::check::Check,
+        origin: SymbolId,
+        method_syms: &[SymbolId],
+    ) -> Option<MergeAbstractsResult> {
+        let origin_ty = ctx.sym(origin).ty.expect("interface type");
+        self.merge_abstracts(ctx, syms, chk, method_syms, origin_ty, false)
+    }
+
+    /// Java: public Symbol findDescriptorSymbol(TypeSymbol origin)
+    /// (Types.java:819-821)
+    pub fn find_descriptor_symbol(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        diags: &crate::util::jc_diagnostic::Factory,
+        chk: &crate::comp::check::Check,
+        origin: SymbolId,
+    ) -> Result<SymbolId, FunctionDescriptorLookupError> {
+        Ok(self
+            .desc_cache_get(ctx, syms, diags, chk, origin)?
+            .get_symbol())
+    }
+
+    /// Java: public Type findDescriptorType(Type origin) (Types.java:827-829)
+    pub fn find_descriptor_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        diags: &crate::util::jc_diagnostic::Factory,
+        chk: &crate::comp::check::Check,
+        origin: TypeId,
+    ) -> Result<TypeId, FunctionDescriptorLookupError> {
+        let origin_tsym = ctx.typ(origin).tsym.expect("origin type symbol");
+        let descriptor = self.desc_cache_get(ctx, syms, diags, chk, origin_tsym)?;
+        descriptor.get_type(ctx, syms, self, chk, origin)
+    }
+
+    /// Java: public boolean isFunctionalInterface(TypeSymbol tsym)
+    /// (Types.java:834-841) / isFunctionalInterface(Type site) (843-850)
+    pub fn is_functional_interface(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        diags: &crate::util::jc_diagnostic::Factory,
+        chk: &crate::comp::check::Check,
+        origin: SymbolId,
+    ) -> bool {
+        self.find_descriptor_symbol(ctx, syms, diags, chk, origin)
+            .is_ok()
+    }
+
+    /// Java: public Type removeWildcards(Type site) (Types.java:852-885)
+    pub fn remove_wildcards(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        site: TypeId,
+    ) -> TypeId {
+        let actuals = crate::code::types::get_type_arguments(ctx, site);
+        let wildcard_tag = crate::code::type_tag::TypeTag::WILDCARD;
+        let has_wildcard = actuals
+            .iter()
+            .any(|t| ctx.typ(t).has_tag(wildcard_tag));
+        if !has_wildcard {
+            return site;
+        }
+        let site_tsym = ctx.typ(site).tsym.expect("site symbol");
+        let site_tsym_ty = ctx.sym(site_tsym).ty.expect("site symbol type");
+        let formals = crate::code::types::get_type_arguments(ctx, site_tsym_ty);
+        let mut args: List<TypeId> = List::nil();
+        let mut current = actuals;
+        let mut formals_iter = formals.clone();
+        while current.non_empty() {
+            let actual = *current.head();
+            let formal = *formals_iter.head();
+            let bound = ctx
+                .typ(formal)
+                .get_upper_bound()
+                .expect("formal upper bound");
+            if ctx.typ(actual).has_tag(wildcard_tag) {
+                // Java: WildcardType wt = (WildcardType)actual;
+                let (wt_type, wt_kind) = match &ctx.typ(actual).kind {
+                    TypeKindData::WildcardType { type_, kind, .. } => (*type_, *kind),
+                    _ => (None, crate::code::bound_kind::BoundKind::UNBOUND),
+                };
+                let contains_formals = self.contains_any(ctx, syms, bound, &formals);
+                if contains_formals {
+                    // Java: targs.add(wt.type); (may be null)
+                    if let Some(wt_type) = wt_type {
+                        args = args.append(wt_type);
+                    }
+                } else {
+                    match wt_kind {
+                        crate::code::bound_kind::BoundKind::UNBOUND => {
+                            args = args.append(bound);
+                        }
+                        crate::code::bound_kind::BoundKind::EXTENDS => {
+                            let wt_type = wt_type.expect("wildcard bound type");
+                            let glb = self.glb(ctx, syms, bound, wt_type);
+                            args = args.append(glb);
+                        }
+                        crate::code::bound_kind::BoundKind::SUPER => {
+                            args = args.append(wt_type.expect("wildcard lower type"));
+                        }
+                    }
+                }
+            } else {
+                args = args.append(actual);
+            }
+            current = current.tail();
+            formals_iter = formals_iter.tail();
+        }
+        let substituted = self.subst(ctx, syms, &List::of(site_tsym_ty), &formals, &args);
+        *substituted.head()
+    }
+}
+
+impl FunctionDescriptor {
+    /// Java: public Type getType(Type site) (Types.java:680-700)
+    pub fn get_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        chk: &crate::comp::check::Check,
+        site: TypeId,
+    ) -> Result<TypeId, FunctionDescriptorLookupError> {
+        let site = types.remove_wildcards(ctx, syms, site);
+        if ctx.typ(site).is_intersection() {
+            let components = ctx.typ(site).get_explicit_components();
+            for component in components.iter() {
+                if !chk.check_valid_generic_type(ctx, syms, component) {
+                    // Java: throw failure(diags.fragment(
+                    //     Fragments.NoSuitableFunctionalIntfInst(site)))
+                    return Err(FunctionDescriptorLookupError::new());
+                }
+            }
+        } else if !chk.check_valid_generic_type(ctx, syms, site) {
+            return Err(FunctionDescriptorLookupError::new());
+        }
+        let mt = types.member_type(ctx, syms, site, self.desc_sym);
+        match &self.merge {
+            None => Ok(mt),
+            Some(merge) => {
+                let best_so_far_ty = ctx.sym(merge.best_so_far).ty.expect("merged type");
+                let best_thrown = crate::code::types::get_thrown_types(ctx, best_so_far_ty);
+                Ok(types.create_method_type_with_thrown(ctx, mt, best_thrown))
+            }
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// Types batch 4: makeFunctionalInterfaceClass / functionalInterfaceBridges /
+// pendingBridges (Types.java:890-975), 1:1. §9 adapters: the Enter service and
+// the enclosing Env are explicit parameters (ADR 0001); the synthetic class
+// symbol construction mirrors the upstream ClassSymbol constructor fields.
+// ---------------------------------------------------------------------------
+impl Types {
+    /// Java: public ClassSymbol makeFunctionalInterfaceClass(Env<AttrContext> env,
+    /// Name name, Type target, long cflags) (Types.java:890-916)
+    #[allow(clippy::too_many_arguments)]
+    pub fn make_functional_interface_class(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        diags: &crate::util::jc_diagnostic::Factory,
+        chk: &crate::comp::check::Check,
+        env: &std::rc::Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        name: crate::util::name::Name,
+        target: TypeId,
+        cflags: i64,
+    ) -> Option<SymbolId> {
+        let unknown_type = syms.unknown_type;
+        if target == unknown_type {
+            return None;
+        }
+        let target_tsym = ctx.typ(target).tsym.expect("target type symbol");
+        let desc_sym = self
+            .find_descriptor_symbol(ctx, syms, diags, chk, target_tsym)
+            .ok()?;
+        let desc_type = self
+            .find_descriptor_type(ctx, syms, diags, chk, target)
+            .ok()?;
+        // Java: env.enclClass.sym.outermostClass()
+        let encl_class = env.encl_class?;
+        let encl_sym = match &ctx.tree(encl_class).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl { sym, .. } => (*sym)?,
+            _ => return None,
+        };
+        let mut outermost = encl_sym;
+        loop {
+            let owner = ctx.sym(outermost).owner;
+            match owner {
+                Some(owner) if ctx.sym(owner).kind != crate::code::kinds::Kind::PCK => {
+                    outermost = owner;
+                }
+                _ => break,
+            }
+        }
+        let no_type = no_type_of(ctx, syms);
+        // Java: new ClassSymbol(cflags, name, syms.noSymbol) computes
+        // fullname/flatname from (name, owner) in the constructor.
+        let fullname = crate::code::symtab::form_full_name(ctx, &name, Some(outermost));
+        let flatname = crate::code::symtab::form_flat_name(ctx, &name, Some(outermost));
+        let mut class_symbol = crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::TYP,
+            cflags,
+            name,
+            Some(no_type),
+            Some(outermost),
+            crate::code::symbol::SymbolKind::ClassSymbol {
+                members_field: None,
+                fullname,
+                flatname,
+                sourcefile: None,
+                classfile: None,
+                trans_local: List::nil(),
+                record_components: List::nil(),
+                permitted: List::nil(),
+                is_permitted_explicit: false,
+                annotation_type_metadata: Default::default(),
+            },
+        );
+        class_symbol.completer = None;
+        let csym = ctx.alloc_symbol(class_symbol);
+        let members = ctx.scope_create(Some(csym));
+        if let crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } =
+            &mut ctx.sym_mut(csym).kind_data
+        {
+            *members_field = Some(members);
+        }
+        let desc_flags = ctx.sym(desc_sym).flags_field;
+        let desc_name = ctx.sym(desc_sym).name.clone();
+        let inst_desc = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::MTH,
+            desc_flags,
+            desc_name,
+            Some(desc_type),
+            Some(csym),
+            crate::code::symbol::SymbolKind::MethodSymbol {
+                extra_params: List::nil(),
+                captured_locals: List::nil(),
+                params: List::nil(),
+                default_value: None,
+            },
+        ));
+        ctx.scope_enter(members, inst_desc);
+        let ctype = ctx.alloc_type(crate::code::type_::Type::new_class_type(
+            Some(no_type),
+            Some(List::nil()),
+            csym,
+        ));
+        let object_type = syms.object_type;
+        let interfaces = if ctx.typ(target).is_intersection() {
+            self.direct_supertypes(ctx, syms, target)
+        } else {
+            List::of(target)
+        };
+        if let crate::code::type_::TypeKindData::ClassType {
+            supertype_field,
+            interfaces_field,
+            ..
+        } = &mut ctx.typ_mut(ctype).kind
+        {
+            *supertype_field = Some(object_type);
+            *interfaces_field = Some(interfaces);
+        }
+        ctx.sym_mut(csym).ty = Some(ctype);
+        // Java: csym.sourcefile = ((ClassSymbol)csym.owner).sourcefile;
+        let owner_sourcefile = match &ctx.sym(outermost).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile.clone(),
+            _ => None,
+        };
+        if let crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } =
+            &mut ctx.sym_mut(csym).kind_data
+        {
+            *sourcefile = owner_sourcefile;
+        }
+        Some(csym)
+    }
+
+    /// Java: private Predicate<Symbol> bridgeFilter (Types.java:948-955)
+    fn bridge_filter(
+        &self,
+        ctx: &CompilerContext,
+        sym: SymbolId,
+    ) -> bool {
+        let name = ctx.sym(sym).name.to_java_string();
+        name != ctx.sym(sym).name.table.names().init.to_java_string()
+            && name != ctx.sym(sym).name.table.names().clinit.to_java_string()
+            && (ctx.sym(sym).flags_field & crate::code::flags::SYNTHETIC as i64) == 0
+    }
+
+    /// Java: public List<Symbol> functionalInterfaceBridges(TypeSymbol origin)
+    /// (Types.java:925-947)
+    pub fn functional_interface_bridges(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        diags: &crate::util::jc_diagnostic::Factory,
+        chk: &crate::comp::check::Check,
+        enter: &crate::comp::enter::Enter,
+        origin: SymbolId,
+    ) -> Vec<SymbolId> {
+        assert!(
+            self.is_functional_interface(ctx, syms, diags, chk, origin),
+            "AssertionError: isFunctionalInterface(origin)"
+        );
+        let desc_sym = self
+            .find_descriptor_symbol(ctx, syms, diags, chk, origin)
+            .expect("descriptor symbol");
+        let origin_ty = ctx.sym(origin).ty.expect("interface type");
+        let members = self.members_closure(ctx, syms, origin_ty);
+        let desc_name = ctx.sym(desc_sym).name.clone();
+        let candidates = ctx.scope_get_symbols_by_name(
+            members,
+            &desc_name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        let mut overridden: Vec<SymbolId> = Vec::new();
+        for m2 in candidates {
+            if !self.bridge_filter(ctx, m2) {
+                continue;
+            }
+            if m2 == desc_sym {
+                continue;
+            }
+            if !crate::code::symbol::overrides(ctx, syms, self, desc_sym, m2, origin, false) {
+                continue;
+            }
+            let m2_encl = crate::code::symbol::symbol_encl_class(ctx, m2)
+                .or_else(|| ctx.sym(m2).owner)
+                .expect("enclosing class");
+            let mut skip = false;
+            for m3 in overridden.iter() {
+                let m3_ty = ctx.sym(*m3).ty.expect("bridge type");
+                let m2_ty = ctx.sym(m2).ty.expect("bridge type");
+                let m3_erasure = self.erasure(ctx, syms, m3_ty);
+                let m2_erasure = self.erasure(ctx, syms, m2_ty);
+                let same_erasure = self.is_same_type(ctx, syms, m3_erasure, m2_erasure);
+                let overrides_m2 =
+                    crate::code::symbol::overrides(ctx, syms, self, *m3, m2, origin, false);
+                if same_erasure
+                    || (overrides_m2
+                        && {
+                            let pending = self.pending_bridges(ctx, syms, enter, origin, m2_encl);
+                            let binary = {
+                                let m3_owner = ctx.sym(*m3).owner.expect("m3 owner");
+                                crate::code::symbol::binary_implementation(
+                                    ctx, syms, self, m2, m3_owner,
+                                )
+                                .is_some()
+                            };
+                            pending || binary
+                        })
+                {
+                    skip = true;
+                    break;
+                }
+            }
+            if skip {
+                continue;
+            }
+            overridden.push(m2);
+        }
+        overridden
+    }
+
+    /// Java: private boolean pendingBridges(ClassSymbol origin, TypeSymbol s)
+    /// (Types.java:957-975)
+    fn pending_bridges(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        enter: &crate::comp::enter::Enter,
+        origin: SymbolId,
+        s: SymbolId,
+    ) -> bool {
+        let class_file = match &ctx.sym(origin).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } => classfile.clone(),
+            _ => None,
+        };
+        if let Some(class_file) = class_file
+            && class_file.get_kind() == javac_tools::tools::java_file_object::Kind::CLASS
+            && enter.get_env(origin).is_none()
+        {
+            return false;
+        }
+        if origin == s {
+            return true;
+        }
+        let origin_ty = ctx.sym(origin).ty.expect("class type");
+        let interfaces = self.interfaces(ctx, syms, origin_ty);
+        let mut current = interfaces;
+        while current.non_empty() {
+            let iface = *current.head();
+            let iface_tsym = ctx.typ(iface).tsym.expect("interface symbol");
+            if self.pending_bridges(ctx, syms, enter, iface_tsym, s) {
+                return true;
+            }
+            current = current.tail();
+        }
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7382,5 +9003,375 @@ mod tests {
         assert_eq!(checked, 43, "checked relation rows");
         assert_eq!(skipped, 3, "inner-class rows skipped");
     }
+
+    // ------------------------------------------------------------------
+    // Batch 4: functional interface descriptors / castable warner /
+    // checkUnique MTH.
+    // ------------------------------------------------------------------
+
+    #[allow(clippy::type_complexity, clippy::too_many_arguments)]
+    fn build_services() -> (
+        CompilerContext,
+        Rc<std::cell::RefCell<Symtab>>,
+        Types,
+        Rc<std::cell::RefCell<crate::util::log::Log>>,
+        Rc<crate::util::jc_diagnostic::Factory>,
+        Rc<crate::code::lint::Lint>,
+        Rc<std::cell::RefCell<crate::code::deferred_lint_handler::DeferredLintHandler>>,
+    ) {
+        use crate::code::deferred_lint_handler::DeferredLintHandler;
+        use crate::util::context::Context;
+        use crate::util::javac_messages::JavacMessages;
+        let mut ctx = CompilerContext::new();
+        let mut context = Context::new();
+        let log = crate::util::log::Log::instance(&mut context);
+        let names = Rc::new(Names::new(false));
+        let messages = JavacMessages::instance(&mut context);
+        let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
+        let lint = crate::code::lint::Lint::instance(&mut context);
+        let deferred = Rc::new(std::cell::RefCell::new(DeferredLintHandler::new()));
+        let symtab = Symtab::new(&mut ctx, Rc::clone(&names), Target::DEFAULT, Source::JDK17);
+        let symtab = Rc::new(std::cell::RefCell::new(symtab));
+        let types = Types::with_names(names);
+        (ctx, symtab, types, log, diags, lint, deferred)
+    }
+
+    /// Build a synthetic interface class symbol with the given abstract method
+    /// into the context (a local test fixture for the SAM tests; the upstream
+    /// tests use full Enter/Analyze, which needs the Attr batch).
+    #[allow(clippy::too_many_arguments)]
+    fn make_interface_with_method(
+        ctx: &mut CompilerContext,
+        symtab: &mut Symtab,
+        names: &Rc<Names>,
+        method_name: &str,
+        param_types: &[TypeId],
+        return_type: TypeId,
+        thrown: &[TypeId],
+        owner_outermost: SymbolId,
+        extra_method: Option<(&str, &[TypeId], TypeId)>,
+    ) -> (SymbolId, TypeId, SymbolId) {
+        let names = Rc::clone(names);
+        let object_type = symtab.object_type;
+        let method_class = symtab.method_class;
+        let no_type = ctx.sym(symtab.no_symbol).ty.expect("no type");
+        let flags = (crate::code::flags::PUBLIC
+            | crate::code::flags::INTERFACE
+            | crate::code::flags::ABSTRACT) as i64;
+        let flat = names.from_string(&javac_strings::JavaString::from("Sam"));
+        let class = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::TYP,
+            flags,
+            flat.clone(),
+            Some(no_type),
+            Some(owner_outermost),
+            crate::code::symbol::SymbolKind::ClassSymbol {
+                members_field: None,
+                fullname: flat.clone(),
+                flatname: flat.clone(),
+                sourcefile: None,
+                classfile: None,
+                trans_local: List::nil(),
+                record_components: List::nil(),
+                permitted: List::nil(),
+                is_permitted_explicit: false,
+                annotation_type_metadata: Default::default(),
+            },
+        ));
+        let class_type = ctx.alloc_type(Type::new_class_type(
+            Some(no_type),
+            Some(List::nil()),
+            class,
+        ));
+        ctx.sym_mut(class).ty = Some(class_type);
+        let members = ctx.scope_create(Some(class));
+        if let crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } =
+            &mut ctx.sym_mut(class).kind_data
+        {
+            *members_field = Some(members);
+        }
+        if let TypeKindData::ClassType {
+            supertype_field,
+            interfaces_field,
+            ..
+        } = &mut ctx.typ_mut(class_type).kind
+        {
+            *supertype_field = Some(object_type);
+            *interfaces_field = Some(List::nil());
+        }
+        let mut args = List::nil();
+        for param in param_types.iter().rev() {
+            args = args.prepend(*param);
+        }
+        let mut thrown_list = List::nil();
+        for throw in thrown.iter().rev() {
+            thrown_list = thrown_list.prepend(*throw);
+        }
+        let mtype = ctx.alloc_type(Type::new_method_type(
+            args,
+            return_type,
+            thrown_list,
+            method_class,
+        ));
+        let mname = names.from_string(&javac_strings::JavaString::from(method_name));
+        let mflags = (crate::code::flags::PUBLIC | crate::code::flags::ABSTRACT) as i64;
+        let method = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::MTH,
+            mflags,
+            mname,
+            Some(mtype),
+            Some(class),
+            crate::code::symbol::SymbolKind::MethodSymbol {
+                extra_params: List::nil(),
+                captured_locals: List::nil(),
+                params: List::nil(),
+                default_value: None,
+            },
+        ));
+        ctx.scope_enter(members, method);
+        if let Some((extra_name, extra_params, extra_return)) = extra_method {
+            let mut extra_args = List::nil();
+            for param in extra_params.iter().rev() {
+                extra_args = extra_args.prepend(*param);
+            }
+            let extra_type = ctx.alloc_type(Type::new_method_type(
+                extra_args,
+                extra_return,
+                List::nil(),
+                method_class,
+            ));
+            let extra_symbol_name =
+                names.from_string(&javac_strings::JavaString::from(extra_name));
+            let extra = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+                crate::code::kinds::Kind::MTH,
+                mflags,
+                extra_symbol_name,
+                Some(extra_type),
+                Some(class),
+                crate::code::symbol::SymbolKind::MethodSymbol {
+                    extra_params: List::nil(),
+                    captured_locals: List::nil(),
+                    params: List::nil(),
+                    default_value: None,
+                },
+            ));
+            ctx.scope_enter(members, extra);
+        }
+        (class, class_type, method)
+    }
+
+
+    fn check_for_tests(
+        names: &Rc<Names>,
+        log: &Rc<std::cell::RefCell<crate::util::log::Log>>,
+        diags: &Rc<crate::util::jc_diagnostic::Factory>,
+        types: &Types,
+        lint: &Rc<crate::code::lint::Lint>,
+        deferred: &Rc<std::cell::RefCell<crate::code::deferred_lint_handler::DeferredLintHandler>>,
+        syms: &Rc<std::cell::RefCell<Symtab>>,
+    ) -> crate::comp::check::Check {
+        crate::comp::check::Check::new(
+            Rc::clone(names),
+            Rc::clone(log),
+            Rc::clone(diags),
+            Source::JDK17,
+            '$',
+            Rc::new(types.clone()),
+            Rc::clone(lint),
+            Rc::clone(deferred),
+            Rc::clone(syms),
+        )
+    }
+
+    #[test]
+    fn functional_interface_descriptor_identifies_the_sam() {
+        let (mut ctx, syms_rc, types, log, diags, lint, deferred) = build_services();
+        let names = Rc::new(Names::new(false));
+        let mut syms = syms_rc.borrow_mut();
+        let int_type = syms.int_type;
+        let java_base = syms.java_base;
+        let (_, _, method) = make_interface_with_method(
+            &mut ctx,
+            &mut syms,
+            &names,
+            "apply",
+            &[int_type],
+            int_type,
+            &[],
+            java_base,
+            None,
+        );
+        let chk = check_for_tests(&names, &log, &diags, &types, &lint, &deferred, &syms_rc);
+        let interface_tsym = ctx.sym(method).owner.expect("interface owner");
+        let desc_sym = types
+            .find_descriptor_symbol(&mut ctx, &mut syms, &diags, &chk, interface_tsym)
+            .expect("SAM descriptor");
+        assert_eq!(desc_sym, method, "the single abstract method is the descriptor");
+        assert!(types.is_functional_interface(&mut ctx, &mut syms, &diags, &chk, interface_tsym));
+        let interface_ty = ctx.sym(interface_tsym).ty.expect("interface type");
+        let desc_ty = types
+            .find_descriptor_type(&mut ctx, &mut syms, &diags, &chk, interface_ty)
+            .expect("descriptor type");
+        match &ctx.typ(desc_ty).kind {
+            TypeKindData::MethodType {
+                argtypes, restype, ..
+            } => {
+                assert_eq!(argtypes.length(), 1);
+                assert_eq!(*argtypes.head(), int_type);
+                assert_eq!(restype.expect("return type"), int_type);
+            }
+            _ => panic!("method type expected"),
+        }
+    }
+
+    #[test]
+    fn functional_interface_rejects_two_abstract_methods() {
+        let (mut ctx, syms_rc, types, log, diags, lint, deferred) = build_services();
+        let names = Rc::new(Names::new(false));
+        let mut syms = syms_rc.borrow_mut();
+        let int_type = syms.int_type;
+        let void_type = syms.void_type;
+        let java_base = syms.java_base;
+        let (_, _, method) = make_interface_with_method(
+            &mut ctx,
+            &mut syms,
+            &names,
+            "apply",
+            &[int_type],
+            int_type,
+            &[],
+            java_base,
+            Some(("other", &[], void_type)),
+        );
+        let chk = check_for_tests(&names, &log, &diags, &types, &lint, &deferred, &syms_rc);
+        let interface_tsym = ctx.sym(method).owner.expect("interface owner");
+        let result = types.find_descriptor_symbol(&mut ctx, &mut syms, &diags, &chk, interface_tsym);
+        assert!(result.is_err(), "two abstract methods are not a SAM");
+        assert!(!types.is_functional_interface(&mut ctx, &mut syms, &diags, &chk, interface_tsym));
+    }
+
+    #[test]
+    fn descriptor_type_keeps_the_sam_thrown_clause() {
+        let (mut ctx, syms_rc, types, log, diags, lint, deferred) = build_services();
+        let names = Rc::new(Names::new(false));
+        let mut syms = syms_rc.borrow_mut();
+        let int_type = syms.int_type;
+        let exception_type = syms.exception_type;
+        let java_base = syms.java_base;
+        let (_, _, method) = make_interface_with_method(
+            &mut ctx,
+            &mut syms,
+            &names,
+            "call",
+            &[],
+            int_type,
+            &[exception_type],
+            java_base,
+            None,
+        );
+        let chk = check_for_tests(&names, &log, &diags, &types, &lint, &deferred, &syms_rc);
+        let interface_tsym = ctx.sym(method).owner.expect("interface owner");
+        let interface_ty = ctx.sym(interface_tsym).ty.expect("interface type");
+        let desc_ty = types
+            .find_descriptor_type(&mut ctx, &mut syms, &diags, &chk, interface_ty)
+            .expect("descriptor type");
+        let thrown = crate::code::types::get_thrown_types(&ctx, desc_ty);
+        assert_eq!(thrown.length(), 1);
+        assert_eq!(*thrown.head(), exception_type);
+    }
+
+    #[test]
+    fn is_castable_with_warn_covers_the_primitive_relation() {
+        let (mut ctx, mut syms, types) = build_with_types();
+        let int_type = syms.int_type;
+        let long_type = syms.long_type;
+        let boolean_type = syms.boolean_type;
+        let mut no_warn = crate::util::warner::Warner::new(None);
+        assert!(types.is_castable_with_warn(
+            &mut ctx,
+            &mut syms,
+            int_type,
+            long_type,
+            &mut no_warn
+        ));
+        assert!(!types.is_castable_with_warn(
+            &mut ctx,
+            &mut syms,
+            boolean_type,
+            int_type,
+            &mut no_warn
+        ));
+        assert!(types.is_castable_with_warn(
+            &mut ctx,
+            &mut syms,
+            int_type,
+            int_type,
+            &mut no_warn
+        ));
+        assert!(!no_warn.has_lint(crate::code::lint::LintCategory::UNCHECKED));
+    }
+
+    #[test]
+    fn check_unique_mth_uses_has_same_args() {
+        let (mut ctx, syms_rc, types, log, diags, lint, deferred) = build_services();
+        let names = Rc::new(Names::new(false));
+        let chk = check_for_tests(&names, &log, &diags, &types, &lint, &deferred, &syms_rc);
+        let (class, int_type, java_base) = {
+            let mut syms = syms_rc.borrow_mut();
+            let int_type = syms.int_type;
+            let java_base = syms.java_base;
+            let (class, _, _) = make_interface_with_method(
+                &mut ctx,
+                &mut syms,
+                &names,
+                "apply",
+                &[int_type],
+                int_type,
+                &[],
+                java_base,
+                Some(("apply", &[], int_type)),
+            );
+            (class, int_type, java_base)
+        };
+        let members = match &ctx.sym(class).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => {
+                members_field.expect("members")
+            }
+            _ => panic!("class expected"),
+        };
+        let apply_name = names.from_string(&javac_strings::JavaString::from("apply"));
+        let symbols = ctx.scope_get_symbols_by_name(
+            members,
+            &apply_name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        assert_eq!(symbols.len(), 2);
+        assert!(
+            chk.check_unique(&mut ctx, crate::util::position::NOPOS, symbols[0], members),
+            "different signatures are unique"
+        );
+        let duplicate_type = ctx.sym(symbols[0]).ty.expect("method type");
+        let dup = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::MTH,
+            (crate::code::flags::PUBLIC | crate::code::flags::ABSTRACT) as i64,
+            apply_name,
+            Some(duplicate_type),
+            Some(class),
+            crate::code::symbol::SymbolKind::MethodSymbol {
+                extra_params: List::nil(),
+                captured_locals: List::nil(),
+                params: List::nil(),
+                default_value: None,
+            },
+        ));
+        ctx.scope_enter(members, dup);
+        assert!(
+            !chk.check_unique(&mut ctx, crate::util::position::NOPOS, dup, members),
+            "same signature is a duplicate"
+        );
+        let _ = (int_type, java_base);
+    }
+
 
 }
