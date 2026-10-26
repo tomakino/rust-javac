@@ -2366,7 +2366,14 @@ pub fn implementation(
     origin: SymbolId,
     check_result: bool,
 ) -> Option<SymbolId> {
-    let result = types.implementation_filtered(ctx, syms, sym, origin, check_result);
+    let result = types.implementation_filtered(
+        ctx,
+        syms,
+        sym,
+        origin,
+        check_result,
+        crate::code::types::ImplementationFilterKind::Default,
+    );
     if result.is_some() {
         return result;
     }

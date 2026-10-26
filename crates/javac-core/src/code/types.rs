@@ -275,6 +275,39 @@ pub struct ImplementationEntry {
     pub cached_impl: Option<SymbolId>,
     pub check_result: bool,
     pub prev_mark: i32,
+    pub filter_kind: ImplementationFilterKind,
+}
+
+/// Java: MethodSymbol.implementationFilter (Symbol.java:2168-2172) and the
+/// Check.equalsHasCodeFilter predicate: the predicate identity is compared by
+/// the implementation cache (Types.java:2958-2966); the port represents the
+/// predicate by a comparable kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImplementationFilterKind {
+    /// Java: s.kind == MTH && (s.flags() & SYNTHETIC) == 0
+    Default,
+    /// Java: MethodSymbol.implementation_filter.test(s) && (s.flags() & BAD_OVERRIDE) == 0
+    EqualsHasCode,
+}
+
+/// Adapter: apply the upstream implementation filter predicate to a symbol.
+pub fn implementation_filter_matches(
+    ctx: &CompilerContext,
+    kind: ImplementationFilterKind,
+    sym: SymbolId,
+) -> bool {
+    let flags_value = ctx.sym(sym).flags_field;
+    if ctx.sym(sym).kind != crate::code::kinds::Kind::MTH
+        || (flags_value & crate::code::flags::SYNTHETIC as i64) != 0
+    {
+        return false;
+    }
+    match kind {
+        ImplementationFilterKind::Default => true,
+        ImplementationFilterKind::EqualsHasCode => {
+            (flags_value & crate::code::flags::BAD_OVERRIDE) == 0
+        }
+    }
 }
 
 /// Java: DescriptorCache.Entry (Types.java:703-720).
@@ -7402,8 +7435,9 @@ impl Types {
         ms: SymbolId,
         origin: SymbolId,
         check_result: bool,
+        filter_kind: ImplementationFilterKind,
     ) -> Option<SymbolId> {
-        self.implementation_filtered(ctx, syms, ms, origin, check_result)
+        self.implementation_filtered(ctx, syms, ms, origin, check_result, filter_kind)
     }
 
     /// Java: ImplementationCache.get/implementationInternal
@@ -7415,6 +7449,7 @@ impl Types {
         ms: SymbolId,
         origin: SymbolId,
         check_result: bool,
+        filter_kind: ImplementationFilterKind,
     ) -> Option<SymbolId> {
         let origin_ty = ctx.sym(origin).ty.expect("origin type");
         let members = self.members_closure(ctx, syms, origin_ty);
@@ -7427,10 +7462,11 @@ impl Types {
             .cloned()
             && entry.check_result == check_result
             && entry.prev_mark == mark
+            && entry.filter_kind == filter_kind
         {
             return entry.cached_impl;
         }
-        let result = self.implementation_internal(ctx, syms, ms, origin, check_result);
+        let result = self.implementation_internal(ctx, syms, ms, origin, check_result, filter_kind);
         self.implementation_cache
             .borrow_mut()
             .entry(ms)
@@ -7441,6 +7477,7 @@ impl Types {
                     cached_impl: result,
                     check_result,
                     prev_mark: mark,
+                    filter_kind,
                 },
             );
         result
@@ -7454,9 +7491,9 @@ impl Types {
         ms: SymbolId,
         origin: SymbolId,
         check_result: bool,
+        filter_kind: ImplementationFilterKind,
     ) -> Option<SymbolId> {
         let ms_name = ctx.sym(ms).name.clone();
-        let synthetic_flag = crate::code::flags::SYNTHETIC as i64;
         let mut t = ctx.sym(origin).ty.expect("origin type");
         loop {
             let tag = ctx.typ(t).get_tag();
@@ -7477,7 +7514,7 @@ impl Types {
                     members,
                     &ms_name,
                     crate::code::scope::LookupKind::NON_RECURSIVE,
-                    &|sym| (ctx.sym(sym).flags_field & synthetic_flag) == 0,
+                    &|sym| implementation_filter_matches(ctx, filter_kind, sym),
                 );
                 for sym in found {
                     if crate::code::symbol::overrides(ctx, syms, self, sym, ms, origin, check_result) {

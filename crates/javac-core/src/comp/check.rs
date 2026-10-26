@@ -4904,4 +4904,278 @@ impl Check {
             ctx.sym_mut(ctor).flags_field |= crate::code::flags::ACYCLIC as i64;
         }
     }
+}impl Check {
+    /// Java: void checkDeprecatedAnnotation(DiagnosticPosition pos, Symbol s)
+    /// (Check.java:3530-3550).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - pos: the diagnostic position;
+    ///   - s: the symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:3530-3550.
+    #[allow(clippy::collapsible_if)]
+    pub fn check_deprecated_annotation(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        pos: i32,
+        s: SymbolId,
+    ) {
+        let deprecatable = ctx.sym(s).is_deprecatable_via_annotation(ctx);
+        let deprecated_type_erroneous = ctx
+            .typ(syms.deprecated_type)
+            .has_tag(crate::code::type_tag::TypeTag::ERROR);
+        let deprecated_anno = match ctx.typ(syms.deprecated_type).tsym {
+            Some(deprecated_tsym) => ctx.sym(s).attribute(ctx, deprecated_tsym),
+            None => None,
+        };
+        if self.lint.is_enabled(crate::code::lint::LintCategory::DEP_ANN)
+            && deprecatable
+            && (ctx.sym(s).flags_field & crate::code::flags::DEPRECATED as i64) != 0
+            && !deprecated_type_erroneous
+            && deprecated_anno.is_none()
+        {
+            let warning = crate::util::jc_diagnostic::Warning::from(
+                crate::resources::compiler_properties::warnings::missing_deprecated_annotation(),
+            );
+            crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                &mut *self.log.borrow_mut(),
+                Some(crate::code::lint::LintCategory::DEP_ANN),
+                Some(std::rc::Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                )),
+                warning,
+            );
+        }
+        if self.lint.is_enabled(crate::code::lint::LintCategory::DEPRECATION) && !deprecatable {
+            if !deprecated_type_erroneous && deprecated_anno.is_some() {
+                let kind = crate::code::kinds::kind_name(ctx.sym(s), ctx);
+                let warning = crate::util::jc_diagnostic::Warning::from(
+                    crate::resources::compiler_properties::warnings::deprecated_annotation_has_no_effect(
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                            kind.to_string(),
+                        ),
+                    ),
+                );
+                crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                    &mut *self.log.borrow_mut(),
+                    Some(crate::code::lint::LintCategory::DEPRECATION),
+                    Some(std::rc::Rc::new(
+                        crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                    )),
+                    warning,
+                );
+            }
+        }
+    }
+
+    /// Java: public void checkClassOverrideEqualsAndHashIfNeeded(DiagnosticPosition
+    /// pos, ClassSymbol someClass) (Check.java:2164-2199).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - some_class: the class symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:2164-2199.
+    #[allow(clippy::collapsible_if)]
+    pub fn check_class_override_equals_and_hash_if_needed(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        some_class: SymbolId,
+    ) {
+        let object_tsym = ctx.typ(syms.object_type).tsym.expect("Object symbol");
+        if some_class == object_tsym
+            || ctx.sym(some_class).is_interface()
+            || ctx.sym(some_class).is_enum()
+            || (ctx.sym(some_class).flags_field & crate::code::flags::ANNOTATION as i64) != 0
+            || (ctx.sym(some_class).flags_field & crate::code::flags::ABSTRACT as i64) != 0
+        {
+            return;
+        }
+        if ctx.sym(some_class).is_anonymous() {
+            let class_ty = ctx.sym(some_class).ty.expect("class type");
+            let interfaces = self.types.interfaces(ctx, syms, class_ty);
+            if interfaces.non_empty() {
+                let comparator_tsym = ctx.typ(syms.comparator_type).tsym;
+                let first_tsym = ctx.typ(*interfaces.head()).tsym;
+                if first_tsym.is_some() && first_tsym == comparator_tsym {
+                    return;
+                }
+            }
+        }
+        if !self.lint.is_enabled(crate::code::lint::LintCategory::OVERRIDES) {
+            return;
+        }
+        let object_members = match &ctx.sym(object_tsym).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+            _ => None,
+        };
+        let object_members = match object_members {
+            Some(members) => members,
+            None => return,
+        };
+        let equals_name = self.names.equals.clone();
+        let hash_code_name = self.names.hashCode.clone();
+        let equals_candidates = ctx.scope_get_symbols_by_name(
+            object_members,
+            &equals_name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        let hash_candidates = ctx.scope_get_symbols_by_name(
+            object_members,
+            &hash_code_name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        let equals_at_object = match equals_candidates.first() {
+            Some(sym) => *sym,
+            None => return,
+        };
+        let hash_code_at_object = match hash_candidates.first() {
+            Some(sym) => *sym,
+            None => return,
+        };
+        let equals_impl = self.types.implementation(
+            ctx,
+            syms,
+            equals_at_object,
+            some_class,
+            false,
+            crate::code::types::ImplementationFilterKind::EqualsHasCode,
+        );
+        let overrides_equals = equals_impl.map(|impl_sym| {
+            ctx.sym(impl_sym).owner == Some(some_class)
+        })
+        .unwrap_or(false);
+        let hash_impl = self.types.implementation(
+            ctx,
+            syms,
+            hash_code_at_object,
+            some_class,
+            false,
+            crate::code::types::ImplementationFilterKind::EqualsHasCode,
+        );
+        let overrides_hash_code = hash_impl != Some(hash_code_at_object);
+        if overrides_equals && !overrides_hash_code {
+            let warning = crate::util::jc_diagnostic::Warning::from(
+                crate::resources::compiler_properties::warnings::override_equals_but_not_hashcode(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        crate::comp::resolve::symbol_display_name(ctx, some_class),
+                    ),
+                ),
+            );
+            crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                &mut *self.log.borrow_mut(),
+                Some(crate::code::lint::LintCategory::OVERRIDES),
+                Some(std::rc::Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                )),
+                warning,
+            );
+        }
+    }
+
+    /// Java: void checkFunctionalInterface(JCClassDecl tree, ClassSymbol cs)
+    /// (Check.java:3975-3998).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the class declaration;
+    ///   - cs: the class symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:3975-3998.
+    #[allow(clippy::collapsible_if)]
+    pub fn check_functional_interface(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        tree: TreeId,
+        cs: SymbolId,
+    ) {
+        let functional_tsym = match ctx.typ(syms.functional_interface_type).tsym {
+            Some(tsym) => tsym,
+            None => return,
+        };
+        let functional_anno = ctx.sym(cs).attribute(ctx, functional_tsym);
+        if functional_anno.is_none() {
+            return;
+        }
+        let diags = std::rc::Rc::clone(&self.diags);
+        if let Err(ex) = self
+            .types
+            .find_descriptor_symbol(ctx, syms, &diags, self, cs)
+        {
+            let mut pos = ctx.tree(tree).pos;
+            let mods = match &ctx.tree(tree).kind {
+                crate::tree::jc_tree::TreeKind::ClassDecl { mods, .. } => *mods,
+                _ => None,
+            };
+            if let Some(mods) = mods {
+                let annotations = match &ctx.tree(mods).kind {
+                    crate::tree::jc_tree::TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+                    _ => List::nil(),
+                };
+                let mut current = annotations;
+                while current.non_empty() {
+                    let anno = *current.head();
+                    current = current.tail();
+                    let anno_type_tree = match &ctx.tree(anno).kind {
+                        crate::tree::jc_tree::TreeKind::Annotation {
+                            annotation_type: Some(annotation_type),
+                            ..
+                        } => Some(*annotation_type),
+                        _ => None,
+                    };
+                    if let Some(anno_type_tree) = anno_type_tree {
+                        if ctx.tree(anno_type_tree).ty.and_then(|ty| ctx.typ(ty).tsym)
+                            == Some(functional_tsym)
+                        {
+                            pos = ctx.tree(anno).pos;
+                            break;
+                        }
+                    }
+                }
+            }
+            let details = ex
+                .diagnostic
+                .map(|diagnostic| {
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                        std::rc::Rc::new(diagnostic),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(String::new())
+                });
+            let info = crate::resources::compiler_properties::errors::bad_functional_intf_anno1(details);
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+    }
 }
