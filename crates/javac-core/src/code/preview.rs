@@ -225,7 +225,7 @@ impl Preview {
         assert::check(!self.is_enabled());
         // ADR 0002 revision C temporary representation: the fragment argument is
         // passed by its diagnostic key until the P4 contract lands.
-        let arg = DiagnosticArg(feature.name_fragment().info().key());
+        let arg = DiagnosticArg::Text(feature.name_fragment().info().key());
         if feature.is_plural() {
             errors::preview_feature_disabled_plural(arg).into()
         } else {

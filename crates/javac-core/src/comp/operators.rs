@@ -649,7 +649,7 @@ impl Operators {
                 .args
                 .iter()
                 .map(|arg| {
-                    Rc::new(javac_strings::JavaString::from(arg.0.as_str())) as DiagnosticArg
+                    Rc::new(javac_strings::JavaString::from(arg.to_text().as_str())) as DiagnosticArg
                 })
                 .collect();
             let source = self.log.borrow().current_source();

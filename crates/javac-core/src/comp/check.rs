@@ -1726,7 +1726,7 @@ fn warning_from_info(
         .args
         .iter()
         .map(|arg| {
-            Rc::new(javac_strings::JavaString::from(arg.0.as_str()))
+            Rc::new(javac_strings::JavaString::from(arg.to_text().as_str()))
                 as crate::util::jc_diagnostic::DiagnosticArg
         })
         .collect();

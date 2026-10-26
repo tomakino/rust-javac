@@ -80,18 +80,58 @@ impl DiagnosticInfo {
     }
 }
 
-/// Java 诊断参数(Object[] 元素)的占位表示。
+/// Java 诊断参数(Object[] 元素)。
 ///
-/// P4 前只保存 Display 文本;P4 后将替换为能保留对象身份的类型化表示。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiagnosticArg(pub String);
+/// PORTING_RULES §9 / ADR 0002 P4: the upstream argument is an arbitrary
+/// Object; in particular a nested JCDiagnostic can be an argument (the
+/// Resolve/AttrRecover nested-diagnostic scans rely on it). The port keeps the
+/// formatted Text variant for the existing call sites and adds the
+/// JCDiagnostic variant to preserve the nested object (option A of the ADR).
+#[derive(Debug, Clone)]
+pub enum DiagnosticArg {
+    /// A pre-formatted textual argument (legacy P4 placeholder).
+    Text(String),
+    /// A nested diagnostic argument (Java: a JCDiagnostic in the Object[]).
+    JCDiagnostic(std::rc::Rc<crate::util::jc_diagnostic::JCDiagnostic>),
+}
 
 impl DiagnosticArg {
     /// 以 Display 文本构造占位参数(P4 前的日志/测试辅助)。
     pub fn from_display(value: impl fmt::Display) -> DiagnosticArg {
-        DiagnosticArg(value.to_string())
+        DiagnosticArg::Text(value.to_string())
+    }
+
+    /// Java: the nested diagnostic argument, if any.
+    pub fn nested_diagnostic(&self) -> Option<&std::rc::Rc<crate::util::jc_diagnostic::JCDiagnostic>> {
+        match self {
+            DiagnosticArg::JCDiagnostic(diag) => Some(diag),
+            DiagnosticArg::Text(_) => None,
+        }
+    }
+
+    /// The textual rendering of this argument (Text as-is; a nested diagnostic
+    /// through its message — P4 prints the message text, §9 registered).
+    pub fn to_text(&self) -> String {
+        match self {
+            DiagnosticArg::Text(text) => text.clone(),
+            DiagnosticArg::JCDiagnostic(diag) => diag.get_message(None).to_string(),
+        }
     }
 }
+
+impl PartialEq for DiagnosticArg {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (DiagnosticArg::Text(a), DiagnosticArg::Text(b)) => a == b,
+            (DiagnosticArg::JCDiagnostic(a), DiagnosticArg::JCDiagnostic(b)) => {
+                std::rc::Rc::ptr_eq(a, b) || a.get_message(None) == b.get_message(None)
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for DiagnosticArg {}
 
 /// 参数装箱 trait:生成的访问器对每个参数调用 into_diagnostic_arg()。
 pub trait IntoDiagnosticArg {
@@ -106,31 +146,31 @@ impl IntoDiagnosticArg for DiagnosticArg {
 
 impl IntoDiagnosticArg for i32 {
     fn into_diagnostic_arg(self) -> DiagnosticArg {
-        DiagnosticArg(self.to_string())
+        DiagnosticArg::Text(self.to_string())
     }
 }
 
 impl IntoDiagnosticArg for bool {
     fn into_diagnostic_arg(self) -> DiagnosticArg {
-        DiagnosticArg(self.to_string())
+        DiagnosticArg::Text(self.to_string())
     }
 }
 
 impl IntoDiagnosticArg for () {
     fn into_diagnostic_arg(self) -> DiagnosticArg {
-        DiagnosticArg("()".to_string())
+        DiagnosticArg::Text("()".to_string())
     }
 }
 
 impl IntoDiagnosticArg for Name {
     fn into_diagnostic_arg(self) -> DiagnosticArg {
-        DiagnosticArg(self.to_string())
+        DiagnosticArg::Text(self.to_string())
     }
 }
 
 impl IntoDiagnosticArg for JavaString {
     fn into_diagnostic_arg(self) -> DiagnosticArg {
-        DiagnosticArg(self.to_string())
+        DiagnosticArg::Text(self.to_string())
     }
 }
 
@@ -138,9 +178,9 @@ impl<T: IntoDiagnosticArg> IntoDiagnosticArg for Vec<T> {
     fn into_diagnostic_arg(self) -> DiagnosticArg {
         let parts: Vec<String> = self
             .into_iter()
-            .map(|item| item.into_diagnostic_arg().0)
+            .map(|item| item.into_diagnostic_arg().to_text())
             .collect();
-        DiagnosticArg(parts.join(", "))
+        DiagnosticArg::Text(parts.join(", "))
     }
 }
 
@@ -198,7 +238,7 @@ macro_rules! opaque_arg {
 
         impl IntoDiagnosticArg for $name {
             fn into_diagnostic_arg(self) -> DiagnosticArg {
-                DiagnosticArg(self.0)
+                DiagnosticArg::Text(self.0)
             }
         }
     };

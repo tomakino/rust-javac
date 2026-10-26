@@ -588,7 +588,7 @@ impl fmt::Display for Feature {
 /// stores diagnostic arguments as display text, so the nested feature fragment is
 /// passed by its resource key until the object-preserving P4 contract lands.
 fn fragment_arg(fragment: &Fragment) -> DiagnosticArg {
-    DiagnosticArg(fragment.info().key())
+    DiagnosticArg::Text(fragment.info().key())
 }
 
 #[cfg(test)]

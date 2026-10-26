@@ -544,7 +544,7 @@ impl Flow {
             .info()
             .args
             .iter()
-            .map(|arg| Rc::new(javac_strings::JavaString::from(arg.0.as_str())) as DiagnosticArg)
+            .map(|arg| Rc::new(javac_strings::JavaString::from(arg.to_text().as_str())) as DiagnosticArg)
             .collect();
         let source = self.log.borrow().current_source();
         let diagnostic = self.diags.create(
@@ -581,7 +581,7 @@ impl Flow {
             .info()
             .args
             .iter()
-            .map(|arg| Rc::new(javac_strings::JavaString::from(arg.0.as_str())) as DiagnosticArg)
+            .map(|arg| Rc::new(javac_strings::JavaString::from(arg.to_text().as_str())) as DiagnosticArg)
             .collect();
         let source = self.log.borrow().current_source();
         let diagnostic = self.diags.create(

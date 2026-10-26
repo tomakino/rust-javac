@@ -354,7 +354,16 @@ info_key_type!(Fragment, FragmentInfo, FRAGMENT);
 /// 届时本函数删除)。
 fn contract_args_to_args(args: &[contract::DiagnosticArg]) -> Vec<DiagnosticArg> {
     args.iter()
-        .map(|arg| Rc::new(JavaString::from(arg.0.as_str())) as DiagnosticArg)
+        .map(|arg| match arg {
+            contract::DiagnosticArg::Text(text) => {
+                Rc::new(JavaString::from(text.as_str())) as DiagnosticArg
+            }
+            contract::DiagnosticArg::JCDiagnostic(diag) => {
+                // Java: a JCDiagnostic is itself an Object[] element — keep the
+                // nested diagnostic object (downcastable from Rc<dyn Any>).
+                Rc::clone(diag) as DiagnosticArg
+            }
+        })
         .collect()
 }
 

@@ -1101,7 +1101,7 @@ impl Resolve {
             .args
             .iter()
             .map(|arg| {
-                std::rc::Rc::new(javac_strings::JavaString::from(arg.0.as_str()))
+                std::rc::Rc::new(javac_strings::JavaString::from(arg.to_text().as_str()))
                     as crate::util::jc_diagnostic::DiagnosticArg
             })
             .collect();
@@ -1217,7 +1217,7 @@ impl Resolve {
         let args: Vec<crate::util::jc_diagnostic::DiagnosticArg> = contract_args
             .iter()
             .map(|arg| {
-                std::rc::Rc::new(javac_strings::JavaString::from(arg.0.as_str()))
+                std::rc::Rc::new(javac_strings::JavaString::from(arg.to_text().as_str()))
                     as crate::util::jc_diagnostic::DiagnosticArg
             })
             .collect();
