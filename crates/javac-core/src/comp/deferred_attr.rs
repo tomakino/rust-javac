@@ -198,12 +198,23 @@ pub fn deferred_type_tag(ctx: &CompilerContext, t: TypeId) -> TypeTag {
 
 /// Java: DeferredType.speculativeType(Symbol msym, MethodResolutionPhase phase)
 pub fn deferred_type_speculative_type(
-    ctx: &CompilerContext,
+    ctx: &mut CompilerContext,
+    attr: &mut Attr,
     t: TypeId,
     msym: Option<SymbolId>,
     phase: MethodResolutionPhase,
 ) -> Option<TypeId> {
-    let (_, _, _, _, cache, _) = deferred_fields(ctx, t);
+    let (_, _, _, _, cache, argument) = deferred_fields(ctx, t);
+    if let Some(data) = argument {
+        let argument_attr = attr
+            .argument_attr
+            .borrow()
+            .clone()
+            .expect("AssertionError: argumentAttr service must be installed");
+        let argument_attr = argument_attr.borrow();
+        let data = data.borrow();
+        return argument_attr.argument_type_speculative_type(ctx, &data, t, msym, phase);
+    }
     let entry = cache.borrow().get(msym, phase)?;
     ctx.tree(entry.speculative_tree).ty
 }
@@ -211,10 +222,21 @@ pub fn deferred_type_speculative_type(
 /// Java: JCTree speculativeTree(DeferredAttrContext deferredAttrContext)
 pub fn deferred_type_speculative_tree(
     ctx: &CompilerContext,
+    attr: &mut Attr,
     t: TypeId,
     deferred_attr_context: &DeferredAttrContext,
 ) -> Option<TreeId> {
-    let (_, _, _, _, cache, _) = deferred_fields(ctx, t);
+    let (_, _, _, _, cache, argument) = deferred_fields(ctx, t);
+    if let Some(data) = argument {
+        let argument_attr = attr
+            .argument_attr
+            .borrow()
+            .clone()
+            .expect("AssertionError: argumentAttr service must be installed");
+        let argument_attr = argument_attr.borrow();
+        let data = data.borrow();
+        return argument_attr.argument_type_speculative_tree(ctx, &data, t, deferred_attr_context);
+    }
     cache
         .borrow()
         .get(deferred_attr_context.msym, deferred_attr_context.phase)
@@ -243,7 +265,7 @@ pub fn deferred_type_complete_base(
                 .deferred_attr
                 .borrow()
                 .clone()
-                .expect("TODO(批6 wiring): Attr.deferred_attr service must be installed");
+                .expect("AssertionError: deferredAttr service must be installed");
             let result_info_rc = Rc::new(result_info.clone());
             let speculative_tree = {
                 let mut deferred = deferred.borrow_mut();
@@ -285,7 +307,7 @@ pub fn deferred_type_complete(
                 .argument_attr
                 .borrow()
                 .clone()
-                .expect("TODO(批6 wiring): Attr.argument_attr service must be installed");
+                .expect("AssertionError: argumentAttr service must be installed");
             let mut argument_attr = argument_attr.borrow_mut();
             argument_attr.argument_type_complete(
                 ctx,
@@ -624,7 +646,7 @@ fn process_deferred_attr_node(
                     .deferred_attr
                     .borrow()
                     .clone()
-                    .expect("TODO(批6 wiring): Attr.deferred_attr service must be installed");
+                    .expect("AssertionError: deferredAttr service must be installed");
                 let mut svc = svc_rc.borrow_mut();
                 let result = svc
                     .structural_stuck_check(ctx, syms, attr, node.dt, &node.result_info, deferred_attr_context);
@@ -997,7 +1019,7 @@ impl DeferredTypeMap {
             // and visitClassType: return types.erasure(t) (§9: the class-type
             // erasure branch is folded into implicit_arg_value).
             let mapped = if ctx.typ(t).has_tag(TypeTag::DEFERRED) {
-                self.type_of_no_recovery(ctx, t)
+                self.type_of_no_recovery(ctx, dctx.attr, t)
                     .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx))
             } else {
                 t
@@ -1210,7 +1232,7 @@ impl DeferredTypeMap {
         t: TypeId,
         pt: &Option<TypeId>,
     ) -> Option<TypeId> {
-        let owntype = self.type_of_no_recovery(ctx, t);
+        let owntype = self.type_of_no_recovery(ctx, dctx.attr, t);
         if self.recovery
             && owntype
                 .map(|ty| ty == crate::code::symtab::no_type_id(ctx))
@@ -1222,12 +1244,18 @@ impl DeferredTypeMap {
     }
 
     /// Java: DeferredTypeMap.typeOf (the base implementation).
-    fn type_of_no_recovery(&mut self, ctx: &mut CompilerContext, t: TypeId) -> Option<TypeId> {
+    fn type_of_no_recovery(
+        &mut self,
+        ctx: &mut CompilerContext,
+        attr: &mut Attr,
+        t: TypeId,
+    ) -> Option<TypeId> {
         let (tree, _, _, _, _, _) = deferred_fields(ctx, t);
         match self.deferred_attr_context.mode {
             AttrMode::CHECK => ctx.tree(tree).ty,
             AttrMode::SPECULATIVE => deferred_type_speculative_type(
                 ctx,
+                attr,
                 t,
                 self.deferred_attr_context.msym,
                 self.deferred_attr_context.phase,
@@ -1280,7 +1308,7 @@ impl DeferredTypeMap {
         };
         let _ = deferred_type_check(ctx, dctx.syms, dctx.types, dctx.attr, dt, &recovery_info);
         // Java: return super.visit(dt);
-        let owntype = self.type_of_no_recovery(ctx, dt);
+        let owntype = self.type_of_no_recovery(ctx, dctx.attr, dt);
         if owntype
             .map(|ty| ty == crate::code::symtab::no_type_id(ctx))
             .unwrap_or(true)

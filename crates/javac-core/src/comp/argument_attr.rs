@@ -853,9 +853,15 @@ impl ArgumentAttr {
             _ => Vec::new(),
         };
         if msym.map(|msym| not_pertinent.contains(&msym)).unwrap_or(false) {
-            return crate::comp::deferred_attr::deferred_type_speculative_type(
-                ctx, t, msym, phase,
-            );
+            // Java: super.speculativeType(msym, phase)
+            let cache = match &ctx.typ(t).kind {
+                crate::code::type_::TypeKindData::Deferred {
+                    speculative_cache, ..
+                } => Rc::clone(speculative_cache),
+                _ => return None,
+            };
+            let entry = cache.borrow().get(msym, phase)?;
+            return ctx.tree(entry.speculative_tree).ty;
         }
         for (result_info, ty) in &data.speculative_types {
             let deferred_attr_context = result_info.check_context.deferred_attr_context();
@@ -888,11 +894,17 @@ impl ArgumentAttr {
             .map(|msym| not_pertinent.contains(&msym))
             .unwrap_or(false)
         {
-            return crate::comp::deferred_attr::deferred_type_speculative_tree(
-                ctx,
-                t,
-                deferred_attr_context,
-            );
+            // Java: super.speculativeTree(deferredAttrContext)
+            let cache = match &ctx.typ(t).kind {
+                crate::code::type_::TypeKindData::Deferred {
+                    speculative_cache, ..
+                } => Rc::clone(speculative_cache),
+                _ => return None,
+            };
+            return cache
+                .borrow()
+                .get(deferred_attr_context.msym, deferred_attr_context.phase)
+                .map(|entry| entry.speculative_tree);
         }
         Some(data.speculative_tree)
     }
