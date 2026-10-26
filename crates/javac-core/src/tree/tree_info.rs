@@ -1556,6 +1556,84 @@ pub fn contains_type_annotation(ctx: &mut CompilerContext, e: TreeId) -> bool {
     finder.found_type_anno
 }
 
+
+/// Batch 5 helper (§9 registered): mirrors "tree instanceof JCExpression"
+/// (JCTree.java class hierarchy) by the node tag. Used by Attr.PostAttrAnalyzer
+/// (Attr.java:5824-5930) which only initializes types of expression nodes.
+pub fn is_expression(ctx: &CompilerContext, tree: TreeId) -> bool {
+    matches!(
+        ctx.tree(tree).tag,
+        Tag::IDENT
+            | Tag::SELECT
+            | Tag::LITERAL
+            | Tag::INDEXED
+            | Tag::TYPEAPPLY
+            | Tag::TYPEARRAY
+            | Tag::TYPEIDENT
+            | Tag::TYPEPARAMETER
+            | Tag::WILDCARD
+            | Tag::TYPEUNION
+            | Tag::TYPEINTERSECTION
+            | Tag::TYPECAST
+            | Tag::TYPETEST
+            | Tag::PARENS
+            | Tag::ASSIGN
+            | Tag::PLUS_ASG
+            | Tag::MINUS_ASG
+            | Tag::MUL_ASG
+            | Tag::DIV_ASG
+            | Tag::MOD_ASG
+            | Tag::BITAND_ASG
+            | Tag::BITOR_ASG
+            | Tag::BITXOR_ASG
+            | Tag::SL_ASG
+            | Tag::SR_ASG
+            | Tag::USR_ASG
+            | Tag::POS
+            | Tag::NEG
+            | Tag::NOT
+            | Tag::COMPL
+            | Tag::PREINC
+            | Tag::PREDEC
+            | Tag::POSTINC
+            | Tag::POSTDEC
+            | Tag::AND
+            | Tag::OR
+            | Tag::BITAND
+            | Tag::BITOR
+            | Tag::BITXOR
+            | Tag::EQ
+            | Tag::NE
+            | Tag::LT
+            | Tag::GT
+            | Tag::LE
+            | Tag::GE
+            | Tag::SL
+            | Tag::SR
+            | Tag::USR
+            | Tag::PLUS
+            | Tag::MINUS
+            | Tag::MUL
+            | Tag::DIV
+            | Tag::MOD
+            | Tag::APPLY
+            | Tag::NEWCLASS
+            | Tag::NEWARRAY
+            | Tag::LAMBDA
+            | Tag::CONDEXPR
+            | Tag::SWITCH_EXPRESSION
+            | Tag::REFERENCE
+            | Tag::ANNOTATION
+            | Tag::TYPE_ANNOTATION
+            | Tag::ANNOTATED_TYPE
+            | Tag::BINDINGPATTERN
+            | Tag::GUARDPATTERN
+            | Tag::PARENTHESIZEDPATTERN
+            | Tag::ERRONEOUS
+            | Tag::LETEXPR
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
