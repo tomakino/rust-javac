@@ -7845,3 +7845,586 @@ fn type_name(ctx: &mut CompilerContext, ty: TypeId) -> String {
         None => format!("{ty:?}"),
     }
 }
+
+impl Check {
+    /// Java: void checkOverrideClashes(DiagnosticPosition pos, Type site,
+    /// MethodSymbol sym) (Check.java:2518-2586).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - site: the class whose methods are checked;
+    ///   - sym: the method symbol to be checked.
+    ///
+    /// # Returns
+    ///   - none (diagnostics are reported).
+    ///
+    /// # Panics
+    ///   - a class invariant is violated.
+    ///
+    /// Upstream: Check.java:2518-2586.
+    #[allow(clippy::too_many_lines)]
+    pub fn check_override_clashes(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        site: TypeId,
+        sym: SymbolId,
+    ) {
+        use crate::code::flags;
+        let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
+        let site_name = ctx.sym(site_tsym).name.clone();
+        let name = ctx.sym(sym).name.clone();
+        let scope = self.types.members_closure(ctx, syms, site);
+        let candidates = ctx.scope_get_symbols_by_name(
+            scope,
+            &name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        let symbols: Vec<SymbolId> = candidates
+            .into_iter()
+            .filter(|candidate| {
+                let flags_value = ctx.sym(*candidate).flags_field;
+                if ctx.sym(*candidate).kind != crate::code::kinds::Kind::MTH
+                    || (flags_value & flags::SYNTHETIC as i64) != 0
+                {
+                    return false;
+                }
+                let should_skip = (flags_value & flags::CLASH) != 0
+                    && ctx.sym(*candidate).owner == Some(site_tsym);
+                if should_skip || ctx.sym(*candidate).is_constructor(&self.names) {
+                    return false;
+                }
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                crate::code::symbol::is_inherited_in(
+                    ctx,
+                    &syms_borrow,
+                    &self.types,
+                    *candidate,
+                    site_tsym,
+                )
+            })
+            .collect();
+        let mut potentially_ambiguous: Vec<SymbolId> = Vec::new();
+        let mut overrides_any = false;
+        for m1 in symbols.iter().copied() {
+            let m1_overrides = crate::code::symbol::overrides(
+                ctx, syms, &self.types, sym, m1, site_tsym, false,
+            );
+            if !m1_overrides {
+                if m1 == sym {
+                    continue;
+                }
+                if !overrides_any {
+                    potentially_ambiguous.push(m1);
+                }
+                continue;
+            }
+            if m1 != sym {
+                overrides_any = true;
+                potentially_ambiguous.clear();
+            }
+            for m2 in symbols.iter().copied() {
+                if m2 == m1 {
+                    continue;
+                }
+                let sym_ty = ctx.sym(sym).ty.expect("method type");
+                let m2_member_ty = {
+                    let syms_rc = Rc::clone(&self.syms);
+                    let syms_borrow = syms_rc.borrow();
+                    self.types.member_type(ctx, &syms_borrow, site, m2)
+                };
+                let strict = crate::code::source::Feature::STRICT_METHOD_CLASH_CHECK
+                    .allowed_in_source(self.source);
+                let sub_signature = {
+                    let syms_rc = Rc::clone(&self.syms);
+                    let syms_borrow = syms_rc.borrow();
+                    self.types.is_sub_signature_strict(
+                        ctx,
+                        &syms_borrow,
+                        sym_ty,
+                        m2_member_ty,
+                        strict,
+                    )
+                };
+                let m2_erased = {
+                    let syms_rc = Rc::clone(&self.syms);
+                    let syms_borrow = syms_rc.borrow();
+                    let m2_ty = ctx.sym(m2).ty.expect("method type");
+                    self.types.erasure(ctx, &syms_borrow, m2_ty)
+                };
+                let m1_erased = {
+                    let syms_rc = Rc::clone(&self.syms);
+                    let syms_borrow = syms_rc.borrow();
+                    let m1_ty = ctx.sym(m1).ty.expect("method type");
+                    self.types.erasure(ctx, &syms_borrow, m1_ty)
+                };
+                let same_args = {
+                    let syms_rc = Rc::clone(&self.syms);
+                    let syms_borrow = syms_rc.borrow();
+                    self.types
+                        .has_same_args(ctx, &syms_borrow, m2_erased, m1_erased)
+                };
+                if !sub_signature && same_args {
+                    ctx.sym_mut(sym).flags_field |= flags::CLASH;
+                    let m1_params = self.member_parameter_types(ctx, site, m1);
+                    let m2_params = self.member_parameter_types(ctx, site, m2);
+                    let m1_name = ctx.sym(m1).name.clone();
+                    let m2_name = ctx.sym(m2).name.clone();
+                    let info = if m1 == sym {
+                        crate::resources::compiler_properties::errors::name_clash_same_erasure_no_override(
+                            m1_name,
+                            m1_params,
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                symbol_display_name(ctx, m1),
+                            ),
+                            m2_name,
+                            m2_params,
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                symbol_display_name(ctx, m2),
+                            ),
+                        )
+                    } else {
+                        let is_interface = (ctx.sym(site_tsym).flags_field
+                            & flags::INTERFACE as i64)
+                            != 0;
+                        let kind = if is_interface {
+                            javac_strings::JavaString::from("interface")
+                        } else {
+                            javac_strings::JavaString::from("class")
+                        };
+                        crate::resources::compiler_properties::errors::name_clash_same_erasure_no_override1(
+                            kind,
+                            site_name.clone(),
+                            m1_name,
+                            m1_params,
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                symbol_display_name(ctx, m1),
+                            ),
+                            m2_name,
+                            m2_params,
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                symbol_display_name(ctx, m2),
+                            ),
+                        )
+                    };
+                    self.log
+                        .borrow_mut()
+                        .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
+                    return;
+                }
+            }
+        }
+        if !overrides_any {
+            for m in potentially_ambiguous {
+                self.check_potentially_ambiguous_overloads(ctx, syms, pos, site, sym, m);
+            }
+        }
+    }
+
+    /// Return the parameter type arguments of a member type.
+    fn member_parameter_types(
+        &self,
+        ctx: &mut CompilerContext,
+        site: TypeId,
+        sym: SymbolId,
+    ) -> Vec<crate::resources::diagnostic_contract::TypeArg> {
+        let member_ty = {
+            let syms_rc = Rc::clone(&self.syms);
+            let syms_borrow = syms_rc.borrow();
+            self.types.member_type(ctx, &syms_borrow, site, sym)
+        };
+        let params = match &ctx.typ(member_ty).kind {
+            crate::code::type_::TypeKindData::MethodType { argtypes, .. } => argtypes.clone(),
+            crate::code::type_::TypeKindData::ForAll { qtype: Some(qtype), .. } => {
+                match &ctx.typ(*qtype).kind {
+                    crate::code::type_::TypeKindData::MethodType { argtypes, .. } => {
+                        argtypes.clone()
+                    }
+                    _ => crate::util::list::List::nil(),
+                }
+            }
+            _ => crate::util::list::List::nil(),
+        };
+        params
+            .iter()
+            .map(|ty| {
+                crate::resources::diagnostic_contract::TypeArg::placeholder(type_display_name(
+                    ctx, ty,
+                ))
+            })
+            .collect()
+    }
+
+    /// Java: void checkHideClashes(DiagnosticPosition pos, Type site,
+    /// MethodSymbol sym) (Check.java:2588-2621).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - site: the class whose methods are checked;
+    ///   - sym: the method symbol to be checked.
+    ///
+    /// # Returns
+    ///   - none (diagnostics are reported).
+    ///
+    /// # Panics
+    ///   - a class invariant is violated.
+    ///
+    /// Upstream: Check.java:2588-2621.
+    pub fn check_hide_clashes(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        site: TypeId,
+        sym: SymbolId,
+    ) {
+        use crate::code::flags;
+        let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
+        let name = ctx.sym(sym).name.clone();
+        let scope = self.types.members_closure(ctx, syms, site);
+        let candidates = ctx.scope_get_symbols_by_name(
+            scope,
+            &name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        for candidate in candidates {
+            let flags_value = ctx.sym(candidate).flags_field;
+            if ctx.sym(candidate).kind != crate::code::kinds::Kind::MTH
+                || (flags_value & flags::SYNTHETIC as i64) != 0
+                || ctx.sym(candidate).is_constructor(&self.names)
+            {
+                continue;
+            }
+            // Java: MembersScope.combine excludes interface-owned members
+            // (Types.java:3020-3025).
+            if let Some(owner) = ctx.sym(candidate).owner
+                && (ctx.sym(owner).flags_field & flags::INTERFACE as i64) != 0
+            {
+                continue;
+            }
+            let should_skip = (flags_value & flags::CLASH) != 0
+                && ctx.sym(candidate).owner == Some(site_tsym);
+            if should_skip {
+                continue;
+            }
+            let inherited = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                crate::code::symbol::is_inherited_in(
+                    ctx,
+                    &syms_borrow,
+                    &self.types,
+                    candidate,
+                    site_tsym,
+                )
+            };
+            if !inherited {
+                continue;
+            }
+            let sym_ty = ctx.sym(sym).ty.expect("method type");
+            let candidate_member_ty = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                self.types
+                    .member_type(ctx, &syms_borrow, site, candidate)
+            };
+            let strict = crate::code::source::Feature::STRICT_METHOD_CLASH_CHECK
+                .allowed_in_source(self.source);
+            let sub_signature = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                self.types.is_sub_signature_strict(
+                    ctx,
+                    &syms_borrow,
+                    sym_ty,
+                    candidate_member_ty,
+                    strict,
+                )
+            };
+            if sub_signature {
+                continue;
+            }
+            let candidate_erased = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                let candidate_ty = ctx.sym(candidate).ty.expect("method type");
+                self.types.erasure(ctx, &syms_borrow, candidate_ty)
+            };
+            let sym_erased = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                self.types.erasure(ctx, &syms_borrow, sym_ty)
+            };
+            let same_args = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                self.types
+                    .has_same_args(ctx, &syms_borrow, candidate_erased, sym_erased)
+            };
+            if same_args {
+                let info = crate::resources::compiler_properties::errors::name_clash_same_erasure_no_hide(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        symbol_display_name(ctx, sym),
+                    ),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        symbol_display_name(ctx, sym),
+                    ),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        symbol_display_name(ctx, candidate),
+                    ),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        symbol_display_name(ctx, candidate),
+                    ),
+                );
+                self.log
+                    .borrow_mut()
+                    .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
+                return;
+            }
+            self.check_potentially_ambiguous_overloads(ctx, syms, pos, site, sym, candidate);
+        }
+    }
+
+    /// Java: void checkPotentiallyAmbiguousOverloads(DiagnosticPosition pos,
+    /// Type site, MethodSymbol msym1, MethodSymbol msym2) (Check.java:2695-2761).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - site: the class whose methods are checked;
+    ///   - msym1/msym2: the two methods.
+    ///
+    /// # Returns
+    ///   - none (warnings are reported).
+    ///
+    /// # Panics
+    ///   - a method invariant is violated.
+    ///
+    /// Upstream: Check.java:2695-2761.
+    #[allow(clippy::too_many_lines)]
+    pub fn check_potentially_ambiguous_overloads(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        site: TypeId,
+        msym1: SymbolId,
+        msym2: SymbolId,
+    ) {
+        use crate::code::flags;
+        if msym1 == msym2
+            || !crate::code::source::Feature::DEFAULT_METHODS.allowed_in_source(self.source)
+            || !self.lint.is_enabled(crate::code::lint::LintCategory::OVERLOADS)
+            || (ctx.sym(msym1).flags_field & flags::POTENTIALLY_AMBIGUOUS) != 0
+            || (ctx.sym(msym2).flags_field & flags::POTENTIALLY_AMBIGUOUS) != 0
+        {
+            return;
+        }
+        let mt1 = {
+            let syms_rc = Rc::clone(&self.syms);
+            let syms_borrow = syms_rc.borrow();
+            self.types.member_type(ctx, &syms_borrow, site, msym1)
+        };
+        let mut mt2 = {
+            let syms_rc = Rc::clone(&self.syms);
+            let syms_borrow = syms_rc.borrow();
+            self.types.member_type(ctx, &syms_borrow, site, msym2)
+        };
+        // if both generic methods, adjust type variables
+        let (mt1_forall, mt2_forall) = (
+            matches!(&ctx.typ(mt1).kind, crate::code::type_::TypeKindData::ForAll { .. }),
+            matches!(&ctx.typ(mt2).kind, crate::code::type_::TypeKindData::ForAll { .. }),
+        );
+        if mt1_forall && mt2_forall {
+            let same_bounds = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                let tvars1 = match &ctx.typ(mt1).kind {
+                    crate::code::type_::TypeKindData::ForAll { tvars, .. } => tvars.clone(),
+                    _ => crate::util::list::List::nil(),
+                };
+                let tvars2 = match &ctx.typ(mt2).kind {
+                    crate::code::type_::TypeKindData::ForAll { tvars, .. } => tvars.clone(),
+                    _ => crate::util::list::List::nil(),
+                };
+                self.types
+                    .has_same_bounds(ctx, &syms_borrow, &tvars1, &tvars2)
+            };
+            if same_bounds {
+                let (tvars1, tvars2) = (
+                    match &ctx.typ(mt1).kind {
+                        crate::code::type_::TypeKindData::ForAll { tvars, .. } => tvars.clone(),
+                        _ => crate::util::list::List::nil(),
+                    },
+                    match &ctx.typ(mt2).kind {
+                        crate::code::type_::TypeKindData::ForAll { tvars, .. } => tvars.clone(),
+                        _ => crate::util::list::List::nil(),
+                    },
+                );
+                mt2 = {
+                    let syms_rc = Rc::clone(&self.syms);
+                    let syms_borrow = syms_rc.borrow();
+                    self.types
+                        .subst_type(ctx, &syms_borrow, mt2, &tvars2, &tvars1)
+                };
+            }
+        }
+        let params1 = match &ctx.typ(mt1).kind {
+            crate::code::type_::TypeKindData::MethodType { argtypes, .. } => argtypes.clone(),
+            _ => crate::util::list::List::nil(),
+        };
+        let params2 = match &ctx.typ(mt2).kind {
+            crate::code::type_::TypeKindData::MethodType { argtypes, .. } => argtypes.clone(),
+            _ => crate::util::list::List::nil(),
+        };
+        let max_length = params1.length().max(params2.length()) as usize;
+        let (args1, args2) = {
+            let syms_rc = Rc::clone(&self.syms);
+            let syms_borrow = syms_rc.borrow();
+            let args1 = crate::comp::resolve::adjust_args(
+                ctx,
+                &syms_borrow,
+                &self.types,
+                params1,
+                Some(msym1),
+                max_length,
+                true,
+            );
+            let args2 = crate::comp::resolve::adjust_args(
+                ctx,
+                &syms_borrow,
+                &self.types,
+                params2,
+                Some(msym2),
+                max_length,
+                true,
+            );
+            (args1, args2)
+        };
+        if args1.length() != args2.length() {
+            return;
+        }
+        let mut potentially_ambiguous = false;
+        let mut l1 = args1;
+        let mut l2 = args2;
+        while l1.non_empty() && l2.non_empty() {
+            let s = *l1.head();
+            let t = *l2.head();
+            l1 = l1.tail();
+            l2 = l2.tail();
+            let (sub_t_s, sub_s_t) = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms_borrow = syms_rc.borrow();
+                (
+                    self.types.is_subtype(ctx, &syms_borrow, t, s),
+                    self.types.is_subtype(ctx, &syms_borrow, s, t),
+                )
+            };
+            if sub_t_s || sub_s_t {
+                continue;
+            }
+            let s_tsym = ctx.typ(s).tsym;
+            let t_tsym = ctx.typ(t).tsym;
+            let (s_functional, t_functional) = match (s_tsym, t_tsym) {
+                (Some(s_tsym), Some(t_tsym)) => {
+                    let diags = Rc::clone(&self.diags);
+                    let syms_rc = Rc::clone(&self.syms);
+                    let mut syms_borrow = syms_rc.borrow_mut();
+                    let s_functional = self.types.is_functional_interface(
+                        ctx,
+                        &mut syms_borrow,
+                        &diags,
+                        self,
+                        s_tsym,
+                    );
+                    let t_functional = self.types.is_functional_interface(
+                        ctx,
+                        &mut syms_borrow,
+                        &self.diags,
+                        self,
+                        t_tsym,
+                    );
+                    (s_functional, t_functional)
+                }
+                _ => (false, false),
+            };
+            if s_functional && t_functional {
+                let s_params = self.descriptor_parameter_count(ctx, syms, s);
+                let t_params = self.descriptor_parameter_count(ctx, syms, t);
+                if s_params > 0 && s_params == t_params {
+                    potentially_ambiguous = true;
+                    continue;
+                }
+            }
+            return;
+        }
+        if potentially_ambiguous {
+            ctx.sym_mut(msym1).flags_field |= flags::POTENTIALLY_AMBIGUOUS;
+            ctx.sym_mut(msym2).flags_field |= flags::POTENTIALLY_AMBIGUOUS;
+            let warning = crate::resources::compiler_properties::warnings::potentially_ambiguous_overload(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_display_name(
+                    ctx, msym1,
+                )),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_display_name(
+                    ctx, msym1,
+                )),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_display_name(
+                    ctx, msym2,
+                )),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_display_name(
+                    ctx, msym2,
+                )),
+            );
+            self.log.borrow_mut().warning(
+                Some(crate::code::lint::LintCategory::OVERLOADS),
+                Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
+                warning_from_info(warning),
+            );
+        }
+    }
+
+    /// Return the parameter count of the functional descriptor of a type.
+    fn descriptor_parameter_count(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        ty: TypeId,
+    ) -> usize {
+        let diags = Rc::clone(&self.diags);
+        match self
+            .types
+            .find_descriptor_type(ctx, syms, &diags, self, ty)
+        {
+            Ok(descriptor) => match &ctx.typ(descriptor).kind {
+                crate::code::type_::TypeKindData::MethodType { argtypes, .. } => {
+                    argtypes.length() as usize
+                }
+                _ => 0,
+            },
+            Err(_) => 0,
+        }
+    }
+}
+
+/// Return a printable name for a symbol (diagnostic argument adapter).
+fn symbol_display_name(ctx: &mut CompilerContext, sym: SymbolId) -> String {
+    ctx.sym(sym)
+        .name
+        .to_java_string()
+        .to_string_lossy()
+        .to_string()
+}
+
+/// Return a printable name for a type (diagnostic argument adapter).
+fn type_display_name(ctx: &mut CompilerContext, ty: TypeId) -> String {
+    match ctx.typ(ty).tsym {
+        Some(sym) => symbol_display_name(ctx, sym),
+        None => format!("{ty:?}"),
+    }
+}

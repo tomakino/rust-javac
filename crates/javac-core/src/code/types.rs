@@ -2745,7 +2745,7 @@ impl Types {
 
     /// Java: public boolean hasSameBounds(ForAll t, ForAll s) (the bounds slice
     /// form used by isSameType's ForAll branch).
-    fn has_same_bounds(
+    pub fn has_same_bounds(
         &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
@@ -2971,6 +2971,7 @@ impl Types {
             _ => panic!("AssertionError: hasSameArgs {:?}", ctx.typ(t).get_tag()),
         }
     }
+
 
     /// Java: public boolean isSubSignature(Type t, Type s) —
     /// hasSameArgs(t, s) || hasSameArgs(t, erasure(s)) (Types.java:2799).
