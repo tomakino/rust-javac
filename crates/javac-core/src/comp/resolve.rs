@@ -4625,12 +4625,22 @@ impl Resolve {
                 if m1_more_specific_than_any {
                     return m1;
                 }
+                // Java: Resolve.java:1710-1726: AmbiguityError e = (AmbiguityError)m2.baseSymbol();
+                // if (!allAmbiguousMoreSpecificThanM1) e.addAmbiguousSymbol(m1); return e;
+                let error = base_symbol_id(ctx, m2);
                 if !all_more_specific_than_m1 {
-                    unimplemented!(
-                        "TODO(Symbol/Resolve error batch): AmbiguityError.addAmbiguousSymbol (Resolve.java:1755-1760)"
-                    );
+                    // Java: addAmbiguousSymbol prepends m1 to the ambiguity list
+                    // (Resolve.java:4571-4574) and returns the error symbol.
+                    if let crate::code::symbol::SymbolKind::ResolveError { data, .. } =
+                        &mut ctx.sym_mut(error).kind_data
+                        && let crate::code::symbol::ResolveErrorData::Ambiguity { syms } =
+                            &mut **data
+                        && !syms.contains(&m1)
+                    {
+                        syms.insert(0, m1);
+                    }
                 }
-                m2
+                error
             }
             _ => panic!("AssertionError: unexpected most-specific candidate kind"),
         }
