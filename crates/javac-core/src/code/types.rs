@@ -9406,6 +9406,30 @@ pub trait SignatureGenerator {
 
     /// Assemble the generic signature of a type.
     ///
+    /// Java: public void assembleSig(Type type) — the default signature grammar;
+    /// subclasses override this entry to special-case verifier pseudo-types.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - t: the type whose signature is assembled.
+    ///
+    /// # Returns
+    ///   - Ok(()) when appended, Err(InvalidSignatureException) for illegal types.
+    ///
+    /// # Panics
+    ///   - an unsupported type tag reaches the assertion branch.
+    fn assemble_sig(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        t: TypeId,
+    ) -> Result<(), InvalidSignatureException> {
+        self.assemble_sig_default(ctx, syms, t)
+    }
+
+    /// Assemble the generic signature of a type.
+    ///
     /// method walks the Java type tag and appends the corresponding JVMS 4.7.9.1
     /// signature grammar: primitive/void codes, L<class>; for classes, [ for
     /// arrays, (args)ret^throws for methods, wildcard bound markers, T<var>; for
@@ -9425,7 +9449,7 @@ pub trait SignatureGenerator {
     ///   - the type tag is not handled by the signature grammar (assertion,
     ///     mirroring the upstream AssertionError default branch).
     ///
-    fn assemble_sig(
+    fn assemble_sig_default(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,

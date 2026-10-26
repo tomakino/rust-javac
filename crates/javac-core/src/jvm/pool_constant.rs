@@ -24,6 +24,8 @@ pub enum PoolKey {
     Long(i64),
     Double(u64),
     String(JavaString),
+    /// A Utf8 name pool key.
+    Utf8(Name),
     /// A class-type loadable constant (Java: ClassType pool key).
     Class(TypeId),
     /// A method-handle loadable constant.
