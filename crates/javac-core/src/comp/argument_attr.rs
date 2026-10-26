@@ -43,6 +43,17 @@ use crate::util::list::List;
 /// ParensType 405-425, ConditionalType 430-456, SwitchExpressionType 461-513,
 /// ExplicitLambdaType 518-640, ResolvedMemberType/ResolvedMethodType/
 /// ResolvedConstructorType 645-735).
+///
+/// # Arguments
+///   - (none: enum only).
+///
+/// # Returns
+///   - the enum value identifying the concrete ArgumentType subclass.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: ArgumentAttr.java:405-735 (ParensType/ConditionalType/SwitchExpressionType/ExplicitLambdaType/ResolvedMethodType/ResolvedConstructorType).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArgumentKind {
     Parens,
@@ -60,6 +71,17 @@ pub enum ArgumentKind {
 /// speculativeCache) stays in the Deferred variant; this payload adds the
 /// speculative tree, the ResultInfo-keyed speculative types map and the lazily
 /// populated scratch lists of SwitchExpressionType/ExplicitLambdaType.
+///
+/// # Fields
+///   - kind: the concrete subclass (§9 enum dispatch);
+///   - speculative_tree: the speculative pass tree (ArgumentAttr.java:330-350);
+///   - speculative_types: ResultInfo->Type entries (ArgumentAttr.java:360-390);
+///   - yield_expressions/argtypes/return_expressions: the lazily populated scratch lists.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: ArgumentAttr.java:330-400, 480-500, 515-640.
 #[derive(Clone)]
 pub struct ArgumentTypeData {
     /// The concrete subclass.
@@ -84,6 +106,19 @@ pub struct ArgumentTypeData {
 // ---------------------------------------------------------------------------
 
 /// Java: public class ArgumentAttr (ArgumentAttr.java:96-790)
+///
+/// # Fields
+///   - deferred: DeferredAttr service cell (§9, mutual recursion);
+///   - diags: JCDiagnostic.Factory;
+///   - env: the current attribution environment (AttribArg save/restore);
+///   - result: the attribution result;
+///   - argument_type_cache: UniquePos -> ArgumentType cache;
+///   - flow: Flow service cell (§9).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: ArgumentAttr.java:96-130.
 pub struct ArgumentAttr {
     /// Java: final DeferredAttr deferredAttr (cell: DeferredAttr and
     /// ArgumentAttr are mutually recursive services, §9).
@@ -102,6 +137,15 @@ pub struct ArgumentAttr {
 }
 
 /// Java: class ArgumentAttr.UniquePos (ArgumentAttr.java:745-775)
+///
+/// # Fields
+///   - pos: source char offset;
+///   - source: source-file identity (the file object pointer, §9).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: ArgumentAttr.java:745-775.
 #[derive(Clone, Debug)]
 pub struct UniquePos {
     /// Java: int pos
@@ -112,6 +156,19 @@ pub struct UniquePos {
 
 impl UniquePos {
     /// Java: UniquePos(JCTree tree)
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context (tree position);
+    ///   - log: the Log (current source identity);
+    ///   - tree: the tree whose position is captured.
+    ///
+    /// # Returns
+    ///   - a UniquePos for the tree.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: ArgumentAttr.java:745-760.
     pub fn new(
         ctx: &crate::compiler_context::CompilerContext,
         log: &crate::util::log::Log,
@@ -143,6 +200,14 @@ impl std::hash::Hash for UniquePos {
 }
 
 /// Java: class ArgumentAttr.LocalCacheContext (ArgumentAttr.java:213-230).
+///
+/// # Fields
+///   - prev_cache: the cache of the enclosing context restored by leave().
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: ArgumentAttr.java:213-230.
 pub struct LocalCacheContext {
     /// Java: Map<UniquePos, ArgumentType<?>> prevCache
     pub prev_cache: Option<std::collections::HashMap<UniquePos, Rc<RefCell<ArgumentTypeData>>>>,
@@ -150,6 +215,17 @@ pub struct LocalCacheContext {
 
 impl LocalCacheContext {
     /// Java: public void leave()
+    ///
+    /// # Arguments
+    ///   - argument_attr: the service whose cache is restored.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: ArgumentAttr.java:226-230.
     pub fn leave(&mut self, argument_attr: &mut ArgumentAttr) {
         if let Some(prev) = self.prev_cache.take() {
             argument_attr.argument_type_cache = prev;
@@ -160,6 +236,18 @@ impl LocalCacheContext {
 impl ArgumentAttr {
     /// Java: public static ArgumentAttr instance(Context) — explicit
     /// construction per ADR 0001.
+    ///
+    /// # Arguments
+    ///   - deferred: the DeferredAttr service cell;
+    ///   - diags: the diagnostic factory.
+    ///
+    /// # Returns
+    ///   - the shared ArgumentAttr cell (§9 cell injection).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: ArgumentAttr.java:112-130.
     pub fn new(
         deferred: Rc<RefCell<Option<Rc<RefCell<crate::comp::deferred_attr::DeferredAttrService>>>>>,
         diags: Rc<crate::util::jc_diagnostic::Factory>,
@@ -175,6 +263,19 @@ impl ArgumentAttr {
     }
 
     /// Java: void setResult(JCExpression tree, Type type) (ArgumentAttr.java:135-142)
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - tree: the attributed expression;
+    ///   - ty: the attribution result.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: ArgumentAttr.java:135-142.
     pub fn set_result(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -199,6 +300,19 @@ impl ArgumentAttr {
 
     /// Java: Type checkSpeculative(DiagnosticPosition pos, Type t,
     /// ResultInfo resultInfo) (ArgumentAttr.java:157-166)
+    ///
+    /// # Arguments
+    ///   - ctx/syms/types/attr: explicit services (ADR 0001);
+    ///   - t: the candidate type;
+    ///   - result_info: the target result.
+    ///
+    /// # Returns
+    ///   - Ok(Some(type)) or Ok(None); a deferred type is checked through DeferredAttr.
+    ///
+    /// # Panics
+    ///   - none (failures are returned).
+    ///
+    /// Upstream: ArgumentAttr.java:157-166.
     pub fn check_speculative_type(
         &mut self,
         ctx: &mut CompilerContext,
@@ -225,6 +339,19 @@ impl ArgumentAttr {
     }
 
     /// Java: Type checkSpeculative(JCTree expr, ResultInfo resultInfo)
+    ///
+    /// # Arguments
+    ///   - ctx/syms/types/attr: explicit services;
+    ///   - expr: the expression (its tree type is checked);
+    ///   - result_info: the target result.
+    ///
+    /// # Returns
+    ///   - Ok(Some(type)) or Ok(None) when the tree has no type.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: ArgumentAttr.java:150-155.
     pub fn check_speculative(
         &mut self,
         ctx: &mut CompilerContext,
@@ -241,6 +368,17 @@ impl ArgumentAttr {
     }
 
     /// Java: LocalCacheContext withLocalCacheContext() (ArgumentAttr.java:196-198)
+    ///
+    /// # Arguments
+    ///   - (none).
+    ///
+    /// # Returns
+    ///   - a LocalCacheContext that must be left after the speculative pass.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: ArgumentAttr.java:196-198.
     pub fn with_local_cache_context(&mut self) -> LocalCacheContext {
         let prev = std::mem::take(&mut self.argument_type_cache);
         LocalCacheContext {
@@ -250,6 +388,19 @@ impl ArgumentAttr {
 
     /// Java: Type attribArg(JCTree tree, Env<AttrContext> env)
     /// (ArgumentAttr.java:232-242)
+    ///
+    /// # Arguments
+    ///   - ctx/syms/attr/log: explicit services;
+    ///   - tree: the argument tree;
+    ///   - env: the attribution environment.
+    ///
+    /// # Returns
+    ///   - Ok(Some(type)) with the attribution result.
+    ///
+    /// # Panics
+    ///   - none (completion failures are returned).
+    ///
+    /// Upstream: ArgumentAttr.java:232-242.
     pub fn attrib_arg(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -787,6 +938,19 @@ fn deferred_failure_to_completion(
 impl ArgumentAttr {
     /// Java: ArgumentType.complete(ResultInfo, DeferredAttrContext)
     /// (ArgumentAttr.java:355-370).
+    ///
+    /// # Arguments
+    ///   - ctx/syms/attr: explicit services;
+    ///   - t/data: the deferred type and its ArgumentType payload;
+    ///   - result_info/deferred_attr_context: the check target and mode.
+    ///
+    /// # Returns
+    ///   - the computed type (speculative) or the plain attribution result (CHECK).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: ArgumentAttr.java:355-370.
     #[allow(clippy::too_many_arguments)]
     pub fn argument_type_complete(
         &mut self,
@@ -838,6 +1002,20 @@ impl ArgumentAttr {
 
     /// Java: ArgumentType.speculativeType(Symbol, MethodResolutionPhase)
     /// (ArgumentAttr.java:372-390).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - data: the ArgumentType payload;
+    ///   - t: the deferred type;
+    ///   - msym/phase: the resolution round.
+    ///
+    /// # Returns
+    ///   - the recorded speculative type, or noType (Some(no_type_id)) when absent.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: ArgumentAttr.java:372-390.
     pub fn argument_type_speculative_type(
         &self,
         ctx: &mut CompilerContext,
@@ -876,6 +1054,20 @@ impl ArgumentAttr {
 
     /// Java: ArgumentType.speculativeTree(DeferredAttrContext)
     /// (ArgumentAttr.java:390-400).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - data: the ArgumentType payload;
+    ///   - t: the deferred type;
+    ///   - deferred_attr_context: the resolution round.
+    ///
+    /// # Returns
+    ///   - the speculative tree of the recorded round.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: ArgumentAttr.java:390-400.
     pub fn argument_type_speculative_tree(
         &self,
         ctx: &CompilerContext,

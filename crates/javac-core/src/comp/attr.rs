@@ -2494,6 +2494,16 @@ impl crate::comp::check::CheckContext for ExpressionLambdaReturnContext {
 impl Attr {
     /// Java: CheckContext conditionalContext(CheckContext checkContext)
     /// (Attr.java:2092-2106)
+/// # Arguments
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Attr.java:3335-3350 (conditionalContext).
+///
     pub fn conditional_context(&self) -> Rc<dyn crate::comp::check::CheckContext> {
         Rc::new(ConditionalCheckContext {
             enclosing: Rc::clone(&self.basic_handler),
@@ -2503,6 +2513,18 @@ impl Attr {
 
     /// Java: CheckContext diamondContext(JCNewClass clazz, TypeSymbol tsym,
     /// CheckContext checkContext) (Attr.java:3007-3016)
+/// # Arguments
+///   - clazz: the diamond new-class tree
+///   - tsym: the site class symbol
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Attr.java:3360-3380 (diamondContext).
+///
     pub fn diamond_context(
         &self,
         clazz: TreeId,
@@ -2518,6 +2540,20 @@ impl Attr {
 
     /// Java: ResultInfo lambdaBodyResult(JCLambda that, Type descriptor,
     /// ResultInfo resultInfo) (Attr.java:3438-3453)
+/// # Arguments
+///   - ctx: compiler context
+///   - that: the lambda tree
+///   - descriptor: the functional descriptor
+///   - result_info: the target result
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Attr.java:3438-3453 (lambdaBodyResult).
+///
     pub fn lambda_body_result(
         &self,
         ctx: &mut CompilerContext,
@@ -2564,6 +2600,20 @@ impl Attr {
 
     /// Java: void checkLambdaCompatible(JCLambda tree, Type descriptor,
     /// CheckContext checkContext) (Attr.java:3455-3480)
+/// # Arguments
+///   - ctx/syms: explicit services
+///   - tree: the lambda tree
+///   - descriptor: the functional descriptor
+///   - check_context: the compatibility context
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Attr.java:3460-3490 (checkLambdaCompatible).
+///
     pub fn check_lambda_compatible(
         &self,
         ctx: &mut CompilerContext,
@@ -2664,6 +2714,20 @@ impl Attr {
     /// resultInfo, List<Type> explicitParamTypes) (Attr.java:3240-3295) —
     /// §9: explicit ctx/syms parameters; the upstream unchecked
     /// FunctionDescriptorLookupError is returned as Err.
+/// # Arguments
+///   - ctx/syms: explicit services
+///   - that: the functional expression
+///   - result_info: the target result
+///   - explicit_param_types: the explicit parameter types (if any)
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Attr.java:3390-3435 (getTargetInfo).
+///
     pub fn get_target_info(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2954,6 +3018,13 @@ impl crate::comp::check::CheckContext for RecoveryCheckContext {
 // upstream constructor arguments.
 // ---------------------------------------------------------------------------
 
+/// /// Java: class Attr.PostAttrAnalyzer extends TreeScanner (Attr.java:5824-5930).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Attr.java:5824-5930.
+///
 pub struct PostAttrAnalyzer<'a> {
     pub syms: &'a Symtab,
     pub names: &'a Names,
@@ -3483,6 +3554,21 @@ impl Attr {
     /// List<Type> argtypes, List<Type> typeargtypes) (Attr.java:4774-4895)
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::drop_non_drop)] // the drops release borrows early (Attr/Check)
+/// # Arguments
+///   - ctx/syms: explicit services
+///   - rs/infer: the resolve and inference services
+///   - site/sym: the method and its site
+///   - result_info/env: the attribution target and environment
+///   - argtrees/argtypes/typeargtypes: the actual arguments
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Attr.java:4774-4895 (checkMethod).
+///
     pub fn check_method(
         &mut self,
         ctx: &mut CompilerContext,
@@ -3817,6 +3903,19 @@ impl Attr {
 impl Attr {
     /// Java: ResultInfo memberReferenceQualifierResult(JCMemberReference tree)
     /// (Attr.java:3755-3761)
+/// # Arguments
+///   - ctx: compiler context
+///   - env: the attribution environment
+///   - tree: the member reference
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Attr.java:3755-3761 (memberReferenceQualifierResult).
+///
     pub fn member_reference_qualifier_result(
         &self,
         ctx: &CompilerContext,
@@ -3839,6 +3938,19 @@ impl Attr {
 
     /// Java: public Env<AttrContext> lambdaEnv(JCLambda that,
     /// Env<AttrContext> env) (Attr.java:3484-3560)
+/// # Arguments
+///   - ctx/syms: explicit services
+///   - that: the lambda tree
+///   - env: the enclosing attribution environment
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Attr.java:3484-3560 (lambdaEnv).
+///
     pub fn lambda_env(
         &mut self,
         ctx: &mut CompilerContext,
@@ -3932,6 +4044,20 @@ impl Attr {
 
     /// Java: void preFlow(JCLambda tree) (Attr.java:3296-3315)
     #[allow(clippy::too_many_arguments)]
+/// # Arguments
+///   - ctx/syms: explicit services
+///   - attr_recover/rs/infer/chk/diags: explicit services
+///   - env: the attribution environment
+///   - tree: the lambda tree
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Attr.java:3296-3315 (preFlow).
+///
     pub fn pre_flow(
         &mut self,
         ctx: &mut CompilerContext,

@@ -1,22 +1,22 @@
-//! ADR 0001 的编译期对象 arena 容器(CompilerContext)。
+//! The compile-time object arena container of ADR 0001 (CompilerContext).
 //!
-//! PORTING_RULES: 非 1:1 适配文件(Java 的可变对象图 -> arena + ID),见 ADR 0001。
-//! 六种 arena:Symbol/Type/JCTree/Scope/Attribute/Directive;每种 *Id 只对同一个
-//! CompilerContext 有效,编译结束整体释放。
+//! PORTING_RULES: non-1:1 adapter file (Java mutable object graph -> arena + ID), see ADR 0001.
+//! Six arenas: Symbol/Type/JCTree/Scope/Attribute/Directive; every *Id is valid only for the same
+//! CompilerContext and is released with the compilation.
 //!
-//! 借用规则(ADR 0001 规则 3-4,所有组件必须遵守):
-//! - CompilerContext 独占持有六种 arena;组件逻辑为带 ctx: &mut CompilerContext
-//!   参数的函数/方法(Java 的 x.field -> ctx.sym(x).field);
-//! - 禁止用 Rc<RefCell<...>> 表达核心对象图(PORTING_RULES §9 白名单除外);
-//! - 需要同时访问多个 arena 时用字段拆分借用:Rust 的借用检查按字段进行,
-//!   例如 &mut ctx.scopes 与 &ctx.symbols 可以同时存在;
-//! - 访问器返回的引用与 &self 绑定:持有引用的期间不得对同一个 ctx 再做可变
-//!   借用;需要先读后写时,先用访问器把 name/kind/ID 等值取出来再释放借用;
-//! - arena 只增不减(ADR 0001 规则 8);越界访问在 debug 下由 util/arena.rs 断言。
+//! Borrow rules (ADR 0001 rules 3-4; all components must follow them):
+//! - CompilerContext exclusively owns the six arenas; component logic lives in functions/methods taking
+//!   ctx: &mut CompilerContext (Java x.field -> ctx.sym(x).field);
+//! - Rc<RefCell<...>> must not express the core object graph (except the PORTING_RULES §9 whitelist);
+//! - when several arenas are needed at once, split the borrow by field: Rust borrow checking is per field,
+//!   e.g. &mut ctx.scopes and &ctx.symbols can coexist;
+//! - accessor references borrow &self: while a reference is held the same ctx must not be borrowed mutably;
+//!   for read-then-write, copy out name/kind/IDs through accessors first and then release the borrow;
+//! - arenas only grow (ADR 0001 rule 8); out-of-bounds access is asserted in util/arena.rs in debug builds.
 //!
-//! Scope 的查找/迭代顺序语义由 code/scope.rs 的算法保证(上游开放寻址双哈希 +
-//! elems/shadowed 链);本模块只提供基于 CompilerContext 的包装方法,不再暴露
-//! 之前的 SymbolResolver/self_id 过渡(方法内部把 arena 切片传给 Scope 算法)。
+//! Scope lookup/iteration order is guaranteed by the algorithm in code/scope.rs (upstream open addressing double hashing +
+//! elems/shadowed chains); this module only provides CompilerContext-based wrappers and no longer exposes
+//! the former SymbolResolver/self_id transition (the methods pass arena slices to the Scope algorithm).
 
 use crate::code::attribute::Attribute;
 use crate::code::directive::Directive;

@@ -53,6 +53,27 @@ pub struct TreeCopier {
 
 impl TreeCopier {
     /// Java: public TreeCopier(TreeMaker M)
+    ///
+    /// # Arguments
+    ///   - make: the TreeMaker cell.
+    ///
+    /// # Returns
+    ///   - a plain TreeCopier.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: JCTree.java:3200.
+/// # Arguments
+///   - make: the TreeMaker cell.
+///
+/// # Returns
+///   - a plain TreeCopier.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: JCTree.java:3200.
     pub fn new(make: Rc<std::cell::RefCell<TreeMaker>>) -> TreeCopier {
         TreeCopier {
             make,
@@ -61,6 +82,27 @@ impl TreeCopier {
     }
 
     /// Java: the DeferredAttr anonymous TreeCopier subclass (§9 flag).
+    ///
+    /// # Arguments
+    ///   - make: the TreeMaker cell.
+    ///
+    /// # Returns
+    ///   - a TreeCopier with the speculative diamond/member-reference behavior.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: DeferredAttr.java:530-560.
+/// # Arguments
+///   - make: the TreeMaker cell.
+///
+/// # Returns
+///   - a TreeCopier with the speculative diamond/member-reference behavior.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: DeferredAttr.java:530-560.
     pub fn new_speculative(make: Rc<std::cell::RefCell<TreeMaker>>) -> TreeCopier {
         TreeCopier {
             make,

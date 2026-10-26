@@ -47,7 +47,7 @@
 //!   (Java String.split semantics for runs of commas: empty input yields [""],
 //!   a string of only commas yields []).
 //!
-//! ## Trimmed options (docs/SUPPORT_MATRIX.md "命令行选项/裁剪"; no substitute
+//! ## Trimmed options (docs/SUPPORT_MATRIX.md "command-line options / trimming"; no substitute
 //! behaviour is invented and these constants do not exist in this enum):
 //! * annotation processing (APT is out of scope): PROC (-proc:), PROCESSOR,
 //!   PROCESSOR_PATH, PROCESSOR_MODULE_PATH, A (-A).

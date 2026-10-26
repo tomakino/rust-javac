@@ -709,6 +709,19 @@ impl Resolve {
     /// Java: protected Symbol access(Name name, TypeSymbol location) — the
     /// per-error-class access implementation (ResolveError/InvalidSymbolError/
     /// AmbiguityError overrides).
+/// # Arguments
+///   - ctx/syms: explicit services
+///   - error: the resolve-error symbol
+///   - name/location: the access target
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Resolve.java:4110-4160 (ResolveError.access overrides).
+///
     pub fn resolve_error_access(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -830,6 +843,19 @@ impl Resolve {
     /// DiagnosticPosition pos, Symbol location, Type site, Name name,
     /// List<Type> argtypes, List<Type> typeargtypes)
     #[allow(clippy::too_many_arguments)]
+/// # Arguments
+///   - ctx/syms: explicit services
+///   - error: the resolve-error symbol
+///   - dkind/pos/location/site/name/argtypes/typeargtypes: the diagnostic context
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Resolve.java:4160-4370 (getDiagnostic overrides).
+///
     pub fn resolve_error_diagnostic(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -3253,6 +3279,13 @@ impl Default for MethodResolutionContext {
 }
 
 impl MethodResolutionContext {
+/// /// Java: MethodResolutionContext() (Resolve.java:4920-4940).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Resolve.java:4920-4940.
+///
     pub fn new() -> MethodResolutionContext {
         MethodResolutionContext {
             candidates: Vec::new(),
@@ -3352,6 +3385,13 @@ pub struct InapplicableMethodException {
 }
 
 impl InapplicableMethodException {
+/// /// Java: InapplicableMethodException(JCDiagnostic) (Resolve.java:1398-1411).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Resolve.java:1398-1411.
+///
     pub fn new(diagnostic: crate::util::jc_diagnostic::JCDiagnostic) -> InapplicableMethodException {
         InapplicableMethodException { diagnostic }
     }
@@ -4154,6 +4194,13 @@ pub struct LookupFilter {
 }
 
 impl LookupFilter {
+/// /// Java: LookupFilter.test(Symbol) (Resolve.java:1880-1895).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Resolve.java:1880-1895.
+///
     pub fn test(&self, ctx: &crate::compiler_context::CompilerContext, sym: SymbolId) -> bool {
         let flags = ctx.sym(sym).flags_field;
         (flags & crate::code::flags::ABSTRACT as i64) != 0 || self.abstractok
@@ -6007,6 +6054,20 @@ impl Resolve {
     /// Symbol location, MethodCheck methodCheck, LookupHelper lookupHelper)
     /// (Resolve.java:3688-3692)
     #[allow(clippy::too_many_arguments)]
+/// # Arguments
+///   - ctx/syms/types/attr/chk/infer: explicit services
+///   - env/pos/site: the lookup context
+///   - method_check: the applicability check
+///   - helper: the lookup helper
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Resolve.java:4300-4330 (lookupMethod with a helper).
+///
     pub fn lookup_method_with_check(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -6542,6 +6603,19 @@ impl Resolve {
     /// Java: Symbol findPolymorphicSignatureInstance(Env<AttrContext> env,
     /// Symbol spMethod, List<Type> argtypes) (Resolve.java:2764-2770)
     #[allow(clippy::too_many_arguments)]
+/// # Arguments
+///   - ctx/syms/types/attr/chk/diags/infer: explicit services
+///   - env: the attribution environment
+///   - sp_method/argtypes: the signature polymorphic method and actuals
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Resolve.java:2764-2770.
+///
     pub fn find_polymorphic_signature_instance(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -6563,6 +6637,18 @@ impl Resolve {
 
     /// Java: Symbol findPolymorphicSignatureInstance(final Symbol spMethod,
     /// Type mtype) (Resolve.java:2772-2812)
+/// # Arguments
+///   - ctx/syms/types: explicit services
+///   - sp_method/mtype: the method and its synthetic type
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Resolve.java:2772-2812.
+///
     pub fn find_polymorphic_signature_instance_with_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -6882,6 +6968,13 @@ pub struct ReferenceLookupHelper {
 
 impl ReferenceLookupHelper {
     #[allow(clippy::too_many_arguments)]
+/// /// Java: new MethodReferenceLookupHelper(...) (Resolve.java:3528-3540).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Resolve.java:3528-3540.
+///
     pub fn new_method(
         reference_tree: TreeId,
         name: crate::util::name::Name,
@@ -6905,6 +6998,13 @@ impl ReferenceLookupHelper {
     }
 
     #[allow(clippy::too_many_arguments)]
+/// /// Java: new UnboundMethodReferenceLookupHelper(...) (Resolve.java:3585-3600).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Resolve.java:3585-3600.
+///
     pub fn new_unbound_method(
         reference_tree: TreeId,
         name: crate::util::name::Name,
@@ -7251,6 +7351,19 @@ impl LookupHelper for ReferenceLookupHelper {
 impl Resolve {
     /// Java: boolean enclosingInstanceMissing(Env<AttrContext> env, Type type)
     /// (Resolve.java:3746-3752)
+/// # Arguments
+///   - ctx/syms/types: explicit services
+///   - env: the attribution environment
+///   - site: the constructor site type
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Resolve.java:3746-3752.
+///
     pub fn enclosing_instance_missing(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -7278,6 +7391,20 @@ impl Resolve {
 
     /// Java: private Symbol resolveSelfContainingInternal(Env<AttrContext> env,
     /// Symbol member, boolean isSuperCall) (Resolve.java:3760-3800)
+/// # Arguments
+///   - ctx/syms/types: explicit services
+///   - env: the attribution environment
+///   - member: the member symbol
+///   - is_super_call: the super-call context
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Resolve.java:3760-3800.
+///
     pub fn resolve_self_containing_internal(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -7341,6 +7468,19 @@ impl Resolve {
     /// Type site, Name name, List<Type> argtypes, List<Type> typeargtypes,
     /// MethodResolutionPhase maxPhase) (Resolve.java:3027-3045)
     #[allow(clippy::too_many_arguments)]
+/// # Arguments
+///   - ctx/syms/types: explicit services
+///   - reference_tree/site/name: the reference site
+///   - argtypes/typeargtypes/max_phase: the lookup input
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Resolve.java:3027-3045.
+///
     pub fn make_reference_lookup_helper(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -7471,6 +7611,19 @@ impl Resolve {
     /// Env<AttrContext> env, JCMemberReference referenceTree, Type site,
     /// Name name) (Resolve.java:3000-3016)
     #[allow(clippy::too_many_arguments)]
+/// # Arguments
+///   - ctx/syms/types/attr/chk/infer: explicit services
+///   - pos/env/reference_tree: the reference context
+///   - site/name: the qualifier type and name
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Resolve.java:3000-3016.
+///
     pub fn get_member_reference(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -7522,6 +7675,20 @@ impl Resolve {
     /// argtypes, List<Type> typeargtypes, Type descriptor, MethodCheck,
     /// InferenceContext, ReferenceChooser) (Resolve.java:3071-3130)
     #[allow(clippy::too_many_arguments)]
+/// # Arguments
+///   - ctx/syms/types/attr/chk/infer: explicit services
+///   - env/pos/reference_tree: the reference context
+///   - site/name/argtypes/typeargtypes/descriptor: the lookup input
+///   - method_check/inference_context/reference_chooser: the resolution round
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Resolve.java:3071-3130.
+///
     pub fn resolve_member_reference(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,

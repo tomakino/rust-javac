@@ -2595,6 +2595,17 @@ impl Check {
 impl Check {
     /// Java: public Warner convertWarner(DiagnosticPosition pos, Type found,
     /// Type expected) (Check.java:3979-3981)
+/// # Arguments
+///   - pos: the diagnostic position
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Check.java:900-940 (initWarner/convertWarner).
+///
     pub fn convert_warner(&self, pos: i32) -> Warner {
         Warner::new(Some(Rc::new(SimpleDiagnosticPosition::new(pos))))
     }
@@ -2664,6 +2675,20 @@ impl Check {
     /// final List<Type> argtypes, final boolean useVarargs,
     /// InferenceContext inferenceContext) (Check.java:991-1080)
     #[allow(clippy::too_many_arguments)]
+/// # Arguments
+///   - ctx/syms/types/attr/chk: explicit services;
+///   - mtype/sym: the candidate method;
+///   - argtrees/argtypes: the actual arguments;
+///   - use_varargs/inference_context: the resolution round
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Check.java:903-970 (checkMethod).
+///
     pub fn check_method(
         &self,
         ctx: &mut CompilerContext,

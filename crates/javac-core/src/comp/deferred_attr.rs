@@ -61,6 +61,13 @@ impl AttributionMode {
         !matches!(self, AttributionMode::FULL)
     }
 
+/// /// Java: AttributionMode.recover() (DeferredAttr.java:1435-1450).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: DeferredAttr.java:1435-1450.
+///
     pub fn recover(self) -> bool {
         matches!(self, AttributionMode::FULL | AttributionMode::ATTRIB_TO_TREE)
     }
@@ -1555,6 +1562,14 @@ struct FilterScanner;
 
 /// §9 helper: the scanner services the upstream inner class reaches through the
 /// enclosing DeferredAttr instance (explicit parameter bundle).
+///
+/// # Fields
+///   - syms/diags/chk: the services the upstream inner class reaches through DeferredAttr.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: DeferredAttr.java:1050-1330 (inner-class service access, §9 bundle).
 pub struct StuckScannerEnv<'a> {
     syms: &'a mut Symtab,
     diags: &'a crate::util::jc_diagnostic::Factory,
@@ -2107,7 +2122,17 @@ impl crate::comp::infer::FreeTypeListener for CheckStuckPolicyListener {
 
 /// Java: CheckStuckPolicy constructor wrapper used by DeferredType.check
 /// (the upstream new CheckStuckPolicy(resultInfo, dt)).
-#[allow(clippy::too_many_arguments)]
+///
+/// # Arguments
+///   - ctx/syms/types/diags/chk/result_info/dt: explicit services.
+///
+/// # Returns
+///   - a fresh CheckStuckPolicy.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: DeferredAttr.java:1160-1190 (new CheckStuckPolicy(resultInfo, dt)).
 pub fn check_stuck_policy_new(
     ctx: &mut CompilerContext,
     syms: &mut Symtab,
@@ -2166,7 +2191,17 @@ impl DeferredStuckPolicy for OverloadStuckPolicy {
 }
 
 /// Java: OverloadStuckPolicy constructor wrapper used by DeferredType.check.
-#[allow(clippy::too_many_arguments)]
+///
+/// # Arguments
+///   - ctx/syms/types/diags/chk/result_info/dt: explicit services.
+///
+/// # Returns
+///   - a fresh OverloadStuckPolicy.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: DeferredAttr.java:1300-1330.
 pub fn overload_stuck_policy_new(
     ctx: &mut CompilerContext,
     syms: &mut Symtab,
@@ -2190,6 +2225,15 @@ pub fn overload_stuck_policy_new(
 // ---------------------------------------------------------------------------
 
 /// Java: public class DeferredAttr (DeferredAttr.java:96-560)
+///
+/// # Fields
+///   - annotate/diags/enter/infer/log/make/types/syms/names/dcfh: injected services;
+///   - tree_copier/stuck_tree/empty_deferred_attr_context: the upstream fields.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: DeferredAttr.java:96-230.
 pub struct DeferredAttrService {
     /// Java: final Annotate annotate (lazily installed, §9 cell).
     pub annotate: Rc<RefCell<Option<Rc<crate::comp::annotate::Annotate>>>>,
@@ -2241,6 +2285,19 @@ crate::tree::tree_scanner::tree_scanner_visitor_delegate!(PositionScannerVisitor
 impl DeferredAttrService {
     /// Java: protected DeferredAttr(Context context) (DeferredAttr.java:112-200)
     /// — the Ported construction with explicit services (ADR 0001).
+    /// 
+    /// # Arguments
+    ///   - ctx: compiler context used to allocate the shared stuck tree;
+    ///   - the service parameters mirror the upstream constructor fields.
+    /// 
+    /// # Returns
+    ///   - the shared DeferredAttrService handle.
+    /// 
+    /// # Panics
+    ///   - none.
+    /// 
+    /// Upstream: DeferredAttr.java:112-230.
+    /// 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         ctx: &mut CompilerContext,
@@ -2286,6 +2343,18 @@ impl DeferredAttrService {
 
     /// Java: JCTree attribSpeculative(JCTree, Env, ResultInfo)
     /// (DeferredAttr.java:470-472)
+    /// 
+    /// # Arguments
+    ///   - ctx/syms/attr: explicit services;
+    ///   - tree/env/result_info: the speculative target.
+    /// 
+    /// # Returns
+    ///   - Ok(the speculative tree with its type).
+    /// 
+    /// # Panics
+    ///   - the copied tree must be a valid JCExpression tree (upstream Assert).
+    /// 
+    /// Upstream: DeferredAttr.java:470-472.
     pub fn attrib_speculative(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2310,6 +2379,30 @@ impl DeferredAttrService {
     /// Java: JCTree attribSpeculative(JCTree tree, Env, ResultInfo,
     /// TreeCopier<Z> deferredCopier, Supplier<DiagnosticHandler>,
     /// AttributionMode, LocalCacheContext) (DeferredAttr.java:481-489)
+    /// 
+    /// # Arguments
+    ///   - as above plus diag_handler_creator/attribution_mode; the tree is copied first with tree_copier.
+    /// 
+    /// # Returns
+    ///   - Ok(the speculative tree) after attributing the copy.
+    /// 
+    /// # Panics
+    ///   - none beyond the registered dependency failures.
+    /// 
+    /// Upstream: DeferredAttr.java:481-489.
+    /// 
+    /// 
+    /// # Arguments
+    ///   - as above; §4: the LocalCacheContext overload is registered with the ArgumentAttr stage.
+    /// 
+    /// # Returns
+    ///   - Ok(the speculative tree) after the attribution round.
+    /// 
+    /// # Panics
+    ///   - none.
+    /// 
+    /// Upstream: DeferredAttr.java:496-520.
+    /// 
     #[allow(clippy::too_many_arguments)]
     pub fn attrib_speculative_with_copier(
         &mut self,
@@ -2415,6 +2508,19 @@ impl DeferredAttrService {
 impl DeferredAttrService {
     /// Java: JCLambda attribSpeculativeLambda(JCLambda that, Env<AttrContext> env,
     /// ResultInfo resultInfo) (DeferredAttr.java:434-468)
+    /// 
+    /// # Arguments
+    ///   - ctx/syms/attr/attr_recover/rs/chk/diags/flow: explicit services;
+    ///   - that/env/result_info: the lambda and its target.
+    /// 
+    /// # Returns
+    ///   - Ok(the speculative lambda tree).
+    /// 
+    /// # Panics
+    ///   - the lambda body / return tree shapes are asserted as in the upstream casts.
+    /// 
+    /// Upstream: DeferredAttr.java:434-468.
+    /// 
     #[allow(clippy::too_many_arguments)]
     pub fn attrib_speculative_lambda(
         &mut self,
@@ -2515,6 +2621,17 @@ impl DeferredAttrService {
 impl DeferredAttrService {
     /// Java: StructuralStuckChecker.check(DeferredType dt, ResultInfo,
     /// DeferredAttrContext) (DeferredAttr.java:808-816)
+    /// 
+    /// # Arguments
+    ///   - ctx/syms/attr/dt/result_info/deferred_attr_context: the stuck node and its target.
+    /// 
+    /// # Returns
+    ///   - Ok(()) after recording the stuck tree in the speculative cache.
+    /// 
+    /// # Panics
+    ///   - none.
+    /// 
+    /// Upstream: DeferredAttr.java:808-816.
     pub fn structural_stuck_check(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2957,6 +3074,15 @@ impl DeferredAttrService {
     }
 
     /// Java: LambdaBodyStructChecker (DeferredAttr.java:955-990)
+    /// 
+    /// # Fields
+    ///   - is_void_compatible/is_potentially_value_compatible: the JLS value/void compatibility flags.
+    /// 
+    /// # Panics
+    ///   - none.
+    /// 
+    /// Upstream: DeferredAttr.java:955-990.
+    /// 
     fn lambda_body_struct_check(
         &self,
         ctx: &mut CompilerContext,

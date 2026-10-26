@@ -292,6 +292,13 @@ pub struct FunctionDescriptorLookupError {
 }
 
 impl FunctionDescriptorLookupError {
+/// /// Java: FunctionDescriptorLookupError() (Types.java:4100-4120).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Types.java:4100-4120.
+///
     pub fn new() -> FunctionDescriptorLookupError {
         FunctionDescriptorLookupError { diagnostic: None }
     }
@@ -301,6 +308,13 @@ impl FunctionDescriptorLookupError {
         self
     }
 
+/// /// Java: FunctionDescriptorLookupError.getDiagnostic() (Types.java:4120-4140).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Types.java:4120-4140.
+///
     pub fn get_diagnostic(&self) -> Option<&crate::util::jc_diagnostic::JCDiagnostic> {
         self.diagnostic.as_ref()
     }
@@ -326,6 +340,13 @@ pub struct FunctionDescriptorMerge {
 }
 
 impl FunctionDescriptor {
+/// /// Java: FunctionDescriptor(Symbol) (Types.java:3000-3020).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Types.java:3000-3020.
+///
     pub fn new(desc_sym: SymbolId) -> FunctionDescriptor {
         FunctionDescriptor {
             desc_sym,

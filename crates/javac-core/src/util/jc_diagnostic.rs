@@ -349,9 +349,9 @@ info_key_type!(Warning, WarningInfo, WARNING);
 info_key_type!(Note, NoteInfo, NOTE);
 info_key_type!(Fragment, FragmentInfo, FRAGMENT);
 
-/// 接入 resources 生成访问器的 P4 前契约:contract 参数当前是占位 Display
-/// 文本,先以 JavaString 参数保留(ADR 0002 修订 C:xtask 契约替换后为真实对象,
-/// 届时本函数删除)。
+/// The pre-P4 contract feeding the resources-generated accessors: the contract argument is currently placeholder Display
+/// text, kept as a JavaString argument (ADR 0002 revision C: after the xtask contract replacement it becomes a real object and
+/// this function is then removed).
 fn contract_args_to_args(args: &[contract::DiagnosticArg]) -> Vec<DiagnosticArg> {
     args.iter()
         .map(|arg| match arg {

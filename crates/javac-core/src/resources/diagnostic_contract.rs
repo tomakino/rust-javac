@@ -1,18 +1,18 @@
-//! P4 前置诊断契约:类型化访问器使用的诊断键对象与参数类型(占位实现)。
+//! P4 diagnostic contract: diagnostic key objects and argument types used by the typed accessors (placeholder implementation).
 //!
-//! 来源锚点:src/jdk.compiler/share/classes/com/sun/tools/javac/util/JCDiagnostic.java @ 982d53c
-//! (jdk-17.0.19-ga)的 DiagnosticInfo / Error / Warning / Note / Fragment;设计见
+//! Origin: src/jdk.compiler/share/classes/com/sun/tools/javac/util/JCDiagnostic.java @ 982d53c
+//! (jdk-17.0.19-ga): DiagnosticInfo / Error / Warning / Note / Fragment; see
 //! docs/ADR/0002-diagnostic-resources.md。
 //!
-//! PORTING_RULES: 本文件是 P4(JCDiagnostic/Log 移植)之前的适配占位(登记 §9):
-//! - DiagnosticInfo 对应 JCDiagnostic.DiagnosticInfo{type,prefix,code,args};
-//! - ErrorInfo/WarningInfo/NoteInfo/FragmentInfo 对应 4 个 JCDiagnostic 诊断子类;
-//! - DiagnosticArg 对应 Java 的 Object[] 诊断参数(当前以 Display 文本占位);
-//! - 其余 *Arg 类型对应尚未移植的 javac 类型(Symbol/Type/File/...)。
+//! PORTING_RULES: this file is the adapter placeholder before P4 (JCDiagnostic/Log port; §9 registered):
+//! - DiagnosticInfo corresponds to JCDiagnostic.DiagnosticInfo{type,prefix,code,args};
+//! - ErrorInfo/WarningInfo/NoteInfo/FragmentInfo correspond to the 4 JCDiagnostic subclasses;
+//! - DiagnosticArg corresponds to the Java Object[] diagnostic arguments (currently placeholder Display text);
+//! - the other *Arg types correspond to javac types not ported yet (Symbol/Type/File/...).
 //!
-//! P4 替换点(ADR 0002 修订 C):本文件与 xtask/src/gen_resources.rs 的 SIMPLE_TYPES
-//! 映射表。替换时必须保留参数的原始对象语义与身份(不得以预先格式化的文本替代参数对象),
-//! 验收方式为诊断格式化与 javac 逐字对齐(javac-tests 差分基座字节级比较)。
+//! P4 replacement points (ADR 0002 revision C): this file and SIMPLE_TYPES in xtask/src/gen_resources.rs
+//! mapping. The replacement must keep the original object semantics and identity of the arguments (pre-formatted text must not replace argument objects);
+//! acceptance is diagnostic formatting aligned with javac (byte-level comparison in the javac-tests differential base).
 
 use std::fmt;
 
@@ -43,11 +43,11 @@ impl DiagnosticType {
 /// Java: JCDiagnostic.DiagnosticInfo
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiagnosticInfo {
-    /// Java: DiagnosticInfo.prefix(资源文件前缀,如 "compiler")。
+    /// Java: DiagnosticInfo.prefix (the resource bundle prefix, e.g. "compiler").
     pub prefix: &'static str,
     /// Java: DiagnosticInfo.type
     pub kind: DiagnosticType,
-    /// Java: DiagnosticInfo.code(如 "plugin.not.found")。
+    /// Java: DiagnosticInfo.code (e.g. "plugin.not.found").
     pub code: &'static str,
     /// Java: DiagnosticInfo.args
     pub args: Vec<DiagnosticArg>,
@@ -80,7 +80,7 @@ impl DiagnosticInfo {
     }
 }
 
-/// Java 诊断参数(Object[] 元素)。
+/// Java diagnostic argument (an element of the Object[]).
 ///
 /// PORTING_RULES §9 / ADR 0002 P4: the upstream argument is an arbitrary
 /// Object; in particular a nested JCDiagnostic can be an argument (the
@@ -96,7 +96,7 @@ pub enum DiagnosticArg {
 }
 
 impl DiagnosticArg {
-    /// 以 Display 文本构造占位参数(P4 前的日志/测试辅助)。
+    /// Build a placeholder argument from Display text (log/test helper before P4).
     pub fn from_display(value: impl fmt::Display) -> DiagnosticArg {
         DiagnosticArg::Text(value.to_string())
     }
@@ -133,7 +133,7 @@ impl PartialEq for DiagnosticArg {
 
 impl Eq for DiagnosticArg {}
 
-/// 参数装箱 trait:生成的访问器对每个参数调用 into_diagnostic_arg()。
+/// Argument boxing trait: the generated accessors call into_diagnostic_arg() for every argument.
 pub trait IntoDiagnosticArg {
     fn into_diagnostic_arg(self) -> DiagnosticArg;
 }
@@ -184,20 +184,20 @@ impl<T: IntoDiagnosticArg> IntoDiagnosticArg for Vec<T> {
     }
 }
 
-/// 生成 4 个诊断键 newtype(Java: JCDiagnostic 的 4 个诊断子类)。
+/// Generate the 4 diagnostic-key newtypes (Java: the 4 JCDiagnostic subclasses).
 macro_rules! info_type {
     ($name:ident, $kind:expr) => {
-        /// 类型化诊断键(P4 后映射到对应 JCDiagnostic 子类)。
+        /// Typed diagnostic key (after P4 it maps to the corresponding JCDiagnostic subclass).
         #[derive(Debug, Clone, PartialEq, Eq)]
         pub struct $name(pub DiagnosticInfo);
 
         impl $name {
-            /// 由资源文件生成的访问器构造。
+            /// Constructed by the accessors generated from the resource files.
             pub fn new(code: &'static str, args: Vec<DiagnosticArg>) -> $name {
                 $name(DiagnosticInfo::new($kind, "compiler", code, args))
             }
 
-            /// 取出底层诊断键对象。
+            /// Return the underlying diagnostic-key object.
             pub fn info(&self) -> &DiagnosticInfo {
                 &self.0
             }
@@ -210,15 +210,15 @@ info_type!(WarningInfo, DiagnosticType::Warning);
 info_type!(NoteInfo, DiagnosticType::Note);
 info_type!(FragmentInfo, DiagnosticType::Fragment);
 
-/// 生成尚未移植的 javac 诊断参数类型的 opaque 占位(P4 时替换为真实类型)。
+/// Generate opaque placeholders for javac diagnostic argument types not ported yet (replaced by the real types at P4).
 macro_rules! opaque_arg {
     ($name:ident) => {
-        /// 诊断参数占位类型(P4 时替换为对应的 javac 类型)。
+        /// Placeholder diagnostic argument type (replaced by the corresponding javac type at P4).
         #[derive(Debug, Clone, PartialEq, Eq)]
         pub struct $name(pub String);
 
         impl $name {
-            /// 构造占位值(P4 前的日志/测试辅助)。
+            /// Build a placeholder value (log/test helper before P4).
             pub fn placeholder(text: impl Into<String>) -> $name {
                 $name(text.into())
             }

@@ -35,6 +35,15 @@ use crate::util::names::Names;
 use crate::tree::tree_maker::TreeFactory;
 
 /// Java: class AttrRecover
+/// # Fields
+///   - names/syms/types: explicit services;
+///   - make: the TreeMaker cell (repair);
+///   - recovery_todo: the pending recovery queue.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Attr.java:3970-4000.
 pub struct AttrRecover {
     pub names: Rc<Names>,
     pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
@@ -67,6 +76,16 @@ enum RollbackAction {
 
 impl AttrRecover {
     /// Java: protected AttrRecover(Context context)
+/// # Arguments
+///   - the explicit services (ctx/names/make/syms/types/log/diags).
+///
+/// # Returns
+///   - an AttrRecover.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Attr.java:3990-4000.
     pub fn new(
         names: Rc<Names>,
         make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
@@ -106,6 +125,16 @@ impl AttrRecover {
 impl AttrRecover {
     /// Java: public void doRecovery() (AttrRecover.java:97-200)
     #[allow(clippy::too_many_arguments)]
+/// # Arguments
+///   - ctx/syms/attr/rs/infer/chk/diags: explicit services.
+///
+/// # Returns
+///   - none; the recovery queue is drained.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: AttrRecover.java:97-200.
     pub fn do_recovery(
         &self,
         ctx: &mut CompilerContext,
@@ -328,6 +357,16 @@ impl AttrRecover {
     /// Java: Type recoverMethodInvocation(JCTree tree, Type site, Symbol sym,
     /// Env<AttrContext> env, ResultInfo resultInfo) (AttrRecover.java:202-215)
     #[allow(clippy::too_many_arguments)]
+/// # Arguments
+///   - ctx/syms/attr/rs/infer/chk/diags, tree/site/sym/env/result_info.
+///
+/// # Returns
+///   - the recovered type.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: AttrRecover.java:202-215.
     pub fn recover_method_invocation(
         &self,
         ctx: &mut CompilerContext,
@@ -433,6 +472,16 @@ impl AttrRecover {
 
     /// Java: void wrongMethodSymbolCandidate(TypeSymbol errSymbol, Symbol candSym,
     /// JCDiagnostic diag) (AttrRecover.java:228-260)
+/// # Arguments
+///   - ctx/syms/attr/rs/infer/chk/diags and the candidate.
+///
+/// # Returns
+///   - true when the candidate matches the recovery keys.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: AttrRecover.java:228-260.
     pub fn wrong_method_symbol_candidate(
         &self,
         ctx: &mut CompilerContext,

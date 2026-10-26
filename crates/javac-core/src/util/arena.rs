@@ -1,26 +1,26 @@
-//! 泛型 arena 容器:ADR 0001 的 ID/arena 基础设施。
+//! Generic arena container: the ADR 0001 ID/arena infrastructure.
 //!
-//! Arena<T> 拥有元素,元素只能通过 arena 下标访问;arena 只增不减(ADR 0001 规则 8),
-//! 编译结束随 CompilerContext 整体释放。本模块只提供容器,不定义编译器实体;
-//! CompilerContext(后续任务)将按 ADR 0001 持有 Symbol/Type/Tree/Scope 各 Arena。
+//! Arena<T> owns the elements, which are only reachable through arena indices; arenas only grow (ADR 0001 rule 8),
+//! and are released with CompilerContext when compilation ends. This module only provides the container, not compiler entities;
+//! CompilerContext (later task) holds the Symbol/Type/Tree/Scope arenas per ADR 0001.
 //!
-//! PORTING_RULES:非 1:1 适配文件(Java 可变对象图 -> arena + ID),见 ADR 0001。
+//! PORTING_RULES: non-1:1 adapter file (Java mutable object graph -> arena + ID), see ADR 0001.
 
-/// 只增不减的 arena:push 返回新元素的下标,外部用下标构造对应 ID。
+/// A grow-only arena: push returns the new element index; callers build the matching ID from it.
 ///
-/// 不引入 Rc/RefCell:所有权归 arena,访问通过 ID(ADR 0001 规则 4)。
+/// No Rc/RefCell: ownership belongs to the arena and access goes through IDs (ADR 0001 rule 4).
 #[derive(Debug, Clone)]
 pub struct Arena<T> {
     values: Vec<T>,
 }
 
 impl<T> Arena<T> {
-    /// 创建空 arena。
+    /// Create an empty arena.
     pub const fn new() -> Arena<T> {
         Arena { values: Vec::new() }
     }
 
-    /// 追加元素,返回其 arena 下标(调用方用对应 ID 类型的 new(index) 包装)。
+    /// Append an element and return its arena index (the caller wraps it with the matching ID type new(index)).
     pub fn push(&mut self, value: T) -> u32 {
         let index = self.values.len();
         assert!(
@@ -31,7 +31,7 @@ impl<T> Arena<T> {
         index as u32
     }
 
-    /// 按下标读取元素;越界是内部错误,debug 下直接断言(ADR 0001 规则 8)。
+    /// Read an element by index; out-of-bounds is an internal error, asserted in debug builds (ADR 0001 rule 8).
     pub fn get(&self, index: u32) -> &T {
         debug_assert!(
             (index as usize) < self.values.len(),
@@ -41,7 +41,7 @@ impl<T> Arena<T> {
         &self.values[index as usize]
     }
 
-    /// 按下标可变读取元素;越界是内部错误,debug 下直接断言(ADR 0001 规则 8)。
+    /// Read an element mutably by index; out-of-bounds is an internal error, asserted in debug builds (ADR 0001 rule 8).
     pub fn get_mut(&mut self, index: u32) -> &mut T {
         debug_assert!(
             (index as usize) < self.values.len(),
@@ -51,17 +51,17 @@ impl<T> Arena<T> {
         &mut self.values[index as usize]
     }
 
-    /// 元素个数。
+    /// Number of elements.
     pub fn len(&self) -> usize {
         self.values.len()
     }
 
-    /// 是否为空。
+    /// Whether the arena is empty.
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
 
-    /// 按下标顺序迭代全部元素。
+    /// Iterate over all elements in index order.
     pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
         self.values.iter()
     }

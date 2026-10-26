@@ -2041,6 +2041,13 @@ impl GraphStrategy for LeafSolver {
 /// Java: Map<Node, Pair<List<Node>, Integer>> treeCache (Inference.java:1357)
 pub type TreeCache = RefCell<Vec<(usize, (Vec<usize>, i32))>>;
 
+/// /// Java: Infer.GraphSolver.BestLeafSolver (Infer.java:1290-1330).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Infer.java:1290-1330.
+///
 pub struct BestLeafSolver {
     pub context: std::rc::Weak<InferenceContext>,
     pub vars_to_solve: List<TypeId>,
@@ -2134,6 +2141,13 @@ pub enum DependencyKind {
 }
 
 impl DependencyKind {
+/// /// Java: Infer.DependencyKind.dotStyle (Infer.java:1350-1370).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Infer.java:1350-1370.
+///
     pub fn dot_style(self) -> &'static str {
         match self {
             DependencyKind::BOUND => "dotted",
@@ -2148,6 +2162,13 @@ pub struct GraphSolver<'a> {
 }
 
 impl<'a> GraphSolver<'a> {
+/// /// Java: GraphSolver(InferenceContext) (Infer.java:1370-1390).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Infer.java:1370-1390.
+///
     pub fn new(inference_context: &'a Rc<InferenceContext>) -> GraphSolver<'a> {
         GraphSolver { inference_context }
     }
@@ -2525,6 +2546,13 @@ pub struct ReachabilityVisitor {
 }
 
 impl ReachabilityVisitor {
+/// /// Java: ReachabilityVisitor(InferenceContext) (Infer.java:1450-1470).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Infer.java:1450-1470.
+///
     pub fn new(_context: &InferenceContext) -> ReachabilityVisitor {
         ReachabilityVisitor {
             equiv: Vec::new(),
@@ -3112,6 +3140,13 @@ impl Infer {
         clippy::collapsible_if,
         clippy::blocks_in_conditions
     )]
+/// /// Java: Type instantiateMethod(Env, Type, List<Type>, ... ) (Infer.java:1800-1900).
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Infer.java:1800-1900.
+///
     pub fn instantiate_method(
         &self,
         ctx: &mut CompilerContext,
@@ -3921,6 +3956,20 @@ impl Infer {
     /// MethodSymbol spMethod, Resolve.MethodResolutionContext resolveContext,
     /// List<Type> argtypes) (Infer.java:555-630)
     #[allow(clippy::too_many_arguments)]
+/// # Arguments
+///   - ctx/syms/types/attr/chk/diags: explicit services;
+///   - env: the attribution environment;
+///   - sp_method: the signature polymorphic method (None for object);
+///   - argtypes: the actual argument types
+///
+/// # Returns
+///   - the upstream result (see the summary).
+///
+/// # Panics
+///   - none beyond the registered unimplemented dependencies.
+///
+/// Upstream: Infer.java:555-630.
+///
     pub fn instantiate_polymorphic_signature_instance(
         &self,
         ctx: &mut CompilerContext,
