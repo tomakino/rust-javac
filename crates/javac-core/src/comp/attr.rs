@@ -706,6 +706,8 @@ impl Attr {
             Tag::DOLOOP => self.visit_do_loop(ctx, syms, tree),
             Tag::WHILELOOP => self.visit_while_loop(ctx, syms, tree),
             Tag::FORLOOP => self.visit_for_loop(ctx, syms, tree),
+            Tag::SYNCHRONIZED => self.visit_synchronized(ctx, syms, tree),
+            Tag::TRY => self.visit_try(ctx, syms, tree),
             Tag::TYPECAST => self.visit_type_cast(ctx, syms, tree),
             Tag::LITERAL => self.visit_literal(ctx, syms, tree),
             Tag::IDENT => self.visit_ident(ctx, syms, tree),
@@ -7242,6 +7244,382 @@ impl Attr {
             }
         }
         Ok(self.no_type(ctx))
+    }
+}
+
+/// Java: the anonymous Check.NestedCheckContext in visitTry (Attr.java:1893-1905)
+/// reporting TryNotApplicableToType (§9: named struct).
+pub struct TryCheckContext {
+    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
+    pub basic_handler: Rc<dyn crate::comp::check::CheckContext>,
+    pub diags: Rc<crate::util::jc_diagnostic::Factory>,
+}
+
+impl crate::comp::check::CheckContext for TryCheckContext {
+    fn compatible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        found: TypeId,
+        req: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        self.enclosing.compatible(ctx, syms, types, found, req, warn)
+    }
+
+    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+        // Java: chk.basicHandler.report(pos,
+        //     diags.fragment(Fragments.TryNotApplicableToType(details)));
+        let message = details.get_message(None);
+        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+            crate::resources::compiler_properties::fragments::try_not_applicable_to_type(
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                    message.to_string(),
+                ),
+            ),
+        ));
+        self.basic_handler.report(ctx, pos, &fragment);
+    }
+
+    fn check_warner(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> crate::util::warner::Warner {
+        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+    }
+
+    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
+        self.enclosing.inference_context()
+    }
+
+    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
+        self.enclosing.deferred_attr_context()
+    }
+}
+
+impl Attr {
+    /// Java: public void visitSynchronized(JCSynchronized tree) (Attr.java:1871-1883).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the synchronized statement.
+    ///
+    /// # Returns
+    ///   - Type.noType (statement result).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:1871-1883.
+    fn visit_synchronized(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let (lock, body) = match &ctx.tree(tree).kind {
+            TreeKind::Synchronized { lock, body } => {
+                (lock.expect("synchronized lock"), body.expect("synchronized body"))
+            }
+            _ => panic!("ClassCastException: JCSynchronized expected"),
+        };
+        let lock_type = self.attrib_expr(ctx, syms, lock, &env);
+        let chk_rc = Rc::clone(&self.chk);
+        let chk = chk_rc.borrow();
+        chk.check_ref_type(ctx, ctx.tree(lock).pos, lock_type);
+        drop(chk);
+        // Java: if (env.info.lint.isEnabled(LintCategory.SYNCHRONIZATION) &&
+        //     isValueBased(tree.lock.type)) log.warning(...);
+        let sync_enabled = env
+            .info
+            .borrow()
+            .lint
+            .as_ref()
+            .map(|lint| lint.is_enabled(crate::code::lint::LintCategory::SYNCHRONIZATION))
+            .unwrap_or(false);
+        let is_value_based = ctx
+            .typ(lock_type)
+            .tsym
+            .map(|tsym| ctx.sym(tsym).flags_field & crate::code::flags::VALUE_BASED != 0)
+            .unwrap_or(false);
+        if sync_enabled && is_value_based {
+            let warning = crate::resources::compiler_properties::warnings::attempt_to_synchronize_on_instance_of_value_based_class();
+            let warning = crate::util::jc_diagnostic::Warning::from(warning);
+            crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                &mut *self.log.borrow_mut(),
+                Some(crate::code::lint::LintCategory::SYNCHRONIZATION),
+                Some(Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+                )),
+                warning,
+            );
+        }
+        self.attrib_stat(ctx, syms, body, &env);
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitTry(JCTry tree) (Attr.java:1885-1965).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the try statement.
+    ///
+    /// # Returns
+    ///   - Type.noType (statement result).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:1885-1965.
+    #[allow(clippy::collapsible_if)]
+    fn visit_try(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let (body, catchers, finalizer, resources) = match &ctx.tree(tree).kind {
+            TreeKind::Try {
+                body,
+                catchers,
+                finalizer,
+                resources,
+                ..
+            } => (
+                body.expect("try body"),
+                catchers.clone(),
+                *finalizer,
+                resources.clone(),
+            ),
+            _ => panic!("ClassCastException: JCTry expected"),
+        };
+        let local_env = self.dup_env_with_scope(ctx, &env, Some(tree), None);
+        let is_try_with_resource = !resources.is_empty();
+        let try_env = if is_try_with_resource {
+            self.dup_env_with_scope(ctx, &env, Some(tree), None)
+        } else {
+            Rc::clone(&local_env)
+        };
+        // Attribute resource declarations.
+        let mut current = resources;
+        while current.non_empty() {
+            let resource = *current.head();
+            let twr_context: Rc<dyn crate::comp::check::CheckContext> = Rc::new(TryCheckContext {
+                enclosing: Rc::clone(&self.result_info.as_ref().expect("resultInfo").check_context),
+                basic_handler: Rc::clone(&self.basic_handler),
+                diags: Rc::clone(&self.diags),
+            });
+            let twr_result = ResultInfo::new(
+                KindSelector::VAR,
+                Some(syms.auto_closeable_type),
+                twr_context,
+            );
+            if ctx.tree(resource).tag == Tag::VARDEF {
+                let resource_type = self.attrib_stat(ctx, syms, resource, &try_env);
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                twr_result.check(ctx, syms, &chk, ctx.tree(resource).pos, resource_type);
+                drop(chk);
+                // check that resource type cannot throw InterruptedException
+                self.check_auto_closeable(ctx, syms, ctx.tree(resource).pos, &local_env, resource_type);
+                let var = match &ctx.tree(resource).kind {
+                    TreeKind::VariableDecl { sym: Some(sym), .. } => Some(*sym),
+                    _ => None,
+                };
+                if let Some(var) = var {
+                    if let crate::code::symbol::SymbolKind::VarSymbol { data_kind, .. } =
+                        &mut ctx.sym_mut(var).kind_data
+                    {
+                        *data_kind = Some(crate::code::symbol::ElementKind::RESOURCE_VARIABLE);
+                    }
+                }
+            } else {
+                self.attrib_tree_use(ctx, syms, resource, &try_env, twr_result);
+            }
+            current = current.tail();
+        }
+        // Attribute body.
+        self.attrib_stat(ctx, syms, body, &try_env);
+        // Attribute catch clauses.
+        let mut c = catchers;
+        while c.non_empty() {
+            let catch = *c.head();
+            let catch_env = {
+                let scope = local_env.info.borrow().scope.expect("local env scope");
+                let new_scope = ctx.scope_dup(scope, None);
+                let info = local_env.info.borrow().dup(Some(new_scope));
+                local_env.dup(Some(catch), info)
+            };
+            let (param, catch_body) = match &ctx.tree(catch).kind {
+                TreeKind::Catch { param, body } => {
+                    (param.expect("catch param"), body.expect("catch body"))
+                }
+                _ => panic!("ClassCastException: JCCatch expected"),
+            };
+            let ctype = self.attrib_stat(ctx, syms, param, &catch_env);
+            if crate::tree::tree_info::is_multi_catch(ctx, catch) {
+                // multi-catch parameter is implicitly marked as final
+                let sym = match &ctx.tree(param).kind {
+                    TreeKind::VariableDecl { sym: Some(sym), .. } => Some(*sym),
+                    _ => None,
+                };
+                if let Some(sym) = sym {
+                    ctx.sym_mut(sym).flags_field |=
+                        crate::code::flags::FINAL as i64 | crate::code::flags::UNION;
+                }
+            }
+            let param_sym = match &ctx.tree(param).kind {
+                TreeKind::VariableDecl { sym: Some(sym), .. } => Some(*sym),
+                _ => None,
+            };
+            if let Some(param_sym) = param_sym {
+                if let crate::code::symbol::SymbolKind::VarSymbol { data_kind, .. } =
+                    &mut ctx.sym_mut(param_sym).kind_data
+                {
+                    *data_kind = Some(crate::code::symbol::ElementKind::EXCEPTION_PARAMETER);
+                }
+                let vartype_pos = match &ctx.tree(param).kind {
+                    TreeKind::VariableDecl { vartype: Some(vartype), .. } => ctx.tree(*vartype).pos,
+                    _ => ctx.tree(param).pos,
+                };
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                let class_type = chk.check_class_type(ctx, vartype_pos, ctype);
+                chk.check_type(
+                    ctx,
+                    syms,
+                    vartype_pos,
+                    class_type,
+                    syms.throwable_type,
+                    &*self.basic_handler,
+                );
+            }
+            self.attrib_stat(ctx, syms, catch_body, &catch_env);
+            c = c.tail();
+        }
+        // Attribute finalizer.
+        if let Some(finalizer) = finalizer {
+            self.attrib_stat(ctx, syms, finalizer, &local_env);
+        }
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: void checkAutoCloseable(DiagnosticPosition pos, Env<AttrContext> env,
+    /// Type resource) (Attr.java:1966-1985).
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::collapsible_if)]
+    fn check_auto_closeable(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        pos: i32,
+        env: &Rc<Env<AttrContext>>,
+        resource: TypeId,
+    ) {
+        if ctx.typ(resource).has_tag(TypeTag::ERROR) {
+            return;
+        }
+        let auto_closeable_tsym = ctx
+            .typ(syms.auto_closeable_type)
+            .tsym
+            .expect("AutoCloseable type symbol");
+        if self.types.as_super(ctx, syms, resource, auto_closeable_tsym).is_none()
+            || self.types.is_same_type(ctx, syms, resource, syms.auto_closeable_type)
+        {
+            return;
+        }
+        // Java: resolve the close method with a discarding diagnostic handler.
+        self.log
+            .borrow_mut()
+            .install_diagnostic_handler(crate::util::log::DiagnosticHandler::Discard { prev: None });
+        // Java: types.skipTypeVars(resource, false)
+        let skipped = {
+            let mut current = resource;
+            while ctx.typ(current).has_tag(TypeTag::TYPEVAR) {
+                match ctx.typ(current).get_upper_bound() {
+                    Some(upper) => current = upper,
+                    None => break,
+                }
+            }
+            current
+        };
+        let close_sym = {
+            let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+            let mut rs = rs_rc.borrow_mut();
+            let types_rc = Rc::clone(&self.types);
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            let infer_rc = Rc::clone(&self.infer);
+            let name = ctx.sym(env.encl_class.and_then(|encl| class_tree_symbol(ctx, encl)).unwrap_or(syms.no_symbol)).name.clone();
+            let _ = name;
+            let close_name = self.names.close.clone();
+            rs.resolve_qualified_method(
+                ctx,
+                syms,
+                &types_rc,
+                self,
+                &chk,
+                &infer_rc,
+                simple_diag_pos(pos),
+                env,
+                syms.no_symbol,
+                skipped,
+                close_name,
+                List::nil(),
+                None,
+            )
+        };
+        self.log.borrow_mut().pop_diagnostic_handler();
+        if ctx.sym(close_sym).kind == crate::code::kinds::Kind::MTH {
+            let resource_tsym = ctx.typ(resource).tsym.expect("resource type symbol");
+            let overrides = crate::code::symbol::overrides(
+                ctx,
+                syms,
+                &self.types,
+                close_sym,
+                syms.auto_closeable_close,
+                resource_tsym,
+                true,
+            );
+            if overrides {
+                let close_type = self.types.member_type(ctx, syms, resource, close_sym);
+                let thrown = ctx.typ(close_type).get_thrown_types(ctx);
+                let handled = {
+                    let chk_rc = Rc::clone(&self.chk);
+                    let chk = chk_rc.borrow();
+                    chk.is_handled(ctx, syms, syms.interrupted_exception_type, &thrown)
+                };
+                let try_enabled = env
+                    .info
+                    .borrow()
+                    .lint
+                    .as_ref()
+                    .map(|lint| lint.is_enabled(crate::code::lint::LintCategory::TRY))
+                    .unwrap_or(false);
+                if handled && try_enabled {
+                    let warning = crate::resources::compiler_properties::warnings::try_resource_throws_interrupted_exc(
+                        Self::type_arg_placeholder(ctx, resource),
+                    );
+                    let warning = crate::util::jc_diagnostic::Warning::from(warning);
+                    crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                        &mut *self.log.borrow_mut(),
+                        Some(crate::code::lint::LintCategory::TRY),
+                        Some(Rc::new(
+                            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                        )),
+                        warning,
+                    );
+                }
+            }
+        }
     }
 }
 
