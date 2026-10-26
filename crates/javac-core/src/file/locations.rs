@@ -394,6 +394,11 @@ impl ModuleLocation {
     fn is_explicit(&self) -> bool {
         self.explicit.get()
     }
+
+    /// Java: boolean explicit (Locations.java:1855): set by setPathsForModule.
+    fn set_explicit(&self, value: bool) {
+        self.explicit.set(value);
+    }
 }
 
 impl Location for ModuleLocation {
@@ -1503,15 +1508,15 @@ impl Locations {
                 table.get(module_name)
             }
             HandlerKind::PatchModules(state) => state.module_table.get(module_name),
-            HandlerKind::ModulePath(_) => {
-                unimplemented!(
-                    "TODO(S3c): ModulePathLocationHandler module scan needs java.util.jar Manifest and the zip/jmod containers"
-                )
-            }
             HandlerKind::ModuleSourcePath(state) => match &state.module_table {
                 Some(table) => table.get(module_name),
                 None => None,
             },
+            HandlerKind::ModulePath(state) => {
+                // Java: initModuleLocations(); moduleTable.get(moduleName)
+                module_path_init_locations(fs_info, self.log.as_ref(), state, &parent);
+                state.module_table.as_ref().and_then(|table| table.get(module_name))
+            }
             HandlerKind::SystemModules(state) => {
                 ctx.init_system_modules(state)?;
                 state
@@ -1588,15 +1593,32 @@ impl Locations {
                 }
             }
             HandlerKind::PatchModules(state) => vec![state.module_table.locations()],
-            HandlerKind::ModulePath(_) => {
-                unimplemented!(
-                    "TODO(S3c): ModulePathLocationHandler module scan needs java.util.jar Manifest and the zip/jmod containers"
-                )
-            }
             HandlerKind::ModuleSourcePath(state) => match &state.module_table {
                 None => Vec::new(),
                 Some(table) => vec![table.locations()],
             },
+            HandlerKind::ModulePath(state) => {
+                // Java: explicitLocations + ModulePathIterator sets (Locations.java:1161-1177).
+                let mut paths: Vec<Vec<Rc<dyn Location>>> = Vec::new();
+                let explicit = state
+                    .module_table
+                    .as_ref()
+                    .map(|table| table.explicit_locations())
+                    .unwrap_or_default();
+                if !explicit.is_empty() {
+                    paths.push(explicit);
+                }
+                if state.search_path.is_some() {
+                    for set in module_path_scan_sets(fs_info, self.log.as_ref(), state, &parent) {
+                        paths.push(
+                            set.into_iter()
+                                .map(|location| location as Rc<dyn Location>)
+                                .collect(),
+                        );
+                    }
+                }
+                paths
+            }
             HandlerKind::SystemModules(state) => {
                 ctx.init_system_modules(state)?;
                 match &state.module_table {
@@ -1712,7 +1734,397 @@ impl<'a> LocationCtx<'a> {
     }
 }
 
+/// Java: ModulePathLocationHandler.initModuleLocations (Locations.java:1226-1242).
+fn module_path_init_locations(
+    fs_info: &CacheFSInfo,
+    log: StdOption<&Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    state: &mut ModulePathState,
+    parent: &JavaString,
+) {
+    if state.module_table.is_some() {
+        return;
+    }
+    let mut table = ModuleTable::new();
+    if let Some(search_path) = state.search_path.clone() {
+        for (index, path) in search_path.iter().enumerate() {
+            let set = module_path_scan_path(fs_info, log, path, index, parent);
+            for location in set {
+                if table.get(location.get_module_name()).is_none() {
+                    table.add(location);
+                }
+            }
+        }
+    }
+    state.module_table = Some(table);
+}
+
+/// Java: ModulePathIterator (Locations.java:1267-1502): one set per search path entry.
+fn module_path_scan_sets(
+    fs_info: &CacheFSInfo,
+    log: StdOption<&Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    state: &ModulePathState,
+    parent: &JavaString,
+) -> Vec<Vec<Rc<ModuleLocation>>> {
+    let mut result = Vec::new();
+    let Some(search_path) = state.search_path.as_ref() else {
+        return result;
+    };
+    for (index, path) in search_path.iter().enumerate() {
+        result.push(module_path_scan_path(fs_info, log, path, index, parent));
+    }
+    result
+}
+
+/// Java: ModulePathIterator.scanDirectory/scanFile dispatch (Locations.java:1303-1375).
+fn module_path_scan_path(
+    fs_info: &CacheFSInfo,
+    log: StdOption<&Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    path: &FsPath,
+    path_index: usize,
+    parent: &JavaString,
+) -> Vec<Rc<ModuleLocation>> {
+    if fs_info.is_directory(path) {
+        module_path_scan_directory(fs_info, log, path, path_index, parent)
+    } else {
+        match module_path_infer_module_name(fs_info, log, path) {
+            Some((module_name, module_paths)) => {
+                let name = format!("{parent}[{path_index}:{module_name}]");
+                let location = ModuleLocation::new(
+                    parent,
+                    JavaString::from(name.as_str()),
+                    &module_name,
+                    module_paths,
+                    false,
+                );
+                // Locations.java:1279: the scanned locations are not explicit.
+                location.set_explicit(false);
+                vec![location]
+            }
+            None => Vec::new(),
+        }
+    }
+}
+
+/// Java: ModulePathIterator.scanDirectory (Locations.java:1303-1359).
+fn module_path_scan_directory(
+    fs_info: &CacheFSInfo,
+    log: StdOption<&Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    path: &FsPath,
+    path_index: usize,
+    parent: &JavaString,
+) -> Vec<Rc<ModuleLocation>> {
+    let entries = match Files::list_directory(path) {
+        Ok(entries) => entries,
+        Err(_) => {
+            module_path_error(
+                log,
+                crate::resources::compiler_properties::errors::locn_cant_read_directory(
+                    crate::resources::diagnostic_contract::PathArg::placeholder(path.to_java_string()),
+                ),
+            );
+            return Vec::new();
+        }
+    };
+    let mut paths: Vec<FsPath> = Vec::new();
+    let mut module_info_class: StdOption<FsPath> = None;
+    for entry in entries {
+        let name = entry
+            .file_name()
+            .map(|name| name.to_java_string())
+            .unwrap_or_default();
+        if name.ends_with("module-info.class") {
+            module_info_class = Some(entry);
+            break;
+        }
+        paths.push(entry);
+    }
+    if let Some(module_info_class) = module_info_class {
+        // It's an exploded module directly on the module path.
+        match module_path_read_module_name_file(&module_info_class) {
+            Ok(module_name) => {
+                let name = format!("{parent}[{path_index}:{module_name}]");
+                let location = ModuleLocation::new(
+                    parent,
+                    JavaString::from(name.as_str()),
+                    &module_name,
+                    vec![path.clone()],
+                    false,
+                );
+                // Locations.java:1279: the scanned locations are not explicit.
+                location.set_explicit(false);
+                return vec![location];
+            }
+            Err(error) => {
+                module_path_error(
+                    log,
+                    module_name_reader_error_info(&error, path.to_java_string()),
+                );
+                return Vec::new();
+            }
+        }
+    }
+    // A directory of modules.
+    let mut result: Vec<Rc<ModuleLocation>> = Vec::new();
+    for (index, entry) in paths.iter().enumerate() {
+        let Some((module_name, module_paths)) = module_path_infer_module_name(fs_info, log, entry)
+        else {
+            continue;
+        };
+        let name = format!("{parent}[{path_index}.{index}:{module_name}]");
+        let location = ModuleLocation::new(
+            parent,
+            JavaString::from(name.as_str()),
+            &module_name,
+            module_paths,
+            false,
+        );
+        // Locations.java:1279: the scanned locations are not explicit.
+        location.set_explicit(false);
+        result.push(location);
+    }
+    result
+}
+
+/// Java: ModulePathIterator.inferModuleName (Locations.java:1377-1496).
+fn module_path_infer_module_name(
+    fs_info: &CacheFSInfo,
+    log: StdOption<&Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    p: &FsPath,
+) -> StdOption<(String, Vec<FsPath>)> {
+    if fs_info.is_directory(p) {
+        let module_info_class = FsPath::from_path_buf(p.as_path().join("module-info.class"));
+        let module_info_sig = FsPath::from_path_buf(p.as_path().join("module-info.sig"));
+        if fs_info.exists(&module_info_class) || fs_info.exists(&module_info_sig) {
+            let name = p
+                .file_name()
+                .map(|name| name.to_java_string())
+                .unwrap_or_default();
+            if is_module_name(&name) {
+                return Some((name, vec![p.clone()]));
+            }
+        }
+        return None;
+    }
+    let file_name = p
+        .file_name()
+        .map(|name| name.to_java_string())
+        .unwrap_or_default();
+    if file_name.ends_with(".jar") && fs_info.exists(p) {
+        let archive = match javac_zip::ZipArchive::open(&p.to_path_buf()) {
+            Ok(archive) => archive,
+            Err(_) => {
+                module_path_error(
+                    log,
+                    crate::resources::compiler_properties::errors::locn_cant_read_file(
+                        crate::resources::diagnostic_contract::PathArg::placeholder(
+                            p.to_java_string(),
+                        ),
+                    ),
+                );
+                return None;
+            }
+        };
+        if let Some(bytes) = archive.get_entry("module-info.class") {
+            match module_path_read_module_name_bytes(&bytes) {
+                Ok(module_name) => {
+                    if is_module_name(&module_name) {
+                        return Some((module_name, vec![p.clone()]));
+                    }
+                    module_path_error(
+                        log,
+                        crate::resources::compiler_properties::errors::locn_bad_module_info(
+                            crate::resources::diagnostic_contract::PathArg::placeholder(
+                                p.to_java_string(),
+                            ),
+                        ),
+                    );
+                    return None;
+                }
+                Err(error) => {
+                    module_path_error(
+                        log,
+                        module_name_reader_error_info(&error, p.to_java_string()),
+                    );
+                    return None;
+                }
+            }
+        }
+        if let Some(bytes) = archive.get_entry("META-INF/MANIFEST.MF") {
+            if let Ok(attributes) = crate::file::fs_info::parse_manifest_main_attributes(&bytes) {
+                if let Some(module_name) = attributes.get("automatic-module-name") {
+                    if is_module_name(module_name) {
+                        return Some((module_name.clone(), vec![p.clone()]));
+                    }
+                    module_path_error(
+                        log,
+                        crate::resources::compiler_properties::errors::locn_cant_get_module_name_for_jar(
+                            crate::resources::diagnostic_contract::PathArg::placeholder(
+                                p.to_java_string(),
+                            ),
+                        ),
+                    );
+                    return None;
+                }
+            }
+        }
+        // automatic module
+        let module_name = automatic_module_name(&file_name);
+        if !module_name.is_empty() {
+            return Some((module_name, vec![p.clone()]));
+        }
+        module_path_error(
+            log,
+            crate::resources::compiler_properties::errors::locn_cant_get_module_name_for_jar(
+                crate::resources::diagnostic_contract::PathArg::placeholder(p.to_java_string()),
+            ),
+        );
+        return None;
+    }
+    if file_name.ends_with(".jmod") {
+        let archive = match javac_zip::ZipArchive::open(&p.to_path_buf()) {
+            Ok(archive) => archive,
+            Err(_) => {
+                module_path_error(
+                    log,
+                    crate::resources::compiler_properties::errors::locn_cant_read_file(
+                        crate::resources::diagnostic_contract::PathArg::placeholder(
+                            p.to_java_string(),
+                        ),
+                    ),
+                );
+                return None;
+            }
+        };
+        let Some(bytes) = archive.get_entry("classes/module-info.class") else {
+            return None;
+        };
+        match module_path_read_module_name_bytes(&bytes) {
+            Ok(module_name) => {
+                if is_module_name(&module_name) {
+                    // PORTING_RULES: the upstream returns the jmod file system
+                    // "classes" path; the ported file layer has no jmod
+                    // FileSystem, so the module path is the jmod file itself
+                    // (registered adapter; the container layer resolves entries).
+                    return Some((module_name, vec![p.clone()]));
+                }
+                None
+            }
+            Err(error) => {
+                module_path_error(
+                    log,
+                    module_name_reader_error_info(&error, p.to_java_string()),
+                );
+                None
+            }
+        }
+    } else {
+        None
+    }
+}
+
+/// Java: ModulePathIterator.readModuleName(Path) (Locations.java:1498-1502).
+fn module_path_read_module_name_file(
+    path: &FsPath,
+) -> Result<String, crate::jvm::module_name_reader::Error> {
+    let mut reader = crate::jvm::module_name_reader::ModuleNameReader::new();
+    let path = path.to_path_buf();
+    reader
+        .read_module_name(&path)
+        .map(|name| name.to_string_lossy())
+}
+
+/// Java: ModuleNameReader.readModuleName(InputStream) over the zip entry bytes.
+fn module_path_read_module_name_bytes(
+    bytes: &[u8],
+) -> Result<String, crate::jvm::module_name_reader::Error> {
+    let mut reader = crate::jvm::module_name_reader::ModuleNameReader::new();
+    let mut cursor = std::io::Cursor::new(bytes);
+    reader
+        .read_module_name_from_reader(&mut cursor)
+        .map(|name| name.to_string_lossy())
+}
+
+fn module_path_error(
+    log: StdOption<&Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    info: crate::resources::diagnostic_contract::ErrorInfo,
+) {
+    if let Some(log) = log {
+        use crate::util::abstract_log::AbstractLog;
+        log.borrow_mut()
+            .error_pos(None, crate::util::jc_diagnostic::Error::from(info));
+    }
+}
+
+/// Java: the ModuleNameReader error reporting of ModulePathIterator.
+fn module_name_reader_error_info(
+    error: &crate::jvm::module_name_reader::Error,
+    path: String,
+) -> crate::resources::diagnostic_contract::ErrorInfo {
+    let path_arg = || {
+        crate::resources::diagnostic_contract::PathArg::placeholder(path.clone())
+    };
+    match error {
+        crate::jvm::module_name_reader::Error::BadClassFile(_) => {
+            crate::resources::compiler_properties::errors::locn_bad_module_info(path_arg())
+        }
+        _ => crate::resources::compiler_properties::errors::locn_cant_read_file(path_arg()),
+    }
+}
+
+/// Java: ModulePathLocationHandler.isModuleName(String) (Locations.java:1509-1520).
+fn is_module_name(name: &str) -> bool {
+    use javac_tools::lang::model::source_version::SourceVersion;
+    for id in name.split('.') {
+        if !SourceVersion::is_name(&javac_strings::JavaString::from(id)) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Java: ModulePath.deriveModuleDescriptor automatic module name
+/// (Locations.java:1426-1450).
+fn automatic_module_name(file_name: &str) -> String {
+    let mut mn = &file_name[..file_name.len() - 4];
+    let bytes = mn.as_bytes();
+    let mut found: StdOption<usize> = None;
+    let mut index = 0usize;
+    while index + 1 < bytes.len() {
+        if bytes[index] == b'-' && bytes[index + 1].is_ascii_digit() {
+            let mut end = index + 1;
+            while end < bytes.len() && bytes[end].is_ascii_digit() {
+                end += 1;
+            }
+            if end == bytes.len() || bytes[end] == b'.' {
+                found = Some(index);
+                break;
+            }
+        }
+        index += 1;
+    }
+    if let Some(start) = found {
+        mn = &mn[..start];
+    }
+    let mut result = String::new();
+    let mut last_dot = false;
+    for ch in mn.chars() {
+        if ch.is_ascii_alphanumeric() {
+            result.push(ch);
+            last_dot = false;
+        } else if !result.is_empty() && !last_dot {
+            result.push('.');
+            last_dot = true;
+        }
+    }
+    while result.ends_with('.') {
+        result.pop();
+    }
+    result
+}
+
 #[cfg(test)]
+
+
 mod tests {
     use super::{LocationCtx, Locations};
     use crate::file::cache_fs_info::CacheFSInfo;
@@ -1946,6 +2358,46 @@ mod tests {
         let entries = ctx.get_path_entries(&format!("a{separator}{separator}b"), Some(&default));
         assert_eq!(entries.len(), 3);
     }
+
+    fn module_info_bytes(module: &str) -> Option<Vec<u8>> {
+        let home = java_home().to_path_buf();
+        let class_path = javac_classpath::ClassPath::system(&home).ok()?;
+        class_path.read_class_in_module(module, "module-info")
+    }
+
+    #[test]
+    fn module_path_scan_reads_an_exploded_module() {
+        let Some(bytes) = module_info_bytes("java.base") else {
+            eprintln!("skipping: no baseline JDK 17 installation found");
+            return;
+        };
+        let parent = temp_dir("mpscan");
+        let module_dir = parent.join("java.base");
+        std::fs::create_dir_all(&module_dir).expect("module dir");
+        std::fs::write(module_dir.join("module-info.class"), &bytes).expect("write module-info");
+        let mut locations = new_locations();
+        assert!(locations.handle_option(
+            crate::main::option::Option::MODULE_PATH,
+            Some(parent.to_str().expect("utf8"))
+        ));
+        let location = locations
+            .get_location_for_module(&StandardLocation::MODULE_PATH, "java.base")
+            .expect("module path")
+            .expect("java.base location");
+        assert_eq!(
+            location.get_name().to_string_lossy(),
+            "MODULE_PATH[0.0:java.base]"
+        );
+        let sets = locations
+            .list_locations_for_modules(&StandardLocation::MODULE_PATH)
+            .expect("module path sets");
+        assert_eq!(sets.len(), 1);
+        assert!(sets[0]
+            .iter()
+            .any(|location| location.get_name().to_string_lossy() == "MODULE_PATH[0.0:java.base]"));
+        std::fs::remove_dir_all(&parent).expect("cleanup");
+    }
+
 }
 
 #[cfg(test)]
@@ -1974,5 +2426,6 @@ mod module_source_path_pattern_tests {
             vec!["xaby".to_string(), "xacy".to_string(), "xdy".to_string()]
         );
     }
+
 }
 

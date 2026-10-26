@@ -242,7 +242,6 @@ impl ResultInfo {
         result.check_non_void = self.check_non_void;
         result
     }
-
     /// Java: protected ResultInfo dup(CheckContext newContext)
     pub fn dup_context(&self, new_context: Rc<dyn crate::comp::check::CheckContext>) -> ResultInfo {
         if matches!(self.kind, ResultInfoKind::MethodAttr) {
@@ -1893,9 +1892,31 @@ impl Attr {
             // Fragments.CanonicalCantHaveReturnStatement));
             // Registered with the Records (Fragments.Compact/Canonical
             // fragment helpers need the argument plumbing).
-            unimplemented!(
-                "TODO(Records batch): Attr.visitReturn invalid canonical constructor (Attr.java:2425-2428)"
-            )
+            // Java: log.error(env.enclMethod,
+            //     Errors.InvalidCanonicalConstructorInRecord(Fragments.Compact,
+            //     env.enclMethod.sym.name, Fragments.CanonicalCantHaveReturnStatement));
+            let encl_method = env.encl_method.expect("enclosing method");
+            let method_symbol = crate::tree::tree_info::symbol(ctx, encl_method)
+                .expect("enclosing method symbol");
+            let compact = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::compact(),
+            ));
+            let cant_return = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::canonical_cant_have_return_statement(),
+            ));
+            let info = crate::resources::compiler_properties::errors::invalid_canonical_constructor_in_record(
+                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+                    compact,
+                )),
+                ctx.sym(method_symbol).name.clone(),
+                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+                    cant_return,
+                )),
+            );
+            self.log.borrow_mut().error_at(
+                ctx.tree(encl_method).pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
         } else {
             let result_info = return_result.expect("returnResult");
             if let Some(expr) = expr {
@@ -11344,6 +11365,109 @@ impl Attr {
     ///   - the annotate service must be installed.
     ///
     /// Upstream: Attr.java:5191-5200.
+    /// Java: public void attribPackage(DiagnosticPosition pos, PackageSymbol p)
+    /// (Attr.java:5156-5163).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - p: the package symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the annotate service and the package type environment must be installed.
+    ///
+    /// Upstream: Attr.java:5156-5163.
+    pub fn attrib_package_with_pos(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        pos: i32,
+        p: SymbolId,
+    ) {
+        let annotate_rc = self
+            .annotate
+            .borrow()
+            .clone()
+            .expect("AssertionError: annotate service must be installed");
+        if let Err(failure) = annotate_rc.flush(ctx) {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.completion_error(ctx, pos, &failure, syms);
+            return;
+        }
+        self.attrib_package(ctx, syms, p);
+    }
+
+    /// Java: void attribPackage(PackageSymbol p) (Attr.java:5165-5168).
+    fn attrib_package(&mut self, ctx: &mut CompilerContext, syms: &mut Symtab, p: SymbolId) {
+        let env = self
+            .type_envs
+            .borrow()
+            .get(p)
+            .expect("type environment for package");
+        let tree = env.tree.expect("package tree");
+        let pid_pos = match &ctx.tree(tree).kind {
+            TreeKind::PackageDecl { pid, .. } => pid
+                .map(|pid| ctx.tree(pid).pos)
+                .unwrap_or_else(|| ctx.tree(tree).pos),
+            _ => panic!("ClassCastException: JCPackageDecl expected"),
+        };
+        let chk_rc = Rc::clone(&self.chk);
+        let chk = chk_rc.borrow();
+        chk.check_deprecated_annotation(ctx, syms, pid_pos, p);
+    }
+
+    /// Java: public void attribModule(DiagnosticPosition pos, ModuleSymbol m)
+    /// (Attr.java:5170-5177).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - m: the module symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the annotate service and the module type environment must be installed.
+    ///
+    /// Upstream: Attr.java:5170-5177.
+    pub fn attrib_module_with_pos(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        pos: i32,
+        m: SymbolId,
+    ) {
+        let annotate_rc = self
+            .annotate
+            .borrow()
+            .clone()
+            .expect("AssertionError: annotate service must be installed");
+        if let Err(failure) = annotate_rc.flush(ctx) {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.completion_error(ctx, pos, &failure, syms);
+            return;
+        }
+        self.attrib_module(ctx, syms, m);
+    }
+
+    /// Java: void attribModule(ModuleSymbol m) (Attr.java:5179-5183).
+    fn attrib_module(&mut self, ctx: &mut CompilerContext, syms: &mut Symtab, m: SymbolId) {
+        let env = self
+            .type_envs
+            .borrow()
+            .get(m)
+            .expect("type environment for module");
+        let tree = env.tree.expect("module tree");
+        self.attrib_stat(ctx, syms, tree, &env);
+    }
+
+
     pub fn attrib_class_with_pos(
         &mut self,
         ctx: &mut CompilerContext,
@@ -11387,10 +11511,22 @@ impl Attr {
         let tree = env.tree.expect("env tree");
         match ctx.tree(tree).tag {
             Tag::MODULEDEF => {
-                unimplemented!("TODO(Modules batch): Attr.attribModule (Attr.java:5144-5146)")
+                // Java: attribModule(env.tree.pos(), ((JCModuleDecl) env.tree).sym)
+                let pos = ctx.tree(tree).pos;
+                let m = match &ctx.tree(tree).kind {
+                    TreeKind::ModuleDecl { sym: Some(sym), .. } => *sym,
+                    _ => panic!("ClassCastException: JCModuleDecl expected"),
+                };
+                self.attrib_module_with_pos(ctx, syms, pos, m);
             }
             Tag::PACKAGEDEF => {
-                unimplemented!("TODO(Modules batch): Attr.attribPackage (Attr.java:5147-5149)")
+                // Java: attribPackage(env.tree.pos(), ((JCPackageDecl) env.tree).packge)
+                let pos = ctx.tree(tree).pos;
+                let p = match &ctx.tree(tree).kind {
+                    TreeKind::PackageDecl { packge: Some(packge), .. } => *packge,
+                    _ => panic!("ClassCastException: JCPackageDecl expected"),
+                };
+                self.attrib_package_with_pos(ctx, syms, pos, p);
             }
             _ => {
                 let pos = ctx.tree(tree).pos;

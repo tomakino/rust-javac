@@ -178,7 +178,7 @@ fn io_error(message: String) -> javac_fs::Error {
 ///   space removed and the text appended without a separator
 ///   ("Class-Path: a.jar" + " b.jar" -> "a.jarb.jar");
 /// - header names are case-insensitive.
-fn parse_manifest_main_attributes(bytes: &[u8]) -> Result<HashMap<String, String>, javac_fs::Error> {
+pub(crate) fn parse_manifest_main_attributes(bytes: &[u8]) -> Result<HashMap<String, String>, javac_fs::Error> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| io_error(format!("invalid manifest UTF-8: {error}")))?;
     let mut attributes: HashMap<String, String> = HashMap::new();

@@ -1288,13 +1288,81 @@ impl ArgumentAttr {
                 Ok(current_target)
             }
             ArgumentKind::ResolvedMethod | ArgumentKind::ResolvedConstructor => {
-                // Java: ResolvedMemberType.overloadCheck (ArgumentAttr.java:660-680)
-                // Requires Infer.PartiallyInferredMethodType.check and the
-                // partial method type pipeline (Infer); registered as
-                // unimplemented per Completeness rules.
-                unimplemented!(
-                    "TODO(Infer batch): ArgumentAttr.ResolvedMemberType.overloadCheck needs Infer.PartiallyInferredMethodType.check (Infer.java:1063-1120) and the partial method type constraints",
-                )
+                // Java: ResolvedMemberType.overloadCheck (ArgumentAttr.java:635-649)
+                let mtype = match kind {
+                    ArgumentKind::ResolvedMethod => match &ctx.tree(speculative_tree).kind {
+                        crate::tree::jc_tree::TreeKind::MethodInvocation { meth, .. } => {
+                            meth.and_then(|meth| ctx.tree(meth).ty)
+                        }
+                        _ => panic!("ClassCastException: JCMethodInvocation expected"),
+                    },
+                    _ => match &ctx.tree(speculative_tree).kind {
+                        crate::tree::jc_tree::TreeKind::NewClass {
+                            constructor_type, ..
+                        } => *constructor_type,
+                        _ => panic!("ClassCastException: JCNewClass expected"),
+                    },
+                };
+                let local_info = match kind {
+                    ArgumentKind::ResolvedMethod => result_info.clone(),
+                    _ => {
+                        let clazz = match &ctx.tree(speculative_tree).kind {
+                            crate::tree::jc_tree::TreeKind::NewClass { clazz, .. } => {
+                                clazz.expect("new class clazz")
+                            }
+                            _ => panic!("ClassCastException: JCNewClass expected"),
+                        };
+                        let clazz_type = ctx.tree(clazz).ty.expect("new class clazz type");
+                        let tsym = ctx.typ(clazz_type).tsym.expect("clazz type symbol");
+                        result_info
+                            .dup_context(attr.diamond_context(clazz, tsym))
+                    }
+                };
+                let t = match mtype {
+                    Some(mtype)
+                        if {
+                            let tag = ctx.typ(mtype).get_tag();
+                            tag == crate::code::type_tag::TypeTag::METHOD
+                                || tag == crate::code::type_tag::TypeTag::FORALL
+                        } && ctx.typ(mtype).is_partial() =>
+                    {
+                        // Java: ((PartiallyInferredMethodType) mtype).check(localInfo)
+                        let chk_rc = Rc::clone(&attr.chk);
+                        let chk = chk_rc.borrow();
+                        match attr.infer.partially_inferred_method_type_check(
+                            ctx,
+                            syms,
+                            &types_rc,
+                            &chk,
+                            mtype,
+                            &local_info,
+                        ) {
+                            Ok(t) => t,
+                            Err(exception) => {
+                                crate::comp::resolve::throw_inference_exception(exception)
+                            }
+                        }
+                    }
+                    _ => {
+                        // Java: localInfo.check(tree.pos(), speculativeTree.type)
+                        let chk_rc = Rc::clone(&attr.chk);
+                        let chk = chk_rc.borrow();
+                        let speculative_type = ctx
+                            .tree(speculative_tree)
+                            .ty
+                            .unwrap_or_else(|| no_type_of(ctx));
+                        local_info.check(
+                            ctx,
+                            syms,
+                            &chk,
+                            ctx.tree(speculative_tree).pos,
+                            speculative_type,
+                        )
+                    }
+                };
+                let local_info = Rc::new(local_info);
+                data.borrow_mut().speculative_types.push((local_info, t));
+                Ok(t)
             }
         }
     }
