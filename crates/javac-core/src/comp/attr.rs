@@ -712,7 +712,7 @@ impl Attr {
             Tag::SWITCH => self.visit_switch(ctx, syms, tree),
             Tag::SWITCH_EXPRESSION => self.visit_switch_expression(ctx, syms, tree),
             Tag::LAMBDA => self.visit_lambda(ctx, syms, tree),
-            Tag::REFERENCE => unimplemented!("TODO(Check/Symbol): Attr.visitReference (member reference resolution and the Check override family are not ported)"),
+            Tag::REFERENCE => self.visit_reference(ctx, syms, tree),
             Tag::BLOCK => self.visit_block(ctx, syms, tree),
             Tag::DOLOOP => self.visit_do_loop(ctx, syms, tree),
             Tag::WHILELOOP => self.visit_while_loop(ctx, syms, tree),
@@ -950,14 +950,17 @@ impl Attr {
         env: &Rc<Env<AttrContext>>,
     ) -> List<TypeId> {
         let mut result: List<TypeId> = List::nil();
-        let mut current = trees;
+        let mut current = trees.clone();
         while current.non_empty() {
             let tree = *current.head();
             let ty = self.attrib_type_use(ctx, syms, tree, env);
             result = result.append(ty);
             current = current.tail();
         }
-        result
+        // Java: return chk.checkRefTypes(trees, types); (Attr.java:800-810)
+        let chk_rc = Rc::clone(&self.chk);
+        let chk = chk_rc.borrow();
+        chk.check_ref_types(ctx, syms, trees, result)
     }
 
     /// Java: public void visitWildcard(JCWildcard tree) (5099-5109)
@@ -9457,6 +9460,614 @@ impl Attr {
         }
         Ok(self.result.unwrap_or(result))
     }
+}
+
+/// Java: the FreeTypeListener registered by checkReferenceCompatible to
+/// install the instantiated referent type (Attr.java:3800-3810).
+pub struct ReferentTypeListener {
+    pub tree: TreeId,
+    pub referent: TypeId,
+}
+
+impl crate::comp::infer::FreeTypeListener for ReferentTypeListener {
+    /// Java: the listener lambda setting tree.referentType.
+    fn types_inferred(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        inference_context: &crate::comp::infer::InferenceContext,
+    ) -> Result<(), crate::comp::infer::InferenceException> {
+        let referent = inference_context.as_inst_type(ctx, syms, types, self.referent);
+        if let TreeKind::MemberReference { referent_type, .. } = &mut ctx.tree_mut(self.tree).kind {
+            *referent_type = Some(referent);
+        }
+        Ok(())
+    }
+}
+
+impl Attr {
+    /// Java: void checkReferenceCompatible(JCMemberReference tree, Type
+    /// descriptor, Type refType, CheckContext checkContext, boolean speculativeAttr)
+    /// (Attr.java:3780-3815).
+    #[allow(clippy::too_many_arguments)]
+    fn check_reference_compatible(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        descriptor: TypeId,
+        ref_type: TypeId,
+        check_context: &Rc<dyn crate::comp::check::CheckContext>,
+        speculative_attr: bool,
+    ) {
+        let inference_context = Rc::clone(check_context.inference_context());
+        let return_type = inference_context.as_undet_var(
+            ctx,
+            syms,
+            &self.types,
+            self.types.get_return_type_public(ctx, descriptor),
+        );
+        let mode = match &ctx.tree(tree).kind {
+            TreeKind::MemberReference { mode, .. } => *mode,
+            _ => panic!("ClassCastException: JCMemberReference expected"),
+        };
+        let res_type = if mode == crate::tree::jc_tree::ReferenceMode::NEW {
+            let expr = match &ctx.tree(tree).kind {
+                TreeKind::MemberReference { expr: Some(expr), .. } => *expr,
+                _ => panic!("AssertionError: member reference without qualifier"),
+            };
+            let expr_type = ctx.tree(expr).ty.unwrap_or_else(|| self.no_type(ctx));
+            if !self.types.is_raw_type_public(ctx, expr_type) {
+                expr_type
+            } else {
+                self.types.get_return_type_public(ctx, ref_type)
+            }
+        } else {
+            self.types.get_return_type_public(ctx, ref_type)
+        };
+        let mut incompatible_return_type: Option<TypeId> = Some(res_type);
+        if ctx.typ(return_type).has_tag(TypeTag::VOID) {
+            incompatible_return_type = None;
+        }
+        if !ctx.typ(return_type).has_tag(TypeTag::VOID)
+            && !ctx.typ(res_type).has_tag(TypeTag::VOID)
+        {
+            let func_context = FunctionalReturnContext {
+                enclosing: Rc::clone(check_context),
+                basic_handler: Rc::clone(&self.basic_handler),
+                diags: Rc::clone(&self.diags),
+            };
+            let mut warn = check_context.check_warner(
+                ctx,
+                syms,
+                &self.types,
+                ctx.tree(tree).pos,
+                res_type,
+                return_type,
+            );
+            if ctx.typ(res_type).has_tag(TypeTag::ERROR)
+                || crate::comp::check::CheckContext::compatible(
+                    &func_context,
+                    ctx,
+                    syms,
+                    &self.types,
+                    res_type,
+                    return_type,
+                    &mut warn,
+                )
+            {
+                incompatible_return_type = None;
+            }
+        }
+        if let Some(incompatible_return_type) = incompatible_return_type {
+            let details = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::inconvertible_types(
+                    Self::type_arg_placeholder(ctx, incompatible_return_type),
+                    Self::type_arg_placeholder(
+                        ctx,
+                        self.types.get_return_type_public(ctx, descriptor),
+                    ),
+                ),
+            ));
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::incompatible_ret_type_in_mref(
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                        Rc::new(details),
+                    ),
+                ),
+            ));
+            check_context.report(ctx, ctx.tree(tree).pos, &fragment);
+        } else {
+            if inference_context.free(ctx, syms, &self.types, ref_type) {
+                let listener = Rc::new(ReferentTypeListener {
+                    tree,
+                    referent: ref_type,
+                });
+                inference_context.add_free_type_listener(
+                    ctx,
+                    syms,
+                    &self.types,
+                    List::of(ref_type),
+                    listener,
+                );
+            } else {
+                if let TreeKind::MemberReference { referent_type, .. } = &mut ctx.tree_mut(tree).kind {
+                    *referent_type = Some(ref_type);
+                }
+            }
+        }
+        if !speculative_attr {
+            let ref_thrown = ctx.typ(ref_type).get_thrown_types(ctx);
+            let desc_thrown = ctx.typ(descriptor).get_thrown_types(ctx);
+            if !self.check_ex_constraints(ctx, syms, ref_thrown.clone(), desc_thrown, &inference_context) {
+                let mut args: Vec<crate::resources::diagnostic_contract::TypeArg> = Vec::new();
+                let mut current = ref_thrown;
+                while current.non_empty() {
+                    args.push(Self::type_arg_placeholder(ctx, *current.head()));
+                    current = current.tail();
+                }
+                let info = crate::resources::compiler_properties::errors::incompatible_thrown_types_in_mref(args);
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    ctx.tree(tree).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+        }
+    }
+}
+
+impl Attr {
+    /// Java: public void visitReference(final JCMemberReference that)
+    /// (Attr.java:3541-3760).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - that: the member reference.
+    ///
+    /// # Returns
+    ///   - the attributed target type.
+    ///
+    /// # Panics
+    ///   - the registered service dependencies must be installed.
+    ///
+    /// Upstream: Attr.java:3541-3760.
+    #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::too_many_arguments)]
+    fn visit_reference(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        that: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let pt = result_info.pt.unwrap_or_else(|| self.no_type(ctx));
+        let recovery_type = syms.recovery_type;
+        let pt_is_erroneous = ctx.typ(pt).has_tag(TypeTag::ERROR);
+        let pt_is_none = ctx.typ(pt).has_tag(TypeTag::NONE);
+        if pt_is_erroneous || (pt_is_none && pt != recovery_type) {
+            let encl_var_erroneous = {
+                let info = env.info.borrow();
+                match info.encl_var {
+                    None => true,
+                    Some(encl_var) => ctx
+                        .sym(encl_var)
+                        .ty
+                        .map(|ty| !ctx.typ(ty).has_tag(TypeTag::ERROR))
+                        .unwrap_or(true),
+                }
+            };
+            if pt_is_none && encl_var_erroneous {
+                // method reference only allowed in assignment or method invocation/cast context
+                self.attr_error(
+                    ctx.tree(that).pos,
+                    crate::resources::compiler_properties::errors::unexpected_mref(),
+                );
+            }
+            let error = self.types.create_error_type_original(ctx, Some(pt), syms);
+            ctx.tree_mut(that).ty = Some(error);
+            self.result = Some(error);
+            return Ok(error);
+        }
+        let (expr, name, typeargs_opt, mode) = match &ctx.tree(that).kind {
+            TreeKind::MemberReference { expr: Some(expr), name, typeargs, mode, .. } => {
+                (*expr, name.clone(), typeargs.clone(), *mode)
+            }
+            _ => panic!("ClassCastException: JCMemberReference expected"),
+        };
+        let typeargs = typeargs_opt.unwrap_or_else(List::nil);
+        let local_env = env.dup_shared(Some(that));
+        // attribute the member reference qualifier - if this is a constructor
+        // reference, the expected kind must be a type
+        let qualifier_info = self.member_reference_qualifier_result(ctx, &env, that);
+        let mut expr_type = self.attrib_tree_use(ctx, syms, expr, &env, qualifier_info);
+        if mode == crate::tree::jc_tree::ReferenceMode::NEW {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            expr_type = chk.check_constructor_ref_type(ctx, syms, ctx.tree(expr).pos, expr_type);
+            drop(chk);
+            if !ctx.typ(expr_type).has_tag(TypeTag::ERROR)
+                && self.types.is_raw_type_public(ctx, expr_type)
+                && !typeargs.is_empty()
+            {
+                self.attr_error(
+                    ctx.tree(expr).pos,
+                    crate::resources::compiler_properties::errors::invalid_mref(
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                            crate::code::kinds::kind_name(
+                                ctx.sym(ctx.typ(expr_type).tsym.expect("expr type symbol")),
+                                ctx,
+                            )
+                            .to_string(),
+                        ),
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                            Rc::new(self.diags.fragment(
+                                crate::util::jc_diagnostic::Fragment::from(
+                                    crate::resources::compiler_properties::fragments::mref_infer_and_explicit_params(),
+                                ),
+                            )),
+                        ),
+                    ),
+                );
+                expr_type = self.types.create_error_type_original(ctx, Some(expr_type), syms);
+            }
+        }
+        if ctx.typ(expr_type).has_tag(TypeTag::ERROR) {
+            ctx.tree_mut(that).ty = Some(expr_type);
+            self.result = Some(expr_type);
+            return Ok(expr_type);
+        }
+        let is_static_selector = crate::tree::tree_info::is_static_selector(ctx, Some(expr), &self.names);
+        if is_static_selector {
+            // Java: chk.validate(that.expr, env, false);
+            // TODO(Check): chk.validate/Validator is not ported (Check.java:1397-1525);
+            // registered.
+        } else {
+            let lhs_sym = crate::tree::tree_info::symbol(ctx, expr);
+            local_env.info.borrow_mut().select_super = lhs_sym
+                .map(|lhs_sym| ctx.sym(lhs_sym).name == self.names._super)
+                .unwrap_or(false);
+        }
+        let typeargtypes: List<TypeId> = if typeargs.is_empty() {
+            List::nil()
+        } else {
+            self.attrib_types(ctx, syms, typeargs.clone(), &local_env)
+        };
+        let is_target_serializable = result_info
+            .check_context
+            .deferred_attr_context()
+            .mode
+            == crate::comp::deferred_attr::AttrMode::CHECK
+            && self.is_serializable(ctx, syms, pt);
+        let target_info = match self.get_target_info(ctx, syms, that, &result_info, None) {
+            Ok(info) => info,
+            Err(ex) => {
+                if let Some(diag) = ex.get_diagnostic() {
+                    result_info.check_context.report(ctx, ctx.tree(that).pos, diag);
+                }
+                let error = self.types.create_error_type_original(ctx, Some(pt), syms);
+                return Ok(error);
+            }
+        };
+        let current_target = target_info.target;
+        let desc = target_info.descriptor;
+        self.set_functional_info(
+            ctx,
+            syms,
+            &local_env,
+            that,
+            pt,
+            desc,
+            current_target,
+            &result_info.check_context,
+        );
+        let argtypes = self.types.get_parameter_types_public(ctx, desc);
+        let inference_context = Rc::clone(result_info.check_context.inference_context());
+        let rs_rc = self
+            .rs
+            .borrow()
+            .clone()
+            .expect("AssertionError: rs service must be installed");
+        let method_check: Rc<RefCell<dyn crate::comp::resolve::MethodCheck>> = {
+            let rs = rs_rc.borrow();
+            if inference_context.free_list(ctx, syms, &self.types, argtypes.clone()) {
+                Rc::new(RefCell::new(crate::comp::resolve::MethodReferenceCheck {
+                    pending_inference_context: Rc::clone(result_info.check_context.inference_context()),
+                    diags: Rc::clone(&self.diags),
+                }))
+            } else {
+                Rc::clone(&rs.default_method_check)
+            }
+        };
+        let saved_undet = inference_context.save(ctx, syms, &self.types);
+        let (ref_sym, helper) = {
+            let mut rs = rs_rc.borrow_mut();
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            let infer_rc = Rc::clone(&self.infer);
+            let types_rc = Rc::clone(&self.types);
+            rs.resolve_member_reference(
+                ctx,
+                syms,
+                &types_rc,
+                self,
+                &chk,
+                &infer_rc,
+                &local_env,
+                ctx.tree(that).pos,
+                that,
+                expr_type,
+                name.clone(),
+                argtypes.clone(),
+                Some(typeargtypes.clone()),
+                desc,
+                method_check,
+                &inference_context,
+                crate::comp::resolve::ReferenceChooserKind::Basic,
+            )
+        };
+        inference_context.rollback(ctx, syms, &self.types, saved_undet);
+        if ctx.sym(ref_sym).kind != crate::code::kinds::Kind::MTH {
+            let target_error = match ctx.sym(ref_sym).kind {
+                crate::code::kinds::Kind::ABSENT_MTH | crate::code::kinds::Kind::MISSING_ENCL => false,
+                crate::code::kinds::Kind::WRONG_MTH
+                | crate::code::kinds::Kind::WRONG_MTHS
+                | crate::code::kinds::Kind::AMBIGUOUS
+                | crate::code::kinds::Kind::HIDDEN
+                | crate::code::kinds::Kind::STATICERR => true,
+                _ => panic!("AssertionError: unexpected result kind"),
+            };
+            let details = {
+                let mut rs = rs_rc.borrow_mut();
+                rs_error_diagnostic(&mut rs, ctx, syms, ref_sym, ctx.tree(that).pos, Some(expr_type), &name, &argtypes, &typeargtypes)
+            };
+            if let Some(details) = details {
+                let kind = crate::code::kinds::kind_name(ctx.sym(ctx.typ(expr_type).tsym.expect("expr type symbol")), ctx);
+                let details_arg = crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(details));
+                let kind_arg = crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string());
+                if target_error && current_target == recovery_type {
+                    // a target error doesn't make sense during recovery stage
+                    ctx.tree_mut(that).ty = Some(current_target);
+                    self.result = Some(current_target);
+                    return Ok(current_target);
+                }
+                if target_error {
+                    let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::invalid_mref(kind_arg, details_arg),
+                    ));
+                    result_info.check_context.report(ctx, ctx.tree(that).pos, &fragment);
+                } else {
+                    let info = crate::resources::compiler_properties::errors::invalid_mref(kind_arg, details_arg);
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        ctx.tree(that).pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                }
+            }
+            let error = self.types.create_error_type_original(ctx, Some(current_target), syms);
+            ctx.tree_mut(that).ty = Some(error);
+            self.result = Some(error);
+            return Ok(error);
+        }
+        let is_constructor = ctx.sym(ref_sym).is_constructor(&self.names);
+        let that_sym = if is_constructor { crate::code::symbol::base_symbol(ctx, ref_sym) } else { ref_sym };
+        if let TreeKind::MemberReference { sym: slot, .. } = &mut ctx.tree_mut(that).kind {
+            *slot = Some(that_sym);
+        }
+        if let Some(helper) = &helper {
+            let reference_kind = helper.reference_kind(ctx, that_sym);
+            if let TreeKind::MemberReference { kind: slot, .. } = &mut ctx.tree_mut(that).kind {
+                *slot = Some(reference_kind);
+            }
+            let enclosing = crate::code::symbol::symbol_encl_class(ctx, that_sym);
+            let accessible = match enclosing {
+                Some(enclosing) => {
+                    let encl_type = ctx.sym(enclosing).ty.expect("enclosing class type");
+                    let mut rs = rs_rc.borrow_mut();
+                    let types_rc = Rc::clone(&self.types);
+                    rs.is_accessible_pub(ctx, syms, &types_rc, &local_env, encl_type, that_sym)
+                }
+                None => true,
+            };
+            if let TreeKind::MemberReference { owner_accessible: slot, .. } = &mut ctx.tree_mut(that).kind {
+                *slot = accessible;
+            }
+        }
+        let desc_return = self.types.get_return_type_public(ctx, desc);
+        if desc_return == recovery_type {
+            ctx.tree_mut(that).ty = Some(current_target);
+            self.result = Some(current_target);
+            return Ok(current_target);
+        }
+        if !env.info.borrow().attribution_mode.is_speculative()
+            && mode == crate::tree::jc_tree::ReferenceMode::NEW
+        {
+            let enclosing_type = ctx.typ(expr_type).get_enclosing_type();
+            if let Some(enclosing_type) = enclosing_type.filter(|t| ctx.typ(*t).has_tag(TypeTag::CLASS)) {
+                let _ = enclosing_type;
+                let rs_rc2 = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                let mut rs = rs_rc2.borrow_mut();
+                let types_rc = Rc::clone(&self.types);
+                rs.resolve_implicit_this(
+                    ctx,
+                    syms,
+                    &types_rc,
+                    simple_diag_pos(ctx.tree(that).pos),
+                    &local_env,
+                    expr_type,
+                    false,
+                );
+            }
+        }
+        if result_info.check_context.deferred_attr_context().mode
+            == crate::comp::deferred_attr::AttrMode::CHECK
+        {
+            // TODO(Check): chk.checkRaw is not ported (Check.java:1560-1580);
+            // registered.
+            if let Some(helper) = &helper {
+                if let TreeKind::MemberReference { kind: Some(reference_kind), .. } = &ctx.tree(that).kind {
+                    if is_static_selector
+                        && reference_kind.is_unbound()
+                        && self.types.is_raw_type_public(ctx, helper.site)
+                    {
+                        // Java: chk.checkRaw(that.expr, localEnv); — registered.
+                    }
+                }
+            }
+            let static_ref = ctx.sym(that_sym).flags_field & (crate::code::flags::STATIC as i64) != 0;
+            if static_ref && is_static_selector {
+                let expr_args = ctx.typ(expr_type).get_type_arguments();
+                if !expr_args.is_empty() {
+                    let kind = crate::code::kinds::kind_name(ctx.sym(ctx.typ(expr_type).tsym.expect("expr symbol")), ctx);
+                    let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::static_mref_with_targs(),
+                    ));
+                    let info = crate::resources::compiler_properties::errors::invalid_mref(
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
+                    );
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        ctx.tree(expr).pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                    let error = self.types.create_error_type_original(ctx, Some(current_target), syms);
+                    ctx.tree_mut(that).ty = Some(error);
+                    self.result = Some(error);
+                    return Ok(error);
+                }
+            }
+            if !static_ref {
+                if let TreeKind::MemberReference { kind: Some(reference_kind), .. } = &ctx.tree(that).kind {
+                    if *reference_kind == crate::tree::jc_tree::ReferenceKind::SUPER {
+                        let rs_rc2 = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                        let mut rs = rs_rc2.borrow_mut();
+                        rs.check_non_abstract(ctx, simple_diag_pos(ctx.tree(that).pos), that_sym);
+                    }
+                }
+            }
+            if is_target_serializable {
+                // TODO(Check): chk.checkAccessFromSerializableElement is not ported
+                // (Check.java:2745-2800, lint/serial); registered.
+            }
+        }
+        let check_info_context: Rc<dyn crate::comp::check::CheckContext> = Rc::new(FunctionalReturnContext {
+            enclosing: Rc::clone(&result_info.check_context),
+            basic_handler: Rc::clone(&self.basic_handler),
+            diags: Rc::clone(&self.diags),
+        });
+        let desc_return_ty = self.types.get_return_type_public(ctx, desc);
+        let ret_for_template = if ctx.typ(desc_return_ty).has_tag(TypeTag::VOID) {
+            self.no_type(ctx)
+        } else {
+            desc_return_ty
+        };
+        let reference_kind_unbound = match &ctx.tree(that).kind {
+            TreeKind::MemberReference { kind: Some(kind), .. } => kind.is_unbound(),
+            _ => false,
+        };
+        let params_for_template = if reference_kind_unbound {
+            argtypes.tail()
+        } else {
+            argtypes.clone()
+        };
+        let method_template = self.new_method_template(
+            ctx,
+            syms,
+            ret_for_template,
+            params_for_template,
+            Some(typeargtypes.clone()),
+        );
+        let check_info = result_info.dup_pt_context_mode(
+            Some(method_template),
+            check_info_context,
+            crate::comp::check::CheckMode::NO_TREE_UPDATE,
+        );
+        let site = match &helper {
+            Some(helper) => helper.site,
+            None => expr_type,
+        };
+        let mut ref_type = self.check_id(ctx, syms, that, site, ref_sym, &local_env, &check_info);
+        if reference_kind_unbound && inference_context.free(ctx, syms, &self.types, *argtypes.head()) {
+            let head_undet = inference_context.as_undet_var(ctx, syms, &self.types, *argtypes.head());
+            assert!(
+                self.types.is_subtype(ctx, syms, head_undet, expr_type),
+                "AssertionError: Can't get here"
+            );
+        }
+        if !ctx.typ(ref_type).has_tag(TypeTag::ERROR) {
+            let check_info_pt = check_info.pt.unwrap_or_else(|| self.no_type(ctx));
+            let check_info_params = self.types.get_parameter_types_public(ctx, check_info_pt);
+            let ref_return = self.types.get_return_type_public(ctx, ref_type);
+            let adjusted = self.adjust_method_return_type(
+                ctx,
+                syms,
+                ref_sym,
+                site,
+                &name,
+                &check_info_params,
+                ref_return,
+            );
+            ref_type = self.types.create_method_type_with_return(ctx, ref_type, adjusted);
+        }
+        let is_speculative_round = result_info.check_context.deferred_attr_context().mode
+            == crate::comp::deferred_attr::AttrMode::SPECULATIVE;
+        ctx.tree_mut(that).ty = Some(current_target);
+        self.check_reference_compatible(
+            ctx,
+            syms,
+            that,
+            desc,
+            ref_type,
+            &result_info.check_context,
+            is_speculative_round,
+        );
+        if !is_speculative_round {
+            let inference_context = Rc::clone(result_info.check_context.inference_context());
+            let list = List::of(desc).prepend(current_target);
+            self.check_accessible_types(
+                ctx,
+                syms,
+                ctx.tree(that).pos,
+                &local_env,
+                &inference_context,
+                &list,
+            );
+        }
+        let result = self.check(ctx, syms, that, current_target, KindSelector::VAL, &result_info);
+        self.result = Some(result);
+        Ok(result)
+    }
+}
+
+/// Adapter: build the resolve error diagnostic for a member reference failure
+/// (the resolve-error diagnostic channel).
+#[allow(clippy::too_many_arguments)]
+fn rs_error_diagnostic(
+    rs: &mut crate::comp::resolve::Resolve,
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    error: SymbolId,
+    pos: i32,
+    site: Option<TypeId>,
+    name: &crate::util::name::Name,
+    argtypes: &List<TypeId>,
+    typeargtypes: &List<TypeId>,
+) -> Option<crate::util::jc_diagnostic::JCDiagnostic> {
+    rs.resolve_error_diagnostic(
+        ctx,
+        syms,
+        error,
+        crate::util::jc_diagnostic::DiagnosticType::FRAGMENT,
+        simple_diag_pos(pos),
+        None,
+        site,
+        Some(name),
+        Some(argtypes.clone()),
+        Some(typeargtypes.clone()),
+    )
 }
 
 #[cfg(test)]
