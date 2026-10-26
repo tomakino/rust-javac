@@ -9274,7 +9274,6 @@ impl Types {
     }
 }
 
-/// Java: public static class InvalidSignatureException extends RuntimeException
 /// (Types.java:5046-5061).
 ///
 /// The generator reports types that cannot appear in a JVM signature (e.g.
@@ -9283,14 +9282,12 @@ impl Types {
 /// upstream RuntimeException field.
 #[derive(Clone, Debug)]
 pub struct InvalidSignatureException {
-    /// Java: private final transient Type type (Types.java:5050).
     pub type_: TypeId,
 }
 
 impl InvalidSignatureException {
     /// Return the type that could not be assembled into a signature.
     ///
-    /// Java: public Type type() (Types.java:5058-5060). The value is the
     /// constructor argument reported by reportIllegalSignature; callers use it
     /// to attach the diagnostic to the offending type tree.
     ///
@@ -9300,13 +9297,11 @@ impl InvalidSignatureException {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Types.java:5058-5060.
     pub fn type_(&self) -> TypeId {
         self.type_
     }
 }
 
-/// Java: public static abstract class SignatureGenerator (Types.java:5044-5244).
 ///
 /// Assembles the JVM generic signature of a type into a caller-provided buffer.
 /// The upstream abstract class is modelled as a trait: implementations supply
@@ -9316,7 +9311,6 @@ impl InvalidSignatureException {
 pub trait SignatureGenerator {
     /// Append one character to the signature buffer.
     ///
-    /// Java: protected abstract void append(char ch) (Types.java:5067). The
     /// concrete buffer decides whether characters are widened to UTF-8 bytes
     /// (StringBuilder) or emitted directly (the Lower signature generator).
     ///
@@ -9326,12 +9320,10 @@ pub trait SignatureGenerator {
     /// # Panics
     ///   - none; buffer overflow handling is the implementation's concern.
     ///
-    /// Upstream: Types.java:5067.
     fn append_char(&mut self, ch: char);
 
     /// Append a pre-encoded UTF-8 byte sequence to the signature buffer.
     ///
-    /// Java: protected abstract void append(byte[] ba) (Types.java:5068). Used
     /// for externalized class names so that the internal JVM encoding is
     /// produced without a second conversion step.
     ///
@@ -9341,12 +9333,10 @@ pub trait SignatureGenerator {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Types.java:5068.
     fn append_bytes(&mut self, ba: &[u8]);
 
     /// Append a name to the signature buffer.
     ///
-    /// Java: protected abstract void append(Name name) (Types.java:5069). The
     /// implementation decides the encoding (upstream uses the name table bytes).
     ///
     /// # Arguments
@@ -9355,12 +9345,10 @@ pub trait SignatureGenerator {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Types.java:5069.
     fn append_name(&mut self, name: &crate::util::name::Name);
 
     /// Hook invoked when a class name is referenced from a signature.
     ///
-    /// Java: protected void classReference(ClassSymbol c) (Types.java:5070-5072).
     /// The upstream default is a no-op; the class-writer subclass records the
     /// referenced class so that the constant pool entry can be created later.
     ///
@@ -9370,12 +9358,10 @@ pub trait SignatureGenerator {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Types.java:5070-5072.
     fn class_reference(&mut self, _c: SymbolId) {}
 
     /// Return the Types service that owns this generator.
     ///
-    /// Java: private final Types types (Types.java:5063) — the ported trait
     /// exposes it to the default signature methods so that a generator can be
     /// created once and reused for many trees.
     ///
@@ -9385,12 +9371,10 @@ pub trait SignatureGenerator {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Types.java:5063-5076.
     fn types(&self) -> &Types;
 
     /// Report a type that is illegal in a generic signature.
     ///
-    /// Java: protected void reportIllegalSignature(Type t) (Types.java:5078-5080).
     /// The upstream method throws InvalidSignatureException; the ported trait
     /// returns the same payload as an error so that callers propagate it without
     /// panics (the Lower caller converts it into the JVMS error path).
@@ -9404,7 +9388,6 @@ pub trait SignatureGenerator {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Types.java:5078-5080.
     fn report_illegal_signature(
         &mut self,
         t: TypeId,
@@ -9414,7 +9397,6 @@ pub trait SignatureGenerator {
 
     /// Assemble the generic signature of a type.
     ///
-    /// Java: public void assembleSig(Type type) (Types.java:5085-5165). The
     /// method walks the Java type tag and appends the corresponding JVMS 4.7.9.1
     /// signature grammar: primitive/void codes, L<class>; for classes, [ for
     /// arrays, (args)ret^throws for methods, wildcard bound markers, T<var>; for
@@ -9434,7 +9416,6 @@ pub trait SignatureGenerator {
     ///   - the type tag is not handled by the signature grammar (assertion,
     ///     mirroring the upstream AssertionError default branch).
     ///
-    /// Upstream: Types.java:5085-5165.
     fn assemble_sig(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -9547,7 +9528,6 @@ pub trait SignatureGenerator {
 
     /// Check whether a type list mentions a type variable.
     ///
-    /// Java: public boolean hasTypeVar(List<Type> l) (Types.java:5170-5178). The
     /// result decides whether a method's throws clause is appended after the
     /// return type (JVMS 4.7.9.1 only emits ^throwable for generic throws).
     ///
@@ -9561,7 +9541,6 @@ pub trait SignatureGenerator {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Types.java:5170-5178.
     fn has_type_var(
         &self,
         ctx: &crate::compiler_context::CompilerContext,
@@ -9581,7 +9560,6 @@ pub trait SignatureGenerator {
 
     /// Assemble the class portion of a signature (after the leading 'L').
     ///
-    /// Java: public void assembleClassSig(Type type) (Types.java:5180-5214). For
     /// a member class whose enclosing type carries type parameters the upstream
     /// grammar emits the enclosing type followed by '.' (or '$' for local and
     /// anonymous classes, whose flat name carries the synthetic separator);
@@ -9600,7 +9578,6 @@ pub trait SignatureGenerator {
     /// # Panics
     ///   - the type is not a class type, or a class symbol lacks an owner.
     ///
-    /// Upstream: Types.java:5180-5214.
     fn assemble_class_sig(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -9660,8 +9637,7 @@ pub trait SignatureGenerator {
 
     /// Assemble the formal type-parameter section of a generic signature.
     ///
-    /// Java: public void assembleParamsSig(List<Type> typarams)
-    /// (Types.java:5216-5232). Emits '<' then, for each type variable, its name
+    /// Emits '<' then, for each type variable, its name
     /// followed by the bounds in JVMS form: a ':' before the first bound when it
     /// is an interface, and one ':' per bound otherwise.
     ///
@@ -9677,7 +9653,6 @@ pub trait SignatureGenerator {
     /// # Panics
     ///   - a type parameter has no symbol.
     ///
-    /// Upstream: Types.java:5216-5232.
     fn assemble_params_sig(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -9716,7 +9691,6 @@ pub trait SignatureGenerator {
 
     /// Assemble the signatures of a type list.
     ///
-    /// Java: public void assembleSig(List<Type> types) (Types.java:5234-5240).
     /// Each element is assembled in order; this is used for method parameters,
     /// class type arguments and type-parameter bounds.
     ///
@@ -9732,7 +9706,6 @@ pub trait SignatureGenerator {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Types.java:5234-5240.
     fn assemble_sig_list(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
