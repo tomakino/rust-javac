@@ -1656,15 +1656,6 @@ pub(crate) fn symbol_flat_name(
     }
 }
 
-/// Java: Symbol.name.isEmpty() comparison helper.
-pub(crate) fn name_equals(
-    _names: &crate::util::names::Names,
-    left: &crate::util::name::Name,
-    right: &crate::util::name::Name,
-) -> bool {
-    left == right
-}
-
 /// Java: Resolve.Env snapshot for the resolution-error payloads.
 pub(crate) fn resolve_env_snapshot(
     ctx: &crate::compiler_context::CompilerContext,
@@ -1942,6 +1933,7 @@ impl Resolve {
 
     /// Java: Symbol findIdentInPackage(pos, Env, TypeSymbol pck, Name,
     /// KindSelector) (Resolve.java:2435-2440)
+    #[allow(clippy::too_many_arguments)]
     pub fn find_ident_in_package(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -1958,6 +1950,7 @@ impl Resolve {
 
     /// Java: Symbol findIdentInPackageInternal(Env, TypeSymbol pck, Name,
     /// KindSelector) (Resolve.java:2441-2470)
+    #[allow(clippy::too_many_arguments)]
     fn find_ident_in_package_internal(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -1999,6 +1992,7 @@ impl Resolve {
 
     /// Java: Symbol findIdentInType(pos, Env, Type site, Name, KindSelector)
     /// (Resolve.java:2472-2477)
+    #[allow(clippy::too_many_arguments)]
     pub fn find_ident_in_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -2015,6 +2009,7 @@ impl Resolve {
 
     /// Java: Symbol findIdentInTypeInternal(Env, Type site, Name, KindSelector)
     /// (Resolve.java:2478-2513)
+    #[allow(clippy::too_many_arguments)]
     fn find_ident_in_type_internal(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -2140,9 +2135,19 @@ impl Resolve {
                 log_resolve_helper,
                 site,
                 argtypes.clone(),
-                None,
+                typeargtypes.clone(),
             ) {
-                self.log_resolve_error(ctx, syms, err_sym, pos, location, site, name, argtypes, None);
+                self.log_resolve_error(
+                    ctx,
+                    syms,
+                    err_sym,
+                    pos,
+                    location,
+                    site,
+                    name,
+                    argtypes,
+                    typeargtypes,
+                );
             }
             return sym;
         }
@@ -2210,7 +2215,7 @@ impl Resolve {
             name,
             qualified,
             argtypes,
-            None,
+            typeargtypes,
             LogResolveHelper::Method,
         )
     }

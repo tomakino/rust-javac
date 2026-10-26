@@ -1729,12 +1729,19 @@ mod tests {
         ctx: CompilerContext,
         syms: Symtab,
         names: Rc<Names>,
+        log: Rc<RefCell<Log>>,
+        diags: Rc<Factory>,
+        options: Rc<Options>,
         class_tree: TreeId,
         env: Rc<Env<AttrContext>>,
         attr: Attr,
     }
 
     fn build_attr_harness() -> AttrHarness {
+        build_attr_harness_with_source(SAMPLE_SOURCE)
+    }
+
+    fn build_attr_harness_with_source(source_text: &str) -> AttrHarness {
         let mut context = Context::new();
         let log = Log::instance(&mut context);
         let names = Rc::new(Names::new(false));
@@ -1744,7 +1751,7 @@ mod tests {
         let sourcefile: JavaFileObjectRef = Rc::new(TestSourceFile {
             name: javac_strings::JavaString::from("Sample.java"),
             base: String::from("Sample"),
-            content: SAMPLE_SOURCE.to_string(),
+            content: source_text.to_string(),
         });
         log.borrow_mut().use_source(Some(Rc::clone(&sourcefile)));
         let scanner_factory =
@@ -1759,7 +1766,7 @@ mod tests {
         let mut ctx = CompilerContext::new();
         let mut parser = parser_factory.new_parser(
             &mut ctx,
-            &javac_strings::JavaString::from(SAMPLE_SOURCE),
+            &javac_strings::JavaString::from(source_text),
             false,
             true,
             false,
@@ -1774,7 +1781,7 @@ mod tests {
         } = &mut ctx.tree_mut(unit).kind
         {
             *modle = Some(java_base);
-            *slot = Some(sourcefile);
+            *slot = Some(Rc::clone(&sourcefile));
         }
         let types = Rc::new(Types::new());
         let chk = Rc::new(RefCell::new(Check::new(
@@ -1867,6 +1874,9 @@ mod tests {
             ctx,
             syms,
             names,
+            log,
+            diags,
+            options,
             class_tree,
             env,
             attr,
@@ -2082,4 +2092,208 @@ mod tests {
             );
         }
     }
+
+    /// The same source as tools/gen-resolve-oracle/GenResolveOracle.java.
+    const RESOLVE_SAMPLE_SOURCE: &str = "class Sample {\n    int f1;\n    String f2;\n    static int f3;\n    class Inner {}\n    int m() {\n        return f1 + f3;\n    }\n    Inner m2() {\n        return null;\n    }\n}\n";
+
+    /// The development-time Resolve oracle (tools/gen-resolve-oracle).
+    const RESOLVE_ORACLE: &str =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/resolve-oracle.txt"));
+
+    /// Encodes a resolved symbol in the oracle line format
+    /// "REF <name> <kind> <owner-qualified-name>".
+    fn resolve_ref_line(ctx: &CompilerContext, symbol: SymbolId) -> String {
+        let kind = match ctx.sym(symbol).kind {
+            crate::code::kinds::Kind::VAR => "FIELD",
+            crate::code::kinds::Kind::TYP => "CLASS",
+            crate::code::kinds::Kind::MTH => "METHOD",
+            other => return format!("REF {:?}", other),
+        };
+        let name = ctx.sym(symbol).name.to_java_string().to_string_lossy();
+        let owner = ctx
+            .sym(symbol)
+            .owner
+            .map(|owner| match &ctx.sym(owner).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol { fullname, .. } => {
+                    fullname.to_java_string().to_string_lossy()
+                }
+                _ => ctx.sym(owner).name.to_java_string().to_string_lossy(),
+            })
+            .unwrap_or_default();
+        format!("REF {} {} {}", name, kind, owner)
+    }
+
+    /// Enters the field symbols of the class. The full MemberEnter.visitVarDef
+    /// path calls Attr.attribType (TODO(Attr batch), not ported yet), so the
+    /// test enters the VarSymbols with the upstream MemberEnter field
+    /// construction (name/owner/flags; the type attribution is the registered
+    /// Attr batch dependency).
+    fn enter_member_fields(harness: &mut AttrHarness) {
+        let class_sym = class_tree_symbol(&harness.ctx, harness.class_tree).expect("class symbol");
+        let members = harness.ctx.sym(class_sym).members().expect("class members scope");
+        let mut current = class_defs(&harness.ctx, harness.class_tree);
+        while current.non_empty() {
+            let def = *current.head();
+            if harness.ctx.tree(def).has_tag(Tag::VARDEF) {
+                let pos = harness.ctx.tree(def).pos;
+                let (name, flags_value) = match &harness.ctx.tree(def).kind {
+                    TreeKind::VariableDecl { name, mods, .. } => {
+                        let flags_value = mods
+                            .and_then(|mods| match &harness.ctx.tree(mods).kind {
+                                TreeKind::Modifiers { flags, .. } => Some(*flags),
+                                _ => None,
+                            })
+                            .unwrap_or(0);
+                        (name.clone(), flags_value)
+                    }
+                    _ => panic!("variable decl expected"),
+                };
+                let symbol = harness.ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+                    crate::code::kinds::Kind::VAR,
+                    flags_value,
+                    name,
+                    None,
+                    Some(class_sym),
+                    crate::code::symbol::SymbolKind::VarSymbol {
+                        pos,
+                        adr: 0,
+                        data_kind: None,
+                        data: None,
+                    },
+                ));
+                harness.ctx.scope_enter(members, symbol);
+            }
+            current = current.tail();
+        }
+    }
+
+    /// A method-body environment over the class environment (the Attr
+    /// scope.dup()/leave() pattern modelled with an explicit scope).
+    fn build_method_env(harness: &mut AttrHarness) -> Rc<Env<AttrContext>> {
+        let class_env = Rc::clone(&harness.env);
+        let class_tree = harness.class_tree;
+        let class_sym = class_tree_symbol(&harness.ctx, class_tree).expect("class symbol");
+        let method_scope = harness.ctx.scope_create(Some(class_sym));
+        let mut info = crate::comp::attr_context::AttrContext::new();
+        info.scope = Some(method_scope);
+        Rc::new(Env {
+            next: None,
+            outer: Some(class_env),
+            tree: Some(class_tree),
+            toplevel: harness.env.toplevel,
+            encl_class: Some(class_tree),
+            encl_method: None,
+            info: Rc::new(RefCell::new(info)),
+            base_clause: false,
+        })
+    }
+
+    #[test]
+    fn resolve_find_ident_matches_the_javac_oracle() {
+        use crate::code::kinds::KindSelector;
+        use crate::comp::resolve::Resolve;
+        let mut harness = build_attr_harness_with_source(RESOLVE_SAMPLE_SOURCE);
+        enter_member_fields(&mut harness);
+        let method_env = build_method_env(&mut harness);
+        let mut resolve = Resolve::new(
+            &mut harness.ctx,
+            Rc::clone(&harness.names),
+            Rc::clone(&harness.log),
+            Rc::clone(&harness.attr.types),
+            Rc::clone(&harness.diags),
+            Source::JDK17,
+            Rc::clone(&harness.options),
+            None,
+        );
+        let class_sym = class_tree_symbol(&harness.ctx, harness.class_tree).expect("class symbol");
+        let class_type = harness.ctx.sym(class_sym).ty.expect("class type");
+        let mut actual = Vec::new();
+        for line in RESOLVE_ORACLE.lines() {
+            let fields: Vec<&str> = line.split(' ').collect();
+            if fields.first() != Some(&"REF") {
+                continue;
+            }
+            let name = harness.names.from_utf(fields[1].as_bytes());
+            let selector = match fields[2] {
+                "FIELD" => KindSelector::VAL,
+                "CLASS" => KindSelector::TYP,
+                other => panic!("unsupported oracle kind {}", other),
+            };
+            let symbol = resolve.find_ident_in_type(
+                &mut harness.ctx,
+                &mut harness.syms,
+                None,
+                &method_env,
+                class_type,
+                &name,
+                selector,
+            );
+            actual.push(resolve_ref_line(&harness.ctx, symbol));
+        }
+        let expected: Vec<String> = RESOLVE_ORACLE
+            .lines()
+            .filter(|line| line.starts_with("REF "))
+            .map(|line| line.to_string())
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn resolve_find_ident_finds_fields_and_member_types() {
+        use crate::code::kinds::KindSelector;
+        use crate::comp::resolve::Resolve;
+        let mut harness = build_attr_harness_with_source(RESOLVE_SAMPLE_SOURCE);
+        enter_member_fields(&mut harness);
+        let method_env = build_method_env(&mut harness);
+        let mut resolve = Resolve::new(
+            &mut harness.ctx,
+            Rc::clone(&harness.names),
+            Rc::clone(&harness.log),
+            Rc::clone(&harness.attr.types),
+            Rc::clone(&harness.diags),
+            Source::JDK17,
+            Rc::clone(&harness.options),
+            None,
+        );
+        // findIdent(VAL) goes through findVar/findField from the method env.
+        let f1_name = harness.names.from_utf(b"f1");
+        let f1 = resolve.find_ident(
+            &mut harness.ctx,
+            &mut harness.syms,
+            None,
+            &method_env,
+            &f1_name,
+            KindSelector::VAL,
+        );
+        assert_eq!(harness.ctx.sym(f1).name, f1_name);
+        assert_eq!(harness.ctx.sym(f1).kind, crate::code::kinds::Kind::VAR);
+        // findIdentInType(TYP) finds the member type Inner.
+        let class_sym = class_tree_symbol(&harness.ctx, harness.class_tree).expect("class symbol");
+        let class_type = harness.ctx.sym(class_sym).ty.expect("class type");
+        let inner_name = harness.names.from_utf(b"Inner");
+        let inner = resolve.find_ident_in_type(
+            &mut harness.ctx,
+            &mut harness.syms,
+            None,
+            &method_env,
+            class_type,
+            &inner_name,
+            KindSelector::TYP,
+        );
+        assert_eq!(harness.ctx.sym(inner).name, inner_name);
+        assert_eq!(harness.ctx.sym(inner).kind, crate::code::kinds::Kind::TYP);
+        // Unknown member: the typeNotFound error symbol.
+        let missing = harness.names.from_utf(b"missing");
+        let not_found = resolve.find_ident_in_type(
+            &mut harness.ctx,
+            &mut harness.syms,
+            None,
+            &method_env,
+            class_type,
+            &missing,
+            KindSelector::VAL,
+        );
+        assert!(crate::code::symbol::symbol_resolve_error_data(&harness.ctx, not_found).is_some());
+    }
+
 }
