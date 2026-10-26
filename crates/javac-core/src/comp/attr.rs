@@ -352,6 +352,9 @@ pub struct Attr {
     pub result: Option<TypeId>,
     /// Java: private JCTree breakTree = null (Attr.java:448)
     pub break_tree: Option<TreeId>,
+    /// Adapter: the environment carried by the BreakAttr control exception
+    /// (the Rust panic payload is zero-sized; the env is stored here).
+    pub break_attr_env: Option<Rc<Env<AttrContext>>>,
     /// Java: the predefined result infos (statInfo/unknownExprInfo/...)
     pub stat_info: ResultInfo,
     pub var_assignment_info: ResultInfo,
@@ -462,6 +465,7 @@ impl Attr {
             result_info: None,
             result: None,
             break_tree: None,
+            break_attr_env: None,
             basic_handler: Rc::clone(&basic_handler),
             stat_info: ResultInfo::new(KindSelector::NIL, None, Rc::clone(&basic_handler)),
             var_assignment_info: ResultInfo::new(KindSelector::ASG, None, Rc::clone(&basic_handler)),
@@ -707,7 +711,7 @@ impl Attr {
             Tag::GUARDPATTERN => self.visit_guard_pattern(ctx, syms, tree),
             Tag::SWITCH => self.visit_switch(ctx, syms, tree),
             Tag::SWITCH_EXPRESSION => self.visit_switch_expression(ctx, syms, tree),
-            Tag::LAMBDA => unimplemented!("TODO(Check/Symbol): Attr.visitLambda (setFunctionalInfo/checkImplementations/checkOverride and the BreakAttr recovery are not ported)"),
+            Tag::LAMBDA => self.visit_lambda(ctx, syms, tree),
             Tag::REFERENCE => unimplemented!("TODO(Check/Symbol): Attr.visitReference (member reference resolution and the Check override family are not ported)"),
             Tag::BLOCK => self.visit_block(ctx, syms, tree),
             Tag::DOLOOP => self.visit_do_loop(ctx, syms, tree),
@@ -8715,6 +8719,744 @@ fn is_pattern_label(ctx: &CompilerContext, tree: TreeId) -> bool {
     ctx.tree(tree).has_tag(Tag::BINDINGPATTERN)
         || ctx.tree(tree).has_tag(Tag::PARENTHESIZEDPATTERN)
         || ctx.tree(tree).has_tag(Tag::GUARDPATTERN)
+}
+
+/// Java: the FreeTypeListener registered by Attr.setFunctionalInfo
+/// (Attr.java:3889-3900): re-applies the functional info once the
+/// descriptor has been instantiated.
+pub struct SetFunctionalInfoListener {
+    pub env: Rc<Env<AttrContext>>,
+    pub f_expr: TreeId,
+    pub pt: TypeId,
+    pub descriptor: TypeId,
+    pub primary_target: TypeId,
+    pub check_context: Rc<dyn crate::comp::check::CheckContext>,
+    pub types: Rc<Types>,
+    pub chk: Rc<RefCell<crate::comp::check::Check>>,
+    pub diags: Rc<Factory>,
+    pub names: Rc<Names>,
+}
+
+impl crate::comp::infer::FreeTypeListener for SetFunctionalInfoListener {
+    /// Java: the listener lambda in setFunctionalInfo (Attr.java:3889-3900).
+    fn types_inferred(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        inference_context: &crate::comp::infer::InferenceContext,
+    ) -> Result<(), crate::comp::infer::InferenceException> {
+        let descriptor = inference_context.as_inst_type(ctx, syms, types, self.descriptor);
+        let primary_target =
+            inference_context.as_inst_type(ctx, syms, types, self.primary_target);
+        set_functional_info_step(
+            ctx,
+            syms,
+            &self.env,
+            self.f_expr,
+            self.pt,
+            descriptor,
+            primary_target,
+            &self.check_context,
+            &self.types,
+            &self.chk,
+            &self.diags,
+            &self.names,
+        );
+        Ok(())
+    }
+}
+
+/// Java: the FreeTypeListener registered by Attr.checkAccessibleTypes
+/// (Attr.java:3371-3382).
+pub struct AccessibleTypesListener {
+    pub env: Rc<Env<AttrContext>>,
+    pub pos: i32,
+    pub rs: Option<Rc<RefCell<crate::comp::resolve::Resolve>>>,
+    pub ts: List<TypeId>,
+}
+
+impl crate::comp::infer::FreeTypeListener for AccessibleTypesListener {
+    /// Java: the listener lambda in checkAccessibleTypes (Attr.java:3371-3382).
+    fn types_inferred(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        inference_context: &crate::comp::infer::InferenceContext,
+    ) -> Result<(), crate::comp::infer::InferenceException> {
+        let mut instantiated: List<TypeId> = List::nil();
+        let mut current = self.ts.clone();
+        while current.non_empty() {
+            let t = *current.head();
+            instantiated =
+                instantiated.append(inference_context.as_inst_type(ctx, syms, types, t));
+            current = current.tail();
+        }
+        let mut accessible = instantiated;
+        while accessible.non_empty() {
+            let t = *accessible.head();
+            if let Some(rs) = &self.rs {
+                let mut rs = rs.borrow_mut();
+                rs.check_accessible_type(ctx, syms, &self.env, t);
+            }
+            accessible = accessible.tail();
+        }
+        let _ = self.pos;
+        Ok(())
+    }
+}
+
+/// Java: Attr.setFunctionalInfo listener step (Attr.java:3881-3915).
+#[allow(clippy::too_many_arguments)]
+fn set_functional_info_step(
+    ctx: &mut CompilerContext,
+    syms: &mut Symtab,
+    env: &Rc<Env<AttrContext>>,
+    f_expr: TreeId,
+    pt: TypeId,
+    descriptor_type: TypeId,
+    primary_target: TypeId,
+    check_context: &Rc<dyn crate::comp::check::CheckContext>,
+    types: &Rc<Types>,
+    chk: &Rc<RefCell<crate::comp::check::Check>>,
+    diags: &Rc<Factory>,
+    names: &Rc<Names>,
+) {
+    let inference_context = Rc::clone(check_context.inference_context());
+    if inference_context.free(ctx, syms, types, descriptor_type) {
+        let type_list = List::of(pt).prepend(descriptor_type);
+        let listener = Rc::new(SetFunctionalInfoListener {
+            env: Rc::clone(env),
+            f_expr,
+            pt,
+            descriptor: descriptor_type,
+            primary_target,
+            check_context: Rc::clone(check_context),
+            types: Rc::clone(types),
+            chk: Rc::clone(chk),
+            diags: Rc::clone(diags),
+            names: Rc::clone(names),
+        });
+        inference_context.add_free_type_listener(ctx, syms, types, type_list, listener);
+        return;
+    }
+    if ctx.typ(pt).has_tag(TypeTag::CLASS) {
+        match &mut ctx.tree_mut(f_expr).kind {
+            TreeKind::Lambda { target, .. } => *target = Some(primary_target),
+            TreeKind::MemberReference { target, .. } => *target = Some(primary_target),
+            _ => {}
+        }
+    }
+    if check_context.deferred_attr_context().mode
+        == crate::comp::deferred_attr::AttrMode::CHECK
+        && pt != syms.recovery_type
+    {
+        // check that functional interface class is well-formed
+        let target = match &ctx.tree(f_expr).kind {
+            TreeKind::Lambda { target, .. } => *target,
+            TreeKind::MemberReference { target, .. } => *target,
+            _ => None,
+        };
+        if let Some(target) = target {
+            let abstract_flag = crate::code::flags::ABSTRACT as i64;
+            let chk_guard = chk.borrow();
+            if let Some(csym) = types.make_functional_interface_class(
+                ctx,
+                syms,
+                diags,
+                &chk_guard,
+                env,
+                names.empty.clone(),
+                target,
+                abstract_flag,
+            ) {
+                chk_guard.check_implementations_for(ctx, syms, env.tree.expect("env tree"), csym, csym);
+                ctx.sym_mut(csym).flags_field |= crate::code::flags::INTERFACE as i64;
+                let csym_type = ctx.sym(csym).ty.expect("functional interface class type");
+                if types
+                    .find_descriptor_type(ctx, syms, diags, &chk_guard, csym_type)
+                    .is_err()
+                {
+                    let fragment = diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::no_suitable_functional_intf_inst(
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                type_display_of(ctx, target),
+                            ),
+                        ),
+                    ));
+                    check_context.report(ctx, ctx.tree(f_expr).pos, &fragment);
+                }
+            }
+        }
+    }
+}
+
+/// Java: Type checked exception classification helper used by checkExConstraints.
+#[allow(clippy::collapsible_if)]
+fn undetvar_set_throw(ctx: &mut CompilerContext, t: TypeId) {
+    if let crate::code::type_::TypeKindData::UndetVar { kind, .. } =
+        &mut ctx.typ_mut(t).kind
+    {
+        if *kind != crate::code::type_::UndetVarKind::CAPTURED {
+            *kind = crate::code::type_::UndetVarKind::THROWS;
+        }
+    }
+}
+
+impl Attr {
+    /// Java: boolean isSerializable(Type t) (Attr.java:5521-5530).
+    fn is_serializable(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> bool {
+        self.types
+            .is_subtype(ctx, syms, t, syms.serializable_type)
+    }
+
+    /// Java: private void setFunctionalInfo(Env, JCFunctionalExpression, Type,
+    /// Type, Type, CheckContext) (Attr.java:3881-3915).
+    #[allow(clippy::too_many_arguments)]
+    fn set_functional_info(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        env: &Rc<Env<AttrContext>>,
+        f_expr: TreeId,
+        pt: TypeId,
+        descriptor_type: TypeId,
+        primary_target: TypeId,
+        check_context: &Rc<dyn crate::comp::check::CheckContext>,
+    ) {
+        set_functional_info_step(
+            ctx,
+            syms,
+            env,
+            f_expr,
+            pt,
+            descriptor_type,
+            primary_target,
+            check_context,
+            &self.types,
+            &self.chk,
+            &self.diags,
+            &self.names,
+        );
+    }
+
+    /// Java: private void checkAccessibleTypes(DiagnosticPosition, Env,
+    /// InferenceContext, List<Type>) (Attr.java:3371-3382).
+    fn check_accessible_types(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        pos: i32,
+        env: &Rc<Env<AttrContext>>,
+        inference_context: &Rc<crate::comp::infer::InferenceContext>,
+        ts: &List<TypeId>,
+    ) {
+        if inference_context.free_list(ctx, syms, &self.types, ts.clone()) {
+            let listener = Rc::new(AccessibleTypesListener {
+                env: Rc::clone(env),
+                pos,
+                rs: self.rs.borrow().clone(),
+                ts: ts.clone(),
+            });
+            inference_context.add_free_type_listener(
+                ctx,
+                syms,
+                &self.types,
+                ts.clone(),
+                listener,
+            );
+        } else {
+            let mut current = ts.clone();
+            while current.non_empty() {
+                let t = *current.head();
+                if let Some(rs_rc) = self.rs.borrow().clone() {
+                    let mut rs = rs_rc.borrow_mut();
+                    rs.check_accessible_type(ctx, syms, env, t);
+                }
+                current = current.tail();
+            }
+        }
+    }
+
+    /// Java: boolean checkExConstraints(List<Type> thrownByFuncExpr,
+    /// List<Type> thrownAtFuncType, InferenceContext) (Attr.java:3816-3878).
+    #[allow(clippy::too_many_arguments)]
+    fn check_ex_constraints(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        thrown_by_func_expr: List<TypeId>,
+        thrown_at_func_type: List<TypeId>,
+        inference_context: &Rc<crate::comp::infer::InferenceContext>,
+    ) -> bool {
+        let mut non_proper_list: List<TypeId> = List::nil();
+        let mut current = thrown_at_func_type.clone();
+        while current.non_empty() {
+            let e = *current.head();
+            if inference_context.free(ctx, syms, &self.types, e) {
+                non_proper_list = non_proper_list.append(e);
+            }
+            current = current.tail();
+        }
+        let mut proper_list: List<TypeId> = List::nil();
+        let mut current = thrown_at_func_type.clone();
+        while current.non_empty() {
+            let e = *current.head();
+            let mut is_non_proper = false;
+            let mut scan = non_proper_list.clone();
+            while scan.non_empty() {
+                if *scan.head() == e {
+                    is_non_proper = true;
+                }
+                scan = scan.tail();
+            }
+            if !is_non_proper {
+                proper_list = proper_list.append(e);
+            }
+            current = current.tail();
+        }
+        let mut checked_list: List<TypeId> = List::nil();
+        let mut current = thrown_by_func_expr;
+        while current.non_empty() {
+            let e = *current.head();
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            if chk.is_checked_type(ctx, syms, e) {
+                checked_list = checked_list.append(e);
+            }
+            current = current.tail();
+        }
+        let mut uncaught: List<TypeId> = List::nil();
+        let mut checked_current = checked_list;
+        while checked_current.non_empty() {
+            let checked = *checked_current.head();
+            let mut is_subtype = false;
+            let mut proper_current = proper_list.clone();
+            while proper_current.non_empty() {
+                let proper = *proper_current.head();
+                if self.types.is_subtype(ctx, syms, checked, proper) {
+                    is_subtype = true;
+                    break;
+                }
+                proper_current = proper_current.tail();
+            }
+            if !is_subtype {
+                uncaught = uncaught.append(checked);
+            }
+            checked_current = checked_current.tail();
+        }
+        if non_proper_list.is_empty() && !uncaught.is_empty() {
+            return false;
+        }
+        let non_proper_as_undet =
+            inference_context.as_undet_vars(ctx, syms, &self.types, non_proper_list.clone());
+        let mut uncaught_current = uncaught;
+        while uncaught_current.non_empty() {
+            let checked_ex = *uncaught_current.head();
+            let mut non_proper_current = non_proper_as_undet.clone();
+            while non_proper_current.non_empty() {
+                let non_proper = *non_proper_current.head();
+                let _ = self.types.is_subtype(ctx, syms, checked_ex, non_proper);
+                non_proper_current = non_proper_current.tail();
+            }
+            uncaught_current = uncaught_current.tail();
+        }
+        let mut non_proper_current = non_proper_as_undet;
+        while non_proper_current.non_empty() {
+            let t = *non_proper_current.head();
+            if ctx.typ(t).has_tag(TypeTag::UNDETVAR) {
+                undetvar_set_throw(ctx, t);
+            }
+            non_proper_current = non_proper_current.tail();
+        }
+        true
+    }
+}
+
+/// Java: Attr.BreakAttr (Attr.java:450-458): the attributed-to-tree control
+/// exception. The carried environment is stored on the Attr service (the Rust
+/// panic payload must be Send); the marker stays zero-sized.
+pub struct BreakAttr;
+
+impl Attr {
+    /// Java: protected void breakTreeFound(Env<AttrContext> env)
+    /// (Attr.java:695-697).
+    fn break_tree_found(&mut self, env: Rc<Env<AttrContext>>) -> ! {
+        self.break_attr_env = Some(env);
+        std::panic::panic_any(BreakAttr)
+    }
+
+    /// Java: public Env<AttrContext> attribExprToTree(JCTree expr,
+    /// Env<AttrContext> env, JCTree tree) (Attr.java:410-414).
+    pub fn attrib_expr_to_tree(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        expr: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        tree: TreeId,
+    ) -> Rc<Env<AttrContext>> {
+        let result_info = self.unknown_expr_info.clone();
+        self.attrib_to_tree(ctx, syms, expr, env, tree, result_info)
+    }
+
+    /// Java: public Env<AttrContext> attribStatToTree(JCTree stmt,
+    /// Env<AttrContext> env, JCTree tree) (Attr.java:416-420).
+    pub fn attrib_stat_to_tree(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        stmt: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        tree: TreeId,
+    ) -> Rc<Env<AttrContext>> {
+        let result_info = self.stat_info.clone();
+        self.attrib_to_tree(ctx, syms, stmt, env, tree, result_info)
+    }
+
+    /// Java: private Env<AttrContext> attribToTree(JCTree root, Env<AttrContext>
+    /// env, JCTree tree, ResultInfo resultInfo) (Attr.java:422-446).
+    fn attrib_to_tree(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        root: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        tree: TreeId,
+        result_info: ResultInfo,
+    ) -> Rc<Env<AttrContext>> {
+        self.break_tree = Some(tree);
+        let prev_source = {
+            let toplevel = env.toplevel.expect("env toplevel");
+            let sourcefile = match &ctx.tree(toplevel).kind {
+                TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
+                _ => None,
+            };
+            crate::util::abstract_log::AbstractLog::use_source(
+                &mut *self.log.borrow_mut(),
+                sourcefile,
+            )
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // Java: deferredAttr.attribSpeculative(root, env, resultInfo, null,
+            // AttributionMode.ATTRIB_TO_TREE, argumentAttr.withLocalCacheContext());
+            let deferred_rc = self
+                .deferred_attr
+                .borrow()
+                .clone()
+                .expect("AssertionError: deferredAttr service must be installed");
+            let mut deferred = deferred_rc.borrow_mut();
+            let _ = deferred.attrib_speculative_with_diag(
+                ctx,
+                syms,
+                self,
+                root,
+                env,
+                &result_info,
+                None,
+                crate::comp::deferred_attr::AttributionMode::ATTRIB_TO_TREE,
+            );
+            // Java: attrRecover.doRecovery();
+            self.do_recovery(ctx, syms);
+        }));
+        self.break_tree = None;
+        crate::util::abstract_log::AbstractLog::use_source(
+            &mut *self.log.borrow_mut(),
+            prev_source,
+        );
+        match result {
+            Ok(()) => Rc::clone(env),
+            Err(payload) => {
+                if payload.is::<BreakAttr>() {
+                    self.break_attr_env.take().expect("AssertionError: BreakAttr env")
+                } else {
+                    std::panic::resume_unwind(payload)
+                }
+            }
+        }
+    }
+}
+
+impl Attr {
+    /// Java: public void visitLambda(final JCLambda that) (Attr.java:3076-3310).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - that: the lambda expression.
+    ///
+    /// # Returns
+    ///   - the attributed target type.
+    ///
+    /// # Panics
+    ///   - the registered service dependencies must be installed.
+    ///
+    /// Upstream: Attr.java:3076-3310.
+    #[allow(clippy::too_many_lines, clippy::collapsible_if)]
+    fn visit_lambda(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        that: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let pt = result_info.pt.unwrap_or_else(|| self.no_type(ctx));
+        let recovery_type = syms.recovery_type;
+        let mut wrong_context = false;
+        let pt_is_erroneous = ctx.typ(pt).has_tag(TypeTag::ERROR);
+        let pt_is_none = ctx.typ(pt).has_tag(TypeTag::NONE);
+        if pt_is_erroneous || (pt_is_none && pt != recovery_type) {
+            let encl_var_erroneous = {
+                let info = env.info.borrow();
+                match info.encl_var {
+                    None => true,
+                    Some(encl_var) => ctx
+                        .sym(encl_var)
+                        .ty
+                        .map(|ty| !ctx.typ(ty).has_tag(TypeTag::ERROR))
+                        .unwrap_or(true),
+                }
+            };
+            if pt_is_none && encl_var_erroneous {
+                // lambda only allowed in assignment or method invocation/cast context
+                self.attr_error(
+                    ctx.tree(that).pos,
+                    crate::resources::compiler_properties::errors::unexpected_lambda(),
+                );
+            }
+            self.result_info = Some(self.recovery_info.clone());
+            wrong_context = true;
+        }
+        let result_info = self.result_info.clone().expect("resultInfo");
+        // create an environment for attribution of the lambda expression
+        let local_env = self.lambda_env(ctx, syms, that, &env);
+        let mut needs_recovery =
+            result_info.check_context.deferred_attr_context().mode
+                == crate::comp::deferred_attr::AttrMode::CHECK;
+        if needs_recovery && self.is_serializable(ctx, syms, pt) {
+            local_env.info.borrow_mut().is_serializable = true;
+            local_env.info.borrow_mut().is_serializable_lambda = true;
+        }
+        let (params, body, param_kind) = match &ctx.tree(that).kind {
+            TreeKind::Lambda { params, body, param_kind, .. } => {
+                (params.clone(), *body, *param_kind)
+            }
+            _ => panic!("ClassCastException: JCLambda expected"),
+        };
+        let explicit_param_types: Option<List<TypeId>> =
+            if param_kind == crate::tree::jc_tree::ParameterKind::EXPLICIT {
+                self.attrib_stats(ctx, syms, params.clone(), &local_env);
+                let mut result: List<TypeId> = List::nil();
+                let mut current = crate::tree::tree_info::types(ctx, &params);
+                while current.non_empty() {
+                    result = result.append(
+                        (*current.head()).unwrap_or(syms.err_type),
+                    );
+                    current = current.tail();
+                }
+                Some(result)
+            } else {
+                None
+            };
+        let target_info = match self.get_target_info(ctx, syms, that, &result_info, explicit_param_types) {
+            Ok(info) => info,
+            Err(ex) => {
+                if let Some(diag) = ex.get_diagnostic() {
+                    result_info.check_context.report(ctx, ctx.tree(that).pos, diag);
+                }
+                let error = self.types.create_error_type_original(ctx, Some(pt), syms);
+                return Ok(error);
+            }
+        };
+        let current_target = target_info.target;
+        let lambda_type = target_info.descriptor;
+        if ctx.typ(current_target).has_tag(TypeTag::ERROR) {
+            ctx.tree_mut(that).ty = Some(current_target);
+            self.result = Some(current_target);
+            return Ok(current_target);
+        }
+        self.set_functional_info(
+            ctx,
+            syms,
+            &local_env,
+            that,
+            pt,
+            lambda_type,
+            current_target,
+            &result_info.check_context,
+        );
+        if ctx.typ(lambda_type).has_tag(TypeTag::FORALL) {
+            // lambda expression target desc cannot be a generic method
+            let target_tsym = ctx.typ(current_target).tsym.expect("current target symbol");
+            let kind = crate::code::kinds::kind_name(ctx.sym(target_tsym), ctx);
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::invalid_generic_lambda_target(
+                    Self::type_arg_placeholder(ctx, lambda_type),
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        crate::comp::resolve::symbol_display_name(ctx, target_tsym),
+                    ),
+                ),
+            ));
+            result_info.check_context.report(ctx, ctx.tree(that).pos, &fragment);
+            let error = self.types.create_error_type_original(ctx, Some(pt), syms);
+            ctx.tree_mut(that).ty = Some(error);
+            self.result = Some(error);
+            return Ok(error);
+        }
+        if param_kind == crate::tree::jc_tree::ParameterKind::IMPLICIT {
+            // add param type info in the AST
+            let mut actuals = self.types.get_parameter_types_public(ctx, lambda_type);
+            let mut current_params = params.clone();
+            let mut arity_mismatch = false;
+            while current_params.non_empty() {
+                let param = *current_params.head();
+                if actuals.is_empty() {
+                    arity_mismatch = true;
+                }
+                let arg_type = if arity_mismatch {
+                    syms.err_type
+                } else {
+                    *actuals.head()
+                };
+                let implicit = match &ctx.tree(param).kind {
+                    TreeKind::VariableDecl { vartype: Some(vartype), .. } => {
+                        ctx.tree(*vartype).pos == crate::util::position::NOPOS
+                    }
+                    TreeKind::VariableDecl { vartype: None, .. } => true,
+                    _ => false,
+                };
+                if implicit {
+                    self.set_synthetic_variable_type(ctx, syms, param, arg_type);
+                }
+                if let TreeKind::VariableDecl { sym, .. } = &mut ctx.tree_mut(param).kind {
+                    *sym = None;
+                }
+                if !actuals.is_empty() {
+                    actuals = actuals.tail();
+                }
+                current_params = current_params.tail();
+            }
+            self.attrib_stats(ctx, syms, params.clone(), &local_env);
+            if arity_mismatch {
+                let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::incompatible_arg_types_in_lambda(),
+                ));
+                result_info.check_context.report(ctx, ctx.tree(that).pos, &fragment);
+                let error = self.types.create_error_type_original(ctx, Some(current_target), syms);
+                ctx.tree_mut(that).ty = Some(error);
+                self.result = Some(error);
+                return Ok(error);
+            }
+        }
+        needs_recovery = false;
+        let body_result_info = self.lambda_body_result(ctx, that, lambda_type, &result_info);
+        local_env.info.borrow_mut().return_result = Some(body_result_info.clone());
+        let body_tree = body.expect("lambda body");
+        if ctx.tree(body_tree).tag == Tag::BLOCK {
+            if Some(body_tree) == self.break_tree
+                && result_info.check_context.deferred_attr_context().mode
+                    == crate::comp::deferred_attr::AttrMode::CHECK
+            {
+                let types_rc = Rc::clone(&self.types);
+                let copy = self.copy_env(ctx, syms, &types_rc, &local_env);
+                self.break_tree_found(copy);
+            }
+            let stats = match &ctx.tree(body_tree).kind {
+                TreeKind::Block { stats, .. } => stats.clone(),
+                _ => List::nil(),
+            };
+            self.attrib_stats(ctx, syms, stats, &local_env);
+        } else {
+            self.attrib_tree_use(ctx, syms, body_tree, &local_env, body_result_info);
+        }
+        let mut result = self.check(ctx, syms, that, current_target, KindSelector::VAL, &result_info);
+        let is_speculative_round = result_info.check_context.deferred_attr_context().mode
+            == crate::comp::deferred_attr::AttrMode::SPECULATIVE;
+        // Java: preFlow(that); flow.analyzeLambda(env, that, make, isSpeculativeRound);
+        {
+            let rs_rc = self.rs.borrow().clone();
+            let recover_rc = self.attr_recover.borrow().clone();
+            let chk_rc = Rc::clone(&self.chk);
+            if let (Some(rs_rc), Some(recover_rc)) = (rs_rc, recover_rc) {
+                let mut rs = rs_rc.borrow_mut();
+                let mut recover = recover_rc.borrow_mut();
+                let chk = chk_rc.borrow();
+                let infer_rc = Rc::clone(&self.infer);
+                let diags = Rc::clone(&self.diags);
+                self.pre_flow(ctx, syms, &mut recover, &mut rs, &infer_rc, &chk, &diags, &env, that);
+            }
+        }
+        {
+            let flow_rc = self.flow.borrow().clone().expect("AssertionError: flow service must be installed");
+            let make = Rc::clone(&self.make);
+            flow_rc.analyze_lambda(ctx, &env, that, &make, is_speculative_round);
+        }
+        ctx.tree_mut(that).ty = Some(current_target);
+        self.check_lambda_compatible(ctx, syms, that, lambda_type, &result_info.check_context);
+        if !is_speculative_round {
+            // add thrown types as bounds to the thrown types free variables if needed
+            let inference_context = Rc::clone(result_info.check_context.inference_context());
+            let lambda_thrown = ctx.typ(lambda_type).get_thrown_types(ctx);
+            if inference_context.free_list(ctx, syms, &self.types, lambda_thrown.clone()) {
+                let inferred_thrown_types = {
+                    let flow_rc = self.flow.borrow().clone().expect("AssertionError: flow service must be installed");
+                    let make = Rc::clone(&self.make);
+                    flow_rc.analyze_lambda_thrown_types(ctx, &env, that, &make)
+                };
+                if !self.check_ex_constraints(ctx, syms, inferred_thrown_types, lambda_thrown.clone(), &inference_context) {
+                    let thrown_display = self
+                        .names
+                        .empty
+                        .to_java_string()
+                        .to_string_lossy()
+                        .to_string();
+                    let _ = thrown_display;
+                    let rejected: Vec<crate::resources::diagnostic_contract::TypeArg> = Vec::new();
+                    let info = crate::resources::compiler_properties::errors::incompatible_thrown_types_in_mref(rejected);
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        ctx.tree(that).pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                }
+            }
+            let list = List::of(lambda_type).prepend(current_target);
+            self.check_accessible_types(
+                ctx,
+                syms,
+                ctx.tree(that).pos,
+                &local_env,
+                &inference_context,
+                &list,
+            );
+        }
+        if wrong_context {
+            let error = self.types.create_error_type_original(ctx, Some(pt), syms);
+            ctx.tree_mut(that).ty = Some(error);
+            result = error;
+        }
+        self.result = Some(result);
+        // finally: leave the local scope and run the recovery round if needed
+        let local_scope = local_env.info.borrow().scope.expect("local env scope");
+        ctx.scope_leave(local_scope);
+        if needs_recovery {
+            let prev_result = result;
+            let recovery_info = self.recovery_info.clone();
+            let recovered = self.attrib_tree_use(ctx, syms, that, &env, recovery_info);
+            if recovered == syms.recovery_type {
+                self.result = Some(prev_result);
+                ctx.tree_mut(that).ty = Some(prev_result);
+            }
+        }
+        Ok(self.result.unwrap_or(result))
+    }
 }
 
 #[cfg(test)]

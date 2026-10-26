@@ -3749,3 +3749,77 @@ impl Check {
         }
     }
 }
+
+impl Check {
+    /// Java: Type checkConstructorRefType(DiagnosticPosition pos, Type t)
+    /// (Check.java:741-763).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - t: the constructor reference qualifier type.
+    ///
+    /// # Returns
+    ///   - the checked type (error type on failure).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:741-763.
+    pub fn check_constructor_ref_type(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        pos: i32,
+        t: TypeId,
+    ) -> TypeId {
+        let t = self.check_class_or_array_type(ctx, pos, t);
+        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            let tsym = ctx.typ(t).tsym.expect("class type symbol");
+            let flags_value = ctx.sym(tsym).flags_field;
+            if flags_value
+                & ((crate::code::flags::ABSTRACT as i64) | (crate::code::flags::INTERFACE as i64))
+                != 0
+            {
+                let info = crate::resources::compiler_properties::errors::abstract_cant_be_instantiated(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        crate::comp::resolve::symbol_display_name(ctx, tsym),
+                    ),
+                );
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+                return self.types.create_error_type_original(ctx, Some(t), syms);
+            } else if flags_value & (crate::code::flags::ENUM as i64) != 0 {
+                let info = crate::resources::compiler_properties::errors::enum_cant_be_instantiated();
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+                return self.types.create_error_type_original(ctx, Some(t), syms);
+            } else {
+                return self.check_class_type_no_bounds(ctx, pos, t, true);
+            }
+        } else if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
+            let elemtype = match &ctx.typ(t).kind {
+                crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => {
+                    elemtype.expect("array element type")
+                }
+                _ => t,
+            };
+            if !self.types.is_reifiable(ctx, syms, elemtype) {
+                let info = crate::resources::compiler_properties::errors::generic_array_creation();
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+                return self.types.create_error_type_original(ctx, Some(t), syms);
+            }
+        }
+        t
+    }
+}

@@ -8365,6 +8365,37 @@ impl Resolve {
     }
 }
 
+
+impl Resolve {
+    /// Adapter: public wrapper of the ported isAccessible(Env, TypeSymbol)
+    /// subset (Resolve.java:1042-1060).
+    ///
+    /// # Arguments
+    ///   - ctx/syms/types: explicit services;
+    ///   - env: the attribution environment;
+    ///   - site: the qualifier type;
+    ///   - sym: the referenced symbol.
+    ///
+    /// # Returns
+    ///   - true when the symbol is accessible.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Resolve.java:1042-1060.
+    pub fn is_accessible_pub(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        types: &crate::code::types::Types,
+        env: &Rc<Env<AttrContext>>,
+        site: TypeId,
+        sym: SymbolId,
+    ) -> bool {
+        self.is_accessible(ctx, syms, types, env, site, sym)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
