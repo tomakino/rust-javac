@@ -1887,3 +1887,26 @@ mod tests {
         assert_eq!(recorder.names, vec!["A"]);
     }
 }
+
+/// §9 helper: the direct children of a tree node (the navigational bodies of
+/// TreeScanner without recursion); used by the explicit-recursion adapters.
+pub struct ChildCollector {
+    pub children: Vec<TreeId>,
+}
+
+impl TreeScannerVisitor for ChildCollector {
+    fn scan(&mut self, _ctx: &mut CompilerContext, tree: Option<TreeId>) {
+        if let Some(tree) = tree {
+            self.children.push(tree);
+        }
+    }
+}
+
+tree_scanner_visitor_delegate!(ChildCollector);
+
+/// §9 helper: collect the direct children of a tree node.
+pub fn tree_children(ctx: &mut CompilerContext, tree: TreeId) -> Vec<TreeId> {
+    let mut collector = ChildCollector { children: Vec::new() };
+    crate::tree::jc_tree::accept(ctx, tree, &mut collector);
+    collector.children
+}

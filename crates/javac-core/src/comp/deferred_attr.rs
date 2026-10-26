@@ -619,9 +619,19 @@ fn process_deferred_attr_node(
     match deferred_attr_context.mode {
         AttrMode::SPECULATIVE => {
             if node.deferred_stuck_policy.is_stuck() {
-                unimplemented!(
-                    "TODO(FunctionDescriptor/Attr batch): DeferredAttrNode.StructuralStuckChecker (DeferredAttr.java:800-990)"
-                )
+                // Java: new StructuralStuckChecker().check(dt, resultInfo, deferredAttrContext)
+                let svc_rc = attr
+                    .deferred_attr
+                    .borrow()
+                    .clone()
+                    .expect("TODO(批6 wiring): Attr.deferred_attr service must be installed");
+                let mut svc = svc_rc.borrow_mut();
+                let result = svc
+                    .structural_stuck_check(ctx, syms, attr, node.dt, &node.result_info, deferred_attr_context);
+                match result {
+                    Ok(()) => Ok(true),
+                    Err(failure) => Err(failure),
+                }
             } else {
                 panic!("AssertionError: Cannot get here");
             }
@@ -794,9 +804,29 @@ pub fn deferred_type_check(
     } else if deferred_attr_context.mode == AttrMode::SPECULATIVE
         || deferred_attr_context.inside_overload_phase()
     {
-        Rc::new(overload_stuck_policy_new(ctx, syms, types, result_info, t))
+        let chk_rc = Rc::clone(&attr.chk);
+        let chk = chk_rc.borrow();
+        Rc::new(overload_stuck_policy_new(
+            ctx,
+            syms,
+            types,
+            &attr.diags,
+            &chk,
+            result_info,
+            t,
+        ))
     } else {
-        Rc::new(check_stuck_policy_new(ctx, syms, types, result_info, t))
+        let chk_rc = Rc::clone(&attr.chk);
+        let chk = chk_rc.borrow();
+        Rc::new(check_stuck_policy_new(
+            ctx,
+            syms,
+            types,
+            &attr.diags,
+            &chk,
+            result_info,
+            t,
+        ))
     };
     check_with_policy(
         ctx,
@@ -1495,6 +1525,14 @@ impl ResolveDeferredRecoveryMap {
 /// TreeScanner methods for the visited tags.
 struct FilterScanner;
 
+/// §9 helper: the scanner services the upstream inner class reaches through the
+/// enclosing DeferredAttr instance (explicit parameter bundle).
+pub struct StuckScannerEnv<'a> {
+    syms: &'a mut Symtab,
+    diags: &'a crate::util::jc_diagnostic::Factory,
+    chk: &'a crate::comp::check::Check,
+}
+
 impl FilterScanner {
     /// Java: public void scan(JCTree tree)
     fn scan(
@@ -1502,6 +1540,7 @@ impl FilterScanner {
         tree: Option<TreeId>,
         policy: &mut CheckStuckPolicy,
         types: &Types,
+        env: &mut StuckScannerEnv,
     ) {
         let Some(tree) = tree else {
             return;
@@ -1514,19 +1553,19 @@ impl FilterScanner {
                     } => (*truepart, *falsepart),
                     _ => panic!("expected a conditional"),
                 };
-                Self::scan(ctx, truepart, policy, types);
-                Self::scan(ctx, falsepart, policy, types);
+                Self::scan(ctx, truepart, policy, types, env);
+                Self::scan(ctx, falsepart, policy, types, env);
             }
             Tag::PARENS => {
                 let expr = match &ctx.tree(tree).kind {
                     TreeKind::Parens { expr } => *expr,
                     _ => panic!("expected parens"),
                 };
-                Self::scan(ctx, expr, policy, types);
+                Self::scan(ctx, expr, policy, types, env);
             }
-            Tag::LAMBDA => policy.visit_lambda(ctx, tree, types),
-            Tag::REFERENCE => policy.visit_reference(ctx, tree, types),
-            Tag::SWITCH_EXPRESSION => policy.visit_switch_expression(ctx, tree, types),
+            Tag::LAMBDA => policy.visit_lambda(ctx, tree, types, env),
+            Tag::REFERENCE => policy.visit_reference(ctx, tree, types, env),
+            Tag::SWITCH_EXPRESSION => policy.visit_switch_expression(ctx, tree, types, env),
             _ => {
                 // Java: void skip(JCTree tree) {} — the node is discarded.
             }
@@ -1535,11 +1574,13 @@ impl FilterScanner {
 
     /// LambdaReturnScanner's statement traversal (DeferredAttr.java:1100-1105)
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     fn scan_lambda_return(
         ctx: &mut CompilerContext,
         tree: Option<TreeId>,
         policy: &mut CheckStuckPolicy,
         types: &Types,
+        env: &mut StuckScannerEnv,
         pt: Option<TypeId>,
     ) {
         let Some(tree) = tree else {
@@ -1550,7 +1591,7 @@ impl FilterScanner {
                 if let TreeKind::Block { stats, .. } = &ctx.tree(tree).kind {
                     let stats = stats.clone();
                     for stat in stats.iter() {
-                        Self::scan_lambda_return(ctx, Some(stat), policy, types, pt);
+                        Self::scan_lambda_return(ctx, Some(stat), policy, types, env, pt);
                     }
                 }
             }
@@ -1561,8 +1602,8 @@ impl FilterScanner {
                     } => (*thenpart, *elsepart),
                     _ => panic!("expected an if"),
                 };
-                Self::scan_lambda_return(ctx, thenpart, policy, types, pt);
-                Self::scan_lambda_return(ctx, elsepart, policy, types, pt);
+                Self::scan_lambda_return(ctx, thenpart, policy, types, env, pt);
+                Self::scan_lambda_return(ctx, elsepart, policy, types, env, pt);
             }
             Tag::RETURN => {
                 let expr = match &ctx.tree(tree).kind {
@@ -1572,39 +1613,39 @@ impl FilterScanner {
                 if let Some(expr) = expr {
                     let prev_pt = policy.pt;
                     policy.pt = pt;
-                    Self::scan(ctx, Some(expr), policy, types);
+                    Self::scan(ctx, Some(expr), policy, types, env);
                     policy.pt = prev_pt;
                 }
             }
             Tag::DOLOOP => {
                 if let TreeKind::DoWhileLoop { body, .. } = &ctx.tree(tree).kind {
                     let body = *body;
-                    Self::scan_lambda_return(ctx, body, policy, types, pt);
+                    Self::scan_lambda_return(ctx, body, policy, types, env, pt);
                 }
             }
             Tag::WHILELOOP => {
                 if let TreeKind::WhileLoop { body, .. } = &ctx.tree(tree).kind {
                     let body = *body;
-                    Self::scan_lambda_return(ctx, body, policy, types, pt);
+                    Self::scan_lambda_return(ctx, body, policy, types, env, pt);
                 }
             }
             Tag::FORLOOP => {
                 if let TreeKind::ForLoop { body, .. } = &ctx.tree(tree).kind {
                     let body = *body;
-                    Self::scan_lambda_return(ctx, body, policy, types, pt);
+                    Self::scan_lambda_return(ctx, body, policy, types, env, pt);
                 }
             }
             Tag::FOREACHLOOP => {
                 if let TreeKind::EnhancedForLoop { body, .. } = &ctx.tree(tree).kind {
                     let body = *body;
-                    Self::scan_lambda_return(ctx, body, policy, types, pt);
+                    Self::scan_lambda_return(ctx, body, policy, types, env, pt);
                 }
             }
             Tag::SWITCH => {
                 if let TreeKind::Switch { cases, .. } = &ctx.tree(tree).kind {
                     let cases = cases.clone();
                     for case in cases.iter() {
-                        Self::scan_lambda_return(ctx, Some(case), policy, types, pt);
+                        Self::scan_lambda_return(ctx, Some(case), policy, types, env, pt);
                     }
                 }
             }
@@ -1613,9 +1654,9 @@ impl FilterScanner {
                     let stats = stats.clone();
                     let body = *body;
                     for stat in stats.iter() {
-                        Self::scan_lambda_return(ctx, Some(stat), policy, types, pt);
+                        Self::scan_lambda_return(ctx, Some(stat), policy, types, env, pt);
                     }
-                    Self::scan_lambda_return(ctx, body, policy, types, pt);
+                    Self::scan_lambda_return(ctx, body, policy, types, env, pt);
                 }
             }
             Tag::TRY => {
@@ -1628,22 +1669,22 @@ impl FilterScanner {
                     } => (*body, catchers.clone(), *finalizer),
                     _ => panic!("expected a try"),
                 };
-                Self::scan_lambda_return(ctx, body, policy, types, pt);
+                Self::scan_lambda_return(ctx, body, policy, types, env, pt);
                 for catcher in catchers.iter() {
-                    Self::scan_lambda_return(ctx, Some(catcher), policy, types, pt);
+                    Self::scan_lambda_return(ctx, Some(catcher), policy, types, env, pt);
                 }
-                Self::scan_lambda_return(ctx, finalizer, policy, types, pt);
+                Self::scan_lambda_return(ctx, finalizer, policy, types, env, pt);
             }
             Tag::CATCH => {
                 if let TreeKind::Catch { body, .. } = &ctx.tree(tree).kind {
                     let body = *body;
-                    Self::scan_lambda_return(ctx, body, policy, types, pt);
+                    Self::scan_lambda_return(ctx, body, policy, types, env, pt);
                 }
             }
             Tag::SYNCHRONIZED => {
                 if let TreeKind::Synchronized { body, .. } = &ctx.tree(tree).kind {
                     let body = *body;
-                    Self::scan_lambda_return(ctx, body, policy, types, pt);
+                    Self::scan_lambda_return(ctx, body, policy, types, env, pt);
                 }
             }
             _ => {}
@@ -1656,6 +1697,7 @@ impl FilterScanner {
         tree: Option<TreeId>,
         policy: &mut CheckStuckPolicy,
         types: &Types,
+        env: &mut StuckScannerEnv,
         pt: Option<TypeId>,
     ) {
         let Some(tree) = tree else {
@@ -1670,7 +1712,7 @@ impl FilterScanner {
                 if let Some(value) = value {
                     let prev_pt = policy.pt;
                     policy.pt = pt;
-                    FilterScanner::scan(ctx, Some(value), policy, types);
+                    FilterScanner::scan(ctx, Some(value), policy, types, env);
                     policy.pt = prev_pt;
                 }
             }
@@ -1678,7 +1720,7 @@ impl FilterScanner {
                 if let TreeKind::Block { stats, .. } = &ctx.tree(tree).kind {
                     let stats = stats.clone();
                     for stat in stats.iter() {
-                        Self::scan_switch_expression(ctx, Some(stat), policy, types, pt);
+                        Self::scan_switch_expression(ctx, Some(stat), policy, types, env, pt);
                     }
                 }
             }
@@ -1687,9 +1729,9 @@ impl FilterScanner {
                     let stats = stats.clone();
                     let body = *body;
                     for stat in stats.iter() {
-                        Self::scan_switch_expression(ctx, Some(stat), policy, types, pt);
+                        Self::scan_switch_expression(ctx, Some(stat), policy, types, env, pt);
                     }
-                    Self::scan_switch_expression(ctx, body, policy, types, pt);
+                    Self::scan_switch_expression(ctx, body, policy, types, env, pt);
                 }
             }
             Tag::IF => {
@@ -1699,38 +1741,38 @@ impl FilterScanner {
                     } => (*thenpart, *elsepart),
                     _ => panic!("expected an if"),
                 };
-                Self::scan_switch_expression(ctx, thenpart, policy, types, pt);
-                Self::scan_switch_expression(ctx, elsepart, policy, types, pt);
+                Self::scan_switch_expression(ctx, thenpart, policy, types, env, pt);
+                Self::scan_switch_expression(ctx, elsepart, policy, types, env, pt);
             }
             Tag::DOLOOP => {
                 if let TreeKind::DoWhileLoop { body, .. } = &ctx.tree(tree).kind {
                     let body = *body;
-                    Self::scan_switch_expression(ctx, body, policy, types, pt);
+                    Self::scan_switch_expression(ctx, body, policy, types, env, pt);
                 }
             }
             Tag::WHILELOOP => {
                 if let TreeKind::WhileLoop { body, .. } = &ctx.tree(tree).kind {
                     let body = *body;
-                    Self::scan_switch_expression(ctx, body, policy, types, pt);
+                    Self::scan_switch_expression(ctx, body, policy, types, env, pt);
                 }
             }
             Tag::FORLOOP => {
                 if let TreeKind::ForLoop { body, .. } = &ctx.tree(tree).kind {
                     let body = *body;
-                    Self::scan_switch_expression(ctx, body, policy, types, pt);
+                    Self::scan_switch_expression(ctx, body, policy, types, env, pt);
                 }
             }
             Tag::FOREACHLOOP => {
                 if let TreeKind::EnhancedForLoop { body, .. } = &ctx.tree(tree).kind {
                     let body = *body;
-                    Self::scan_switch_expression(ctx, body, policy, types, pt);
+                    Self::scan_switch_expression(ctx, body, policy, types, env, pt);
                 }
             }
             Tag::SWITCH => {
                 if let TreeKind::Switch { cases, .. } = &ctx.tree(tree).kind {
                     let cases = cases.clone();
                     for case in cases.iter() {
-                        Self::scan_switch_expression(ctx, Some(case), policy, types, pt);
+                        Self::scan_switch_expression(ctx, Some(case), policy, types, env, pt);
                     }
                 }
             }
@@ -1744,22 +1786,22 @@ impl FilterScanner {
                     } => (*body, catchers.clone(), *finalizer),
                     _ => panic!("expected a try"),
                 };
-                Self::scan_switch_expression(ctx, body, policy, types, pt);
+                Self::scan_switch_expression(ctx, body, policy, types, env, pt);
                 for catcher in catchers.iter() {
-                    Self::scan_switch_expression(ctx, Some(catcher), policy, types, pt);
+                    Self::scan_switch_expression(ctx, Some(catcher), policy, types, env, pt);
                 }
-                Self::scan_switch_expression(ctx, finalizer, policy, types, pt);
+                Self::scan_switch_expression(ctx, finalizer, policy, types, env, pt);
             }
             Tag::CATCH => {
                 if let TreeKind::Catch { body, .. } = &ctx.tree(tree).kind {
                     let body = *body;
-                    Self::scan_switch_expression(ctx, body, policy, types, pt);
+                    Self::scan_switch_expression(ctx, body, policy, types, env, pt);
                 }
             }
             Tag::SYNCHRONIZED => {
                 if let TreeKind::Synchronized { body, .. } = &ctx.tree(tree).kind {
                     let body = *body;
-                    Self::scan_switch_expression(ctx, body, policy, types, pt);
+                    Self::scan_switch_expression(ctx, body, policy, types, env, pt);
                 }
             }
             _ => {}
@@ -1795,6 +1837,8 @@ impl CheckStuckPolicy {
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         types: &Types,
+        diags: &crate::util::jc_diagnostic::Factory,
+        chk: &crate::comp::check::Check,
         result_info: &ResultInfo,
         dt: TypeId,
     ) -> CheckStuckPolicy {
@@ -1805,7 +1849,10 @@ impl CheckStuckPolicy {
             dep_vars: Rc::new(RefCell::new(Vec::new())),
         };
         let (tree, _, _, _, _, _) = deferred_fields(ctx, dt);
-        FilterScanner::scan(ctx, Some(tree), &mut policy, types);
+        {
+            let mut local_env = StuckScannerEnv { syms, diags, chk };
+            FilterScanner::scan(ctx, Some(tree), &mut policy, types, &mut local_env);
+        }
         if !policy.stuck_vars.borrow().is_empty() {
             let stuck_vars = policy.stuck_vars.borrow().clone();
             let listener = Rc::new(CheckStuckPolicyListener {
@@ -1824,25 +1871,128 @@ impl CheckStuckPolicy {
     }
 
     /// Java: public void scan(JCTree tree) (FilterScanner.scan)
-    pub fn scan(&mut self, ctx: &mut CompilerContext, types: &Types, tree: Option<TreeId>) {
-        FilterScanner::scan(ctx, tree, self, types);
+    pub fn scan(
+        &mut self,
+        ctx: &mut CompilerContext,
+        types: &Types,
+        env: &mut StuckScannerEnv,
+        tree: Option<TreeId>,
+    ) {
+        FilterScanner::scan(ctx, tree, self, types, env);
     }
 
-    /// Java: public void visitLambda(JCLambda tree) — registered: needs
-    /// Types.isFunctionalInterface/findDescriptorType (FunctionDescriptor batch).
-    fn visit_lambda(&mut self, _ctx: &mut CompilerContext, _tree: TreeId, _types: &Types) {
-        unimplemented!(
-            "TODO(FunctionDescriptor batch): CheckStuckPolicy.visitLambda (DeferredAttr.java:1195-1220)"
-        )
+    /// Java: public void visitLambda(JCLambda tree) (DeferredAttr.java:1195-1220)
+    fn visit_lambda(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        types: &Types,
+        env: &mut StuckScannerEnv,
+    ) {
+        let Some(pt) = self.pt else {
+            return;
+        };
+        if self.inference_context.inference_vars().contains(&pt) {
+            self.stuck_vars.borrow_mut().push(pt);
+        }
+        let Some(pt_tsym) = ctx.typ(pt).tsym else {
+            return;
+        };
+        if !types.is_functional_interface(ctx, env.syms, env.diags, env.chk, pt_tsym) {
+            return;
+        }
+        let descriptor_type = match types.find_descriptor_type(ctx, env.syms, env.diags, env.chk, pt) {
+            Ok(descriptor) => descriptor,
+            Err(_) => return,
+        };
+        let desc_params = types.get_parameter_types_public(ctx, descriptor_type);
+        let free_arg_vars = self.free_vars_of(ctx, types, env, desc_params);
+        let param_kind = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::Lambda { param_kind, .. } => *param_kind,
+            _ => return,
+        };
+        if param_kind == crate::tree::jc_tree::ParameterKind::IMPLICIT && !free_arg_vars.is_empty() {
+            self.stuck_vars.borrow_mut().extend(free_arg_vars);
+            let ret = types.get_return_type_public(ctx, descriptor_type);
+            let thrown = ctx.typ(descriptor_type).get_thrown_types(ctx);
+            let dep_return = self.free_vars_of(ctx, types, env, List::of(ret));
+            let dep_thrown = self.free_vars_of(ctx, types, env, thrown);
+            self.dep_vars.borrow_mut().extend(dep_return);
+            self.dep_vars.borrow_mut().extend(dep_thrown);
+        }
+        let ret = types.get_return_type_public(ctx, descriptor_type);
+        self.scan_lambda_body(ctx, tree, types, env, Some(ret));
     }
 
-    /// Java: public void visitReference(JCMemberReference tree) — registered:
-    /// needs Types.isFunctionalInterface/findDescriptorType and the
-    /// JCMemberReference.OverloadKind state (Resolve B/FunctionDescriptor batch).
-    fn visit_reference(&mut self, _ctx: &mut CompilerContext, _tree: TreeId, _types: &Types) {
-        unimplemented!(
-            "TODO(FunctionDescriptor/Resolve B batch): CheckStuckPolicy.visitReference (DeferredAttr.java:1222-1245)"
-        )
+    /// §9 helper: InferenceContext.freeVarsIn(List<Type>) (DeferredAttr.java:1228-1240).
+    fn free_vars_of(
+        &self,
+        ctx: &mut CompilerContext,
+        types: &Types,
+        env: &StuckScannerEnv,
+        ts: crate::util::list::List<TypeId>,
+    ) -> Vec<TypeId> {
+        let mut result: Vec<TypeId> = Vec::new();
+        let mut current = ts;
+        while current.non_empty() {
+            let t = *current.head();
+            let vars = self
+                .inference_context
+                .free_vars_in(ctx, env.syms, types, t);
+            result.extend(vars.iter());
+            current = current.tail();
+        }
+        result
+    }
+
+    /// Java: public void visitReference(JCMemberReference tree) (DeferredAttr.java:1222-1245)
+    fn visit_reference(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        types: &Types,
+        env: &mut StuckScannerEnv,
+    ) {
+        // Java: scan(tree.expr)
+        let expr = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::MemberReference { expr, .. } => *expr,
+            _ => return,
+        };
+        FilterScanner::scan(ctx, expr, self, types, env);
+        let Some(pt) = self.pt else {
+            return;
+        };
+        if self.inference_context.inference_vars().contains(&pt) {
+            self.stuck_vars.borrow_mut().push(pt);
+            return;
+        }
+        let Some(pt_tsym) = ctx.typ(pt).tsym else {
+            return;
+        };
+        if !types.is_functional_interface(ctx, env.syms, env.diags, env.chk, pt_tsym) {
+            return;
+        }
+        let descriptor_type = match types.find_descriptor_type(ctx, env.syms, env.diags, env.chk, pt) {
+            Ok(descriptor) => descriptor,
+            Err(_) => return,
+        };
+        let desc_params = types.get_parameter_types_public(ctx, descriptor_type);
+        let free_arg_vars = self.free_vars_of(ctx, types, env, desc_params);
+        let overload_kind = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::MemberReference { overload_kind, .. } => *overload_kind,
+            _ => None,
+        };
+        if !free_arg_vars.is_empty()
+            && overload_kind != Some(crate::tree::jc_tree::OverloadKind::UNOVERLOADED)
+        {
+            self.stuck_vars.borrow_mut().extend(free_arg_vars);
+            let ret = types.get_return_type_public(ctx, descriptor_type);
+            let thrown = ctx.typ(descriptor_type).get_thrown_types(ctx);
+            let dep_return = self.free_vars_of(ctx, types, env, List::of(ret));
+            let dep_thrown = self.free_vars_of(ctx, types, env, thrown);
+            self.dep_vars.borrow_mut().extend(dep_return);
+            self.dep_vars.borrow_mut().extend(dep_thrown);
+        }
     }
 
     /// Java: void scanLambdaBody(JCLambda lambda, final Type pt)
@@ -1853,6 +2003,7 @@ impl CheckStuckPolicy {
         ctx: &mut CompilerContext,
         lambda: TreeId,
         types: &Types,
+        env: &mut StuckScannerEnv,
         lambda_pt: Option<TypeId>,
     ) {
         let (body, _param_kind) = match &ctx.tree(lambda).kind {
@@ -1866,23 +2017,29 @@ impl CheckStuckPolicy {
             // Java: BodyKind.EXPRESSION
             let prev_pt = self.pt;
             self.pt = lambda_pt;
-            self.scan(ctx, types, Some(body));
+            self.scan(ctx, types, env, Some(body));
             self.pt = prev_pt;
         } else {
-            FilterScanner::scan_lambda_return(ctx, Some(body), self, types, lambda_pt);
+            FilterScanner::scan_lambda_return(ctx, Some(body), self, types, env, lambda_pt);
         }
     }
 
     /// Java: public void visitSwitchExpression(JCSwitchExpression expr)
     /// (DeferredAttr.java:1272-1285)
-    fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId, types: &Types) {
+    fn visit_switch_expression(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        types: &Types,
+        env: &mut StuckScannerEnv,
+    ) {
         let cases = match &ctx.tree(tree).kind {
             TreeKind::SwitchExpression { cases, .. } => cases.clone(),
             _ => panic!("expected a switch expression"),
         };
         let pt = self.pt;
         for case in cases.iter() {
-            FilterScanner::scan_switch_expression(ctx, Some(case), self, types, pt);
+            FilterScanner::scan_switch_expression(ctx, Some(case), self, types, env, pt);
         }
     }
 }
@@ -1922,14 +2079,17 @@ impl crate::comp::infer::FreeTypeListener for CheckStuckPolicyListener {
 
 /// Java: CheckStuckPolicy constructor wrapper used by DeferredType.check
 /// (the upstream new CheckStuckPolicy(resultInfo, dt)).
+#[allow(clippy::too_many_arguments)]
 pub fn check_stuck_policy_new(
     ctx: &mut CompilerContext,
     syms: &mut Symtab,
     types: &Types,
+    diags: &crate::util::jc_diagnostic::Factory,
+    chk: &crate::comp::check::Check,
     result_info: &ResultInfo,
     dt: TypeId,
 ) -> CheckStuckPolicy {
-    CheckStuckPolicy::new(ctx, syms, types, result_info, dt)
+    CheckStuckPolicy::new(ctx, syms, types, diags, chk, result_info, dt)
 }
 
 /// Java: class OverloadStuckPolicy extends CheckStuckPolicy implements
@@ -1953,10 +2113,12 @@ impl OverloadStuckPolicy {
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         types: &Types,
+        diags: &crate::util::jc_diagnostic::Factory,
+        chk: &crate::comp::check::Check,
         result_info: &ResultInfo,
         dt: TypeId,
     ) -> OverloadStuckPolicy {
-        let base = CheckStuckPolicy::new(ctx, syms, types, result_info, dt);
+        let base = CheckStuckPolicy::new(ctx, syms, types, diags, chk, result_info, dt);
         OverloadStuckPolicy { base, stuck: false }
     }
 }
@@ -1976,14 +2138,17 @@ impl DeferredStuckPolicy for OverloadStuckPolicy {
 }
 
 /// Java: OverloadStuckPolicy constructor wrapper used by DeferredType.check.
+#[allow(clippy::too_many_arguments)]
 pub fn overload_stuck_policy_new(
     ctx: &mut CompilerContext,
     syms: &mut Symtab,
     types: &Types,
+    diags: &crate::util::jc_diagnostic::Factory,
+    chk: &crate::comp::check::Check,
     result_info: &ResultInfo,
     dt: TypeId,
 ) -> OverloadStuckPolicy {
-    OverloadStuckPolicy::new(ctx, syms, types, result_info, dt)
+    OverloadStuckPolicy::new(ctx, syms, types, diags, chk, result_info, dt)
 }
 
 // ---------------------------------------------------------------------------
@@ -2309,6 +2474,539 @@ impl DeferredAttrService {
             ctx.scope_leave(scope);
         }
         outcome
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Batch 5: DeferredAttrNode.StructuralStuckChecker (DeferredAttr.java:800-990)
+// and LambdaBodyStructChecker (DeferredAttr.java:955-990). §9: the inner-
+// class field access is explicit service parameters; the navigational body is
+// tree_children (explicit recursion).
+// ---------------------------------------------------------------------------
+
+impl DeferredAttrService {
+    /// Java: StructuralStuckChecker.check(DeferredType dt, ResultInfo,
+    /// DeferredAttrContext) (DeferredAttr.java:808-816)
+    pub fn structural_stuck_check(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        attr: &mut Attr,
+        dt: TypeId,
+        result_info: &Rc<ResultInfo>,
+        deferred_attr_context: &DeferredAttrContext,
+    ) -> Result<(), DeferredAttrFailure> {
+        let (tree, env, _, _, cache, _) = deferred_fields(ctx, dt);
+        let state = StructuralState {
+            result_info: Rc::clone(result_info),
+            inference_context: Rc::clone(&deferred_attr_context.inference_context),
+            env,
+        };
+        self.structural_check_tree(ctx, syms, attr, &state, tree)?;
+        cache
+            .borrow_mut()
+            .put(self.stuck_tree, Rc::clone(result_info));
+        Ok(())
+    }
+
+    /// Java: StructuralStuckChecker tree navigation (TreeScanner default bodies;
+    /// the overridden visits are the special cases below).
+    fn structural_check_tree(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        attr: &mut Attr,
+        state: &StructuralState,
+        tree: TreeId,
+    ) -> Result<(), DeferredAttrFailure> {
+        use crate::tree::jc_tree::Tag;
+        match ctx.tree(tree).tag {
+            Tag::LAMBDA => self.structural_check_lambda(ctx, syms, attr, state, tree),
+            Tag::REFERENCE => self.structural_check_reference(ctx, syms, attr, state, tree),
+            // Java: visitNewClass/visitApply: do nothing
+            Tag::NEWCLASS | Tag::APPLY => Ok(()),
+            Tag::CONDEXPR => {
+                // Java: visitConditional: skip tree.cond
+                let (truepart, falsepart) = match &ctx.tree(tree).kind {
+                    crate::tree::jc_tree::TreeKind::Conditional {
+                        truepart, falsepart, ..
+                    } => (*truepart, *falsepart),
+                    _ => panic!("ClassCastException: JCConditional expected"),
+                };
+                if let Some(truepart) = truepart {
+                    self.structural_check_tree(ctx, syms, attr, state, truepart)?;
+                }
+                if let Some(falsepart) = falsepart {
+                    self.structural_check_tree(ctx, syms, attr, state, falsepart)?;
+                }
+                Ok(())
+            }
+            Tag::SWITCH_EXPRESSION => {
+                // Java: visitSwitchExpression: scan(tree.cases)
+                let cases = match &ctx.tree(tree).kind {
+                    crate::tree::jc_tree::TreeKind::SwitchExpression { cases, .. } => cases.clone(),
+                    _ => panic!("ClassCastException: JCSwitchExpression expected"),
+                };
+                let mut current = cases;
+                while current.non_empty() {
+                    self.structural_check_tree(ctx, syms, attr, state, *current.head())?;
+                    current = current.tail();
+                }
+                Ok(())
+            }
+            _ => {
+                for child in crate::tree::tree_scanner::tree_children(ctx, tree) {
+                    self.structural_check_tree(ctx, syms, attr, state, child)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Java: StructuralStuckChecker.visitLambda (DeferredAttr.java:820-880)
+    fn structural_check_lambda(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        attr: &mut Attr,
+        state: &StructuralState,
+        tree: TreeId,
+    ) -> Result<(), DeferredAttrFailure> {
+        let check_context = Rc::clone(&state.result_info.check_context);
+        let pt = state
+            .result_info
+            .pt
+            .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
+        let inference_vars = state.inference_context.inference_vars();
+        if inference_vars.contains(&pt) {
+            return Ok(());
+        }
+        // must be a functional descriptor
+        let descriptor_type = {
+            let chk_rc = Rc::clone(&attr.chk);
+            let chk = chk_rc.borrow();
+            match self
+                .types
+                .find_descriptor_type(ctx, syms, &self.diags, &chk, pt)
+            {
+                Ok(descriptor) => Some(descriptor),
+                Err(error) => {
+                    if let Some(diag) = error.get_diagnostic() {
+                        check_context.report(ctx, 0, diag);
+                    }
+                    None
+                }
+            }
+        };
+        let Some(descriptor_type) = descriptor_type else {
+            return Ok(());
+        };
+        let params = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::Lambda { params, .. } => params.clone(),
+            _ => panic!("ClassCastException: JCLambda expected"),
+        };
+        let descriptor_params = self.types.get_parameter_types_public(ctx, descriptor_type);
+        if list_len(&descriptor_params) != list_len_trees(&params) {
+            let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::incompatible_arg_types_in_lambda(),
+            ));
+            check_context.report(ctx, ctx.tree(tree).pos, &diag);
+        }
+        let current_return_type = self.types.get_return_type_public(ctx, descriptor_type);
+        let return_type_is_void =
+            ctx.typ(current_return_type).has_tag(TypeTag::VOID);
+        let (body, body_is_expression) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::Lambda { body, .. } => {
+                let body = body.expect("lambda body");
+                (body, ctx.tree(body).tag != crate::tree::jc_tree::Tag::BLOCK)
+            }
+            _ => panic!("ClassCastException: JCLambda expected"),
+        };
+        if body_is_expression {
+            let is_expression_compatible = !return_type_is_void
+                || crate::tree::tree_info::is_expression_statement(ctx, body);
+            if !is_expression_compatible {
+                let missing = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::missing_ret_val(
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, current_return_type),
+                        ),
+                    ),
+                ));
+                let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::incompatible_ret_type_in_lambda(
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                            Rc::new(missing),
+                        ),
+                    ),
+                ));
+                check_context.report(ctx, ctx.tree(tree).pos, &diag);
+            }
+        } else {
+            let (is_void_compatible, is_potentially_value_compatible) =
+                self.lambda_body_struct_check(ctx, body);
+            if return_type_is_void {
+                if !is_void_compatible {
+                    let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::unexpected_ret_val(),
+                    ));
+                    check_context.report(ctx, ctx.tree(tree).pos, &diag);
+                }
+            } else {
+                let can_complete_normally =
+                    self.can_lambda_body_complete_normally(ctx, syms, attr, state, tree)?;
+                let is_value_compatible =
+                    is_potentially_value_compatible && !can_complete_normally;
+                if !is_value_compatible && !is_void_compatible {
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        ctx.tree(body).pos,
+                        crate::util::jc_diagnostic::Error::from(
+                            crate::resources::compiler_properties::errors::
+                                lambda_body_neither_value_nor_void_compatible(),
+                        ),
+                    );
+                }
+                if !is_value_compatible {
+                    let missing = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::missing_ret_val(
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::comp::attr::type_display_of(ctx, current_return_type),
+                            ),
+                        ),
+                    ));
+                    let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::incompatible_ret_type_in_lambda(
+                            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                                Rc::new(missing),
+                            ),
+                        ),
+                    ));
+                    check_context.report(ctx, ctx.tree(tree).pos, &diag);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Java: StructuralStuckChecker.visitReference (DeferredAttr.java:900-955)
+    fn structural_check_reference(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        attr: &mut Attr,
+        state: &StructuralState,
+        tree: TreeId,
+    ) -> Result<(), DeferredAttrFailure> {
+        let check_context = Rc::clone(&state.result_info.check_context);
+        let pt = state
+            .result_info
+            .pt
+            .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
+        let inference_vars = state.inference_context.inference_vars();
+        if inference_vars.contains(&pt) {
+            return Ok(());
+        }
+        let descriptor = {
+            let chk_rc = Rc::clone(&attr.chk);
+            let chk = chk_rc.borrow();
+            match self
+                .types
+                .find_descriptor_type(ctx, syms, &self.diags, &chk, pt)
+            {
+                Ok(descriptor) => Some(descriptor),
+                Err(error) => {
+                    if let Some(diag) = error.get_diagnostic() {
+                        check_context.report(ctx, 0, diag);
+                    }
+                    None
+                }
+            }
+        };
+        let Some(descriptor) = descriptor else {
+            return Ok(());
+        };
+        let (expr, name) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::MemberReference { expr, name, .. } => {
+                (*expr, name.clone())
+            }
+            _ => panic!("ClassCastException: JCMemberReference expected"),
+        };
+        let expr = expr.expect("member reference qualifier");
+        let local_env = state.env.dup(Some(tree), state.env.info.borrow().dup(None));
+        let qualifier_result = attr.member_reference_qualifier_result(ctx, &local_env, tree);
+        let expr_tree = self
+            .attrib_speculative(ctx, syms, attr, expr, &local_env, &qualifier_result)
+            .map_err(|failure| match failure {
+                DeferredAttrFailure::Completion(failure) => failure,
+                other => panic!("unexpected speculative attribution failure: {:?}", other),
+            })?;
+        let descriptor_params = self.types.get_parameter_types_public(ctx, descriptor);
+        let mut argtypes: crate::util::list::List<TypeId> = crate::util::list::List::nil();
+        let mut current = descriptor_params;
+        while current.non_empty() {
+            argtypes = argtypes.append(crate::code::symtab::no_type_id(ctx));
+            current = current.tail();
+        }
+        let mref2 = {
+            let copier = crate::tree::tree_copier::TreeCopier::new(Rc::clone(&self.make));
+            copier.copy(ctx, Some(tree)).expect("copied member reference")
+        };
+        if let crate::tree::jc_tree::TreeKind::MemberReference { expr: mref_expr, .. } =
+            &mut ctx.tree_mut(mref2).kind
+        {
+            *mref_expr = Some(expr_tree);
+        }
+        let expr_type = ctx.tree(expr_tree).ty.expect("qualifier type");
+        let site = ctx.typ(expr_type).tsym.expect("qualifier type symbol");
+        let rs_rc = attr.rs.borrow().clone().expect("resolve service");
+        let mut rs = rs_rc.borrow_mut();
+        let chk_rc = Rc::clone(&attr.chk);
+        let chk = chk_rc.borrow();
+        let types_rc = Rc::clone(&attr.types);
+        let infer_rc = Rc::clone(&attr.infer);
+        let arity_check: Rc<RefCell<dyn crate::comp::resolve::MethodCheck>> =
+            Rc::new(RefCell::new(crate::comp::resolve::ArityMethodCheck));
+        let (lookup_sym, _) = rs.resolve_member_reference(
+            ctx,
+            syms,
+            &types_rc,
+            attr,
+            &chk,
+            &infer_rc,
+            &local_env,
+            ctx.tree(tree).pos,
+            mref2,
+            expr_type,
+            name.clone(),
+            argtypes.clone(),
+            None,
+            descriptor,
+            arity_check,
+            &state.inference_context,
+            crate::comp::resolve::ReferenceChooserKind::Structural,
+        );
+        let kind = ctx.sym(lookup_sym).kind;
+        match kind {
+            crate::code::kinds::Kind::WRONG_MTH | crate::code::kinds::Kind::WRONG_MTHS => {
+                // note: as argtypes are erroneous types, type-errors must have
+                // been caused by arity mismatch
+                let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::incompatible_arg_types_in_mref(),
+                ));
+                check_context.report(ctx, ctx.tree(tree).pos, &diag);
+            }
+            crate::code::kinds::Kind::ABSENT_MTH | crate::code::kinds::Kind::STATICERR => {
+                // if no method found, or method found with wrong staticness,
+                // report better message
+                let diagnostic = rs.resolve_error_diagnostic(
+                    ctx,
+                    syms,
+                    lookup_sym,
+                    crate::util::jc_diagnostic::DiagnosticType::FRAGMENT,
+                    None,
+                    Some(site),
+                    Some(expr_type),
+                    Some(&name),
+                    Some(argtypes),
+                    None,
+                );
+                if let Some(diagnostic) = diagnostic {
+                    check_context.report(ctx, ctx.tree(tree).pos, &diagnostic);
+                }
+            }
+            _ => {}
+        }
+        drop(chk);
+        drop(rs);
+        Ok(())
+    }
+    /// Java: StructuralStuckChecker.canLambdaBodyCompleteNormally(JCLambda)
+    /// (DeferredAttr.java:885-900)
+    fn can_lambda_body_complete_normally(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        attr: &mut Attr,
+        state: &StructuralState,
+        tree: TreeId,
+    ) -> Result<bool, DeferredAttrFailure> {
+        let _ = state;
+        let old_params = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::Lambda { params, .. } => params.clone(),
+            _ => panic!("ClassCastException: JCLambda expected"),
+        };
+        let err_type = ctx
+            .sym(syms.err_symbol)
+            .ty
+            .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
+        // Java: tree.params = tree.params.stream().map(vd -> make.VarDef(
+        //   vd.mods, vd.name, make.Erroneous(), null))
+        let mut new_params: crate::util::list::List<TreeId> = crate::util::list::List::nil();
+        let mut current = old_params.clone();
+        while current.non_empty() {
+            let vd = *current.head();
+            let (mods, name) = match &ctx.tree(vd).kind {
+                crate::tree::jc_tree::TreeKind::VariableDecl { mods, name, .. } => {
+                    (*mods, name.clone())
+                }
+                _ => panic!("ClassCastException: JCVariableDecl expected"),
+            };
+            let new_vd = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
+                pos: ctx.tree(vd).pos,
+                ty: Some(err_type),
+                tag: crate::tree::jc_tree::Tag::VARDEF,
+                kind: crate::tree::jc_tree::TreeKind::VariableDecl {
+                    mods,
+                    name,
+                    nameexpr: None,
+                    vartype: None,
+                    init: None,
+                    sym: None,
+                    start_pos: 0,
+                },
+            });
+            new_params = new_params.append(new_vd);
+            current = current.tail();
+        }
+        if let crate::tree::jc_tree::TreeKind::Lambda { params, .. } =
+            &mut ctx.tree_mut(tree).kind
+        {
+            *params = new_params;
+        }
+        let env = state.env.clone();
+        let unknown_expr_info = attr.unknown_expr_info.clone();
+        let attr_recover_rc = attr
+            .attr_recover
+            .borrow()
+            .clone()
+            .expect("attr recover service");
+        let mut attr_recover = attr_recover_rc.borrow_mut();
+        let rs_rc = attr.rs.borrow().clone().expect("resolve service");
+        let mut rs = rs_rc.borrow_mut();
+        let chk_rc = Rc::clone(&attr.chk);
+        let chk = chk_rc.borrow();
+        let diags = Rc::clone(&attr.diags);
+        let flow_rc = attr
+            .argument_attr
+            .borrow()
+            .clone()
+            .and_then(|argument_attr| argument_attr.borrow().flow.borrow().clone())
+            .expect("flow service");
+        let result = self.attrib_speculative_lambda(
+            ctx,
+            syms,
+            attr,
+            &mut attr_recover,
+            &mut rs,
+            &chk,
+            &diags,
+            &flow_rc,
+            tree,
+            &env,
+            &unknown_expr_info,
+        );
+        drop(chk);
+        drop(rs);
+        drop(attr_recover);
+        // Java: tree.params = oldParams (finally)
+        if let crate::tree::jc_tree::TreeKind::Lambda { params, .. } =
+            &mut ctx.tree_mut(tree).kind
+        {
+            *params = old_params;
+        }
+        let speculative_lambda = result.map_err(|failure| match failure {
+            DeferredAttrFailure::Completion(failure) => failure,
+            other => panic!("unexpected speculative lambda failure: {:?}", other),
+        })?;
+        Ok(match &ctx.tree(speculative_lambda).kind {
+            crate::tree::jc_tree::TreeKind::Lambda {
+                can_complete_normally,
+                ..
+            } => *can_complete_normally,
+            _ => panic!("ClassCastException: JCLambda expected"),
+        })
+    }
+
+    /// Java: LambdaBodyStructChecker (DeferredAttr.java:955-990)
+    fn lambda_body_struct_check(
+        &self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) -> (bool, bool) {
+        let mut checker = LambdaBodyStructChecker {
+            is_void_compatible: true,
+            is_potentially_value_compatible: true,
+        };
+        checker.scan(ctx, Some(tree));
+        (
+            checker.is_void_compatible,
+            checker.is_potentially_value_compatible,
+        )
+    }
+}
+
+/// Java: DeferredAttrNode.StructuralStuckChecker state
+struct StructuralState {
+    result_info: Rc<ResultInfo>,
+    inference_context: Rc<crate::comp::infer::InferenceContext>,
+    env: Rc<Env<crate::comp::attr_context::AttrContext>>,
+}
+
+/// §9 helper: List length.
+fn list_len(list: &crate::util::list::List<TypeId>) -> usize {
+    let mut current = list.clone();
+    let mut n = 0;
+    while current.non_empty() {
+        n += 1;
+        current = current.tail();
+    }
+    n
+}
+
+fn list_len_trees(list: &crate::util::list::List<TreeId>) -> usize {
+    let mut current = list.clone();
+    let mut n = 0;
+    while current.non_empty() {
+        n += 1;
+        current = current.tail();
+    }
+    n
+}
+
+/// Java: LambdaBodyStructChecker (DeferredAttr.java:955-990)
+struct LambdaBodyStructChecker {
+    is_void_compatible: bool,
+    is_potentially_value_compatible: bool,
+}
+
+impl LambdaBodyStructChecker {
+    fn scan(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) {
+        let Some(tree) = tree else {
+            return;
+        };
+        use crate::tree::jc_tree::Tag;
+        match ctx.tree(tree).tag {
+            // Java: visitClassDef/visitLambda/visitNewClass: do nothing
+            Tag::CLASSDEF | Tag::LAMBDA | Tag::NEWCLASS => {}
+            Tag::RETURN => {
+                // Java: visitReturn
+                let expr = match &ctx.tree(tree).kind {
+                    crate::tree::jc_tree::TreeKind::Return { expr } => *expr,
+                    _ => None,
+                };
+                if expr.is_some() {
+                    self.is_void_compatible = false;
+                } else {
+                    self.is_potentially_value_compatible = false;
+                }
+            }
+            _ => {
+                for child in crate::tree::tree_scanner::tree_children(ctx, tree) {
+                    self.scan(ctx, Some(child));
+                }
+            }
+        }
     }
 }
 

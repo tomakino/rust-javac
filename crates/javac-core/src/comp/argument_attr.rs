@@ -66,11 +66,11 @@ pub struct ArgumentTypeData {
     pub kind: ArgumentKind,
     /// Java: T speculativeTree
     pub speculative_tree: TreeId,
-    /// Java: Map<ResultInfo, Type> speculativeTypes — keyed by ResultInfo.id
-    /// (§9); insertion order preserved (upstream HashMap iteration order is
-    /// unspecified, the port keeps insertion order for the speculativeType
-    /// scan).
-    pub speculative_types: Vec<(u64, TypeId)>,
+    /// Java: Map<ResultInfo, Type> speculativeTypes (§9: the ResultInfo
+    /// identity is kept as Rc<ResultInfo> because the speculativeType scan
+    /// reads each entry's DeferredAttrContext; insertion order preserved
+    /// (upstream HashMap iteration order is unspecified)).
+    pub speculative_types: Vec<(Rc<ResultInfo>, TypeId)>,
     /// Java: SwitchExpressionType.yieldExpressions (Optional<List<JCYield>>)
     pub yield_expressions: Option<List<TreeId>>,
     /// Java: ExplicitLambdaType.argtypes (Optional<List<Type>>)
@@ -812,7 +812,7 @@ impl ArgumentAttr {
             } else {
                 self.overload_check(ctx, syms, attr, data, result_info, deferred_attr_context)?
             };
-            data.borrow_mut().speculative_types.push((result_info.id, tt));
+            data.borrow_mut().speculative_types.push((Rc::new(result_info.clone()), tt));
             Ok(tt)
         } else {
             let env = match &ctx.typ(t).kind {
@@ -840,7 +840,7 @@ impl ArgumentAttr {
     /// (ArgumentAttr.java:372-390).
     pub fn argument_type_speculative_type(
         &self,
-        ctx: &CompilerContext,
+        ctx: &mut CompilerContext,
         data: &ArgumentTypeData,
         t: TypeId,
         msym: Option<SymbolId>,
@@ -857,14 +857,44 @@ impl ArgumentAttr {
                 ctx, t, msym, phase,
             );
         }
-        for (id, ty) in &data.speculative_types {
-            let _ = id;
-            let _ = ty;
+        for (result_info, ty) in &data.speculative_types {
+            let deferred_attr_context = result_info.check_context.deferred_attr_context();
+            if deferred_attr_context.phase == phase
+                && deferred_attr_context.msym == msym
+            {
+                return Some(*ty);
+            }
         }
-        // The speculativeTypes map is keyed by ResultInfo identity; the
-        // DeferredAttr check context of each entry is not stored in the port
-        // entry, so the scan uses the checked result (see §9 in the report).
-        None
+        Some(crate::code::symtab::no_type_id(ctx))
+    }
+
+    /// Java: ArgumentType.speculativeTree(DeferredAttrContext)
+    /// (ArgumentAttr.java:390-400).
+    pub fn argument_type_speculative_tree(
+        &self,
+        ctx: &CompilerContext,
+        data: &ArgumentTypeData,
+        t: TypeId,
+        deferred_attr_context: &crate::comp::deferred_attr::DeferredAttrContext,
+    ) -> Option<TreeId> {
+        let not_pertinent = match &ctx.typ(t).kind {
+            crate::code::type_::TypeKindData::Deferred {
+                not_pertinent, ..
+            } => not_pertinent.clone(),
+            _ => Vec::new(),
+        };
+        if deferred_attr_context
+            .msym
+            .map(|msym| not_pertinent.contains(&msym))
+            .unwrap_or(false)
+        {
+            return crate::comp::deferred_attr::deferred_type_speculative_tree(
+                ctx,
+                t,
+                deferred_attr_context,
+            );
+        }
+        Some(data.speculative_tree)
     }
 
     /// Java: ArgumentType.overloadCheck(ResultInfo, DeferredAttrContext)
