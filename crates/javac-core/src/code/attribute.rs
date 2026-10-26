@@ -41,6 +41,7 @@ use crate::util::list::List;
 use crate::util::pair::Pair;
 
 /// Java: public abstract class Attribute implements AnnotationValue
+#[derive(Clone)]
 pub struct Attribute {
     /// The type of the annotation element (Java: public Type type).
     pub ty: Option<TypeId>,
@@ -364,6 +365,7 @@ fn symbol_display(_ctx: &CompilerContext, _symbol: SymbolId) -> String {
 /// PORTING_RULES: one variant per upstream concrete class (TypeCompound is a
 /// distinct upstream class, hence a distinct variant).
 #[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
 pub enum AttributeKind {
     /// Java: Attribute.Constant (the value for an annotation element of
     /// primitive type or String).

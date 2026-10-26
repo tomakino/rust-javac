@@ -496,7 +496,7 @@ pub struct Code {
     /// Type relations.
     pub types: Rc<Types>,
     /// The symbol table.
-    pub syms: Rc<Symtab>,
+    pub syms: Rc<RefCell<Symtab>>,
     /// The constant pool writer.
     pub pool_writer: Rc<RefCell<PoolWriter>>,
 }
@@ -530,7 +530,7 @@ impl Code {
         stack_map: StackMapFormat,
         debug_code: bool,
         crt: Option<CRTable>,
-        syms: Rc<Symtab>,
+        syms: Rc<RefCell<Symtab>>,
         types: Rc<Types>,
         pool_writer: Rc<RefCell<PoolWriter>>,
     ) -> Code {
@@ -818,7 +818,8 @@ impl Code {
 
     /// Push a value and update the maximum stack size.
     fn push(&mut self, ctx: &mut CompilerContext, t: TypeId) {
-        let syms = Rc::clone(&self.syms);
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = syms_rc.borrow();
         self.state.push(ctx, &syms, t);
         if self.state.stacksize > self.max_stack {
             self.max_stack = self.state.stacksize;
@@ -827,19 +828,22 @@ impl Code {
 
     /// Pop one single-width value.
     fn pop1(&mut self, ctx: &mut CompilerContext) -> TypeId {
-        let syms = Rc::clone(&self.syms);
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = syms_rc.borrow();
         self.state.pop1(ctx, &syms)
     }
 
     /// Pop one two-slot value.
     fn pop2(&mut self, ctx: &mut CompilerContext) -> TypeId {
-        let syms = Rc::clone(&self.syms);
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = syms_rc.borrow();
         self.state.pop2(ctx, &syms)
     }
 
     /// Pop a value of the given type.
     fn pop_type(&mut self, ctx: &mut CompilerContext, t: TypeId) {
-        let syms = Rc::clone(&self.syms);
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = syms_rc.borrow();
         self.state.pop_type(ctx, &syms, t);
     }
 
@@ -888,7 +892,8 @@ impl Code {
         ctx: &mut CompilerContext,
         constant: LoadableConstantRef,
     ) {
-        let syms = Rc::clone(&self.syms);
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = syms_rc.borrow();
         let od = {
             let mut pool_writer = self.pool_writer.borrow_mut();
             pool_writer.put_constant(
@@ -959,7 +964,8 @@ impl Code {
     /// Return the total verifier width of a method type's parameter types.
     fn method_argsize(&mut self, ctx: &mut CompilerContext, mtype: TypeId) -> i32 {
         let params = self.types.get_parameter_types_public(ctx, mtype);
-        let syms = Rc::clone(&self.syms);
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = syms_rc.borrow();
         Code::width_list(ctx, &syms, &params)
     }
 
@@ -980,7 +986,8 @@ impl Code {
         if !self.alive {
             return;
         }
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
         let index = {
             let mut pool_writer = self.pool_writer.borrow_mut();
             pool_writer.put_member(ctx, &syms, member)
@@ -1005,7 +1012,8 @@ impl Code {
         if !self.alive {
             return;
         }
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
         let index = {
             let mut pool_writer = self.pool_writer.borrow_mut();
             pool_writer.put_member(ctx, &syms, member)
@@ -1038,7 +1046,8 @@ impl Code {
         if !self.alive {
             return;
         }
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
         let index = {
             let mut pool_writer = self.pool_writer.borrow_mut();
             pool_writer.put_member(ctx, &syms, member)
@@ -1061,7 +1070,8 @@ impl Code {
         if !self.alive {
             return;
         }
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
         let index = {
             let mut pool_writer = self.pool_writer.borrow_mut();
             pool_writer.put_member(ctx, &syms, member)
@@ -1084,7 +1094,8 @@ impl Code {
         if !self.alive {
             return;
         }
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
         let index = {
             let mut pool_writer = self.pool_writer.borrow_mut();
             pool_writer.put_dynamic(ctx, &syms, dyn_member)
@@ -1114,7 +1125,8 @@ impl Code {
                     "AssertionError: null type cannot be indexed"
                 );
                 self.pop_n(1);
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
                 let elem = self.types.elemtype(ctx, &syms, a);
                 let erased = self.types.erasure(ctx, &syms, elem);
                 self.push(ctx, erased);
@@ -1124,25 +1136,25 @@ impl Code {
             }
             NOP | INEG | LNEG | FNEG | DNEG => {}
             ACONST_NULL => {
-                let bot = self.syms.bot_type;
+                let bot = self.syms.borrow().bot_type;
                 self.push(ctx, bot);
             }
             ICONST_M1 | ICONST_0 | ICONST_1 | ICONST_2 | ICONST_3 | ICONST_4
             | ICONST_5 | ILOAD_0 | ILOAD_1 | ILOAD_2 | ILOAD_3 => {
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             LCONST_0 | LCONST_1 | LLOAD_0 | LLOAD_1 | LLOAD_2 | LLOAD_3 => {
-                let long = self.syms.long_type;
+                let long = self.syms.borrow().long_type;
                 self.push(ctx, long);
             }
             FCONST_0 | FCONST_1 | FCONST_2 | FLOAD_0 | FLOAD_1 | FLOAD_2
             | FLOAD_3 => {
-                let float = self.syms.float_type;
+                let float = self.syms.borrow().float_type;
                 self.push(ctx, float);
             }
             DCONST_0 | DCONST_1 | DLOAD_0 | DLOAD_1 | DLOAD_2 | DLOAD_3 => {
-                let double = self.syms.double_type;
+                let double = self.syms.borrow().double_type;
                 self.push(ctx, double);
             }
             ALOAD_0 => {
@@ -1171,22 +1183,22 @@ impl Code {
             }
             IALOAD | BALOAD | CALOAD | SALOAD => {
                 self.pop_n(2);
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             LALOAD => {
                 self.pop_n(2);
-                let long = self.syms.long_type;
+                let long = self.syms.borrow().long_type;
                 self.push(ctx, long);
             }
             FALOAD => {
                 self.pop_n(2);
-                let float = self.syms.float_type;
+                let float = self.syms.borrow().float_type;
                 self.push(ctx, float);
             }
             DALOAD => {
                 self.pop_n(2);
-                let double = self.syms.double_type;
+                let double = self.syms.borrow().double_type;
                 self.push(ctx, double);
             }
             ISTORE_0 | ISTORE_1 | ISTORE_2 | ISTORE_3 | FSTORE_0 | FSTORE_1
@@ -1232,7 +1244,7 @@ impl Code {
             }
             ARRAYLENGTH => {
                 self.pop_n(1);
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             ISUB | IADD | IMUL | IDIV | IMOD | ISHL | ISHR | IUSHR | IAND | IOR
@@ -1247,67 +1259,67 @@ impl Code {
             }
             LCMP => {
                 self.pop_n(4);
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             L2I => {
                 self.pop_n(2);
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             I2L => {
                 self.pop_n(1);
-                let long = self.syms.long_type;
+                let long = self.syms.borrow().long_type;
                 self.push(ctx, long);
             }
             I2F => {
                 self.pop_n(1);
-                let float = self.syms.float_type;
+                let float = self.syms.borrow().float_type;
                 self.push(ctx, float);
             }
             I2D => {
                 self.pop_n(1);
-                let double = self.syms.double_type;
+                let double = self.syms.borrow().double_type;
                 self.push(ctx, double);
             }
             L2F => {
                 self.pop_n(2);
-                let float = self.syms.float_type;
+                let float = self.syms.borrow().float_type;
                 self.push(ctx, float);
             }
             L2D => {
                 self.pop_n(2);
-                let double = self.syms.double_type;
+                let double = self.syms.borrow().double_type;
                 self.push(ctx, double);
             }
             F2I => {
                 self.pop_n(1);
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             F2L => {
                 self.pop_n(1);
-                let long = self.syms.long_type;
+                let long = self.syms.borrow().long_type;
                 self.push(ctx, long);
             }
             F2D => {
                 self.pop_n(1);
-                let double = self.syms.double_type;
+                let double = self.syms.borrow().double_type;
                 self.push(ctx, double);
             }
             D2I => {
                 self.pop_n(2);
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             D2L => {
                 self.pop_n(2);
-                let long = self.syms.long_type;
+                let long = self.syms.borrow().long_type;
                 self.push(ctx, long);
             }
             D2F => {
                 self.pop_n(2);
-                let float = self.syms.float_type;
+                let float = self.syms.borrow().float_type;
                 self.push(ctx, float);
             }
             TABLESWITCH | LOOKUPSWITCH => {
@@ -1427,12 +1439,12 @@ impl Code {
             }
             FCMPL | FCMPG => {
                 self.pop_n(2);
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             DCMPL | DCMPG => {
                 self.pop_n(4);
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             SWAP => {
@@ -1480,12 +1492,12 @@ impl Code {
         self.emit1(od);
         match op {
             BIPUSH => {
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             LDC1 => {
                 let constant = data.expect("AssertionError: ldc constant");
-                let t = self.types.constant_type(ctx, &Rc::clone(&self.syms), &constant);
+                let t = self.types.constant_type(ctx, &self.syms.borrow(), &constant);
                 self.push(ctx, t);
             }
             _ => panic!("AssertionError: {}", Code::mnem(op)),
@@ -1508,19 +1520,19 @@ impl Code {
         }
         match op {
             ILOAD => {
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             LLOAD => {
-                let long = self.syms.long_type;
+                let long = self.syms.borrow().long_type;
                 self.push(ctx, long);
             }
             FLOAD => {
-                let float = self.syms.float_type;
+                let float = self.syms.borrow().float_type;
                 self.push(ctx, float);
             }
             DLOAD => {
-                let double = self.syms.double_type;
+                let double = self.syms.borrow().double_type;
                 self.push(ctx, double);
             }
             ALOAD => {
@@ -1585,13 +1597,15 @@ impl Code {
         self.emit2(od);
         match op {
             GETSTATIC => {
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
                 let ty = ctx.sym(data).ty.expect("symbol type");
                 let erased = self.types.erasure(ctx, &syms, ty);
                 self.push(ctx, erased);
             }
             PUTSTATIC => {
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
                 let ty = ctx.sym(data).ty.expect("symbol type");
                 let erased = self.types.erasure(ctx, &syms, ty);
                 self.pop_type(ctx, erased);
@@ -1600,7 +1614,8 @@ impl Code {
                 self.mark_dead();
             }
             PUTFIELD => {
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
                 let ty = ctx.sym(data).ty.expect("symbol type");
                 let erased = self.types.erasure(ctx, &syms, ty);
                 self.pop_type(ctx, erased);
@@ -1608,7 +1623,8 @@ impl Code {
             }
             GETFIELD => {
                 self.pop_n(1); // object ref
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
                 let ty = ctx.sym(data).ty.expect("symbol type");
                 let erased = self.types.erasure(ctx, &syms, ty);
                 self.push(ctx, erased);
@@ -1634,7 +1650,8 @@ impl Code {
         self.emit2(od);
         match op {
             NEW => {
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
                 let tsym = ctx.typ(data).tsym.expect("class type symbol");
                 let owner_ty = ctx.sym(tsym).ty.expect("class symbol type");
                 let erased = self.types.erasure(ctx, &syms, owner_ty);
@@ -1644,7 +1661,8 @@ impl Code {
             }
             CHECKCAST => {
                 self.pop_n(1); // object ref
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
                 let erased = self.types.erasure(ctx, &syms, data);
                 self.push(ctx, erased);
             }
@@ -1673,7 +1691,7 @@ impl Code {
         self.emit2(od);
         match op {
             SIPUSH => {
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             IF_ACMP_NULL | IF_ACMP_NONNULL | IFEQ | IFNE | IFLT | IFGE | IFGT
@@ -1689,12 +1707,12 @@ impl Code {
             }
             INSTANCEOF => {
                 self.pop_n(1);
-                let int = self.syms.int_type;
+                let int = self.syms.borrow().int_type;
                 self.push(ctx, int);
             }
             LDC2 | LDC2W => {
                 let constant = data.expect("AssertionError: ldc constant");
-                let t = self.types.constant_type(ctx, &Rc::clone(&self.syms), &constant);
+                let t = self.types.constant_type(ctx, &self.syms.borrow(), &constant);
                 self.push(ctx, t);
             }
             JSR => {}
@@ -1978,7 +1996,8 @@ impl Code {
             if self.state.defined.is_member(i)
                 && let Some(lv) = &self.lvar[i as usize]
             {
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
                 let ty = ctx.sym(lv.sym).ty.expect("local type");
                 let erased = self.types.erasure(ctx, &syms, ty);
                 next_local = i + Code::width(Code::typecode(ctx, erased));
@@ -2015,7 +2034,8 @@ impl Code {
             if self.state.defined.is_member(i)
                 && let Some(lv) = &self.lvar[i as usize]
             {
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
                 let ty = ctx.sym(lv.sym).ty.expect("local type");
                 let vtype = if ctx.typ(ty).get_tag() == TypeTag::UNINITIALIZED_THIS
                     || ctx.typ(ty).get_tag() == TypeTag::UNINITIALIZED_OBJECT
@@ -2062,7 +2082,8 @@ impl Code {
             if self.state.defined.is_member(i)
                 && let Some(lv) = &self.lvar[i as usize]
             {
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
                 let ty = ctx.sym(lv.sym).ty.expect("local type");
                 let vtype = if ctx.typ(ty).get_tag() == TypeTag::UNINITIALIZED_THIS
                     || ctx.typ(ty).get_tag() == TypeTag::UNINITIALIZED_OBJECT
@@ -2075,7 +2096,7 @@ impl Code {
             }
             local_count += 1;
             if let Some(Some(vtype)) = locals.get(i as usize) {
-                let w = Code::width_type(ctx, &self.syms, Some(*vtype));
+                let w = Code::width_type(ctx, &self.syms.borrow(), Some(*vtype));
                 if w > 1 {
                     i += 1;
                 }
@@ -2092,7 +2113,7 @@ impl Code {
             );
             let local = locals[i as usize].expect("local type");
             frame.locals.push(Some(local));
-            let w = Code::width_type(ctx, &self.syms, Some(local));
+            let w = Code::width_type(ctx, &self.syms.borrow(), Some(local));
             if w > 1 {
                 i += 1;
             }
@@ -2108,7 +2129,8 @@ impl Code {
         frame.stack = Vec::new();
         for i in 0..self.state.stacksize {
             if let Some(t) = self.state.stack[i as usize] {
-                let syms = Rc::clone(&self.syms);
+                let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
                 let erased = self.types.erasure(ctx, &syms, t);
                 frame.stack.push(erased);
             }
@@ -2121,7 +2143,8 @@ impl Code {
             );
         }
         let last_frame = self.last_frame.as_ref().expect("last frame");
-        let syms = Rc::clone(&self.syms);
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = syms_rc.borrow();
         let entry = StackMapTableFrame::get_instance(
             ctx,
             &frame,
@@ -2138,7 +2161,8 @@ impl Code {
 
     /// Return the initial stack map frame of the method.
     fn get_initial_frame(&mut self, ctx: &mut CompilerContext) -> StackMapFrame {
-        let syms = Rc::clone(&self.syms);
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = syms_rc.borrow();
         let meth_ty = ctx.sym(self.meth).ty.expect("method type");
         let external = crate::code::symbol::external_type(
             ctx,
@@ -2314,7 +2338,8 @@ impl Code {
                     eprintln!("resolving chain state={}", node.state.dump());
                 }
                 if self.alive {
-                    let syms = Rc::clone(&self.syms);
+                    let syms_rc = Rc::clone(&self.syms);
+            let syms = syms_rc.borrow();
                     let mut joined = node.state.dup();
                     joined.join(ctx, &syms, &self.types, &new_state);
                     new_state = joined;
@@ -2700,7 +2725,8 @@ impl Code {
 
     /// Create a new local variable for a symbol and add it.
     pub fn new_local_symbol(&mut self, ctx: &mut CompilerContext, v: SymbolId) -> i32 {
-        let syms = Rc::clone(&self.syms);
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = syms_rc.borrow();
         let ty = ctx.sym(v).ty.expect("variable type");
         let erased = self.types.erasure(ctx, &syms, ty);
         let reg = self.new_local_type(ctx, erased);

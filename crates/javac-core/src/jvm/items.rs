@@ -119,7 +119,7 @@ pub struct Items {
     /// The current code buffer.
     pub code: Rc<RefCell<Code>>,
     /// The current symbol table.
-    pub syms: Rc<Symtab>,
+    pub syms: Rc<RefCell<Symtab>>,
     /// Type utilities.
     pub types: Rc<Types>,
     /// The flyweight void item.
@@ -149,7 +149,7 @@ impl Items {
     pub fn new(
         pool_writer: Rc<RefCell<PoolWriter>>,
         code: Rc<RefCell<Code>>,
-        syms: Rc<Symtab>,
+        syms: Rc<RefCell<Symtab>>,
         types: Rc<Types>,
     ) -> Items {
         let void_item = Item::new(VOID_CODE, ItemKind::Void);
@@ -197,7 +197,7 @@ impl Items {
         let ty = ctx.sym(member).ty.expect("member type");
         let types = Rc::clone(&self.types);
         let syms = Rc::clone(&self.syms);
-        let erased = types.erasure(ctx, &syms, ty);
+        let erased = types.erasure(ctx, &syms.borrow(), ty);
         Item::new(
             Code::typecode(ctx, erased),
             ItemKind::Dynamic { member },
@@ -214,7 +214,7 @@ impl Items {
         let ty = ctx.sym(v).ty.expect("variable type");
         let types = Rc::clone(&self.types);
         let syms = Rc::clone(&self.syms);
-        let erased = types.erasure(ctx, &syms, ty);
+        let erased = types.erasure(ctx, &syms.borrow(), ty);
         let reg = match &ctx.sym(v).kind_data {
             crate::code::symbol::SymbolKind::VarSymbol { adr, .. } => *adr,
             _ => panic!("AssertionError: variable symbol expected"),
@@ -223,11 +223,7 @@ impl Items {
     }
 
     /// Make an item representing a local anonymous variable.
-    ///
-    /// The upstream private overload is not referenced by the ported methods;
-    /// it is kept for implementation-unit traceability.
-    #[allow(dead_code)]
-    fn make_local_item_anonymous(
+    pub fn make_local_item_anonymous(
         &self,
         ctx: &CompilerContext,
         type_: TypeId,
@@ -241,7 +237,7 @@ impl Items {
         let ty = ctx.sym(member).ty.expect("member type");
         let types = Rc::clone(&self.types);
         let syms = Rc::clone(&self.syms);
-        let erased = types.erasure(ctx, &syms, ty);
+        let erased = types.erasure(ctx, &syms.borrow(), ty);
         Item::new(
             Code::typecode(ctx, erased),
             ItemKind::Static { member },
@@ -258,7 +254,7 @@ impl Items {
         let ty = ctx.sym(member).ty.expect("member type");
         let types = Rc::clone(&self.types);
         let syms = Rc::clone(&self.syms);
-        let erased = types.erasure(ctx, &syms, ty);
+        let erased = types.erasure(ctx, &syms.borrow(), ty);
         Item::new(
             Code::typecode(ctx, erased),
             ItemKind::Member {
@@ -369,7 +365,7 @@ impl Items {
                 let od = self
                     .pool_writer
                     .borrow_mut()
-                    .put_member(ctx, &syms, *member);
+                    .put_member(ctx, &syms.borrow(), *member);
                 self.code
                     .borrow_mut()
                     .emitop2_symbol(ctx, GETSTATIC, od, *member);
@@ -383,7 +379,7 @@ impl Items {
                 let ty = ctx.sym(*member).ty.expect("member type");
                 let types = Rc::clone(&self.types);
                 let syms = Rc::clone(&self.syms);
-                let erased = types.erasure(ctx, &syms, ty);
+                let erased = types.erasure(ctx, &syms.borrow(), ty);
                 let rescode = Code::typecode(ctx, erased);
                 self.code
                     .borrow_mut()
@@ -395,7 +391,7 @@ impl Items {
                 let od = self
                     .pool_writer
                     .borrow_mut()
-                    .put_member(ctx, &syms, *member);
+                    .put_member(ctx, &syms.borrow(), *member);
                 self.code
                     .borrow_mut()
                     .emitop2_symbol(ctx, GETFIELD, od, *member);
@@ -477,7 +473,7 @@ impl Items {
             let syms = Rc::clone(&self.syms);
             let od = self.pool_writer.borrow_mut().put_constant(
                 ctx,
-                &syms,
+                &syms.borrow(),
                 loadable_to_pool_constant(value),
             );
             self.code
@@ -535,7 +531,7 @@ impl Items {
                 let od = self
                     .pool_writer
                     .borrow_mut()
-                    .put_member(ctx, &syms, *member);
+                    .put_member(ctx, &syms.borrow(), *member);
                 self.code
                     .borrow_mut()
                     .emitop2_symbol(ctx, PUTSTATIC, od, *member);
@@ -548,7 +544,7 @@ impl Items {
                 let od = self
                     .pool_writer
                     .borrow_mut()
-                    .put_member(ctx, &syms, *member);
+                    .put_member(ctx, &syms.borrow(), *member);
                 self.code
                     .borrow_mut()
                     .emitop2_symbol(ctx, PUTFIELD, od, *member);
@@ -571,7 +567,7 @@ impl Items {
                 let ty = ctx.sym(*member).ty.expect("member type");
                 let types = Rc::clone(&self.types);
                 let syms = Rc::clone(&self.syms);
-                let mtype = types.erasure(ctx, &syms, ty);
+                let mtype = types.erasure(ctx, &syms.borrow(), ty);
                 let restype = types.get_return_type_public(ctx, mtype);
                 let rescode = Code::typecode(ctx, restype);
                 self.code
@@ -587,7 +583,7 @@ impl Items {
                 let ty = ctx.sym(*member).ty.expect("member type");
                 let types = Rc::clone(&self.types);
                 let syms = Rc::clone(&self.syms);
-                let mtype = types.erasure(ctx, &syms, ty);
+                let mtype = types.erasure(ctx, &syms.borrow(), ty);
                 let restype = types.get_return_type_public(ctx, mtype);
                 let rescode = Code::typecode(ctx, restype);
                 self.code
@@ -602,7 +598,7 @@ impl Items {
                 let syms = Rc::clone(&self.syms);
                 let names = Rc::clone(&self.pool_writer.borrow().names);
                 let mtype =
-                    crate::code::symbol::external_type(ctx, &types, &syms, &names, *member);
+                    crate::code::symbol::external_type(ctx, &types, &syms.borrow(), &names, *member);
                 let restype = types.get_return_type_public(ctx, mtype);
                 let rescode = Code::typecode(ctx, restype);
                 let is_interface = {
@@ -795,43 +791,59 @@ impl Items {
                 } else {
                     self.make_immediate_item(
                         ctx,
-                        self.syms.int_type,
+                        self.syms.borrow().int_type,
                         ImmediateValue::Int(immediate_int(value)),
                     )
                 }
             }
             LONG_CODE => self.make_immediate_item(
                 ctx,
-                self.syms.long_type,
+                self.syms.borrow().long_type,
                 ImmediateValue::Long(immediate_long(value)),
             ),
             FLOAT_CODE => self.make_immediate_item(
                 ctx,
-                self.syms.float_type,
+                self.syms.borrow().float_type,
                 ImmediateValue::Float(immediate_float(value)),
             ),
             DOUBLE_CODE => self.make_immediate_item(
                 ctx,
-                self.syms.double_type,
+                self.syms.borrow().double_type,
                 ImmediateValue::Double(immediate_double(value)),
             ),
             BYTE_CODE => self.make_immediate_item(
                 ctx,
-                self.syms.byte_type,
+                self.syms.borrow().byte_type,
                 ImmediateValue::Int(immediate_int(value) as i8 as i32),
             ),
             CHAR_CODE => self.make_immediate_item(
                 ctx,
-                self.syms.char_type,
+                self.syms.borrow().char_type,
                 ImmediateValue::Int(immediate_int(value) as u16 as i32),
             ),
             SHORT_CODE => self.make_immediate_item(
                 ctx,
-                self.syms.short_type,
+                self.syms.borrow().short_type,
                 ImmediateValue::Int(immediate_int(value) as i16 as i32),
             ),
             _ => panic!("AssertionError: unsupported coercion target"),
         }
+    }
+
+    /// Make a conditional item with the given opcode and no jump chains.
+    pub fn make_cond_item_opcode(&self, opcode: i32) -> Item {
+        self.make_cond_item(opcode, None, None)
+    }
+
+    /// Coerce an item to the given target type.
+    pub fn coerce_type(
+        &mut self,
+        ctx: &mut CompilerContext,
+        item: &Item,
+        targettype: TypeId,
+    ) -> Item {
+        let targetcode = Code::typecode(ctx, targettype);
+        self.coerce(ctx, item, targetcode)
     }
 
     /// Return the width of an item on the stack in words.
@@ -859,14 +871,14 @@ impl Items {
             self.load(ctx, item);
             let literal = self.make_immediate_item(
                 ctx,
-                self.syms.int_type,
+                self.syms.borrow().int_type,
                 ImmediateValue::Int(if x >= 0 { x } else { -x }),
             );
             self.load(ctx, &literal);
             self.code
                 .borrow_mut()
                 .emitop0(ctx, if x >= 0 { IADD } else { ISUB });
-            let stack_int = self.make_stack_item(ctx, self.syms.int_type);
+            let stack_int = self.make_stack_item(ctx, self.syms.borrow().int_type);
             let targetcode = item.typecode;
             self.coerce(ctx, &stack_int, targetcode);
             self.store(ctx, item);
@@ -1063,4 +1075,49 @@ fn is_pos_zero_f32(x: f32) -> bool {
 /// Return whether a double is positive zero.
 fn is_pos_zero_f64(x: f64) -> bool {
     x == 0.0f64 && 1.0f64 / x > 0.0f64
+}
+
+impl Items {
+    /// Return the opcode of a conditional item.
+    pub fn cond_opcode(&self, item: &Item) -> i32 {
+        cond_parts(item).0
+    }
+
+    /// Return the true-jump chain of a conditional item.
+    pub fn cond_true_jumps(&self, item: &Item) -> Option<Box<Chain>> {
+        cond_parts(item).1
+    }
+
+    /// Return the false-jump chain of a conditional item.
+    pub fn cond_false_jumps(&self, item: &Item) -> Option<Box<Chain>> {
+        cond_parts(item).2
+    }
+
+    /// Set the condition tree of a conditional item.
+    pub fn set_cond_tree(&self, item: &mut Item, tree: TreeId) {
+        if let ItemKind::Cond { tree: slot, .. } = &mut item.kind {
+            *slot = Some(tree);
+        } else {
+            panic!("AssertionError: conditional item expected");
+        }
+    }
+
+    /// Make a conditional item with an explicit condition tree.
+    pub fn make_cond_item_with_tree(
+        &self,
+        opcode: i32,
+        true_jumps: Option<Box<Chain>>,
+        false_jumps: Option<Box<Chain>>,
+        tree: Option<TreeId>,
+    ) -> Item {
+        Item::new(
+            BYTE_CODE,
+            ItemKind::Cond {
+                opcode,
+                true_jumps,
+                false_jumps,
+                tree,
+            },
+        )
+    }
 }

@@ -268,3 +268,4 @@ mod tests {
         assert_eq!(TypeTag::UNINITIALIZED_OBJECT.to_string(), "UNINITIALIZED_OBJECT");
     }
 }
+

@@ -10941,3 +10941,30 @@ impl Types {
         }
     }
 }
+
+impl Types {
+    /// Return the number of array dimensions of a type.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - t: the type.
+    ///
+    /// # Returns
+    ///   - the number of array dimensions (0 for non-array types).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn dimensions(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        t: TypeId,
+    ) -> i32 {
+        if !ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
+            return 0;
+        }
+        let elem = self.elemtype(ctx, syms, t);
+        self.dimensions(ctx, syms, elem) + 1
+    }
+}
