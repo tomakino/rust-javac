@@ -9215,6 +9215,40 @@ impl Types {
         vis
     }
 }
+
+impl Types {
+    /// Java: JCLambda.getDescriptorType(Types types) (JCTree.java:775-777).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - diags/chk: the diagnostic factory and the check service;
+    ///   - target: the lambda target type.
+    ///
+    /// # Returns
+    ///   - the descriptor type, or an error type for a null target.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: JCTree.java:775-777 (delegates to Types.findDescriptorType).
+    pub fn lambda_descriptor_type(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        diags: &crate::util::jc_diagnostic::Factory,
+        chk: &crate::comp::check::Check,
+        target: Option<TypeId>,
+    ) -> TypeId {
+        match target {
+            Some(target) => match self.find_descriptor_type(ctx, syms, diags, chk, target) {
+                Ok(descriptor) => descriptor,
+                Err(_) => self.create_error_type_original(ctx, Some(target), syms),
+            },
+            None => self.create_error_type_original(ctx, None, syms),
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -7,6 +7,7 @@ pub mod attr;
 pub mod attr_recover;
 pub mod attr_context;
 pub mod check;
+pub mod compile_states;
 pub mod const_fold;
 pub mod deferred_attr;
 pub mod enter;

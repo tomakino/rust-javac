@@ -13068,6 +13068,55 @@ impl Attr {
     }
 }
 
+impl Attr {
+    /// Java: public JCExpression makeNullCheck(JCExpression arg) (Attr.java:3036-3050).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - arg: the expression to null-check.
+    ///
+    /// # Returns
+    ///   - the (possibly optimized) null-check expression.
+    ///
+    /// # Panics
+    ///   - the operators service must be installed.
+    ///
+    /// Upstream: Attr.java:3036-3050.
+    pub fn make_null_check(&mut self, ctx: &mut CompilerContext, arg: TreeId) -> TreeId {
+        // optimization: new Outer() can never be null; skip null check
+        if ctx.tree(arg).has_tag(Tag::NEWCLASS) {
+            return arg;
+        }
+        // optimization: X.this is never null; skip null check
+        if let Some(name) = crate::tree::tree_info::name(ctx, arg)
+            && (name.content_equals(&self.names._this.to_java_string())
+                || name.content_equals(&self.names._super.to_java_string()))
+        {
+            return arg;
+        }
+        let optag = Tag::NULLCHK;
+        let arg_ty = ctx.tree(arg).ty.unwrap_or_else(|| self.no_type(ctx));
+        let pos = ctx.tree(arg).pos;
+        let mut make = self.make.borrow_mut();
+        let tree = make.at(pos).unary(ctx, optag, arg);
+        drop(make);
+        let operator = {
+            let operators_rc = self.operators.borrow().clone();
+            match operators_rc {
+                Some(operators_rc) => {
+                    let mut syms = self.syms.borrow_mut();
+                    operators_rc.resolve_unary(ctx, &mut syms, &self.types, pos, optag, arg_ty)
+                }
+                None => panic!("AssertionError: operators service must be installed"),
+            }
+        };
+        if let TreeKind::Unary { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(operator);
+        }
+        ctx.tree_mut(tree).ty = Some(arg_ty);
+        tree
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
