@@ -48,7 +48,7 @@ pub struct SourceRange {
 }
 
 impl Default for SourceRange {
-    /// Create an empty source range (Java: the no-argument constructor).
+    /// Create an empty source range.
     fn default() -> SourceRange {
         SourceRange::new()
     }

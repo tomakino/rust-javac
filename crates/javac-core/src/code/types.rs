@@ -10830,3 +10830,43 @@ impl UniqueType {
         types.is_same_type(ctx, syms, self.type_, other.type_)
     }
 }
+
+impl Types {
+    /// Return the type of a loadable constant.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - c: the loadable constant.
+    ///
+    /// # Returns
+    ///   - the constant type.
+    ///
+    /// # Panics
+    ///   - the constant is not loadable.
+    pub fn constant_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        c: &crate::jvm::pool_constant::LoadableConstantRef,
+    ) -> TypeId {
+        use crate::jvm::pool_constant::LoadableConstantRef;
+        match crate::jvm::pool_constant::loadable_pool_tag(c) {
+            crate::jvm::class_file::CONSTANT_CLASS => syms.class_type,
+            crate::jvm::class_file::CONSTANT_STRING => syms.string_type,
+            crate::jvm::class_file::CONSTANT_INTEGER => syms.int_type,
+            crate::jvm::class_file::CONSTANT_FLOAT => syms.float_type,
+            crate::jvm::class_file::CONSTANT_LONG => syms.long_type,
+            crate::jvm::class_file::CONSTANT_DOUBLE => syms.double_type,
+            crate::jvm::class_file::CONSTANT_METHODHANDLE => syms.method_handle_type,
+            crate::jvm::class_file::CONSTANT_METHODTYPE => syms.method_type_type,
+            crate::jvm::class_file::CONSTANT_DYNAMIC => {
+                let LoadableConstantRef::Dynamic(sym) = c else {
+                    panic!("AssertionError: dynamic constant expected");
+                };
+                ctx.sym(*sym).ty.expect("dynamic constant type")
+            }
+            tag => panic!("AssertionError: Not a loadable constant: {}", tag),
+        }
+    }
+}

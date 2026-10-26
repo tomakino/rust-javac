@@ -2928,6 +2928,50 @@ pub fn new_dynamic_method_symbol(
     ctx.alloc_symbol(symbol)
 }
 
+
+/// Return whether a symbol carries type annotations.
+pub fn symbol_has_type_annotations(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> bool {
+    ctx.sym(sym).has_type_annotations()
+}
+
+/// Return the raw type attributes of a symbol.
+pub fn symbol_raw_type_attributes(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> List<crate::ids::AttributeId> {
+    ctx.sym(sym).get_raw_type_attributes()
+}
+
+/// Return whether a variable symbol is an exception parameter.
+pub fn symbol_is_exception_parameter(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> bool {
+    matches!(
+        &ctx.sym(sym).kind_data,
+        SymbolKind::VarSymbol {
+            data_kind: Some(ElementKind::EXCEPTION_PARAMETER),
+            ..
+        }
+    )
+}
+
+/// Return whether a variable symbol is a resource variable.
+pub fn symbol_is_resource_variable(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> bool {
+    matches!(
+        &ctx.sym(sym).kind_data,
+        SymbolKind::VarSymbol {
+            data_kind: Some(ElementKind::RESOURCE_VARIABLE),
+            ..
+        }
+    )
+}
 /// Create a constant-dynamic variable symbol.
 ///
 /// # Arguments

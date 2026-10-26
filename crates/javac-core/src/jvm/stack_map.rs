@@ -50,7 +50,7 @@ pub struct StackMapFrame {
 }
 
 impl Default for StackMapFrame {
-    /// Create an empty frame (Java: the implicit no-argument constructor).
+    /// Create an empty frame.
     fn default() -> StackMapFrame {
         StackMapFrame::new()
     }

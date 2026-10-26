@@ -52,6 +52,36 @@ pub trait PoolConstant {
 
 pub trait LoadableConstant: PoolConstant {}
 
+/// Return the constant pool tag of a loadable constant reference.
+pub fn loadable_pool_tag(c: &LoadableConstantRef) -> i32 {
+    match c {
+        LoadableConstantRef::Basic(basic) => basic.pool_tag(),
+        LoadableConstantRef::Class(_) => crate::jvm::class_file::CONSTANT_CLASS,
+        LoadableConstantRef::MethodHandle(_) => {
+            crate::jvm::class_file::CONSTANT_METHODHANDLE
+        }
+        LoadableConstantRef::Dynamic(_) => crate::jvm::class_file::CONSTANT_DYNAMIC,
+    }
+}
+
+/// Convert a loadable constant reference to the pool writer constant view.
+pub fn loadable_to_pool_constant(
+    c: &LoadableConstantRef,
+) -> crate::jvm::pool_writer::PoolConstantRef {
+    match c {
+        LoadableConstantRef::Basic(basic) => {
+            crate::jvm::pool_writer::PoolConstantRef::Basic(basic.clone())
+        }
+        LoadableConstantRef::Class(ty) => crate::jvm::pool_writer::PoolConstantRef::Class(*ty),
+        LoadableConstantRef::MethodHandle(sym) => {
+            crate::jvm::pool_writer::PoolConstantRef::MethodHandle(*sym)
+        }
+        LoadableConstantRef::Dynamic(sym) => {
+            crate::jvm::pool_writer::PoolConstantRef::Dynamic(*sym)
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct BasicConstant {
     pub tag: i32,
