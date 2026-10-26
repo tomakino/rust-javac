@@ -215,6 +215,7 @@ pub(crate) fn new_class_symbol(
             record_components: List::nil(),
             permitted: List::nil(),
             is_permitted_explicit: false,
+                annotation_type_metadata: Default::default(),
         },
     ));
     ctx.typ_mut(class_type).tsym = Some(symbol);
@@ -247,6 +248,7 @@ fn new_class_symbol_with_type(
             record_components: List::nil(),
             permitted: List::nil(),
             is_permitted_explicit: false,
+                annotation_type_metadata: Default::default(),
         },
     ))
 }
@@ -398,6 +400,7 @@ fn new_method_symbol(
             extra_params: List::nil(),
             captured_locals: List::nil(),
             params: List::nil(),
+            default_value: None,
         },
     ))
 }

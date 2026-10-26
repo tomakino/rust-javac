@@ -1659,7 +1659,7 @@ mod tests {
 
     struct Harness {
         ctx: CompilerContext,
-        syms: Symtab,
+        syms: Rc<RefCell<Symtab>>,
         type_enter: TypeEnter,
         names: Rc<Names>,
     }
@@ -1672,13 +1672,15 @@ mod tests {
         let diags = Rc::new(Factory::new(messages, "compiler"));
         let options = crate::util::options::Options::instance(&mut context);
         let mut ctx = CompilerContext::new();
-        let syms = Symtab::new(
+        let syms = Rc::new(RefCell::new(Symtab::new(
             &mut ctx,
             Rc::clone(&names),
             Target::JDK1_17,
             Source::JDK17,
-        );
+        )));
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
+        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
+        let lint = crate::code::lint::Lint::instance(&mut context);
         let chk = Rc::new(RefCell::new(crate::comp::check::Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
@@ -1686,8 +1688,10 @@ mod tests {
             Source::JDK17,
             '$',
             Rc::clone(&types),
+            lint,
+            Rc::clone(&deferred),
+            Rc::clone(&syms),
         )));
-        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let enter = Rc::new(RefCell::new(Enter::new(
             Rc::clone(&log),
@@ -1795,11 +1799,11 @@ mod tests {
 
     fn new_symbol(harness: &mut Harness) -> SymbolId {
         let ctx = &mut harness.ctx;
-        let owner = harness.syms.java_base;
+        let owner = harness.syms.borrow().java_base;
         ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
             0,
             harness.names.empty.clone(),
-            ctx.sym(owner).ty.unwrap_or(harness.syms.err_type),
+            ctx.sym(owner).ty.unwrap_or(harness.syms.borrow().err_type),
             owner,
         ))
     }
@@ -1808,7 +1812,7 @@ mod tests {
     #[test]
     fn handle_deprecated_annotations_sets_the_deprecated_flags() {
         let mut harness = harness();
-        let deprecated_type = harness.syms.deprecated_type;
+        let deprecated_type = harness.syms.borrow().deprecated_type;
         let sym = new_symbol(&mut harness);
         let for_removal = harness.names.forRemoval.clone();
         let annotation = annotation_with_arg(
@@ -1819,7 +1823,7 @@ mod tests {
         );
         harness.type_enter.handle_deprecated_annotations(
             &mut harness.ctx,
-            &harness.syms,
+            &harness.syms.borrow(),
             List::of(annotation),
             sym,
         );
@@ -1832,7 +1836,7 @@ mod tests {
     #[test]
     fn handle_deprecated_annotations_sets_the_preview_flags() {
         let mut harness = harness();
-        let preview_type = harness.syms.preview_feature_type;
+        let preview_type = harness.syms.borrow().preview_feature_type;
         let sym = new_symbol(&mut harness);
         let reflective = harness.names.reflective.clone();
         let annotation = annotation_with_arg(
@@ -1843,7 +1847,7 @@ mod tests {
         );
         harness.type_enter.handle_deprecated_annotations(
             &mut harness.ctx,
-            &harness.syms,
+            &harness.syms.borrow(),
             List::of(annotation),
             sym,
         );
@@ -1857,7 +1861,7 @@ mod tests {
     #[test]
     fn handle_deprecated_annotations_ignores_other_annotations() {
         let mut harness = harness();
-        let other_type = harness.syms.object_type;
+        let other_type = harness.syms.borrow().object_type;
         let sym = new_symbol(&mut harness);
         let reflective = harness.names.reflective.clone();
         let annotation = annotation_with_arg(
@@ -1868,7 +1872,7 @@ mod tests {
         );
         harness.type_enter.handle_deprecated_annotations(
             &mut harness.ctx,
-            &harness.syms,
+            &harness.syms.borrow(),
             List::of(annotation),
             sym,
         );
@@ -1881,7 +1885,7 @@ mod tests {
     fn set_flag_if_attribute_true_requires_the_literal_true_value() {
         let mut harness = harness();
         let sym = new_symbol(&mut harness);
-        let deprecated_type = harness.syms.deprecated_type;
+        let deprecated_type = harness.syms.borrow().deprecated_type;
         let for_removal = harness.names.forRemoval.clone();
         let annotation = annotation_with_arg(
             &mut harness,
@@ -1906,13 +1910,13 @@ mod tests {
     fn named_import_scope_structure_records_the_imported_type() {
         let mut harness = harness();
         let ctx = &mut harness.ctx;
-        let owner = harness.syms.java_base;
+        let owner = harness.syms.borrow().java_base;
         let named = ctx.alloc_scope(crate::code::scope::Scope::new_named_import_scope(Some(owner)));
         let origin = ctx.scope_create(Some(owner));
         let symbol = ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
             0,
             harness.names.empty.clone(),
-            harness.syms.err_type,
+            harness.syms.borrow().err_type,
             owner,
         ));
         let imported = ctx.scope_import_type(named, origin, origin, symbol);
@@ -1942,7 +1946,7 @@ mod tests {
     fn star_import_scope_structure_deduplicates_import_all() {
         let mut harness = harness();
         let ctx = &mut harness.ctx;
-        let owner = harness.syms.java_base;
+        let owner = harness.syms.borrow().java_base;
         let star = ctx.alloc_scope(crate::code::scope::Scope::new_star_import_scope(Some(owner)));
         let origin = ctx.scope_create(Some(owner));
         assert!(!ctx.scope_is_filled(star));

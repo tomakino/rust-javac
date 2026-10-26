@@ -4024,6 +4024,7 @@ impl Types {
                 record_components: List::nil(),
                 permitted: List::nil(),
                 is_permitted_explicit: false,
+                annotation_type_metadata: Default::default(),
             },
         ));
         let intersection = ctx.alloc_type(

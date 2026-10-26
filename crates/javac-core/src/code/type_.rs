@@ -149,6 +149,9 @@ pub struct Type {
     /// value attached (the upstream anonymous subclasses only override
     /// constValue and baseType; registered in section 9).
     pub const_value: Option<ConstantValue>,
+    /// Java: protected final TypeMetadata metadata (TypeMetadata.java:89;
+    /// Java null -> None for the default value).
+    pub metadata: Option<crate::code::type_metadata::TypeMetadata>,
 }
 
 impl Type {
@@ -160,7 +163,94 @@ impl Type {
             tsym,
             kind,
             const_value: None,
+            metadata: None,
         }
+    }
+
+    /// Java: public TypeMetadata getMetadata() (Type.java:91-93)
+    pub fn get_metadata(&self) -> Option<&crate::code::type_metadata::TypeMetadata> {
+        self.metadata.as_ref()
+    }
+
+    /// Java: public Entry getMetadataOfKind(final Entry.Kind kind)
+    /// (Type.java:95-97)
+    pub fn get_metadata_of_kind(
+        &self,
+        kind: crate::code::type_metadata::EntryKind,
+    ) -> Option<&crate::code::type_metadata::Entry> {
+        self.metadata.as_ref().and_then(|metadata| metadata.get(kind))
+    }
+
+    /// Java: protected Type typeNoMetadata() (Type.java:348-350).
+    ///
+    /// PORTING_RULES §9 adapter: the upstream baseType() default returns this
+    /// for most subclasses; the port returns a clone without metadata.
+    pub fn type_no_metadata(&self) -> Type {
+        if self.metadata.is_none() {
+            self.clone()
+        } else {
+            let mut stripped = self.clone();
+            stripped.metadata = None;
+            stripped
+        }
+    }
+
+    /// Java: public abstract Type cloneWithMetadata(TypeMetadata metadata)
+    /// (Type.java:354-356).
+    pub fn clone_with_metadata(
+        &self,
+        metadata: crate::code::type_metadata::TypeMetadata,
+    ) -> Type {
+        let mut cloned = self.clone();
+        cloned.metadata = Some(metadata);
+        cloned
+    }
+
+    /// Java: public Type annotatedType(final List<Attribute.TypeCompound> annos)
+    /// (Type.java:400-404).
+    pub fn annotated_type(&self, annos: &List<crate::ids::AttributeId>) -> Type {
+        let base = self
+            .metadata
+            .clone()
+            .unwrap_or_else(crate::code::type_metadata::TypeMetadata::empty);
+        let entry = crate::code::type_metadata::Entry::Annotations(
+            crate::code::type_metadata::Annotations::new(annos.clone()),
+        );
+        self.clone_with_metadata(base.combine(entry))
+    }
+
+    /// Java: public boolean isAnnotated() (Type.java:406-412)
+    pub fn is_annotated(&self) -> bool {
+        match self.get_metadata_of_kind(crate::code::type_metadata::EntryKind::ANNOTATIONS) {
+            Some(crate::code::type_metadata::Entry::Annotations(annotations)) => {
+                !annotations.get_annotations().is_empty()
+            }
+            None => false,
+        }
+    }
+
+    /// Java: public List<Attribute.TypeCompound> getAnnotationMirrors()
+    /// (Type.java:414-419)
+    pub fn get_annotation_mirrors(&self) -> List<crate::ids::AttributeId> {
+        match self.get_metadata_of_kind(crate::code::type_metadata::EntryKind::ANNOTATIONS) {
+            Some(crate::code::type_metadata::Entry::Annotations(annotations)) => {
+                annotations.get_annotations()
+            }
+            None => List::nil(),
+        }
+    }
+
+    /// Java: public <A extends Annotation> A getAnnotation(Class<A>
+    /// annotationType) (Type.java:423-425): the upstream body returns null.
+    pub fn get_annotation(&self) -> Option<crate::ids::AttributeId> {
+        None
+    }
+
+    /// Java: public <A extends Annotation> A[] getAnnotationsByType(
+    /// Class<A> annotationType) (Type.java:428-433): the upstream body
+    /// returns an empty array.
+    pub fn get_annotations_by_type(&self) -> Vec<crate::ids::AttributeId> {
+        Vec::new()
     }
 
     /// Java: public Type constType(Object constValue) — the base Type rejects

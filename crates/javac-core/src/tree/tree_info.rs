@@ -1702,6 +1702,7 @@ mod tests {
                 record_components: List::nil(),
                 permitted: List::nil(),
                 is_permitted_explicit: false,
+                annotation_type_metadata: Default::default(),
             },
         ));
         let ident = tree(
@@ -1824,4 +1825,127 @@ mod tests {
         assert_eq!(innermost_type(&ctx, array, false), Some(anno));
         assert_eq!(innermost_type(&ctx, array, true), Some(ident));
     }
+}
+
+// ---------------------------------------------------------------------------
+// Java: TreeInfo.DeclScanner + declarationFor (TreeInfo.java:735-830)
+// ---------------------------------------------------------------------------
+
+/// Java: static class DeclScanner extends TreeScanner (TreeInfo.java:735-783)
+struct DeclScanner {
+    sym: crate::ids::SymbolId,
+    result: Option<TreeId>,
+}
+
+impl DeclScanner {
+    fn new(sym: crate::ids::SymbolId) -> DeclScanner {
+        DeclScanner { sym, result: None }
+    }
+
+    /// Java: public void scan(JCTree tree) (only until the result is found)
+    fn decl_scan(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) {
+        if let Some(tree) = tree {
+            if self.result.is_none() {
+                crate::tree::jc_tree::accept(ctx, tree, self);
+            }
+        }
+    }
+}
+
+use crate::tree::tree_scanner::{tree_scanner_visitor_delegate, TreeScannerVisitor};
+
+tree_scanner_visitor_delegate!(DeclScanner);
+
+impl TreeScannerVisitor for DeclScanner {
+    fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let packge = match &ctx.tree(tree).kind {
+            TreeKind::CompilationUnit { packge, .. } => *packge,
+            _ => panic!("expected a compilation unit"),
+        };
+        if packge == Some(self.sym) {
+            self.result = Some(tree);
+        } else {
+            <Self as TreeScannerVisitor>::visit_top_level(self, ctx, tree);
+        }
+    }
+
+    fn visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let sym = match &ctx.tree(tree).kind {
+            TreeKind::ModuleDecl { sym, .. } => *sym,
+            _ => panic!("expected a module declaration"),
+        };
+        if sym == Some(self.sym) {
+            self.result = Some(tree);
+        }
+        // no need to scan within module declaration
+    }
+
+    fn visit_package_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let packge = match &ctx.tree(tree).kind {
+            TreeKind::PackageDecl { packge, .. } => *packge,
+            _ => panic!("expected a package declaration"),
+        };
+        if packge == Some(self.sym) {
+            self.result = Some(tree);
+        } else {
+            <Self as TreeScannerVisitor>::visit_package_def(self, ctx, tree);
+        }
+    }
+
+    fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let sym = match &ctx.tree(tree).kind {
+            TreeKind::ClassDecl { sym, .. } => *sym,
+            _ => panic!("expected a class declaration"),
+        };
+        if sym == Some(self.sym) {
+            self.result = Some(tree);
+        } else {
+            <Self as TreeScannerVisitor>::visit_class_def(self, ctx, tree);
+        }
+    }
+
+    fn visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let sym = match &ctx.tree(tree).kind {
+            TreeKind::MethodDecl { sym, .. } => *sym,
+            _ => panic!("expected a method declaration"),
+        };
+        if sym == Some(self.sym) {
+            self.result = Some(tree);
+        } else {
+            <Self as TreeScannerVisitor>::visit_method_def(self, ctx, tree);
+        }
+    }
+
+    fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let sym = match &ctx.tree(tree).kind {
+            TreeKind::VariableDecl { sym, .. } => *sym,
+            _ => panic!("expected a variable declaration"),
+        };
+        if sym == Some(self.sym) {
+            self.result = Some(tree);
+        } else {
+            <Self as TreeScannerVisitor>::visit_var_def(self, ctx, tree);
+        }
+    }
+
+    fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let tsym = ctx.tree(tree).ty.and_then(|ty| ctx.typ(ty).tsym);
+        if tsym == Some(self.sym) {
+            self.result = Some(tree);
+        } else {
+            <Self as TreeScannerVisitor>::visit_type_parameter(self, ctx, tree);
+        }
+    }
+}
+
+/// Java: public static JCTree declarationFor(final Symbol sym, final JCTree
+/// tree) (TreeInfo.java:785-789)
+pub fn declaration_for(
+    ctx: &mut CompilerContext,
+    sym: crate::ids::SymbolId,
+    tree: TreeId,
+) -> Option<TreeId> {
+    let mut scanner = DeclScanner::new(sym);
+    scanner.decl_scan(ctx, Some(tree));
+    scanner.result
 }

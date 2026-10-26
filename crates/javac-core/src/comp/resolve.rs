@@ -5564,6 +5564,7 @@ impl Resolve {
                     extra_params: crate::util::list::List::nil(),
                     captured_locals: crate::util::list::List::nil(),
                     params: crate::util::list::List::nil(),
+                    default_value: None,
                 },
             ));
             best_so_far = self.select_best(
@@ -6578,6 +6579,7 @@ mod tests {
                 extra_params: crate::util::list::List::nil(),
                 captured_locals: crate::util::list::List::nil(),
                 params: crate::util::list::List::nil(),
+                default_value: None,
             },
         ));
         let concrete_sym = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
@@ -6590,6 +6592,7 @@ mod tests {
                 extra_params: crate::util::list::List::nil(),
                 captured_locals: crate::util::list::List::nil(),
                 params: crate::util::list::List::nil(),
+                default_value: None,
             },
         ));
         let strict = LookupFilter { abstractok: false };

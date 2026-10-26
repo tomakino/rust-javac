@@ -145,7 +145,7 @@ impl MemberEnter {
                 exc = self
                     .chk
                     .borrow()
-                    .check_class_type(ctx, syms, ctx.tree(thrown_tree).pos, exc);
+                    .check_class_type(ctx, ctx.tree(thrown_tree).pos, exc);
             } else if ctx
                 .typ(exc)
                 .tsym
@@ -293,6 +293,7 @@ impl MemberEnter {
                 extra_params: List::nil(),
                 captured_locals: List::nil(),
                 params: List::nil(),
+                default_value: None,
             },
         ));
         let mods_flags = method_decl_mods_flags(ctx, tree);

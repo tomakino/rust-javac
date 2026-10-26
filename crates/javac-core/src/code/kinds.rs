@@ -415,6 +415,7 @@ mod tests {
             record_components: List::nil(),
             permitted: List::nil(),
             is_permitted_explicit: false,
+                annotation_type_metadata: Default::default(),
         }
     }
 
@@ -423,6 +424,7 @@ mod tests {
             extra_params: List::nil(),
             captured_locals: List::nil(),
             params: List::nil(),
+            default_value: None,
         }
     }
 

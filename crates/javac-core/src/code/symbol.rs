@@ -874,6 +874,9 @@ pub enum SymbolKind {
         permitted: List<SymbolId>,
         /// Whether the permits clause was explicit.
         is_permitted_explicit: bool,
+        /// Java: private AnnotationTypeMetadata annotationTypeMetadata
+        /// (Symbol.java:1290; the not-an-annotation default).
+        annotation_type_metadata: crate::comp::annotate::AnnotationTypeMetadata,
     },
     /// Java: Symbol.BindingSymbol (Symbol.java:1861-1902) — a VarSymbol
     /// subclass introduced by a pattern match binding.
@@ -922,6 +925,9 @@ pub enum SymbolKind {
         captured_locals: List<SymbolId>,
         /// The value parameter symbols.
         params: List<SymbolId>,
+        /// Java: public Attribute defaultValue (Symbol.java:1780; null -> None)
+        /// — the annotation element default value (AttributeId, §9 arena).
+        default_value: Option<crate::ids::AttributeId>,
     },
     /// Java: Symbol.MethodHandleSymbol
     MethodHandleSymbol {
@@ -1167,6 +1173,7 @@ impl Symbol {
                 extra_params: List::nil(),
                 captured_locals: List::nil(),
                 params: List::nil(),
+                default_value: None,
             },
         )
     }
@@ -1780,6 +1787,56 @@ pub fn binding_symbol_is_preserved(ctx: &CompilerContext, sym: SymbolId) -> bool
 }
 
 
+
+impl Symbol {
+    /// Java: public AnnotationTypeMetadata getAnnotationTypeMetadata()
+    /// (Symbol.java:867/1614; the base Symbol asserts, only ClassSymbol has it).
+    pub fn get_annotation_type_metadata(
+        &self,
+    ) -> Option<&crate::comp::annotate::AnnotationTypeMetadata> {
+        match &self.kind_data {
+            SymbolKind::ClassSymbol {
+                annotation_type_metadata,
+                ..
+            } => Some(annotation_type_metadata),
+            _ => None,
+        }
+    }
+
+    /// Java: ClassSymbol.setAnnotationTypeMetadata (Symbol.java:1614 area;
+    /// the upstream ClassSymbol constructor installs the metadata).
+    pub fn set_annotation_type_metadata(
+        &mut self,
+        metadata: crate::comp::annotate::AnnotationTypeMetadata,
+    ) {
+        if let SymbolKind::ClassSymbol {
+            annotation_type_metadata,
+            ..
+        } = &mut self.kind_data
+        {
+            *annotation_type_metadata = metadata;
+        }
+    }
+
+    /// Mutable accessor (the upstream AnnotationTypeMetadata setters mutate the
+    /// metadata object through the ClassSymbol field).
+    pub fn get_annotation_type_metadata_mut(
+        &mut self,
+    ) -> Option<&mut crate::comp::annotate::AnnotationTypeMetadata> {
+        match &mut self.kind_data {
+            SymbolKind::ClassSymbol {
+                annotation_type_metadata,
+                ..
+            } => Some(annotation_type_metadata),
+            _ => None,
+        }
+    }
+
+    /// Java: ClassSymbol.isAnnotationType() (Symbol.java:1618-1620).
+    pub fn is_annotation_type(&self) -> bool {
+        (self.flags_field & crate::code::flags::ANNOTATION as i64) != 0
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1848,6 +1905,7 @@ mod tests {
             record_components: List::nil(),
             permitted: List::nil(),
             is_permitted_explicit: false,
+                annotation_type_metadata: Default::default(),
         }
     }
 
@@ -1856,6 +1914,7 @@ mod tests {
             extra_params: List::nil(),
             captured_locals: List::nil(),
             params: List::nil(),
+            default_value: None,
         }
     }
 
@@ -1989,6 +2048,7 @@ mod tests {
                 record_components: List::nil(),
                 permitted: List::nil(),
                 is_permitted_explicit: false,
+                annotation_type_metadata: Default::default(),
             },
         )
     }

@@ -660,6 +660,7 @@ impl CompilerContext {
                 record_components: List::nil(),
                 permitted: List::nil(),
                 is_permitted_explicit: false,
+                annotation_type_metadata: Default::default(),
             },
         ));
         self.sym_mut(sym).erasure_field = Some(erasure);

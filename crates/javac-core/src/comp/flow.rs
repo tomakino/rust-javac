@@ -5310,6 +5310,9 @@ mod tests {
         let messages = JavacMessages::instance(&mut jcontext);
         let diags = Rc::new(Factory::new(messages, "compiler"));
         let lint = Lint::instance(&mut jcontext);
+        let deferred = Rc::new(RefCell::new(
+            crate::code::deferred_lint_handler::DeferredLintHandler::new(),
+        ));
         let check = Rc::new(RefCell::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
@@ -5317,6 +5320,9 @@ mod tests {
             source,
             '$',
             Rc::clone(&types),
+            Rc::clone(&lint),
+            Rc::clone(&deferred),
+            Rc::clone(&syms),
         )));
         let options = Options::instance(&mut jcontext);
         let resolve = Rc::new(RefCell::new(Resolve::new(

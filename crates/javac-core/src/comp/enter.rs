@@ -1015,6 +1015,7 @@ fn set_tree_symbol_and_type(ctx: &mut CompilerContext, tree: TreeId, symbol: Sym
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::code::deferred_lint_handler::DeferredLintHandler;
     use std::io::Read;
 
     use javac_tools::error::Error as ToolsError;
@@ -1234,6 +1235,7 @@ mod tests {
         names: Rc<Names>,
         options: Rc<crate::util::options::Options>,
         diags: Rc<Factory>,
+        context: Context,
     }
 
     fn harness(sample: &str) -> Harness {
@@ -1278,6 +1280,7 @@ mod tests {
             names,
             options,
             diags,
+            context,
         }
     }
 
@@ -1289,13 +1292,13 @@ mod tests {
             content: sample_source(sample).to_string(),
         });
         let mut ctx = std::mem::take(&mut harness.ctx);
-        let mut syms = Symtab::new(
+        let syms = Rc::new(RefCell::new(Symtab::new(
             &mut ctx,
             Rc::clone(&harness.names),
             Target::JDK1_17,
             Source::JDK17,
-        );
-        let java_base = syms.java_base;
+        )));
+        let java_base = syms.borrow().java_base;
         if let TreeKind::CompilationUnit { modle, sourcefile: slot, .. } =
             &mut ctx.tree_mut(harness.unit).kind
         {
@@ -1303,6 +1306,8 @@ mod tests {
             *slot = Some(sourcefile as Rc<dyn JavaFileObject>);
         }
         let types = Rc::new(crate::code::types::Types::with_names(Rc::clone(&harness.names)));
+        let lint = crate::code::lint::Lint::instance(&mut harness.context);
+        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
         let chk = Rc::new(RefCell::new(Check::new(
             Rc::clone(&harness.names),
             Rc::clone(&harness.log),
@@ -1310,6 +1315,9 @@ mod tests {
             Source::JDK17,
             '$',
             Rc::clone(&types),
+            lint,
+            Rc::clone(&deferred),
+            Rc::clone(&syms),
         )));
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let mut enter = Enter::new(
@@ -1322,7 +1330,7 @@ mod tests {
             manager,
             &harness.options,
         );
-        enter.main(&mut ctx, &mut syms, List::of(harness.unit));
+        enter.main(&mut ctx, &mut syms.borrow_mut(), List::of(harness.unit));
         harness.ctx = ctx;
     }
 

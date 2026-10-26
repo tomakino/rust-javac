@@ -649,3 +649,126 @@ mod tests {
         CompilerContext::new()
     }
 }
+
+/// Java: the Object returned by Attribute.getValue() (the AnnotationValue
+/// domain). PORTING_RULES §9 adapter: the union of the upstream return types
+/// (Type / List<Attribute> / VarSymbol / String / this) is represented as an
+/// enum so callers can dispatch without any/object downcasts.
+#[derive(Clone, Debug)]
+pub enum AttributeValue {
+    /// Java: Attribute.Constant.getValue() -> Object (the constant value)
+    Constant(ConstantValue),
+    /// Java: Attribute.Class.getValue() -> Type
+    Class(TypeId),
+    /// Java: Attribute.Array.getValue() -> List<Attribute> (arena ids, §9)
+    Array(Vec<AttributeId>),
+    /// Java: Attribute.Enum.getValue() -> VarSymbol
+    Enum(SymbolId),
+    /// Java: Attribute.Error.getValue() -> String ("<error>")
+    Error(String),
+    /// Java: Attribute.Compound.getValue() -> this (the compound attribute id)
+    Compound(AttributeId),
+}
+
+impl Attribute {
+    /// Java: public Constant(Type type, Object value) (Attribute.java:76)
+    pub fn new_constant(ty: Option<TypeId>, value: ConstantValue) -> Attribute {
+        Attribute::new(ty, AttributeKind::Constant { value })
+    }
+
+    /// Java: public Compound(Type type, List<Pair<MethodSymbol,Attribute>>
+    /// values, TypeAnnotationPosition position) (Attribute.java:166)
+    pub fn new_compound_at(
+        ty: Option<TypeId>,
+        values: List<crate::util::pair::Pair<SymbolId, AttributeId>>,
+        position: Option<TypeAnnotationPosition>,
+    ) -> Attribute {
+        Attribute::new(
+            ty,
+            AttributeKind::Compound {
+                values,
+                position,
+                synthesized: false,
+            },
+        )
+    }
+
+    /// Java: public Compound(Type type, List<Pair<MethodSymbol,Attribute>>
+    /// values) (Attribute.java:174) — the position is null.
+    pub fn new_compound(
+        ty: Option<TypeId>,
+        values: List<crate::util::pair::Pair<SymbolId, AttributeId>>,
+    ) -> Attribute {
+        Attribute::new_compound_at(ty, values, None)
+    }
+
+    /// Java: public TypeCompound(Type type, List<Pair<MethodSymbol,Attribute>>
+    /// values, TypeAnnotationPosition position) (Attribute.java:322-326)
+    pub fn new_type_compound(
+        ty: Option<TypeId>,
+        values: List<crate::util::pair::Pair<SymbolId, AttributeId>>,
+        position: Option<TypeAnnotationPosition>,
+    ) -> Attribute {
+        Attribute::new(
+            ty,
+            AttributeKind::TypeCompound {
+                values,
+                position,
+                synthesized: false,
+            },
+        )
+    }
+
+    /// Java: public Array(Type type, Attribute[] values) (Attribute.java:316)
+    pub fn new_array(ty: Option<TypeId>, values: Vec<AttributeId>) -> Attribute {
+        Attribute::new(ty, AttributeKind::Array { values })
+    }
+
+    /// Java: public Enum(Type type, VarSymbol value) (Attribute.java:363)
+    pub fn new_enum(ty: Option<TypeId>, value: SymbolId) -> Attribute {
+        Attribute::new(
+            ty,
+            AttributeKind::Enum {
+                value: Some(value),
+            },
+        )
+    }
+
+    /// Java: public Error(Type type) (Attribute.java:383)
+    pub fn new_error(ty: Option<TypeId>) -> Attribute {
+        Attribute::new(ty, AttributeKind::Error)
+    }
+
+    /// Java: public UnresolvedClass(Type type, Type classType)
+    /// (Attribute.java:403-406)
+    pub fn new_unresolved_class(
+        ty: Option<TypeId>,
+        class_type: Option<TypeId>,
+    ) -> Attribute {
+        Attribute::new(ty, AttributeKind::UnresolvedClass { class_type })
+    }
+
+    /// Java: Attribute.getValue() — the per-subclass Object result.
+    /// AttributeId is passed because Compound.getValue() returns this.
+    pub fn get_value(&self, self_id: AttributeId) -> AttributeValue {
+        match &self.kind {
+            AttributeKind::Constant { value } => AttributeValue::Constant(value.clone()),
+            AttributeKind::Class { class_type } => AttributeValue::Class(
+                class_type.expect("Attribute.Class.getValue: classType"),
+            ),
+            AttributeKind::Compound { values, .. }
+            | AttributeKind::TypeCompound { values, .. } => {
+                let _ = values;
+                AttributeValue::Compound(self_id)
+            }
+            AttributeKind::Array { values } => AttributeValue::Array(values.clone()),
+            AttributeKind::Enum { value } => AttributeValue::Enum(
+                value.expect("Attribute.Enum.getValue: VarSymbol"),
+            ),
+            AttributeKind::Error => AttributeValue::Error(String::from("<error>")),
+            AttributeKind::UnresolvedClass { .. } => {
+                AttributeValue::Error(String::from("<error>"))
+            }
+        }
+    }
+}

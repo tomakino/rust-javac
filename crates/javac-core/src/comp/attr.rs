@@ -588,7 +588,7 @@ impl Attr {
         let clazztype = self
             .chk
             .borrow()
-            .check_class_type(ctx, syms, clazz_pos, clazz_type);
+            .check_class_type(ctx, clazz_pos, clazz_type);
 
         // Attribute type parameters
         let arguments = type_apply_arguments(ctx, tree);
@@ -2408,7 +2408,7 @@ mod tests {
 
     struct AttrHarness {
         ctx: CompilerContext,
-        syms: Symtab,
+        syms: Rc<RefCell<Symtab>>,
         names: Rc<Names>,
         log: Rc<RefCell<Log>>,
         diags: Rc<Factory>,
@@ -2453,8 +2453,13 @@ mod tests {
             false,
         );
         let unit = parser.parse_compilation_unit(&mut ctx);
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, Source::JDK17);
-        let java_base = syms.java_base;
+        let syms = Rc::new(RefCell::new(Symtab::new(
+            &mut ctx,
+            Rc::clone(&names),
+            Target::JDK1_17,
+            Source::JDK17,
+        )));
+        let java_base = syms.borrow().java_base;
         if let TreeKind::CompilationUnit {
             modle,
             sourcefile: slot,
@@ -2465,6 +2470,8 @@ mod tests {
             *slot = Some(Rc::clone(&sourcefile));
         }
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
+        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
+        let lint = crate::code::lint::Lint::instance(&mut context);
         let chk = Rc::new(RefCell::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
@@ -2472,8 +2479,10 @@ mod tests {
             Source::JDK17,
             '$',
             Rc::clone(&types),
+            lint,
+            Rc::clone(&deferred),
+            Rc::clone(&syms),
         )));
-        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
         let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
         let dependencies: Rc<RefCell<dyn crate::code::dependencies::Dependencies>> =
             Rc::new(RefCell::new(DummyDependencies));
@@ -2529,7 +2538,7 @@ mod tests {
             &options,
             &preview,
         );
-        enter.borrow_mut().main(&mut ctx, &mut syms, List::of(unit));
+        enter.borrow_mut().main(&mut ctx, &mut syms.borrow_mut(), List::of(unit));
         let class_tree = class_tree_in(&ctx, unit);
         let class_sym = class_tree_symbol(&ctx, class_tree).expect("class symbol");
         let top = enter.borrow().get_top_level_env(&mut ctx, unit);
@@ -2753,15 +2762,15 @@ mod tests {
     #[test]
     fn attr_type_attribution_matches_the_javac_oracle() {
         let mut harness = build_attr_harness();
-        inject_list_type_parameters(&mut harness.ctx, &mut harness.syms);
+        inject_list_type_parameters(&mut harness.ctx, &mut harness.syms.borrow_mut());
         let trees = type_trees(&harness.ctx, harness.class_tree);
         let mut actual: Vec<String> = Vec::new();
         for (index, tree) in trees.iter().enumerate() {
             let tree = *tree;
-            preset_type_idents(&mut harness.ctx, &harness.syms, &harness.names, tree);
+            preset_type_idents(&mut harness.ctx, &harness.syms.borrow(), &harness.names, tree);
             let ty = harness
                 .attr
-                .attrib_type(&mut harness.ctx, &mut harness.syms, tree, &harness.env);
+                .attrib_type(&mut harness.ctx, &mut harness.syms.borrow_mut(), tree, &harness.env);
             actual.push(format!("TYPE {} {}", index, encode_type(&harness.ctx, ty)));
         }
         let expected = oracle_entries();
@@ -2902,7 +2911,7 @@ mod tests {
             };
             let symbol = resolve.find_ident_in_type(
                 &mut harness.ctx,
-                &mut harness.syms,
+                &mut harness.syms.borrow_mut(),
                 None,
                 &method_env,
                 class_type,
@@ -2940,7 +2949,7 @@ mod tests {
         let f1_name = harness.names.from_utf(b"f1");
         let f1 = resolve.find_ident(
             &mut harness.ctx,
-            &mut harness.syms,
+            &mut harness.syms.borrow_mut(),
             None,
             &method_env,
             &f1_name,
@@ -2954,7 +2963,7 @@ mod tests {
         let inner_name = harness.names.from_utf(b"Inner");
         let inner = resolve.find_ident_in_type(
             &mut harness.ctx,
-            &mut harness.syms,
+            &mut harness.syms.borrow_mut(),
             None,
             &method_env,
             class_type,
@@ -2967,7 +2976,7 @@ mod tests {
         let missing = harness.names.from_utf(b"missing");
         let not_found = resolve.find_ident_in_type(
             &mut harness.ctx,
-            &mut harness.syms,
+            &mut harness.syms.borrow_mut(),
             None,
             &method_env,
             class_type,
@@ -3007,7 +3016,7 @@ mod tests {
         let e1 = resolve
             .resolve_error_diagnostic(
                 &mut harness.ctx,
-                &harness.syms,
+                &harness.syms.borrow(),
                 resolve.var_not_found,
                 DiagnosticType::ERROR,
                 None,
@@ -3022,7 +3031,7 @@ mod tests {
         let e2 = resolve
             .resolve_error_diagnostic(
                 &mut harness.ctx,
-                &harness.syms,
+                &harness.syms.borrow(),
                 resolve.type_not_found,
                 DiagnosticType::ERROR,
                 None,
@@ -3057,7 +3066,7 @@ mod tests {
         let e3 = resolve
             .resolve_error_diagnostic(
                 &mut harness.ctx,
-                &harness.syms,
+                &harness.syms.borrow(),
                 static_error,
                 DiagnosticType::ERROR,
                 None,
@@ -3099,7 +3108,7 @@ mod tests {
         let e4 = resolve
             .resolve_error_diagnostic(
                 &mut harness.ctx,
-                &harness.syms,
+                &harness.syms.borrow(),
                 access_error,
                 DiagnosticType::ERROR,
                 None,
@@ -3197,7 +3206,7 @@ class Sample {
 
     #[test]
     fn find_jump_target_resolves_an_unlabelled_break_to_the_loop() {
-        let mut harness = build_attr_harness_with_source(ATTR_B_SOURCE);
+        let harness = build_attr_harness_with_source(ATTR_B_SOURCE);
         let (_labelled, while_tree, _break_tree) = attr_b_trees(&harness);
         let mut info = crate::comp::attr_context::AttrContext::new();
         info.scope = None;
@@ -3213,7 +3222,7 @@ class Sample {
         });
         let (target, error) = harness.attr.find_jump_target_no_error(
             &harness.ctx,
-            &mut harness.syms,
+            &mut harness.syms.borrow_mut(),
             Tag::BREAK,
             &None,
             &env,
@@ -3251,7 +3260,7 @@ class Sample {
         let stat_info = harness.attr.stat_info.clone();
         let result = harness
             .attr
-            .attrib_tree(&mut harness.ctx, &mut harness.syms, break_tree, &env, stat_info)
+            .attrib_tree(&mut harness.ctx, &mut harness.syms.borrow_mut(), break_tree, &env, stat_info)
             .expect("break attribution");
         let _ = result;
         let target = match &harness.ctx.tree(break_tree).kind {
