@@ -369,7 +369,12 @@ impl Resolve {
             return self.is_accessible_type(ctx, syms, env, bound, check_inner);
         }
         // TODO(Types): t.isUnion() / UnionClassType alternative types.
-        let tsym = ctx.typ(t).tsym.expect("type symbol");
+        // Java: isAccessible(env, (Symbol) t.tsym, checkInner) returns true for
+        // a null symbol (e.g. the no-type has no tsym).
+        let tsym = match ctx.typ(t).tsym {
+            Some(tsym) => tsym,
+            None => return true,
+        };
         self.is_accessible_class(ctx, syms, env, tsym, check_inner)
     }
 
@@ -379,7 +384,7 @@ impl Resolve {
     pub fn is_accessible_member(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         sym: SymbolId,
@@ -428,8 +433,15 @@ impl Resolve {
                 .unwrap_or(false);
             (same_owner || same_outermost) && inherited
         } else if access == 0 {
-            let owner_owner = ctx.sym(owner).owner.expect("owner owner");
-            (toplevel_package == Some(owner_owner) || toplevel_package == sym_package)
+            // Java: env.toplevel.packge == sym.owner.owner || ...; the ported
+            // package owner may be unset (Modules not ported), in which case the
+            // first comparison is false (a null owner does not match a package).
+            let owner_owner_matches = ctx
+                .sym(owner)
+                .owner
+                .map(|owner_owner| toplevel_package == Some(owner_owner))
+                .unwrap_or(false);
+            (owner_owner_matches || toplevel_package == sym_package)
                 && self.is_accessible_type(ctx, syms, env, site, check_inner)
                 && ctx
                     .typ(site)
@@ -438,7 +450,11 @@ impl Resolve {
                     .unwrap_or(false)
                 && self.not_overridden_in(ctx, syms, site, sym)
         } else if access == flags::PROTECTED as i64 {
-            let owner_owner = ctx.sym(owner).owner.expect("owner owner");
+            let owner_owner_matches = ctx
+                .sym(owner)
+                .owner
+                .map(|owner_owner| toplevel_package == Some(owner_owner))
+                .unwrap_or(false);
             let select_super = env.info.borrow().select_super;
             let sym_static = (ctx.sym(sym).flags_field & flags::STATIC as i64) != 0;
             let sym_is_type = ctx.sym(sym).kind == Kind::TYP;
@@ -446,7 +462,7 @@ impl Resolve {
                 .encl_class
                 .and_then(|class_tree| class_decl_symbol(ctx, class_tree))
                 .expect("enclClass symbol");
-            (toplevel_package == Some(owner_owner)
+            (owner_owner_matches
                 || toplevel_package == sym_package
                 || self.is_protected_accessible(ctx, syms, sym, encl_sym, site)
                 || (select_super && !sym_static && !sym_is_type))
@@ -464,7 +480,7 @@ impl Resolve {
     fn not_overridden_in(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        _syms: &Symtab,
+        syms: &mut Symtab,
         site: TypeId,
         sym: SymbolId,
     ) -> bool {
@@ -474,11 +490,11 @@ impl Resolve {
         if !is_method || is_constructor || is_static {
             return true;
         }
-        // Java: ((MethodSymbol)sym).implementation(site.tsym, types, true)
-        // TODO(Symbol): MethodSymbol.implementation (binaryImplementation/
-        // overrides chain) is not ported yet.
-        let _ = site;
-        unimplemented!("TODO(Symbol batch): Resolve.notOverriddenIn implementation()")
+        // Java: ((MethodSymbol)sym).implementation(site.tsym, types, true) == sym
+        // (Resolve.java:467-474; Symbol.java:2168-2187).
+        let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
+        crate::code::symbol::implementation(ctx, syms, &self.types, sym, site_tsym, true)
+            == Some(sym)
     }
 
     /// Java: private boolean isProtectedAccessible(Symbol sym, ClassSymbol c,
@@ -1663,7 +1679,7 @@ impl Resolve {
     fn find_field(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         name: &crate::util::name::Name,
@@ -1733,7 +1749,7 @@ impl Resolve {
     fn find_var(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
     ) -> SymbolId {
@@ -1877,7 +1893,7 @@ impl Resolve {
     fn find_immediate_member_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         name: &crate::util::name::Name,
@@ -1908,7 +1924,7 @@ impl Resolve {
     fn find_inherited_member_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         name: &crate::util::name::Name,
@@ -1945,7 +1961,7 @@ impl Resolve {
     fn find_member_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         name: &crate::util::name::Name,
@@ -2792,11 +2808,31 @@ impl Resolve {
             // Java: argtypes = logResolveHelper.getArgumentTypes(errSym, sym,
             // name, argtypes)
             if log_resolve_helper == LogResolveHelper::Method {
-                // TODO(DeferredAttr): ResolveDeferredRecoveryMap needs the
-                // DeferredAttr machinery.
-                unimplemented!(
-                    "TODO(DeferredAttr batch): LogResolveHelper.getArgumentTypes (ResolveDeferredRecoveryMap)"
-                )
+                // Java: argtypes.map(new ResolveDeferredRecoveryMap(SPECULATIVE,
+                // accessedSym, currentResolutionContext.step)) (Resolve.java:2615),
+                // i.e. RecoveryDeferredTypeMap over the argument types. Types that
+                // are not deferred map to themselves (the map is the identity on
+                // every other type), which is the only case reachable before the
+                // Attr re-entry hook exists for deferred mapping.
+                if let Some(current_argtypes) = argtypes.clone() {
+                    let mut has_deferred = false;
+                    let mut current = current_argtypes;
+                    while current.non_empty() {
+                        if ctx
+                            .typ(*current.head())
+                            .has_tag(crate::code::type_tag::TypeTag::DEFERRED)
+                        {
+                            has_deferred = true;
+                            break;
+                        }
+                        current = current.tail();
+                    }
+                    if has_deferred {
+                        unimplemented!(
+                            "TODO(DeferredAttr batch): ResolveDeferredRecoveryMap deferred mapping needs the Attr re-entry hook"
+                        )
+                    }
+                }
             }
             if self.resolve_diagnostic_needed(
                 ctx,
@@ -3518,6 +3554,19 @@ pub trait AbstractMethodCheck: MethodCheck {
     ) -> Result<(), MethodCheckFailure>;
 }
 
+/// Java: List.head on the empty list yields null; the ported comparison
+/// "formals.head != varargsFormal" is None == None for the empty list.
+fn formals_head_is_not_varargs(
+    formals: &crate::util::list::List<TypeId>,
+    varargs_formal: Option<TypeId>,
+) -> bool {
+    if formals.is_empty() {
+        varargs_formal.is_some()
+    } else {
+        Some(*formals.head()) != varargs_formal
+    }
+}
+
 /// The ported AbstractMethodCheck.argumentsAcceptable body, shared by the
 /// resolveMethodCheck/MethodReferenceCheck/arityMethodCheck implementations.
 #[allow(clippy::too_many_arguments)]
@@ -3550,7 +3599,29 @@ pub fn abstract_method_check_arguments_acceptable(
     };
     let mut argtypes = argtypes;
     let mut formals = formals;
-    while argtypes.non_empty() && Some(*formals.head()) != varargs_formal {
+    // Java: if (varargsFormal == null && argtypes.size() != formals.size())
+    //     reportMC(callTree, MethodCheckDiag.ARITY_MISMATCH, inferenceContext);
+    if varargs_formal.is_none() {
+        let mut arg_count = 0usize;
+        let mut current = argtypes.clone();
+        while current.non_empty() {
+            arg_count += 1;
+            current = current.tail();
+        }
+        let mut formal_count = 0usize;
+        let mut current = formals.clone();
+        while current.non_empty() {
+            formal_count += 1;
+            current = current.tail();
+        }
+        if arg_count != formal_count {
+            return Err(MethodCheckFailure::Inapplicable(
+                InapplicableMethodException::new(method_check_diag(diags, "arity mismatch")),
+            ));
+        }
+    }
+    // Java: formals.head (null for the empty list) != varargsFormal.
+    while argtypes.non_empty() && formals_head_is_not_varargs(&formals, varargs_formal) {
         let pos = if trees.non_empty() {
             Some(*trees.head())
         } else {
@@ -3575,7 +3646,7 @@ pub fn abstract_method_check_arguments_acceptable(
             trees = trees.tail();
         }
     }
-    if Some(*formals.head()) != varargs_formal {
+    if formals_head_is_not_varargs(&formals, varargs_formal) {
         return Err(MethodCheckFailure::Inapplicable(InapplicableMethodException::new(
             method_check_diag(diags, "arity mismatch"),
         )));
@@ -5817,7 +5888,11 @@ impl Resolve {
         typeargtypes: Option<crate::util::list::List<TypeId>>,
     ) -> SymbolId {
         let encl_tree = env.encl_class.expect("resolving method outside class");
-        let encl_class = crate::tree::tree_info::symbol(ctx, encl_tree).expect("enclosing class");
+        // Java: env.enclClass.sym.type (Resolve.java:1520-1530).
+        let encl_class = match &ctx.tree(encl_tree).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+            _ => panic!("enclosing class"),
+        };
         let site = ctx.sym(encl_class).ty.expect("enclosing class type");
         let mut helper = BasicLookupHelper::new(
             name,
@@ -6379,8 +6454,11 @@ impl Resolve {
             let tree = env.tree;
             env1.info.borrow_mut().preferred_tree_for_diagnostics = tree;
             let encl_tree = env1.encl_class.expect("enclosing class tree");
-            let encl_class = crate::tree::tree_info::symbol(ctx, encl_tree)
-                .expect("enclosing class symbol");
+            // Java: env1.enclClass.sym.type (Resolve.java:findFun).
+            let encl_class = match &ctx.tree(encl_tree).kind {
+                crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+                _ => panic!("enclosing class symbol"),
+            };
             let site = ctx.sym(encl_class).ty.expect("enclosing class type");
             let sym = self.find_method(
                 ctx,
@@ -7958,7 +8036,11 @@ impl Resolve {
         // env.enclClass.sym.type, name, false);
         let found = self.find_ident(ctx, syms, pos.clone(), env, &name, kind);
         let encl_tree = env.encl_class.expect("resolving ident outside class");
-        let encl_sym = crate::tree::tree_info::symbol(ctx, encl_tree).expect("enclosing class");
+        // Java: env.enclClass.sym.type (Resolve.java:2683).
+        let encl_sym = match &ctx.tree(encl_tree).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+            _ => panic!("enclosing class"),
+        };
         let site = ctx.sym(encl_sym).ty;
         let location = env
             .info
@@ -8177,7 +8259,7 @@ impl Resolve {
     pub(crate) fn find_member_type_pub(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         name: &crate::util::name::Name,

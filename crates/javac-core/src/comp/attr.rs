@@ -715,6 +715,7 @@ impl Attr {
             Tag::SELECT => self.visit_select(ctx, syms, tree),
             Tag::NEWARRAY => self.visit_new_array(ctx, syms, tree),
             Tag::NEWCLASS => self.visit_new_class(ctx, syms, tree),
+            Tag::CLASSDEF => self.visit_class_def(ctx, syms, tree),
             Tag::CONDEXPR => self.visit_conditional(ctx, syms, tree),
             Tag::ASSERT => self.visit_assert(ctx, syms, tree),
             Tag::LABELLED => self.visit_labeled(ctx, syms, tree),
@@ -1413,7 +1414,12 @@ impl Attr {
                 owntype = value;
             }
             Kind::PCK | Kind::ERR => {
-                owntype = ctx.sym(sym).ty.expect("symbol type");
+                // Java: owntype = sym.type; (may be null for packages; the port
+                // maps the Java null type to Type.noType).
+                owntype = ctx
+                    .sym(sym)
+                    .ty
+                    .unwrap_or_else(|| self.no_type(ctx));
             }
             other => panic!("AssertionError: unexpected kind: {:?} in tree", other),
         }
@@ -5285,12 +5291,8 @@ impl Attr {
                 &local_env,
             );
             argtypes = attributed;
-            typeargtypes = Some(self.attrib_types(
-                ctx,
-                syms,
-                typeargs.clone(),
-                &local_env,
-            ));
+            // Java: typeargtypes = attribAnyTypes(tree.typeargs, localEnv).
+            typeargtypes = Some(self.attrib_any_types(ctx, syms, typeargs.clone(), &local_env));
             // Variable `site` points to the class in which the called constructor is defined.
             let encl_class = env.encl_class.expect("env.enclClass");
             let encl_sym = class_tree_symbol(ctx, encl_class).expect("enclClass sym");
@@ -5448,12 +5450,13 @@ impl Attr {
                 &local_env,
             );
             argtypes = attributed;
-            typeargtypes = Some(self.attrib_any_types(
-                ctx,
-                syms,
-                typeargs.clone(),
-                &local_env,
-            ));
+            // Java: typeargtypes = attribAnyTypes(tree.typeargs, localEnv);
+            // (attribAnyTypes returns null for an empty list).
+            typeargtypes = if typeargs.is_empty() {
+                None
+            } else {
+                Some(self.attrib_any_types(ctx, syms, typeargs.clone(), &local_env))
+            };
             //... and attribute the method using as a prototype a methodtype whose
             // formal argument types are exactly the list of actual arguments
             // (this will also set the method symbol).
@@ -7920,7 +7923,7 @@ impl Attr {
         let unique = {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
-            chk.check_unique(ctx, ctx.tree(tree).pos, binding, scope)
+            chk.check_unique(ctx, &*syms, ctx.tree(tree).pos, binding, scope)
         };
         if unique {
             let chk_rc = Rc::clone(&self.chk);
@@ -10406,9 +10409,12 @@ pub fn wire_attr_services(
         *recover_cell.borrow_mut() = Some(recover);
         *flow_cell.borrow_mut() = Some(flow);
         *analyzer_cell.borrow_mut() = Some(analyzer);
-        *annotate_cell.borrow_mut() = Some(annotate);
+        *annotate_cell.borrow_mut() = Some(Rc::clone(&annotate));
         *attr.borrow().type_annotations.borrow_mut() = Some(Rc::clone(&type_annotations));
         *chk.borrow().type_annotations.borrow_mut() = Some(type_annotations);
+        *a.member_enter.borrow().attr.borrow_mut() = Some(Rc::clone(&attr));
+        *a.member_enter.borrow().annotate.borrow_mut() = Some(Rc::clone(&annotate));
+        *a.type_enter.borrow().annotate.borrow_mut() = Some(Rc::clone(&annotate));
         let deferred = match Rc::try_unwrap(deferred) {
             Ok(service) => service,
             Err(_) => panic!("AssertionError: fresh DeferredAttrService is shared"),
@@ -12097,7 +12103,8 @@ impl Attr {
         }
         // Attribute constructor arguments.
         let (pkind, argtypes) = self.attrib_args(ctx, syms, KindSelector::VAL, args.clone(), &local_env);
-        let typeargtypes = self.attrib_types(ctx, syms, typeargs.clone(), &local_env);
+        // Java: typeargtypes = attribAnyTypes(tree.typeargs, localEnv).
+        let typeargtypes = self.attrib_any_types(ctx, syms, typeargs.clone(), &local_env);
         if ctx.typ(clazztype).has_tag(TypeTag::CLASS) || ctx.typ(clazztype).has_tag(TypeTag::ERROR) {
             // Enums may not be instantiated except implicitly
             let clazztype_tsym = ctx.typ(clazztype).tsym.expect("class type symbol");
@@ -12921,6 +12928,146 @@ impl crate::comp::infer::FreeTypeListener for AnonymousClassDiamondListener {
     }
 }
 
+impl Attr {
+    /// Adapter: public wrapper of the private attribType(tree, env) pipeline
+    /// (MemberEnter.java:120 routes through Attr.attribType).
+    pub fn attrib_type_public(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+    ) -> TypeId {
+        self.attrib_type_use(ctx, syms, tree, env)
+    }
+
+    /// Adapter: public wrapper of the private attribTree(tree, env, resultInfo)
+    /// pipeline (MemberEnter.java:610 routes through Attr.attribExpr).
+    pub fn attrib_tree_public(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        result_info: ResultInfo,
+    ) -> TypeId {
+        self.attrib_tree_use(ctx, syms, tree, env, result_info)
+    }
+}
+impl Attr {
+    /// Java: public void visitClassDef(JCClassDecl tree) (Attr.java:948-990).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the local or anonymous class declaration.
+    ///
+    /// # Returns
+    ///   - the attributed class type (or the no-type result).
+    ///
+    /// # Panics
+    ///   - the registered services must be installed.
+    ///
+    /// Upstream: Attr.java:948-990.
+    #[allow(clippy::too_many_lines)]
+    fn visit_class_def(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        // Java: Optional<ArgumentAttr.LocalCacheContext> localCacheContext =
+        // Optional.ofNullable(env.info.attributionMode.isSpeculative ?
+        //     argumentAttr.withLocalCacheContext() : null);
+        let local_cache_context = self
+            .env
+            .as_ref()
+            .filter(|env| env.info.borrow().attribution_mode.is_speculative())
+            .and_then(|_| {
+                let argument_attr = self.argument_attr.borrow().clone();
+                argument_attr
+                    .map(|argument_attr| argument_attr.borrow_mut().with_local_cache_context())
+            });
+        let result = self.visit_class_def_body(ctx, syms, tree);
+        // Java: finally localCacheContext.ifPresent(LocalCacheContext::leave);
+        if let Some(mut local_cache_context) = local_cache_context {
+            let argument_attr = self.argument_attr.borrow().clone();
+            if let Some(argument_attr) = argument_attr {
+                local_cache_context.leave(&mut argument_attr.borrow_mut());
+            }
+        }
+        result
+    }
+
+    /// The body of Attr.visitClassDef (Attr.java:952-987), split out for the
+    /// try/finally leave above.
+    fn visit_class_def_body(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        // Local and anonymous classes have not been entered yet, so we need to
+        // do it now.
+        let scope_owner_kind = env
+            .info
+            .borrow()
+            .scope
+            .and_then(|scope| ctx.scope(scope).owner)
+            .map(|owner| ctx.sym(owner).kind);
+        let matches_val_mth = scope_owner_kind
+            .map(|kind| kind.matches(crate::code::kinds::KindSelector::VAL_MTH))
+            .unwrap_or(false);
+        if matches_val_mth {
+            self.enter
+                .borrow_mut()
+                .class_enter(ctx, syms, tree, Some(Rc::clone(&env)));
+        } else {
+            // If this class declaration is part of a class level annotation,
+            // as in @MyAnno(new Object() {}) class MyClass {}, enter it in
+            // order to simplify later steps and allow for sensible error messages.
+            let env_tree_is_new_class = env
+                .tree
+                .map(|env_tree| ctx.tree(env_tree).has_tag(Tag::NEWCLASS))
+                .unwrap_or(false);
+            if env_tree_is_new_class
+                && crate::tree::tree_info::is_in_annotation(ctx, &env, tree)
+            {
+                self.enter
+                    .borrow_mut()
+                    .class_enter(ctx, syms, tree, Some(Rc::clone(&env)));
+            }
+        }
+        let class_symbol = match &ctx.tree(tree).kind {
+            TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+            _ => {
+                // Java: exit in case something drastic went wrong during enter.
+                self.result = None;
+                return Ok(self.no_type(ctx));
+            }
+        };
+        // make sure class has been completed:
+        ctx.complete_class_symbol(syms, class_symbol)?;
+        // If this class appears as an anonymous class
+        // in a superclass constructor call disable implicit outer instance
+        // from being passed. (This would be an illegal access to "this before super").
+        let is_self_call = env.info.borrow().is_self_call;
+        let env_tree_is_new_class = env
+            .tree
+            .map(|env_tree| ctx.tree(env_tree).has_tag(Tag::NEWCLASS))
+            .unwrap_or(false);
+        if is_self_call && env_tree_is_new_class {
+            ctx.sym_mut(class_symbol).flags_field |= crate::code::flags::NOOUTERTHIS as i64;
+        }
+        let class_pos = ctx.tree(tree).pos;
+        self.attrib_class_with_pos(ctx, syms, class_pos, class_symbol);
+        let class_type = ctx.sym(class_symbol).ty.unwrap_or_else(|| self.no_type(ctx));
+        ctx.tree_mut(tree).ty = Some(class_type);
+        self.result = Some(class_type);
+        Ok(class_type)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -13274,6 +13421,282 @@ mod tests {
         attr: Attr,
     }
 
+
+
+    /// The test CheckContext carrying an explicit inference context (the
+    /// diamond listener path needs InferenceContext.free to answer true).
+    struct TestAnonCheckContext {
+        enclosing: Rc<dyn crate::comp::check::CheckContext>,
+        inference: Rc<crate::comp::infer::InferenceContext>,
+    }
+
+    impl crate::comp::check::CheckContext for TestAnonCheckContext {
+        fn compatible(
+            &self,
+            ctx: &mut CompilerContext,
+            syms: &crate::code::symtab::Symtab,
+            types: &crate::code::types::Types,
+            found: TypeId,
+            req: TypeId,
+            warn: &mut crate::util::warner::Warner,
+        ) -> bool {
+            self.enclosing.compatible(ctx, syms, types, found, req, warn)
+        }
+
+        fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+            self.enclosing.report(ctx, pos, details);
+        }
+
+        fn check_warner(
+            &self,
+            ctx: &mut CompilerContext,
+            syms: &crate::code::symtab::Symtab,
+            types: &crate::code::types::Types,
+            pos: i32,
+            found: TypeId,
+            req: TypeId,
+        ) -> crate::util::warner::Warner {
+            self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+        }
+
+        fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
+            &self.inference
+        }
+
+        fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
+            self.enclosing.deferred_attr_context()
+        }
+    }
+
+    /// Builds the anonymous-class diamond scenario: an empty-name class
+    /// declaration used as the new-class def and an Object-typed clazz.
+    fn build_anonymous_class_scenario(
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        names: &Names,
+        make: &Rc<RefCell<TreeMaker>>,
+        clazz_ty: TypeId,
+    ) -> (TreeId, TreeId, TreeId) {
+        let object_type = syms.object_type;
+        let object_tsym = ctx.typ(object_type).tsym.expect("java.lang.Object symbol");
+        let object_name = names.from_string(&javac_strings::JavaString::from("Object"));
+        let clazz = {
+            let mut m = make.borrow_mut();
+            m.ident(ctx, object_name)
+        };
+        let clazzid = clazz;
+        ctx.tree_mut(clazzid).ty = Some(clazz_ty);
+        if let TreeKind::Ident { sym, .. } = &mut ctx.tree_mut(clazzid).kind {
+            *sym = Some(object_tsym);
+        }
+        // Java: new <Object><>() {} — a diamond class creation is a TYPEAPPLY
+        // with an empty argument list (TreeInfo.isDiamond).
+        let clazz = {
+            let mut m = make.borrow_mut();
+            m.type_apply(ctx, clazzid, List::nil())
+        };
+        ctx.tree_mut(clazz).ty = Some(clazz_ty);
+        let mods = {
+            let mut m = make.borrow_mut();
+            m.modifiers(ctx, 0)
+        };
+        let cdef = {
+            let mut m = make.borrow_mut();
+            m.class_def(
+                ctx,
+                mods,
+                names.empty.clone(),
+                List::nil(),
+                None,
+                List::nil(),
+                List::nil(),
+            )
+        };
+        let tree = {
+            let mut m = make.borrow_mut();
+            m.new_class(
+                ctx,
+                None,
+                List::nil(),
+                clazz,
+                List::nil(),
+                Some(cdef),
+            )
+        };
+        (tree, clazz, cdef)
+    }
+
+    fn wire_for_anonymous_class_test(
+        ctx: &mut CompilerContext,
+        attr: &Rc<RefCell<Attr>>,
+        options: &Rc<Options>,
+    ) {
+        wire_attr_services(ctx, Rc::clone(attr), Rc::clone(options), Source::JDK17, None);
+    }
+
+    #[test]
+    fn anonymous_class_diamond_listener_replays_the_body() {
+        let AttrHarness {
+            mut ctx,
+            syms,
+            names,
+            options,
+            env,
+            attr,
+            ..
+        } = build_attr_harness();
+        let attr = Rc::new(RefCell::new(attr));
+        wire_for_anonymous_class_test(&mut ctx, &attr, &options);
+        let make = Rc::clone(&attr.borrow().make);
+        let types_rc = Rc::clone(&attr.borrow().types);
+        let (object_type, owner_symbol) = {
+            let syms_ref = syms.borrow();
+            let owner_tree = env.encl_class.expect("enclosing class");
+            let owner = match &ctx.tree(owner_tree).kind {
+                TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+                _ => panic!("enclosing class symbol"),
+            };
+            (syms_ref.object_type, owner)
+        };
+        let type_var = ctx.new_type_var_with_owner(
+            &names,
+            names.from_string(&javac_strings::JavaString::from("T")),
+            owner_symbol,
+            object_type,
+        );
+        if let crate::code::type_::TypeKindData::TypeVar { bound, .. } =
+            &mut ctx.typ_mut(type_var).kind
+        {
+            *bound = Some(object_type);
+        }
+        let (tree, clazz, cdef) = {
+            let syms_ref = syms.borrow();
+            build_anonymous_class_scenario(&mut ctx, &syms_ref, &names, &make, type_var)
+        };
+        let inference = crate::comp::infer::InferenceContext::with_undet_vars(
+            None,
+            List::of(type_var),
+            List::nil(),
+        );
+        let check_context = Rc::new(TestAnonCheckContext {
+            enclosing: Rc::clone(&attr.borrow().basic_handler),
+            inference: Rc::clone(&inference),
+        }) as Rc<dyn crate::comp::check::CheckContext>;
+        let result_info = ResultInfo::new(KindSelector::VAL, Some(type_var), check_context);
+        {
+            let mut a = attr.borrow_mut();
+            a.env = Some(Rc::clone(&env));
+            a.result_info = Some(result_info);
+        }
+        let result = {
+            let mut a = attr.borrow_mut();
+            let mut syms_mut = syms.borrow_mut();
+            a.visit_anonymous_class_definition(
+                &mut ctx,
+                &mut syms_mut,
+                tree,
+                clazz,
+                type_var,
+                cdef,
+                &env,
+                List::nil(),
+                List::nil(),
+                KindSelector::VAL,
+            )
+        };
+        let result = result.expect("visit_anonymous_class_definition");
+        assert!(
+            ctx.typ(result).has_tag(crate::code::type_tag::TypeTag::ERROR),
+            "the listener branch returns the recovery error type"
+        );
+        assert_eq!(ctx.tree(tree).ty, Some(result));
+        // Inference completes: the listener replays the body with the snapshot.
+        inference
+            .notify_change(&mut ctx, &mut syms.borrow_mut(), &types_rc)
+            .expect("notify_change");
+        assert_eq!(
+            ctx.tree(clazz).ty,
+            Some(type_var),
+            "the listener instantiates clazz.type"
+        );
+        let extending = match &ctx.tree(cdef).kind {
+            TreeKind::ClassDecl { extending, .. } => *extending,
+            _ => panic!("class decl"),
+        };
+        assert_eq!(extending, Some(clazz), "the replayed body sets the superclass");
+    }
+
+    #[test]
+    fn anonymous_class_without_free_types_uses_the_normal_body() {
+        let AttrHarness {
+            mut ctx,
+            syms,
+            names,
+            options,
+            env,
+            attr,
+            ..
+        } = build_attr_harness();
+        let attr = Rc::new(RefCell::new(attr));
+        wire_for_anonymous_class_test(&mut ctx, &attr, &options);
+        let make = Rc::clone(&attr.borrow().make);
+        let (tree, clazz, cdef, object_type) = {
+            let syms_ref = syms.borrow();
+            let object_type = syms_ref.object_type;
+            let (tree, clazz, cdef) =
+                build_anonymous_class_scenario(&mut ctx, &syms_ref, &names, &make, object_type);
+            (tree, clazz, cdef, object_type)
+        };
+        let inference = crate::comp::infer::InferenceContext::with_undet_vars(
+            None,
+            List::nil(),
+            List::nil(),
+        );
+        let check_context = Rc::new(TestAnonCheckContext {
+            enclosing: Rc::clone(&attr.borrow().basic_handler),
+            inference,
+        }) as Rc<dyn crate::comp::check::CheckContext>;
+        let result_info = ResultInfo::new(KindSelector::VAL, Some(object_type), check_context);
+        {
+            let mut a = attr.borrow_mut();
+            a.env = Some(Rc::clone(&env));
+            a.result_info = Some(result_info);
+        }
+        let result = {
+            let mut a = attr.borrow_mut();
+            let mut syms_mut = syms.borrow_mut();
+            a.visit_anonymous_class_definition(
+                &mut ctx,
+                &mut syms_mut,
+                tree,
+                clazz,
+                object_type,
+                cdef,
+                &env,
+                List::nil(),
+                List::nil(),
+                KindSelector::VAL,
+            )
+        };
+        let result = result.expect("visit_anonymous_class_definition");
+        assert!(
+            ctx.typ(result).has_tag(crate::code::type_tag::TypeTag::ERROR),
+            "the normal path returns the error type (no reusable class type)"
+        );
+        let extending = match &ctx.tree(cdef).kind {
+            TreeKind::ClassDecl { extending, .. } => *extending,
+            _ => panic!("class decl"),
+        };
+        assert_eq!(
+            extending,
+            Some(clazz),
+            "the normal path executes the body directly"
+        );
+        assert!(
+            ctx.tree(tree).ty.is_none(),
+            "the normal body leaves tree.type to the caller (no cdef symbol here)"
+        );
+    }
     #[test]
     fn wiring_installs_the_services() {
         let mut harness = build_attr_harness();

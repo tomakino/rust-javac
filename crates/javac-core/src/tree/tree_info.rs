@@ -2161,3 +2161,62 @@ mod type_annotation_finder_tests {
         assert!(contains_type_annotation(&mut ctx, annotated_type));
     }
 }
+
+/// Java: public static boolean isInAnnotation(Env<?> env, JCTree tree)
+/// (TreeInfo.java:381-391).
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - env: the attribution environment (its toplevel is the search root);
+///   - tree: the tree whose path is checked.
+///
+/// # Returns
+///   - true when the path from the compilation unit to the tree contains an
+///     annotation.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: TreeInfo.java:381-391 (TreePath.getPath(env.toplevel, tree) walk).
+pub fn is_in_annotation(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    env: &std::rc::Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+    tree: TreeId,
+) -> bool {
+    let Some(toplevel) = env.toplevel else {
+        return false;
+    };
+    struct PathFinder {
+        target: TreeId,
+        stack: Vec<TreeId>,
+        found: Option<Vec<TreeId>>,
+    }
+    crate::tree::tree_scanner::tree_scanner_visitor_delegate!(PathFinder);
+    impl crate::tree::tree_scanner::TreeScannerVisitor for PathFinder {
+        fn scan(
+            &mut self,
+            ctx: &mut crate::compiler_context::CompilerContext,
+            tree: Option<TreeId>,
+        ) {
+            let Some(tree) = tree else { return; };
+            self.stack.push(tree);
+            if tree == self.target {
+                self.found = Some(self.stack.clone());
+            } else if self.found.is_none() {
+                crate::tree::jc_tree::accept(ctx, tree, self);
+            }
+            self.stack.pop();
+        }
+    }
+    let mut finder = PathFinder {
+        target: tree,
+        stack: Vec::new(),
+        found: None,
+    };
+    crate::tree::tree_scanner::TreeScannerVisitor::scan(&mut finder, ctx, Some(toplevel));
+    let Some(path) = finder.found else {
+        return false;
+    };
+    path.iter()
+        .any(|node| ctx.tree(*node).has_tag(crate::tree::jc_tree::Tag::ANNOTATION))
+}

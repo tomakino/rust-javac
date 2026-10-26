@@ -6898,6 +6898,15 @@ impl Types {
         match &ctx.typ(t).kind {
             TypeKindData::MethodType { argtypes, .. }
             | TypeKindData::PartiallyInferredMethodType { argtypes, .. } => argtypes.clone(),
+            // Java: DelegatedType.getParameterTypes() delegates to qtype.
+            // Java: DelegatedType.getParameterTypes() delegates to qtype.
+            TypeKindData::ForAll { qtype: Some(qtype), .. } => {
+                match &ctx.typ(*qtype).kind {
+                    TypeKindData::MethodType { argtypes, .. }
+                    | TypeKindData::PartiallyInferredMethodType { argtypes, .. } => argtypes.clone(),
+                    _ => List::nil(),
+                }
+            }
             _ => List::nil(),
         }
     }
@@ -6913,7 +6922,11 @@ impl Types {
                 restype: Some(restype),
                 ..
             } => *restype,
-            _ => panic!("AssertionError: no return type"),
+            // Java: DelegatedType.getReturnType() delegates to qtype.
+            TypeKindData::ForAll { qtype: Some(qtype), .. } => {
+                self.get_return_type_public(ctx, *qtype)
+            }
+            _ => panic!("AssertionError: no return type tag={:?}", ctx.typ(t).get_tag()),
         }
     }
 
@@ -6939,6 +6952,11 @@ impl Types {
         ctx: &CompilerContext,
         t: TypeId,
     ) -> List<TypeId> {
+        // Java: DelegatedType.getTypeArguments() delegates to qtype; ForAll
+        // overrides it with the type variables.
+        if let TypeKindData::ForAll { tvars, .. } = &ctx.typ(t).kind {
+            return tvars.clone();
+        }
         get_type_arguments(ctx, t)
     }
 
@@ -10137,7 +10155,13 @@ mod tests {
         );
         assert_eq!(symbols.len(), 2);
         assert!(
-            chk.check_unique(&mut ctx, crate::util::position::NOPOS, symbols[0], members),
+            chk.check_unique(
+                &mut ctx,
+                &syms_rc.borrow(),
+                crate::util::position::NOPOS,
+                symbols[0],
+                members,
+            ),
             "different signatures are unique"
         );
         let duplicate_type = ctx.sym(symbols[0]).ty.expect("method type");
@@ -10156,7 +10180,13 @@ mod tests {
         ));
         ctx.scope_enter(members, dup);
         assert!(
-            !chk.check_unique(&mut ctx, crate::util::position::NOPOS, dup, members),
+            !chk.check_unique(
+                &mut ctx,
+                &syms_rc.borrow(),
+                crate::util::position::NOPOS,
+                dup,
+                members,
+            ),
             "same signature is a duplicate"
         );
         let _ = (int_type, java_base);

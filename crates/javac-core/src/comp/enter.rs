@@ -712,7 +712,10 @@ impl Enter {
         };
         set_type_parameter_type(ctx, tree, tvar);
         let tsym = ctx.typ(tvar).tsym.expect("type var symbol");
-        let unique = self.chk.borrow().check_unique(ctx, ctx.tree(tree).pos, tsym, scope);
+        let unique = self
+            .chk
+            .borrow()
+            .check_unique(ctx, &*syms, ctx.tree(tree).pos, tsym, scope);
         if unique {
             ctx.scope_enter(scope, tsym);
         }

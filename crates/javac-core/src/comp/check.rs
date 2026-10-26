@@ -874,6 +874,7 @@ impl Check {
     pub fn check_unique(
         &self,
         ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         sym: SymbolId,
         scope: ScopeId,
@@ -916,12 +917,11 @@ impl Check {
                 let sym_ty = ctx.sym(sym).ty.expect("method type");
                 let other_ty = ctx.sym(by_name).ty.expect("method type");
                 let types = crate::code::types::Types::with_names(Rc::clone(&self.names));
-                let syms = self.syms.borrow();
-                types.has_same_args(ctx, &syms, sym_ty, other_ty)
+                types.has_same_args(ctx, syms, sym_ty, other_ty)
                     || {
-                        let sym_erasure = types.erasure(ctx, &syms, sym_ty);
-                        let other_erasure = types.erasure(ctx, &syms, other_ty);
-                        types.has_same_args(ctx, &syms, sym_erasure, other_erasure)
+                        let sym_erasure = types.erasure(ctx, syms, sym_ty);
+                        let other_erasure = types.erasure(ctx, syms, other_ty);
+                        types.has_same_args(ctx, syms, sym_erasure, other_erasure)
                     }
             } else {
                 true
@@ -938,8 +938,7 @@ impl Check {
                     let sym_ty = ctx.sym(sym).ty.expect("method type");
                     let other_ty = ctx.sym(by_name).ty.expect("method type");
                     let types = crate::code::types::Types::with_names(Rc::clone(&self.names));
-                    let syms = self.syms.borrow();
-                    if !types.has_same_args_strict(ctx, &syms, sym_ty, other_ty, false) {
+                    if !types.has_same_args_strict(ctx, syms, sym_ty, other_ty, false) {
                         self.duplicate_erasure_error(ctx, pos, sym, by_name);
                         ctx.sym_mut(sym).flags_field |= crate::code::flags::CLASH;
                         return true;

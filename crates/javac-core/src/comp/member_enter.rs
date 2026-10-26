@@ -70,6 +70,9 @@ pub struct MemberEnter {
     /// constructed (Rc cycle MemberEnter/TypeEnter -> Annotate -> Attr ->
     /// MemberEnter/TypeEnter; registered in the report).
     pub annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
+    /// Java: Attr attr = Attr.instance(context) — explicit injection adapter
+    /// (ADR 0001): the cell is filled by the wiring after the Attr exists.
+    pub attr: Rc<RefCell<Option<Rc<RefCell<crate::comp::attr::Attr>>>>>,
 }
 
 impl MemberEnter {
@@ -90,6 +93,7 @@ impl MemberEnter {
             deferred_lint_handler,
             env: None,
             annotate,
+            attr: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -186,45 +190,67 @@ impl MemberEnter {
         }
     }
 
-    // Attr dependencies (registered TODO: Attr).
+    /// The Java service handle (Attr attr = Attr.instance(context)).
+    fn attr_service(&self) -> Rc<RefCell<crate::comp::attr::Attr>> {
+        self.attr
+            .borrow()
+            .clone()
+            .expect("AssertionError: the Attr service must be installed")
+    }
+
+    /// Java: attr.attribTypeVariables(typarams, env, true)
+    /// (MemberEnter.java:106; Attr.java:811-836).
     fn attrib_type_variables(
         &self,
-        _ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
-        _typarams: List<TreeId>,
-        _env: &Rc<Env<AttrContext>>,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        typarams: List<TreeId>,
+        env: &Rc<Env<AttrContext>>,
     ) {
-        unimplemented!("TODO(Attr batch): MemberEnter.signature attr.attribTypeVariables")
+        let attr_rc = self.attr_service();
+        attr_rc
+            .borrow_mut()
+            .attrib_type_variables(ctx, syms, typarams, env, true);
     }
 
+    /// Java: attr.attribType(tree, env) (MemberEnter.java:120).
     fn attrib_type(
         &self,
-        _ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
-        _tree: TreeId,
-        _env: &Rc<Env<AttrContext>>,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
-        unimplemented!("TODO(Attr batch): MemberEnter Attr.attribType")
+        let attr_rc = self.attr_service();
+        attr_rc.borrow_mut().attrib_type_public(ctx, syms, tree, env)
     }
 
+    /// Java: attr.attribExpr(tree, env) (MemberEnter.java:610; Attr.java:729-731).
     fn attrib_expr(
         &self,
-        _ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
-        _tree: TreeId,
-        _env: &Rc<Env<AttrContext>>,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
-        unimplemented!("TODO(Attr batch): MemberEnter Attr.attribExpr")
+        let attr_rc = self.attr_service();
+        let info = attr_rc.borrow().unknown_expr_info.clone();
+        attr_rc.borrow_mut().attrib_tree_public(ctx, syms, tree, env, info)
     }
 
+    /// Java: attr.attribIdentAsEnumType(localEnv, (JCIdent) tree.vartype)
+    /// (MemberEnter.java:263).
     fn attrib_ident_as_enum_type(
         &self,
-        _ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
-        _tree: TreeId,
-        _env: &Rc<Env<AttrContext>>,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
     ) {
-        unimplemented!("TODO(Attr batch): MemberEnter Attr.attribIdentAsEnumType")
+        let attr_rc = self.attr_service();
+        attr_rc
+            .borrow_mut()
+            .attrib_ident_as_enum_type(ctx, syms, env, tree);
     }
 
     /// Java: protected void memberEnter(JCTree tree, Env<AttrContext> env)
@@ -361,6 +387,7 @@ impl MemberEnter {
         let _ = ctx.scope_leave(local_scope);
         let unique = self.chk.borrow().check_unique(
             ctx,
+            &*syms,
             ctx.tree(tree).pos,
             m,
             encl_scope,
@@ -533,7 +560,7 @@ impl MemberEnter {
         let unique = self
             .chk
             .borrow()
-            .check_unique(ctx, ctx.tree(tree).pos, v, encl_scope);
+            .check_unique(ctx, &*syms, ctx.tree(tree).pos, v, encl_scope);
         if unique {
             self.chk
                 .borrow()
@@ -582,20 +609,26 @@ impl MemberEnter {
     /// IncorrectConstructorReceiverType/IncorrectReceiverType checks, which are
     /// TODO until Attr is ported; the method is kept for that.
     #[allow(dead_code)]
+    /// Java: void checkType(JCTree tree, Type type, Error errorKey)
+    /// (MemberEnter.java:315-319).
     fn check_type(
         &self,
-        _ctx: &mut CompilerContext,
-        _tree: TreeId,
-        _expected: TypeId,
-        _error: crate::resources::diagnostic_contract::ErrorInfo,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        expected: TypeId,
+        error: crate::resources::diagnostic_contract::ErrorInfo,
     ) {
-        // TODO(Attr/Check): the upstream body is
-        // if (!tree.type.isErroneous() && !types.isSameType(tree.type, type))
-        // log.error(tree, errorKey);
-        // Types.isSameType needs the Symtab argument in the port (explicit
-        // context adapter); checkReceiver therefore cannot call it before the
-        // Symtab is threaded (registered).
-        unimplemented!("TODO(Attr batch): MemberEnter.checkType (Types.isSameType + Symtab)")
+        if let Some(tree_ty) = ctx.tree(tree).ty
+            && !ctx.typ(tree_ty).has_tag(crate::code::type_tag::TypeTag::ERROR)
+            && !self.types.is_same_type(ctx, syms, tree_ty, expected)
+        {
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                ctx.tree(tree).pos,
+                crate::util::jc_diagnostic::Error::from(error),
+            );
+        }
     }
 
     /// Java: void checkReceiver(JCVariableDecl tree, Env<AttrContext> localEnv)
@@ -629,10 +662,38 @@ impl MemberEnter {
                 .typ(outer_type)
                 .has_tag(crate::code::type_tag::TypeTag::CLASS)
             {
-                // TODO(Attr): checkType(tree.vartype, outertype,
-                // Errors.IncorrectConstructorReceiverType(...));
-                // TODO(Attr): checkType(tree.nameexpr, outertype,
-                // Errors.IncorrectConstructorReceiverName(...));
+                let (vartype, nameexpr) = match &ctx.tree(tree).kind {
+                    TreeKind::VariableDecl { vartype, nameexpr, .. } => (*vartype, *nameexpr),
+                    _ => (None, None),
+                };
+                if let Some(vartype) = vartype {
+                    let vartype_ty = ctx.tree(vartype).ty;
+                    let info = crate::resources::compiler_properties::errors::incorrect_constructor_receiver_type(
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, outer_type),
+                        ),
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            vartype_ty
+                                .map(|ty| crate::comp::attr::type_display_of(ctx, ty))
+                                .unwrap_or_default(),
+                        ),
+                    );
+                    self.check_type(ctx, syms, vartype, outer_type, info);
+                }
+                if let Some(nameexpr) = nameexpr {
+                    let nameexpr_ty = ctx.tree(nameexpr).ty;
+                    let info = crate::resources::compiler_properties::errors::incorrect_constructor_receiver_name(
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, outer_type),
+                        ),
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            nameexpr_ty
+                                .map(|ty| crate::comp::attr::type_display_of(ctx, ty))
+                                .unwrap_or_default(),
+                        ),
+                    );
+                    self.check_type(ctx, syms, nameexpr, outer_type, info);
+                }
             } else {
                 self.log.borrow_mut().error_at(
                     ctx.tree(tree).pos,
@@ -642,10 +703,41 @@ impl MemberEnter {
                 );
             }
         } else {
-            // TODO(Attr): checkType(tree.vartype, m.owner.type,
-            // Errors.IncorrectReceiverType(...));
-            // TODO(Attr): checkType(tree.nameexpr, m.owner.type,
-            // Errors.IncorrectReceiverName(...));
+            let owner_type = ctx.sym(m).owner.and_then(|owner| ctx.sym(owner).ty);
+            let (vartype, nameexpr) = match &ctx.tree(tree).kind {
+                TreeKind::VariableDecl { vartype, nameexpr, .. } => (*vartype, *nameexpr),
+                _ => (None, None),
+            };
+            if let Some(outer_type) = owner_type {
+                if let Some(vartype) = vartype {
+                    let vartype_ty = ctx.tree(vartype).ty;
+                    let info = crate::resources::compiler_properties::errors::incorrect_receiver_type(
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, outer_type),
+                        ),
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            vartype_ty
+                                .map(|ty| crate::comp::attr::type_display_of(ctx, ty))
+                                .unwrap_or_default(),
+                        ),
+                    );
+                    self.check_type(ctx, syms, vartype, outer_type, info);
+                }
+                if let Some(nameexpr) = nameexpr {
+                    let nameexpr_ty = ctx.tree(nameexpr).ty;
+                    let info = crate::resources::compiler_properties::errors::incorrect_receiver_name(
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, outer_type),
+                        ),
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            nameexpr_ty
+                                .map(|ty| crate::comp::attr::type_display_of(ctx, ty))
+                                .unwrap_or_default(),
+                        ),
+                    );
+                    self.check_type(ctx, syms, nameexpr, outer_type, info);
+                }
+            }
         }
     }
 
@@ -655,14 +747,57 @@ impl MemberEnter {
     }
 
     /// Java: Env<AttrContext> initEnv(JCVariableDecl tree, Env<AttrContext> env)
+    /// Java: Env<AttrContext> initEnv(JCVariableDecl tree, Env<AttrContext> env)
+    /// (MemberEnter.java:421-434).
     pub fn init_env(
         &mut self,
-        _ctx: &mut CompilerContext,
-        _tree: TreeId,
-        _env: &Rc<Env<AttrContext>>,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
     ) -> Rc<Env<AttrContext>> {
-        // Java: env.dupto(new AttrContextEnv(tree, env.info.dup()));
-        unimplemented!("TODO(Attr batch): MemberEnter.initEnv needs AttrContextEnv (Attr inner class)")
+        // Java: Env<AttrContext> localEnv = env.dupto(new AttrContextEnv(tree, env.info.dup()));
+        let mut info = env.info.borrow().dup_ctx();
+        let local_env = env.dup_with_outer(env.tree, info.clone(), Some(Rc::clone(env)));
+        let sym = match &ctx.tree(tree).kind {
+            TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
+            _ => return local_env,
+        };
+        let owner_is_type = ctx
+            .sym(sym)
+            .owner
+            .map(|owner| ctx.sym(owner).kind == Kind::TYP)
+            .unwrap_or(false);
+        if owner_is_type {
+            // Java: localEnv.info.scope = env.info.scope.dupUnshared(tree.sym);
+            if let Some(scope_id) = env.info.borrow().scope {
+                let new_scope = ctx.scope(scope_id).dup_unshared(
+                    scope_id,
+                    Some(sym),
+                    ctx.scopes_arena(),
+                );
+                let new_scope_id = ctx.alloc_scope(new_scope);
+                info.scope = Some(new_scope_id);
+            }
+        }
+        let owner_is_static = (crate::tree::tree_info::flags(ctx, tree)
+            & crate::code::flags::STATIC as i64)
+            != 0;
+        let encl_class_interface = env
+            .encl_class
+            .and_then(|clazz_tree| match &ctx.tree(clazz_tree).kind {
+                TreeKind::ClassDecl { sym: Some(clazz), .. } => Some(*clazz),
+                _ => None,
+            })
+            .map(|clazz| {
+                (ctx.sym(clazz).flags_field & crate::code::flags::INTERFACE as i64) != 0
+            })
+            .unwrap_or(false);
+        if owner_is_static || (encl_class_interface && env.encl_method.is_none()) {
+            info.static_level += 1;
+        }
+        local_env.info.borrow_mut().scope = info.scope;
+        local_env.info.borrow_mut().static_level = info.static_level;
+        local_env
     }
 
     /// Java: public void visitTree(JCTree tree) { }
