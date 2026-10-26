@@ -208,7 +208,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use javac_tools::lang::model::element::element_kind::ElementKind;
+pub use javac_tools::lang::model::element::element_kind::ElementKind;
 use javac_tools::tools::java_file_manager::Location;
 use javac_tools::tools::java_file_object::JavaFileObject;
 

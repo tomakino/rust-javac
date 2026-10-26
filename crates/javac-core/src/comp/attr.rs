@@ -684,6 +684,7 @@ impl Attr {
             Tag::INDEXED => self.visit_indexed(ctx, syms, tree),
             Tag::ASSIGN => self.visit_assign(ctx, syms, tree),
             Tag::APPLY => self.visit_apply(ctx, syms, tree),
+            Tag::SELECT => self.visit_select(ctx, syms, tree),
             Tag::LABELLED => self.visit_labeled(ctx, syms, tree),
             other => {
                 let _ = other;
@@ -5449,6 +5450,480 @@ impl Attr {
         // NOT PORTED: Check.validate/Validator (Check.java:1397-1525, Check batch);
         // registered.
         Ok(self.result.expect("attribution result"))
+    }
+}
+
+impl Attr {
+    /// Java: public void visitSelect(JCFieldAccess tree) (Attr.java:4262-4400).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the field access.
+    ///
+    /// # Returns
+    ///   - the attributed select type.
+    ///
+    /// # Panics
+    ///   - none (the upstream AssertionError cases are registered).
+    ///
+    /// Upstream: Attr.java:4262-4400.
+    fn visit_select(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        use crate::code::flags;
+        let (selected, name) = match &ctx.tree(tree).kind {
+            TreeKind::FieldAccess { selected, name, .. } => {
+                (selected.expect("select qualifier"), name.clone())
+            }
+            _ => panic!("ClassCastException: JCFieldAccess expected"),
+        };
+        // Determine the expected kind of the qualifier expression.
+        let mut skind = KindSelector::NIL;
+        if name == self.names._this || name == self.names._super || name == self.names._class {
+            skind = KindSelector::TYP;
+        } else {
+            let pkind = self.pkind();
+            if pkind.contains(KindSelector::PCK) {
+                skind = KindSelector::of(&[skind, KindSelector::PCK]);
+            }
+            if pkind.contains(KindSelector::TYP) {
+                skind = KindSelector::of(&[skind, KindSelector::TYP, KindSelector::PCK]);
+            }
+            if pkind.contains(KindSelector::VAL_MTH) {
+                skind = KindSelector::of(&[skind, KindSelector::VAL, KindSelector::TYP]);
+            }
+        }
+        // Attribute the qualifier expression, and determine its symbol (if any).
+        let env = self.env.clone().expect("env");
+        let no_type = self.no_type(ctx);
+        let qualifier_info = ResultInfo::new(skind, Some(no_type), Rc::clone(&self.basic_handler));
+        let mut site = self.attrib_tree_use(ctx, syms, selected, &env, qualifier_info);
+        if !self.pkind().contains(KindSelector::TYP_PCK) {
+            site = self.types.capture(ctx, syms, site);
+        }
+        // don't allow T.class T[].class, etc
+        if skind == KindSelector::TYP {
+            let mut elt = site;
+            while ctx.typ(elt).has_tag(TypeTag::ARRAY) {
+                elt = self.types.elemtype(ctx, syms, elt);
+            }
+            if ctx.typ(elt).has_tag(TypeTag::TYPEVAR) {
+                self.attr_error(
+                    ctx.tree(tree).pos,
+                    crate::resources::compiler_properties::errors::type_var_cant_be_deref(),
+                );
+                let site_name = ctx.typ(site).tsym.map(|tsym| ctx.sym(tsym).name.clone()).unwrap_or_else(|| self.names.empty.clone());
+                let error = self.types.create_error_type(ctx, site_name, ctx.typ(site).tsym.expect("site symbol"), Some(site));
+                ctx.tree_mut(tree).ty = Some(error);
+                let error_tsym = ctx.typ(error).tsym;
+                if let TreeKind::FieldAccess { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                    *slot = error_tsym;
+                }
+                self.result = Some(error);
+                return Ok(error);
+            }
+        }
+        // If qualifier symbol is a type or `super', assert `selectSuper' for the
+        // selection. This is relevant for determining whether protected symbols
+        // are accessible.
+        let sitesym = crate::tree::tree_info::symbol(ctx, selected);
+        let select_super_prev = env.info.borrow().select_super;
+        let is_super_qualifier = sitesym
+            .map(|sitesym| ctx.sym(sitesym).name == self.names._super)
+            .unwrap_or(false);
+        env.info.borrow_mut().select_super = is_super_qualifier;
+        // Determine the symbol represented by the selection.
+        env.info.borrow_mut().pending_resolution_phase = None;
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let mut sym = self.select_sym(ctx, syms, tree, sitesym, site, &env, &result_info);
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::VAR
+            && ctx.sym(sym).name != self.names._super
+            && env.info.borrow().default_super_call_site.is_some()
+        {
+            let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
+            self.attr_error(
+                ctx.tree(selected).pos,
+                crate::resources::compiler_properties::errors::not_encl_class(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        ctx.sym(site_tsym).name.to_java_string().to_string_lossy().to_string(),
+                    ),
+                ),
+            );
+            sym = syms.err_symbol;
+        }
+        let sym_exists = crate::code::symbol::symbol_exists(ctx, sym);
+        if sym_exists
+            && ctx.sym(sym).kind != crate::code::kinds::Kind::TYP
+            && self.pkind().contains(KindSelector::TYP_PCK)
+        {
+            site = self.types.capture(ctx, syms, site);
+            sym = self.select_sym(ctx, syms, tree, sitesym, site, &env, &result_info);
+        }
+        let var_args = env.info.borrow().last_resolve_varargs();
+        let _ = var_args;
+        // Java: tree.sym = sym;
+        if let TreeKind::FieldAccess { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(sym);
+        }
+        if ctx.typ(site).has_tag(TypeTag::TYPEVAR)
+            && ctx.sym(sym).kind != crate::code::kinds::Kind::TYP
+            && ctx.sym(sym).kind != crate::code::kinds::Kind::ERR
+        {
+            // site = types.skipTypeVars(site, true)
+            let mut current = site;
+            while ctx.typ(current).has_tag(TypeTag::TYPEVAR) {
+                current = ctx.typ(current).get_upper_bound().expect("typevar upper bound");
+            }
+            site = self.types.capture(ctx, syms, current);
+        }
+        // If that symbol is a variable, ...
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::VAR {
+            // ... evaluate its initializer, if it has one, and check for
+            // illegal forward reference.
+            self.check_init(ctx, syms, tree, &env, sym, true);
+            // If we are expecting a variable (as opposed to a value), check
+            // that the variable is assignable in the current environment.
+            if crate::code::kinds::KindSelector::ASG.subset(self.pkind()) {
+                self.check_assignable(ctx, &env, ctx.tree(tree).pos, sym, Some(selected));
+            }
+        }
+        // Java: try-with-resources explicit close lint (SERIAL batch) — the
+        // upstream branch needs LintCategory.TRY + autoCloseableClose;
+        // ported below with the ported Lint service.
+        if let Some(sitesym) = sitesym {
+            let is_resource = match &ctx.sym(sitesym).kind_data {
+                crate::code::symbol::SymbolKind::VarSymbol { data_kind, .. } => {
+                    *data_kind == Some(crate::code::symbol::ElementKind::RESOURCE_VARIABLE)
+                }
+                _ => false,
+            };
+            if is_resource
+                && ctx.sym(sym).kind == crate::code::kinds::Kind::MTH
+                && ctx.sym(sym).name == self.names.close
+            {
+                let sitesym_type = ctx.sym(sitesym).ty.expect("resource type");
+                let sitesym_tsym = ctx.typ(sitesym_type).tsym.expect("resource type symbol");
+                if crate::code::symbol::overrides(
+                    ctx,
+                    syms,
+                    &self.types,
+                    sym,
+                    syms.auto_closeable_close,
+                    sitesym_tsym,
+                    true,
+                ) {
+                    let try_enabled = env
+                        .info
+                        .borrow()
+                        .lint
+                        .as_ref()
+                        .map(|lint| lint.is_enabled(crate::code::lint::LintCategory::TRY))
+                        .unwrap_or(false);
+                    if try_enabled {
+                        let warning = crate::resources::compiler_properties::warnings::try_explicit_close_call();
+                        let warning = crate::util::jc_diagnostic::Warning::from(warning);
+                        crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                            &mut *self.log.borrow_mut(),
+                            Some(crate::code::lint::LintCategory::TRY),
+                            Some(std::rc::Rc::new(
+                                crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+                            )),
+                            warning,
+                        );
+                    }
+                }
+            }
+        }
+        // Disallow selecting a type from an expression
+        let sitesym_is_type = sitesym
+            .map(|sitesym| ctx.sym(sitesym).kind == crate::code::kinds::Kind::TYP)
+            .unwrap_or(false);
+        let sym_is_type = ctx.sym(sym).kind == crate::code::kinds::Kind::TYP;
+        if sym_is_type
+            && !sitesym
+                .map(|sitesym| {
+                    ctx.sym(sitesym)
+                        .kind
+                        .matches(KindSelector::TYP_PCK)
+                })
+                .unwrap_or(false)
+        {
+            let pt = self.pt().unwrap_or_else(|| self.no_type(ctx));
+            let check_kind = match sitesym {
+                None => KindSelector::VAL,
+                Some(sitesym) => ctx.sym(sitesym).kind.to_selector(),
+            };
+            let new_info = ResultInfo::new(
+                KindSelector::TYP_PCK,
+                Some(pt),
+                Rc::clone(&self.basic_handler),
+            );
+            let site_type = self.check(ctx, syms, selected, pt, check_kind, &new_info);
+            ctx.tree_mut(tree).ty = Some(site_type);
+        }
+        if sitesym_is_type {
+            if ctx.sym(sym).name == self.names._this {
+                // If `C' is the currently compiled class, check that C.this does
+                // not appear in a call to a super(...)
+                let encl_class = env.encl_class.expect("enclClass");
+                let encl_sym = class_tree_symbol(ctx, encl_class).expect("enclClass sym");
+                if env.info.borrow().is_self_call && ctx.typ(site).tsym == Some(encl_sym) {
+                    let chk_rc = Rc::clone(&self.chk);
+                    let chk = chk_rc.borrow();
+                    chk.early_ref_error(ctx, &self.log, ctx.tree(tree).pos, sym);
+                }
+            } else {
+                // Check if type-qualified fields or methods are static (JLS)
+                let sym_flags = ctx.sym(sym).flags_field;
+                if (sym_flags & (flags::STATIC as i64)) == 0
+                    && ctx.sym(sym).name != self.names._super
+                    && (ctx.sym(sym).kind == crate::code::kinds::Kind::VAR
+                        || ctx.sym(sym).kind == crate::code::kinds::Kind::MTH)
+                {
+                    let static_error = {
+                        let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                        let mut rs = rs_rc.borrow_mut();
+                        rs.new_static_error_pub(ctx, sym)
+                    };
+                    let pos = simple_diag_pos(ctx.tree(tree).pos);
+                    let site_opt = Some(site);
+                    let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                    let mut rs = rs_rc.borrow_mut();
+                    let sym_name = ctx.sym(sym).name.clone();
+                    rs.access_base(
+                        ctx,
+                        syms,
+                        static_error,
+                        pos,
+                        None,
+                        site_opt,
+                        &sym_name,
+                        true,
+                    );
+                }
+            }
+            // Java: if (!allowStaticInterfaceMethods && sitesym.isInterface() &&
+            //     sym.isStatic() && sym.kind == MTH) log.error(DiagnosticFlag.SOURCE_LEVEL,
+            //     tree.pos(), Feature.STATIC_INTERFACE_METHODS_INVOKE.error(sourceName));
+            // NOT PORTED: the source-level feature error logging (Features batch);
+            // registered.
+        } else if ctx.sym(sym).kind != crate::code::kinds::Kind::ERR
+            && (ctx.sym(sym).flags_field & (flags::STATIC as i64)) != 0
+            && ctx.sym(sym).name != self.names._class
+        {
+            // If the qualified item is not a type and the selected item is
+            // static, report a warning.
+            let kind_name = crate::code::kinds::kind_name(ctx.sym(sym), ctx);
+            let owner = ctx.sym(sym).owner.expect("symbol owner");
+            let warning = crate::resources::compiler_properties::warnings::static_not_qualified_by_type(
+                crate::resources::diagnostic_contract::KindNameArg::placeholder(kind_name.to_string()),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    ctx.sym(owner).name.to_java_string().to_string_lossy().to_string(),
+                ),
+            );
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.warn_static(ctx, &self.log, ctx.tree(tree).pos, warning);
+        }
+        // If we are selecting an instance member via a `super', ...
+        if env.info.borrow().select_super && (ctx.sym(sym).flags_field & (flags::STATIC as i64)) == 0 {
+            // Check that super-qualified symbols are not abstract (JLS)
+            let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+            let mut rs = rs_rc.borrow_mut();
+            rs.check_non_abstract(ctx, simple_diag_pos(ctx.tree(tree).pos), sym);
+            drop(rs);
+            if self.types.is_raw_type_public(ctx, site) {
+                // Determine argument types for site.
+                let encl_class = env.encl_class.expect("enclClass");
+                let encl_sym = class_tree_symbol(ctx, encl_class).expect("enclClass sym");
+                let encl_type = ctx.sym(encl_sym).ty.expect("encl class type");
+                let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
+                if let Some(site1) = self.types.as_super(ctx, syms, encl_type, site_tsym) {
+                    site = site1;
+                }
+            }
+        }
+        if env.info.borrow().is_serializable {
+            // NOT PORTED: chk.checkAccessFromSerializableElement(tree,
+            // env.info.isSerializableLambda) (Check.java:2745-2800, lint/serial
+            // batch); registered.
+        }
+        env.info.borrow_mut().select_super = select_super_prev;
+        let result = self.check_id(ctx, syms, tree, site, sym, &env, &result_info);
+        self.result = Some(result);
+        Ok(result)
+    }
+
+    /// Java: private Symbol selectSym(JCFieldAccess tree, Symbol location,
+    /// Type site, Env<AttrContext> env, ResultInfo resultInfo)
+    /// (Attr.java:4420-4478).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the select tree;
+    ///   - location: the qualifier symbol;
+    ///   - site: the qualifier type;
+    ///   - env/result_info: the attribution context.
+    ///
+    /// # Returns
+    ///   - the selected symbol.
+    ///
+    /// # Panics
+    ///   - wildcard qualifiers assert as in the upstream code.
+    ///
+    /// Upstream: Attr.java:4420-4478.
+    #[allow(clippy::too_many_arguments)]
+    fn select_sym(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        location: Option<SymbolId>,
+        site: TypeId,
+        env: &Rc<Env<AttrContext>>,
+        result_info: &ResultInfo,
+    ) -> SymbolId {
+        let name = match &ctx.tree(tree).kind {
+            TreeKind::FieldAccess { name, .. } => name.clone(),
+            _ => panic!("ClassCastException: JCFieldAccess expected"),
+        };
+        let pos = simple_diag_pos(ctx.tree(tree).pos);
+        match ctx.typ(site).get_tag() {
+            TypeTag::PACKAGE => {
+                let site_tsym = ctx.typ(site).tsym.expect("package symbol");
+                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                let mut rs = rs_rc.borrow_mut();
+                let found = rs.find_ident_in_package(
+                    ctx,
+                    syms,
+                    pos.clone(),
+                    env,
+                    site_tsym,
+                    &name,
+                    result_info.pkind,
+                );
+                rs.access_base(ctx, syms, found, pos, location, Some(site), &name, true)
+            }
+            TypeTag::ARRAY | TypeTag::CLASS => {
+                let pt_is_method = result_info
+                    .pt
+                    .map(|pt| {
+                        let tag = ctx.typ(pt).get_tag();
+                        tag == TypeTag::METHOD || tag == TypeTag::FORALL
+                    })
+                    .unwrap_or(false);
+                if pt_is_method {
+                    let pt = result_info.pt.expect("method prototype");
+                    let argtypes = self.types.get_parameter_types_public(ctx, pt);
+                    let typeargtypes = self.types.get_type_arguments_public(ctx, pt);
+                    let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                    let mut rs = rs_rc.borrow_mut();
+                    let types_rc = Rc::clone(&self.types);
+                    let chk_rc = Rc::clone(&self.chk);
+                    let chk = chk_rc.borrow();
+                    let infer_rc = Rc::clone(&self.infer);
+                    rs.resolve_qualified_method(
+                        ctx,
+                        syms,
+                        &types_rc,
+                        self,
+                        &chk,
+                        &infer_rc,
+                        pos.clone(),
+                        env,
+                        location.unwrap_or(syms.no_symbol),
+                        site,
+                        name.clone(),
+                        argtypes,
+                        Some(typeargtypes),
+                    )
+                } else if name == self.names._this || name == self.names._super {
+                    let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
+                    let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                    let mut rs = rs_rc.borrow_mut();
+                    let types_rc = Rc::clone(&self.types);
+                    rs.resolve_self(ctx, syms, &types_rc, pos, env, site_tsym, name)
+                } else if name == self.names._class {
+                    let types_rc = Rc::clone(&self.types);
+                    let syms_guard = syms;
+                    syms_guard.get_class_field(ctx, &types_rc, site)
+                } else {
+                    let found = {
+                        let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                        let mut rs = rs_rc.borrow_mut();
+                        rs.find_ident_in_type(ctx, syms, pos.clone(), env, site, &name, result_info.pkind)
+                    };
+                    let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                    let mut rs = rs_rc.borrow_mut();
+                    rs.access_base(ctx, syms, found, pos, location, Some(site), &name, true)
+                }
+            }
+            TypeTag::WILDCARD => panic!("AssertionError: wildcard select"),
+            TypeTag::TYPEVAR => {
+                let upper = ctx.typ(site).get_upper_bound();
+                let mut sym: Option<SymbolId> = None;
+                if let Some(upper) = upper {
+                    let captured = self.types.capture(ctx, syms, upper);
+                    sym = Some(self.select_sym(ctx, syms, tree, location, captured, env, result_info));
+                }
+                let Some(mut sym) = sym else {
+                    self.attr_error(
+                        ctx.tree(tree).pos,
+                        crate::resources::compiler_properties::errors::type_var_cant_be_deref(),
+                    );
+                    return syms.err_symbol;
+                };
+                if ctx.sym(sym).flags_field & (crate::code::flags::PRIVATE as i64) != 0 {
+                    // Java: sym2 = rs.new AccessError(env, site, sym);
+                    let env_snapshot = crate::comp::resolve::resolve_env_snapshot(ctx, env);
+                    let access_error = {
+                        let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                        let mut rs = rs_rc.borrow_mut();
+                        let data = crate::code::symbol::ResolveErrorData::Access {
+                            env: env_snapshot,
+                            site: Some(site),
+                            site_inaccessible: false,
+                            sym,
+                        };
+                        rs.new_resolve_error(
+                            ctx,
+                            crate::code::kinds::Kind::HIDDEN,
+                            "access error",
+                            data,
+                        )
+                    };
+                    sym = access_error;
+                }
+                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                let mut rs = rs_rc.borrow_mut();
+                rs.access_base(ctx, syms, sym, pos, location, Some(site), &name, true);
+                sym
+            }
+            TypeTag::ERROR => {
+                let site_tsym = ctx.typ(site).tsym.expect("error type symbol");
+                let error = self.types.create_error_type(ctx, name, site_tsym, Some(site));
+                ctx.typ(error).tsym.expect("error type symbol")
+            }
+            _ => {
+                // The qualifier expression is of a primitive type -- only
+                // .class is allowed for these.
+                if name == self.names._class {
+                    let types_rc = Rc::clone(&self.types);
+                    syms.get_class_field(ctx, &types_rc, site)
+                } else {
+                    self.attr_error(
+                        ctx.tree(tree).pos,
+                        crate::resources::compiler_properties::errors::cant_deref(
+                            Self::type_arg_placeholder(ctx, site),
+                        ),
+                    );
+                    syms.err_symbol
+                }
+            }
+        }
     }
 }
 

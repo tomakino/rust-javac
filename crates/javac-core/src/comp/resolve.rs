@@ -8296,6 +8296,75 @@ impl Resolve {
     }
 }
 
+impl Resolve {
+    /// Java: void checkNonAbstract(DiagnosticPosition pos, Symbol sym)
+    /// (Resolve.java:2655-2667).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - pos: the diagnostic position;
+    ///   - sym: the selected symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Resolve.java:2655-2667.
+    pub fn check_non_abstract(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
+        sym: SymbolId,
+    ) {
+        let flags = ctx.sym(sym).flags_field;
+        if (flags & (crate::code::flags::ABSTRACT as i64)) != 0
+            && (flags & crate::code::flags::DEFAULT) == 0
+        {
+            let kind = crate::code::kinds::kind_name(ctx.sym(sym), ctx);
+            let enclosing = crate::code::symbol::symbol_encl_class(ctx, sym);
+            let info = crate::resources::compiler_properties::errors::abstract_cant_be_accessed_directly(
+                crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    ctx.sym(sym).name.to_java_string().to_string_lossy().to_string(),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    enclosing
+                        .map(|encl| ctx.sym(encl).name.to_java_string().to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                ),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos.as_ref().map(|pos| pos.get_start_position()).unwrap_or(0),
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+    }
+
+    /// §9 helper: public wrapper of new StaticError(sym).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - sym: the symbol to wrap.
+    ///
+    /// # Returns
+    ///   - the StaticError symbol.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Resolve.java:4520-4530.
+    pub fn new_static_error_pub(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        sym: SymbolId,
+    ) -> SymbolId {
+        self.new_static_error(ctx, sym)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

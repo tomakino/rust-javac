@@ -2916,3 +2916,39 @@ impl Check {
         result
     }
 }
+impl Check {
+    /// Java: void warnStatic(DiagnosticPosition pos, Warning warnKey)
+    /// (Check.java:275-282).
+    ///
+    /// # Arguments
+    ///   - pos: the diagnostic position;
+    ///   - warning: the warning key.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:275-282.
+    pub fn warn_static(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        log: &std::rc::Rc<std::cell::RefCell<crate::util::log::Log>>,
+        pos: i32,
+        warning: crate::resources::diagnostic_contract::WarningInfo,
+    ) {
+        if self.lint.is_enabled(crate::code::lint::LintCategory::STATIC) {
+            let warning = crate::util::jc_diagnostic::Warning::from(warning);
+            crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                &mut *log.borrow_mut(),
+                Some(crate::code::lint::LintCategory::STATIC),
+                Some(std::rc::Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                )),
+                warning,
+            );
+        }
+        let _ = ctx;
+    }
+}
