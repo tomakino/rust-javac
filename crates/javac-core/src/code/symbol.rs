@@ -2380,6 +2380,38 @@ pub fn implementation(
     None
 }
 
+
+impl Symbol {
+    /// Java: public Object getConstValue() (Symbol.java:1734-1765).
+    ///
+    /// # Arguments
+    ///   - (none).
+    ///
+    /// # Returns
+    ///   - the constant value of this variable (None for non-constants and for
+    ///     exception/resource parameters).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Symbol.java:1734-1765.
+    pub fn get_const_value(&self) -> Option<crate::code::attribute::ConstValue> {
+        let kind_data = match &self.kind_data {
+            SymbolKind::VarSymbol { data_kind, data, .. } => (data_kind, data),
+            _ => return None,
+        };
+        let (data_kind, data) = kind_data;
+        if *data_kind == Some(crate::code::symbol::ElementKind::EXCEPTION_PARAMETER)
+            || *data_kind == Some(crate::code::symbol::ElementKind::RESOURCE_VARIABLE)
+        {
+            return None;
+        }
+        // The Java Callable<?> lazy-initializer channel is not represented: the
+        // constant is computed when the symbol is entered (Porting adapter).
+        data.clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

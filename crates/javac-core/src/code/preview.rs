@@ -47,7 +47,10 @@ use crate::code::source::{Feature, Source};
 use crate::jvm::target::Target;
 use crate::resources::compiler_properties::errors;
 use crate::resources::diagnostic_contract::{DiagnosticArg, FileObjectArg};
+use crate::code::lint::Lint;
 use crate::util::assert;
+use crate::util::log::Log;
+use crate::util::mandatory_warning_handler::{MandatoryWarningHandler, MandatoryWarningLog};
 use crate::util::context::Context;
 use crate::util::java_string::JavaString;
 use crate::util::jc_diagnostic::{DiagnosticPosition, Error, Warning};
@@ -67,12 +70,61 @@ pub struct Preview {
     major_version_to_source: HashMap<i32, Source>,
 
     /// Java: private final Set<JavaFileObject> sourcesWithPreviewFeatures = new HashSet<>();
-    sources_with_preview_features: Vec<JavaFileObjectRef>,
+    sources_with_preview_features: std::cell::RefCell<Vec<JavaFileObjectRef>>,
 
-    // Java: private final MandatoryWarningHandler previewHandler;
-    // Java: private final Lint lint; private final Log log;
-    // TODO(Log/Lint): those dependencies are not ported yet; the fields are
-    // represented once the Log/Lint construction is available.
+    /// Java: private final Log log (None for the service-free adapter constructor).
+    log: Option<Rc<std::cell::RefCell<Log>>>,
+    /// Java: private final Lint lint (None for the service-free adapter constructor).
+    lint: Option<Rc<Lint>>,
+    /// Java: private final Source source (None for the service-free adapter constructor).
+    source: Option<Source>,
+    /// Java: private final MandatoryWarningHandler previewHandler (None for the
+    /// service-free adapter constructor).
+    preview_handler: std::cell::RefCell<
+        Option<MandatoryWarningHandler<Rc<std::cell::RefCell<Log>>>>,
+    >,
+}
+
+/// Adapter: the MandatoryWarningLog implementation over the shared Log cell
+/// (the upstream handler holds a concrete Log).
+impl MandatoryWarningLog for Rc<std::cell::RefCell<Log>> {
+    fn current_source_file(&mut self) -> Option<Rc<dyn JavaFileObject>> {
+        MandatoryWarningLog::current_source_file(&mut *self.borrow_mut())
+    }
+
+    fn nwarnings(&self) -> i32 {
+        self.borrow().nwarnings
+    }
+
+    fn max_warnings(&self) -> i32 {
+        self.borrow().max_warnings
+    }
+
+    fn mandatory_warning(
+        &mut self,
+        lc: Option<crate::code::lint::LintCategory>,
+        pos: Option<Rc<dyn DiagnosticPosition>>,
+        warning_key: Warning,
+    ) {
+        MandatoryWarningLog::mandatory_warning(&mut *self.borrow_mut(), lc, pos, warning_key)
+    }
+
+    fn warning(
+        &mut self,
+        lc: Option<crate::code::lint::LintCategory>,
+        pos: Option<Rc<dyn DiagnosticPosition>>,
+        warning_key: Warning,
+    ) {
+        MandatoryWarningLog::warning(&mut *self.borrow_mut(), lc, pos, warning_key)
+    }
+
+    fn mandatory_note(&mut self, file: Option<Rc<dyn JavaFileObject>>, note: crate::util::jc_diagnostic::Note) {
+        MandatoryWarningLog::mandatory_note(&mut *self.borrow_mut(), file, note)
+    }
+
+    fn note(&mut self, file: Option<Rc<dyn JavaFileObject>>, note: crate::util::jc_diagnostic::Note) {
+        MandatoryWarningLog::note(&mut *self.borrow_mut(), file, note)
+    }
 }
 
 impl Preview {
@@ -91,8 +143,54 @@ impl Preview {
             enabled,
             force_preview,
             major_version_to_source: Preview::init_major_version_to_source_map(),
-            sources_with_preview_features: Vec::new(),
+            sources_with_preview_features: std::cell::RefCell::new(Vec::new()),
+            log: None,
+            lint: None,
+            source: None,
+            preview_handler: std::cell::RefCell::new(None),
         }
+    }
+
+    /// Java: Preview(Context context) — the full constructor (Options/Log/Lint/
+    /// Source/MandatoryWarningHandler wiring).
+    pub fn new_with_services(
+        enabled: bool,
+        force_preview: bool,
+        log: Rc<std::cell::RefCell<Log>>,
+        lint: Rc<Lint>,
+        source: Source,
+    ) -> Preview {
+        let verbose = lint.is_enabled(crate::code::lint::LintCategory::PREVIEW);
+        let handler = MandatoryWarningHandler::new(
+            Rc::clone(&log),
+            Some(source),
+            verbose,
+            true,
+            "preview",
+            Some(crate::code::lint::LintCategory::PREVIEW),
+        );
+        Preview {
+            enabled,
+            force_preview,
+            major_version_to_source: Preview::init_major_version_to_source_map(),
+            sources_with_preview_features: std::cell::RefCell::new(Vec::new()),
+            log: Some(log),
+            lint: Some(lint),
+            source: Some(source),
+            preview_handler: std::cell::RefCell::new(Some(handler)),
+        }
+    }
+
+    fn log_service(&self) -> Rc<std::cell::RefCell<Log>> {
+        self.log
+            .clone()
+            .expect("AssertionError: Preview log service must be installed")
+    }
+
+    fn lint_service(&self) -> Rc<Lint> {
+        self.lint
+            .clone()
+            .expect("AssertionError: Preview lint service must be installed")
     }
 
     /// Java:
@@ -133,10 +231,20 @@ impl Preview {
     ///
     /// TODO(Log/Lint/Options): the constructor reads Options/Log/Lint; the
     /// entry point stays unimplemented (no substitute components).
-    pub fn instance(_context: &mut Context) -> Rc<Preview> {
-        unimplemented!(
-            "TODO(Log/Lint/Options batch): Preview.instance (Options/Log/Lint/MandatoryWarningHandler are not ported)"
-        )
+    pub fn instance(context: &mut Context) -> Rc<Preview> {
+        let options = crate::util::options::Options::instance(context);
+        let enabled = options.is_set("preview");
+        let force_preview = options.is_set("forcePreview");
+        let log = Log::instance(context);
+        let lint = Lint::instance(context);
+        let source = *Source::instance(context);
+        Rc::new(Preview::new_with_services(
+            enabled,
+            force_preview,
+            log,
+            lint,
+            source,
+        ))
     }
 
     /// Report usage of a preview feature. Usages reported through this method will
@@ -145,10 +253,30 @@ impl Preview {
     /// @param feature the preview feature used.
     ///
     /// Java: public void warnPreview(int pos, Feature feature).
-    pub fn warn_preview(&self, _pos: i32, _feature: Feature) {
-        unimplemented!(
-            "TODO(Log/Lint batch): Preview.warnPreview (Log.currentSourceFile and MandatoryWarningHandler are not ported)"
-        )
+    pub fn warn_preview(&self, pos: i32, feature: Feature) {
+        assert::check(self.is_enabled());
+        assert::check(self.is_preview(feature));
+        let lint = self.lint_service();
+        if !lint.is_suppressed(crate::code::lint::LintCategory::PREVIEW) {
+            let log = self.log_service();
+            let current_file = MandatoryWarningLog::current_source_file(&mut *log.borrow_mut());
+            if let Some(file) = current_file {
+                let mut sources = self.sources_with_preview_features.borrow_mut();
+                sources.push(file);
+            }
+            let arg = DiagnosticArg::Text(feature.name_fragment().info().key());
+            let info = if feature.is_plural() {
+                crate::resources::compiler_properties::warnings::preview_feature_use_plural(arg)
+            } else {
+                crate::resources::compiler_properties::warnings::preview_feature_use(arg)
+            };
+            let warning = Warning::from(info);
+            let mut handler = self.preview_handler.borrow_mut();
+            handler.as_mut().expect("Preview handler must be installed").report(
+                Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
+                warning,
+            );
+        }
     }
 
     /// Report usage of a preview feature. Usages reported through this method will
@@ -157,10 +285,8 @@ impl Preview {
     /// @param feature the preview feature used.
     ///
     /// Java: public void warnPreview(DiagnosticPosition pos, Feature feature).
-    pub fn warn_preview_at(&self, _pos: &dyn DiagnosticPosition, _feature: Feature) {
-        unimplemented!(
-            "TODO(Log/Lint batch): Preview.warnPreview (Log.currentSourceFile and MandatoryWarningHandler are not ported)"
-        )
+    pub fn warn_preview_at(&self, pos: &dyn DiagnosticPosition, feature: Feature) {
+        self.warn_preview(pos.get_start_position(), feature)
     }
 
     /// Report usage of a preview feature in classfile.
@@ -168,30 +294,61 @@ impl Preview {
     /// @param major_version the major version found in the classfile.
     ///
     /// Java: public void warnPreview(JavaFileObject classfile, int majorVersion).
-    pub fn warn_preview_classfile(&self, _classfile: &dyn JavaFileObject, _major_version: i32) {
-        unimplemented!(
-            "TODO(Log/Lint batch): Preview.warnPreview(JavaFileObject, int) (Log/MandatoryWarningHandler are not ported)"
-        )
+    pub fn warn_preview_classfile(&self, classfile: &dyn JavaFileObject, major_version: i32) {
+        assert::check(self.is_enabled());
+        let lint = self.lint_service();
+        if lint.is_enabled(crate::code::lint::LintCategory::PREVIEW) {
+            let log = self.log_service();
+            let current_file = MandatoryWarningLog::current_source_file(&mut *log.borrow_mut());
+            if let Some(file) = current_file {
+                let mut sources = self.sources_with_preview_features.borrow_mut();
+                sources.push(file);
+            }
+            let source_name = match self.major_version_to_source.get(&major_version) {
+                Some(source) => source.name(),
+                None => "",
+            };
+            let file_arg = FileObjectArg::from(classfile.get_name().to_string_lossy().as_str());
+            let info = crate::resources::compiler_properties::warnings::preview_feature_use_classfile(
+                file_arg,
+                JavaString::from(source_name),
+            );
+            let warning = Warning::from(info);
+            MandatoryWarningLog::mandatory_warning(
+                &mut *log.borrow_mut(),
+                Some(crate::code::lint::LintCategory::PREVIEW),
+                None,
+                warning,
+            );
+        }
     }
 
     /// Java: public void markUsesPreview(DiagnosticPosition pos).
     pub fn mark_uses_preview(&self, _pos: &dyn DiagnosticPosition) {
-        unimplemented!(
-            "TODO(Log batch): Preview.markUsesPreview (Log.currentSourceFile is not ported)"
-        )
+        let log = self.log_service();
+        let current_file = MandatoryWarningLog::current_source_file(&mut *log.borrow_mut());
+        if let Some(file) = current_file {
+            let mut sources = self.sources_with_preview_features.borrow_mut();
+            sources.push(file);
+        }
     }
 
     /// Java: public void reportPreviewWarning(DiagnosticPosition pos, Warning warnKey).
-    pub fn report_preview_warning(&self, _pos: &dyn DiagnosticPosition, _warn_key: Warning) {
-        unimplemented!(
-            "TODO(Log batch): Preview.reportPreviewWarning (MandatoryWarningHandler is not ported)"
-        )
+    pub fn report_preview_warning(&self, pos: &dyn DiagnosticPosition, warn_key: Warning) {
+        let mut handler = self.preview_handler.borrow_mut();
+        handler.as_mut().expect("Preview handler must be installed").report(
+            Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                pos.get_start_position(),
+            ))),
+            warn_key,
+        );
     }
 
     /// Java: public boolean usesPreview(JavaFileObject file) {
     ///           return sourcesWithPreviewFeatures.contains(file); }
     pub fn uses_preview(&self, file: &JavaFileObjectRef) -> bool {
         self.sources_with_preview_features
+            .borrow()
             .iter()
             .any(|candidate| Rc::ptr_eq(candidate, file))
     }
@@ -263,23 +420,47 @@ impl Preview {
 
     /// Report any deferred diagnostics.
     pub fn report_deferred_diagnostics(&self) {
-        unimplemented!(
-            "TODO(Log batch): Preview.reportDeferredDiagnostics (MandatoryWarningHandler is not ported)"
-        )
+        let mut handler = self.preview_handler.borrow_mut();
+        if let Some(handler) = handler.as_mut() {
+            handler.report_deferred_diagnostic();
+        }
     }
 
     /// Java: public void clear().
     pub fn clear(&self) {
-        unimplemented!(
-            "TODO(Log batch): Preview.clear (MandatoryWarningHandler is not ported)"
-        )
+        let mut handler = self.preview_handler.borrow_mut();
+        if let Some(handler) = handler.as_mut() {
+            handler.clear();
+        }
     }
 
     /// Java: public void checkSourceLevel(DiagnosticPosition pos, Feature feature).
-    pub fn check_source_level(&self, _pos: &dyn DiagnosticPosition, _feature: Feature) {
-        unimplemented!(
-            "TODO(Log/Lint batch): Preview.checkSourceLevel (Log.error and Lint are not ported)"
-        )
+    pub fn check_source_level(&self, pos: &dyn DiagnosticPosition, feature: Feature) {
+        if self.is_preview(feature) && !self.is_enabled() {
+            let error = self.disabled_error(feature);
+            let log = self.log_service();
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *log.borrow_mut(),
+                pos.get_start_position(),
+                error,
+            );
+        } else {
+            let source = self
+                .source
+                .expect("AssertionError: Preview source service must be installed");
+            if !feature.allowed_in_source(source) {
+                let error = feature.error(source.name());
+                let log = self.log_service();
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *log.borrow_mut(),
+                    pos.get_start_position(),
+                    error,
+                );
+            }
+            if self.is_enabled() && self.is_preview(feature) {
+                self.warn_preview_at(pos, feature);
+            }
+        }
     }
 }
 
@@ -444,13 +625,13 @@ mod tests {
 
     #[test]
     fn uses_preview_compares_file_object_identity() {
-        let mut preview = Preview::new(false, false);
+        let preview = Preview::new(false, false);
         let first: javac_tools::tools::java_file_manager::JavaFileObjectRef =
             std::rc::Rc::new(TestJavaFileObject);
         let second: javac_tools::tools::java_file_manager::JavaFileObjectRef =
             std::rc::Rc::new(TestJavaFileObject);
         assert!(!preview.uses_preview(&first));
-        preview.sources_with_preview_features.push(first.clone());
+        preview.sources_with_preview_features.borrow_mut().push(first.clone());
         assert!(preview.uses_preview(&first));
         // JavaFileObject has no equals override: a different instance is a
         // different set element.
@@ -458,17 +639,34 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "TODO(Log batch)")]
-    fn mark_uses_preview_needs_the_log_port() {
-        let preview = Preview::new(false, false);
+    fn mark_uses_preview_records_the_current_source_file() {
+        let mut context = crate::util::context::Context::new();
+        let log = crate::util::log::Log::instance(&mut context);
+        let lint = crate::code::lint::Lint::instance(&mut context);
+        let file: javac_tools::tools::java_file_manager::JavaFileObjectRef =
+            std::rc::Rc::new(TestJavaFileObject);
+        crate::util::abstract_log::AbstractLog::use_source(
+            &mut *log.borrow_mut(),
+            Some(std::rc::Rc::clone(&file)),
+        );
+        let preview = Preview::new_with_services(
+            false,
+            false,
+            log,
+            lint,
+            crate::code::source::Source::JDK17,
+        );
         let pos = SimpleDiagnosticPosition::new(0);
         preview.mark_uses_preview(&pos);
+        assert!(preview.uses_preview(&file));
     }
 
     #[test]
-    #[should_panic(expected = "TODO(Log/Lint/Options batch)")]
-    fn instance_needs_the_log_lint_options_port() {
+    fn instance_constructs_preview_from_context() {
         let mut context = crate::util::context::Context::new();
-        let _ = Preview::instance(&mut context);
+        let preview = Preview::instance(&mut context);
+        assert!(!preview.is_enabled());
+        assert!(preview.is_preview(crate::code::source::Feature::CASE_NULL));
+        assert!(preview.is_preview(crate::code::source::Feature::PATTERN_SWITCH));
     }
 }

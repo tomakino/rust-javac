@@ -4581,7 +4581,6 @@ impl Attr {
         env.info.borrow().static_level > outer.info.borrow().static_level
     }
 
-    #[allow(dead_code)]
     /// Java: boolean isStaticReference(JCTree tree) (Attr.java:322-333).
     ///
     /// # Arguments
@@ -8636,8 +8635,8 @@ impl Attr {
                 if ctx.sym(symbol).flags_field & (crate::code::flags::ENUM as i64) == 0 {
                     return None;
                 }
-                // TODO(ConstValue): VarSymbol.getConstValue() is not ported; the
-                // enum initializer evaluation side effect is registered.
+                // Java: ((VarSymbol)s).getConstValue(); // ensure initializer is evaluated
+                let _ = ctx.sym(symbol).get_const_value();
                 return Some(symbol);
             }
         }
