@@ -142,3 +142,5 @@ file/locations/classfinder 适配 helper、资源生成器。后续按优先级�
   已按§20 退回,要求按 Scope.java 1:1 实现并更正汇报;该批未验收。
 - 上下文/预算判断(PORTING_RULES §22):必须先调用 session_usage 实测,禁止靠感觉;汇报提及上下文状态须附实际数据;
   数据仅作监控(§21)。
+- 时间规则(PORTING_RULES §23):涉及时间的判断必须先调用 current_time 实测;每批汇报附实测时间戳/耗时;
+  猜测时间视为未验证。

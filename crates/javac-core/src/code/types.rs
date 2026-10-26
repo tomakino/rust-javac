@@ -240,6 +240,9 @@ fn flat_name_of(ctx: &CompilerContext, symbol: SymbolId) -> Name {
 pub struct Types {
     /// Java: final Names names (None until the service construction wires it).
     names: Option<std::rc::Rc<crate::util::names::Names>>,
+    /// Java: final boolean mapCapturesToBounds (Types.java:97; set from
+    /// Feature.MAP_CAPTURES_TO_BOUNDS for the configured source level).
+    map_captures_to_bounds: bool,
 }
 
 impl Types {
@@ -249,13 +252,38 @@ impl Types {
     /// Rust Types keeps only the Names service (wired by the services that
     /// need capture(); see with_names).
     pub fn new() -> Types {
-        Types { names: None }
+        Types {
+            names: None,
+            map_captures_to_bounds: false,
+        }
     }
 
     /// Wires the Names service (the ported service construction; the upstream
     /// constructor reads Names.instance(context)).
     pub fn with_names(names: std::rc::Rc<crate::util::names::Names>) -> Types {
-        Types { names: Some(names) }
+        Types {
+            names: Some(names),
+            map_captures_to_bounds: false,
+        }
+    }
+
+    /// Wires the Names service and the source-dependent
+    /// mapCapturesToBounds flag (the upstream Types constructor reads
+    /// Feature.MAP_CAPTURES_TO_BOUNDS.allowedInSource(source)).
+    pub fn with_names_and_source(
+        names: std::rc::Rc<crate::util::names::Names>,
+        source: crate::code::source::Source,
+    ) -> Types {
+        Types {
+            names: Some(names),
+            map_captures_to_bounds:
+                crate::code::source::Feature::MAP_CAPTURES_TO_BOUNDS.allowed_in_source(source),
+        }
+    }
+
+    /// Java: final boolean mapCapturesToBounds
+    pub fn map_captures_to_bounds(&self) -> bool {
+        self.map_captures_to_bounds
     }
 
     /// The captured type variable name (Types.java:122).
@@ -330,6 +358,10 @@ impl Types {
                 // Java: System.identityHashCode(t) (strict and non-strict).
                 type_identity_hash(t)
             }
+            TypeKindData::UndetVar { .. } => {
+                // Java: HashCodeVisitor.visitUndetVar -> System.identityHashCode(t)
+                type_identity_hash(t)
+            }
             TypeKindData::ForAll { qtype, .. } => {
                 // Java: SimpleVisitor.visitForAll -> visit(qtype).
                 let qtype = qtype.expect("for-all qtype");
@@ -385,7 +417,72 @@ impl Types {
                 panic!("AssertionError: isSameType {:?}", ctx.typ(t).get_tag());
             }
             TypeKindData::ForAll { .. } => self.is_same_type_visit_for_all(ctx, syms, t, s),
+            TypeKindData::UndetVar { .. } => {
+                self.is_same_type_visit_undet_var(ctx, syms, t, s)
+            }
         }
+    }
+
+    /// Java: isSameTypeVisitor.visitUndetVar (Types.java:1463-1480)
+    fn is_same_type_visit_undet_var(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+    ) -> bool {
+        if ctx.typ(s).has_tag(TypeTag::WILDCARD) {
+            // FIXME, this might be leftovers from before capture conversion
+            return false;
+        }
+        let qtype = self.undet_var_qtype(ctx, t);
+        if t == s
+            || qtype == s
+            || ctx.typ(s).has_tag(TypeTag::ERROR)
+            || ctx.typ(s).has_tag(TypeTag::UNKNOWN)
+        {
+            return true;
+        }
+        self.undet_var_add_bound(
+            ctx,
+            syms,
+            t,
+            crate::code::type_::InferenceBound::EQ,
+            s,
+            false,
+        );
+        true
+    }
+
+    /// Java: isSubtype.visitUndetVar (Types.java:1214-1227)
+    fn is_subtype_visit_undet_var(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+    ) -> bool {
+        let qtype = self.undet_var_qtype(ctx, t);
+        if t == s
+            || qtype == s
+            || ctx.typ(s).has_tag(TypeTag::ERROR)
+            || ctx.typ(s).has_tag(TypeTag::UNKNOWN)
+        {
+            return true;
+        } else if ctx.typ(s).has_tag(TypeTag::BOT) {
+            // if 's' is 'null' there's no instantiated type U for which
+            // U <: s (but 'null' itself, which is not a valid type)
+            return false;
+        }
+        self.undet_var_add_bound(
+            ctx,
+            syms,
+            t,
+            crate::code::type_::InferenceBound::UPPER,
+            s,
+            false,
+        );
+        true
     }
 
     /// Java: isSameTypeVisitor.visitType
@@ -1108,17 +1205,25 @@ impl Types {
                 }
                 _ => unreachable!(),
             };
+            let no_type = no_type_of(ctx, syms);
             let outer1 = match outer {
                 Some(outer) => self.subst_visit(ctx, syms, outer, from, to),
-                None => panic!("unimplemented: subst of a class type without enclosing type"),
+                // Java: a class type may have Type.noType as its enclosing
+                // type; the structural mapping visits it unchanged.
+                None => no_type,
             };
             let typarams1 = self.subst(ctx, syms, &typarams, from, to);
-            let unchanged = outer1 == outer.expect("outer") && list_same(&typarams, &typarams1);
+            let outer_unchanged = match outer {
+                Some(outer) => outer1 == outer,
+                None => outer1 == no_type,
+            };
+            let unchanged = outer_unchanged && list_same(&typarams, &typarams1);
             if unchanged {
                 return t;
             }
             let tsym = ctx.typ(t).tsym;
-            return new_class_type(ctx, Some(outer1), Some(typarams1), tsym);
+            let outer_field = if outer1 == no_type { None } else { Some(outer1) };
+            return new_class_type(ctx, outer_field, Some(typarams1), tsym);
         }
         if matches!(&ctx.typ(t).kind, TypeKindData::WildcardType { .. }) {
             let (type_, kind, bound) = match &ctx.typ(t).kind {
@@ -1974,7 +2079,40 @@ impl Types {
     ) -> bool {
         match ctx.typ(t).get_tag() {
             TypeTag::UNDETVAR => {
-                panic!("unimplemented: containedBy on UndetVar (not ported)")
+                if ctx.typ(s).has_tag(TypeTag::WILDCARD) {
+                    let kind = match &ctx.typ(s).kind {
+                        TypeKindData::WildcardType { kind, .. } => *kind,
+                        _ => unreachable!(),
+                    };
+                    match kind {
+                        crate::code::bound_kind::BoundKind::UNBOUND => {}
+                        crate::code::bound_kind::BoundKind::EXTENDS => {
+                            let bound = self.wild_upper_bound(ctx, syms, s);
+                            self.undet_var_add_bound(
+                                ctx,
+                                syms,
+                                t,
+                                crate::code::type_::InferenceBound::UPPER,
+                                bound,
+                                false,
+                            );
+                        }
+                        crate::code::bound_kind::BoundKind::SUPER => {
+                            let bound = self.wild_lower_bound(ctx, syms, s);
+                            self.undet_var_add_bound(
+                                ctx,
+                                syms,
+                                t,
+                                crate::code::type_::InferenceBound::LOWER,
+                                bound,
+                                false,
+                            );
+                        }
+                    }
+                    true
+                } else {
+                    self.is_same_type(ctx, syms, t, s)
+                }
             }
             TypeTag::ERROR => true,
             _ => self.contains_type(ctx, syms, s, t),
@@ -2007,6 +2145,14 @@ impl Types {
                 }
             }
             TypeKindData::ErrorType { .. } => true,
+            TypeKindData::UndetVar { .. } => {
+                // Java: ContainsType.visitUndetVar (Types.java:1593)
+                if !ctx.typ(s).has_tag(TypeTag::WILDCARD) {
+                    self.is_same_type(ctx, syms, t, s)
+                } else {
+                    false
+                }
+            }
             TypeKindData::ForAll { qtype, .. } => {
                 let qtype = qtype.expect("for-all qtype");
                 self.contains_type(ctx, syms, qtype, s)
@@ -2181,6 +2327,9 @@ impl Types {
                 }
                 tag => panic!("AssertionError: isSubtype {tag:?}"),
             },
+            TypeKindData::UndetVar { .. } => {
+                self.is_subtype_visit_undet_var(ctx, syms, t, s)
+            }
             TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
                 let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
                 self.is_subtype_no_capture(ctx, syms, upper, s)
@@ -2270,7 +2419,23 @@ impl Types {
         match ctx.typ(t).get_tag() {
             TypeTag::ERROR => true,
             TypeTag::UNDETVAR => {
-                panic!("unimplemented: isSuperType on UndetVar (not ported)")
+                let qtype = self.undet_var_qtype(ctx, t);
+                if t == s
+                    || qtype == s
+                    || ctx.typ(s).has_tag(TypeTag::ERROR)
+                    || ctx.typ(s).has_tag(TypeTag::BOT)
+                {
+                    return true;
+                }
+                self.undet_var_add_bound(
+                    ctx,
+                    syms,
+                    t,
+                    crate::code::type_::InferenceBound::LOWER,
+                    s,
+                    false,
+                );
+                true
             }
             _ => self.is_subtype(ctx, syms, s, t),
         }
@@ -2639,9 +2804,13 @@ impl Types {
         let t_undet = ctx.typ(t).has_tag(TypeTag::UNDETVAR);
         let s_undet = ctx.typ(s).has_tag(TypeTag::UNDETVAR);
         if t_undet || s_undet {
-            // UndetVar is not ported yet (Infer batch); the branch is
-            // registered there.
-            unimplemented!("TODO(Infer batch): isConvertible with UndetVar types")
+            return if t_undet {
+                let boxed = self.boxed_type_or_type(ctx, syms, s);
+                self.is_subtype(ctx, syms, t, boxed)
+            } else {
+                let boxed = self.boxed_type_or_type(ctx, syms, t);
+                self.is_subtype(ctx, syms, boxed, s)
+            };
         }
         if t_primitive {
             let boxed = self.boxed_class(ctx, syms, t);
@@ -3917,7 +4086,7 @@ impl Types {
     // ------------------------------------------------------------------
 
     /// Java: ClassType.allparams() — the cached all type parameters.
-    fn class_allparams(&self, ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
+    pub fn class_allparams(&self, ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
         match &ctx.typ(t).kind {
             TypeKindData::ClassType {
                 allparams_field,
@@ -5285,6 +5454,1173 @@ impl Types {
         true
     }
 
+}
+
+
+// ---------------------------------------------------------------------------
+// Infer batch: Type.UndetVar operations (Type.java:1892-2250) and the
+// UndetVar branches of the Types relations (Types.java:1214/1282/1463/1494/
+// 1593/4229/2731).
+// ---------------------------------------------------------------------------
+impl Types {
+    /// Java: public List<Type> getBounds(TypeVar t) (Types.java:2731-2742)
+    pub fn get_bounds(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> List<TypeId> {
+        let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+        if ctx.typ(upper).has_tag(TypeTag::NONE) {
+            return List::nil();
+        }
+        if self.is_erroneous(ctx, syms, upper) || !self.is_compound(ctx, upper) {
+            return List::of(upper);
+        }
+        let erasure = self.erasure(ctx, syms, t);
+        let erasure_tsym = ctx.typ(erasure).tsym.expect("erasure symbol");
+        if (ctx.sym(erasure_tsym).flags_field & crate::code::flags::INTERFACE as i64) == 0 {
+            let interfaces = self.interfaces(ctx, syms, t);
+            let supertype = self.supertype(ctx, syms, t);
+            interfaces.prepend(supertype)
+        } else {
+            self.interfaces(ctx, syms, t)
+        }
+    }
+
+    /// Java: public boolean isErroneous() (Type.java:564/1111/1377/1493/1811/
+    /// 1850/2397)
+    #[allow(clippy::only_used_in_recursion)]
+    fn is_erroneous(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
+        let kind = ctx.typ(t).kind.clone();
+        let tsym_opt = ctx.typ(t).tsym;
+        match &kind {
+            TypeKindData::ErrorType { .. } => true,
+            TypeKindData::ClassType { .. }
+            | TypeKindData::ErasedClassType { .. }
+            | TypeKindData::UnionClassType { .. }
+            | TypeKindData::IntersectionClassType { .. } => {
+                if let Some(enclosing) = get_enclosing_type(ctx, t)
+                    && self.is_erroneous(ctx, syms, enclosing)
+                {
+                    return true;
+                }
+                let mut arguments = get_type_arguments(ctx, t);
+                while arguments.non_empty() {
+                    if self.is_erroneous(ctx, syms, *arguments.head()) {
+                        return true;
+                    }
+                    arguments = arguments.tail();
+                }
+                let Some(tsym) = tsym_opt else {
+                    return false;
+                };
+                let Some(tsym_type) = ctx.sym(tsym).ty else {
+                    return false;
+                };
+                tsym_type != t && self.is_erroneous(ctx, syms, tsym_type)
+            }
+            TypeKindData::ArrayType { elemtype } => elemtype
+                .map(|elem| self.is_erroneous(ctx, syms, elem))
+                .unwrap_or(false),
+            TypeKindData::MethodType {
+                argtypes, restype, ..
+            } => {
+                let mut arguments = argtypes.clone();
+                while arguments.non_empty() {
+                    if self.is_erroneous(ctx, syms, *arguments.head()) {
+                        return true;
+                    }
+                    arguments = arguments.tail();
+                }
+                restype
+                    .map(|restype| self.is_erroneous(ctx, syms, restype))
+                    .unwrap_or(false)
+            }
+            TypeKindData::ForAll { qtype, .. } => qtype
+                .map(|qtype| self.is_erroneous(ctx, syms, qtype))
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
+
+    /// The origin type variable of an UndetVar (DelegatedType.qtype).
+    pub fn undet_var_qtype(&self, ctx: &CompilerContext, uv: TypeId) -> TypeId {
+        match &ctx.typ(uv).kind {
+            TypeKindData::UndetVar { qtype, .. } => *qtype,
+            _ => panic!("ClassCastException: not an UndetVar"),
+        }
+    }
+
+    fn undet_var_kind(&self, ctx: &CompilerContext, uv: TypeId) -> crate::code::type_::UndetVarKind {
+        match &ctx.typ(uv).kind {
+            TypeKindData::UndetVar { kind, .. } => *kind,
+            _ => panic!("ClassCastException: not an UndetVar"),
+        }
+    }
+
+    /// Java: public UndetVar(TypeVar origin, UndetVarListener listener,
+    /// Types types) (Type.java:1965-2000)
+    pub fn undet_var_new(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        origin: TypeId,
+        listener: Option<std::rc::Rc<dyn crate::comp::infer::UndetVarListener>>,
+    ) -> TypeId {
+        let captured = ctx.typ(origin).is_captured();
+        let kind = if captured {
+            crate::code::type_::UndetVarKind::CAPTURED
+        } else {
+            crate::code::type_::UndetVarKind::NORMAL
+        };
+        let declared_bounds = self.get_bounds(ctx, syms, origin);
+        let declared_count = declared_bounds.length() as usize;
+        let tsym = ctx.typ(origin).tsym;
+        let uv = ctx.alloc_type(Type::new(
+            TypeTag::UNDETVAR,
+            tsym,
+            TypeKindData::UndetVar {
+                qtype: origin,
+                inst: None,
+                bounds: [List::nil(), List::nil(), List::nil()],
+                declared_count,
+                kind,
+                listener,
+                incorporation_actions: std::collections::VecDeque::new(),
+            },
+        ));
+        // Java: for (Type t : declaredBounds.reverse()) addBound(UPPER, t, types, true)
+        let mut reversed: Vec<TypeId> = Vec::new();
+        let mut current = declared_bounds;
+        while current.non_empty() {
+            reversed.push(*current.head());
+            current = current.tail();
+        }
+        for t in reversed.into_iter().rev() {
+            self.undet_var_add_bound(
+                ctx,
+                syms,
+                uv,
+                crate::code::type_::InferenceBound::UPPER,
+                t,
+                true,
+            );
+        }
+        if captured {
+            let lower = ctx.typ(origin).get_lower_bound().expect("captured lower bound");
+            if !ctx.typ(lower).has_tag(TypeTag::BOT) {
+                self.undet_var_add_bound(
+                    ctx,
+                    syms,
+                    uv,
+                    crate::code::type_::InferenceBound::LOWER,
+                    lower,
+                    true,
+                );
+            }
+        }
+        uv
+    }
+
+    /// Java: public List<Type> getBounds(InferenceBound... ibs)
+    pub fn undet_var_get_bounds(
+        &self,
+        ctx: &CompilerContext,
+        uv: TypeId,
+        ibs: &[crate::code::type_::InferenceBound],
+    ) -> List<TypeId> {
+        let bounds = match &ctx.typ(uv).kind {
+            TypeKindData::UndetVar { bounds, .. } => bounds.clone(),
+            _ => panic!("ClassCastException: not an UndetVar"),
+        };
+        let mut result: List<TypeId> = List::nil();
+        for ib in ibs {
+            let mut current = bounds[ib.ordinal()].clone();
+            while current.non_empty() {
+                result = result.append(*current.head());
+                current = current.tail();
+            }
+        }
+        result
+    }
+
+    /// Java: public List<Type> getDeclaredBounds()
+    pub fn undet_var_get_declared_bounds(
+        &self,
+        ctx: &CompilerContext,
+        uv: TypeId,
+    ) -> List<TypeId> {
+        let declared_count = match &ctx.typ(uv).kind {
+            TypeKindData::UndetVar { declared_count, .. } => *declared_count,
+            _ => panic!("ClassCastException: not an UndetVar"),
+        };
+        let mut result: List<TypeId> = List::nil();
+        let mut count = 0;
+        let mut current = self.undet_var_get_bounds(
+            ctx,
+            uv,
+            &[crate::code::type_::InferenceBound::UPPER],
+        );
+        while current.non_empty() {
+            if count == declared_count {
+                break;
+            }
+            result = result.append(*current.head());
+            count += 1;
+            current = current.tail();
+        }
+        result
+    }
+
+    /// Java: public void setBounds(InferenceBound ib, List<Type> newBounds)
+    pub fn undet_var_set_bounds(
+        &self,
+        ctx: &mut CompilerContext,
+        uv: TypeId,
+        ib: crate::code::type_::InferenceBound,
+        new_bounds: List<TypeId>,
+    ) {
+        if let TypeKindData::UndetVar { bounds, .. } = &mut ctx.typ_mut(uv).kind {
+            bounds[ib.ordinal()] = new_bounds;
+        } else {
+            panic!("ClassCastException: not an UndetVar");
+        }
+    }
+
+    /// Java: public Type getInst()
+    pub fn undet_var_get_inst(&self, ctx: &CompilerContext, uv: TypeId) -> Option<TypeId> {
+        match &ctx.typ(uv).kind {
+            TypeKindData::UndetVar { inst, .. } => *inst,
+            _ => panic!("ClassCastException: not an UndetVar"),
+        }
+    }
+
+    /// Java: public void setInst(Type inst)
+    pub fn undet_var_set_inst(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        uv: TypeId,
+        inst: TypeId,
+    ) {
+        let listener = match &ctx.typ(uv).kind {
+            TypeKindData::UndetVar { listener, .. } => listener.clone(),
+            _ => panic!("ClassCastException: not an UndetVar"),
+        };
+        if let TypeKindData::UndetVar { inst: slot, .. } = &mut ctx.typ_mut(uv).kind {
+            *slot = Some(inst);
+        } else {
+            panic!("ClassCastException: not an UndetVar");
+        }
+        if let Some(listener) = listener {
+            listener.var_instantiated(ctx, syms, self, uv);
+        }
+    }
+
+    /// Java: public final boolean isCaptured()
+    pub fn undet_var_is_captured(&self, ctx: &CompilerContext, uv: TypeId) -> bool {
+        self.undet_var_kind(ctx, uv) == crate::code::type_::UndetVarKind::CAPTURED
+    }
+
+    /// Java: public final boolean isThrows()
+    pub fn undet_var_is_throws(&self, ctx: &CompilerContext, uv: TypeId) -> bool {
+        self.undet_var_kind(ctx, uv) == crate::code::type_::UndetVarKind::THROWS
+    }
+
+    /// Java: public void setThrow()
+    pub fn undet_var_set_throw(&self, ctx: &mut CompilerContext, uv: TypeId) {
+        if self.undet_var_kind(ctx, uv) == crate::code::type_::UndetVarKind::CAPTURED {
+            panic!("IllegalStateException: invalid state transition");
+        }
+        if let TypeKindData::UndetVar { kind, .. } = &mut ctx.typ_mut(uv).kind {
+            *kind = crate::code::type_::UndetVarKind::THROWS;
+        } else {
+            panic!("ClassCastException: not an UndetVar");
+        }
+    }
+
+    /// Java: private void notifyBoundChange(InferenceBound ib, Type bound,
+    /// boolean update)
+    fn undet_var_notify_bound_change(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        uv: TypeId,
+        ib: crate::code::type_::InferenceBound,
+        bound: TypeId,
+        update: bool,
+    ) {
+        let listener = match &ctx.typ(uv).kind {
+            TypeKindData::UndetVar { listener, .. } => listener.clone(),
+            _ => panic!("ClassCastException: not an UndetVar"),
+        };
+        if let Some(listener) = listener {
+            listener.var_bound_changed(ctx, syms, self, uv, ib, bound, update);
+        }
+    }
+
+    /// Java: public final void addBound(InferenceBound ib, Type bound,
+    /// Types types) (Type.java:2090-2110) — the public entry with the
+    /// mapCapturesToBounds rewriting.
+    pub fn undet_var_add_bound(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        uv: TypeId,
+        ib: crate::code::type_::InferenceBound,
+        bound: TypeId,
+        update: bool,
+    ) {
+        if self.map_captures_to_bounds && !update {
+            let mut bound = bound;
+            match ib {
+                crate::code::type_::InferenceBound::LOWER => {
+                    bound = self.cvar_upper_bound(ctx, bound);
+                }
+                crate::code::type_::InferenceBound::UPPER => {
+                    let alt_bound = cvar_lower_bound(ctx, bound);
+                    if !ctx.typ(alt_bound).has_tag(TypeTag::BOT) {
+                        bound = alt_bound;
+                    }
+                }
+                crate::code::type_::InferenceBound::EQ => {}
+            }
+            self.undet_var_add_bound_internal(ctx, syms, uv, ib, bound, update);
+        } else {
+            self.undet_var_add_bound_internal(ctx, syms, uv, ib, bound, update);
+        }
+    }
+
+    /// Java: private void addBound(InferenceBound ib, Type bound, Types types,
+    /// boolean update) (Type.java:2110-2143)
+    fn undet_var_add_bound_internal(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        uv: TypeId,
+        ib: crate::code::type_::InferenceBound,
+        bound: TypeId,
+        update: bool,
+    ) {
+        let kind = self.undet_var_kind(ctx, uv);
+        if kind == crate::code::type_::UndetVarKind::CAPTURED && !update {
+            // If the new incoming bound is itself a (regular) inference
+            // variable, then we are allowed to propagate this inference
+            // variable bounds to it.
+            if ctx.typ(bound).has_tag(TypeTag::UNDETVAR)
+                && !self.undet_var_is_captured(ctx, bound)
+            {
+                self.undet_var_add_bound_internal(
+                    ctx,
+                    syms,
+                    bound,
+                    ib.complement(),
+                    uv,
+                    false,
+                );
+            }
+            return;
+        }
+        let mapped = self.map_undet_vars_to_typevars(ctx, syms, bound);
+        let bound2 = self.base_type_of(ctx, mapped);
+        let qtype = self.undet_var_qtype(ctx, uv);
+        if bound == qtype {
+            return;
+        }
+        let prev_bounds = self.undet_var_get_bounds(ctx, uv, &[ib]);
+        let mut current = prev_bounds;
+        while current.non_empty() {
+            if self.is_same_type(ctx, syms, *current.head(), bound2) {
+                return;
+            }
+            current = current.tail();
+        }
+        let new_bounds = self
+            .undet_var_get_bounds(ctx, uv, &[ib])
+            .prepend(bound2);
+        self.undet_var_set_bounds(ctx, uv, ib, new_bounds);
+        self.undet_var_notify_bound_change(ctx, syms, uv, ib, bound2, false);
+    }
+
+    /// Java: TypeMapping toTypeVarMap (Type.java:2144-2151): replace every
+    /// UndetVar by its inst (or qtype) in a structural mapping.
+    fn map_undet_vars_to_typevars(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> TypeId {
+        let kind = ctx.typ(t).kind.clone();
+        let tsym_opt = ctx.typ(t).tsym;
+        match &kind {
+            TypeKindData::UndetVar { inst, qtype, .. } => inst.unwrap_or(*qtype),
+            TypeKindData::ClassType { .. }
+            | TypeKindData::ErasedClassType { .. }
+            | TypeKindData::UnionClassType { .. }
+            | TypeKindData::IntersectionClassType { .. } => {
+                let outer = get_enclosing_type(ctx, t);
+                let outer1 = outer.map(|outer| self.map_undet_vars_to_typevars(ctx, syms, outer));
+                let typarams = get_type_arguments(ctx, t);
+                let mut typarams1: List<TypeId> = List::nil();
+                let mut changed = false;
+                let mut current = typarams.clone();
+                while current.non_empty() {
+                    let arg = *current.head();
+                    let mapped = self.map_undet_vars_to_typevars(ctx, syms, arg);
+                    if mapped != arg {
+                        changed = true;
+                    }
+                    typarams1 = typarams1.append(mapped);
+                    current = current.tail();
+                }
+                let outer_changed = match (outer, outer1) {
+                    (Some(original), Some(mapped)) => original != mapped,
+                    _ => false,
+                };
+                if !changed && !outer_changed {
+                    t
+                } else {
+                    new_class_type(ctx, outer1, Some(typarams1), tsym_opt)
+                }
+            }
+            TypeKindData::ArrayType { elemtype } => {
+                let elemtype = elemtype.expect("array element type");
+                let elemtype1 = self.map_undet_vars_to_typevars(ctx, syms, elemtype);
+                if elemtype1 == elemtype {
+                    t
+                } else {
+                    new_array_type(ctx, elemtype1, tsym_opt)
+                }
+            }
+            TypeKindData::WildcardType { type_, kind, bound } => {
+                let Some(type_) = *type_ else {
+                    return t;
+                };
+                let type1 = self.map_undet_vars_to_typevars(ctx, syms, type_);
+                if type1 == type_ {
+                    t
+                } else {
+                    new_wildcard_type(ctx, Some(type1), *kind, tsym_opt, *bound)
+                }
+            }
+            TypeKindData::MethodType {
+                argtypes,
+                restype,
+                thrown,
+                ..
+            } => {
+                let argtypes1 = self.map_undet_vars_list(ctx, syms, argtypes.clone());
+                let restype1 = restype.map(|restype| self.map_undet_vars_to_typevars(ctx, syms, restype));
+                let thrown1 = self.map_undet_vars_list(ctx, syms, thrown.clone());
+                let changed = !list_same(argtypes, &argtypes1)
+                    || restype1 != *restype
+                    || !list_same(thrown, &thrown1);
+                if changed {
+                    new_method_type_2(ctx, argtypes1, restype1, thrown1, tsym_opt)
+                } else {
+                    t
+                }
+            }
+            TypeKindData::ForAll { tvars, qtype } => {
+                let qtype = qtype.expect("for-all qtype");
+                let qtype1 = self.map_undet_vars_to_typevars(ctx, syms, qtype);
+                if qtype1 == qtype {
+                    t
+                } else {
+                    ctx.alloc_type(Type::new(
+                        TypeTag::FORALL,
+                        tsym_opt,
+                        TypeKindData::ForAll {
+                            tvars: tvars.clone(),
+                            qtype: Some(qtype1),
+                        },
+                    ))
+                }
+            }
+            _ => t,
+        }
+    }
+
+    fn map_undet_vars_list(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ts: List<TypeId>,
+    ) -> List<TypeId> {
+        let mut result: List<TypeId> = List::nil();
+        let mut current = ts;
+        while current.non_empty() {
+            result = result.append(self.map_undet_vars_to_typevars(ctx, syms, *current.head()));
+            current = current.tail();
+        }
+        result
+    }
+
+    /// Java: UndetVar.baseType() (Type.java:2043-2048)
+    fn base_type_of(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
+        match &ctx.typ(t).kind {
+            TypeKindData::UndetVar { .. } => match self.undet_var_get_inst(ctx, t) {
+                Some(inst) => self.base_type_of(ctx, inst),
+                None => t,
+            },
+            _ => t,
+        }
+    }
+
+    /// Java: public UndetVar dup(Types types) (Type.java:2025-2030)
+    pub fn undet_var_dup(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        uv: TypeId,
+    ) -> TypeId {
+        let qtype = self.undet_var_qtype(ctx, uv);
+        let listener = match &ctx.typ(uv).kind {
+            TypeKindData::UndetVar { listener, .. } => listener.clone(),
+            _ => panic!("ClassCastException: not an UndetVar"),
+        };
+        let uv2 = self.undet_var_new(ctx, syms, qtype, listener);
+        self.undet_var_dup_to(ctx, syms, uv, uv2);
+        uv2
+    }
+
+    /// Java: public void dupTo(UndetVar uv2, Types types)
+    /// (Type.java:2032-2050)
+    pub fn undet_var_dup_to(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        uv: TypeId,
+        uv2: TypeId,
+    ) {
+        // uv2.listener = null
+        if let TypeKindData::UndetVar { listener, .. } = &mut ctx.typ_mut(uv2).kind {
+            *listener = None;
+        }
+        for ib in crate::code::type_::InferenceBound::values() {
+            self.undet_var_set_bounds(ctx, uv2, ib, List::nil());
+            let mut bounds = self.undet_var_get_bounds(ctx, uv, &[ib]);
+            while bounds.non_empty() {
+                self.undet_var_add_bound(ctx, syms, uv2, ib, *bounds.head(), true);
+                bounds = bounds.tail();
+            }
+        }
+        let inst = self.undet_var_get_inst(ctx, uv);
+        if let TypeKindData::UndetVar { inst: slot, .. } = &mut ctx.typ_mut(uv2).kind {
+            *slot = inst;
+        }
+        let listener = match &ctx.typ(uv).kind {
+            TypeKindData::UndetVar { listener, .. } => listener.clone(),
+            _ => panic!("ClassCastException: not an UndetVar"),
+        };
+        let kind = self.undet_var_kind(ctx, uv);
+        let actions = match &ctx.typ(uv).kind {
+            TypeKindData::UndetVar {
+                incorporation_actions,
+                ..
+            } => incorporation_actions.clone(),
+            _ => panic!("ClassCastException: not an UndetVar"),
+        };
+        let mut new_actions = std::collections::VecDeque::new();
+        for action in actions {
+            new_actions.push_back(action.dup(uv2));
+        }
+        if let TypeKindData::UndetVar {
+            listener: listener_slot,
+            incorporation_actions: actions_slot,
+            kind: kind_slot,
+            ..
+        } = &mut ctx.typ_mut(uv2).kind
+        {
+            *listener_slot = listener;
+            *actions_slot = new_actions;
+            *kind_slot = kind;
+        }
+    }
+
+    /// Java: public void substBounds(List<Type> from, List<Type> to,
+    /// Types types) (Type.java:2153-2190)
+    pub fn undet_var_subst_bounds(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        uv: TypeId,
+        from: &List<TypeId>,
+        to: &List<TypeId>,
+    ) {
+        let previous_listener = match &ctx.typ(uv).kind {
+            TypeKindData::UndetVar { listener, .. } => listener.clone(),
+            _ => panic!("ClassCastException: not an UndetVar"),
+        };
+        let recorder = std::rc::Rc::new(BoundsChangeRecorder::default());
+        if let TypeKindData::UndetVar { listener, .. } = &mut ctx.typ_mut(uv).kind {
+            *listener = Some(recorder.clone());
+        }
+        for ib in crate::code::type_::InferenceBound::values() {
+            let prev_bounds = self.undet_var_get_bounds(ctx, uv, &[ib]);
+            let mut new_bounds: List<TypeId> = List::nil();
+            let mut deps: Vec<TypeId> = Vec::new();
+            let mut current = prev_bounds;
+            while current.non_empty() {
+                let t = *current.head();
+                if !self.contains_any(ctx, syms, t, from) {
+                    new_bounds = new_bounds.append(t);
+                } else {
+                    deps.push(t);
+                }
+                current = current.tail();
+            }
+            self.undet_var_set_bounds(ctx, uv, ib, new_bounds);
+            for dep in deps {
+                let substituted = self.subst_type(ctx, syms, dep, from, to);
+                self.undet_var_add_bound(ctx, syms, uv, ib, substituted, true);
+            }
+        }
+        if let TypeKindData::UndetVar { listener, .. } = &mut ctx.typ_mut(uv).kind {
+            *listener = previous_listener;
+        }
+        let changes = recorder.changes.borrow().clone();
+        for (ib, bound) in changes {
+            self.undet_var_notify_bound_change(ctx, syms, uv, ib, bound, true);
+        }
+    }
+}
+
+/// The UndetVarListener used by UndetVar.substBounds to record bound changes
+/// (Type.java:2156-2160).
+#[derive(Default)]
+struct BoundsChangeRecorder {
+    changes: std::cell::RefCell<Vec<(crate::code::type_::InferenceBound, TypeId)>>,
+}
+
+impl crate::comp::infer::UndetVarListener for BoundsChangeRecorder {
+    fn var_bound_changed(
+        &self,
+        _ctx: &mut CompilerContext,
+        _syms: &Symtab,
+        _types: &Types,
+        _uv: TypeId,
+        ib: crate::code::type_::InferenceBound,
+        bound: TypeId,
+        _update: bool,
+    ) {
+        self.changes.borrow_mut().push((ib, bound));
+    }
+
+    fn var_instantiated(
+        &self,
+        _ctx: &mut CompilerContext,
+        _syms: &Symtab,
+        _types: &Types,
+        _uv: TypeId,
+    ) {
+        unimplemented!("TODO(Infer batch): BoundsChangeRecorder.varInstantiated");
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// Infer batch: the least-upper-bound machinery used by InferenceStep.LOWER
+// (Types.java:3792-3960/3988-4090: intersect/merge/compoundMin/
+// erasedSupertypes/lub). 
+// ---------------------------------------------------------------------------
+impl Types {
+    /// Java: public List<Type> intersect(List<Type> cl1, List<Type> cl2)
+    /// (Types.java:3811-3834)
+    pub fn intersect(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        cl1: List<TypeId>,
+        cl2: List<TypeId>,
+    ) -> List<TypeId> {
+        let mut merges: Vec<(TypeId, TypeId)> = Vec::new();
+        self.intersect_internal(ctx, syms, cl1, cl2, &mut merges)
+    }
+
+    fn intersect_internal(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        cl1: List<TypeId>,
+        cl2: List<TypeId>,
+        merges: &mut Vec<(TypeId, TypeId)>,
+    ) -> List<TypeId> {
+        if list_same(&cl1, &cl2) {
+            return cl1;
+        }
+        if cl1.is_empty() || cl2.is_empty() {
+            return List::nil();
+        }
+        let head1 = *cl1.head();
+        let head2 = *cl2.head();
+        let sym1 = ctx.typ(head1).tsym.expect("closure head symbol");
+        let sym2 = ctx.typ(head2).tsym.expect("closure head symbol");
+        if self.symbol_precedes(ctx, syms, sym1, sym2) {
+            return self.intersect_internal(ctx, syms, cl1.tail(), cl2, merges);
+        }
+        if self.symbol_precedes(ctx, syms, sym2, sym1) {
+            return self.intersect_internal(ctx, syms, cl1, cl2.tail(), merges);
+        }
+        if self.is_same_type(ctx, syms, head1, head2) {
+            return self
+                .intersect_internal(ctx, syms, cl1.tail(), cl2.tail(), merges)
+                .prepend(head1);
+        }
+        if sym1 == sym2
+            && ctx.typ(head1).has_tag(TypeTag::CLASS)
+            && ctx.typ(head2).has_tag(TypeTag::CLASS)
+        {
+            if is_parameterized_type(ctx, head1) && is_parameterized_type(ctx, head2) {
+                let merge = self.merge_types(ctx, syms, head1, head2, merges);
+                return self
+                    .intersect_internal(ctx, syms, cl1.tail(), cl2.tail(), merges)
+                    .prepend(merge);
+            }
+            if is_raw_type(ctx, head1) || is_raw_type(ctx, head2) {
+                let erased = self.erasure(ctx, syms, head1);
+                return self
+                    .intersect_internal(ctx, syms, cl1.tail(), cl2.tail(), merges)
+                    .prepend(erased);
+            }
+        }
+        self.intersect_internal(ctx, syms, cl1.tail(), cl2.tail(), merges)
+    }
+
+    /// Java: private Type merge(Type c1, Type c2) (Types.java:3864-3900)
+    fn merge_types(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        c1: TypeId,
+        c2: TypeId,
+        merges: &mut Vec<(TypeId, TypeId)>,
+    ) -> TypeId {
+        let act1 = get_type_arguments(ctx, c1);
+        let act2 = get_type_arguments(ctx, c2);
+        let c1_tsym = ctx.typ(c1).tsym.expect("class type symbol");
+        let typarams_type = ctx.sym(c1_tsym).ty.expect("class symbol type");
+        let mut typarams = get_type_arguments(ctx, typarams_type);
+        let mut merged: List<TypeId> = List::nil();
+        let mut act1 = act1;
+        let mut act2 = act2;
+        while act1.non_empty() && act2.non_empty() && typarams.non_empty() {
+            let a1 = *act1.head();
+            let a2 = *act2.head();
+            let m = if self.contains_type(ctx, syms, a1, a2) {
+                a1
+            } else if self.contains_type(ctx, syms, a2, a1) {
+                a2
+            } else {
+                let pair = (c1, c2);
+                let already = merges.iter().any(|(x, y)| {
+                    self.is_same_type(ctx, syms, *x, c1)
+                        && self.is_same_type(ctx, syms, *y, c2)
+                });
+                if !already {
+                    merges.push(pair);
+                    let upper1 = self.wild_upper_bound(ctx, syms, a1);
+                    let upper2 = self.wild_upper_bound(ctx, syms, a2);
+                    let lub = self.lub_pair(ctx, syms, upper1, upper2);
+                    merges.pop();
+                    ctx.alloc_type(crate::code::type_::Type::new(
+                        TypeTag::WILDCARD,
+                        Some(syms.bound_class),
+                        TypeKindData::WildcardType {
+                            type_: Some(lub),
+                            kind: crate::code::bound_kind::BoundKind::EXTENDS,
+                            bound: None,
+                        },
+                    ))
+                } else {
+                    ctx.alloc_type(crate::code::type_::Type::new(
+                        TypeTag::WILDCARD,
+                        Some(syms.bound_class),
+                        TypeKindData::WildcardType {
+                            type_: Some(syms.object_type),
+                            kind: crate::code::bound_kind::BoundKind::UNBOUND,
+                            bound: None,
+                        },
+                    ))
+                }
+            };
+            let formal = *typarams.head();
+            let with_var = with_type_var(ctx, m, formal);
+            merged = merged.append(with_var);
+            act1 = act1.tail();
+            act2 = act2.tail();
+            typarams = typarams.tail();
+        }
+        assert!(
+            act1.is_empty() && act2.is_empty() && typarams.is_empty(),
+            "AssertionError: merge arity"
+        );
+        let outer = get_enclosing_type(ctx, c1);
+        new_class_type(ctx, outer, Some(merged), Some(c1_tsym))
+    }
+
+    /// Java: private Type compoundMin(List<Type> cl) (Types.java:3902-3913)
+    fn compound_min(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        names: &crate::util::names::Names,
+        cl: List<TypeId>,
+    ) -> TypeId {
+        if cl.is_empty() {
+            return syms.object_type;
+        }
+        let compound = self.closure_min(ctx, syms, cl);
+        if compound.is_empty() {
+            panic!("AssertionError: compoundMin on an empty minimal closure");
+        } else if compound.tail().is_empty() {
+            *compound.head()
+        } else {
+            self.make_intersection_type(ctx, syms, names, compound, false)
+        }
+    }
+
+    /// Java: List<Type> erasedSupertypes(Type t) (Types.java:4040-4052)
+    fn erased_supertypes(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> List<TypeId> {
+        let mut result: List<TypeId> = List::nil();
+        let mut sup = self.closure(ctx, syms, t);
+        while sup.non_empty() {
+            let sup_t = *sup.head();
+            if ctx.typ(sup_t).has_tag(TypeTag::TYPEVAR) {
+                result = result.append(sup_t);
+            } else {
+                result = result.append(self.erasure(ctx, syms, sup_t));
+            }
+            sup = sup.tail();
+        }
+        result
+    }
+
+    /// Java: public Type lub(List<Type> ts) (Types.java:3957-3959)
+    pub fn lub_list(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        names: &crate::util::names::Names,
+        ts: List<TypeId>,
+    ) -> TypeId {
+        let mut args: Vec<TypeId> = Vec::new();
+        let mut current = ts;
+        while current.non_empty() {
+            args.push(*current.head());
+            current = current.tail();
+        }
+        self.lub(ctx, syms, names, &args)
+    }
+
+    /// Java: public Type lub(Type... ts) (Types.java:3965-4035)
+    pub fn lub(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        names: &crate::util::names::Names,
+        ts: &[TypeId],
+    ) -> TypeId {
+        const UNKNOWN_BOUND: i32 = 0;
+        const ARRAY_BOUND: i32 = 1;
+        const CLASS_BOUND: i32 = 2;
+        let mut kinds: Vec<i32> = vec![UNKNOWN_BOUND; ts.len()];
+        let mut boundkind = UNKNOWN_BOUND;
+        for (index, t) in ts.iter().enumerate() {
+            let mut t = *t;
+            match ctx.typ(t).get_tag() {
+                TypeTag::CLASS => {
+                    kinds[index] = CLASS_BOUND;
+                    boundkind |= CLASS_BOUND;
+                }
+                TypeTag::ARRAY => {
+                    kinds[index] = ARRAY_BOUND;
+                    boundkind |= ARRAY_BOUND;
+                }
+                TypeTag::TYPEVAR => {
+                    while ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
+                        t = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+                    }
+                    if ctx.typ(t).has_tag(TypeTag::ARRAY) {
+                        kinds[index] = ARRAY_BOUND;
+                        boundkind |= ARRAY_BOUND;
+                    } else {
+                        kinds[index] = CLASS_BOUND;
+                        boundkind |= CLASS_BOUND;
+                    }
+                }
+                _ => {
+                    kinds[index] = UNKNOWN_BOUND;
+                    if ctx.typ(t).is_primitive() {
+                        return syms.err_type;
+                    }
+                }
+            }
+        }
+        match boundkind {
+            0 => syms.bot_type,
+            ARRAY_BOUND => {
+                // calculate lub(A[], B[])
+                let mut elements: Vec<TypeId> = Vec::new();
+                for t in ts {
+                    let elem = elemtype_of(ctx, syms, *t);
+                    if ctx.typ(elem).is_primitive() {
+                        let first = ts[0];
+                        for other in &ts[1..] {
+                            if !self.is_same_type(ctx, syms, first, *other) {
+                                // lub(int[], B[]) is Cloneable & Serializable
+                                return self.array_super_type(ctx, syms);
+                            }
+                        }
+                        // all the array types are the same, return one
+                        return first;
+                    }
+                    elements.push(elem);
+                }
+                // lub(A[], B[]) is lub(A, B)[]
+                let lub = self.lub(ctx, syms, names, &elements);
+                new_array_type(ctx, lub, Some(syms.array_class))
+            }
+            CLASS_BOUND => {
+                // calculate lub(A, B)
+                let mut start_idx = 0;
+                for t in ts {
+                    if ctx.typ(*t).has_tag(TypeTag::CLASS)
+                        || ctx.typ(*t).has_tag(TypeTag::TYPEVAR)
+                    {
+                        break;
+                    }
+                    start_idx += 1;
+                }
+                assert!(start_idx < ts.len(), "AssertionError: lub startIdx");
+                // step 1 - compute erased candidate set (EC)
+                let mut cl = self.erased_supertypes(ctx, syms, ts[start_idx]);
+                for t in &ts[start_idx + 1..] {
+                    if ctx.typ(*t).has_tag(TypeTag::CLASS)
+                        || ctx.typ(*t).has_tag(TypeTag::TYPEVAR)
+                    {
+                        let erased = self.erased_supertypes(ctx, syms, *t);
+                        cl = self.intersect(ctx, syms, cl, erased);
+                    }
+                }
+                // step 2 - compute minimal erased candidate set (MEC)
+                let mec = self.closure_min(ctx, syms, cl);
+                // step 3 - for each element G in MEC, compute lci(Inv(G))
+                let mut candidates: List<TypeId> = List::nil();
+                let mut mec_current = mec;
+                while mec_current.non_empty() {
+                    let erased_supertype = *mec_current.head();
+                    let erased_tsym = ctx
+                        .typ(erased_supertype)
+                        .tsym
+                        .expect("erased supertype symbol");
+                    let mut lci: List<TypeId> = List::nil();
+                    if let Some(first) = self.as_super(ctx, syms, ts[start_idx], erased_tsym) {
+                        lci = List::of(first);
+                    }
+                    for t in &ts[start_idx + 1..] {
+                        let super_type = self.as_super(ctx, syms, *t, erased_tsym);
+                        let super_list = super_type.map(List::of).unwrap_or_else(List::nil);
+                        lci = self.intersect(ctx, syms, lci, super_list);
+                    }
+                    let mut lci_current = lci;
+                    while lci_current.non_empty() {
+                        candidates = candidates.append(*lci_current.head());
+                        lci_current = lci_current.tail();
+                    }
+                    mec_current = mec_current.tail();
+                }
+                // step 4 - let MEC be { G1, G2 ... Gn }, then we have that
+                // lub = lci(Inv(G1)) & lci(Inv(G2)) & ... & lci(Inv(Gn))
+                self.compound_min(ctx, syms, names, candidates)
+            }
+            _ => {
+                // calculate lub(A, B[])
+                let mut classes: List<TypeId> =
+                    List::of(self.array_super_type(ctx, syms));
+                for (index, t) in ts.iter().enumerate() {
+                    if kinds[index] != ARRAY_BOUND {
+                        // Filter out any arrays
+                        classes = classes.prepend(*t);
+                    }
+                }
+                // lub(A, B[]) is lub(A, arraySuperType)
+                self.lub_list(ctx, syms, names, classes)
+            }
+        }
+    }
+
+    /// Java: private Type lub(Type t, Type s) — the two-argument form used by
+    /// merge (a convenience over lub(Type...)).
+    fn lub_pair(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+    ) -> TypeId {
+        let names = self
+            .names
+            .clone()
+            .expect("TODO(Types batch): lub needs the Names service (Types::with_names)");
+        self.lub(ctx, syms, &names, &[t, s])
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// Infer batch: public wrappers used by comp/infer.rs (the UndetVar engine and
+// the Infer incorporation actions), and the closureCollector helper used by
+// Infer.CheckUpperBounds (Types.java:3738-3750).
+// ---------------------------------------------------------------------------
+impl Types {
+    /// Java: boolean isParameterized() view used by Infer.getParameterizedSupers.
+    pub fn is_parameterized_type_of(&self, ctx: &CompilerContext, t: TypeId) -> bool {
+        is_parameterized_type(ctx, t)
+    }
+
+    /// Java: Type.getTypeArguments() view used by Infer's ReachabilityVisitor.
+    pub fn get_type_arguments_public(
+        &self,
+        ctx: &CompilerContext,
+        t: TypeId,
+    ) -> List<TypeId> {
+        get_type_arguments(ctx, t)
+    }
+
+    /// Java: Type.isErroneous() view used by Infer.instantiateAsUninferredVars.
+    pub fn is_erroneous_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> bool {
+        self.is_erroneous(ctx, syms, t)
+    }
+
+    /// Java: public List<Type> getBounds(TypeVar t) — the public name used by
+    /// Infer.instantiateAsUninferredVars.
+    pub fn get_bounds_of_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> List<TypeId> {
+        self.get_bounds(ctx, syms, t)
+    }
+
+    /// The UndetVar incorporation action queue (upstream
+    /// UndetVar.incorporationActions); the engine mutates it through these
+    /// accessors because the type lives in the arena.
+    pub fn undet_var_actions(
+        &self,
+        ctx: &CompilerContext,
+        uv: TypeId,
+    ) -> Vec<crate::comp::infer::IncorporationAction> {
+        match &ctx.typ(uv).kind {
+            TypeKindData::UndetVar {
+                incorporation_actions,
+                ..
+            } => incorporation_actions.iter().cloned().collect(),
+            _ => panic!("ClassCastException: not an UndetVar"),
+        }
+    }
+
+    pub fn undet_var_add_actions(
+        &self,
+        ctx: &mut CompilerContext,
+        uv: TypeId,
+        actions: Vec<crate::comp::infer::IncorporationAction>,
+    ) {
+        if let TypeKindData::UndetVar {
+            incorporation_actions,
+            ..
+        } = &mut ctx.typ_mut(uv).kind
+        {
+            for action in actions {
+                incorporation_actions.push_back(action);
+            }
+        }
+    }
+
+    pub fn undet_var_add_action_front(
+        &self,
+        ctx: &mut CompilerContext,
+        uv: TypeId,
+        action: crate::comp::infer::IncorporationAction,
+    ) {
+        if let TypeKindData::UndetVar {
+            incorporation_actions,
+            ..
+        } = &mut ctx.typ_mut(uv).kind
+        {
+            incorporation_actions.push_front(action);
+        }
+    }
+
+    pub fn undet_var_pop_action(
+        &self,
+        ctx: &mut CompilerContext,
+        uv: TypeId,
+    ) -> Option<crate::comp::infer::IncorporationAction> {
+        match &mut ctx.typ_mut(uv).kind {
+            TypeKindData::UndetVar {
+                incorporation_actions,
+                ..
+            } => incorporation_actions.pop_front(),
+            _ => panic!("ClassCastException: not an UndetVar"),
+        }
+    }
+
+    /// Java: Collector closureCollector(true, types::isSameType) as used by
+    /// Infer.CheckUpperBounds (Types.java:3738-3750 + 922-925): merge the
+    /// closures of ts with the isSameType skip predicate and minimize.
+    pub fn closure_collect(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ts: List<TypeId>,
+    ) -> List<TypeId> {
+        let mut closure: List<TypeId> = List::nil();
+        let mut current = ts;
+        while current.non_empty() {
+            let t = *current.head();
+            let t_closure = self.closure(ctx, syms, t);
+            let mut c = t_closure;
+            while c.non_empty() {
+                let x = *c.head();
+                closure = self.closure_insert_same_type(ctx, syms, closure, x);
+                c = c.tail();
+            }
+            current = current.tail();
+        }
+        self.closure_min(ctx, syms, closure)
+    }
+
+    /// Java: closureCollector insert(cl, t, (t1,t2) -> isSameType(t1,t2)).
+    fn closure_insert_same_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        cl: List<TypeId>,
+        t: TypeId,
+    ) -> List<TypeId> {
+        if cl.is_empty() {
+            return cl.prepend(t);
+        }
+        let head = *cl.head();
+        if self.is_same_type(ctx, syms, t, head) {
+            return cl;
+        }
+        let t_tsym = ctx.typ(t).tsym.expect("closure type symbol");
+        let head_tsym = ctx.typ(head).tsym.expect("closure head symbol");
+        if self.symbol_precedes(ctx, syms, t_tsym, head_tsym) {
+            return cl.prepend(t);
+        }
+        self.closure_insert_same_type(ctx, syms, cl.tail(), t)
+            .prepend(head)
+    }
 }
 
 #[cfg(test)]

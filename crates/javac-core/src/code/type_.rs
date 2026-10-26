@@ -64,6 +64,66 @@
 //!   has no direct Rust mapping; needs a design decision);
 //! - Type.Visitor interface.
 
+/// Java: Type.UndetVar.Kind (NORMAL/CAPTURED/THROWS).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UndetVarKind {
+    NORMAL,
+    CAPTURED,
+    THROWS,
+}
+
+/// Java: Type.UndetVar.InferenceBound (inference variable bound kinds).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InferenceBound {
+    /// lower bounds
+    LOWER,
+    /// equality constraints
+    EQ,
+    /// upper bounds
+    UPPER,
+}
+
+impl InferenceBound {
+    /// Java: public InferenceBound complement()
+    pub fn complement(self) -> InferenceBound {
+        match self {
+            InferenceBound::LOWER => InferenceBound::UPPER,
+            InferenceBound::EQ => InferenceBound::EQ,
+            InferenceBound::UPPER => InferenceBound::LOWER,
+        }
+    }
+
+    /// Java: public boolean lessThan(InferenceBound that)
+    pub fn less_than(self, that: InferenceBound) -> bool {
+        if that == self {
+            return false;
+        }
+        match that {
+            InferenceBound::UPPER => true,
+            InferenceBound::LOWER => false,
+            InferenceBound::EQ => self != InferenceBound::UPPER,
+        }
+    }
+
+    /// Java: EnumMap ordinal order (the declaration order).
+    pub fn ordinal(self) -> usize {
+        match self {
+            InferenceBound::LOWER => 0,
+            InferenceBound::EQ => 1,
+            InferenceBound::UPPER => 2,
+        }
+    }
+
+    /// Java: InferenceBound.values()
+    pub fn values() -> [InferenceBound; 3] {
+        [
+            InferenceBound::LOWER,
+            InferenceBound::EQ,
+            InferenceBound::UPPER,
+        ]
+    }
+}
+
 use crate::code::bound_kind::BoundKind;
 use crate::code::type_tag::TypeTag;
 use crate::ids::{SymbolId, TypeId};
@@ -205,7 +265,9 @@ impl Type {
     pub fn is_partial(&self) -> bool {
         matches!(
             &self.kind,
-            TypeKindData::ErrorType { .. } | TypeKindData::UnknownType
+            TypeKindData::ErrorType { .. }
+                | TypeKindData::UnknownType
+                | TypeKindData::UndetVar { .. }
         )
     }
 
@@ -530,6 +592,24 @@ pub enum TypeKindData {
     },
     /// Java: Type.UnknownType
     UnknownType,
+    /// Java: Type.UndetVar (an inference variable; DelegatedType with qtype)
+    UndetVar {
+        /// The original type variable (DelegatedType.qtype).
+        qtype: TypeId,
+        /// The inference variable's inferred type (inst; null while uninstantiated).
+        inst: Option<TypeId>,
+        /// The inference variable's bounds, indexed by InferenceBound ordinal
+        /// (upstream EnumMap<InferenceBound, List<Type>>: LOWER/EQ/UPPER).
+        bounds: [List<TypeId>; 3],
+        /// The number of declared (upper) bounds.
+        declared_count: usize,
+        /// The inference variable kind (upstream UndetVar.Kind).
+        kind: UndetVarKind,
+        /// The inference variable's change listener.
+        listener: Option<std::rc::Rc<dyn crate::comp::infer::UndetVarListener>>,
+        /// The list of incorporation actions (used by the incorporation engine).
+        incorporation_actions: std::collections::VecDeque<crate::comp::infer::IncorporationAction>,
+    },
 }
 
 
