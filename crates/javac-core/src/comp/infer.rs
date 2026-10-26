@@ -3787,6 +3787,128 @@ impl Infer {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Batch 5: Infer.instantiateFunctionalInterface (Infer.java:633-690), needed
+// by Attr.getTargetInfo (functional interface target typing). §9: explicit
+// ctx/syms/diags/chk/pos parameters per ADR 0001; Java's unchecked
+// FunctionDescriptorLookupError is propagated as a panic (it is a RuntimeException
+// upstream and is never caught inside this method).
+// ---------------------------------------------------------------------------
+impl Infer {
+    /// Java: public Type instantiateFunctionalInterface(DiagnosticPosition pos,
+    /// Type funcInterface, List<Type> paramTypes, Check.CheckContext checkContext)
+    /// (Infer.java:633-690)
+    #[allow(clippy::too_many_arguments)]
+    pub fn instantiate_functional_interface(
+        self: &Rc<Self>,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        diags: &crate::util::jc_diagnostic::Factory,
+        chk: &crate::comp::check::Check,
+        pos: i32,
+        func_interface: TypeId,
+        param_types: List<TypeId>,
+        check_context: &Rc<dyn crate::comp::check::CheckContext>,
+    ) -> Result<TypeId, crate::code::types::FunctionDescriptorLookupError> {
+        use crate::util::jc_diagnostic::Fragment;
+        // Java: checkContext.report(pos, diags.fragment(...)) — inlined at each
+        // call site (the FragmentInfo type is module-private, so a closure type
+        // annotation is not expressible; §9 adapter, no behavior change).
+        macro_rules! report_fragment {
+            ($ctx:expr, $fragment:expr) => {{
+                let diag = diags.fragment(Fragment::from($fragment));
+                check_context.report($ctx, pos, &diag);
+            }};
+        }
+        if types.capture(ctx, syms, func_interface) == func_interface {
+            // if capture doesn't change the type then return the target unchanged
+            // (this means the target contains no wildcards!)
+            return Ok(func_interface);
+        }
+        let tsym = ctx.typ(func_interface).tsym.expect("funcInterface tsym");
+        let formal_interface = ctx.sym(tsym).ty.expect("funcInterface tsym type");
+        let typeargs = crate::code::types::get_type_arguments(ctx, formal_interface);
+        let func_interface_context = crate::comp::infer::InferenceContext::new(
+            Rc::clone(self),
+            ctx,
+            syms,
+            types,
+            typeargs,
+        );
+        // Assert.check(paramTypes != null)
+        let mut param_types = param_types;
+        // Java: types.findDescriptorType(formalInterface) — an upstream
+        // FunctionDescriptorLookupError is an unchecked exception that this
+        // method does not catch; the port returns it as Err (§9).
+        let descriptor = types.find_descriptor_type(ctx, syms, diags, chk, formal_interface)?;
+        let desc_parameter_types = types.get_parameter_types_public(ctx, descriptor);
+        if desc_parameter_types.length() != param_types.length() {
+            report_fragment!(
+                ctx,
+                crate::resources::compiler_properties::fragments::incompatible_arg_types_in_lambda()
+            );
+            return Ok(types.create_error_type_original(ctx, Some(func_interface), syms));
+        }
+        for p in desc_parameter_types.iter() {
+            let undet = func_interface_context.as_undet_var(ctx, syms, types, p);
+            if !types.is_same_type(ctx, syms, undet, *param_types.head()) {
+                report_fragment!(
+                    ctx,
+                    crate::resources::compiler_properties::fragments::no_suitable_functional_intf_inst(
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, func_interface),
+                        )
+                    )
+                );
+                return Ok(types.create_error_type_original(ctx, Some(func_interface), syms));
+            }
+            param_types = param_types.tail();
+        }
+        let mut actual_typeargs = crate::code::types::get_type_arguments(ctx, func_interface);
+        let formal_typeargs = crate::code::types::get_type_arguments(ctx, formal_interface);
+        let undetvars = {
+            let state = func_interface_context.inner.borrow();
+            state.undetvars.clone()
+        };
+        for undet in undetvars.iter() {
+            let bounds = types.undet_var_get_bounds(
+                ctx,
+                undet,
+                &[crate::code::type_::InferenceBound::EQ],
+            );
+            let mut inst: Option<TypeId> = None;
+            for b in bounds.iter() {
+                let contains_formal = types.contains_any(ctx, syms, b, &formal_typeargs);
+                if !contains_formal {
+                    inst = Some(b);
+                    break;
+                }
+            }
+            let inst = inst.unwrap_or(*actual_typeargs.head());
+            types.undet_var_set_inst(ctx, syms, undet, inst);
+            actual_typeargs = actual_typeargs.tail();
+        }
+        let owntype = func_interface_context.as_inst_type(ctx, syms, types, formal_interface);
+        if !chk.check_valid_generic_type(ctx, syms, owntype) {
+            // if the inferred functional interface type is not well-formed, or if
+            // it's not a subtype of the original target, issue an error
+            report_fragment!(
+                ctx,
+                crate::resources::compiler_properties::fragments::no_suitable_functional_intf_inst(
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                        crate::comp::attr::type_display_of(ctx, func_interface),
+                    )
+                )
+            );
+        }
+        // propagate constraints as per JLS 18.2.1
+        let mut no_warnings = crate::util::warner::Warner::new(None);
+        let _ = check_context.compatible(ctx, syms, types, owntype, func_interface, &mut no_warnings);
+        Ok(owntype)
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::collapsible_if, clippy::blocks_in_conditions)]
 mod tests {
@@ -4179,3 +4301,4 @@ mod tests {
     }
 
 }
+

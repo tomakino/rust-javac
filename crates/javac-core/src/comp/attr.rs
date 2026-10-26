@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 // Origin: com/sun/tools/javac/comp/Attr.java @ 982d53c (jdk-17.0.19-ga)
 //
 // Attr batch A (structure + type/identifier/expression entry points).
@@ -2160,6 +2161,714 @@ fn class_tree_symbol(ctx: &CompilerContext, tree: TreeId) -> Option<SymbolId> {
         _ => None,
     }
 }
+// ---------------------------------------------------------------------------
+// Batch 5: Attr API subset used by ArgumentAttr/DeferredAttr (Attr.java:
+// conditionalContext 2092-2106, diamondContext 3007-3016, FunctionalReturn
+// context 3380-3435, lambdaBodyResult 3438-3453, checkLambdaCompatible
+// 3455-3480). §9 registered adapters: the anonymous Java CheckContext
+// subclasses are named structs; the explicit ctx/syms parameters follow
+// ADR 0001.
+// ---------------------------------------------------------------------------
+
+/// Java: Attr.conditionalContext(CheckContext) (Attr.java:2092-2106)
+pub struct ConditionalCheckContext {
+    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
+    pub diags: Rc<crate::util::jc_diagnostic::Factory>,
+}
+
+impl crate::comp::check::CheckContext for ConditionalCheckContext {
+    fn compatible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        found: TypeId,
+        req: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        self.enclosing.compatible(ctx, syms, types, found, req, warn)
+    }
+
+    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+        // Java: enclosingContext.report(pos,
+        //   diags.fragment(Fragments.IncompatibleTypeInConditional(details)));
+        let message = details.get_message(None);
+        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+            crate::resources::compiler_properties::fragments::incompatible_type_in_conditional(
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                    message.to_string(),
+                ),
+            ),
+        ));
+        self.enclosing.report(ctx, pos, &fragment);
+    }
+
+    fn check_warner(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> crate::util::warner::Warner {
+        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+    }
+
+    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
+        self.enclosing.inference_context()
+    }
+
+    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
+        self.enclosing.deferred_attr_context()
+    }
+}
+
+/// Java: Attr.diamondContext(JCNewClass, TypeSymbol, CheckContext)
+/// (Attr.java:3007-3016)
+pub struct DiamondCheckContext {
+    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
+    pub diags: Rc<crate::util::jc_diagnostic::Factory>,
+    pub clazz: TreeId,
+    pub tsym: SymbolId,
+}
+
+impl crate::comp::check::CheckContext for DiamondCheckContext {
+    fn compatible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        found: TypeId,
+        req: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        self.enclosing.compatible(ctx, syms, types, found, req, warn)
+    }
+
+    fn report(&self, ctx: &mut CompilerContext, _pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+        // Java: enclosingContext.report(clazz.clazz,
+        //   diags.fragment(Fragments.CantApplyDiamond1(Fragments.Diamond(tsym), details)));
+        let diamond_text = {
+            let sym = ctx.sym(self.tsym);
+            let display = crate::code::kinds::kind_name(sym, ctx);
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::diamond(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(display.to_string()),
+                ),
+            ));
+            fragment.get_message(None).to_string()
+        };
+        let message = details.get_message(None);
+        let key = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+            crate::resources::compiler_properties::fragments::cant_apply_diamond1(
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(diamond_text),
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                    message.to_string(),
+                ),
+            ),
+        ));
+        let clazz_pos = ctx.tree(self.clazz).pos;
+        self.enclosing.report(ctx, clazz_pos, &key);
+    }
+
+    fn check_warner(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> crate::util::warner::Warner {
+        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+    }
+
+    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
+        self.enclosing.inference_context()
+    }
+
+    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
+        self.enclosing.deferred_attr_context()
+    }
+}
+
+/// Java: Attr.FunctionalReturnContext (Attr.java:3394-3411)
+pub struct FunctionalReturnContext {
+    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
+    pub basic_handler: Rc<dyn crate::comp::check::CheckContext>,
+    pub diags: Rc<crate::util::jc_diagnostic::Factory>,
+}
+
+impl crate::comp::check::CheckContext for FunctionalReturnContext {
+    fn compatible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        found: TypeId,
+        req: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        // Java: chk.basicHandler.compatible(inferenceContext().asUndetVar(found),
+        //   inferenceContext().asUndetVar(req), warn)
+        let inference_context = Rc::clone(self.enclosing.inference_context());
+        let found = inference_context.as_undet_var(ctx, syms, types, found);
+        let req = inference_context.as_undet_var(ctx, syms, types, req);
+        self.basic_handler.compatible(ctx, syms, types, found, req, warn)
+    }
+
+    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+        // Java: enclosingContext.report(pos,
+        //   diags.fragment(Fragments.IncompatibleRetTypeInLambda(details)));
+        let message = details.get_message(None);
+        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+            crate::resources::compiler_properties::fragments::incompatible_ret_type_in_lambda(
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                    message.to_string(),
+                ),
+            ),
+        ));
+        self.enclosing.report(ctx, pos, &fragment);
+    }
+
+    fn check_warner(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> crate::util::warner::Warner {
+        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+    }
+
+    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
+        self.enclosing.inference_context()
+    }
+
+    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
+        self.enclosing.deferred_attr_context()
+    }
+}
+
+/// Java: Attr.ExpressionLambdaReturnContext (Attr.java:3413-3435)
+pub struct ExpressionLambdaReturnContext {
+    pub base: FunctionalReturnContext,
+    pub expr: TreeId,
+    pub exp_stmt_expected: std::cell::Cell<bool>,
+}
+
+impl crate::comp::check::CheckContext for ExpressionLambdaReturnContext {
+    fn compatible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        found: TypeId,
+        req: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        // Java: if (req.hasTag(VOID)) { expStmtExpected = true;
+        //          return TreeInfo.isExpressionStatement(expr); }
+        //        else return super.compatible(found, req, warn);
+        if ctx.typ(req).has_tag(crate::code::type_tag::TypeTag::VOID) {
+            self.exp_stmt_expected.set(true);
+            return crate::tree::tree_info::is_expression_statement(ctx, self.expr);
+        }
+        self.base.compatible(ctx, syms, types, found, req, warn)
+    }
+
+    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+        // Java: if (expStmtExpected) enclosingContext.report(pos,
+        //          diags.fragment(Fragments.StatExprExpected));
+        //        else super.report(pos, details);
+        if self.exp_stmt_expected.get() {
+            let fragment = self.base.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::stat_expr_expected(),
+            ));
+            self.base.enclosing.report(ctx, pos, &fragment);
+        } else {
+            self.base.report(ctx, pos, details);
+        }
+    }
+
+    fn check_warner(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> crate::util::warner::Warner {
+        self.base.check_warner(ctx, syms, types, pos, found, req)
+    }
+
+    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
+        self.base.inference_context()
+    }
+
+    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
+        self.base.deferred_attr_context()
+    }
+}
+
+impl Attr {
+    /// Java: CheckContext conditionalContext(CheckContext checkContext)
+    /// (Attr.java:2092-2106)
+    pub fn conditional_context(&self) -> Rc<dyn crate::comp::check::CheckContext> {
+        Rc::new(ConditionalCheckContext {
+            enclosing: Rc::clone(&self.basic_handler),
+            diags: Rc::clone(&self.diags),
+        })
+    }
+
+    /// Java: CheckContext diamondContext(JCNewClass clazz, TypeSymbol tsym,
+    /// CheckContext checkContext) (Attr.java:3007-3016)
+    pub fn diamond_context(
+        &self,
+        clazz: TreeId,
+        tsym: SymbolId,
+    ) -> Rc<dyn crate::comp::check::CheckContext> {
+        Rc::new(DiamondCheckContext {
+            enclosing: Rc::clone(&self.basic_handler),
+            diags: Rc::clone(&self.diags),
+            clazz,
+            tsym,
+        })
+    }
+
+    /// Java: ResultInfo lambdaBodyResult(JCLambda that, Type descriptor,
+    /// ResultInfo resultInfo) (Attr.java:3438-3453)
+    pub fn lambda_body_result(
+        &self,
+        ctx: &mut CompilerContext,
+        that: TreeId,
+        descriptor: TypeId,
+        result_info: &ResultInfo,
+    ) -> ResultInfo {
+        let (body, body_is_expression) = match &ctx.tree(that).kind {
+            TreeKind::Lambda { body, .. } => {
+                let body = body.expect("lambda body");
+                // Java: that.getBodyKind() == EXPRESSION (JCLambda.getBodyKind
+                // returns STATEMENT iff body.hasTag(BLOCK)).
+                (body, ctx.tree(body).tag != Tag::BLOCK)
+            }
+            _ => panic!("ClassCastException: JCLambda expected"),
+        };
+        let func_context: Rc<dyn crate::comp::check::CheckContext> = if body_is_expression {
+            Rc::new(ExpressionLambdaReturnContext {
+                base: FunctionalReturnContext {
+                    enclosing: Rc::clone(&result_info.check_context),
+                    basic_handler: Rc::clone(&self.basic_handler),
+                    diags: Rc::clone(&self.diags),
+                },
+                expr: body,
+                exp_stmt_expected: std::cell::Cell::new(false),
+            })
+        } else {
+            Rc::new(FunctionalReturnContext {
+                enclosing: Rc::clone(&result_info.check_context),
+                basic_handler: Rc::clone(&self.basic_handler),
+                diags: Rc::clone(&self.diags),
+            })
+        };
+        let return_type = self
+            .types
+            .get_return_type_public(ctx, descriptor);
+        if Some(return_type) == Some(self.syms.borrow().recovery_type) {
+            // Java: descriptor.getReturnType() == Type.recoveryType ? recoveryInfo: ...
+            self.recovery_info.clone()
+        } else {
+            ResultInfo::new(KindSelector::VAL, Some(return_type), func_context)
+        }
+    }
+
+    /// Java: void checkLambdaCompatible(JCLambda tree, Type descriptor,
+    /// CheckContext checkContext) (Attr.java:3455-3480)
+    pub fn check_lambda_compatible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        tree: TreeId,
+        descriptor: TypeId,
+        check_context: &Rc<dyn crate::comp::check::CheckContext>,
+    ) {
+        let inference_context = Rc::clone(check_context.inference_context());
+        let return_type = inference_context.as_undet_var(
+            ctx,
+            syms,
+            &self.types,
+            self.types.get_return_type_public(ctx, descriptor),
+        );
+        let (body, _body_is_expression) = match &ctx.tree(tree).kind {
+            TreeKind::Lambda { body, .. } => (
+                body,
+                body.map(|body| ctx.tree(body).tag != Tag::BLOCK)
+                    .unwrap_or(false),
+            ),
+            _ => panic!("ClassCastException: JCLambda expected"),
+        };
+        let can_complete_normally = match &ctx.tree(tree).kind {
+            TreeKind::Lambda {
+                can_complete_normally,
+                ..
+            } => *can_complete_normally,
+            _ => panic!("ClassCastException: JCLambda expected"),
+        };
+        let return_type_is_void =
+            ctx.typ(return_type).has_tag(crate::code::type_tag::TypeTag::VOID);
+        let return_type_is_recovery = return_type == self.syms.borrow().recovery_type;
+        let body_is_statement = body
+            .map(|body| ctx.tree(body).tag == Tag::BLOCK)
+            .unwrap_or(true);
+        if body_is_statement && can_complete_normally && !return_type_is_void && !return_type_is_recovery {
+            let missing = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::missing_ret_val(
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                        type_display(ctx, return_type),
+                    ),
+                ),
+            ));
+            let message = missing.get_message(None);
+            let outer = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::incompatible_ret_type_in_lambda(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        message.to_string(),
+                    ),
+                ),
+            ));
+            check_context.report(ctx, ctx.tree(tree).pos, &outer);
+        }
+        let arg_types = inference_context.as_undet_vars(
+            ctx,
+            syms,
+            &self.types,
+            self.types.get_parameter_types_public(ctx, descriptor),
+        );
+        let param_trees = match &ctx.tree(tree).kind {
+            TreeKind::Lambda { params, .. } => params.clone(),
+            _ => panic!("ClassCastException: JCLambda expected"),
+        };
+        let tree_types = crate::tree::tree_info::types(ctx, &param_trees);
+        let mut same = arg_types.length() == tree_types.length();
+        if same {
+            let mut a = arg_types;
+            let mut b = tree_types;
+            while a.non_empty() {
+                let at = *a.head();
+                let bt = *b.head();
+                if bt != Some(at) {
+                    same = false;
+                    break;
+                }
+                a = a.tail();
+                b = b.tail();
+            }
+        }
+        if !same {
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::incompatible_arg_types_in_lambda(),
+            ));
+            check_context.report(ctx, ctx.tree(tree).pos, &fragment);
+        }
+    }
+}
+
+/// Java: Attr.TargetInfo (Attr.java:3230-3238)
+pub struct TargetInfo {
+    pub target: TypeId,
+    pub descriptor: TypeId,
+}
+
+impl Attr {
+    /// Java: TargetInfo getTargetInfo(JCPolyExpression that, ResultInfo
+    /// resultInfo, List<Type> explicitParamTypes) (Attr.java:3240-3295) —
+    /// §9: explicit ctx/syms parameters; the upstream unchecked
+    /// FunctionDescriptorLookupError is returned as Err.
+    pub fn get_target_info(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        that: TreeId,
+        result_info: &ResultInfo,
+        explicit_param_types: Option<List<TypeId>>,
+    ) -> Result<TargetInfo, crate::code::types::FunctionDescriptorLookupError> {
+        use crate::code::type_tag::TypeTag;
+        let recovery_type = self.syms.borrow().recovery_type;
+        let mut current_target = result_info.pt.expect("resultInfo.pt");
+        let lambda_type;
+        if Some(current_target) != Some(recovery_type) {
+            // We need to adjust the target. If the target is an intersection
+            // type, for example: SAM & I1 & I2 ... the target will be updated
+            // to SAM.
+            current_target = self.target_checker(ctx, syms, current_target, ctx.tree(that).pos)?;
+            if !ctx.typ(current_target).is_intersection() {
+                if let Some(explicit) = &explicit_param_types {
+                    let chk = self.chk.borrow();
+                    current_target = self.infer.instantiate_functional_interface(
+                        ctx,
+                        syms,
+                        &self.types,
+                        &self.diags,
+                        &chk,
+                        ctx.tree(that).pos,
+                        current_target,
+                        explicit.clone(),
+                        &result_info.check_context,
+                    )?;
+                }
+                current_target = self.types.remove_wildcards(ctx, syms, current_target);
+                let chk = self.chk.borrow();
+                lambda_type = self
+                    .types
+                    .find_descriptor_type(ctx, syms, &self.diags, &chk, current_target)?;
+            } else {
+                let mut components: List<TypeId> = List::nil();
+                let explicit_components = ctx.typ(current_target).get_explicit_components();
+                for bound in explicit_components.iter() {
+                    let mut bound = bound;
+                    if let Some(explicit) = &explicit_param_types {
+                        // Java: try { bound = infer.instantiateFunctionalInterface(that,
+                        //     bound, explicitParamTypes, resultInfo.checkContext); }
+                        //     catch (FunctionDescriptorLookupError t) { /* do nothing */ }
+                        let chk = self.chk.borrow();
+                        if let Ok(instantiated) = self.infer.instantiate_functional_interface(
+                            ctx,
+                            syms,
+                            &self.types,
+                            &self.diags,
+                            &chk,
+                            ctx.tree(that).pos,
+                            bound,
+                            explicit.clone(),
+                            &result_info.check_context,
+                        ) {
+                            bound = instantiated;
+                        }
+                    }
+                    bound = self.types.remove_wildcards(ctx, syms, bound);
+                    components = components.append(bound);
+                }
+                current_target =
+                    self.types
+                        .make_intersection_type(ctx, syms, &self.names, components, false);
+                // Java: currentTarget.tsym.flags_field |= INTERFACE;
+                let tsym = ctx
+                    .typ(current_target)
+                    .tsym
+                    .expect("intersection type tsym");
+                let interface_flag = crate::code::flags::INTERFACE as i64;
+                ctx.sym_mut(tsym).flags_field |= interface_flag;
+                let chk = self.chk.borrow();
+                lambda_type = self
+                    .types
+                    .find_descriptor_type(ctx, syms, &self.diags, &chk, current_target)?;
+            }
+        } else {
+            current_target = recovery_type;
+            lambda_type = self.fallback_descriptor_type(ctx, syms, that);
+        }
+        if ctx.tree(that).tag == Tag::LAMBDA && ctx.typ(lambda_type).has_tag(TypeTag::FORALL) {
+            // lambda expression target desc cannot be a generic method
+            let kind = crate::code::kinds::kind_name(ctx.sym(ctx.typ(current_target).tsym.expect("currentTarget tsym")), ctx);
+            let sym = ctx.typ(current_target).tsym.expect("currentTarget tsym");
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::invalid_generic_lambda_target(
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(type_display(ctx, lambda_type)),
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        crate::comp::resolve::symbol_display_name(ctx, sym),
+                    ),
+                ),
+            ));
+            result_info
+                .check_context
+                .report(ctx, ctx.tree(that).pos, &fragment);
+            current_target =
+                self.types
+                    .create_error_type_original(ctx, result_info.pt, &self.syms.borrow());
+        }
+        Ok(TargetInfo {
+            target: current_target,
+            descriptor: lambda_type,
+        })
+    }
+
+    /// Java: Types.MapVisitor<DiagnosticPosition> targetChecker (Attr.java:
+    /// 3315-3348): visitClassType => intersection ? visitIntersectionClassType
+    /// : t; visitIntersectionClassType validates the notional interface through
+    /// findDescriptorSymbol and returns the intersection unchanged.
+    fn target_checker(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+        pos: i32,
+    ) -> Result<TypeId, crate::code::types::FunctionDescriptorLookupError> {
+        if !ctx.typ(t).is_intersection() {
+            return Ok(t);
+        }
+        let notional = self.make_notional_interface(ctx, syms, t, pos);
+        let chk = self.chk.borrow();
+        self.types
+            .find_descriptor_symbol(ctx, syms, &self.diags, &chk, notional)?;
+        Ok(t)
+    }
+
+    /// Java: private TypeSymbol makeNotionalInterface(IntersectionClassType ict,
+    /// DiagnosticPosition pos) (Attr.java:3322-3338)
+    fn make_notional_interface(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        ict: TypeId,
+        _pos: i32,
+    ) -> SymbolId {
+        let interfaces = match &ctx.typ(ict).kind {
+            crate::code::type_::TypeKindData::IntersectionClassType {
+                interfaces_field, ..
+            } => interfaces_field.clone().expect("intersection type has no interfaces"),
+            _ => panic!("ClassCastException: IntersectionClassType expected"),
+        };
+        let mut targs: List<TypeId> = List::nil();
+        let mut supertypes: List<TypeId> = List::nil();
+        for i in interfaces.iter() {
+            if self.types.is_parameterized_type_of(ctx, i) {
+                let i_tsym = ctx.typ(i).tsym.expect("interface tsym");
+                let i_tsym_type = ctx.sym(i_tsym).ty.expect("interface tsym type");
+                let mut params = crate::code::types::allparams_of(ctx, i_tsym_type);
+                while params.non_empty() {
+                    targs = targs.append(*params.head());
+                    params = params.tail();
+                }
+            }
+            let i_tsym = ctx.typ(i).tsym.expect("interface tsym");
+            let i_tsym_type = ctx.sym(i_tsym).ty.expect("interface tsym type");
+            supertypes = supertypes.append(i_tsym_type);
+        }
+        let notional = self
+            .types
+            .make_intersection_type(ctx, syms, &self.names, supertypes, false);
+        if let crate::code::type_::TypeKindData::IntersectionClassType {
+            allparams_field, ..
+        } = &mut ctx.typ_mut(notional).kind
+        {
+            *allparams_field = Some(targs);
+        }
+        let notional_tsym = ctx.typ(notional).tsym.expect("notional interface tsym");
+        ctx.sym_mut(notional_tsym).flags_field |= crate::code::flags::INTERFACE as i64;
+        notional_tsym
+    }
+
+    /// Java: private Type fallbackDescriptorType(JCExpression tree)
+    /// (Attr.java:3350-3372)
+    fn fallback_descriptor_type(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> TypeId {
+        match ctx.tree(tree).tag {
+            Tag::LAMBDA => {
+                let params = match &ctx.tree(tree).kind {
+                    TreeKind::Lambda { params, .. } => params.clone(),
+                    _ => panic!("ClassCastException: JCLambda expected"),
+                };
+                let mut argtypes: List<TypeId> = List::nil();
+                for param in params.iter() {
+                    let vartype = match &ctx.tree(param).kind {
+                        TreeKind::VariableDecl { vartype, .. } => *vartype,
+                        _ => panic!("ClassCastException: JCVariableDecl expected"),
+                    };
+                    let argtype = match vartype {
+                        Some(vartype) => match ctx.tree(vartype).ty {
+                            Some(ty) => ty,
+                            None => syms.err_type,
+                        },
+                        None => syms.err_type,
+                    };
+                    argtypes = argtypes.append(argtype);
+                }
+                let recovery_type = syms.recovery_type;
+                let ty = crate::code::type_::Type::new_method_type(
+                    argtypes,
+                    recovery_type,
+                    List::of(syms.throwable_type),
+                    syms.method_class,
+                );
+                ctx.alloc_type(ty)
+            }
+            Tag::REFERENCE => {
+                let recovery_type = syms.recovery_type;
+                let ty = crate::code::type_::Type::new_method_type(
+                    List::nil(),
+                    recovery_type,
+                    List::of(syms.throwable_type),
+                    syms.method_class,
+                );
+                ctx.alloc_type(ty)
+            }
+            _ => panic!("AssertionError: Cannot get here!"),
+        }
+    }
+}
+
+/// Batch 5 helper: diagnostic display text of a type for the Infer/Attr
+/// adapter argument placeholders (§9, the type printer batch is pending).
+pub(crate) fn type_display_of(ctx: &CompilerContext, t: TypeId) -> String {
+    type_display(ctx, t)
+}
+
+/// Java: Attr.RecoveryInfo's anonymous CheckContext (Attr.java:598-620): a
+/// NestedCheckContext whose deferredAttrContext is the empty deferred context.
+/// Registered §9: the anonymous subclass is a named struct.
+pub struct RecoveryCheckContext {
+    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
+    pub deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
+}
+
+impl crate::comp::check::CheckContext for RecoveryCheckContext {
+    fn compatible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        found: TypeId,
+        req: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        self.enclosing.compatible(ctx, syms, types, found, req, warn)
+    }
+
+    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+        self.enclosing.report(ctx, pos, details);
+    }
+
+    fn check_warner(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> crate::util::warner::Warner {
+        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+    }
+
+    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
+        self.enclosing.inference_context()
+    }
+
+    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
+        &self.deferred_attr_context
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3380,48 +4089,3 @@ class Sample {
 
 }
 
-/// Java: Attr.RecoveryInfo's anonymous CheckContext (Attr.java:598-620): a
-/// NestedCheckContext whose deferredAttrContext is the empty deferred context.
-/// Registered §9: the anonymous subclass is a named struct.
-pub struct RecoveryCheckContext {
-    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
-    pub deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
-}
-
-impl crate::comp::check::CheckContext for RecoveryCheckContext {
-    fn compatible(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        types: &Types,
-        found: TypeId,
-        req: TypeId,
-        warn: &mut crate::util::warner::Warner,
-    ) -> bool {
-        self.enclosing.compatible(ctx, syms, types, found, req, warn)
-    }
-
-    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
-        self.enclosing.report(ctx, pos, details);
-    }
-
-    fn check_warner(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        types: &Types,
-        pos: i32,
-        found: TypeId,
-        req: TypeId,
-    ) -> crate::util::warner::Warner {
-        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
-    }
-
-    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
-        self.enclosing.inference_context()
-    }
-
-    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
-        &self.deferred_attr_context
-    }
-}
