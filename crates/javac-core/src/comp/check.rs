@@ -1884,11 +1884,64 @@ impl Check {
                 .unwrap_or(false)
             && ctx.sym(s).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::TYP);
         if is_record_field {
-            // Java: the record-component annotation propagation needs
-            // ClassSymbol.getRecordComponent + RecordComponent metadata.
-            unimplemented!(
-                "TODO(Record batch): Check.validateAnnotation record-field branch (Check.java:2944-2975)"
-            );
+            // Java: Check.java:2944-2986.
+            use crate::util::abstract_log::AbstractLog;
+            let annotation_type_tree = match &ctx.tree(a).kind {
+                TreeKind::Annotation { annotation_type, .. } => {
+                    annotation_type.expect("annotation type")
+                }
+                _ => panic!("expected an annotation"),
+            };
+            let annotation_type = ctx.tree(annotation_type_tree).ty.expect("annotation type");
+            let annotation_tsym = ctx.typ(annotation_type).tsym.expect("annotation tsym");
+            let targets = self.get_target_names(ctx, annotation_tsym)?;
+            let applies_to_records = targets.iter().any(|target| {
+                *target == self.names.FIELD
+                    || *target == self.names.PARAMETER
+                    || *target == self.names.METHOD
+                    || *target == self.names.TYPE_USE
+                    || *target == self.names.RECORD_COMPONENT
+            });
+            if !applies_to_records {
+                // Java: log.error(a.pos(), Errors.AnnotationTypeNotApplicable);
+                self.log.borrow_mut().error_at(
+                    ctx.tree(a).pos,
+                    crate::util::jc_diagnostic::Error::from(
+                        crate::resources::compiler_properties::errors::annotation_type_not_applicable(),
+                    ),
+                );
+            } else {
+                // Java: find the annotations targeted to record components and
+                // append them to the corresponding record component.
+                let record_class = ctx.sym(s).owner.expect("record class");
+                let record_component = ctx
+                    .sym(record_class)
+                    .get_record_component(ctx, s)
+                    .expect("record component");
+                let metadata_empty = match &ctx.sym(record_component).metadata {
+                    Some(metadata) => metadata.is_empty(),
+                    None => true,
+                };
+                if metadata_empty {
+                    let mut filtered: crate::util::list::List<crate::ids::AttributeId> =
+                        crate::util::list::List::nil();
+                    let mut current = ctx.sym(s).get_raw_attributes();
+                    while current.non_empty() {
+                        let annotation = *current.head();
+                        current = current.tail();
+                        let anno_ty = ctx.attr(annotation).ty.expect("annotation type");
+                        let anno_tsym = ctx.typ(anno_ty).tsym.expect("annotation tsym");
+                        let anno_targets = self.get_target_names(ctx, anno_tsym)?;
+                        if anno_targets
+                            .iter()
+                            .any(|name| *name == self.names.RECORD_COMPONENT)
+                        {
+                            filtered = filtered.append_list(&crate::util::list::List::of(annotation));
+                        }
+                    }
+                    ctx.sym_mut(record_component).append_attributes(filtered);
+                }
+            }
         }
         let _ = is_record_member;
         let annotation_type_ty = match &ctx.tree(a).kind {

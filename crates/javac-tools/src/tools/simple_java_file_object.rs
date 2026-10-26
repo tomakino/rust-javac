@@ -134,14 +134,18 @@ impl FileObject for SimpleJavaFileObject {
     /// @throws IOException {@inheritDoc}
     fn open_writer(&self) -> Result<Box<dyn Writer>, Error> {
         // Java: return new OutputStreamWriter(openOutputStream());
-        // TODO(P6): OutputStreamWriter uses the platform default charset
-        // (docs/PORTING_RULES.md §7: the output layer owns platform charset
-        // encoding).  Until the output layer is ported this default
-        // implementation must not fabricate an encoding: it is unimplemented.
-        unimplemented!(
-            "TODO(P6): SimpleJavaFileObject.openWriter needs the platform \
-             default-charset OutputStreamWriter of the output layer"
-        )
+        // The java.io.OutputStreamWriter default (StreamEncoder) uses the
+        // platform default charset and CodingErrorAction.REPLACE (oracle: a
+        // US-ASCII writer emits 3F for U+00E9 instead of throwing).
+        let charset = javac_charset::Charset::default_charset();
+        let mut encoder = charset.new_encoder();
+        encoder
+            .on_malformed_input(javac_charset::CodingErrorAction::Replace)
+            .on_unmappable_character(javac_charset::CodingErrorAction::Replace);
+        let output = self.open_output_stream()?;
+        Ok(Box::new(crate::java_io::OutputStreamWriter::new(
+            output, encoder,
+        )))
     }
 
     /// This implementation returns 0L.  Subclasses can change this

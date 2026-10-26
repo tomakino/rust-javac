@@ -61,4 +61,19 @@ pub trait BaseFileManagerApi {
 
     /// Java: BaseFileManager.cache(JavaFileObject, CharBuffer).
     fn cache(&self, file: &PathFileObject, cb: javac_strings::JavaString);
+
+    /// Java: fileManager.log.useSource(this) (PathFileObject.getCharContent);
+    /// returns the previous source to restore it later.
+    fn use_source(
+        &self,
+        file: &PathFileObject,
+    ) -> std::option::Option<std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>;
+
+    /// Java: fileManager.log.useSource(prev).
+    fn restore_source(
+        &self,
+        previous: std::option::Option<
+            std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
+        >,
+    );
 }

@@ -255,26 +255,41 @@ impl DocTreeMaker {
         text: JavaString,
         diag: Rc<JCDiagnostic>,
     ) -> Rc<DCTree> {
-        self.node(DCKind::Erroneous { body: text, diag })
+        self.node(DCKind::Erroneous {
+            body: text,
+            diag,
+        })
     }
 
     /// Java: public DCErroneous newErroneousTree(String text,
     /// DiagnosticSource diagSource, String code, Object... args)
+    /// (DocTreeMaker.java:292-296 / DCTree.java:375-428).
     ///
-    /// TODO(parser S8/P4): the upstream constructor creates the diagnostic with
-    /// the ErroneousTree itself as the position (a self reference resolved after
-    /// DocTreeMaker sets pos); that needs the JCDiagnostic self-reference design
-    /// of the diagnostic layer. Not ported yet, no replacement is written.
+    /// PORTING_RULES adapter: the upstream DCErroneous is its own
+    /// JCDiagnostic.DiagnosticPosition; the ported position object carries the
+    /// same observable values (getTree null, start = pos, preferred =
+    /// pos + body.length() - 1, end = pos + body.length()) without an Rc cycle.
     pub fn new_erroneous_tree(
         &mut self,
-        _text: JavaString,
-        _diag_source: Rc<crate::util::diagnostic_source::DiagnosticSource>,
-        _code: &str,
-        _args: Vec<crate::util::jc_diagnostic::DiagnosticArg>,
+        text: JavaString,
+        diag_source: Rc<crate::util::diagnostic_source::DiagnosticSource>,
+        code: &str,
+        args: Vec<crate::util::jc_diagnostic::DiagnosticArg>,
     ) -> Rc<DCTree> {
-        unimplemented!(
-            "TODO(parser S8/P4): newErroneousTree(diagSource, code, args) needs the self-referencing diagnostic position"
-        )
+        let body_len = text.as_units().len() as i32;
+        let position: Rc<dyn DiagnosticPosition> =
+            Rc::new(DCErroneousPosition::new(self.pos, body_len));
+        let diag = self.diags.create(
+            crate::util::jc_diagnostic::DiagnosticType::ERROR,
+            Some(diag_source),
+            Some(position),
+            code,
+            args,
+        );
+        self.node(DCKind::Erroneous {
+            body: text,
+            diag: Rc::new(diag),
+        })
     }
 
     /// Java: public DCThrows newExceptionTree(ReferenceTree name,
@@ -794,6 +809,41 @@ impl Comment for DummyComment {
     }
 }
 
+/// Java: DCErroneous implements JCDiagnostic.DiagnosticPosition (DCTree.java:375-428):
+/// getTree returns null, getStartPosition is pos, getPreferredPosition is
+/// pos + body.length() - 1 and getEndPosition is pos + body.length().
+struct DCErroneousPosition {
+    pos: i32,
+    body_len: i32,
+}
+
+impl DCErroneousPosition {
+    fn new(pos: i32, body_len: i32) -> DCErroneousPosition {
+        DCErroneousPosition { pos, body_len }
+    }
+}
+
+impl DiagnosticPosition for DCErroneousPosition {
+    fn get_tree(&self) -> Option<TreeId> {
+        None
+    }
+
+    fn get_start_position(&self) -> i32 {
+        self.pos
+    }
+
+    fn get_preferred_position(&self) -> i32 {
+        self.pos + self.body_len - 1
+    }
+
+    fn get_end_position(
+        &self,
+        _end_pos_table: Option<&dyn crate::tree::end_pos_table::EndPosTable>,
+    ) -> i32 {
+        self.pos + self.body_len
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1046,4 +1096,30 @@ mod tests {
         let text_node = maker.new_text_tree(JavaString::from("not a ref"));
         maker.new_link_tree(&text_node, &[]);
     }
+    #[test]
+    fn erroneous_tree_has_the_self_position_and_diagnostic() {
+        use crate::util::diagnostic_source::DiagnosticSource;
+        let mut maker = maker();
+        maker.at(5);
+        let tree = maker.new_erroneous_tree(
+            JavaString::from("bad"),
+            Rc::new(DiagnosticSource::no_source()),
+            "compiler.err.test",
+            Vec::new(),
+        );
+        assert_eq!(tree.pos, 5);
+        match &tree.kind {
+            DCKind::Erroneous { body, diag } => {
+                assert_eq!(body.to_string_lossy(), "bad");
+                // Java: DCErroneous.getStartPosition() = pos,
+                // getPreferredPosition() = pos + body.length() - 1,
+                // getEndPosition() = pos + body.length().
+                assert_eq!(diag.get_start_position(), 5);
+                assert_eq!(diag.get_position(), 7);
+                assert_eq!(diag.get_end_position(), 8);
+            }
+            _ => panic!("expected an erroneous doc tree"),
+        }
+    }
+
 }

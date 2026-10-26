@@ -2495,7 +2495,7 @@ impl DeferredAttrService {
             log.nwarnings += nwarnings;
         }
         if let Some(toplevel) = env.toplevel {
-            self.enter.borrow_mut().unenter(ctx, toplevel, tree);
+            self.enter.borrow_mut().unenter(ctx, syms, toplevel, tree);
         }
         self.log.borrow_mut().pop_diagnostic_handler();
         match result {

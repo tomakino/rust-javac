@@ -11,6 +11,8 @@
 //! Charset: names/aliases plus Java-compatible decode/encode.
 
 use crate::error::{CharacterCodingError, CharsetError};
+use std::option::Option as StdOption;
+
 use javac_strings::JavaString;
 
 /// Java: java.nio.charset.CodingErrorAction (the subset javac uses).
@@ -242,24 +244,80 @@ pub fn new_encoder(self) -> crate::coder::CharsetEncoder {
 ///
 /// # Panics
 ///   - none.
-pub fn default_charset() -> Charset {
+pub fn default_charset_name() -> JavaString {
     if let Ok(name) = std::env::var("JAVAC_DEFAULT_ENCODING") {
-        if let Ok(charset) = Charset::for_name(&JavaString::from(name.as_str())) {
-            return charset;
-        }
+        return JavaString::from(name.as_str());
     }
     for key in ["LC_ALL", "LC_CTYPE", "LANG"] {
         if let Ok(value) = std::env::var(key) {
             let upper = value.to_ascii_uppercase();
             if upper.contains("UTF-8") || upper.contains("UTF8") {
-                return Charset::Utf8;
+                return JavaString::from("UTF-8");
             }
             if upper.contains("ISO-8859-1") || upper.contains("LATIN1") {
-                return Charset::Iso8859_1;
+                return JavaString::from("ISO-8859-1");
             }
         }
     }
-    Charset::Utf8
+    #[cfg(windows)]
+    if let Ok(acp) = Self::windows_acp() {
+        if let Some(name) = Self::acp_charset_name(acp) {
+            return JavaString::from(name);
+        }
+        return JavaString::from(format!("x-windows-{acp}").as_str());
+    }
+    JavaString::from("UTF-8")
+}
+
+/// Java: Charset.defaultCharset() — the launcher/platform default charset.
+///
+/// PORTING_RULES: the JVM default comes from file.encoding/native.encoding;
+/// the port resolves the name via default_charset_name() (launcher override,
+/// POSIX locale, Windows ANSI code page) and maps it through the implemented
+/// charset set; a name outside the implemented set falls back to UTF-8 (the
+/// oracle on the development host is UTF-8; registered adapter).
+///
+/// # Arguments
+///   - none.
+///
+/// # Returns
+///   - the default charset.
+///
+/// # Panics
+///   - none.
+pub fn default_charset() -> Charset {
+    let name = Self::default_charset_name();
+    Charset::for_name(&name).unwrap_or(Charset::Utf8)
+}
+
+/// Windows ANSI code page (Java: the native encoding used for
+/// Charset.defaultCharset on Windows).
+#[cfg(windows)]
+pub(crate) fn windows_acp() -> Result<u32, ()> {
+    unsafe extern "system" {
+        fn GetACP() -> u32;
+    }
+    // SAFETY: GetACP is a Win32 API with no preconditions.
+    Ok(unsafe { GetACP() })
+}
+
+/// Map a Windows ANSI code page to the JDK charset name (the JVM uses the
+/// equivalent java.nio.charset name; the table covers the JDK 17 default
+/// encodings; other code pages map to the JVM-style x-windows-N name).
+#[cfg(windows)]
+pub(crate) fn acp_charset_name(acp: u32) -> StdOption<&'static str> {
+    match acp {
+        65001 => StdOption::Some("UTF-8"),
+        20127 => StdOption::Some("US-ASCII"),
+        28591 => StdOption::Some("ISO-8859-1"),
+        932 => StdOption::Some("Shift_JIS"),
+        936 => StdOption::Some("GBK"),
+        949 => StdOption::Some("x-windows-949"),
+        950 => StdOption::Some("Big5"),
+        1252 => StdOption::Some("windows-1252"),
+        437 => StdOption::Some("IBM437"),
+        _ => StdOption::None,
+    }
 }
 }
 

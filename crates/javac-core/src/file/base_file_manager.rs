@@ -354,7 +354,7 @@ impl BaseFileManager {
     ///               defaultEncodingName = Charset.defaultCharset().name();
     ///           return defaultEncodingName; }
     fn get_default_encoding_name(&self) -> JavaString {
-        Charset::default_charset().name()
+        Charset::default_charset_name()
     }
 
     /// Java: public String getEncodingName() {
@@ -622,6 +622,27 @@ impl BaseFileManagerApi for BaseFileManager {
 
     fn cache(&self, file: &PathFileObject, cb: JavaString) {
         BaseFileManager::cache(self, file, cb);
+    }
+
+    fn use_source(
+        &self,
+        file: &PathFileObject,
+    ) -> StdOption<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>> {
+        let log = self.log.as_ref()?;
+        let source: Rc<dyn javac_tools::tools::java_file_object::JavaFileObject> =
+            Rc::new(file.clone());
+        use crate::util::abstract_log::AbstractLog;
+        log.borrow_mut().use_source(Some(source))
+    }
+
+    fn restore_source(
+        &self,
+        previous: StdOption<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>,
+    ) {
+        if let Some(log) = &self.log {
+            use crate::util::abstract_log::AbstractLog;
+            log.borrow_mut().use_source(previous);
+        }
     }
 }
 

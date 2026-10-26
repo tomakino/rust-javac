@@ -1261,6 +1261,24 @@ impl BaseFileManagerApi for JavacFileManager {
     fn cache(&self, file: &PathFileObject, cb: JavaString) {
         self.base.borrow().cache(file, cb);
     }
+
+    fn use_source(
+        &self,
+        file: &PathFileObject,
+    ) -> std::option::Option<
+        std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
+    > {
+        self.base.borrow().use_source(file)
+    }
+
+    fn restore_source(
+        &self,
+        previous: std::option::Option<
+            std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
+        >,
+    ) {
+        self.base.borrow().restore_source(previous);
+    }
 }
 
 /// Java: protected static boolean isRelativeUri(String u) — the checks of the javadoc contract

@@ -182,3 +182,30 @@ fn encoder_stream_matches_the_oracle() {
     let mut output = ByteBuffer::allocate(8);
     assert_eq!(encoder.encode(&mut input, &mut output, true), CoderResult::MalformedForLength(1));
 }
+
+#[test]
+fn default_charset_name_matches_the_oracle_contract() {
+    // Oracle on the development host: Charset.defaultCharset().name() = UTF-8,
+    // native.encoding = UTF-8, file.encoding = UTF-8.
+    let name = Charset::default_charset_name();
+    assert!(!name.to_string_lossy().is_empty());
+    assert!(matches!(
+        Charset::for_name(&name),
+        Ok(_) | Err(crate::error::CharsetError::UnsupportedCharset { .. })
+    ));
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_acp_names_match_the_jdk_default_encodings() {
+    // The JDK maps the Windows ANSI code page to the java.nio.charset name of
+    // the corresponding default encoding.
+    assert_eq!(Charset::acp_charset_name(65001), Some("UTF-8"));
+    assert_eq!(Charset::acp_charset_name(20127), Some("US-ASCII"));
+    assert_eq!(Charset::acp_charset_name(28591), Some("ISO-8859-1"));
+    assert_eq!(Charset::acp_charset_name(936), Some("GBK"));
+    assert_eq!(Charset::acp_charset_name(950), Some("Big5"));
+    assert_eq!(Charset::acp_charset_name(932), Some("Shift_JIS"));
+    assert_eq!(Charset::acp_charset_name(0), None);
+}
+

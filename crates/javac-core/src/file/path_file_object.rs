@@ -53,6 +53,7 @@ use std::rc::Rc;
 
 /// The upstream nested subclasses (Java: DirectoryFileObject, JarFileObject,
 /// JRTFileObject, SimpleFileObject).
+#[derive(Clone)]
 pub enum PathFileObjectKind {
     /// Java: forDirectoryPath / DirectoryFileObject.
     Directory {
@@ -74,6 +75,20 @@ pub struct PathFileObject {
     /// Java: private boolean hasParents;
     has_parents: Cell<bool>,
     kind: PathFileObjectKind,
+}
+
+impl Clone for PathFileObject {
+    /// Java has reference identity; the port clones the object for the
+    /// log.useSource adapter so that the base file manager can hand an
+    /// Rc<dyn JavaFileObject> to Log (registered adapter, section 9).
+    fn clone(&self) -> PathFileObject {
+        PathFileObject {
+            file_manager: Rc::clone(&self.file_manager),
+            path: self.path.clone(),
+            has_parents: Cell::new(self.has_parents.get()),
+            kind: self.kind.clone(),
+        }
+    }
 }
 
 impl PathFileObject {
@@ -446,7 +461,10 @@ impl FileObject for PathFileObject {
                 )
             }
             PathFileObjectKind::Jrt => {
-                unimplemented!("TODO(P2): JRTFileObject.toUri needs the jrt FileSystem")
+                // Java: JRTFileObject does not override toUri; the base
+                // PathFileObject.toUri() returns path.toUri() (the jrt path).
+                let uri = self.path.to_uri().expect("PathFileObject.toUri");
+                URI::create(&jstr(&uri))
             }
             PathFileObjectKind::Directory { .. } => {
                 let uri = self.path.to_uri().expect("PathFileObject.toUri");
@@ -507,7 +525,11 @@ impl FileObject for PathFileObject {
         }
         let mut input = self.open_input_stream()?;
         let bytes = self.file_manager.make_byte_buffer(&mut *input)?;
+        // Java: JavaFileObject prev = fileManager.log.useSource(this);
+        let previous_source = self.file_manager.use_source(self);
         let text = self.file_manager.decode(&bytes, ignore_encoding_errors);
+        // Java: finally fileManager.log.useSource(prev);
+        self.file_manager.restore_source(previous_source);
         self.file_manager.recycle_byte_buffer(bytes);
         if !ignore_encoding_errors {
             self.file_manager.cache(self, text.clone());
@@ -524,9 +546,11 @@ impl FileObject for PathFileObject {
         let charset = javac_charset::Charset::for_name(&encoding_name)
             .map_err(|_| Error::io(JavaString::from("UnsupportedEncodingException")))?;
         let mut encoder = charset.new_encoder();
+        // Java: java.io.OutputStreamWriter default action is REPLACE (oracle:
+        // US-ASCII writer emits 3F for U+00E9).
         encoder
-            .on_malformed_input(javac_charset::CodingErrorAction::Report)
-            .on_unmappable_character(javac_charset::CodingErrorAction::Report);
+            .on_malformed_input(javac_charset::CodingErrorAction::Replace)
+            .on_unmappable_character(javac_charset::CodingErrorAction::Replace);
         let output = self.open_output_stream()?;
         Ok(Box::new(OutputStreamWriter::new(output, encoder)))
     }
@@ -671,7 +695,24 @@ mod tests {
         }
 
         fn cache(&self, _file: &PathFileObject, _cb: JavaString) {}
+        fn use_source(
+            &self,
+            _file: &PathFileObject,
+        ) -> std::option::Option<
+            std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
+        > {
+            None
+        }
+
+        fn restore_source(
+            &self,
+            _previous: std::option::Option<
+                std::rc::Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>,
+            >,
+        ) {
+        }
     }
+
 
     fn manager() -> Rc<dyn BaseFileManagerApi> {
         StubManager::new()
@@ -861,7 +902,10 @@ mod tests {
 
         // Deferred upstream dependencies: jar/jrt URIs (and jar binary names).
         assert!(std::panic::catch_unwind(AssertUnwindSafe(|| FileObject::to_uri(&*jar))).is_err());
-        assert!(std::panic::catch_unwind(AssertUnwindSafe(|| FileObject::to_uri(&*jrt))).is_err());
+        // Java: JRTFileObject uses the base PathFileObject.toUri() = path.toUri().
+        let jrt_uri = FileObject::to_uri(&*jrt);
+        let jrt_path_uri = jrt_path.to_uri().expect("jrt path uri");
+        assert_eq!(jrt_uri.to_uri_string().to_string_lossy(), jrt_path_uri);
         assert!(std::panic::catch_unwind(AssertUnwindSafe(|| jar.infer_binary_name(&[]))).is_err());
     }
 

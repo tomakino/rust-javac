@@ -839,10 +839,46 @@ impl Enter {
     }
 
     /// Java: public void unenter(JCCompilationUnit topLevel, JCTree tree)
-    pub fn unenter(&mut self, _ctx: &mut CompilerContext, _top_level: TreeId, _tree: TreeId) {
-        // TODO(Enter): UnenterScanner needs the JCTree.Visitor callback
-        // scanner (tree scanner); registered.
-        unimplemented!("TODO(Enter batch): Enter.unenter (UnenterScanner)");
+    /// (Enter.java:640-663): the UnenterScanner removes the entered class
+    /// symbols below the tree and their type environments.
+    pub fn unenter(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        top_level: TreeId,
+        tree: TreeId,
+    ) {
+        let module = compilation_unit_module(ctx, top_level).expect("topLevel.modle");
+        self.unenter_scan(ctx, syms, module, tree);
+    }
+
+    /// Java: class UnenterScanner extends TreeScanner (Enter.java:643-663).
+    fn unenter_scan(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        module: SymbolId,
+        tree: TreeId,
+    ) {
+        if let TreeKind::ClassDecl { sym, .. } = &ctx.tree(tree).kind {
+            // Java: if (csym == null) return; (nested expressions may be left
+            // unchecked, nothing to clean up).
+            if let Some(csym) = *sym {
+                self.type_envs.borrow_mut().remove(csym);
+                self.chk.borrow_mut().remove_compiled(ctx, csym);
+                self.chk
+                    .borrow_mut()
+                    .clear_local_class_name_indexes(ctx, csym);
+                let flatname = ctx.sym(csym).flat_name();
+                syms.remove_class(module, &flatname);
+            } else {
+                return;
+            }
+        }
+        // Java: super.visitClassDef(tree) / the TreeScanner navigational scan.
+        for child in crate::tree::tree_scanner::tree_children(ctx, tree) {
+            self.unenter_scan(ctx, syms, module, child);
+        }
     }
 }
 
