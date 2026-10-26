@@ -136,13 +136,12 @@ impl Resolve {
     ) -> bool {
         // 15.9.5.1: the signature of the anonymous constructor can refer to an
         // inaccessible type.
-        if let Some(encl_method) = env.encl_method {
-            if ctx.tree(encl_method).has_tag(crate::tree::jc_tree::Tag::METHODDEF) {
-                let flags_value = method_decl_flags(ctx, encl_method);
-                if (flags_value & flags::ANONCONSTR as i64) != 0 {
-                    return true;
-                }
-            }
+        if env
+            .encl_method
+            .map(|encl_method| method_decl_flags(ctx, encl_method))
+            .is_some_and(|flags_value| (flags_value & flags::ANONCONSTR as i64) != 0)
+        {
+            return true;
         }
 
         if env.info.borrow().visiting_service_implementation {
@@ -222,11 +221,15 @@ impl Resolve {
         let class_type = ctx.sym(c).ty.expect("class symbol type");
         let no_type = crate::code::symtab::no_type_id(ctx);
         let enclosing = ctx.typ(class_type).get_enclosing_type();
-        if !check_inner || enclosing.is_none() || enclosing == Some(no_type) {
-            is_accessible
-        } else {
-            let enclosing = enclosing.expect("enclosing type");
-            is_accessible && self.is_accessible_type(ctx, syms, env, enclosing, check_inner)
+        if !check_inner {
+            return is_accessible;
+        }
+        match enclosing {
+            None => is_accessible,
+            Some(enclosing) if enclosing == no_type => is_accessible,
+            Some(enclosing) => {
+                is_accessible && self.is_accessible_type(ctx, syms, env, enclosing, check_inner)
+            }
         }
     }
 
@@ -292,10 +295,12 @@ impl Resolve {
         }
 
         // 15.9.5.1: anonymous constructor signature accessibility.
-        if let Some(encl_method) = env.encl_method {
-            if (method_decl_flags(ctx, encl_method) & flags::ANONCONSTR as i64) != 0 {
-                return true;
-            }
+        if env
+            .encl_method
+            .map(|encl_method| method_decl_flags(ctx, encl_method))
+            .is_some_and(|flags_value| (flags_value & flags::ANONCONSTR as i64) != 0)
+        {
+            return true;
         }
 
         if env.info.borrow().visiting_service_implementation {
@@ -849,27 +854,24 @@ impl Resolve {
         {
             return None;
         }
-        let mut location = location;
-        if location.is_none() {
-            location = site.and_then(|site| ctx.typ(site).tsym);
-        }
-        let location = location.expect("location symbol");
+        let location = location
+            .or_else(|| site.and_then(|site| ctx.typ(site).tsym))
+            .expect("location symbol");
         let location_name = ctx.sym(location).name.clone();
-        if !location_name.is_empty() {
-            if ctx.sym(location).kind == Kind::PCK
-                && !crate::code::symbol::symbol_exists(
-                    ctx,
-                    site.and_then(|site| ctx.typ(site).tsym).expect("site symbol"),
-                )
-                && location_name != self.names.java
-            {
+        if !location_name.is_empty()
+            && ctx.sym(location).kind == Kind::PCK
+            && !crate::code::symbol::symbol_exists(
+                ctx,
+                site.and_then(|site| ctx.typ(site).tsym).expect("site symbol"),
+            )
+            && location_name != self.names.java
+        {
                 let info = crate::resources::compiler_properties::errors::doesnt_exist(
                     crate::resources::diagnostic_contract::SymbolArg::placeholder(
                         symbol_display_name(ctx, location),
                     ),
                 );
-                return Some(self.factory_error(dkind, pos, info));
-            }
+            return Some(self.factory_error(dkind, pos, info));
         }
         // TODO(Resolve access stage): the cant.resolve.* dynamic keys with the
         // full location/args parameter set (the generated Errors accessors for

@@ -252,17 +252,21 @@ impl CompilerContext {
         self.scope(scope).includes(scope, sym, &self.symbols)
     }
 
-    /// Java: ScopeImpl.getSymbols(Predicate<Symbol>, LookupKind)
+    /// Java: Scope.getSymbols(Predicate<Symbol>, LookupKind) — all scope
+    /// variants (ScopeImpl recursive next-chain, Compound/Import/NamedImport/
+    /// StarImport/SingleEntry/FilterImport); the scope snapshot is cloned so the
+    /// map lookup and the mutable context do not borrow simultaneously.
     pub fn scope_get_symbols(
         &self,
         scope: ScopeId,
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
     ) -> Vec<SymbolId> {
-        self.scope(scope).get_symbols(lookup_kind, filter)
+        let snapshot = self.scope(scope).clone();
+        snapshot.get_symbols(scope, lookup_kind, filter, self)
     }
 
-    /// Java: ScopeImpl.getSymbolsByName(Name, Predicate<Symbol>, LookupKind)
+    /// Java: Scope.getSymbolsByName(Name, Predicate<Symbol>, LookupKind)
     pub fn scope_get_symbols_by_name(
         &self,
         scope: ScopeId,
@@ -270,8 +274,8 @@ impl CompilerContext {
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
     ) -> Vec<SymbolId> {
-        self.scope(scope)
-            .get_symbols_by_name(scope, name, lookup_kind, filter, &self.symbols)
+        let snapshot = self.scope(scope).clone();
+        snapshot.get_symbols_by_name(scope, name, lookup_kind, filter, &self.symbols, self)
     }
 
     /// Java: Scope.isEmpty()

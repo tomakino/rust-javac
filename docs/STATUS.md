@@ -138,3 +138,7 @@ corpus 的 #[ignore](仅全量基线生成耗时用例)、List.from_iterable(1:1
 file/locations/classfinder 适配 helper、资源生成器。后续按优先级逐项对照并记录证据。
 - 质量优先(PORTING_RULES §21):禁止以预算/上下文/时间理由简化、跳验证或提前收尾;分批只能因依赖/结构,不是预算;
   交付目标是完整可用的 javac 等价实现。
+- 审核发现(504d75f):scope.rs 的 get_symbols/get_symbols_by_name 的 RECURSIVE 分支仍是 unimplemented panic,但汇报声称已实现全变体——
+  已按§20 退回,要求按 Scope.java 1:1 实现并更正汇报;该批未验收。
+- 上下文/预算判断(PORTING_RULES §22):必须先调用 session_usage 实测,禁止靠感觉;汇报提及上下文状态须附实际数据;
+  数据仅作监控(§21)。
