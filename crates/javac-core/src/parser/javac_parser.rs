@@ -6067,7 +6067,7 @@ impl JavacParser {
         }
         let table = std::mem::replace(&mut self.end_pos_table, Box::new(EmptyEndPosTable::new()));
         if let TreeKind::CompilationUnit { end_positions, .. } = &mut ctx.tree_mut(toplevel).kind {
-            *end_positions = Some(table.boxed());
+            *end_positions = Some(Rc::from(table.boxed()));
         }
         toplevel
     }

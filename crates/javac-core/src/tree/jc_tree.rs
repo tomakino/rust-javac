@@ -440,6 +440,7 @@ pub enum LiteralValue {
 /// inherited fields of the abstract base classes are merged into the variants.
 #[allow(clippy::large_enum_variant)]
 #[allow(non_camel_case_types)]
+#[derive(Clone)]
 pub enum TreeKind {
     /// Java: JCTree.JCCompilationUnit
     CompilationUnit {
@@ -466,7 +467,7 @@ pub enum TreeKind {
         doc_comments: Option<Rc<std::cell::RefCell<dyn DocCommentTable>>>,
         /// An object encapsulating ending positions of source ranges indexed by
         /// the tree nodes they belong to. Defined only if option -Xjcov is set.
-        end_positions: Option<Box<dyn EndPosTable>>,
+        end_positions: Option<Rc<dyn EndPosTable>>,
     },
     /// Java: JCTree.JCPackageDecl
     PackageDecl {
