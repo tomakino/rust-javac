@@ -753,7 +753,61 @@ impl ModuleResolutionFlags {
 }
 
 #[allow(clippy::large_enum_variant)]
+/// Java: the AttrContext/Env state captured by resolution errors for the
+/// deferred diagnostics (Resolve.InvisibleSymbolError/AccessError keep the
+/// Env<AttrContext>; the port stores the fields the diagnostics read, a
+/// registered §9 adapter for the Rc<Env> reference).
+#[derive(Clone, Debug)]
+pub struct ResolveEnvSnapshot {
+    pub tree: Option<TreeId>,
+    pub toplevel: Option<TreeId>,
+    pub encl_class: Option<TreeId>,
+    pub encl_class_sym: Option<SymbolId>,
+    pub toplevel_package: Option<SymbolId>,
+    pub toplevel_module: Option<SymbolId>,
+    pub select_super: bool,
+    pub visiting_service_implementation: bool,
+}
+
+/// Java: the Resolve.ResolveError subclass payload (Resolve.java:3909-4700).
+/// The hierarchical Java classes map to this tagged payload stored in the
+/// SymbolKind::ResolveError variant (the error object stays a Symbol, as
+/// upstream).
+#[derive(Clone, Debug)]
+pub enum ResolveErrorData {
+    /// Resolve.ResolveError base
+    SymbolNotFound,
+    /// Resolve.InvalidSymbolError (the found symbol is invalid)
+    Invalid { sym: SymbolId },
+    /// Resolve.AccessError (the symbol is not accessible from the site)
+    Access {
+        env: ResolveEnvSnapshot,
+        site: Option<TypeId>,
+        sym: SymbolId,
+    },
+    /// Resolve.InvisibleSymbolError
+    Invisible {
+        env: ResolveEnvSnapshot,
+        suppress_error: bool,
+        sym: SymbolId,
+    },
+    /// Resolve.StaticError
+    Static { sym: SymbolId },
+    /// Resolve.AmbiguityError (the maximally specific symbols, reverse order)
+    Ambiguity { syms: Vec<SymbolId> },
+    /// Resolve.BadRestrictedTypeError
+    BadRestrictedType { type_name: Name },
+}
+
+/// Java: public enum SymbolKind (Resolve.ResolveError hierarchy lives here).
 pub enum SymbolKind {
+    /// Java: Resolve.ResolveError (the resolution error is a Symbol subclass)
+    ResolveError {
+        /// The debug name of the Java error class.
+        debug_name: String,
+        /// The Java subclass payload.
+        data: Box<ResolveErrorData>,
+    },
     /// Java: Symbol.DelegatedSymbol<T extends Symbol>
     DelegatedSymbol {
         /// The delegate symbol.
@@ -1304,10 +1358,50 @@ pub fn symbol_is_static_or_instance_init(ctx: &CompilerContext, symbol: SymbolId
 }
 
 
+/// Java: creates a resolution-error symbol (Resolve.ResolveError)
+pub fn symbol_new_resolve_error(
+    ctx: &mut CompilerContext,
+    kind: crate::code::kinds::Kind,
+    name: Name,
+    debug_name: &str,
+    data: ResolveErrorData,
+) -> SymbolId {
+    let symbol = Symbol::new(
+        kind,
+        0,
+        name,
+        None,
+        None,
+        SymbolKind::ResolveError {
+            debug_name: debug_name.to_string(),
+            data: Box::new(data),
+        },
+    );
+    ctx.alloc_symbol(symbol)
+}
+
+/// The ResolveError payload of a symbol, if any.
+pub fn symbol_resolve_error_data(ctx: &CompilerContext, symbol: SymbolId) -> Option<&ResolveErrorData> {
+    match &ctx.sym(symbol).kind_data {
+        SymbolKind::ResolveError { data, .. } => Some(data),
+        _ => None,
+    }
+}
+
 /// Java: public boolean exists() — ErrorSymbol (ErrSymbol) is the only symbol
 /// that does not exist; the port keys on the symbol kind (registered adapter).
 pub fn symbol_exists(ctx: &CompilerContext, symbol: SymbolId) -> bool {
-    ctx.sym(symbol).kind != crate::code::kinds::Kind::ERR
+    match &ctx.sym(symbol).kind_data {
+        SymbolKind::ResolveError { data, .. } => matches!(
+            **data,
+            ResolveErrorData::Invalid { .. }
+                | ResolveErrorData::Access { .. }
+                | ResolveErrorData::Invisible { .. }
+                | ResolveErrorData::Static { .. }
+                | ResolveErrorData::Ambiguity { .. }
+        ),
+        _ => ctx.sym(symbol).kind != crate::code::kinds::Kind::ERR,
+    }
 }
 
 /// Java: public ClassSymbol outermostClass() (Symbol.java:523)
@@ -1576,6 +1670,25 @@ pub fn symbol_location_site(
     match ctx.typ(ownertype).tsym {
         Some(tsym) => Some(tsym),
         None => Some(owner),
+    }
+}
+
+
+/// Java: PackageSymbol.fullname (Symbol.java PackageSymbol field)
+pub fn package_fullname(ctx: &CompilerContext, pkg: SymbolId) -> Option<crate::util::name::Name> {
+    match &ctx.sym(pkg).kind_data {
+        SymbolKind::PackageSymbol { fullname, .. }
+        | SymbolKind::RootPackageSymbol { fullname, .. } => Some(fullname.clone()),
+        _ => None,
+    }
+}
+
+/// Java: PackageSymbol.modle (Symbol.java PackageSymbol field)
+pub fn package_module(ctx: &CompilerContext, pkg: SymbolId) -> Option<SymbolId> {
+    match &ctx.sym(pkg).kind_data {
+        SymbolKind::PackageSymbol { modle, .. }
+        | SymbolKind::RootPackageSymbol { modle, .. } => *modle,
+        _ => None,
     }
 }
 

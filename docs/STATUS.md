@@ -136,3 +136,5 @@ corpus 的 #[ignore](仅全量基线生成耗时用例)、List.from_iterable(1:1
 
 待审 backlog(尚未逐方法对照):早期 util 批(22 文件)、javac-tools/javac-source 接口层、javac_parser 错误恢复/诊断细节、
 file/locations/classfinder 适配 helper、资源生成器。后续按优先级逐项对照并记录证据。
+- 质量优先(PORTING_RULES §21):禁止以预算/上下文/时间理由简化、跳验证或提前收尾;分批只能因依赖/结构,不是预算;
+  交付目标是完整可用的 javac 等价实现。

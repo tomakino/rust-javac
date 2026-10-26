@@ -114,6 +114,7 @@ pub trait ScopeListener {
 /// memory leaks. When the listener list is scanned (upon notification), elements
 /// corresponding to GC-ed listeners are removed so that the listener list size
 /// is kept in check.
+#[derive(Clone)]
 pub struct ScopeListenerList {
     listeners: Vec<Weak<dyn ScopeListener>>,
 }
@@ -196,6 +197,7 @@ pub struct Entry {
 
 /// The scope's structure (one variant per upstream concrete Scope class; the
 /// abstract Scope/WriteableScope behavior is expressed by the methods).
+#[derive(Clone)]
 pub enum ScopeData {
     /// Java: private static class ScopeImpl (error_scope marks ErrorScope)
     ScopeImpl {
@@ -279,6 +281,7 @@ pub enum ScopeData {
 }
 
 /// Java: public abstract class Scope (a scope value in the scope arena).
+#[derive(Clone)]
 pub struct Scope {
     /// The scope's owner.
     pub owner: Option<SymbolId>,
@@ -938,6 +941,371 @@ impl Scope {
         };
         *nelems = n;
     }
+
+
+    // ------------------------------------------------------------------
+    // Scope query batch (Scope.java): full cross-scope queries for the import
+    // scopes and the recursive ScopeImpl queries. The explicit-context adapter
+    // passes the CompilerContext (ADR 0001); child scopes are cloned snapshots
+    // so the immutable scope data and the mutable context do not borrow
+    // simultaneously.
+    // ------------------------------------------------------------------
+
+    /// Java: public Iterable<Symbol> getSymbols(Predicate<Symbol> sf,
+    /// LookupKind lookupKind)
+    pub fn get_symbols_full(
+        &self,
+        self_id: ScopeId,
+        lookup_kind: LookupKind,
+        filter: &dyn Fn(SymbolId) -> bool,
+        types: &crate::code::types::Types,
+        syms: &crate::code::symtab::Symtab,
+        ctx: &mut crate::compiler_context::CompilerContext,
+    ) -> Vec<SymbolId> {
+        match &self.data {
+            ScopeData::ScopeImpl { elems, .. } => {
+                let (_, entries) = self.table_and_entries();
+                let entries = entries.borrow();
+                let mut result = Vec::new();
+                let mut current = *elems;
+                while let Some(entry_id) = current {
+                    let entry = &entries[entry_id.index() as usize];
+                    let in_scope = lookup_kind == LookupKind::RECURSIVE
+                        || entry.scope == Some(self_id);
+                    if in_scope
+                        && let Some(sym) = entry.sym
+                        && filter(sym)
+                    {
+                        result.push(sym);
+                    }
+                    current = entry.next_sibling;
+                }
+                result
+            }
+            ScopeData::CompoundScope { sub_scopes, .. }
+            | ScopeData::ImportScope { sub_scopes, .. }
+            | ScopeData::NamedImportScope { sub_scopes, .. }
+            | ScopeData::StarImportScope { sub_scopes, .. } => {
+                let sub_scopes = sub_scopes.clone();
+                let mut result = Vec::new();
+                let mut current = sub_scopes;
+                while current.non_empty() {
+                    let sub_scope = *current.head();
+                    let snapshot = ctx.scope(sub_scope).clone();
+                    result.extend(snapshot.get_symbols_full(sub_scope, lookup_kind, filter, types, syms, ctx));
+                    current = current.tail();
+                }
+                result
+            }
+            ScopeData::SingleEntryScope { sym, content, .. } => match sym {
+                Some(sym) if filter(*sym) => content.clone().to_vec(),
+                _ => Vec::new(),
+            },
+            ScopeData::FilterImportScope {
+                origin,
+                filter_name,
+                filter: import_filter,
+                static_import,
+                ..
+            } => {
+                let (origin, filter_name, static_import, import_filter) = (
+                    *origin,
+                    filter_name.clone(),
+                    *static_import,
+                    import_filter.clone(),
+                );
+                match filter_name {
+                    Some(name) => self.get_symbols_by_name_full(
+                        self_id,
+                        &name,
+                        lookup_kind,
+                        filter,
+                        types,
+                        syms,
+                        ctx,
+                    ),
+                    None => query_filter_import_scope_members(
+                        origin,
+                        static_import,
+                        &import_filter,
+                        None,
+                        filter,
+                        lookup_kind,
+                        types,
+                        syms,
+                        ctx,
+                    ),
+                }
+            }
+        }
+    }
+
+    /// Java: public Iterable<Symbol> getSymbolsByName(Name name,
+    /// Predicate<Symbol> sf, LookupKind lookupKind)
+    pub fn get_symbols_by_name_full(
+        &self,
+        self_id: ScopeId,
+        name: &Name,
+        lookup_kind: LookupKind,
+        filter: &dyn Fn(SymbolId) -> bool,
+        types: &crate::code::types::Types,
+        syms: &crate::code::symtab::Symtab,
+        ctx: &mut crate::compiler_context::CompilerContext,
+    ) -> Vec<SymbolId> {
+        match &self.data {
+            ScopeData::ScopeImpl { .. } => {
+                let (_, entries) = self.table_and_entries();
+                let entries = entries.borrow();
+                let mut result = Vec::new();
+                let start = {
+                    let symbols = ctx.symbols_arena();
+                    self.lookup(name, symbols)
+                };
+                let mut current = start;
+                while let Some(entry_id) = current {
+                    let entry = &entries[entry_id.index() as usize];
+                    if lookup_kind == LookupKind::NON_RECURSIVE
+                        && entry.scope != Some(self_id)
+                    {
+                        break;
+                    }
+                    match entry.sym {
+                        Some(sym) => {
+                            if filter(sym) {
+                                result.push(sym);
+                            }
+                        }
+                        None => break,
+                    }
+                    let mut next = entry.shadowed;
+                    while let Some(next_id) = next {
+                        let next_entry = &entries[next_id.index() as usize];
+                        match next_entry.sym {
+                            Some(next_sym) => {
+                                if lookup_kind == LookupKind::NON_RECURSIVE
+                                    && next_entry.scope != Some(self_id)
+                                {
+                                    next = None;
+                                    break;
+                                }
+                                if filter(next_sym) {
+                                    break;
+                                }
+                                next = next_entry.shadowed;
+                            }
+                            None => {
+                                next = None;
+                            }
+                        }
+                    }
+                    current = next;
+                }
+                result
+            }
+            ScopeData::CompoundScope { sub_scopes, .. }
+            | ScopeData::ImportScope { sub_scopes, .. } => {
+                let sub_scopes = sub_scopes.clone();
+                let mut result = Vec::new();
+                let mut current = sub_scopes;
+                while current.non_empty() {
+                    let sub_scope = *current.head();
+                    let snapshot = ctx.scope(sub_scope).clone();
+                    result.extend(
+                        snapshot.get_symbols_by_name_full(sub_scope, name, lookup_kind, filter, types, syms, ctx),
+                    );
+                    current = current.tail();
+                }
+                result
+            }
+            ScopeData::NamedImportScope { name2_scopes, .. } => {
+                let Some(scopes) = name2_scopes.get(name) else {
+                    return Vec::new();
+                };
+                let scopes = scopes.clone();
+                let mut result = Vec::new();
+                for sub_scope in scopes {
+                    let snapshot = ctx.scope(sub_scope).clone();
+                    result.extend(
+                        snapshot.get_symbols_by_name_full(sub_scope, name, lookup_kind, filter, types, syms, ctx),
+                    );
+                }
+                result
+            }
+            ScopeData::StarImportScope { sub_scopes, .. } => {
+                let sub_scopes = sub_scopes.clone();
+                let mut result = Vec::new();
+                let mut current = sub_scopes;
+                while current.non_empty() {
+                    let sub_scope = *current.head();
+                    let snapshot = ctx.scope(sub_scope).clone();
+                    result.extend(
+                        snapshot.get_symbols_by_name_full(sub_scope, name, lookup_kind, filter, types, syms, ctx),
+                    );
+                    current = current.tail();
+                }
+                result
+            }
+            ScopeData::SingleEntryScope { sym, content, .. } => match sym {
+                Some(sym) => {
+                    let matches = {
+                        let symbol_name = ctx.sym(*sym).name.clone();
+                        symbol_name == *name
+                    };
+                    if matches && filter(*sym) {
+                        content.clone().to_vec()
+                    } else {
+                        Vec::new()
+                    }
+                }
+                None => Vec::new(),
+            },
+            ScopeData::FilterImportScope {
+                origin,
+                filter_name,
+                filter: import_filter,
+                static_import,
+                ..
+            } => {
+                if let Some(filter_name) = filter_name
+                    && filter_name != name
+                {
+                    return Vec::new();
+                }
+                let (origin, static_import, import_filter) =
+                    (*origin, *static_import, import_filter.clone());
+                query_filter_import_scope_members(
+                    origin,
+                    static_import,
+                    &import_filter,
+                    Some(name),
+                    filter,
+                    lookup_kind,
+                    types,
+                    syms,
+                    ctx,
+                )
+            }
+        }
+    }
+
+    /// Java: public boolean includes(Symbol c) — the Scope default
+    /// implementation: getSymbolsByName(name, null, NON_RECURSIVE) contains c.
+    pub fn includes_full(
+        &self,
+        self_id: ScopeId,
+        sym: SymbolId,
+        types: &crate::code::types::Types,
+        syms: &crate::code::symtab::Symtab,
+        ctx: &mut crate::compiler_context::CompilerContext,
+    ) -> bool {
+        let name = ctx.sym(sym).name.clone();
+        let found = self.get_symbols_by_name_full(
+            self_id,
+            &name,
+            LookupKind::NON_RECURSIVE,
+            &|candidate| candidate == sym,
+            types,
+            syms,
+            ctx,
+        );
+        !found.is_empty()
+    }
+
+    /// Java: public Scope getOrigin(Symbol byName)
+    pub fn get_origin_full(
+        &self,
+        self_id: ScopeId,
+        by_name: SymbolId,
+        types: &crate::code::types::Types,
+        syms: &crate::code::symtab::Symtab,
+        ctx: &mut crate::compiler_context::CompilerContext,
+    ) -> Option<ScopeId> {
+        match &self.data {
+            ScopeData::ScopeImpl { .. } => {
+                let name = ctx.sym(by_name).name.clone();
+                let (_, entries) = self.table_and_entries();
+                let entries = entries.borrow();
+                let start = {
+                    let symbols = ctx.symbols_arena();
+                    self.lookup(&name, symbols)
+                };
+                let mut current = start;
+                while let Some(entry_id) = current {
+                    let entry = &entries[entry_id.index() as usize];
+                    if entry.scope != Some(self_id) {
+                        return None;
+                    }
+                    if entry.sym == Some(by_name) {
+                        return Some(self_id);
+                    }
+                    current = entry.shadowed;
+                }
+                None
+            }
+            ScopeData::SingleEntryScope { sym, origin, .. } => {
+                if *sym == Some(by_name) {
+                    *origin
+                } else {
+                    None
+                }
+            }
+            ScopeData::FilterImportScope { origin, .. } => Some(*origin),
+            ScopeData::CompoundScope { sub_scopes, .. }
+            | ScopeData::ImportScope { sub_scopes, .. }
+            | ScopeData::NamedImportScope { sub_scopes, .. }
+            | ScopeData::StarImportScope { sub_scopes, .. } => {
+                let sub_scopes = sub_scopes.clone();
+                let mut current = sub_scopes;
+                while current.non_empty() {
+                    let sub_scope = *current.head();
+                    let snapshot = ctx.scope(sub_scope).clone();
+                    if snapshot.includes_full(sub_scope, by_name, types, syms, ctx) {
+                        return snapshot.get_origin_full(sub_scope, by_name, types, syms, ctx);
+                    }
+                    current = current.tail();
+                }
+                None
+            }
+        }
+    }
+
+    /// Java: public boolean isStaticallyImported(Symbol sym)
+    pub fn is_statically_imported_full(
+        &self,
+        by_name: SymbolId,
+        types: &crate::code::types::Types,
+        syms: &crate::code::symtab::Symtab,
+        ctx: &mut crate::compiler_context::CompilerContext,
+    ) -> bool {
+        match &self.data {
+            ScopeData::FilterImportScope { static_import, .. } => *static_import,
+            ScopeData::SingleEntryScope { .. } => false,
+            ScopeData::ScopeImpl { .. } => false,
+            ScopeData::NamedImportScope {
+                name2_scopes: _, ..
+            } => false,
+            ScopeData::CompoundScope { .. }
+            | ScopeData::ImportScope { .. }
+            | ScopeData::StarImportScope { .. } => {
+                let sub_scopes = match &self.data {
+                    ScopeData::CompoundScope { sub_scopes, .. }
+                    | ScopeData::ImportScope { sub_scopes, .. }
+                    | ScopeData::StarImportScope { sub_scopes, .. } => sub_scopes.clone(),
+                    _ => unreachable!(),
+                };
+                let mut current = sub_scopes;
+                while current.non_empty() {
+                    let sub_scope = *current.head();
+                    let snapshot = ctx.scope(sub_scope).clone();
+                    if snapshot.includes_full(sub_scope, by_name, types, syms, ctx) {
+                        return snapshot.is_statically_imported_full(by_name, types, syms, ctx);
+                    }
+                    current = current.tail();
+                }
+                false
+            }
+        }
+    }
 }
 /// Reads the name of a symbol from the symbol arena (upstream: sym.name).
 fn symbol_name(symbols: &Arena<Symbol>, sym: SymbolId) -> Name {
@@ -987,6 +1355,126 @@ pub(crate) fn probe_index(
         }
         i = ((i as i32 + x) & mask) as usize;
     }
+}
+
+
+
+/// Java: FilterImportScope's anonymous SymbolImporter.importFrom(TypeSymbol,
+/// List<Iterable<Symbol>>) (Scope.java:999-1019). processed is the upstream
+/// LinkedHashSet<Symbol> (identity semantics).
+#[allow(clippy::too_many_arguments)]
+fn symbol_importer_import_from(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    types: &crate::code::types::Types,
+    syms: &crate::code::symtab::Symtab,
+    inspect_super_types: bool,
+    by_name: Option<&Name>,
+    sf: &dyn Fn(SymbolId) -> bool,
+    lookup_kind: LookupKind,
+    processed: &mut Vec<SymbolId>,
+    results: &mut Vec<Vec<SymbolId>>,
+    tsym: Option<SymbolId>,
+) {
+    let Some(tsym) = tsym else {
+        return;
+    };
+    if processed.contains(&tsym) {
+        return;
+    }
+    processed.push(tsym);
+    if inspect_super_types {
+        let tsym_type = ctx.sym(tsym).ty.expect("type symbol type");
+        let super_type = types.supertype(ctx, syms, tsym_type);
+        let super_tsym = ctx.typ(super_type).tsym;
+        symbol_importer_import_from(
+            ctx,
+            types,
+            syms,
+            inspect_super_types,
+            by_name,
+            sf,
+            lookup_kind,
+            processed,
+            results,
+            super_tsym,
+        );
+        let interfaces = types.interfaces(ctx, syms, tsym_type);
+        let mut current = interfaces;
+        while current.non_empty() {
+            let interface = *current.head();
+            let interface_tsym = ctx.typ(interface).tsym;
+            symbol_importer_import_from(
+                ctx,
+                types,
+                syms,
+                inspect_super_types,
+                by_name,
+                sf,
+                lookup_kind,
+                processed,
+                results,
+                interface_tsym,
+            );
+            current = current.tail();
+        }
+    }
+    let members = ctx.sym(tsym).members();
+    let Some(members) = members else {
+        results.insert(0, Vec::new());
+        return;
+    };
+    let members_snapshot = ctx.scope(members).clone();
+    let found = match by_name {
+        Some(name) => {
+            members_snapshot.get_symbols_by_name_full(members, name, lookup_kind, sf, types, syms, ctx)
+        }
+        None => members_snapshot.get_symbols_full(members, lookup_kind, sf, types, syms, ctx),
+    };
+    results.insert(0, found);
+}
+
+/// Java: FilterImportScope.getSymbols/getSymbolsByName + SymbolImporter +
+/// filter.accepts(origin, s) (Scope.java:908-1019).
+#[allow(clippy::too_many_arguments)]
+fn query_filter_import_scope_members(
+    origin: ScopeId,
+    static_import: bool,
+    import_filter: &Option<Rc<dyn Fn(ScopeId, SymbolId) -> bool>>,
+    by_name: Option<&Name>,
+    sf: &dyn Fn(SymbolId) -> bool,
+    lookup_kind: LookupKind,
+    types: &crate::code::types::Types,
+    syms: &crate::code::symtab::Symtab,
+    ctx: &mut crate::compiler_context::CompilerContext,
+) -> Vec<SymbolId> {
+    let origin_owner = ctx.scope(origin).owner.expect("import origin owner");
+    let mut processed: Vec<SymbolId> = Vec::new();
+    let mut results: Vec<Vec<SymbolId>> = Vec::new();
+    symbol_importer_import_from(
+        ctx,
+        types,
+        syms,
+        static_import,
+        by_name,
+        sf,
+        lookup_kind,
+        &mut processed,
+        &mut results,
+        Some(origin_owner),
+    );
+    let mut output = Vec::new();
+    for group in results {
+        for sym in group {
+            let accepted = match import_filter {
+                Some(filter) => filter(origin, sym),
+                None => panic!("AssertionError: FilterImportScope without filter"),
+            };
+            if accepted {
+                output.push(sym);
+            }
+        }
+    }
+    output
 }
 
 #[cfg(test)]

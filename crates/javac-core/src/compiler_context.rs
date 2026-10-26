@@ -108,6 +108,16 @@ impl CompilerContext {
         self.trees.get_mut(id.index())
     }
 
+    /// The scope arena (immutable view for the recursive Scope queries).
+    pub fn scopes_arena(&self) -> &Arena<Scope> {
+        &self.scopes
+    }
+
+    /// The symbol arena (immutable view for the recursive Scope queries).
+    pub fn symbols_arena(&self) -> &Arena<crate::code::symbol::Symbol> {
+        &self.symbols
+    }
+
     /// Java: ctx.scope(id).
     pub fn scope(&self, id: ScopeId) -> &Scope {
         self.scopes.get(id.index())

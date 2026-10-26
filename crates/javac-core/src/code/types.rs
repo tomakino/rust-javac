@@ -2485,7 +2485,7 @@ fn get_type_arguments(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
 ///
 /// PORTING_RULES: reproduced here because type_.rs has not ported it yet (TODO
 /// Type batch; registered).
-fn get_parameter_types(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
+pub(crate) fn get_parameter_types(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::MethodType { argtypes, .. } => argtypes.clone(),
         _ => List::nil(),

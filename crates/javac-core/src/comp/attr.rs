@@ -1367,7 +1367,7 @@ fn type_apply_arguments(ctx: &CompilerContext, tree: TreeId) -> List<TreeId> {
 
 /// Java: Type.getTypeArguments() for a class type (the ported ClassType stores
 /// Option<List<TypeId>>; Union/Intersection inherit the field).
-fn type_arguments(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
+pub(crate) fn type_arguments(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::ClassType { typarams_field, .. }
         | TypeKindData::UnionClassType { typarams_field, .. }
