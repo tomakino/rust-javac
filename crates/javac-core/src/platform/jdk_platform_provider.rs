@@ -62,7 +62,7 @@
 //!      subclassing -> Rust composition with explicit overriding (the javac-tools
 //!      `ForwardingJavaFileObject` pattern).
 //! 2. `SigJavaFileObject` (S3, its only caller is getFileManager()).
-//! 3. the `ctSym2FileSystem` map and the `close()` loop over it (S3; in this batch no
+//! 3. the `ctSym2FileSystem` map and the `close()` loop over it (S3; in this no
 //!    file system handle is kept open — javac-ctsym reads the archive once and drops it — so
 //!    close() has nothing to release and returns Ok like the upstream empty-loop case).
 //! 4. S4 (launcher): supply the real java.home in front of JDKPlatformProvider::new.
@@ -169,10 +169,10 @@ impl JDKPlatformProvider {
     fn compute_supported_java_platform_versions(java_home: &FsPath) -> Vec<JavaString> {
         let mut versions: Vec<JavaString> = Vec::new();
         let ct_sym = JDKPlatformProvider::find_ct_sym(java_home);
-        // Java: if (Files.exists(ctSymFile)) { ... } — a missing ct.sym leaves the set empty.
+        // Java: if (Files.exists(ctSymFile)) {... } — a missing ct.sym leaves the set empty.
         if Files::exists(&ct_sym) {
             // Java: FileSystems.newFileSystem(...) throws IOException/ProviderNotFoundException,
-            // both caught -> empty set.  javac-ctsym reports the same failures as Err.
+            // both caught -> empty set. javac-ctsym reports the same failures as Err.
             if let Ok(archive) = CtSym::open(&ct_sym.as_path()) {
                 for section in archive.sections() {
                     let name = section.name();
@@ -242,7 +242,7 @@ pub fn numerical_comparator(s1: &JavaString, s2: &JavaString) -> Ordering {
     let i1 = parse_int_or_max(s1);
     let i2 = parse_int_or_max(s2);
     if i1 != i2 {
-        // Java: return i1 - i2; — Java int arithmetic wraps on overflow (PORTING_RULES §8).
+        // Java: return i1 - i2; — Java int arithmetic wraps on overflow (Porting rules).
         i1.wrapping_sub(i2).cmp(&0)
     } else {
         // Java: return s1.compareTo(s2);
@@ -298,8 +298,8 @@ struct PlatformDescriptionImpl {
     ct_sym_version: JavaString,
     // Java: private final Map<Path, FileSystem> ctSym2FileSystem = new HashMap<>();
     // TODO(S3): the map is only filled by getFileManager(); no FileSystem handle is kept in
-    // this batch (javac-ctsym reads the archive once and drops it), so the field is not
-    // declared yet.  close() below is the upstream empty-loop case.
+    // this (javac-ctsym reads the archive once and drops it), so the field is not
+    // declared yet. close() below is the upstream empty-loop case.
 }
 
 impl PlatformDescriptionImpl {
@@ -374,7 +374,7 @@ impl PlatformDescription for PlatformDescriptionImpl {
     /// }
     /// </pre>
     ///
-    /// PORTING_RULES: no file system handle is opened by this batch (getFileManager is still
+    /// PORTING_RULES: no file system handle is opened by this (getFileManager is still
     /// TODO(S3)), so the upstream loop over an empty map is the Ok(()) case here.  When S3
     /// opens the ct.sym file system, the map and this loop are ported 1:1.
     fn close(&self) -> Result<(), Error> {
@@ -387,7 +387,7 @@ const CHARACTER_MAX_RADIX: u32 = 36;
 
 /// Java: java.lang.Integer.parseInt(String) — decimal only; malformed input throws
 /// NumberFormatException, which is an unchecked Java exception and becomes a panic
-/// (PORTING_RULES §12).
+/// (PORTING_RULES Porting rules).
 ///
 /// PORTING_RULES: java.lang.Integer is not a ported surface; Rust's decimal parse accepts
 /// the same leading '+'/'-' and rejects whitespace like Integer.parseInt, but it does not

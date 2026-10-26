@@ -1,11 +1,11 @@
 // Origin: com/sun/tools/javac/main/Option.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: dependent service batch (see docs/PLAN.md).
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: dependent service (see docs/PLAN.md).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: getSupportedRuntimeOptions (Option.java:820)
 // - NOT PORTED: showHelp (Option.java:1003)
 // - NOT PORTED: getPrimaryName (Option.java:1071)
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! Options for javac.
 //! The specific Option to handle a command-line option can be found by calling
@@ -33,15 +33,15 @@
 //!   (all + the 31 categories with their negated forms + none).
 //! * Java Set<Option> -> &[Option] / Vec<Option> (EnumSet order = declaration order).
 //! * Java Option.getPattern()/findSeparator()/help()/helpSynopsis()/process()/
-//!   handleOption() are NOT declared in this batch:
-//!   TODO(main/OptionHelper + Arguments + Log batch): process/handleOption/help
+//!   handleOption() are NOT declared in this:
+//!   TODO(main/OptionHelper + Arguments + Log): process/handleOption/help
 //!   need main.OptionHelper, util.Log, java.util.regex and
 //!   java.lang.module.ModuleDescriptor, none of which is ported.  No substitute
-//!   helper is invented (registered §9).  Option value validation (Source/Target/
+//!   helper is invented (registered Porting rules).  Option value validation (Source/Target/
 //!   Profile lookup, --release platform lookup, choices bookkeeping, the
-//!   FILEMANAGER handleFileManagerOption call) is ported together with that batch,
+//!   FILEMANAGER handleFileManagerOption call) is ported together with that,
 //!   as is CommandLine/Arguments (the argv scanner) and SOURCEFILE's Files/Paths
-//!   checks.  getPattern is deferred to the java.util.regex adapter batch.
+//!   checks.  getPattern is deferred to the java.util.regex adapter.
 //! * options whose value is a choice keep the upstream choice semantics in
 //!   matches(): ONEOF compares the whole attached argument, ANYOF splits on ",+"
 //!   (Java String.split semantics for runs of commas: empty input yields [""],
@@ -485,7 +485,7 @@ impl Option {
                 Some(ChoiceKind::ONEOF) => return choices.iter().any(|choice| choice == attached),
                 _ => {
                     // Java: for (String a : arg.split(",+")) {
-                    //           if (!choices.contains(a)) return false; }
+                    // if (!choices.contains(a)) return false; }
                     for part in split_commas_plus(attached) {
                         if !choices.iter().any(|choice| choice == part) {
                             return false;
@@ -504,7 +504,7 @@ impl Option {
 
     /// Java: public static Option lookup(String arg, Set<Option> options).
     ///
-    /// PORTING_RULES: Java overload renamed (§3); EnumSet order = declaration order.
+    /// PORTING_RULES: Java overload renamed (Porting rules); EnumSet order = declaration order.
     pub fn lookup_in(arg: &str, options: &[Option]) -> StdOption<Option> {
         options.iter().copied().find(|option| option.matches(arg))
     }
@@ -591,8 +591,8 @@ fn get_xlint_choices() -> Vec<String> {
 ///
 /// Java: public static class InvalidValueException extends Exception
 ///
-/// TODO(main/OptionHelper batch): the upstream (String, Throwable) constructor is
-/// not ported; the project error model carries the cause separately (§6).
+/// TODO(main/OptionHelper): the upstream (String, Throwable) constructor is
+/// not ported; the project error model carries the cause separately (Porting rules).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvalidValueException {
     message: String,
@@ -669,7 +669,7 @@ impl fmt::Display for OptionKind {
 /// Java: enum OptionGroup (package-private)
 ///
 /// PORTING_RULES: Java constant names kept (BASIC/FILEMANAGER/INFO/OPERAND); no
-/// camel-case renaming (§3), so the acronym lint is allowed here.
+/// camel-case renaming (Porting rules), so the acronym lint is allowed here.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum OptionGroup {
@@ -684,7 +684,7 @@ pub(crate) enum OptionGroup {
     /// A command-line "option" representing a file or class name.
     ///
     /// PORTING_RULES: kept 1:1 from upstream; no kept Option constant uses this
-    /// group yet (upstream does not either), the Arguments/CommandLine batch will.
+    /// group yet (upstream does not either), the Arguments/CommandLine will.
     #[allow(dead_code)]
     OPERAND,
 }
@@ -694,7 +694,7 @@ pub(crate) enum OptionGroup {
 /// Java: enum ChoiceKind (package-private)
 ///
 /// PORTING_RULES: Java constant names kept (ONEOF/ANYOF); no camel-case renaming
-/// (§3), so the acronym lint is allowed here.
+/// (Porting rules), so the acronym lint is allowed here.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum ChoiceKind {

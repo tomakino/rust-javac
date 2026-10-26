@@ -1,9 +1,9 @@
 // Origin: com/sun/tools/javac/file/PathFileObject.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: P2 ClassReader / API batch.
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P2 ClassReader / API.
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: hashCode (PathFileObject.java:539)
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! Implementation of JavaFileObject using java.nio.file API.
 //!
@@ -84,7 +84,7 @@ impl PathFileObject {
         kind: PathFileObjectKind,
     ) -> PathFileObject {
         // Java: if (Files.isDirectory(path)) throw new IllegalArgumentException(
-        //           "directories not supported");
+        // "directories not supported");
         if FsFiles::is_directory(&path) {
             panic!("java.lang.IllegalArgumentException: directories not supported");
         }
@@ -219,8 +219,8 @@ impl PathFileObject {
                         Err(_) => continue,
                     };
                     if abs_path.starts_with(&ap) {
-                        // Java: try { Path rp = ap.relativize(absPath); if (rp != null) ... }
-                        //       catch (IllegalArgumentException e) { /* ignore this p */ }
+                        // Java: try { Path rp = ap.relativize(absPath); if (rp != null)... }
+                        // catch (IllegalArgumentException e) { /* ignore this p */ }
                         if let Ok(relative) = ap.relativize(&abs_path) {
                             return Some(to_binary_name_path(&relative));
                         }
@@ -312,7 +312,7 @@ impl PathFileObject {
         if pn == sn.to_string_lossy() {
             return true;
         }
-        // Java: if (p.getFileSystem() == defaultFileSystem) { ... }
+        // Java: if (p.getFileSystem() == defaultFileSystem) {... }
         // The JRT/Jar paths belong to non-default file systems.
         let default_file_system = matches!(
             self.kind,
@@ -321,7 +321,7 @@ impl PathFileObject {
         if default_file_system {
             // TODO(P2): the macOS Normalizer.isNormalized branch is not ported.
             // Java: if (pn.equalsIgnoreCase(sn)) { try { return
-            //           p.toRealPath(NOFOLLOW_LINKS).getFileName().toString().equals(sn); } catch ... }
+            // p.toRealPath(NOFOLLOW_LINKS).getFileName().toString().equals(sn); } catch... }
             if pn.eq_ignore_ascii_case(&sn.to_string_lossy())
                 && let Ok(raw) = std::fs::canonicalize(path.as_path())
                 && let real = crate::file::fs_info::strip_verbatim_prefix(raw)

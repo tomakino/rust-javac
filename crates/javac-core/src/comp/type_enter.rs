@@ -1,44 +1,44 @@
 #![allow(dead_code)] // TODO(Attr/TreeMaker/Check batches): helpers waiting for their batches (registered in the file header).
 // Origin: com/sun/tools/javac/comp/TypeEnter.java @ 982d53c (jdk-17.0.19-ga)
 //
-// PORTING_RULES §19 registration (this file):
+// Registration (this file):
 // - Ported below: the TypeEnter structure/dependencies injection, instance
-//   equivalent (new), allowTypeAnnos/allowDeprecationOnImport/completionEnabled,
-//   ensureImportsChecked, complete(), finishImports, the Phase machinery
-//   (Phase.completeEnvs/doCompleteEnvs; the Java inner phase subclasses are
-//   expressed as TypeEnter phase methods, registered adapter), ImportsPhase
-//   (runPhase/resolveImports/checkClassPackageClash/doImport/attribImportType/
-//   importAll/importStaticAll/importNamedStatic/importNamed), HierarchyPhase
-//   (runPhase/complete/superTypes), PermitsPhase, AbstractHeaderPhase
-//   (baseEnv/enumBase/modelMissingTypes/Synthesizer structure), HeaderPhase
-//   (runPhase/attribSuperTypes/clearTypeParams/default constructor/this&super
-//   field/finishClass), RecordPhase, MembersPhase, DefaultConstructorHelper
-//   hierarchy, defaultConstructor, finishClass/addAccessor/addEnumMembers/
-//   getCanonicalConstructorDecl/addRecordMembersIfNeeded/lookupMethod/
-//   getDefaultConstructorHelper, markDeprecated/handleDeprecatedAnnotations/
-//   setFlagIfAttributeTrue.
+// equivalent (new), allowTypeAnnos/allowDeprecationOnImport/completionEnabled,
+// ensureImportsChecked, complete(), finishImports, the Phase machinery
+// (Phase.completeEnvs/doCompleteEnvs; the Java inner phase subclasses are
+// expressed as TypeEnter phase methods, registered adapter), ImportsPhase
+// (runPhase/resolveImports/checkClassPackageClash/doImport/attribImportType/
+// importAll/importStaticAll/importNamedStatic/importNamed), HierarchyPhase
+// (runPhase/complete/superTypes), PermitsPhase, AbstractHeaderPhase
+// (baseEnv/enumBase/modelMissingTypes/Synthesizer structure), HeaderPhase
+// (runPhase/attribSuperTypes/clearTypeParams/default constructor/this&super
+// field/finishClass), RecordPhase, MembersPhase, DefaultConstructorHelper
+// hierarchy, defaultConstructor, finishClass/addAccessor/addEnumMembers/
+// getCanonicalConstructorDecl/addRecordMembersIfNeeded/lookupMethod/
+// getDefaultConstructorHelper, markDeprecated/handleDeprecatedAnnotations/
+// setFlagIfAttributeTrue.
 //
 // NOT PORTED IN THIS FILE (registered; dependencies not ported yet, no
 // substitute):
 // - Attr: attr.attribImportQualifier/attribType/attribBase/
-//   attribTypeVariables -> explicit unimplemented helpers (Attr batch);
+// attribTypeVariables -> explicit unimplemented helpers (Attr);
 // - Annotate/TypeAnnotations/Todo/Preview: annotate.blockAnnotations/
-//   unblockAnnotations/annotateLater/organizeTypeAnnotationsSignatures/
-//   typeAnnotations.validate*, todo.append, preview checks -> TODO comments
-//   (Annotate/TypeAnnotations/Todo batches);
+// unblockAnnotations/annotateLater/organizeTypeAnnotationsSignatures/
+// typeAnnotations.validate*, todo.append, preview checks -> TODO comments
+// (Annotate/TypeAnnotations/Todo batches);
 // - TreeMaker factories (Import/QualIdent/ClassDef/MethodDef/Modifiers/
-//   VarDef/Return/Block/Type/Select/Ident/Assign...) are not ported (registered
-//   in TreeMaker batch): make.* calls are explicit unimplemented helpers;
+// VarDef/Return/Block/Type/Select/Ident/Assign...) are not ported (registered
+// in TreeMaker): make.* calls are explicit unimplemented helpers;
 // - Check: checkImportsUnique/checkImportsResolvable/
-//   checkImportedPackagesObservable/importAccessible/checkCanonical/
-//   checkDefaultConstructor/checkNonCyclic -> explicit unimplemented helpers
-//   (Check batch);
-// - Lint: Lint.suppress is not ported (Lint batch) -> unimplemented helper;
+// checkImportedPackagesObservable/importAccessible/checkCanonical/
+// checkDefaultConstructor/checkNonCyclic -> explicit unimplemented helpers
+// (Check);
+// - Lint: Lint.suppress is not ported (Lint) -> unimplemented helper;
 // - ClassSymbol.isCompleted/setAnnotationTypeMetadata/getRecordComponent,
-//   TreeInfo.recordFields/hasConstructors/isConstructor, RecordComponent ->
-//   registered TODOs where used (symbol/record batches);
+// TreeInfo.recordFields/hasConstructors/isConstructor, RecordComponent ->
+// registered TODOs where used (symbol/record batches);
 // - Modules: syms.enterPackage/lookupPackage/getClass are ported; the
-//   checkClassPackageClash body follows upstream with the local adapters.
+// checkClassPackageClash body follows upstream with the local adapters.
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -210,8 +210,8 @@ impl TypeEnter {
         if !self.completion_enabled {
             // Re-install same completer for next time around and return.
             // Java: Assert.check((sym.flags() & Flags.COMPOUND) == 0);
-            //       sym.completer = this;
-            // TODO(TypeEnter/Completer batch): the completer registration is an
+            // sym.completer = this;
+            // TODO(TypeEnter/Completer): the completer registration is an
             // adapter concern (the local completion is driven by the caller's
             // complete_symbol); registered.
             return;
@@ -308,7 +308,7 @@ impl TypeEnter {
         if ctx.sym(owner).kind == Kind::PCK {
             let top = self.enter.borrow().get_top_level_env(ctx, toplevel(env));
             self.resolve_imports(ctx, syms, toplevel(env), &top);
-            // TODO(Todo batch): todo.append(env);
+            // TODO(Todo): todo.append(env);
         }
         if ctx.sym(owner).kind == Kind::TYP {
             // Java: sym.owner.complete();
@@ -339,7 +339,7 @@ impl TypeEnter {
             .deferred_lint_handler
             .borrow_mut()
             .immediate();
-        // TODO(Lint batch): Lint prevLint = chk.setLint(lint);
+        // TODO(Lint): Lint prevLint = chk.setLint(lint);
         let prev_env = self.imports_env.clone();
         self.imports_env = Some(Rc::clone(env));
         let packge = compilation_unit_package(ctx, tree);
@@ -409,7 +409,7 @@ impl TypeEnter {
             }
         }
         self.imports_env = prev_env;
-        // TODO(Lint batch): chk.setLint(prevLint);
+        // TODO(Lint): chk.setLint(prevLint);
         self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint_pos);
         self.static_import_filter = prev_static;
         self.type_import_filter = prev_type;
@@ -437,9 +437,9 @@ impl TypeEnter {
                     if let Some(owner) = owner {
                         // Java: p.owner.complete(); enter all class members of p
                         let _ = ctx.complete_symbol(syms, owner);
-                        // TODO(Modules batch): syms.lookupPackage(toplevel(&env).modle,
-                        //     p.owner.getQualifiedName()) + syms.getClass(...) +
-                        //     Errors.PkgClashesWithClassOfSameName(p);
+                        // TODO(Modules): syms.lookupPackage(toplevel(&env).modle,
+                        // p.owner.getQualifiedName()) + syms.getClass(...) +
+                        // Errors.PkgClashesWithClassOfSameName(p);
                     }
                     p = owner.unwrap();
                 }
@@ -485,7 +485,7 @@ impl TypeEnter {
         let p = self.attrib_import_qualifier(ctx, syms, tree, &local_env);
         if name.to_java_string() == self.names.asterisk.to_java_string() {
             // Import on demand.
-            // TODO(Check batch): chk.checkCanonical(imp.selected);
+            // TODO(Check): chk.checkCanonical(imp.selected);
             if import_static_import(ctx, tree) {
                 self.import_static_all(ctx, tree, p, &env);
             } else {
@@ -494,7 +494,7 @@ impl TypeEnter {
         } else if import_static_import(ctx, tree) {
             // Named static import.
             self.import_named_static(ctx, syms, tree, p, name, &local_env);
-            // TODO(Check batch): chk.checkCanonical(imp.selected);
+            // TODO(Check): chk.checkCanonical(imp.selected);
         } else {
             // Named type import.
             let imported_type = self.attrib_import_type(ctx, syms, qualid, &local_env);
@@ -504,7 +504,7 @@ impl TypeEnter {
             } else {
                 ctx.typ(imported_type).tsym
             };
-            // TODO(Check batch): chk.checkCanonical(imp);
+            // TODO(Check): chk.checkCanonical(imp);
             if let Some(c) = c {
                 self.import_named(ctx, syms, ctx.tree(tree).pos, c, &env, tree);
             }
@@ -521,8 +521,8 @@ impl TypeEnter {
         _env: &Rc<Env<AttrContext>>,
     ) -> crate::ids::TypeId {
         // Java: Assert.check(completionEnabled);
-        //       Lint prevLint = chk.setLint(...); completionEnabled = false;
-        //       return attr.attribType(tree, env);
+        // Lint prevLint = chk.setLint(...); completionEnabled = false;
+        // return attr.attribType(tree, env);
         unimplemented!("TODO(Attr batch): ImportsPhase.attribImportType attr.attribType")
     }
 
@@ -550,7 +550,7 @@ impl TypeEnter {
         let filter = self.static_import_filter.clone();
         let _ = filter;
         // Java: toplevel(&env).starImportScope.importAll(types, tsym.members(),
-        //     typeImportFilter, imp, cfHandler);
+        // typeImportFilter, imp, cfHandler);
         let type_filter = self.type_import_filter.clone();
         ctx.scope_import_all(
             star_scope,
@@ -597,7 +597,7 @@ impl TypeEnter {
     ) {
         if ctx.sym(tsym).kind != Kind::TYP {
             // Java: log.error(DiagnosticFlag.RECOVERABLE, imp.pos(),
-            //     Errors.StaticImpOnlyClassesAndInterfaces);
+            // Errors.StaticImpOnlyClassesAndInterfaces);
             self.log.borrow_mut().error_at(
                 ctx.tree(tree).pos,
                 crate::util::jc_diagnostic::Error::from(
@@ -665,17 +665,17 @@ impl TypeEnter {
         };
         self.import_all(ctx, imp, java_lang, env);
     }
-    /// Java: Check.checkImportsUnique(toplevel) — TODO(Check batch).
+    /// Java: Check.checkImportsUnique(toplevel) — TODO(Check).
     fn check_imports_unique(&mut self, _ctx: &mut CompilerContext, _toplevel: TreeId) {
         unimplemented!("TODO(Check batch): Check.checkImportsUnique")
     }
 
-    /// Java: Check.checkImportsResolvable(toplevel) — TODO(Check batch).
+    /// Java: Check.checkImportsResolvable(toplevel) — TODO(Check).
     fn check_imports_resolvable(&mut self, _ctx: &mut CompilerContext, _toplevel: TreeId) {
         unimplemented!("TODO(Check batch): Check.checkImportsResolvable")
     }
 
-    /// Java: Check.checkImportedPackagesObservable(toplevel) — TODO(Check batch).
+    /// Java: Check.checkImportedPackagesObservable(toplevel) — TODO(Check).
     fn check_imported_packages_observable(&mut self, _ctx: &mut CompilerContext, _toplevel: TreeId) {
         unimplemented!("TODO(Check batch): Check.checkImportedPackagesObservable")
     }
@@ -696,7 +696,7 @@ impl TypeEnter {
         self.handle_deprecated_annotations(ctx, syms, annotations, sym);
     }
 
-    /// Java: Attr.attribAnnotationTypes(annotations, env) — TODO(Attr batch).
+    /// Java: Attr.attribAnnotationTypes(annotations, env) — TODO(Attr).
     fn attrib_annotation_types(
         &mut self,
         _ctx: &mut CompilerContext,
@@ -860,8 +860,8 @@ impl TypeEnter {
         _interface_expected: bool,
     ) -> crate::ids::TypeId {
         // Java: if (!t.hasTag(ERROR)) return t; else new ErrorType(...)
-        //       getModelType() -> new Synthesizer(...).visit(tree)
-        // TODO(Synthesizer batch): the local ErrorType modelType hook and the
+        // getModelType() -> new Synthesizer(...).visit(tree)
+        // TODO(Synthesizer): the local ErrorType modelType hook and the
         // Synthesizer visitor are not ported; registered.
         t
     }
@@ -877,7 +877,7 @@ impl TypeEnter {
         _syms: &mut Symtab,
         _env: &Rc<Env<AttrContext>>,
     ) {
-        // TODO(Attr batch): supertypes processing (attribSuperTypes /
+        // TODO(Attr): supertypes processing (attribSuperTypes /
         // chk.checkNonCyclic / markDeprecated / chk.checkNonCyclicDecl);
         // registered.
         unimplemented!("TODO(Attr/Check batch): TypeEnter.hierarchyPhase.runPhase")
@@ -931,7 +931,7 @@ impl TypeEnter {
         _syms: &mut Symtab,
         _env: &Rc<Env<AttrContext>>,
     ) {
-        // TODO(Attr/Check/Annotate batch): annotate.queueScanTreeAndTypeAnnotate/
+        // TODO(Attr/Check/Annotate): annotate.queueScanTreeAndTypeAnnotate/
         // annotate.flush/attribSuperTypes/chk.checkNotRepeated/annotateLater/
         // attr.attribTypeVariables/syms.packageExists/Errors.ClashWithPkgOfSameName/
         // JavaFileObject.isNameCompatible/AUXILIARY; registered.
@@ -986,7 +986,7 @@ impl TypeEnter {
         _syms: &mut Symtab,
         _env: &Rc<Env<AttrContext>>,
     ) {
-        // TODO(Record batch): TreeInfo.recordFields/findRecordComponentToRemove/
+        // TODO(Record): TreeInfo.recordFields/findRecordComponentToRemove/
         // TreeCopier/createRecordComponent/memberEnter; registered.
         unimplemented!("TODO(Record batch): TypeEnter.recordPhase.runPhase")
     }
@@ -998,7 +998,7 @@ impl TypeEnter {
         _syms: &mut Symtab,
         _env: &Rc<Env<AttrContext>>,
     ) {
-        // TODO(Attr/Check/Annotate batch): checkDefaultConstructor/
+        // TODO(Attr/Check/Annotate): checkDefaultConstructor/
         // defaultConstructor/enterThisAndSuper/checkNonCyclic/finishClass/
         // typeAnnotations.organizeTypeAnnotationsSignatures; registered.
         unimplemented!("TODO(Attr/Check batch): TypeEnter.membersPhase.runPhase")
@@ -1020,10 +1020,10 @@ impl TypeEnter {
         _default_constructor: Option<TreeId>,
         _env: &Rc<Env<AttrContext>>,
     ) {
-        // TODO(Enum/Record/Annotate batch): addEnumMembers/addRecordMembersIfNeeded/
+        // TODO(Enum/Record/Annotate): addEnumMembers/addRecordMembersIfNeeded/
         // setAnnotationTypeMetadata; memberEnter.memberEnter(defs) is ported.
         // The defs member enter part is:
-        //   memberEnter.memberEnter(defsToEnter, env);
+        // memberEnter.memberEnter(defsToEnter, env);
         unimplemented!("TODO(Enum/Record/Annotate batch): TypeEnter.finishClass")
     }
 
@@ -1069,8 +1069,8 @@ impl TypeEnter {
     ) -> Option<TreeId> {
         let symbol = class_tree_symbol(ctx, tree).expect("class sym");
         // Java: sym.isRecord() && tree.defs.stream().filter(t ->
-        //     TreeInfo.isConstructor(t) && t.sym.params.length ==
-        //     TreeInfo.recordFields(tree).length()).findFirst()
+        // TreeInfo.isConstructor(t) && t.sym.params.length ==
+        // TreeInfo.recordFields(tree).length()).findFirst()
         if !symbol_is_record(ctx, symbol) {
             return None;
         }
@@ -1079,7 +1079,7 @@ impl TypeEnter {
         while current.non_empty() {
             let def = *current.head();
             if tree_info::is_constructor(ctx, def) {
-                // TODO(Record batch): compare the parameter count with the
+                // TODO(Record): compare the parameter count with the
                 // record components (TreeInfo.recordFields).
                 return Some(def);
             }
@@ -1102,12 +1102,12 @@ impl TypeEnter {
         let symbols = ctx.scope_get_symbols_by_name(scope, &name, LookupKind::NON_RECURSIVE, &|_| true);
         for sym in symbols {
             // Java: if (types.hasSameArgs(m.type, new MethodType(argtypes,
-            //     syms.voidType, List.nil(), syms.methodClass), true)) return m;
+            // syms.voidType, List.nil(), syms.methodClass), true)) return m;
             if let Some(ty) = ctx.sym(sym).ty
                 && ctx.typ(ty).has_tag(TypeTag::METHOD) {
                     let same = self.types.has_same_args(ctx, syms, ty, ty);
                     if same {
-                        // TODO(Types batch): compare with the synthetic
+                        // TODO(Types): compare with the synthetic
                         // MethodType(argtypes, voidType, nil, methodClass);
                         // the full hasSameArgs comparison is registered.
                         return Some(sym);
@@ -1134,7 +1134,7 @@ impl TypeEnter {
         _ctx: &mut CompilerContext,
         _env: &Rc<Env<AttrContext>>,
     ) -> Option<Box<dyn DefaultConstructorHelper>> {
-        // TODO(Record/TreeMaker batch): BasicConstructorHelper/
+        // TODO(Record/TreeMaker): BasicConstructorHelper/
         // AnonClassConstructorHelper/RecordConstructorHelper need TreeMaker and
         // RecordComponent; registered.
         unimplemented!("TODO(Record/TreeMaker batch): TypeEnter.getDefaultConstructorHelper")
@@ -1341,7 +1341,7 @@ fn literal_is_true(ctx: &CompilerContext, literal: TreeId) -> bool {
 
 /// Java: TypeEnter.DefaultConstructorHelper (TypeEnter.java:1180-1190)
 ///
-/// TODO(TreeMaker/Attr batch): the helper method bodies need TreeMaker/Attr/
+/// TODO(TreeMaker/Attr): the helper method bodies need TreeMaker/Attr/
 /// Types.memberType; the trait and the concrete helper types are defined here so
 /// that the mapping is explicit (registered; the implementations follow in the
 /// Attr/TreeMaker batches).

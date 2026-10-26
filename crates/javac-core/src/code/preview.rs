@@ -18,11 +18,11 @@
 //!   so the set is a Vec<JavaFileObjectRef> searched with Rc::ptr_eq (same identity
 //!   semantics; the set is tiny).  Map<Integer, Source> -> HashMap<i32, Source>.
 //! * the Java overloads of warnPreview/disabledError become distinct Rust names
-//!   (§3): warn_preview(int, Feature) -> warn_preview, warnPreview(
+//!   (Porting rules): warn_preview(int, Feature) -> warn_preview, warnPreview(
 //!   DiagnosticPosition, Feature) -> warn_preview_at, warnPreview(JavaFileObject,
 //!   int) -> warn_preview_classfile; disabledError(Feature) -> disabled_error,
 //!   disabledError(JavaFileObject, int) -> disabled_error_classfile.
-//! * TODO(Log/Lint/Options batch): the constructor reads Options (enabled,
+//! * TODO(Log/Lint/Options): the constructor reads Options (enabled,
 //!   forcePreview), Log.instance, Lint.instance and creates a
 //!   MandatoryWarningHandler; none of these is ported yet.  instance(Context) and the
 //!   diagnostics entry points that need them (warnPreview x3, markUsesPreview,
@@ -30,7 +30,7 @@
 //!   unimplemented (no substitute Log/Options/MandatoryWarningHandler).  The fields
 //!   used only by those methods (log, lint, previewHandler) are not represented yet.
 //! * the constructor adapter new(enabled, force_preview) takes the two option flags
-//!   directly (the full Java constructor wiring lands with the Options/Log batch);
+//!   directly (the full Java constructor wiring lands with the Options/Log);
 //!   majorVersionToSource is initialized by the ported private method.
 //! * disabledError builds the same resource keys as upstream
 //!   (Errors.PreviewFeatureDisabled[Plural]/PreviewFeatureDisabledClassfile); the
@@ -70,8 +70,8 @@ pub struct Preview {
     sources_with_preview_features: Vec<JavaFileObjectRef>,
 
     // Java: private final MandatoryWarningHandler previewHandler;
-    // Java: private final Lint lint;  private final Log log;
-    // TODO(Log/Lint batch): those dependencies are not ported yet; the fields are
+    // Java: private final Lint lint; private final Log log;
+    // TODO(Log/Lint): those dependencies are not ported yet; the fields are
     // represented once the Log/Lint construction is available.
 }
 
@@ -82,7 +82,7 @@ impl Preview {
     /// Java: Preview(Context context) — the full constructor reads Options
     /// (PREVIEW/"forcePreview"), Log.instance, Lint.instance and creates the
     /// MandatoryWarningHandler; those dependencies are not ported yet.
-    // TODO(Log/Lint/Options batch): the P6 wiring builds Preview from the ported
+    // TODO(Log/Lint/Options): the P6 wiring builds Preview from the ported
     // Context (Options/Log/Lint); until then this adapter constructor is used by the
     // module tests, so it is allow(dead_code) for non-test builds.
     #[allow(dead_code)]
@@ -131,7 +131,7 @@ impl Preview {
     /// }
     /// </pre>
     ///
-    /// TODO(Log/Lint/Options batch): the constructor reads Options/Log/Lint; the
+    /// TODO(Log/Lint/Options): the constructor reads Options/Log/Lint; the
     /// entry point stays unimplemented (no substitute components).
     pub fn instance(_context: &mut Context) -> Rc<Preview> {
         unimplemented!(
@@ -210,7 +210,7 @@ impl Preview {
             Feature::CASE_NULL => true,
             Feature::PATTERN_SWITCH => true,
             // Note: this is a backdoor which allows to optionally treat all features
-            // as 'preview' (for testing).  When real preview features will be added,
+            // as 'preview' (for testing). When real preview features will be added,
             // this method can be implemented to return 'true' for those selected
             // features, and 'false' for all the others.
             _ => self.force_preview,

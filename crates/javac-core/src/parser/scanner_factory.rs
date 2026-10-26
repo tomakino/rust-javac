@@ -10,7 +10,7 @@
 //! PORTING_RULES:
 //! * the dependency fields are injected: Names has no Context registration in
 //!   the port and Source.instance / Preview.instance / Lint.instance are not
-//!   implemented yet (TODO(Options batch)), so new()/instance() take Names and
+//!   implemented yet (TODO(Options)), so new()/instance() take Names and
 //!   Source as parameters while Preview and Lint are optional Context
 //!   injections (None = the Java default state: no preview flags, no -Xlint);
 //!   the factory still keeps the upstream dependency fields
@@ -41,12 +41,12 @@ pub struct ScannerFactory {
     pub(crate) names: Rc<Names>,
     pub(crate) source: Source,
     /// Java: final Preview preview.  PORTING_RULES: Preview.instance is not
-    /// implemented yet (TODO(Log/Lint/Options batch)), so the dependency is an
+    /// implemented yet (TODO(Log/Lint/Options)), so the dependency is an
     /// optional injection; None is the default (no preview features enabled).
     pub(crate) preview: Option<Rc<Preview>>,
     pub(crate) tokens: Rc<Tokens>,
     /// Java: final Lint lint.  PORTING_RULES: Lint.instance is not implemented
-    /// yet (TODO(Options batch)); None is the default (no -Xlint categories),
+    /// yet (TODO(Options)); None is the default (no -Xlint categories),
     /// matching the Java default Lint state.
     pub(crate) lint: Option<Rc<Lint>>,
 }

@@ -1,9 +1,9 @@
 // Origin: com/sun/tools/javac/jvm/ModuleNameReader.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: dependent service batch (see docs/PLAN.md).
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: dependent service (see docs/PLAN.md).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: utf8Mapper (ModuleNameReader.java:149)
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! Stripped down ClassReader, just sufficient to read module names from
 //! module-info.class files while analyzing the module path.

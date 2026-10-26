@@ -307,7 +307,7 @@ pub const ReceiverParamFlags: i64 = PARAMETER;
 
 /// Java: public static String toString(long flags)
 ///
-/// PORTING_RULES: Java String results are JavaString (PORTING_RULES §7); this is
+/// PORTING_RULES: Java String results are JavaString (PORTING_RULES Porting rules); this is
 /// the overloaded static toString, so it gets a descriptive Rust name.
 pub fn to_java_string(flags: i64) -> JavaString {
     let mut buf = String::new();

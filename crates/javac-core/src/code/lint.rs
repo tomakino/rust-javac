@@ -1,5 +1,5 @@
 // Origin: com/sun/tools/javac/code/Lint.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: initSyms (Lint.java:391)
@@ -9,7 +9,7 @@
 // - NOT PORTED: visitArray (Lint.java:429)
 // - NOT PORTED: visitEnum (Lint.java:434)
 // - NOT PORTED: visitError (Lint.java:437)
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! A class for handling -Xlint suboptions and @SuppressWarnings.
 //!
@@ -24,7 +24,7 @@
 //!   the enum constructor fills becomes LintCategory::get (a linear match; the
 //!   ConcurrentHashMap had no iteration-order use).
 //! * Java EnumSet<LintCategory> -> BTreeSet (unique elements iterated in enum
-//!   declaration order, which is the EnumSet iteration order; §9.10).
+//!   declaration order, which is the EnumSet iteration order; Porting rules.10).
 //! * Java protected Lint(Lint other) copy constructor -> pub(crate) new_from;
 //!   suppress(LintCategory...) -> suppress(&[LintCategory]); toString -> Display
 //!   with the EnumSet format ("[A, B]").
@@ -58,7 +58,7 @@ pub struct Lint {
     /// Java: private final EnumSet<LintCategory> suppressedValues.
     suppressed_values: BTreeSet<LintCategory>,
     // Java: private final AugmentVisitor augmentor;
-    // TODO(Attribute/Symtab batch): the AugmentVisitor needs Attribute.Compound and
+    // TODO(Attribute/Symtab): the AugmentVisitor needs Attribute.Compound and
     // Symtab.instance, which are not ported yet; no field is represented until then.
 }
 
@@ -73,7 +73,7 @@ impl Lint {
     /// }
     /// </pre>
     ///
-    /// TODO(Options batch): the constructor reads Options (-Xlint/-Xlint:all/none/
+    /// TODO(Options): the constructor reads Options (-Xlint/-Xlint:all/none/
     /// custom/-preview) and Source.instance; both depend on the not yet ported
     /// Options/main.Option.  No substitute Options is invented.
     pub fn instance(context: &mut Context) -> Rc<Lint> {
@@ -155,7 +155,7 @@ impl Lint {
     /// the given annotation.
     ///
     /// Java: public Lint augment(Attribute.Compound attr) (Lint.java:65-67).
-    /// PORTING_RULES §9 adapter: the upstream AugmentVisitor is a context
+    /// PORTING_RULES Porting rules adapter: the upstream AugmentVisitor is a context
     /// singleton; the ported visitor takes the compiler context and symtab
     /// explicitly (ADR 0001).
     pub fn augment_compound(&self, ctx: &CompilerContext, syms: &Symtab, attr: AttributeId) -> Lint {
@@ -176,7 +176,7 @@ impl Lint {
         if sym.is_deprecated() {
             // Java: if (l == this) l = new Lint(this); then remove/add
             // DEPRECATION. The ported augmentor always yields a copy
-            // (Lint::new_from), which the §9 adapter treats as the
+            // (Lint::new_from), which the adapter adapter treats as the
             // "l != this" branch; the resulting category sets are identical.
             let mut values = lint.values.clone();
             let mut suppressed = lint.suppressed_values.clone();

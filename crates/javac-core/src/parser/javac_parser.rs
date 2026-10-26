@@ -1,12 +1,12 @@
 // Origin: com/sun/tools/javac/parser/JavacParser.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: dependent service batch (see docs/PLAN.md).
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: dependent service (see docs/PLAN.md).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: newEndPosTable (JavacParser.java:193)
 // - NOT PORTED: newOdStack (JavacParser.java:1101)
 // - NOT PORTED: newOpStack (JavacParser.java:1107)
 // - NOT PORTED: setParser (JavacParser.java:5035)
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! The parser maps a token sequence into an abstract syntax tree.
 //! The parser is a hand-written recursive-descent parser that
@@ -19,7 +19,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES / batch status (S7b):
+//! PORTING_RULES / status (S7b):
 //! * JCTree values are arena TreeIds (ADR 0001); every parse method takes the
 //!   CompilerContext because tree creation needs the arena;
 //! * the Java nested Abstract/Simple/Empty EndPosTable classes are ported in
@@ -33,7 +33,7 @@
 //! * remaining dependency: DocCommentParser's ReferenceParser is still a
 //!   TODO(parser S7) marker (doc-comment reference parsing only; registered).
 //!
-//! clippy debt registration (pre-existing S6/S7a items, NOT from the S7b batch;
+//! clippy debt registration (pre-existing S6/S7a items, NOT from the S7b;
 //! cleanup happens with the parser-wiring/annotations batches):
 //! - collapsible-if at 631/1548/2093/2726/2727/3128/3375/4353;
 //! - unneeded-return at 2186/2192; unit-let at 4612;
@@ -42,7 +42,7 @@
 //! - &mut Vec vs slice at 2689 (fold helper); while-let at 3881
 //!   (insertAnnotationsToMostInner);
 //! - these are all equivalent upstream-structure ports; the remaining lint
-//!   changes are stylistic and are scheduled for the parser-wiring batch.
+//!   changes are stylistic and are scheduled for the parser-wiring.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -120,7 +120,7 @@ mod Flags {
 }
 /// P4 placeholder: a fragment used as a diagnostic argument is currently
 /// carried as its key text (diagnostic_contract::DiagnosticArg is a text
-/// placeholder until the P4 JCDiagnostic reformatting batch; registered).
+/// placeholder until the P4 JCDiagnostic reformatting; registered).
 fn fragment_diagnostic_arg(fragment: FragmentInfo) -> DiagnosticArg {
     DiagnosticArg::from_display(fragment.info().key())
 }
@@ -132,11 +132,11 @@ const INFIX_PRECEDENCE_LEVELS: i32 = 10;
 const RECOVERY_THRESHOLD: i32 = 50;
 
 // When terms are parsed, the mode determines which is expected:
-//     mode = EXPR        : an expression
-//     mode = TYPE        : a type
-//     mode = NOPARAMS    : no parameters allowed for type
-//     mode = TYPEARG     : type argument
-//     mode |= NOLAMBDA   : lambdas are not allowed
+// mode = EXPR : an expression
+// mode = TYPE : a type
+// mode = NOPARAMS : no parameters allowed for type
+// mode = TYPEARG : type argument
+// mode |= NOLAMBDA : lambdas are not allowed
 pub(crate) const EXPR: i32 = 0x1;
 pub(crate) const TYPE: i32 = 0x2;
 pub(crate) const NOPARAMS: i32 = 0x4;
@@ -294,7 +294,7 @@ pub(crate) trait AbstractEndPosTable: EndPosTable {
     fn to_p(&mut self, t: TreeId, end_pos: i32) -> TreeId;
 
     /// Coerce the table into the plain EndPosTable used by the compilation unit.
-    /// PORTING_RULES §9 adapter: Rust object-safety helper for the Java
+    /// PORTING_RULES Porting rules adapter: Rust object-safety helper for the Java
     /// EndPosTable reference (upstream uses the Java object directly).
     fn boxed(self: Box<Self>) -> Box<dyn EndPosTable>;
 }
@@ -537,7 +537,7 @@ impl JavacParser {
 
     #[allow(dead_code)]
     /// Unwired upstream helper: Java: peekToken(kind1, kind2);
-/// TODO(parser wiring batch): wire the remaining term3Rest/annotations call sites.
+/// TODO(parser wiring): wire the remaining term3Rest/annotations call sites.
     fn peek_token2(&mut self, kind1: TokenKind, kind2: TokenKind) -> bool {
         self.peek_token_at2(0, kind1, kind2)
     }
@@ -549,14 +549,14 @@ impl JavacParser {
 
     #[allow(dead_code)]
     /// Unwired upstream helper: Java: peekToken(kind1, kind2, kind3);
-/// TODO(parser wiring batch).
+/// TODO(parser wiring).
     fn peek_token3(&mut self, kind1: TokenKind, kind2: TokenKind, kind3: TokenKind) -> bool {
         self.peek_token_at3(0, kind1, kind2, kind3)
     }
 
     #[allow(dead_code)]
     /// Unwired upstream helper: Java: peekToken(lookahead, kind1, kind2, kind3);
-    /// TODO(parser wiring batch).
+    /// TODO(parser wiring).
     fn peek_token_at3(
         &mut self,
         lookahead: i32,
@@ -766,7 +766,7 @@ impl JavacParser {
     /// Java: protected void checkNoMods(long mods)
     #[allow(dead_code)]
     /// Unwired upstream helper: Java: checkNoMods(long flags);
-/// TODO(parser wiring batch).
+/// TODO(parser wiring).
     fn check_no_mods(&mut self, ctx: &mut CompilerContext, mods: i64) {
         let pos = self.token.pos;
         self.check_no_mods_at(ctx, pos, mods);
@@ -1192,7 +1192,7 @@ impl JavacParser {
     }
 
     /// Java: lookahead token kind (Java: S.token(lookahead).kind).
-    /// PORTING_RULES §9 adapter: Scanner.lookahead token kind accessor
+    /// PORTING_RULES Porting rules adapter: Scanner.lookahead token kind accessor
     /// (upstream code inlines S.token(lookahead).kind at the call sites).
     #[allow(dead_code)]
     fn lookahead_kind(&mut self, lookahead: i32) -> TokenKind {
@@ -1202,7 +1202,7 @@ impl JavacParser {
     /// Java: static int earlier(int pos1, int pos2)
     #[allow(dead_code)]
     /// Unwired upstream helper: Java: static int earlier(int pos1, int pos2);
-/// TODO(parser wiring batch).
+/// TODO(parser wiring).
     fn earlier(pos1: i32, pos2: i32) -> i32 {
         if pos1 == NOPOS {
             return pos2;
@@ -2419,7 +2419,7 @@ impl JavacParser {
     }
 
     /// Java: term() infix assignment check, factored into a helper (upstream
-    /// JavacParser has no isAssignop method; PORTING_RULES §9 adapter).
+    /// JavacParser has no isAssignop method; PORTING_RULES Porting rules adapter).
     fn is_assignop(kind: TokenKind) -> bool {
         matches!(
             kind,
@@ -2796,7 +2796,7 @@ impl JavacParser {
             }
             TokenKind::LPAREN => {
                 if type_args.is_none() && (self.mode & EXPR) != 0 {
-                    // Java: ParensResult pres = analyzeParens(); switch (pres) { ... }
+                    // Java: ParensResult pres = analyzeParens(); switch (pres) {... }
                     let pres = self.analyze_parens();
                     match pres {
                         ParensResult::Cast => {
@@ -5231,7 +5231,7 @@ impl JavacParser {
             implementing = self.type_list(ctx);
         }
         let defs = self.class_interface_or_record_body(ctx, name.clone(), false, true);
-        // Java: for (JCTree def : defs) { if (def.hasTag(METHODDEF)) { ... } }
+        // Java: for (JCTree def : defs) { if (def.hasTag(METHODDEF)) {... } }
         let mut defs_vec: Vec<TreeId> = defs.iter().collect();
         for def in defs_vec.iter_mut() {
             if !ctx.tree(*def).has_tag(Tag::METHODDEF) {
@@ -5284,8 +5284,8 @@ impl JavacParser {
                         _ => panic!("expected record header variable declaration"),
                     };
                 // Java: F.at(param).VarDef(F.Modifiers(PARAMETER | GENERATED_MEMBER
-                //        | param.mods.flags & VARARGS, param.mods.annotations),
-                //        param.name, param.vartype, null)
+                // | param.mods.flags & VARARGS, param.mods.annotations),
+                // param.name, param.vartype, null)
                 let generated_flags =
                     Flags::PARAMETER | Flags::GENERATED_MEMBER | (param_flags & Flags::VARARGS);
                 let generated_mods =
@@ -5517,8 +5517,8 @@ impl JavacParser {
         } else if is_record && has_ident_type && self.token.kind == TokenKind::THROWS {
             // trying to define a compact constructor with a throws clause
             // Java: log.error(SYNTAX, token.pos, Errors.InvalidCanonicalConstructorInRecord(
-            //         Fragments.Compact, className,
-            //         Fragments.ThrowsClauseNotAllowedForCanonicalConstructor(Fragments.Compact)));
+            // Fragments.Compact, className,
+            // Fragments.ThrowsClauseNotAllowedForCanonicalConstructor(Fragments.Compact)));
             let key = JCDiagnosticError::from(errors::invalid_canonical_constructor_in_record(
                 fragment_diagnostic_arg(fragments::compact()),
                 class_name.clone(),
@@ -5909,7 +5909,7 @@ impl JavacParser {
             self.log.borrow_mut().error_at(self.token.pos, key);
         }
         // PORTING_RULES adapter: type is Some in every current call site; the
-        // null type of implicit lambda parameters is parsed by the lambda batch.
+        // null type of implicit lambda parameters is parsed by the lambda.
         let type_ = type_.map(|t| self.brackets_opt_simple(ctx, t));
         let declared_using_var = match type_ {
             Some(t) => {
@@ -5999,7 +5999,7 @@ impl JavacParser {
                 if first_type_decl && self.token.kind == TokenKind::IDENTIFIER {
                     // Java: ModuleKind kind = ModuleKind.STRONG;
                     // if (token.name() == names.open) { kind = ModuleKind.OPEN; nextToken(); }
-                    // if (token.name() == names.module) { ... moduleDecl(mods, kind, docComment); break; }
+                    // if (token.name() == names.module) {... moduleDecl(mods, kind, docComment); break; }
                     // else if (kind != ModuleKind.STRONG) reportSyntaxError(ExpectedModule);
                     let mut kind = ModuleKind::STRONG;
                     if self.token.name().to_java_string() == self.names.open.to_java_string() {
@@ -6032,7 +6032,7 @@ impl JavacParser {
                 }
                 let mut def = self.type_declaration(ctx, mods.take(), doc_comment);
                 // Java: if (def instanceof JCExpressionStatement statement)
-                //     def = statement.expr;
+                // def = statement.expr;
                 if let TreeKind::ExpressionStatement { expr: Some(expr) } = &ctx.tree(def).kind {
                     def = *expr;
                 }

@@ -3,7 +3,7 @@
 // Adapter for: the java.lang.String methods that JavaTokenizer depends on
 // (String.stripIndent / String.translateEscapes / String.lines /
 // String.isBlank / indexOfNonWhitespace / lastIndexOfNonWhitespace) because the
-// port has no java.lang.String class.  The implementations are 1:1 with the
+// port has no java.lang.String class. The implementations are 1:1 with the
 // JDK 17.0.19 java.base/java/lang/String.java algorithms (stripIndent at
 // String.java:3832, outdent at :3852, indent at :3718, translateEscapes at
 // :3955, lines/indexOfNonWhitespace helpers).

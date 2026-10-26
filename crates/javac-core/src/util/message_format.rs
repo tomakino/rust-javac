@@ -7,15 +7,15 @@
 // use, verified by scanning all message templates (compiler.properties,
 // launcher.properties, javac.properties, ct.properties, legacy.properties and
 // their zh_CN/ja variants):
-//   - argument placeholders {n} (ArgumentIndex with optional leading zeros)
-//   - single-quote escaping / quoting: '' -> ', a pair of single quotes starts
-//     and ends a quoted string where { and } are literal; an unterminated quote
-//     runs to the end of the pattern
-//   - out-of-range argument indexes are left as-is in the output (Java
-//     MessageFormat behaviour, e.g. {5} with two arguments stays "{5}")
-//   - IllegalArgument-equivalent patterns (unclosed brace, non-numeric index,
-//     negative index, index overflow, incomplete sub-format) panic, matching
-//     Java's IllegalArgumentException (PORTING_RULES section 6).
+// - argument placeholders {n} (ArgumentIndex with optional leading zeros)
+// - single-quote escaping / quoting: '' -> ', a pair of single quotes starts
+// and ends a quoted string where { and } are literal; an unterminated quote
+// runs to the end of the pattern
+// - out-of-range argument indexes are left as-is in the output (Java
+// MessageFormat behaviour, e.g. {5} with two arguments stays "{5}")
+// - IllegalArgument-equivalent patterns (unclosed brace, non-numeric index,
+// negative index, index overflow, incomplete sub-format) panic, matching
+// Java's IllegalArgumentException (PORTING_RULES section 6).
 //
 // Not implemented (registered TODO): number/date/time/choice sub-formats
 // ({n,number}, {n,choice,...}) - a scan of all javac message resources found

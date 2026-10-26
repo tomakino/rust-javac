@@ -100,9 +100,9 @@ impl ByteBuffer {
         self.elems =
             array_utils::ensure_capacity_bytes(std::mem::take(&mut self.elems), self.length + 1);
         let len = self.length as usize;
-        // Java: elems[length  ] = (byte)((x >>  8) & 0xFF);
+        // Java: elems[length ] = (byte)((x >> 8) & 0xFF);
         self.elems[len] = ((x >> 8) & 0xFF) as u8;
-        // Java: elems[length+1] = (byte)((x      ) & 0xFF);
+        // Java: elems[length+1] = (byte)((x) & 0xFF);
         self.elems[len + 1] = (x & 0xFF) as u8;
         self.length += 2;
     }
@@ -115,13 +115,13 @@ impl ByteBuffer {
         self.elems =
             array_utils::ensure_capacity_bytes(std::mem::take(&mut self.elems), self.length + 3);
         let len = self.length as usize;
-        // Java: elems[length  ] = (byte)((x >> 24) & 0xFF);
+        // Java: elems[length ] = (byte)((x >> 24) & 0xFF);
         self.elems[len] = ((x >> 24) & 0xFF) as u8;
         // Java: elems[length+1] = (byte)((x >> 16) & 0xFF);
         self.elems[len + 1] = ((x >> 16) & 0xFF) as u8;
-        // Java: elems[length+2] = (byte)((x >>  8) & 0xFF);
+        // Java: elems[length+2] = (byte)((x >> 8) & 0xFF);
         self.elems[len + 2] = ((x >> 8) & 0xFF) as u8;
-        // Java: elems[length+3] = (byte)((x      ) & 0xFF);
+        // Java: elems[length+3] = (byte)((x) & 0xFF);
         self.elems[len + 3] = (x & 0xFF) as u8;
         self.length += 4;
     }
@@ -199,8 +199,8 @@ impl ByteBuffer {
     pub fn get_int(&self, bp: i32) -> i32 {
         let bp = bp as usize;
         // Java:
-        //   ((elems[bp] & 0xFF) << 24) + ((elems[bp+1] & 0xFF) << 16) +
-        //   ((elems[bp+2] & 0xFF) << 8) + (elems[bp+3] & 0xFF)
+        // ((elems[bp] & 0xFF) << 24) + ((elems[bp+1] & 0xFF) << 16) +
+        // ((elems[bp+2] & 0xFF) << 8) + (elems[bp+3] & 0xFF)
         // The left shift of a large byte value wraps as in Java; Rust's << on i32 silently drops
         // the high bits, which is the same bit pattern.
         ((self.elems[bp] as i32 & 0xFF) << 24)

@@ -2,18 +2,18 @@
 //
 // PORTING_RULES:
 // - ADR 0001: the ported Operators receives the services explicitly (the
-//   upstream Context lookup Operators.instance/Operators(Context) is
-//   registered with the Context registration batch).
-// - §9 adapter: the upstream opname Name[] indexed by Tag.operatorIndex() is
-//   expressed as a match on the operator Tag (the same Name objects); the
-//   helper lists keep the upstream "prepend wins" precedence by construction
-//   order (same-tag helpers are tested in the order they were added, latest
-//   first, exactly like the upstream prepend chain).
-// - §9 adapter: the upstream OperatorHelper.lazy alternatives are created
-//   eagerly in the ported constructor (same OperatorSymbol set and order).
+// upstream Context lookup Operators.instance/Operators(Context) is
+// registered with the Context registration).
+// - adapter adapter: the upstream opname Name[] indexed by Tag.operatorIndex() is
+// expressed as a match on the operator Tag (the same Name objects); the
+// helper lists keep the upstream "prepend wins" precedence by construction
+// order (same-tag helpers are tested in the order they were added, latest
+// first, exactly like the upstream prepend chain).
+// - adapter adapter: the upstream OperatorHelper.lazy alternatives are created
+// eagerly in the ported constructor (same OperatorSymbol set and order).
 // - OperatorSymbol.kind: the ported symbol uses Kind::MTH (the upstream
-//   OperatorSymbol inherits the Symbol kind without passing one; registered
-//   with the Symbol batch; no ported Attr path depends on it).
+// OperatorSymbol inherits the Symbol kind without passing one; registered
+// with the Symbol; no ported Attr path depends on it).
 //
 // This class contains the logic for unary and binary operator resolution/lookup.
 
@@ -188,7 +188,7 @@ impl Operators {
     }
 
     /// Helper for the promoted/unboxed type tag reads (avoids the
-    /// ctx.typ(helper(ctx,..)) double borrow; §9 adapter, no behavior change).
+    /// ctx.typ(helper(ctx,..)) double borrow; Porting rules adapter, no behavior change).
     fn promoted_tag(
         &self,
         ctx: &mut CompilerContext,
@@ -571,7 +571,7 @@ impl Operators {
     }
 
     /// Java: Name operatorName(Tag tag) (Operators.java:293-295) — the opname[]
-    /// lookup expressed as the initOperatorNames match (§9 adapter).
+    /// lookup expressed as the initOperatorNames match (Porting rules adapter).
     pub fn operator_name(&self, tag: Tag) -> Name {
         let from = |text: &str| self.names.from_string(&javac_strings::JavaString::from(text));
         match tag {
@@ -677,8 +677,8 @@ impl Operators {
     ) -> Option<SymbolId> {
         let _ = types;
         // Java: binaryOperators.values().stream().flatMap(List::stream)
-        //   .map(helper -> helper.doLookup(test)).distinct()
-        //   .filter(sym -> sym != noOpSymbol).findFirst().get()
+        //.map(helper -> helper.doLookup(test)).distinct()
+        //.filter(sym -> sym != noOpSymbol).findFirst().get()
         for entry in self.binary.iter() {
             if applicability_test(ctx, syms, entry.symbol) && entry.symbol != self.no_op_symbol {
                 return Some(entry.symbol);

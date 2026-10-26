@@ -2,11 +2,11 @@
 //
 // PORTING_RULES adapters (registered):
 // - the upstream sentinel values DECL_NOT_STARTED/DECL_IN_PROGRESS are
-//   List.of(null) instances compared by identity; the port models the three
-//   states with the DeclState enum;
+// List.of(null) instances compared by identity; the port models the three
+// states with the DeclState enum;
 // - the Symbol back-reference is the SymbolId arena id;
 // - Attribute.Compound/TypeCompound lists are List<AttributeId> (the Attribute
-//   is an arena value with identity semantics; ADR 0001).
+// is an arena value with identity semantics; ADR 0001).
 use crate::code::attribute::{Attribute, AttributeKind};
 use crate::code::flags;
 use crate::code::kinds::Kind;

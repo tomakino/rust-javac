@@ -1,6 +1,6 @@
 // Origin: com/sun/tools/javac/jvm/Code.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level, extracted from the reference file):
-// Dependency/phase: P6 code-generation batch (Code/StackMap/CDS/emit*).
+// Gap registration (method-level, extracted from the reference file):
+// Dependency/phase: P6 code-generation (Code/StackMap/CDS/emit*).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: checkLimits (Code.java:111)
 // - NOT PORTED: arraycode (Code.java:299)
@@ -80,13 +80,13 @@
 // - NOT PORTED: endScopes (Code.java:2231)
 // - NOT PORTED: mnem (Code.java:2241)
 // Ported here: typecode(TypeTag/Type), truncate, width(int/Type/List<Type>).
-// End of §19 gap registration.
+// End of Gap registration.
 
-//! PORTING_RULES batch status (P2 ClassReader batch): only the pure static
+//! PORTING_RULES status (P2 ClassReader): only the pure static
 //! helpers needed by ClassReader.readMethod (typecode/truncate/width) are
 //! ported 1:1. The code emitter, StackMapTable/CDS support and the
 //! Code/StackMap/CDS inner classes are NOT ported yet (P6 code-generation
-//! batch) and are registered in the §19 gap block below; no substitute code
+//!) and are registered in the Porting rules gap block below; no substitute code
 //! is provided.
 
 use crate::code::type_tag::TypeTag;

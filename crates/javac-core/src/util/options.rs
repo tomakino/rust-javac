@@ -13,12 +13,12 @@
 //! * Java objects are shared mutable references; the Rust Options table is shared
 //!   through Rc<Options> (Context-cached) and every method takes &self, so the
 //!   mutable state lives in RefCell.  This is a registered interior-mutability
-//!   allowance (§9.11): the borrow windows are the individual table operations,
+//!   allowance (Porting rules.11): the borrow windows are the individual table operations,
 //!   they never cross calls and there is no object graph built out of it.  A
 //!   listener that mutates the listener list from inside notifyListeners would
 //!   panic (RefCell re-borrow); upstream javac never does that (registered).
 //! * Java LinkedHashMap<String,String> -> RefCell<Vec<(String, String)>> keeping
-//!   the insertion order (LinkedHashMap iteration order, §5); put of an existing
+//!   the insertion order (LinkedHashMap iteration order, Porting rules); put of an existing
 //!   key keeps its position, remove deletes the entry, keySet returns a snapshot in
 //!   insertion order, putAll updates/inserts in the argument's order.
 //! * get(String) returns a copy (Rust cannot return a reference out of a RefCell);
@@ -31,12 +31,12 @@
 //!   type, see util/context.rs).
 //! * Option arguments: Option from main::option, using Option::primary_name().
 //!   Rust's std Option is aliased as StdOption in this file because the upstream
-//!   class name Option shadows it (§3 name fidelity is kept).
+//!   class name Option shadows it (Porting rules name fidelity is kept).
 //! * Map values are never null upstream (absence is what get() returns as null);
-//!   Rust models absence with None, so a null value cannot be stored (§14 note).
-//! * TODO(Arguments/CommandLine batch): the table is filled by Arguments/CommandLine
+//!   Rust models absence with None, so a null value cannot be stored (Porting rules note).
+//! * TODO(Arguments/CommandLine): the table is filled by Arguments/CommandLine
 //!   (not ported yet); isLintSet's callers (Lint/Preview) are ported but the
-//!   options are only populated by that batch.
+//!   options are only populated by that.
 
 use std::cell::RefCell;
 use std::option::Option as StdOption;
@@ -99,7 +99,7 @@ impl Options {
 
     /// Get the value for an option.
     ///
-    /// Java: String get(Option option) — overloads use distinct Rust names (§3).
+    /// Java: String get(Option option) — overloads use distinct Rust names (Porting rules).
     pub fn get_option(&self, option: Option) -> StdOption<String> {
         self.get(option.primary_name())
     }
@@ -112,7 +112,7 @@ impl Options {
 
     /// Get the boolean with a default value if the option is not set.
     ///
-    /// Java: getBoolean(String, boolean) — overload renamed (§3).
+    /// Java: getBoolean(String, boolean) — overload renamed (Porting rules).
     pub fn get_boolean_or(&self, name: &str, default_value: bool) -> bool {
         match self.get(name) {
             // Java: Boolean.parseBoolean(value) = "true".equalsIgnoreCase(value)
@@ -128,7 +128,7 @@ impl Options {
 
     /// Check if the value for an option has been set.
     ///
-    /// Java: boolean isSet(Option option) — overload renamed (§3).
+    /// Java: boolean isSet(Option option) — overload renamed (Porting rules).
     pub fn is_set_option(&self, option: Option) -> bool {
         self.is_set(option.primary_name())
     }
@@ -159,7 +159,7 @@ impl Options {
 
     /// Check if the value for an option has not been set.
     ///
-    /// Java: boolean isUnset(Option option) — overload renamed (§3).
+    /// Java: boolean isUnset(Option option) — overload renamed (Porting rules).
     pub fn is_unset_option(&self, option: Option) -> bool {
         self.is_unset(option.primary_name())
     }
@@ -205,7 +205,7 @@ impl Options {
 
     /// Java: public Set<String> keySet().
     ///
-    /// PORTING_RULES: Java Set -> Vec snapshot (§14), in insertion (LinkedHashMap) order.
+    /// PORTING_RULES: Java Set -> Vec snapshot (Porting rules), in insertion (LinkedHashMap) order.
     pub fn key_set(&self) -> Vec<String> {
         self.values
             .borrow()

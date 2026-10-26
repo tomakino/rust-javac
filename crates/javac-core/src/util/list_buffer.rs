@@ -124,9 +124,9 @@ impl<A> ListBuffer<A> {
 
             loop {
                 // Java: while ((orig = orig.tail).nonEmpty()) {
-                //           last.tail = List.of(orig.head);
-                //           last = last.tail;
-                //       }
+                // last.tail = List.of(orig.head);
+                // last = last.tail;
+                // }
                 orig = orig.tail();
                 if orig.is_empty() {
                     break;

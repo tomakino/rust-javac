@@ -1,12 +1,12 @@
 // Origin: com/sun/tools/javac/parser/DocCommentParser.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: dependent service batch (see docs/PLAN.md).
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: dependent service (see docs/PLAN.md).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: getTreeKind (DocCommentParser.java:1106)
-// End of §19 gap registration.
+// End of Gap registration.
 //
-// clippy debt registration (pre-existing doc-comment batch items, NOT S7b;
-// cleanup in the doc-comment completion batch): collapsible-if 1032,
+// clippy debt registration (pre-existing doc-comment items, NOT S7b;
+// cleanup in the doc-comment completion): collapsible-if 1032,
 // mutable-key-type 1536/1689 (Rc<DCTree> keys, upstream identity map).
 
 //! A parser for doc comments, producing DocTree nodes.
@@ -27,7 +27,7 @@
 //!   overloads are disambiguated (inlineTag(ListBuffer) -> inline_tag,
 //!   inlineTag() -> inline_tag_tree; entity(ListBuffer) -> entity_into,
 //!   entity() -> entity_tree);
-//! - TODO(tree batch): erroneous() calls DocTreeMaker.newErroneousTree(text,
+//! - TODO(tree): erroneous() calls DocTreeMaker.newErroneousTree(text,
 //!   diagSource, code), which is still unimplemented! in tree/doc_tree_maker.rs
 //!   (the upstream diagnostic position is the ErroneousTree itself). Malformed
 //!   input panics with that TODO; well-formed comments do not take this path.
@@ -94,7 +94,7 @@ enum TagKind {
 /// Java: private enum WhitespaceRetentionPolicy
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WhitespaceRetentionPolicy {
-    /// Not wired yet (TODO(doc comment S8 wiring batch)).
+    /// Not wired yet (TODO(doc comment S8 wiring)).
     #[allow(dead_code)]
     RetainAll,
     RemoveFirstSpace,
@@ -925,7 +925,7 @@ impl DocCommentParser {
         }
         self.text_start = -1;
         let text = self.new_string(pos, i + 1);
-        // TODO(tree batch): DocTreeMaker.newErroneousTree(text, diagSource, code)
+        // TODO(tree): DocTreeMaker.newErroneousTree(text, diagSource, code)
         // is still unimplemented! (the upstream diagnostic position is the node
         // itself); malformed input panics there. Well-formed comments do not
         // reach this path.

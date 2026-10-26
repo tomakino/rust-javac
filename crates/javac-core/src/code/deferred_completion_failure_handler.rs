@@ -83,7 +83,7 @@ impl FlipSymbolDescription {
         ctx.sym_mut(self.sym).kind = self.kind;
         self.kind = prev_kind;
         // Java: Completer prevCompleter = sym.completer; sym.completer = completer;
-        //       this.completer = prevCompleter;
+        // this.completer = prevCompleter;
         std::mem::swap(&mut ctx.sym_mut(self.sym).completer, &mut self.completer);
         let prev_members = match &ctx.sym(self.sym).kind_data {
             SymbolKind::ClassSymbol { members_field, .. } => *members_field,

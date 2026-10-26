@@ -1,6 +1,6 @@
 // Origin: com/sun/tools/javac/file/Locations.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: P2 ClassReader / API batch.
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P2 ClassReader / API.
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: setPathFactory (Locations.java:179)
 // - NOT PORTED: addDirectories (Locations.java:300)
@@ -48,7 +48,7 @@
 // - NOT PORTED: isSet (Locations.java:2047)
 // - NOT PORTED: setPaths (Locations.java:2057)
 // - NOT PORTED: setPathsForModule (Locations.java:2062)
-// End of §19 gap registration.
+// End of Gap registration.
 
 // PORTING_RULES: the handler code keeps the upstream deeply nested `if let` structure
 // (Java style); the collapsible-if/match suggestions are allowed rather than rewriting it.
@@ -60,7 +60,7 @@
 //!
 //! <p><b>This is NOT part of any supported API.</b>
 //!
-//! PORTING_RULES (S3b batch):
+//! PORTING_RULES (S3b):
 //! * Java class plus its nested LocationHandler hierarchy become one Locations struct
 //!   holding a Vec<Handler>; a Handler keeps the upstream (location name, options,
 //!   explicit) triple plus a HandlerKind state enum (the Java handler subclasses), and
@@ -79,7 +79,7 @@
 //! * reported gaps (TODO, no substitute data):
 //!   - jar Class-Path expansion (java.util.jar Manifest; FSInfo.getJarClassPath TODO(P2)):
 //!     class path archives are accepted, their manifest Class-Path is not expanded;
-//!   - Log.warning diagnostics for path problems (TODO(Log batch)): invalid/nonexistent
+//!   - Log.warning diagnostics for path problems (TODO(Log)): invalid/nonexistent
 //!     elements are still skipped/added as upstream, only the warning is missing;
 //!   - non .jar/.zip class path files are skipped without the upstream zip readability
 //!     probe (java.nio FileSystem); TODO(S3c);
@@ -89,10 +89,10 @@
 //!   - --module-source-path pattern forms (wildcard/brace expansion) need java.util.regex
 //!     and the upstream expansion; only the module=path form is ported;
 //!   - --patch-module accepts the NUL-separated module=path form only (upstream invalid
-//!     argument reporting is TODO(Log batch));
+//!     argument reporting is TODO(Log));
 //!   - BootClassPath options were trimmed in task-48, so the handler has no options and
 //!     only the default platform class path (system modules) is ported;
-//!   - close() is a no-op: no java.nio FileSystem is opened in this batch (jar/ct.sym file
+//!   - close() is a no-op: no java.nio FileSystem is opened in this (jar/ct.sym file
 //!     systems are S3c).
 //! * TODO(S3c): JavacFileManager consumes this API.  Handler locations are looked up by
 //!   name, equal to the upstream identity/equals contract for StandardLocation.
@@ -172,7 +172,7 @@ impl<'a> LocationCtx<'a> {
             return;
         }
         if !self.fs_info.exists(file) {
-            // Java: warning(PathElementNotFound) — TODO(Log batch): no Log warning entry point.
+            // Java: warning(PathElementNotFound) — TODO(Log): no Log warning entry point.
             result.push(file.clone());
             return;
         }
@@ -191,9 +191,9 @@ impl<'a> LocationCtx<'a> {
             let is_jmod = name.ends_with(".jmod");
             let is_modules_image = name.ends_with("modules");
             if !is_jmod && !is_modules_image && !self.is_archive(file) {
-                // Java: opens the file as a zip filesystem to validate it.  java.nio
+                // Java: opens the file as a zip filesystem to validate it. java.nio
                 // FileSystem does not exist in the port: skip (TODO(S3c); the upstream
-                // warning is a TODO(Log batch) diagnostic).
+                // warning is a TODO(Log) diagnostic).
                 return;
             }
         }
@@ -492,7 +492,7 @@ impl ModuleTable {
 /// (in File.pathSeparator-separated String form) into a boot class path, user class path,
 /// and source path (in Collection<String> form).
 pub struct Locations {
-    /// Java: private Log log; (not used by this batch; path warnings are TODO(Log batch)).
+    /// Java: private Log log; (not used by this; path warnings are TODO(Log)).
     #[allow(dead_code)]
     log: StdOption<Rc<std::cell::RefCell<crate::util::log::Log>>>,
     /// Java: private FSInfo fsInfo;
@@ -544,7 +544,7 @@ impl Locations {
         self.multi_release_value = Some(JavaString::from(value));
     }
 
-    /// Java: public void close() throws IOException — no file system is opened by this batch.
+    /// Java: public void close() throws IOException — no file system is opened by this.
     pub fn close(&mut self) -> Result<(), Error> {
         Ok(())
     }

@@ -736,7 +736,7 @@ impl TreeScanner {
 
 
 // ---------------------------------------------------------------------------
-// §9 infrastructure: the reusable TreeScanner navigational defaults.
+// adapter infrastructure: the reusable TreeScanner navigational defaults.
 //
 // The upstream subclassing idiom (a specialized TreeScanner overriding only the
 // visits it cares about) needs the navigational default bodies reachable from a
@@ -1888,7 +1888,7 @@ mod tests {
     }
 }
 
-/// §9 helper: the direct children of a tree node (the navigational bodies of
+/// Porting rules helper: the direct children of a tree node (the navigational bodies of
 /// TreeScanner without recursion); used by the explicit-recursion adapters.
 pub struct ChildCollector {
     pub children: Vec<TreeId>,
@@ -1904,7 +1904,7 @@ impl TreeScannerVisitor for ChildCollector {
 
 tree_scanner_visitor_delegate!(ChildCollector);
 
-/// §9 helper: collect the direct children of a tree node.
+/// Porting rules helper: collect the direct children of a tree node.
 pub fn tree_children(ctx: &mut CompilerContext, tree: TreeId) -> Vec<TreeId> {
     let mut collector = ChildCollector { children: Vec::new() };
     crate::tree::jc_tree::accept(ctx, tree, &mut collector);

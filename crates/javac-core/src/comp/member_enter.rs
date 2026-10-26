@@ -1,6 +1,6 @@
 // Origin: com/sun/tools/javac/comp/MemberEnter.java @ 982d53c (jdk-17.0.19-ga)
 //
-// PORTING_RULES §19 registration:
+// Registration:
 // Ported in this file: the MemberEnter structure, signature(), memberEnter (both
 // overloads), visitMethodDef, methodEnv, visitVarDef, checkType, checkReceiver,
 // needsLazyConstValue + InitTreeVisitor, initEnv, visitTree, visitErroneous,
@@ -9,27 +9,27 @@
 // NOT PORTED IN THIS STEP (registered; dependencies not ported yet, no
 // substitute in this file):
 // - Attr: every attr.attribTypeVariables/attribType/attribExpr/
-//   attribIdentAsEnumType call is routed through explicit unimplemented helpers
-//   (signature/visitVarDef/checkReceiver), because the Attr batch is not ported;
+// attribIdentAsEnumType call is routed through explicit unimplemented helpers
+// (signature/visitVarDef/checkReceiver), because the Attr is not ported;
 // - Annotate: annotate.annotateLater/queueScanTreeAndTypeAnnotate/
-//   annotateDefaultValueLater/unfinishedDefaultValue calls are TODO (Annotate
-//   batch);
+// annotateDefaultValueLater/unfinishedDefaultValue calls are TODO (Annotate
+//);
 // - DeferredLintHandler is ported (code/deferred_lint_handler.rs) and used for
-//   the setPos save/restore exactly like upstream;
-// - AttrContext.returnResult/yieldResult are not represented yet (Attr batch,
-//   registered in AttrContext);
+// the setPos save/restore exactly like upstream;
+// - AttrContext.returnResult/yieldResult are not represented yet (Attr,
+// registered in AttrContext);
 // - initEnv uses AttrContextEnv (an Attr inner class): initEnv/getInitEnv are
-//   explicitly unimplemented (Attr batch);
+// explicitly unimplemented (Attr);
 // - ArrayType.makeVarargs and VarSymbol.setLazyConstValue are not ported
-//   (types/symbol batches): the VARARGS parameter type refinement and the lazy
-//   constant-value computation are TODO in visitVarDef;
-// - getMethodEnv mEnv.info.lint.augment(sym) is TODO (Lint batch), the scope
-//   enterIfAbsent steps are ported.
+// (types/symbol batches): the VARARGS parameter type refinement and the lazy
+// constant-value computation are TODO in visitVarDef;
+// - getMethodEnv mEnv.info.lint.augment(sym) is TODO (Lint), the scope
+// enterIfAbsent steps are ported.
 //
 // The MemberEnter entry point used by TypeEnter (TypeEnter.complete /
 // visitTopLevel / visitClassDef / default constructor / import processing) is in
-// comp/TypeEnter.java upstream (NOT in MemberEnter.java); the TypeEnter batch is
-// registered separately (the Enter batch leaves the TypeEnter completer TODO).
+// comp/TypeEnter.java upstream (NOT in MemberEnter.java); the TypeEnter is
+// registered separately (the Enter leaves the TypeEnter completer TODO).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -68,7 +68,7 @@ pub struct MemberEnter {
     /// Java: Annotate annotate = Annotate.instance(context) — explicit
     /// injection adapter (ADR 0001): the cell is filled after Annotate is
     /// constructed (Rc cycle MemberEnter/TypeEnter -> Annotate -> Attr ->
-    /// MemberEnter/TypeEnter; registered in the batch report).
+    /// MemberEnter/TypeEnter; registered in the report).
     pub annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
 }
 
@@ -186,7 +186,7 @@ impl MemberEnter {
         }
     }
 
-    // Attr dependencies (registered TODO: Attr batch).
+    // Attr dependencies (registered TODO: Attr).
     fn attrib_type_variables(
         &self,
         _ctx: &mut CompilerContext,
@@ -419,13 +419,13 @@ impl MemberEnter {
         let local_scope = ctx.scope_dup_unshared(parent_scope, Some(method));
         let mut info = env.info.borrow().dup(Some(local_scope));
         if ctx.sym(method).ty.is_some() {
-            // TODO(Attr batch): localEnv.info.returnResult = attr.new ResultInfo(
-            //     KindSelector.VAL, tree.sym.type.getReturnType());
+            // TODO(Attr): localEnv.info.returnResult = attr.new ResultInfo(
+            // KindSelector.VAL, tree.sym.type.getReturnType());
         }
         if (method_decl_mods_flags(ctx, tree) & flags::STATIC as i64) != 0 {
             info.static_level += 1;
         }
-        // TODO(Attr batch): localEnv.info.yieldResult = null;
+        // TODO(Attr): localEnv.info.yieldResult = null;
         Rc::new(Env {
             next: None,
             outer: Some(Rc::clone(env)),
@@ -484,7 +484,7 @@ impl MemberEnter {
         }
         self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint);
         if (mods_flags & flags::VARARGS) != 0 {
-            // TODO(Types batch): replace the plain array type with
+            // TODO(Types): replace the plain array type with
             // atype.makeVarargs() (ArrayType.makeVarargs is not ported).
         }
         let encl_scope = self.enter.borrow().enter_scope(ctx, &env);
@@ -525,9 +525,9 @@ impl MemberEnter {
             if (ctx.sym(v).flags_field & flags::FINAL as i64) != 0
                 && self.needs_lazy_const_value(ctx, var_decl_init(ctx, tree).expect("initializer"))
             {
-                // TODO(Symbol/Attr batch): v.setLazyConstValue(initEnv(tree,
+                // TODO(Symbol/Attr): v.setLazyConstValue(initEnv(tree,
                 // getInitEnv(tree, env)), env, attr, tree); setLazyConstValue is
-                // not ported and initEnv needs AttrContextEnv (Attr batch).
+                // not ported and initEnv needs AttrContextEnv (Attr).
             }
         }
         let unique = self
@@ -578,9 +578,9 @@ impl MemberEnter {
 
     /// Java: void checkType(JCTree tree, Type type, Error errorKey)
     ///
-    /// TODO(Attr batch): the upstream call sites are checkReceiver's
+    /// TODO(Attr): the upstream call sites are checkReceiver's
     /// IncorrectConstructorReceiverType/IncorrectReceiverType checks, which are
-    /// TODO until Attr is ported; the method is kept for that batch.
+    /// TODO until Attr is ported; the method is kept for that.
     #[allow(dead_code)]
     fn check_type(
         &self,
@@ -589,9 +589,9 @@ impl MemberEnter {
         _expected: TypeId,
         _error: crate::resources::diagnostic_contract::ErrorInfo,
     ) {
-        // TODO(Attr/Check batch): the upstream body is
-        //   if (!tree.type.isErroneous() && !types.isSameType(tree.type, type))
-        //       log.error(tree, errorKey);
+        // TODO(Attr/Check): the upstream body is
+        // if (!tree.type.isErroneous() && !types.isSameType(tree.type, type))
+        // log.error(tree, errorKey);
         // Types.isSameType needs the Symtab argument in the port (explicit
         // context adapter); checkReceiver therefore cannot call it before the
         // Symtab is threaded (registered).
@@ -629,10 +629,10 @@ impl MemberEnter {
                 .typ(outer_type)
                 .has_tag(crate::code::type_tag::TypeTag::CLASS)
             {
-                // TODO(Attr batch): checkType(tree.vartype, outertype,
-                //     Errors.IncorrectConstructorReceiverType(...));
-                // TODO(Attr batch): checkType(tree.nameexpr, outertype,
-                //     Errors.IncorrectConstructorReceiverName(...));
+                // TODO(Attr): checkType(tree.vartype, outertype,
+                // Errors.IncorrectConstructorReceiverType(...));
+                // TODO(Attr): checkType(tree.nameexpr, outertype,
+                // Errors.IncorrectConstructorReceiverName(...));
             } else {
                 self.log.borrow_mut().error_at(
                     ctx.tree(tree).pos,
@@ -642,10 +642,10 @@ impl MemberEnter {
                 );
             }
         } else {
-            // TODO(Attr batch): checkType(tree.vartype, m.owner.type,
-            //     Errors.IncorrectReceiverType(...));
-            // TODO(Attr batch): checkType(tree.nameexpr, m.owner.type,
-            //     Errors.IncorrectReceiverName(...));
+            // TODO(Attr): checkType(tree.vartype, m.owner.type,
+            // Errors.IncorrectReceiverType(...));
+            // TODO(Attr): checkType(tree.nameexpr, m.owner.type,
+            // Errors.IncorrectReceiverName(...));
         }
     }
 
@@ -697,7 +697,7 @@ impl MemberEnter {
         env: &Rc<Env<AttrContext>>,
     ) -> Rc<Env<AttrContext>> {
         let m_env = self.method_env(ctx, tree, env);
-        // TODO(Lint batch): mEnv.info.lint = mEnv.info.lint.augment(tree.sym);
+        // TODO(Lint): mEnv.info.lint = mEnv.info.lint.augment(tree.sym);
         let scope = m_env.info.borrow().scope.expect("method env scope");
         let mut typarams = method_decl_typarams(ctx, tree);
         while typarams.non_empty() {

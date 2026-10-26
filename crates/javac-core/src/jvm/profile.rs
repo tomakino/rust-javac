@@ -15,7 +15,7 @@
 //!   -> a one-element slice (#14 Set literal mapping; the only upstream use is
 //!   EnumSet.of(t), so the set is represented as a fixed array).
 //! * the Java overloads lookup(String)/lookup(int) become lookup and
-//!   lookup_value (§3 overloads).
+//!   lookup_value (Porting rules overloads).
 //! * instance(Context): Options.instance is ported; the Option.PROFILE enum
 //!   constant is not ported yet (option.rs has the "-profile" primary name
 //!   only), so the lookup uses Options.get("-profile"), which is exactly the
@@ -128,7 +128,7 @@ impl Profile {
     /// }
     /// </pre>
     ///
-    /// TODO(Options/Option batch): Options.instance/options.get and
+    /// TODO(Options/Option): Options.instance/options.get and
     /// Option.PROFILE ("-profile") are not ported; the entry point stays
     /// unimplemented (no substitute Options is invented).
     pub fn instance(context: &mut Context) -> Rc<Profile> {

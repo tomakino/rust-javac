@@ -1,16 +1,16 @@
 // Origin: com/sun/tools/javac/comp/AttrRecover.java @ 982d53c (jdk-17.0.19-ga)
 //
-// PORTING_RULES §19 mapping: AttrRecover (instance/constructor/doRecovery/
+// Registration mapping: AttrRecover (instance/constructor/doRecovery/
 // recoverMethodInvocation/basicMethodInvocationRecovery/wrongMethodSymbolCandidate/
 // RecoveryErrorType/RecoverTodo).
-// §9 registered adapters:
+// adapter registered adapters:
 // - the upstream service fields are explicit parameters (ADR 0001); the instance
-//   holds recoveryTodo and the immutable services;
+// holds recoveryTodo and the immutable services;
 // - the upstream rollback closures (Runnable) are RollbackAction values applied
-//   in order;
+// in order;
 // - the anonymous TreeTranslator that rewrites lambda returns is the explicit
-//   statement traversal below (the port TreeTranslator has no overridable visit
-//   hooks);
+// statement traversal below (the port TreeTranslator has no overridable visit
+// hooks);
 // - RecoveryErrorType is TypeKindData::ErrorType::candidate_symbol.
 
 use std::cell::RefCell;
@@ -62,7 +62,7 @@ pub struct RecoverTodo {
     pub result_info: Rc<ResultInfo>,
 }
 
-/// §9: the upstream ListBuffer<Runnable> rollback actions.
+/// Porting rules: the upstream ListBuffer<Runnable> rollback actions.
 enum RollbackAction {
     /// lambda.body = translate(lambda.body) replacing err with the return.
     RestoreReturnInLambdaBody { lambda: TreeId, from: TreeId, to: TreeId },
@@ -566,7 +566,7 @@ impl AttrRecover {
 
 impl AttrRecover {
     /// Rewrite the returns of a lambda body (the upstream anonymous
-    /// TreeTranslator, §9); returns the body and its rollback actions.
+    /// TreeTranslator, Porting rules); returns the body and its rollback actions.
     fn rewrite_lambda_body(
         &self,
         ctx: &mut CompilerContext,

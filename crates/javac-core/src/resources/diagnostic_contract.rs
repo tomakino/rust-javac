@@ -4,7 +4,7 @@
 //! (jdk-17.0.19-ga): DiagnosticInfo / Error / Warning / Note / Fragment; see
 //! docs/ADR/0002-diagnostic-resources.md。
 //!
-//! PORTING_RULES: this file is the adapter placeholder before P4 (JCDiagnostic/Log port; §9 registered):
+//! PORTING_RULES: this file is the adapter placeholder before P4 (JCDiagnostic/Log port; Porting rules registered):
 //! - DiagnosticInfo corresponds to JCDiagnostic.DiagnosticInfo{type,prefix,code,args};
 //! - ErrorInfo/WarningInfo/NoteInfo/FragmentInfo correspond to the 4 JCDiagnostic subclasses;
 //! - DiagnosticArg corresponds to the Java Object[] diagnostic arguments (currently placeholder Display text);
@@ -82,7 +82,7 @@ impl DiagnosticInfo {
 
 /// Java diagnostic argument (an element of the Object[]).
 ///
-/// PORTING_RULES §9 / ADR 0002 P4: the upstream argument is an arbitrary
+/// PORTING_RULES Porting rules / ADR 0002 P4: the upstream argument is an arbitrary
 /// Object; in particular a nested JCDiagnostic can be an argument (the
 /// Resolve/AttrRecover nested-diagnostic scans rely on it). The port keeps the
 /// formatted Text variant for the existing call sites and adds the
@@ -110,7 +110,7 @@ impl DiagnosticArg {
     }
 
     /// The textual rendering of this argument (Text as-is; a nested diagnostic
-    /// through its message — P4 prints the message text, §9 registered).
+    /// through its message — P4 prints the message text, Porting rules registered).
     pub fn to_text(&self) -> String {
         match self {
             DiagnosticArg::Text(text) => text.clone(),

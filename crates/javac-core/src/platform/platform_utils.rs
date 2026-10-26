@@ -9,7 +9,7 @@
 //!
 //! PORTING_RULES:
 //! * Java static method -> free function; `String` -> `&JavaString`;
-//!   `String.indexOf(":")` uses `JavaString::index_of_char` (§7 UTF-16 code units)
+//!   `String.indexOf(":")` uses `JavaString::index_of_char` (Porting rules UTF-16 code units)
 //!   and `String.substring` maps to `JavaString::substring`.
 //! * DEPENDENCY DEVIATION (P6): the Java implementation discovers the providers with
 //!   `ServiceLoader.load(PlatformProvider.class, Arguments.class.getClassLoader())`.
@@ -39,16 +39,16 @@ pub fn lookup_platform_description(
     // Java: int separator = platformString.indexOf(":");
     let separator = platform_string.index_of_char(':' as u16, 0);
     // Java:
-    //   String platformProviderName =
-    //           separator != (-1) ? platformString.substring(0, separator) : platformString;
+    // String platformProviderName =
+    // separator != (-1) ? platformString.substring(0, separator) : platformString;
     let platform_provider_name = if separator != -1 {
         platform_string.substring(0, separator as usize)
     } else {
         platform_string.clone()
     };
     // Java:
-    //   String platformOptions =
-    //           separator != (-1) ? platformString.substring(separator + 1) : "";
+    // String platformOptions =
+    // separator != (-1) ? platformString.substring(separator + 1) : "";
     let platform_options = if separator != -1 {
         platform_string.substring(separator as usize + 1, platform_string.len())
     } else {
@@ -56,21 +56,21 @@ pub fn lookup_platform_description(
     };
 
     // Java:
-    //   Iterable<PlatformProvider> providers =
-    //           ServiceLoader.load(PlatformProvider.class, Arguments.class.getClassLoader());
-    //   return StreamSupport.stream(providers.spliterator(), false)
-    //           .filter(provider -> StreamSupport.stream(provider.getSupportedPlatformNames()
-    //                                                            .spliterator(), false)
-    //                                            .anyMatch(platformProviderName::equals))
-    //           .findFirst()
-    //           .flatMap(provider -> {
-    //               try {
-    //                   return Optional.of(provider.getPlatform(platformProviderName, platformOptions));
-    //               } catch (PlatformNotSupported pns) {
-    //                   return Optional.empty();
-    //               }
-    //           })
-    //           .orElse(null);
+    // Iterable<PlatformProvider> providers =
+    // ServiceLoader.load(PlatformProvider.class, Arguments.class.getClassLoader());
+    // return StreamSupport.stream(providers.spliterator(), false)
+    //.filter(provider -> StreamSupport.stream(provider.getSupportedPlatformNames()
+    //.spliterator(), false)
+    //.anyMatch(platformProviderName::equals))
+    //.findFirst()
+    //.flatMap(provider -> {
+    // try {
+    // return Optional.of(provider.getPlatform(platformProviderName, platformOptions));
+    // } catch (PlatformNotSupported pns) {
+    // return Optional.empty();
+    // }
+    // })
+    //.orElse(null);
     providers
         .iter()
         .find(|provider| {

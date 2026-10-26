@@ -1,25 +1,25 @@
 // Origin: com/sun/tools/javac/comp/Check.java @ 982d53c (jdk-17.0.19-ga)
 //
-// PORTING_RULES §19 registration: this file ports the Check subset required by
+// Registration: this file ports the Check subset required by
 // the Enter/Flow batches (class enter symbol/flags/duplicate checks, the
-// exception set utilities, and the batch-3 methods below).
+// exception set utilities, and the -3 methods below).
 //
-// PORTED IN THE BATCH-3 STEP:
+// PORTED IN THE -3 STEP:
 // - typeTagError / checkNonVoid / checkClassOrArrayType / asTypeParam /
-//   checkNullOrRefType / checkEmptyIf / checkDivZero / warnDivZero /
-//   duplicateErasureError / varargsDuplicateError (Check.java:288-291,
-//   700-717, 723-727, 814-822, 1007-1016, 371-375, 3718-3737, 3783-3787).
+// checkNullOrRefType / checkEmptyIf / checkDivZero / warnDivZero /
+// duplicateErasureError / varargsDuplicateError (Check.java:288-291,
+// 700-717, 723-727, 814-822, 1007-1016, 371-375, 3718-3737, 3783-3787).
 // STILL NOT PORTED (registered; dependencies in brackets):
 // - checkCastable (Check.java:632-645) [Types.isCastable(Type, Type, Warner)];
 // - checkRedundantCast (Check.java:647-660) [TreeInfo.containsTypeAnnotation,
-//   DeferredLintHandler wiring via Attr];
+// DeferredLintHandler wiring via Attr];
 // - validate/Validator (Check.java:1397-1525) [firstIncompatibleTypeArg,
-//   checkClassBounds, TreeInfo.containsTypeAnnotation, JCTree.Visitor scanner];
+// checkClassBounds, TreeInfo.containsTypeAnnotation, JCTree.Visitor scanner];
 // - checkUnique MTH branches [Check holds no Symtab service yet; the caller
-//   passes no Symtab (ADR 0001 service wiring pending)];
+// passes no Symtab (ADR 0001 service wiring pending)];
 // - the rest of the upstream Check body (type checking beyond the ported
-//   subset, annotation checks, lambda/method checks, warnings, sunApiHandler,
-//   ...).
+// subset, annotation checks, lambda/method checks, warnings, sunApiHandler,
+//...).
 // The ported methods keep the upstream bodies and error keys; where a dependency
 // is not ported the branch is marked TODO and not executed (no substitute).
 
@@ -81,7 +81,7 @@ pub struct Check {
     /// Java: CheckContext basicHandler = new CheckContext() {...}
     pub basic_handler: Rc<dyn CheckContext>,
     /// Java: private Lint lint (Check.java:187) — restored to the upstream
-    /// field shape (batch 3.5a, §17 official structure).
+    /// field shape (, Porting rules official structure).
     pub lint: Rc<Lint>,
     /// Java: private DeferredLintHandler deferredLintHandler (Check.java:193)
     pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
@@ -136,7 +136,7 @@ impl Check {
 
     // ------------------------------------------------------------------
     // Exception checking set utilities (Check.java:1578-1685). Ported here
-    // because the Flow batch (FlowAnalyzer) depends on them (registered §19).
+    // because the Flow (FlowAnalyzer) depends on them (registered Registration).
     // ------------------------------------------------------------------
 
     /// Java: boolean subset(Type t, List<Type> ts) (Check.java:1585-1590)
@@ -663,7 +663,7 @@ impl Check {
                     mask = crate::code::flags::MethodFlags as i64;
                 }
                 if (flags_value & crate::code::flags::STRICTFP as i64) != 0 {
-                    // TODO(Check batch): warnOnExplicitStrictfp uses the
+                    // TODO(Check): warnOnExplicitStrictfp uses the
                     // DeferredLintHandler, which is not ported (registered).
                 }
                 if ((flags_value | implicit) & crate::code::flags::ABSTRACT as i64) == 0
@@ -760,7 +760,7 @@ impl Check {
                     implicit |= crate::code::flags::FINAL as i64;
                 }
                 if (flags_value & crate::code::flags::STRICTFP as i64) != 0 {
-                    // TODO(Check batch): warnOnExplicitStrictfp (DeferredLintHandler)
+                    // TODO(Check): warnOnExplicitStrictfp (DeferredLintHandler)
                 }
                 implicit |= owner
                     .map(|owner| ctx.sym(owner).flags_field & crate::code::flags::STRICTFP as i64)
@@ -1084,7 +1084,7 @@ impl Check {
     /// Java: Type typeTagError(DiagnosticPosition pos, JCDiagnostic required,
     /// Object found) (Check.java:1007-1016)
     ///
-    /// PORTING_RULES §9 adapter: the Java Object found (a Type or a
+    /// PORTING_RULES Porting rules adapter: the Java Object found (a Type or a
     /// JCDiagnostic fragment) maps to the FoundArg enum.
     fn type_tag_error(
         &self,
@@ -1192,10 +1192,10 @@ impl Check {
         if inference_context.free(ctx, syms, &self.types, req)
             || inference_context.free(ctx, syms, &self.types, found)
         {
-            // TODO(Infer batch): inferenceContext.addFreeTypeListener(List.of(req,
-            //     found), solvedContext -> checkType(pos, solvedContext.asInstType
-            //     (found), solvedContext.asInstType(req), checkContext)); the
-            //     listener needs the mutable Attr/Check recursion; registered.
+            // TODO(Infer): inferenceContext.addFreeTypeListener(List.of(req,
+            // found), solvedContext -> checkType(pos, solvedContext.asInstType
+            // (found), solvedContext.asInstType(req), checkContext)); the
+            // listener needs the mutable Attr/Check recursion; registered.
             unimplemented!("TODO(Infer batch): Check.checkType free type listener");
         }
         if ctx.typ(req).has_tag(crate::code::type_tag::TypeTag::ERROR) {
@@ -1210,8 +1210,8 @@ impl Check {
         }
         if ctx.typ(found).is_numeric() && ctx.typ(req).is_numeric() {
             // Java: checkContext.report(pos,
-            //     diags.fragment(Fragments.PossibleLossOfPrecision(found, req)));
-            //     return types.createErrorType(found);
+            // diags.fragment(Fragments.PossibleLossOfPrecision(found, req)));
+            // return types.createErrorType(found);
             let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                 crate::resources::compiler_properties::fragments::possible_loss_of_precision(
                     crate::resources::diagnostic_contract::TypeArg::placeholder(
@@ -1228,8 +1228,8 @@ impl Check {
                 .create_error_type_original(ctx, Some(found), syms);
         }
         // Java: checkContext.report(pos, diags.fragment(
-        //     Fragments.InconvertibleTypes(found, req)));
-        //     return types.createErrorType(found);
+        // Fragments.InconvertibleTypes(found, req)));
+        // return types.createErrorType(found);
         let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
             crate::resources::compiler_properties::fragments::inconvertible_types(
                 crate::resources::diagnostic_contract::TypeArg::placeholder(
@@ -1428,7 +1428,7 @@ impl CheckContext for BasicCheckContext {
         _req: TypeId,
     ) -> Warner {
         // Java: return convertWarner(pos, found, req);
-        // §9 adapter (same as cast_warner): ConversionWarner is expressed as a
+        // adapter adapter (same as cast_warner): ConversionWarner is expressed as a
         // plain Warner; the unchecked/UNCHECKED lint is recorded by isAssignable.
         Warner::new(Some(Rc::new(SimpleDiagnosticPosition::new(pos))))
     }
@@ -1445,7 +1445,7 @@ impl CheckContext for BasicCheckContext {
 /// Java: the Object found parameter of Check.typeTagError (a Type or a
 /// JCDiagnostic fragment, Check.java:1007).
 ///
-/// PORTING_RULES §9 adapter: Rust needs the union represented explicitly.
+/// PORTING_RULES Porting rules adapter: Rust needs the union represented explicitly.
 pub enum FoundArg {
     /// Java: Object found instanceof Type
     Type(TypeId),
@@ -1659,7 +1659,7 @@ impl Check {
     /// Java: public void checkRedundantCast(Env<AttrContext> env,
     /// final JCTypeCast tree) (Check.java:647-660)
     ///
-    /// TODO(TreeInfo batch): requires TreeInfo.containsTypeAnnotation
+    /// TODO(TreeInfo): requires TreeInfo.containsTypeAnnotation
     /// (TypeAnnotationFinder) — not ported; registered.
     pub fn check_redundant_cast(
         &self,
@@ -1676,7 +1676,7 @@ impl Check {
     /// checkRaw) (Check.java:1397-1407) and class Validator
     /// (Check.java:1421-1525)
     ///
-    /// TODO(Types/Check batch): the Validator requires firstIncompatibleTypeArg,
+    /// TODO(Types/Check): the Validator requires firstIncompatibleTypeArg,
     /// checkClassBounds, TreeInfo.containsTypeAnnotation and the JCTree.Visitor
     /// subclass navigation; registered (no partial validator).
     pub fn validate(
@@ -1749,7 +1749,7 @@ fn symbol_place_check(
 }
 
 // ---------------------------------------------------------------------------
-// Java: Check annotation validation (Check.java:211/2857-3520). Batch 3.5a
+// Java: Check annotation validation (Check.java:211/2857-3520). 
 // ports the Annotate-facing part; the branches that need not-yet-ported units
 // (RecordComponent, TypeAnnotations.annotationTargets, Types.cvarLowerBound,
 // types.getRetention/overrideEquivalent) are explicit TODO registrations.
@@ -1882,7 +1882,7 @@ impl Check {
             }
             let _ = not_applicable_or_is_type_use_only;
             // Java: the compiler-generated record element trimming branch
-            // (isCompGeneratedRecordElement) needs the Record batch; registered.
+            // (isCompGeneratedRecordElement) needs the Record; registered.
         }
         // functional interface check
         let functional_interface_tsym = ctx
@@ -2100,7 +2100,7 @@ impl Check {
         s: SymbolId,
     ) -> Result<Option<AttributeId>, CompletionFailure> {
         let mut syms = self.syms.borrow_mut();
-        // §9 adapter: the upstream mutates the ClassSymbol-held metadata in place;
+        // adapter adapter: the upstream mutates the ClassSymbol-held metadata in place;
         // the port temporarily clones it (the metadata is Clone) and writes it back
         // so inference/completer state stays on the symbol.
         let Some(mut metadata) = ctx
@@ -2143,7 +2143,7 @@ impl Check {
             targets.push(self.names.RECORD_COMPONENT.clone());
         }
         // Java: allowModules — Check.allowModules (Feature.MODULES); the ported
-        // Check keeps no allowModules field (registered: module directives batch).
+        // Check keeps no allowModules field (registered: module directives).
         targets
     }
 
@@ -2322,7 +2322,7 @@ impl Check {
 }
 
 // ---------------------------------------------------------------------------
-// Check batch 4: checkCastable (Check.java:632-645), checkValidGenericType
+// Check : checkCastable (Check.java:632-645), checkValidGenericType
 // (Check.java:1076-1162), castWarner/ConversionWarner adapter, checkExtends.
 // ---------------------------------------------------------------------------
 
@@ -2342,7 +2342,7 @@ impl Check {
     /// Java: public Warner castWarner(DiagnosticPosition pos, Type found,
     /// Type expected) (Check.java:3970-3972).
     ///
-    /// PORTING_RULES §9 adapter: the upstream ConversionWarner subclass overrides
+    /// PORTING_RULES Porting rules adapter: the upstream ConversionWarner subclass overrides
     /// warn() to emit the detected unchecked warning immediately; Rust has no
     /// subclassing, so checkCastable records the lint on the plain Warner and
     /// reports it after isCastable returns (same single warning).
@@ -2585,10 +2585,10 @@ impl Check {
 
 
 // ---------------------------------------------------------------------------
-// Batch 5 prerequisites: Check.convertWarner (Check.java:3979-3981),
+// prerequisites: Check.convertWarner (Check.java:3979-3981),
 // Check.assertConvertible (Check.java:1082-1093), Check.isTrustMeAllowedOnMethod
 // (Check.java:970-977), Check.checkMethod (Check.java:991-1080).
-// §9 adapters: explicit ctx/syms parameters (ADR 0001); the ConversionWarner
+// adapter adapters: explicit ctx/syms parameters (ADR 0001); the ConversionWarner
 // subclass is a plain Warner with the same lint-recording behavior used by
 // castWarner; unchecked warnings are recorded through warn_unchecked.
 // ---------------------------------------------------------------------------
@@ -2702,12 +2702,12 @@ impl Check {
         inference_context: &Rc<crate::comp::infer::InferenceContext>,
     ) -> TypeId {
         // Java: if (inferenceContext.free(mtype)) { addFreeTypeListener(...);
-        //   return mtype; }
+        // return mtype; }
         if inference_context.free(ctx, syms, &self.types, mtype) {
             // The listener re-checks the instantiated method type; the port
             // records it through the Batches' free-type-listener mechanism once
             // the listener closure can carry the mutable Check/Attr pair
-            // (registered §3; no substitute result is produced: the branch
+            // (registered Porting rules; no substitute result is produced: the branch
             // returns mtype like the upstream code before the listener fires).
             return mtype;
         }

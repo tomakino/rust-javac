@@ -1,5 +1,5 @@
 // Origin: com/sun/tools/javac/code/Scope.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: isStaticallyImported (Scope.java:162)
@@ -32,7 +32,7 @@
 // - NOT PORTED: getMark (Scope.java:1061)
 // - NOT PORTED: toString (Scope.java:1066)
 // - NOT PORTED: isStaticallyImported (Scope.java:1110)
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! A scope represents an area of visibility in a Java program. The Scope class
 //! is a container for symbols which provides efficient access to symbols given
@@ -207,7 +207,7 @@ pub enum ScopeData {
         next: Option<ScopeId>,
         /// A hash table for the scope's entries.
         ///
-        /// PORTING_RULES §9 adapter: upstream dup()/dupUnshared() share the
+        /// PORTING_RULES Porting rules adapter: upstream dup()/dupUnshared() share the
         /// Entry[] table object between scope instances; Rust represents the
         /// shared table/entry object graph with Rc<RefCell<...>> (borrow rule:
         /// never hold a borrow across a nested scope operation; the methods
@@ -445,7 +445,7 @@ impl Scope {
     /// Removes all entries of this scope from its shared table (if any) and
     /// returns the enclosing scope. The ported Scope owns its data behind
     /// Rc<RefCell<...>> shared handles; the next scope lives in the arena and is
-    /// updated through the explicit scopes parameter (registered §9 adapter).
+    /// updated through the explicit scopes parameter (registered Porting rules adapter).
     pub fn leave(
         &self,
         self_id: ScopeId,
@@ -946,7 +946,7 @@ impl Scope {
 
 
     // ------------------------------------------------------------------
-    // Scope query batch (Scope.java): full cross-scope queries for the import
+    // Scope query (Scope.java): full cross-scope queries for the import
     // scopes and the recursive ScopeImpl queries. The explicit-context adapter
     // passes the CompilerContext (ADR 0001); child scopes are cloned snapshots
     // so the immutable scope data and the mutable context do not borrow
@@ -1308,7 +1308,7 @@ impl Scope {
                 None => Vec::new(),
             },
             ScopeData::FilterImportScope { .. } => {
-                // TODO(Resolve batch): the FilterImportScope query needs the
+                // TODO(Resolve): the FilterImportScope query needs the
                 // SymbolImporter (Types.supertype/interfaces); use
                 // get_symbols_full (the Resolve entry point) for that scope.
                 unimplemented!(
@@ -1404,7 +1404,7 @@ impl Scope {
                 None => Vec::new(),
             },
             ScopeData::FilterImportScope { .. } => {
-                // TODO(Resolve batch): see get_symbols; use get_symbols_by_name_full.
+                // TODO(Resolve): see get_symbols; use get_symbols_by_name_full.
                 unimplemented!(
                     "TODO(Resolve batch): FilterImportScope.getSymbolsByName needs Types; use get_symbols_by_name_full"
                 )
@@ -1980,7 +1980,7 @@ mod tests {
             &|_| true,
         );
         assert!(non_recursive.is_empty());
-        // ... and the RECURSIVE getSymbols visits the enclosing elems chain.
+        //... and the RECURSIVE getSymbols visits the enclosing elems chain.
         let all = ctx.scope_get_symbols(inner, LookupKind::RECURSIVE, &|_| true);
         assert_eq!(all, vec![walk_sym]);
     }

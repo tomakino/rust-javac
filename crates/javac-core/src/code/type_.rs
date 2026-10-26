@@ -183,7 +183,7 @@ impl Type {
 
     /// Java: protected Type typeNoMetadata() (Type.java:348-350).
     ///
-    /// PORTING_RULES §9 adapter: the upstream baseType() default returns this
+    /// PORTING_RULES Porting rules adapter: the upstream baseType() default returns this
     /// for most subclasses; the port returns a clone without metadata.
     pub fn type_no_metadata(&self) -> Type {
         if self.metadata.is_none() {
@@ -640,7 +640,7 @@ pub enum TypeKindData {
         /// The element type.
         elemtype: Option<TypeId>,
         /// Java: ArrayType.isVarargs() — the upstream override lives in the
-        /// anonymous subclass returned by makeVarargs (§9: the flag is a field
+        /// anonymous subclass returned by makeVarargs (Porting rules: the flag is a field
         /// here).
         varargs: bool,
     },
@@ -704,7 +704,7 @@ pub enum TypeKindData {
         all_interfaces_field: Option<List<TypeId>>,
         /// The original type (originalType).
         original_type: Option<TypeId>,
-        /// Java: AttrRecover.RecoveryErrorType.candidateSymbol (§9: the upstream
+        /// Java: AttrRecover.RecoveryErrorType.candidateSymbol (Porting rules: the upstream
         /// ErrorType subclass is expressed by this field; None for plain error
         /// types).
         candidate_symbol: Option<SymbolId>,
@@ -767,7 +767,7 @@ pub enum TypeKindData {
         /// Java: the ArgumentType state when this deferred type is an
         /// ArgumentAttr.ArgumentType (a Java subclass of DeferredType): the
         /// kind, the speculative tree and the ResultInfo-keyed speculative
-        /// types. §9 registered: Java subclassing is expressed by this optional
+        /// types. Porting rules registered: Java subclassing is expressed by this optional
         /// payload plus kind dispatch in argument_attr.rs.
         argument: Option<
             std::rc::Rc<
@@ -779,7 +779,7 @@ pub enum TypeKindData {
 
 
 // ----------------------------------------------------------------------
-// Java: Type subclass constructors (P2 ClassReader batch). TypeMetadata is not
+// Java: Type subclass constructors (P2 ClassReader). TypeMetadata is not
 // ported yet (file header); the adapter constructors take mapped fields.
 // ----------------------------------------------------------------------
 impl Type {
@@ -875,7 +875,7 @@ impl Type {
     }
 
     // ------------------------------------------------------------------
-    // Java: Type accessor methods needed by ClassReader (P2 batch).
+    // Java: Type accessor methods needed by ClassReader (P2).
     // ForAll/DelegatedType delegation needs the type arena, so those
     // accessors take CompilerContext (ADR 0001 registered adapter).
     // ------------------------------------------------------------------
@@ -941,7 +941,7 @@ impl Type {
 }
 
 
-// Type constructors needed by the Signature/attribute batch.
+// Type constructors needed by the Signature/attribute.
 impl Type {
     /// Java: public IntersectionClassType(List<Type> bounds, ClassSymbol csym, boolean allInterfaces)
     pub fn new_intersection_class_type(

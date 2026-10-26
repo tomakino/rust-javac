@@ -592,7 +592,7 @@ impl JavaTokenizer {
                         continue;
                     }
                     // Java: isSurrogate() ? Character.isJavaIdentifierPart(
-                    //     getCodepoint()) : Character.isJavaIdentifierPart(get());
+                    // getCodepoint()) : Character.isJavaIdentifierPart(get());
                     let is_java_identifier_part =
                         javac_unicode::is_java_identifier_part(code_point);
                     if !is_java_identifier_part {

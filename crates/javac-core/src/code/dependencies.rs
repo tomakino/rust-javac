@@ -50,7 +50,7 @@ impl Dependencies for DummyDependencies {
 }
 
 // NOT PORTED: GraphDependencies (Dependencies.java:100-430) — needs GraphUtils,
-// JavaCompiler and Options; registered for the diagnostics/debug batch.
+// JavaCompiler and Options; registered for the diagnostics/debug.
 
 #[cfg(test)]
 mod tests {

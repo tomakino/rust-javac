@@ -1,10 +1,10 @@
 // Origin: com/sun/tools/javac/parser/ReferenceParser.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: dependent service batch (see docs/PLAN.md).
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: dependent service (see docs/PLAN.md).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: visitAnnotatedType (ReferenceParser.java:207)
 // - NOT PORTED: reduce (ReferenceParser.java:212)
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! A utility class to parse a string in a doc comment containing a reference to
 //! an API element, such as a type, field or method.

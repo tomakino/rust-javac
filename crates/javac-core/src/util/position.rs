@@ -25,7 +25,7 @@
 //! - LineMap.getColumnNumber(int)   -> get_column_number
 //! - LineMap.getColumnNumber(long)  -> get_column_number_long
 //!
-//! PORTING_RULES: LineTabMapImpl extends LineMapImpl; per PLAN.md §5 the Java subclass fields are
+//! PORTING_RULES: LineTabMapImpl extends LineMapImpl; per PLAN.md Porting rules the Java subclass fields are
 //! modelled with an enum kind in the outer struct, and the virtual call to setTabPosition is a
 //! match on that kind. Neither LineMapImpl nor LineTabMapImpl is instantiated outside
 //! Position.makeLineMap in javac (verified by grep over the upstream tree).
@@ -130,7 +130,7 @@ pub fn encode_position(line: i32, col: i32) -> i32 {
     if line > MAXLINE || col > MAXCOLUMN {
         return NOPOS;
     }
-    // Java int arithmetic wraps; expressed explicitly per PORTING_RULES §8.
+    // Java int arithmetic wraps; expressed explicitly per Porting rules.
     line.wrapping_shl(LINESHIFT).wrapping_add(col)
 }
 

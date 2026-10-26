@@ -2,12 +2,12 @@
 //
 // PORTING_RULES adapters (registered):
 // - DiagnosticPosition object identity -> Rc<dyn DiagnosticPosition> compared
-//   with Rc::ptr_eq (the Java HashMap uses the default identity hashCode/equals);
+// with Rc::ptr_eq (the Java HashMap uses the default identity hashCode/equals);
 // - the Java anonymous IMMEDIATE_POSITION DiagnosticPosition -> CurrentPos::Immediate
-//   (there is no object identity for the anonymous singleton in Rust; the state is
-//   modeled explicitly);
+// (there is no object identity for the anonymous singleton in Rust; the state is
+// modeled explicitly);
 // - LintLogger -> Rust trait object; report() takes the logger by value (Java
-//   passes an interface instance; the ported callers pass a closure).
+// passes an interface instance; the ported callers pass a closure).
 use std::rc::Rc;
 
 use crate::ids::TreeId;

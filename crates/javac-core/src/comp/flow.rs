@@ -2,23 +2,23 @@
 //
 // PORTING_RULES:
 // - ADR 0001: the ported Flow takes the services explicitly (Flow.instance/
-//   Flow(Context) are registered with the Context registration batch); the
-//   visitor subclass hierarchy maps to the FlowVisitor trait (the default
-//   visit methods are the ported TreeScanner navigational bodies, so a
-//   specialized analyzer overrides only the visit methods it cares about,
-//   exactly like the upstream TreeScanner subclasses);
+// Flow(Context) are registered with the Context registration); the
+// visitor subclass hierarchy maps to the FlowVisitor trait (the default
+// visit methods are the ported TreeScanner navigational bodies, so a
+// specialized analyzer overrides only the visit methods it cares about,
+// exactly like the upstream TreeScanner subclasses);
 // - the upstream TreeScanner.scan(tree) -> tree.accept(this) becomes
-//   FlowVisitor::scan (accept dispatch), and scan_list/scan_list_opt are the
-//   ported list helpers;
+// FlowVisitor::scan (accept dispatch), and scan_list/scan_list_opt are the
+// ported list helpers;
 // - the Java ListBuffer<PendingExit> maps to the ported List<PendingExit> in
-//   the analyzer state (same append/iterate order);
+// the analyzer state (same append/iterate order);
 // - the FlowAnalyzer.ThrownPendingExit / AssignAnalyzer.AssignPendingExit
-//   subclasses map to PendingExit variants;
-// - §9 adapters: JCTree.type checks read the arena type slot; the diagnostic
-//   position surface is the i32 preferred position; the Log error/warning
-//   helpers (log.error(pos, fragment/key), log.warning(LintCategory,...)) are
-//   implemented in this file on top of Factory::create + Log::report
-//   (registered with the Log batch).
+// subclasses map to PendingExit variants;
+// - adapter adapters: JCTree.type checks read the arena type slot; the diagnostic
+// position surface is the i32 preferred position; the Log error/warning
+// helpers (log.error(pos, fragment/key), log.warning(LintCategory,...)) are
+// implemented in this file on top of Factory::create + Log::report
+// (registered with the Log).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -360,7 +360,7 @@ impl JumpKind {
     }
 }
 
-/// Copy helper for Bits (the ported Bits has no Clone; §9 adapter).
+/// Copy helper for Bits (the ported Bits has no Clone; Porting rules adapter).
 pub fn clone_bits(bits: &Bits) -> Bits {
     let mut copy = Bits::new();
     let mut next = bits.next_bit(0);
@@ -538,7 +538,7 @@ impl Flow {
     }
 
     /// Java: log.error(DiagnosticPosition, Error) — via Factory::create +
-    /// Log::report (Log batch; ADR 0002 P4 argument placeholders).
+    /// Log::report (Log; ADR 0002 P4 argument placeholders).
     pub fn error(&self, pos: i32, info: ErrorInfo) {
         let args: Vec<DiagnosticArg> = info
             .info()
@@ -595,7 +595,7 @@ impl Flow {
     }
 
     /// Java: Lint.augment(tree.sym) — Lint.augment is registered with the
-    /// Attribute/Symtab batch (unimplemented at that entry).
+    /// Attribute/Symtab (unimplemented at that entry).
     pub fn augmented_lint(&self, ctx: &CompilerContext, sym: SymbolId) -> Rc<Lint> {
         Rc::new(self.lint.augment(ctx, &self.syms.borrow(), ctx.sym(sym)))
     }
@@ -1556,7 +1556,7 @@ impl<'a> AliveAnalyzer<'a> {
 
     /// Java: private void transitiveCovers(Set<Symbol> covered)
     /// (Flow.java:762-796) — the pattern-switch exhaustive helpers are
-    /// registered with the Pattern matching batch.
+    /// registered with the Pattern matching.
     #[allow(dead_code)]
     fn transitive_covers(&mut self, _ctx: &mut CompilerContext, _covered: &mut HashSet<SymbolId>) {
         unimplemented!(
@@ -2376,7 +2376,7 @@ pub struct FlowAnalyzer<'a> {
     return_type: Option<TypeId>,
     lint: Rc<Lint>,
     /// Java: LambdaFlowAnalyzer.inferredThrownTypes / inLambda
-    /// (Flow.java:1686-1722) — §9 adapter: same struct, mode flag.
+    /// (Flow.java:1686-1722) — Porting rules adapter: same struct, mode flag.
     inferred_thrown_types: List<TypeId>,
     lambda_mode: bool,
     in_lambda: bool,
@@ -3270,7 +3270,7 @@ pub struct AssignAnalyzer<'a> {
     is_initial_constructor: bool,
     lint: Rc<Lint>,
     /// Java: LambdaAssignAnalyzer.enclosedSymbols (Flow.java:1645) — Some in
-    /// the lambda thrown-types pass (§9 adapter: same struct, mode flag).
+    /// the lambda thrown-types pass (Porting rules adapter: same struct, mode flag).
     enclosed_scope: Option<crate::ids::ScopeId>,
     /// Java: LambdaAssignAnalyzer.inLambda (Flow.java:1646)
     lambda_mode: bool,
@@ -3315,7 +3315,7 @@ impl<'a> AssignAnalyzer<'a> {
     }
 
     /// Java: void referenced(Symbol sym) (Flow.java:2851-2853) — the
-    /// unrefdResources scope removal is registered with the Scope batch.
+    /// unrefdResources scope removal is registered with the Scope.
     fn referenced(&mut self, _ctx: &CompilerContext, _sym: SymbolId) {}
 
     /// Java: protected boolean trackable(VarSymbol sym) (Flow.java:1793-1799)

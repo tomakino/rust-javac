@@ -38,7 +38,7 @@
 //! PORTING_RULES: some items are the wiring points for the P2 ClassReader
 //! (getClass/getModule/getPackage/getType/getNameAndType are still TODO; the raw
 //! adapters and the tag sets they use are consumed by the ClassReader in a later
-//! batch), so they are kept with the upstream shape and marked allow(dead_code).
+//!), so they are kept with the upstream shape and marked allow(dead_code).
 #![allow(dead_code)]
 
 use crate::jvm::class_file::{
@@ -302,7 +302,7 @@ impl PoolReader {
             }
             CONSTANT_CLASS => {
                 // Java: Name name = names.fromUtf(getName(index).map(ClassFile::internalize));
-                //       return syms.enterClass(reader.currentModule, name);
+                // return syms.enterClass(reader.currentModule, name);
                 // TODO(P2): Symtab/currentModule are not ported; the port keeps the
                 // internalized raw name.
                 let index = poolbuf.get_char(offset) as i32;
@@ -315,8 +315,8 @@ impl PoolReader {
             }
             CONSTANT_NAMEANDTYPE => {
                 // Java: Name name = getName(poolbuf.getChar(offset));
-                //       Type type = getType(poolbuf.getChar(offset + 2));
-                //       return new NameAndType(name, type);
+                // Type type = getType(poolbuf.getChar(offset + 2));
+                // return new NameAndType(name, type);
                 // TODO(P2): Type/sigToType is not ported; the raw descriptor Name is
                 // kept instead.
                 let name_index = poolbuf.get_char(offset) as i32;
@@ -337,7 +337,7 @@ impl PoolReader {
             }
             CONSTANT_PACKAGE => {
                 // Java: Name name = getName(poolbuf.getChar(offset));
-                //       return syms.enterPackage(reader.currentModule, names.fromUtf(internalize(name)));
+                // return syms.enterPackage(reader.currentModule, names.fromUtf(internalize(name)));
                 // TODO(P2): Symtab/currentModule are not ported; the port keeps the
                 // internalized raw name.
                 let index = poolbuf.get_char(offset) as i32;
@@ -350,7 +350,7 @@ impl PoolReader {
             }
             CONSTANT_MODULE => {
                 // Java: Name name = getName(poolbuf.getChar(offset));
-                //       return syms.enterModule(name);
+                // return syms.enterModule(name);
                 // TODO(P2): Symtab is not ported; the port keeps the name.
                 let index = poolbuf.get_char(offset) as i32;
                 let name = self.get_name(poolbuf, index, names)?;

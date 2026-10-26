@@ -1,13 +1,13 @@
 // Origin: com/sun/tools/javac/util/AbstractDiagnosticFormatter.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration supplement (method-level audit):
-// Dependency/phase: P2/P3 utility-service batch.
+// Gap registration supplement (method-level audit):
+// Dependency/phase: P2/P3 utility-service.
 // - NOT PORTED: expr2String (AbstractDiagnosticFormatter.java:231)
 // - NOT PORTED: getConfiguration (AbstractDiagnosticFormatter.java:400)
 // - NOT PORTED: getPrinter (AbstractDiagnosticFormatter.java:517)
 // - NOT PORTED: setPrinter (AbstractDiagnosticFormatter.java:521)
 // - NOT PORTED: capturedVarId (AbstractDiagnosticFormatter.java:541)
 // - NOT PORTED: visitCapturedType (AbstractDiagnosticFormatter.java:545)
-// End of §19 gap registration supplement.
+// End of Gap registration supplement.
 
 //! This abstract class provides a basic implementation of the functionalities
 //! that should be provided by any formatter used by javac. Among the main
@@ -39,8 +39,8 @@
 //!   carry an _impl suffix (Rust has no overriding); the other upstream methods
 //!   keep the camelCase -> snake_case name;
 //! - SimpleConfiguration(Options) needs the not-yet-ported Options: it is not
-//!   provided (TODO in the batch that ports Options); the report-style option
-//!   decoding is registered in the module doc of the Options/Target batch;
+//!   provided (TODO in the that ports Options); the report-style option
+//!   decoding is registered in the module doc of the Options/Target;
 //! - NOT PORTED IN THIS STEP (dependencies are not ported yet; TODO, no
 //!   substitute logic):
 //!   * the Printer-based Type/Symbol argument formatting needs code/Printer
@@ -386,7 +386,7 @@ pub fn format_argument_default<F: AbstractDiagnosticFormatter + ?Sized>(
         let locale = locale.cloned().unwrap_or_else(Locale::default_locale);
         return formattable.to_string_with_locale(&locale, messages.as_ref());
     }
-    // NOT PORTED before the code/Source batch; now ported.
+    // NOT PORTED before the code/Source; now ported.
     if let Some(source) = arg.downcast_ref::<crate::code::source::Source>() {
         return source.name().to_string();
     }

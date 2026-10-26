@@ -6,7 +6,7 @@
 //!
 //! The lexer/parser layer (Java: package com.sun.tools.javac.parser).
 //!
-//! PORTING_RULES / batch status:
+//! PORTING_RULES / status:
 //! * S6 lexical layer (ported from the upstream parser package): Tokens, UnicodeReader,
 //!   JavaTokenizer, TextBlockSupport, JavadocTokenizer, Lexer, Scanner, ScannerFactory
 //!   (+ the java.lang.String helpers JavaTokenizer needs);
@@ -18,7 +18,7 @@
 //!   JavadocComment are separate comment implementations;
 //! * ScannerFactory.instance and Tokens.instance need the Names/Source Context
 //!   registrations that are not ported yet (Names has no Context registration,
-//!   Source.instance is TODO(Options batch)): the dependencies are injected
+//!   Source.instance is TODO(Options)): the dependencies are injected
 //!   (registered GAP/TODO(P6));
 //! * Character.isJavaIdentifierStart/Part, isIdentifierIgnorable and the Unicode
 //!   identifier/whitespace/digit tables use the ported javac-unicode JDK 17

@@ -2,7 +2,7 @@
 #![allow(clippy::type_complexity)]
 
 // Origin: com/sun/tools/javac/code/Types.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration supplement (method-level audit):
+// Gap registration supplement (method-level audit):
 // Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
 // - NOT PORTED: needsStripping (Types.java:276)
 // - NOT PORTED: needsStripping (Types.java:295)
@@ -136,23 +136,23 @@
 // - NOT PORTED: assembleSig (Types.java:5224)
 // - NOT PORTED: constantType (Types.java:5231)
 // - NOT PORTED: newRound (Types.java:5257)
-// End of §19 gap registration supplement.
-// PORTING_RULES §19 gap registration (Types service, method-level audit).
+// End of Gap registration supplement.
+// Gap registration (Types service, method-level audit).
 // Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check and the
 // ClassReader/complete() symbol graph); the file currently ports the P1/P2
 // subset needed by the parser/tree layers.
 // Lead cross-check of reference code/Types.java against the local fn names
 // reports 164 not-yet-ported semantic methods. Representative groups (the
 // authoritative per-method list is maintained by the Lead in STATUS):
-//   - TypeRelation visitors: visitClassType/visitWildcardType/visitTypeVar/
-//     visitArrayType/visitErrorType dispatch for isSubtype/isSameType families;
-//   - type projection helpers: mapTypeArgument/TypeArgumentProjection/upward/
-//     downward/complement/captures/makeWildcard (TypeProjection);
-//   - lub/glb/capture fresh-type machinery and adapt/subst recursion paths;
-//   - memberType/asSuper recursion over completed symbol graphs (needs the
-//     ClassReader/Enter work).
-// No substitutes are implemented here; these are registered for the P3 batch.
-// End of §19 gap registration.
+// - TypeRelation visitors: visitClassType/visitWildcardType/visitTypeVar/
+// visitArrayType/visitErrorType dispatch for isSubtype/isSameType families;
+// - type projection helpers: mapTypeArgument/TypeArgumentProjection/upward/
+// downward/complement/captures/makeWildcard (TypeProjection);
+// - lub/glb/capture fresh-type machinery and adapt/subst recursion paths;
+// - memberType/asSuper recursion over completed symbol graphs (needs the
+// ClassReader/Enter work).
+// No substitutes are implemented here; these are registered for the P3.
+// End of Gap registration.
 
 //! Utility routines for the Type interface.
 //!
@@ -161,14 +161,14 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES (ADR 0001, arena + IDs): this batch ports ONLY the Types
+//! PORTING_RULES (ADR 0001, arena + IDs): this ports ONLY the Types
 //! subset needed to unlock TreeMaker/class-fields (see the task):
 //! hashCode, isSameType, erasure, boxedClass, and the helpers they need.
 //! The Java Types instance state (Symtab, Names, Source, Check, Enter,
 //! JavacMessages, JCDiagnostic.Factory, Warner) is NOT stored in the Rust Types
 //! (which is a stateless service): the methods that need it take the ported
 //! Symtab explicitly (registered section 9; no Rc/RefCell is introduced). The
-//! remaining Types methods are NOT PORTED (TODO Types batch):
+//! remaining Types methods are NOT PORTED (TODO Types):
 //!   - isSubtype / isCastable / containsType / asSuper / memberType / subst /
 //!     capture / supertype / interfaces / lub / glb / isReifiable / rank / ...;
 //!   - containsTypeEquivalent's containsType(t, s) && containsType(s, t) branch
@@ -186,7 +186,7 @@
 //!
 //! PORTING_RULES (upstream helpers that live in Type.java but are not ported in
 //! type_.rs yet; reproduced here as private helpers and to be moved into
-//! type_.rs with the Type batch, registered): getEnclosingType,
+//! type_.rs with the Type, registered): getEnclosingType,
 //! getTypeArguments, getParameterTypes, getReturnType and the ArrayType
 //! Type.equals override (equalsIgnoreMetadata).
 //!
@@ -263,7 +263,7 @@ pub struct Types {
     members_closure_seen: std::cell::RefCell<std::collections::HashSet<SymbolId>>,
     /// Java: CandidatesCache.cache (Types.java:3151); the upstream Entry
     /// equality uses isSameType(site) + symbol identity, the port keys by the
-    /// nominal TypeId (a cache-miss-only difference, registered §9).
+    /// nominal TypeId (a cache-miss-only difference, registered Porting rules).
     candidates_cache: std::cell::RefCell<
         std::collections::HashMap<(TypeId, SymbolId), Vec<SymbolId>>,
     >,
@@ -517,7 +517,7 @@ impl Types {
                 let restype = restype.expect("method return type");
                 let mut h = tag_ordinal(TypeTag::METHOD);
                 // Java: for (List<Type> thisargs = t.argtypes;
-                //     thisargs.tail != null; thisargs = thisargs.tail)
+                // thisargs.tail != null; thisargs = thisargs.tail)
                 // - every argument but the last.
                 let last = argtypes.length() - 1;
                 for index in 0..last {
@@ -816,7 +816,7 @@ impl Types {
         match (t, s) {
             (Some(t), Some(s)) => self.is_same_type(ctx, syms, t, s),
             // NOT PORTED: a null enclosing type is an upstream assertion
-            // violation (visit(null, ...)); do not invent a value.
+            // violation (visit(null,...)); do not invent a value.
             _ => panic!("unimplemented: null enclosing type in isSameType"),
         }
     }
@@ -1066,7 +1066,7 @@ impl Types {
         ) {
             // Java: Symbol.ClassSymbol.erasure(Types):
             // erasure_field = new ClassType(types.erasure(type.getEnclosingType()),
-            //                               List.nil(), this, type.getMetadata());
+            // List.nil(), this, type.getMetadata());
             let enclosing = get_enclosing_type(ctx, ty).expect("class type enclosing type");
             let erased_enclosing = self.erasure_recurse(ctx, syms, enclosing, false);
             ctx.alloc_type(Type::new(
@@ -1157,7 +1157,7 @@ impl Types {
             TypeKindData::IntersectionClassType { .. } => true,
             TypeKindData::UnionClassType { .. } => {
                 // NOT PORTED: UnionClassType.isCompound() calls getLub() (Types
-                // batch TODO); no approximation is done.
+                // TODO); no approximation is done.
                 panic!("unimplemented: UnionClassType.isCompound (needs getLub)");
             }
             _ => false,
@@ -2094,7 +2094,7 @@ impl Types {
     /// Java: public Type capture(Type t)
     ///
     /// PORTING_RULES: the freshTypeVariables/glb parts need CapturedType plus
-    /// glb (TODO Types batch): a type that does not need capture conversion is
+    /// glb (TODO Types): a type that does not need capture conversion is
     /// returned as-is (the early returns of the upstream method), while the part
     /// that needs fresh captured variables panics with an explicit
     /// unimplemented message (no approximation).
@@ -2762,7 +2762,7 @@ impl Types {
 
     /// Java: public int rank(Type t)
     ///
-    /// PORTING_RULES: the upstream rank_field caches (Type batch, not ported)
+    /// PORTING_RULES: the upstream rank_field caches (Type, not ported)
     /// are not used; the rank is recomputed each time (same result).
     pub fn rank(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> i32 {
         let tag = ctx.typ(t).get_tag();
@@ -2942,7 +2942,7 @@ impl Types {
     }
 
     /// Java: public boolean isSubSignature(Type t, Type s, boolean strict) —
-    /// TODO(Types batch): the strict=false HasSameArgs variant is not ported.
+    /// TODO(Types): the strict=false HasSameArgs variant is not ported.
     pub fn is_sub_signature_strict(
         &self,
         ctx: &mut CompilerContext,
@@ -3057,7 +3057,7 @@ impl Types {
     }
 
     /// The read-only counterpart of boxedClass: the boxed class symbols are
-    /// pre-entered by Symtab (syms.boxed_class_ids, §9 adapter), so relation
+    /// pre-entered by Symtab (syms.boxed_class_ids, Porting rules adapter), so relation
     /// code that only holds &Symtab can obtain the symbol exactly like the
     /// upstream syms.enterClass(java_base, boxedName) call.
     pub fn boxed_class_ro(
@@ -3088,7 +3088,7 @@ impl Types {
     }
 
     /// The read-only counterpart of unboxedType (same upstream body, using the
-    /// pre-entered boxed class symbols; §9 adapter).
+    /// pre-entered boxed class symbols; Porting rules adapter).
     #[allow(clippy::collapsible_if)]
     pub fn unboxed_type_ro(
         &self,
@@ -3180,7 +3180,7 @@ impl Types {
     /// capture, Warner warn)
     ///
     /// PORTING_RULES: the lint warnings (Warner/LintCategory.UNCHECKED) are not
-    /// emitted here (the lint wiring is TODO with the Attr batch); the boolean
+    /// emitted here (the lint wiring is TODO with the Attr); the boolean
     /// relation is 1:1.
     fn is_subtype_unchecked_internal(
         &self,
@@ -3244,11 +3244,11 @@ impl Types {
     /// Java: public boolean isCastable(Type t, Type s, Warner warn)
     /// (Types.java:1640-1670)
     ///
-    /// PORTING_RULES §9 adapter: the upstream TypeRelation.warnStack (a stack
+    /// PORTING_RULES Porting rules adapter: the upstream TypeRelation.warnStack (a stack
     /// pushed around visit) is expressed by passing the Warner explicitly; the
     /// recursive calls that upstream makes with noWarnings construct a local
     /// Warner (noWarnings has no observable state). checkUnsafeVarargsConversion
-    /// (Types.java:1663) is not ported yet (Varargs batch, registered).
+    /// (Types.java:1663) is not ported yet (Varargs, registered).
     pub fn is_castable_with_warn(
         &self,
         ctx: &mut CompilerContext,
@@ -3273,7 +3273,7 @@ impl Types {
             return false;
         }
         // Java: if (warn != warnStack.head) { push; checkUnsafeVarargsConversion;
-        //       result = isCastable.visit(t,s); pop; } else visit(t,s)
+        // result = isCastable.visit(t,s); pop; } else visit(t,s)
         let result = self.is_castable_visit(ctx, syms, t, s, warn);
         if result && ctx.typ(t).has_tag(TypeTag::CLASS) && ctx.typ(s).has_tag(TypeTag::CLASS) {
             let tsym = ctx.typ(t).tsym.expect("class type symbol");
@@ -3388,7 +3388,7 @@ impl Types {
                 }
                 if tag == TypeTag::TYPEVAR {
                     // Java: if (isCastable(t, s.getUpperBound(), noWarnings)) {
-                    //   warnStack.head.warn(UNCHECKED); return true; } else false;
+                    // warnStack.head.warn(UNCHECKED); return true; } else false;
                     let upper = ctx.typ(s).get_upper_bound().expect("type var upper bound");
                     let mut no_warnings = crate::util::warner::Warner::new(None);
                     if self.is_castable_with_warn(ctx, syms, t, upper, &mut no_warnings) {
@@ -3500,7 +3500,7 @@ impl Types {
                             return self.is_subtype_unchecked(ctx, syms, a, b);
                         }
                         // Java: isSubtypeUnchecked(a, b, warn) — the warn parameter
-                        // is registered with the Varargs batch (checkUnsafeVarargsConversion
+                        // is registered with the Varargs (checkUnsafeVarargsConversion
                         // is not ported yet); the boolean relation is unchanged.
                         return self.is_subtype_unchecked(ctx, syms, a, b);
                     }
@@ -3636,7 +3636,7 @@ fn type_identity_hash(t: TypeId) -> i32 {
 /// Java: Type.getEnclosingType() (ClassType: outer_field; other types: null).
 ///
 /// PORTING_RULES: reproduced here because type_.rs has not ported getEnclosingType
-/// yet (TODO Type batch; registered).
+/// yet (TODO Type; registered).
 fn get_enclosing_type(ctx: &CompilerContext, t: TypeId) -> Option<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::ClassType { outer_field, .. }
@@ -3653,7 +3653,7 @@ fn get_enclosing_type(ctx: &CompilerContext, t: TypeId) -> Option<TypeId> {
 ///
 /// PORTING_RULES: the upstream ClassType.getTypeArguments() calls complete()
 /// before defaulting typarams_field to List.nil(); the Symbol completer is not
-/// ported, so the nil default is used (TODO Symbol batch; registered).
+/// ported, so the nil default is used (TODO Symbol; registered).
 pub(crate) fn get_type_arguments(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::ClassType { typarams_field, .. }
@@ -3670,7 +3670,7 @@ pub(crate) fn get_type_arguments(ctx: &CompilerContext, t: TypeId) -> List<TypeI
 /// Java: Type.getParameterTypes() (MethodType: argtypes; other types: List.nil()).
 ///
 /// PORTING_RULES: reproduced here because type_.rs has not ported it yet (TODO
-/// Type batch; registered).
+/// Type; registered).
 pub(crate) fn get_parameter_types(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::MethodType { argtypes, .. } => argtypes.clone(),
@@ -3680,7 +3680,7 @@ pub(crate) fn get_parameter_types(ctx: &CompilerContext, t: TypeId) -> List<Type
 
 /// Java: Type.getReturnType() (MethodType: restype; other types: null).
 ///
-/// PORTING_RULES: reproduced here (TODO Type batch; registered).
+/// PORTING_RULES: reproduced here (TODO Type; registered).
 fn get_return_type(ctx: &CompilerContext, t: TypeId) -> TypeId {
     match &ctx.typ(t).kind {
         TypeKindData::MethodType { restype, .. } => restype.expect("method return type"),
@@ -3691,14 +3691,14 @@ fn get_return_type(ctx: &CompilerContext, t: TypeId) -> TypeId {
 
 
 // ---------------------------------------------------------------------------
-// Types batch 2 helpers.
+// Types helpers.
 //
 // PORTING_RULES: upstream these helpers are methods of Type.java
 // (getThrownTypes/allparams/isParameterized/isRaw/hasErasedSupertypes/
 // getSuperclass/getInterfaces/classBound/cvarUpperBound/cvarLowerBound/elemtype)
 // or of Types.java (classBound/isUnbounded); they are reproduced here as private
 // helpers because type_.rs/symbol.rs have not ported them yet (TODO Type/Symbol
-// batch; registered). Symbol.complete() is not ported, so the lazy completion
+// ; registered). Symbol.complete() is not ported, so the lazy completion
 // calls are skipped (fields are used as-is); a null supertype_field/
 // interfaces_field is returned as "not computed yet".
 // ---------------------------------------------------------------------------
@@ -3799,7 +3799,7 @@ fn has_erased_supertypes(ctx: &CompilerContext, t: TypeId) -> bool {
 /// Type.java:1491 MethodType -> thrown; Type.java:1808 ForAll -> qtype).
 ///
 /// Used by the ported Types relations (isSubSignature/checkMethod paths) and
-/// by the FunctionDescriptor batch when it lands (Types.java:769/774/799).
+/// by the FunctionDescriptor when it lands (Types.java:769/774/799).
 #[allow(dead_code)]
 fn get_thrown_types(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
     match &ctx.typ(t).kind {
@@ -4008,7 +4008,7 @@ fn new_method_type_2(
 /// Java: new Type.TypeVar(tsym, bound, lower)
 ///
 /// Used by substBounds/newInstances (Types.java:3427: new TypeVar(t.tsym,
-/// null, syms.botType, ...)); ported with the Types relations batch.
+/// null, syms.botType, ...)); ported with the Types relations.
 #[allow(dead_code)]
 fn new_type_var_type(
     ctx: &mut CompilerContext,
@@ -4027,7 +4027,7 @@ fn new_type_var_type(
 ///
 /// Used by capture()/freshTypeVariables (Types.java:4465: new CapturedType
 /// (capturedName, syms.noSymbol, bound, syms.botType, wildcard)); ported with
-/// the Types relations batch.
+/// the Types relations.
 #[allow(dead_code)]
 fn new_captured_type(
     ctx: &mut CompilerContext,
@@ -4055,7 +4055,7 @@ fn type_equals_ignore_metadata(ctx: &CompilerContext, t: TypeId, s: TypeId) -> b
 /// Java: Type.contains(elem) (Type.java:1148/1408/1504/1854 overrides; the
 /// upstream uses are in Attr and other not-yet-ported callers, not Types.java).
 ///
-/// TODO(Attr/Type.contains batch): not wired yet. Keep until that batch wires
+/// TODO(Attr/Type.contains): not wired yet. Keep until that wires
 /// it; do not delete.
 #[allow(dead_code)]
 fn type_contains(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, elem: TypeId) -> bool {
@@ -4216,7 +4216,7 @@ impl Types {
 
 
 // ----------------------------------------------------------------------
-// Java: Types.makeIntersectionType/setBounds (Signature attribute batch).
+// Java: Types.makeIntersectionType/setBounds (Signature attribute).
 // ----------------------------------------------------------------------
 impl Types {
     /// Java: public IntersectionClassType makeIntersectionType(List<Type> bounds,
@@ -4237,7 +4237,7 @@ impl Types {
             bounds
         };
         // Java: ClassSymbol bc = new ClassSymbol(ABSTRACT|PUBLIC|SYNTHETIC|COMPOUND|ACYCLIC,
-        //   names.empty, null, syms.noSymbol); bc.type = intersectionType;
+        // names.empty, null, syms.noSymbol); bc.type = intersectionType;
         let flags = crate::code::flags::ABSTRACT as i64
             | crate::code::flags::PUBLIC as i64
             | crate::code::flags::SYNTHETIC as i64
@@ -4311,7 +4311,7 @@ impl Types {
 }
 
 // ----------------------------------------------------------------------
-// Java: Types.createErrorType overloads (P3/Enter batch). The three Java
+// Java: Types.createErrorType overloads (P3/Enter). The three Java
 // overloads get distinct Rust names (PORTING_RULES section 3).
 // ----------------------------------------------------------------------
 
@@ -4446,7 +4446,7 @@ fn type_arguments_list(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
 
 impl Types {
    // ------------------------------------------------------------------
-    // Types relations batch: adapt/adaptSelf/rewriteSupers/containsTypeRecursive
+    // Types relations : adapt/adaptSelf/rewriteSupers/containsTypeRecursive
     // (Types.java:4577-4700/1133-1180) — the core needed by isSubtype's
     // parameterized class-type branch.
     // ------------------------------------------------------------------
@@ -4830,7 +4830,7 @@ impl Types {
 
 
 // ---------------------------------------------------------------------------
-// Types relations batch: Symbol.precedes, closure/insert/union/closureMin,
+// Types relations : Symbol.precedes, closure/insert/union/closureMin,
 // glb and the complete capture (Types.java:835-852 Symbol.precedes,
 // 3700-3810 closure/union, 3915-3950 closureMin, 4088-4160 glb, 4388-4475
 // capture/freshTypeVariables).
@@ -5132,7 +5132,7 @@ impl Types {
 
 
 // ---------------------------------------------------------------------------
-// Types relations batch (isCastable support): asSub, Type.contains,
+// Types relations (isCastable support): asSub, Type.contains,
 // rewriteQuantifiers, notSoftSubtype (Types.java:539-600, 1130-1155,
 // 4720-4800, 1989-2020).
 // ---------------------------------------------------------------------------
@@ -5527,7 +5527,7 @@ fn type_list_contains(
 
 
 // ---------------------------------------------------------------------------
-// Types relations batch (isCastable support): disjointTypes/disjointType,
+// Types relations (isCastable support): disjointTypes/disjointType,
 // superClosure, sideCast/sideCastFinal, giveWarning (Types.java:1888-1975,
 // 4479-4560).
 // ---------------------------------------------------------------------------
@@ -5726,7 +5726,7 @@ impl Types {
 
     /// Java: private boolean sideCast(Type from, Type to, Warner warn)
     /// (Types.java:4479-4520; the unchecked-lint warnings are registered for
-    /// the Attr/Lint batch)
+    /// the Attr/Lint)
     fn side_cast(
         &self,
         ctx: &mut CompilerContext,
@@ -5821,7 +5821,7 @@ impl Types {
             return false;
         }
         // Java: if (giveWarning(t2, t1) || giveWarning(t1, t2))
-        //           warn.warn(LintCategory.UNCHECKED); return true;
+        // warn.warn(LintCategory.UNCHECKED); return true;
         let _ = (reverse, target);
         if self.give_warning(ctx, syms, t2, t1) || self.give_warning(ctx, syms, t1, t2) {
             warn.warn(crate::code::lint::LintCategory::UNCHECKED);
@@ -5833,7 +5833,7 @@ impl Types {
 
 
 // ---------------------------------------------------------------------------
-// Infer batch: Type.UndetVar operations (Type.java:1892-2250) and the
+// Infer: Type.UndetVar operations (Type.java:1892-2250) and the
 // UndetVar branches of the Types relations (Types.java:1214/1282/1463/1494/
 // 1593/4229/2731).
 // ---------------------------------------------------------------------------
@@ -6491,7 +6491,7 @@ impl crate::comp::infer::UndetVarListener for BoundsChangeRecorder {
 
 
 // ---------------------------------------------------------------------------
-// Infer batch: the least-upper-bound machinery used by InferenceStep.LOWER
+// Infer: the least-upper-bound machinery used by InferenceStep.LOWER
 // (Types.java:3792-3960/3988-4090: intersect/merge/compoundMin/
 // erasedSupertypes/lub). 
 // ---------------------------------------------------------------------------
@@ -6806,8 +6806,8 @@ impl Types {
                     }
                     mec_current = mec_current.tail();
                 }
-                // step 4 - let MEC be { G1, G2 ... Gn }, then we have that
-                // lub = lci(Inv(G1)) & lci(Inv(G2)) & ... & lci(Inv(Gn))
+                // step 4 - let MEC be { G1, G2... Gn }, then we have that
+                // lub = lci(Inv(G1)) & lci(Inv(G2)) &... & lci(Inv(Gn))
                 self.compound_min(ctx, syms, names, candidates)
             }
             _ => {
@@ -6845,7 +6845,7 @@ impl Types {
 
 
 // ---------------------------------------------------------------------------
-// Infer batch: public wrappers used by comp/infer.rs (the UndetVar engine and
+// Infer: public wrappers used by comp/infer.rs (the UndetVar engine and
 // the Infer incorporation actions), and the closureCollector helper used by
 // Infer.CheckUpperBounds (Types.java:3738-3750).
 // ---------------------------------------------------------------------------
@@ -7040,7 +7040,7 @@ impl Types {
 
 
 // ---------------------------------------------------------------------------
-// Types batch 4: isAssignable/covariantReturnType/resultSubtype/
+// Types : isAssignable/covariantReturnType/resultSubtype/
 // returnTypeSubstitutable/isDerivedRaw/overrideEquivalent/overridesObjectMethod
 // (Types.java:2338-2365, 2670-2700, 2810-2832, 4249-4300), 1:1.
 // ---------------------------------------------------------------------------
@@ -7110,7 +7110,7 @@ impl Types {
             }
         }
         // Java: isConvertible(t, s, warn) — the warn parameter is not yet wired
-        // in the ported isConvertible (Lint batch, registered); the boolean
+        // in the ported isConvertible (Lint, registered); the boolean
         // relation is unchanged.
         let _ = warn;
         self.is_convertible(ctx, syms, t, s)
@@ -7197,7 +7197,7 @@ impl Types {
             return self.covariant_return_type(ctx, syms, r1_res, r2res, warner);
         }
         // Java: isSubtypeUnchecked(r1.getReturnType(), r2res, warner) — the warn
-        // parameter is registered with the Varargs batch (see is_castable_with_warn).
+        // parameter is registered with the Varargs (see is_castable_with_warn).
         if self.is_subtype_unchecked(ctx, syms, r1_res, r2res) {
             return true;
         }
@@ -7303,16 +7303,16 @@ fn method_return_type(ctx: &CompilerContext, t: TypeId) -> TypeId {
 
 
 // ---------------------------------------------------------------------------
-// Types batch 4: membersClosure/MembersClosureCache/implementation/
+// Types : membersClosure/MembersClosureCache/implementation/
 // ImplementationCache/interfaceCandidates/prune (Types.java:2931-3095,
 // 3150-3260), 1:1. The auxiliary Java inner classes are expressed as methods +
-// explicit caches on the Types value (registered §9).
+// explicit caches on the Types value (registered adapter).
 // ---------------------------------------------------------------------------
 impl Types {
     /// Java: public CompoundScope membersClosure(Type site, boolean skipInterface)
     /// (Types.java:3091-3095).
     ///
-    /// PORTING_RULES §9 adapter: the upstream MembersScope view (which filters
+    /// PORTING_RULES Porting rules adapter: the upstream MembersScope view (which filters
     /// out interface-owned members for skipInterface) is expressed by passing the
     /// filter to the scope query at the call sites (implementationInternal).
     pub fn members_closure(
@@ -7392,7 +7392,7 @@ impl Types {
     /// origin, boolean checkResult, Predicate<Symbol> implFilter)
     /// (Types.java:3003-3005).
     ///
-    /// PORTING_RULES §9 adapter: the only upstream implFilter is
+    /// PORTING_RULES Porting rules adapter: the only upstream implFilter is
     /// MethodSymbol.implementation_filter (non-synthetic methods), so the port
     /// applies that filter directly (see implementation_internal).
     pub fn implementation(
@@ -7607,9 +7607,9 @@ impl Types {
 
 
 // ---------------------------------------------------------------------------
-// Types batch 4: createMethodTypeWithThrown / MostSpecificReturnCheck /
+// Types : createMethodTypeWithThrown / MostSpecificReturnCheck /
 // mergeAbstracts (Types.java:2834-2930, 3519-3535), 1:1.
-// §9 adapters: Types has no Check service field in the port (explicit services,
+// adapter adapters: Types has no Check service field in the port (explicit services,
 // ADR 0001) so mergeAbstracts takes the Check; the merged MethodSymbol's
 // anonymous baseSymbol() override is carried as MergeAbstractsResult.base_symbol.
 // ---------------------------------------------------------------------------
@@ -7654,7 +7654,7 @@ impl MostSpecificReturnCheck {
 }
 
 /// Java: Optional<Symbol> mergeAbstracts(...) result. base_symbol is the
-/// upstream anonymous MethodSymbol.baseSymbol() override (see §9 note above).
+/// upstream anonymous MethodSymbol.baseSymbol() override (see Porting rules note above).
 #[derive(Clone, Debug)]
 pub struct MergeAbstractsResult {
     pub symbol: SymbolId,
@@ -7805,9 +7805,9 @@ impl Types {
 
 
 // ---------------------------------------------------------------------------
-// Types batch 4: DescriptorCache/DescriptorFilter/findDescriptorSymbol/
+// Types : DescriptorCache/DescriptorFilter/findDescriptorSymbol/
 // findDescriptorType/isFunctionalInterface/removeWildcards
-// (Types.java:640-885, 984-1010), 1:1. §9 adapters: the facade services
+// (Types.java:640-885, 984-1010), 1:1. adapter adapters: the facade services
 // (diags/chk/enter) are explicit parameters (ADR 0001); the upstream
 // FunctionDescriptor.getType inner override is carried by
 // FunctionDescriptorMerge (see mergeDescriptors).
@@ -7940,8 +7940,8 @@ impl Types {
                     && self.override_equivalent(ctx, syms, mtype, first_mtype)
                 {
                     // Java: if (!abstracts.stream().filter(msym ->
-                    //     msym.owner.isSubClass(sym.enclClass(), Types.this))
-                    //     .map(...).anyMatch(abstractMType -> isSubSignature(...)))
+                    // msym.owner.isSubClass(sym.enclClass(), Types.this))
+                    //.map(...).anyMatch(abstractMType -> isSubSignature(...)))
                     let sym_encl = crate::code::symbol::symbol_encl_class(ctx, sym)
                         .or_else(|| ctx.sym(sym).owner)
                         .expect("enclosing class");
@@ -8007,7 +8007,7 @@ impl Types {
                 // Java: build IncompatibleDescsInFunctionalIntf with the
                 // descriptor.throws/descriptor fragment lines (JCDiagnostic.
                 // MultilineDiagnostic). The ported JCDiagnostic has no
-                // MultiLine form yet (registered §9): the error is reported with
+                // MultiLine form yet (registered adapter): the error is reported with
                 // the primary diagnostic only, same key.
                 let kind_name = crate::code::kinds::kind_name(ctx.sym(origin), ctx);
                 let fragment =
@@ -8161,7 +8161,7 @@ impl FunctionDescriptor {
             for component in components.iter() {
                 if !chk.check_valid_generic_type(ctx, syms, component) {
                     // Java: throw failure(diags.fragment(
-                    //     Fragments.NoSuitableFunctionalIntfInst(site)))
+                    // Fragments.NoSuitableFunctionalIntfInst(site)))
                     return Err(FunctionDescriptorLookupError::new());
                 }
             }
@@ -8182,8 +8182,8 @@ impl FunctionDescriptor {
 
 
 // ---------------------------------------------------------------------------
-// Types batch 4: makeFunctionalInterfaceClass / functionalInterfaceBridges /
-// pendingBridges (Types.java:890-975), 1:1. §9 adapters: the Enter service and
+// Types : makeFunctionalInterfaceClass / functionalInterfaceBridges /
+// pendingBridges (Types.java:890-975), 1:1. adapter adapters: the Enter service and
 // the enclosing Env are explicit parameters (ADR 0001); the synthetic class
 // symbol construction mirrors the upstream ClassSymbol constructor fields.
 // ---------------------------------------------------------------------------
@@ -8477,7 +8477,7 @@ impl Types {
                 && is_raw_type(ctx, t2)
             {
                 // Java: if (isReifiable(s)) warn.silentWarn(UNCHECKED);
-                //       else warn.warn(UNCHECKED);
+                // else warn.warn(UNCHECKED);
                 if self.is_reifiable(ctx, syms, s) {
                     warn.silent_warn(crate::code::lint::LintCategory::UNCHECKED);
                 } else {
@@ -9208,7 +9208,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // Batch 4: functional interface descriptors / castable warner /
+    // functional interface descriptors / castable warner /
     // checkUnique MTH.
     // ------------------------------------------------------------------
 
@@ -9241,7 +9241,7 @@ mod tests {
 
     /// Build a synthetic interface class symbol with the given abstract method
     /// into the context (a local test fixture for the SAM tests; the upstream
-    /// tests use full Enter/Analyze, which needs the Attr batch).
+    /// tests use full Enter/Analyze, which needs the Attr).
     #[allow(clippy::too_many_arguments)]
     fn make_interface_with_method(
         ctx: &mut CompilerContext,

@@ -1,6 +1,6 @@
 // Origin: com/sun/tools/javac/comp/DeferredAttr.java @ 982d53c (jdk-17.0.19-ga)
 //
-// PORTING_RULES §19 mapping: AttributionMode / AttrMode / DeferredStuckPolicy /
+// Registration mapping: AttributionMode / AttrMode / DeferredStuckPolicy /
 // dummyStuckPolicy / SpeculativeCache / DeferredType operations /
 // DeferredAttrContext / DeferredAttrNode / StuckNode / DeferredTypeMap /
 // RecoveryDeferredTypeMap / FilterScanner / PolyScanner / LambdaReturnScanner /
@@ -13,9 +13,9 @@
 // isFunctionalInterface, Attr.lambdaEnv/preFlow/unknownExprInfo/
 // memberReferenceQualifierResult, ArgumentAttr, Resolve.resolveMemberReference);
 // CheckStuckPolicy.visitLambda/visitReference (needs the FunctionDescriptor
-// batch); RecoveryDeferredTypeMap.recover (needs Attr.RecoveryInfo and
+//); RecoveryDeferredTypeMap.recover (needs Attr.RecoveryInfo and
 // Check.checkNonVoid); DeferredAttr.CannotInfer errors live in Resolve (Resolve B
-// batch). The DeferredAttr service construction is an ADR 0001 explicit-context
+//). The DeferredAttr service construction is an ADR 0001 explicit-context
 // TODO.
 
 #![allow(non_camel_case_types)]
@@ -263,8 +263,8 @@ pub fn deferred_type_complete_base(
     match deferred_attr_context.mode {
         AttrMode::SPECULATIVE => {
             // Java: JCTree speculativeTree = attribSpeculative(tree, env, resultInfo);
-            //       speculativeCache.put(speculativeTree, resultInfo);
-            //       return speculativeTree.type;
+            // speculativeCache.put(speculativeTree, resultInfo);
+            // return speculativeTree.type;
             let (tree, env, mode, _, cache, _) = deferred_fields(ctx, t);
             // Java: Assert.check(mode == null || mode == AttrMode.SPECULATIVE);
             debug_assert!(mode.is_none() || mode == Some(AttrMode::SPECULATIVE));
@@ -391,7 +391,7 @@ pub struct DeferredAttrContext {
     pub parent: Option<Rc<DeferredAttrContext>>,
     /// Java: final Warner warn (shared mutable object upstream; RefCell keeps
     /// the mutable warning state — registered: warning flags are not
-    /// propagated back to the caller, Lint batch)
+    /// propagated back to the caller, Lint)
     pub warn: Option<RefCell<Warner>>,
     /// Java: ArrayList<DeferredAttrNode> deferredAttrNodes
     pub deferred_attr_nodes: RefCell<Vec<Rc<DeferredAttrNode>>>,
@@ -617,7 +617,7 @@ fn can_influence(
 
 /// Java: class StuckNode extends GraphUtils.TarjanNode (the node graph is kept
 /// as an index list; util/graph_utils.rs tarjan_scc_indexed is the faithful
-/// Tarjan translation — §9 adapter)
+/// Tarjan translation — adapter adapter)
 pub struct StuckNode {
     pub data: Rc<DeferredAttrNode>,
     pub deps: Vec<usize>,
@@ -940,30 +940,30 @@ fn check_with_policy(
 /// visitor (not ported as a trait); the port reproduces the visitor's dispatch
 /// for the type variants (identity for non-deferred types, structural recursion
 /// for class/array/wildcard/method/forall, visitTypeVar for captured types)
-/// (§9 adapter registered).
+/// (adapter adapter registered).
 /// Java: class DeferredAttr.DeferredTypeMap<T> / RecoveryDeferredTypeMap
 ///
-/// PORTING_RULES §9 adapters:
-/// - the upstream generic parameter T (Void for the plain mapping, Type for the
-///   recovery mapping) is unified to Option<TypeId> (the Java nullable Type / the
-///   Void payload is unused); the two concrete classes are one struct plus the
-///   recovery flag, and the RecoveryDeferredTypeMap override of typeOf is the
-///   flag-dispatched recovery branch in type_of;
-/// - the upstream StructuralTypeMapping visitor dispatch is reproduced
-///   explicitly (as before); the recovery path needs the Attr/Check services
-///   explicitly (ADR 0001) through DeferredMapCtx.
+/// PORTING_RULES adapter adapters:
+///   - the upstream generic parameter T (Void for the plain mapping, Type for the
+///     recovery mapping) is unified to Option<TypeId> (the Java nullable Type / the
+///     Void payload is unused); the two concrete classes are one struct plus the
+///     recovery flag, and the RecoveryDeferredTypeMap override of typeOf is the
+///     flag-dispatched recovery branch in type_of;
+///   - the upstream StructuralTypeMapping visitor dispatch is reproduced
+///     explicitly (as before); the recovery path needs the Attr/Check services
+///     explicitly (ADR 0001) through DeferredMapCtx.
 pub struct DeferredTypeMap {
     pub deferred_attr_context: Rc<DeferredAttrContext>,
     /// Java: RecoveryDeferredTypeMap overrides typeOf to synthesize a type for a
-    /// deferred type that has not yet been reduced (§9 flag).
+    /// deferred type that has not yet been reduced (adapter flag).
     pub recovery: bool,
     /// Java: Infer.ImplicitArgType extends DeferredTypeMap<Void> and overrides
-    /// visitType/visitClassType (§9 flag with no payload: the mode behavior is
+    /// visitType/visitClassType (adapter flag with no payload: the mode behavior is
     /// fixed by the upstream subclass).
     pub implicit_arg: bool,
 }
 
-/// The explicit context required by the recovery-capable mapping (§9 ADR 0001).
+/// The explicit context required by the recovery-capable mapping (adapter ADR 0001).
 pub struct DeferredMapCtx<'a> {
     pub attr: &'a mut Attr,
     pub syms: &'a mut Symtab,
@@ -991,7 +991,7 @@ impl DeferredTypeMap {
     }
 
     /// Java: new Infer.ImplicitArgType(Symbol msym, MethodResolutionPhase phase)
-    /// — the mapping behavior is fixed (§9 flag).
+    /// — the mapping behavior is fixed (adapter flag).
     pub fn new_implicit_arg(_msym: Option<SymbolId>, _phase: MethodResolutionPhase) -> DeferredTypeMap {
         let mut map = DeferredTypeMap::new(AttrMode::SPECULATIVE, None, MethodResolutionPhase::BOX);
         map.implicit_arg = true;
@@ -999,7 +999,7 @@ impl DeferredTypeMap {
     }
 
     /// Java: new RecoveryDeferredTypeMap(...) — the same mapping with the
-    /// recovery override enabled (§9).
+    /// recovery override enabled (adapter).
     pub fn new_recovery(
         mode: AttrMode,
         msym: Option<SymbolId>,
@@ -1020,10 +1020,10 @@ impl DeferredTypeMap {
     ) -> TypeId {
         if self.implicit_arg {
             // Java: Infer.ImplicitArgType.visitType:
-            //   if (t.hasTag(DEFERRED)) return visit(super.visitType(t, null));
-            //   else if (t.hasTag(BOT)) t = boxedClass(voidType).type;
-            //   return t;
-            // and visitClassType: return types.erasure(t) (§9: the class-type
+            // if (t.hasTag(DEFERRED)) return visit(super.visitType(t, null));
+            // else if (t.hasTag(BOT)) t = boxedClass(voidType).type;
+            // return t;
+            // and visitClassType: return types.erasure(t) (adapter: the class-type
             // erasure branch is folded into implicit_arg_value).
             let mapped = if ctx.typ(t).has_tag(TypeTag::DEFERRED) {
                 self.type_of_no_recovery(ctx, dctx.attr, t)
@@ -1299,7 +1299,7 @@ impl DeferredTypeMap {
             pt.expect("pt")
         };
         // Java: dt.check(attr.new RecoveryInfo(deferredAttrContext, ptRecovery) {
-        //   check(pos, found) => chk.checkNonVoid(pos, super.check(pos, found)) });
+        // check(pos, found) => chk.checkNonVoid(pos, super.check(pos, found)) });
         let recovery_info = {
             let mut info = crate::comp::attr::ResultInfo::new_with_mode(
                 crate::code::kinds::KindSelector::VAL,
@@ -1346,7 +1346,7 @@ fn list_same_types(a: &List<TypeId>, b: &List<TypeId>) -> bool {
 /// Java: public class DeferredAttr.RecoveryDeferredTypeMap extends
 /// DeferredTypeMap<Type> (DeferredAttr.java:1035-1090)
 ///
-/// §9: the Java subclass is the ported DeferredTypeMap with recovery=true (the
+/// adapter: the Java subclass is the ported DeferredTypeMap with recovery=true (the
 /// typeOf override is dispatched in DeferredTypeMap::type_of); the
 /// visitMethodType override is reproduced here.
 pub struct RecoveryDeferredTypeMap {
@@ -1489,7 +1489,7 @@ impl RecoveryDeferredTypeMap {
 /// Java: class Resolve.ResolveDeferredRecoveryMap extends
 /// DeferredAttr.RecoveryDeferredTypeMap (Resolve.java:2639-2660)
 ///
-/// §9: the Java subclass overrides typeOf; the port exposes the same override as
+/// adapter: the Java subclass overrides typeOf; the port exposes the same override as
 /// type_of with the base mapping embedded.
 pub struct ResolveDeferredRecoveryMap {
     pub base: RecoveryDeferredTypeMap,
@@ -1556,11 +1556,11 @@ impl ResolveDeferredRecoveryMap {
 /// PORTING_RULES: the upstream subclass overrides scan(JCTree) to visit only
 /// the nodes whose tag is in validTags; the port reproduces the same dispatch
 /// with explicit tag matching (TreeScanner has no virtual scan hook in the
-/// port) — §9 adapter registered. The traversal order follows the upstream
+/// port) — adapter adapter registered. The traversal order follows the upstream
 /// TreeScanner methods for the visited tags.
 struct FilterScanner;
 
-/// §9 helper: the scanner services the upstream inner class reaches through the
+/// adapter helper: the scanner services the upstream inner class reaches through the
 /// enclosing DeferredAttr instance (explicit parameter bundle).
 ///
 /// # Fields
@@ -1569,7 +1569,7 @@ struct FilterScanner;
 /// # Panics
 ///   - none.
 ///
-/// Upstream: DeferredAttr.java:1050-1330 (inner-class service access, §9 bundle).
+/// Upstream: DeferredAttr.java:1050-1330 (inner-class service access, adapter bundle).
 pub struct StuckScannerEnv<'a> {
     syms: &'a mut Symtab,
     diags: &'a crate::util::jc_diagnostic::Factory,
@@ -1967,7 +1967,7 @@ impl CheckStuckPolicy {
         self.scan_lambda_body(ctx, tree, types, env, Some(ret));
     }
 
-    /// §9 helper: InferenceContext.freeVarsIn(List<Type>) (DeferredAttr.java:1228-1240).
+    /// adapter helper: InferenceContext.freeVarsIn(List<Type>) (DeferredAttr.java:1228-1240).
     fn free_vars_of(
         &self,
         ctx: &mut CompilerContext,
@@ -2151,7 +2151,7 @@ pub fn check_stuck_policy_new(
 /// PORTING_RULES: the upstream constructor's scan dispatches to the overridden
 /// visitLambda/visitReference (Java virtual dispatch). The ported
 /// visitLambda/visitReference are registered as unimplemented (FunctionDescriptor
-/// batch), so the overload-specific stuck flag is only produced by those two
+///), so the overload-specific stuck flag is only produced by those two
 /// methods; this difference is registered together with that dependency.
 pub struct OverloadStuckPolicy {
     /// Java: the inherited CheckStuckPolicy state
@@ -2215,9 +2215,9 @@ pub fn overload_stuck_policy_new(
 }
 
 // ---------------------------------------------------------------------------
-// Batch 5: the DeferredAttr service (DeferredAttr.java:96-560): the service
+// the DeferredAttr service (DeferredAttr.java:96-560): the service
 // instance/constructor, the attribSpeculative overloads, DeferredAttrDiagHandler
-// and its PosScanner. §9 adapters: the upstream service fields are explicit
+// and its PosScanner. adapter adapters: the upstream service fields are explicit
 // construction parameters (ADR 0001); the Position scanner is a precomputed
 // position set of the copied tree (same tree, same positions, registered);
 // the LocalCacheContext overload is registered as depending on ArgumentAttr
@@ -2235,7 +2235,7 @@ pub fn overload_stuck_policy_new(
 ///
 /// Upstream: DeferredAttr.java:96-230.
 pub struct DeferredAttrService {
-    /// Java: final Annotate annotate (lazily installed, §9 cell).
+    /// Java: final Annotate annotate (lazily installed, adapter cell).
     pub annotate: Rc<RefCell<Option<Rc<crate::comp::annotate::Annotate>>>>,
     /// Java: final JCDiagnostic.Factory diags
     pub diags: Rc<crate::util::jc_diagnostic::Factory>,
@@ -2263,7 +2263,7 @@ pub struct DeferredAttrService {
     pub empty_deferred_attr_context: Rc<DeferredAttrContext>,
 }
 
-/// §9: the positions of a copied tree, scanned once when the speculative
+/// adapter: the positions of a copied tree, scanned once when the speculative
 /// DeferredAttrDiagHandler is installed (equivalent to the upstream PosScanner,
 /// which scans the unchanged tree per diagnostic).
 pub struct PositionScannerVisitor {
@@ -2290,13 +2290,13 @@ impl DeferredAttrService {
     ///   - ctx: compiler context used to allocate the shared stuck tree;
     ///   - the service parameters mirror the upstream constructor fields.
     /// 
-    /// # Returns
+    ///    # Returns
     ///   - the shared DeferredAttrService handle.
     /// 
-    /// # Panics
+    ///    # Panics
     ///   - none.
     /// 
-    /// Upstream: DeferredAttr.java:112-230.
+    ///    Upstream: DeferredAttr.java:112-230.
     /// 
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -2348,13 +2348,13 @@ impl DeferredAttrService {
     ///   - ctx/syms/attr: explicit services;
     ///   - tree/env/result_info: the speculative target.
     /// 
-    /// # Returns
+    ///    # Returns
     ///   - Ok(the speculative tree with its type).
     /// 
-    /// # Panics
+    ///    # Panics
     ///   - the copied tree must be a valid JCExpression tree (upstream Assert).
     /// 
-    /// Upstream: DeferredAttr.java:470-472.
+    ///    Upstream: DeferredAttr.java:470-472.
     pub fn attrib_speculative(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2383,25 +2383,25 @@ impl DeferredAttrService {
     /// # Arguments
     ///   - as above plus diag_handler_creator/attribution_mode; the tree is copied first with tree_copier.
     /// 
-    /// # Returns
+    ///    # Returns
     ///   - Ok(the speculative tree) after attributing the copy.
     /// 
-    /// # Panics
+    ///    # Panics
     ///   - none beyond the registered dependency failures.
     /// 
-    /// Upstream: DeferredAttr.java:481-489.
+    ///    Upstream: DeferredAttr.java:481-489.
     /// 
     /// 
-    /// # Arguments
-    ///   - as above; §4: the LocalCacheContext overload is registered with the ArgumentAttr stage.
+    ///    # Arguments
+    ///   - as above; Porting rules: the LocalCacheContext overload is registered with the ArgumentAttr stage.
     /// 
-    /// # Returns
+    ///    # Returns
     ///   - Ok(the speculative tree) after the attribution round.
     /// 
-    /// # Panics
+    ///    # Panics
     ///   - none.
     /// 
-    /// Upstream: DeferredAttr.java:496-520.
+    ///    Upstream: DeferredAttr.java:496-520.
     /// 
     #[allow(clippy::too_many_arguments)]
     pub fn attrib_speculative_with_copier(
@@ -2431,7 +2431,7 @@ impl DeferredAttrService {
     /// Java: JCTree attribSpeculative(JCTree tree, Env, ResultInfo,
     /// Supplier<DiagnosticHandler>, AttributionMode, LocalCacheContext)
     /// (DeferredAttr.java:496-520) — the LocalCacheContext parameter is
-    /// registered with the ArgumentAttr stage (§4 of the batch report).
+    /// registered with the ArgumentAttr stage (Porting rules of the registration).
     #[allow(clippy::too_many_arguments)]
     pub fn attrib_speculative_with_diag(
         &mut self,
@@ -2513,13 +2513,13 @@ impl DeferredAttrService {
     ///   - ctx/syms/attr/attr_recover/rs/chk/diags/flow: explicit services;
     ///   - that/env/result_info: the lambda and its target.
     /// 
-    /// # Returns
+    ///    # Returns
     ///   - Ok(the speculative lambda tree).
     /// 
-    /// # Panics
+    ///    # Panics
     ///   - the lambda body / return tree shapes are asserted as in the upstream casts.
     /// 
-    /// Upstream: DeferredAttr.java:434-468.
+    ///    Upstream: DeferredAttr.java:434-468.
     /// 
     #[allow(clippy::too_many_arguments)]
     pub fn attrib_speculative_lambda(
@@ -2612,8 +2612,8 @@ impl DeferredAttrService {
 }
 
 // ---------------------------------------------------------------------------
-// Batch 5: DeferredAttrNode.StructuralStuckChecker (DeferredAttr.java:800-990)
-// and LambdaBodyStructChecker (DeferredAttr.java:955-990). §9: the inner-
+// DeferredAttrNode.StructuralStuckChecker (DeferredAttr.java:800-990)
+// and LambdaBodyStructChecker (DeferredAttr.java:955-990). adapter: the inner-
 // class field access is explicit service parameters; the navigational body is
 // tree_children (explicit recursion).
 // ---------------------------------------------------------------------------
@@ -2625,13 +2625,13 @@ impl DeferredAttrService {
     /// # Arguments
     ///   - ctx/syms/attr/dt/result_info/deferred_attr_context: the stuck node and its target.
     /// 
-    /// # Returns
+    ///    # Returns
     ///   - Ok(()) after recording the stuck tree in the speculative cache.
     /// 
-    /// # Panics
+    ///    # Panics
     ///   - none.
     /// 
-    /// Upstream: DeferredAttr.java:808-816.
+    ///    Upstream: DeferredAttr.java:808-816.
     pub fn structural_stuck_check(
         &mut self,
         ctx: &mut CompilerContext,
@@ -2986,7 +2986,7 @@ impl DeferredAttrService {
             .ty
             .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
         // Java: tree.params = tree.params.stream().map(vd -> make.VarDef(
-        //   vd.mods, vd.name, make.Erroneous(), null))
+        // vd.mods, vd.name, make.Erroneous(), null))
         let mut new_params: crate::util::list::List<TreeId> = crate::util::list::List::nil();
         let mut current = old_params.clone();
         while current.non_empty() {
@@ -3078,10 +3078,10 @@ impl DeferredAttrService {
     /// # Fields
     ///   - is_void_compatible/is_potentially_value_compatible: the JLS value/void compatibility flags.
     /// 
-    /// # Panics
+    ///    # Panics
     ///   - none.
     /// 
-    /// Upstream: DeferredAttr.java:955-990.
+    ///    Upstream: DeferredAttr.java:955-990.
     /// 
     fn lambda_body_struct_check(
         &self,
@@ -3107,7 +3107,7 @@ struct StructuralState {
     env: Rc<Env<crate::comp::attr_context::AttrContext>>,
 }
 
-/// §9 helper: List length.
+/// adapter helper: List length.
 fn list_len(list: &crate::util::list::List<TypeId>) -> usize {
     let mut current = list.clone();
     let mut n = 0;
@@ -3163,6 +3163,52 @@ impl LambdaBodyStructChecker {
         }
     }
 }
+
+
+impl DeferredAttrService {
+
+    /// Java: JCTree attribSpeculative(JCTree tree, Env, ResultInfo,
+    /// TreeCopier<Z> deferredCopier, Supplier<DiagnosticHandler>,
+    /// AttributionMode, LocalCacheContext) (DeferredAttr.java:496-520) —
+    /// adapter: the caller-supplied copier (Analyzer.TreeRewriter) overload.
+    ///
+    /// # Arguments
+    ///   - as above; copier is the analyzer TreeRewriter.
+    ///
+    /// # Returns
+    ///   - Ok(the speculative tree).
+    ///
+    /// # Panics
+    ///   - none beyond the registered dependencies.
+    ///
+    /// Upstream: DeferredAttr.java:496-520.
+    #[allow(clippy::too_many_arguments)]
+    pub fn attrib_speculative_with_rewriter(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        attr: &mut Attr,
+        tree: TreeId,
+        env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
+        result_info: &ResultInfo,
+        copier: &crate::tree::tree_copier::TreeCopier,
+        diag_handler_creator: Option<Box<dyn Fn() -> crate::util::log::DiagnosticHandler>>,
+        attribution_mode: AttributionMode,
+    ) -> Result<TreeId, DeferredAttrFailure> {
+        let new_tree = copier.copy(ctx, Some(tree)).expect("copied tree");
+        self.attrib_speculative_with_diag(
+            ctx,
+            syms,
+            attr,
+            new_tree,
+            env,
+            result_info,
+            diag_handler_creator,
+            attribution_mode,
+        )
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

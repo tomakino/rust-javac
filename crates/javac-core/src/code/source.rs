@@ -16,7 +16,7 @@
 //!   disabled 1.0/1.1 constants stay disabled as upstream.
 //! * `MIN`/`DEFAULT` are Rust associated constants (DEFAULT = MAX).
 //! * the nested enum `Source.Feature` (and its nested DiagKind) is declared in
-//!   this module (Rust enums cannot be nested in impl blocks, §3).  Its Java
+//!   this module (Rust enums cannot be nested in impl blocks, Porting rules).  Its Java
 //!   constructor data (minLevel/maxLevel/optFragment/optKind) becomes match-based
 //!   accessors; the optFragment values are the typed resource factories of
 //!   crate::resources::compiler_properties (Fragments.FeatureXxx) converted to
@@ -28,7 +28,7 @@
 //!   preserving arguments land with P4), so it is passed by its diagnostic key.
 //! * toSourceVersion -> Option<SourceVersion> (Java null -> None);
 //!   javax.lang.model.SourceVersion is the javac-tools enum (RELEASE_2..RELEASE_17).
-//! * TODO(Options/Option batch): `instance(Context)` uses the not yet ported
+//! * TODO(Options/Option): `instance(Context)` uses the not yet ported
 //!   Options.instance and Option.SOURCE ("--source -source"); left as a single
 //!   unimplemented entry point (no stand-in for Options).
 
@@ -52,9 +52,9 @@ use crate::util::jc_diagnostic::{Error, Fragment};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Source {
     // 1.0 had no inner classes, and so could not pass the JCK:
-    //     JDK1_0("1.0");
+    // JDK1_0("1.0");
     // 1.1 did not have strictfp, and so could not pass the JCK:
-    //     JDK1_1("1.1");
+    // JDK1_1("1.1");
 
     /// 1.2 introduced strictfp.
     JDK1_2,
@@ -318,7 +318,7 @@ pub enum Feature {
 /// Java: the nested enum {@code Source.Feature.DiagKind}.
 ///
 /// PORTING_RULES: Java constant names are kept (NORMAL/PLURAL); no camel-case
-/// renaming (§3), so the acronym lint is allowed here.
+/// renaming (Porting rules), so the acronym lint is allowed here.
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DiagKind {
@@ -422,7 +422,7 @@ impl Feature {
             | Feature::UNDERSCORE_IDENTIFIER
             | Feature::IMPORT_ON_DEMAND_OBSERVABLE_PACKAGES => Source::JDK8,
             Feature::MAP_CAPTURES_TO_BOUNDS => Source::JDK7,
-            // Java: this(minLevel, MAX, ...) with MAX = the last enum constant.
+            // Java: this(minLevel, MAX,...) with MAX = the last enum constant.
             _ => Source::JDK17,
         }
     }

@@ -197,9 +197,9 @@ impl<K: Hash + Eq> IntHashTable<K> {
         self.mask = new_capacity as i32 - 1;
         self.num_bindings = 0; // this is recomputed below
         // Java: for (int i = oldIntsTable.length; --i >= 0;) {
-        //           key = oldObjsTable[i];
-        //           if (key != null && key != DELETED) put(key, oldIntsTable[i]);
-        //       }
+        // key = oldObjsTable[i];
+        // if (key != null && key != DELETED) put(key, oldIntsTable[i]);
+        // }
         for (i, slot) in old_objs_table.into_iter().enumerate().rev() {
             if let Slot::Key(key) = slot {
                 self.put(key, old_ints_table[i]);

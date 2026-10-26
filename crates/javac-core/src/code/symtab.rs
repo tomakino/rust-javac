@@ -1,5 +1,5 @@
 // Origin: com/sun/tools/javac/code/Symtab.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration supplement (method-level audit):
+// Gap registration supplement (method-level audit):
 // Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
 // - NOT PORTED: isTerminal (Symtab.java:324)
 // - NOT PORTED: isTerminal (Symtab.java:358)
@@ -7,7 +7,7 @@
 // - NOT PORTED: getAllModules (Symtab.java:871)
 // - NOT PORTED: getClassesForName (Symtab.java:875)
 // - NOT PORTED: getPackagesForName (Symtab.java:879)
-// End of §19 gap registration supplement.
+// End of Gap registration supplement.
 
 //! A class that defines all predefined constants and operators as well as
 //! special classes such as java.lang.Object, which need to be known to the
@@ -33,11 +33,11 @@
 //!   factories; registered adapter, no Context singletons);
 //! - the anonymous ModuleSymbol/PackageSymbol subclasses that override toString
 //!   (localized "unnamed module"/"unnamed package") cannot be expressed without
-//!   the Symbol batch; the ported symbols are plain ModuleSymbol/PackageSymbol
-//!   values (registered; the localized toString is a Symbol batch TODO);
+//!   the Symbol; the ported symbols are plain ModuleSymbol/PackageSymbol
+//!   values (registered; the localized toString is a Symbol TODO);
 //! - formFlatName/formFullName (Symbol.TypeSymbol/ClassSymbol statics) are not
 //!   ported in symbol.rs yet; they are reproduced here as helpers and must move
-//!   into symbol.rs with the Symbol batch (registered).
+//!   into symbol.rs with the Symbol (registered).
 //!
 //! NOT PORTED IN THIS STEP (dependencies not ported yet; no substitute logic):
 //! - Modules (module completer): the bootstrap may pass the module completer
@@ -51,9 +51,9 @@
 //!   handler;
 //! - Types: the minimal prefix ported in types.rs (hashCode/isSameType/
 //!   erasure/boxedClass) is used by classFields/getClassField; the remaining
-//!   Types methods are NOT PORTED (TODO Types batch; see types.rs).
+//!   Types methods are NOT PORTED (TODO Types; see types.rs).
 //! - ModuleSymbol.isNoModule(): no_module is a plain ModuleSymbol (the upstream
-//!   anonymous override is a Symbol batch TODO);
+//!   anonymous override is a Symbol TODO);
 //! - the JavacMessages-backed toString of the unnamed module/package (see the
 //!   anonymous-subclass note above).
 
@@ -1022,7 +1022,7 @@ pub struct Symtab {
     pub boxed_name: Vec<Option<Name>>,
     /// The boxed class symbols for each primitive tag (pre-entered from
     /// boxed_name at construction; the read-only counterpart of
-    /// Types.boxedClass, registered §9 adapter).
+    /// Types.boxedClass, registered Porting rules adapter).
     pub boxed_class_ids: Vec<Option<SymbolId>>,
     /// Java: private final Map<Types.UniqueType, VarSymbol> classFields
     /// (Rust: UniqueType equivalence is expressed by the Types.hashCode value
@@ -1040,7 +1040,7 @@ impl Symtab {
     /// PORTING_RULES: the Java protected Symtab(Context) constructor needs the
     /// CompilerContext (arena) and the ported Names; the Context registration
     /// (context.put(symtabKey, this)) is done by the caller until the
-    /// Symtab/Context integration batch.
+    /// Symtab/Context integration.
     /// PORTING_RULES: Target.instance(Context) and Source.instance(Context) are
     /// not ported yet (Options/Option integration TODO), so the caller passes
     /// them explicitly, like the Names parameter (registered section 9).
@@ -1059,7 +1059,7 @@ impl Symtab {
         let stuck_type = ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType));
         let recovery_type = ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType));
 
-        // TODO(MissingInfoHandler batch): MissingInfoHandler.instance(context) is
+        // TODO(MissingInfoHandler): MissingInfoHandler.instance(context) is
         // not ported; the root package is created without it.
         let root_package = new_root_package_symbol(
             ctx,
@@ -1076,7 +1076,7 @@ impl Symtab {
         let err_module = new_module_symbol(ctx, names.std.empty.clone(), List::of(java_base_requires));
         add_root_package_for(ctx, &names, &mut maps, err_module, root_package);
         // Java: noModule = new ModuleSymbol(...) { isNoModule() -> true }; the
-        // anonymous override is not expressible (Symbol batch TODO).
+        // anonymous override is not expressible (Symbol TODO).
         let no_module = new_module_symbol(ctx, names.std.empty.clone(), List::nil());
         add_root_package_for(ctx, &names, &mut maps, no_module, root_package);
 
@@ -1337,11 +1337,11 @@ impl Symtab {
         let functional_interface_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.FunctionalInterface");
         let preview_feature_type = enter_class_named(ctx, &names, &mut maps, java_base, "jdk.internal.javac.PreviewFeature");
         // Java: Symtab constructor:
-        //   previewFeatureInternalType = enterSyntheticAnnotation("jdk.internal.PreviewFeature+Annotation");
-        //   valueBasedInternalType = enterSyntheticAnnotation("jdk.internal.ValueBased+Annotation");
-        //   proprietaryType = enterSyntheticAnnotation("sun.Proprietary+Annotation");
-        //   profileType = enterSyntheticAnnotation("jdk.Profile+Annotation") (+ the
-        //   synthetic public abstract int value() member).
+        // previewFeatureInternalType = enterSyntheticAnnotation("jdk.internal.PreviewFeature+Annotation");
+        // valueBasedInternalType = enterSyntheticAnnotation("jdk.internal.ValueBased+Annotation");
+        // proprietaryType = enterSyntheticAnnotation("sun.Proprietary+Annotation");
+        // profileType = enterSyntheticAnnotation("jdk.Profile+Annotation") (+ the
+        // synthetic public abstract int value() member).
         let preview_feature_internal_type = enter_synthetic_annotation(
             ctx,
             &names,
@@ -1435,7 +1435,7 @@ impl Symtab {
 
             // Java: Types.boxedClass(t) enters syms.enterClass(java_base,
     // boxedName[tag]); the port pre-enters the same symbols at startup so
-    // that the read-only relation is available (registered §9 adapter).
+    // that the read-only relation is available (registered adapter adapter).
     let mut boxed_class_ids: Vec<Option<SymbolId>> =
         vec![None; TypeTag::get_type_tag_count() as usize];
     for (tag, boxed) in boxed_name.iter().enumerate() {

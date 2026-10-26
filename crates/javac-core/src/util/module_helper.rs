@@ -9,7 +9,7 @@
 //!   API is introduced; registered in PORTING_RULES section 9);
 //! - the private javacInternalPackages constant array is fully ported and
 //!   exposed as javac_internal_packages() for the module-layer integration
-//!   batch (it is the only data in the class).
+//!   (it is the only data in the class).
 
 /// Java: private static final String[] javacInternalPackages
 pub const JAVAC_INTERNAL_PACKAGES: [&str; 13] = [
@@ -38,7 +38,7 @@ pub fn javac_internal_packages() -> &'static [&'static str] {
 //
 // NOT PORTED: java.lang.Module is a JDK platform type, not part of the javac
 // reference sources and not available outside a running VM; the module-layer
-// batch ports it together with the java.lang.Module interop (registered
+// ports it together with the java.lang.Module interop (registered
 // section 9). No substitute helper is introduced.
 
 #[cfg(test)]

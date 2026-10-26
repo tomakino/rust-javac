@@ -1,50 +1,50 @@
 #![allow(clippy::result_large_err, clippy::needless_pass_by_ref_mut)]
 // Origin: com/sun/tools/javac/comp/Infer.java @ 982d53c (jdk-17.0.19-ga)
-//         com/sun/tools/javac/comp/InferenceContext.java @ 982d53c (jdk-17.0.19-ga)
+// com/sun/tools/javac/comp/InferenceContext.java @ 982d53c (jdk-17.0.19-ga)
 //
-// §19 mapping: the InferenceContext.java unit maps to the InferenceContext
+// Registration mapping: the InferenceContext.java unit maps to the InferenceContext
 // type below (same upstream class, ported into one Rust module because it and
 // Infer are mutually dependent); Infer.java maps to the Infer/Incorporation*/
 // GraphSolver/InferenceStep types below.
 //
-// Ported in this file (Infer batch):
+// Ported in this file (Infer):
 // - InferenceContext: addVar/inferenceVars/undetVars/restvars/instvars/
-//   boundedVars/filterVars/free/freeVarsIn/asUndetVar(s)/instTypes/asInstType(s)/
-//   addFreeTypeListener/notifyChange/save/rollback/dupTo/min (ReachabilityVisitor)/
-//   solve/solveAny/solveBasic/solveLegacy/cachedCapture (InferenceContext.java:
-//   76-606);
+// boundedVars/filterVars/free/freeVarsIn/asUndetVar(s)/instTypes/asInstType(s)/
+// addFreeTypeListener/notifyChange/save/rollback/dupTo/min (ReachabilityVisitor)/
+// solve/solveAny/solveBasic/solveLegacy/cachedCapture (InferenceContext.java:
+// 76-606);
 // - Infer: allowGraphInference/fromTypeVarFun/incorporationEngine (graph+legacy)/
-//   doIncorporation/doIncorporationOp/IncorporationBinaryOp/
-//   getParameterizedSupers/asSuper/reportInstError/reportBoundError/
-//   getBoundFragment/BoundFilter/instantiateAsUninferredVars (Infer.java:82-140,
-//   519-545, 616-630, 692-1290);
+// doIncorporation/doIncorporationOp/IncorporationBinaryOp/
+// getParameterizedSupers/asSuper/reportInstError/reportBoundError/
+// getBoundFragment/BoundFilter/instantiateAsUninferredVars (Infer.java:82-140,
+// 519-545, 616-630, 692-1290);
 // - the inference engine: GraphStrategy/LeafSolver/BestLeafSolver/InferenceStep/
-//   LegacyInferenceSteps/GraphInferenceSteps/DependencyKind/GraphSolver/
-//   InferenceGraph/Node (Infer.java:1299-1945); the Tarjan reduction is a
-//   faithful re-implementation of GraphUtils.tarjan (GraphUtils.java:171-235)
-//   over the graph's node indices, because the ported GraphUtils.tarjan takes
-//   references into an immutable node collection while the inference graph
-//   mutates its nodes (PORTING_RULES §9 adapter, registered);
+// LegacyInferenceSteps/GraphInferenceSteps/DependencyKind/GraphSolver/
+// InferenceGraph/Node (Infer.java:1299-1945); the Tarjan reduction is a
+// faithful re-implementation of GraphUtils.tarjan (GraphUtils.java:171-235)
+// over the graph's node indices, because the ported GraphUtils.tarjan takes
+// references into an immutable node collection while the inference graph
+// mutates its nodes (PORTING_RULES adapter adapter, registered);
 //
 // NOT PORTED IN THIS FILE (registered: dependency batches; no substitutes are
 // written, the upstream signatures depend on services that are not ported yet):
-// Ported in the Resolve B batch (this file; §19 rows in the batch report):
+// Ported in the Resolve B (this file; Registration rows in the registration):
 // - Infer.instantiateMethod (Infer.java:166-260) with the graph/legacy solver
-//   paths, PartiallyInferredMethodType/check (287-360);
+// paths, PartiallyInferredMethodType/check (287-360);
 // - generateReturnConstraints/needsEagerInstantiation/
-//   generateReferenceToTargetConstraint/shouldPropagate/roots
-//   (Infer.java:257-520) — Log.note(Notes.DeferredMethodInst) remains registered
-//   (Log/Notes batch).
+// generateReferenceToTargetConstraint/shouldPropagate/roots
+// (Infer.java:257-520) — Log.note(Notes.DeferredMethodInst) remains registered
+// (Log/Notes).
 // NOT PORTED (registered):
 // - Infer.instantiatePolymorphicSignatureInstance/ImplicitArgType (Infer.java:
-//   555-630): needs Attr tree tags and DeferredAttr.DeferredTypeMap wiring
-//   (Attr batch);
+// 555-630): needs Attr tree tags and DeferredAttr.DeferredTypeMap wiring
+// (Attr);
 // - Infer.instantiateFunctionalInterface (Infer.java:633-690): needs
-//   Types.findDescriptorType and Check.checkValidGenericType (FunctionDescriptor
-//   batch);
-// - Infer.dumpGraphsIfNeeded (Infer.java:360-390): file dumping (Options batch);
+// Types.findDescriptorType and Check.checkValidGenericType (FunctionDescriptor
+//);
+// - Infer.dumpGraphsIfNeeded (Infer.java:360-390): file dumping (Options);
 // - Infer.instance(Context)/Infer(Context) constructor: the port uses explicit
-//   service construction (ADR 0001), registered.
+// service construction (ADR 0001), registered.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -2133,7 +2133,7 @@ impl GraphStrategy for BestLeafSolver {
 }
 
 /// Java: enum DependencyKind implements GraphUtils.DependencyKind
-/// (Infer.java:1601-1610; kept for the §19 mapping of the graph API)
+/// (Infer.java:1601-1610; kept for the Porting rules mapping of the graph API)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DependencyKind {
     BOUND,
@@ -2256,7 +2256,7 @@ impl<'a> GraphSolver<'a> {
 /// Java: class InferenceGraph (Infer.java:1678-1917)
 pub struct InferenceGraph {
     /// The nodes; None marks a deleted node (the graph keeps stable node ids so
-    /// that dependency edges stay valid while nodes are deleted — §9 adapter).
+    /// that dependency edges stay valid while nodes are deleted — Porting rules adapter).
     pub nodes: Vec<Option<GraphNode>>,
 }
 
@@ -2787,9 +2787,9 @@ impl FreeTypeListener for UnreachableVarsListener {
             return Ok(());
         };
         let mut warn = Warner::new(None);
-        // TODO(Lint batch): the deferred solve callback does not propagate the
+        // TODO(Lint): the deferred solve callback does not propagate the
         // original Warner (upstream shares the reference); warnings are
-        // registered for the Lint batch, the boolean result is unaffected.
+        // registered for the Lint, the boolean result is unaffected.
         let _ = inference_context;
         original.solve_list(
             ctx,
@@ -3176,7 +3176,7 @@ impl Infer {
         );
         let deferred_context = Rc::new(defer_context);
         // resolveContext.methodCheck.argumentsAcceptable(env, deferredAttrContext,
-        //         argtypes, mt.getParameterTypes(), warn);
+        // argtypes, mt.getParameterTypes(), warn);
         let method_check = resolve_context
             .method_check
             .clone()
@@ -3264,8 +3264,8 @@ impl Infer {
             .complete(ctx, syms, types, attr, self)
             .map_err(|failure| match failure {
                 crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => ex,
-                // TODO(Attr batch): the CompletionFailure channel of
-                // DeferredAttr.complete is registered with the Attr batch.
+                // TODO(Attr): the CompletionFailure channel of
+                // DeferredAttr.complete is registered with the Attr.
                 crate::comp::deferred_attr::DeferredAttrFailure::Completion(_) => {
                     InferenceException::new()
                 }
@@ -3279,8 +3279,8 @@ impl Infer {
             .complete(ctx, syms, types, attr, self)
             .map_err(|failure| match failure {
                 crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => ex,
-                // TODO(Attr batch): the CompletionFailure channel of
-                // DeferredAttr.complete is registered with the Attr batch.
+                // TODO(Attr): the CompletionFailure channel of
+                // DeferredAttr.complete is registered with the Attr.
                 crate::comp::deferred_attr::DeferredAttrFailure::Completion(_) => {
                     InferenceException::new()
                 }
@@ -3726,8 +3726,8 @@ impl Infer {
     ///
     /// PORTING_RULES: the upstream method returns a Type and reports the
     /// inference failure through ResultInfo.checkContext.report + Assert.error;
-    /// the ported path returns the InferenceException (the Attr batch caller
-    /// propagates/reports it) — registered §9 adapter.
+    /// the ported path returns the InferenceException (the Attr caller
+    /// propagates/reports it) — registered Porting rules adapter.
     #[allow(
         clippy::too_many_arguments,
         clippy::needless_pass_by_ref_mut,
@@ -3824,8 +3824,8 @@ impl Infer {
 }
 
 // ---------------------------------------------------------------------------
-// Batch 5: Infer.instantiateFunctionalInterface (Infer.java:633-690), needed
-// by Attr.getTargetInfo (functional interface target typing). §9: explicit
+// Infer.instantiateFunctionalInterface (Infer.java:633-690), needed
+// by Attr.getTargetInfo (functional interface target typing). adapter: explicit
 // ctx/syms/diags/chk/pos parameters per ADR 0001; Java's unchecked
 // FunctionDescriptorLookupError is propagated as a panic (it is a RuntimeException
 // upstream and is never caught inside this method).
@@ -3850,7 +3850,7 @@ impl Infer {
         use crate::util::jc_diagnostic::Fragment;
         // Java: checkContext.report(pos, diags.fragment(...)) — inlined at each
         // call site (the FragmentInfo type is module-private, so a closure type
-        // annotation is not expressible; §9 adapter, no behavior change).
+        // annotation is not expressible; adapter adapter, no behavior change).
         macro_rules! report_fragment {
             ($ctx:expr, $fragment:expr) => {{
                 let diag = diags.fragment(Fragment::from($fragment));
@@ -3876,7 +3876,7 @@ impl Infer {
         let mut param_types = param_types;
         // Java: types.findDescriptorType(formalInterface) — an upstream
         // FunctionDescriptorLookupError is an unchecked exception that this
-        // method does not catch; the port returns it as Err (§9).
+        // method does not catch; the port returns it as Err (adapter).
         let descriptor = types.find_descriptor_type(ctx, syms, diags, chk, formal_interface)?;
         let desc_parameter_types = types.get_parameter_types_public(ctx, descriptor);
         if desc_parameter_types.length() != param_types.length() {
@@ -3946,9 +3946,9 @@ impl Infer {
 }
 
 // ---------------------------------------------------------------------------
-// Batch 5 prerequisite: Infer.instantiatePolymorphicSignatureInstance
+// prerequisite: Infer.instantiatePolymorphicSignatureInstance
 // (Infer.java:555-630) + the ImplicitArgType mapping (expressed through
-// DeferredTypeMap::new_implicit_arg, §9). Explicit ctx/syms/attr/chk/diags
+// DeferredTypeMap::new_implicit_arg, adapter). Explicit ctx/syms/attr/chk/diags
 // parameters per ADR 0001.
 // ---------------------------------------------------------------------------
 impl Infer {

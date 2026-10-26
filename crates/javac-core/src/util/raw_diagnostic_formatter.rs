@@ -18,7 +18,7 @@
 //!   AbstractDiagnosticFormatter trait;
 //! - the upstream constructor takes Options (SimpleConfiguration(Options,
 //!   parts)); Options are not ported yet, so only the option-less construction
-//!   is provided (TODO(Options batch));
+//!   is provided (TODO(Options));
 //! - NOT PORTED IN THIS STEP (dependencies are not ported yet; no substitute
 //!   logic):
 //!   * the source-name branches need file/PathFileObject (getShortName /

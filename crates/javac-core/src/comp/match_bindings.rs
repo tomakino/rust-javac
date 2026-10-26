@@ -1,16 +1,16 @@
 // Origin: com/sun/tools/javac/comp/MatchBindingsComputer.java @ 982d53c
-//         (jdk-17.0.19-ga)
+// (jdk-17.0.19-ga)
 //
 // PORTING_RULES:
 // - ADR 0001: the ported MatchBindingsComputer receives the Log/Factory
-//   services explicitly; MatchBindingsComputer.instance(Context) is registered
-//   with the Context registration batch.
-// - §9 adapter: the upstream static EMPTY identity checks are expressed as
-//   emptiness checks on the binding lists (a non-EMPTY empty-list value takes
-//   the fast path; union/intersection of empty lists yields empty, so the
-//   observable result is unchanged).
-// - §9 adapter: BindingSymbol lists are SymbolId lists (SymbolKind::BindingSymbol
-//   carries the aliases field).
+// services explicitly; MatchBindingsComputer.instance(Context) is registered
+// with the Context registration.
+// - adapter adapter: the upstream static EMPTY identity checks are expressed as
+// emptiness checks on the binding lists (a non-EMPTY empty-list value takes
+// the fast path; union/intersection of empty lists yields empty, so the
+// observable result is unchanged).
+// - adapter adapter: BindingSymbol lists are SymbolId lists (SymbolKind::BindingSymbol
+// carries the aliases field).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -69,7 +69,7 @@ impl MatchBindings {
         }
     }
 
-    /// §9 adapter for the upstream `bindings == EMPTY` identity checks.
+    /// Porting rules adapter for the upstream `bindings == EMPTY` identity checks.
     pub fn is_empty_bindings(&self) -> bool {
         self.bindings_when_true.is_empty() && self.bindings_when_false.is_empty()
     }

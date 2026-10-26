@@ -1,20 +1,20 @@
 // Origin: com/sun/tools/javac/comp/Annotate.java @ 982d53c (jdk-17.0.19-ga)
 //
-// Batch 3.5a contains the Annotate support types that the batch-3.5b Annotate
-// body and the batch-3.5 pre-requisite Check.validateAnnotation family need:
+// contains the Annotate support types that the -3.5b Annotate
+// body and the -3.5 pre-requisite Check.validateAnnotation family need:
 // the AnnotationTypeCompleter interface and the AnnotationTypeMetadata class
 // (Annotate.java:1310-1460). The Annotate class body itself follows in 3.5b.
 //
 // PORTING_RULES:
 // - the Java AnnotationTypeMetadata holds a ClassSymbol and a completer; the
-//   port stores the SymbolId and Rc<RefCell<dyn AnnotationTypeCompleter>>
-//   (arena identity + ADR 0001 explicit context).
+// port stores the SymbolId and Rc<RefCell<dyn AnnotationTypeCompleter>>
+// (arena identity + ADR 0001 explicit context).
 // - the Java NOT_AN_ANNOTATION_TYPE anonymous singleton maps to the
-//   Default/none state (is_metadata_for_annotation_type == false, all getters
-//   empty), which is behaviourally identical.
+// Default/none state (is_metadata_for_annotation_type == false, all getters
+// empty), which is behaviourally identical.
 // - the Java isCompleted() loop uses the COMPLETE symbol flag, which is not
-//   ported; the port uses the completed-completer state
-//   (CompilerContext::complete_symbol takes the completer), registered §9.
+// ported; the port uses the completed-completer state
+// (CompilerContext::complete_symbol takes the completer), registered adapter.
 
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -123,7 +123,7 @@ impl AnnotationTypeMetadata {
         }
         if let Some(completer) = self.annotation_type_completer.take() {
             completer.borrow_mut().complete(ctx, syms, meta_data_for)?;
-            // §9 adapter: the upstream completer mutates the shared metadata
+            // adapter adapter: the upstream completer mutates the shared metadata
             // object through ClassSymbol.getAnnotationTypeMetadata(); the port
             // clones the metadata (Rust borrow rules, see Check), so mirror the
             // completer-written fields into this copy.
@@ -156,7 +156,7 @@ impl AnnotationTypeMetadata {
 
     /// Java: public void setRepeatable(Compound repeatable) — the upstream setter
     /// is also called with null (CompleterDeproxy.complete), so the port takes
-    /// an Option<AttributeId> (registered §9 adapter).
+    /// an Option<AttributeId> (registered Porting rules adapter).
     pub fn set_repeatable(&mut self, repeatable: Option<AttributeId>) {
         assert!(self.repeatable.is_none(), "AssertionError: repeatable already set");
         self.repeatable = repeatable;
@@ -173,7 +173,7 @@ impl AnnotationTypeMetadata {
     }
 
     /// Java: public void setTarget(Compound target) — may be null (see
-    /// set_repeatable; registered §9 adapter).
+    /// set_repeatable; registered Porting rules adapter).
     pub fn set_target(&mut self, target: Option<AttributeId>) {
         assert!(self.target.is_none(), "AssertionError: target already set");
         self.target = target;
@@ -249,7 +249,7 @@ impl AnnotationTypeMetadata {
 }
 
 // ---------------------------------------------------------------------------
-// Java: public class Annotate (Annotate.java:78-1426) — batch 3.5b.
+// Java: public class Annotate (Annotate.java:78-1426) —.
 //
 // PORTING_RULES (ADR 0001): the upstream Context-injected services are held in
 // an Rc<AnnotateServices> so the queued closures (the Java Runnable queues) can
@@ -447,7 +447,7 @@ impl Annotate {
 
     /// Java: public static Annotate instance(Context context).
     ///
-    /// TODO(Context integration batch): the Context-key based singleton needs the
+    /// TODO(Context integration): the Context-key based singleton needs the
     /// ported service wiring; the explicit constructor is used by the tests.
     pub fn instance(_context: &mut crate::util::context::Context) -> Rc<Annotate> {
         unimplemented!(
@@ -584,7 +584,7 @@ impl Annotate {
     }
 }
 
-// Annotate batch 3.5b: scheduling/entry of annotations.
+// Annotate : scheduling/entry of annotations.
 //
 // PORTING_RULES: the queued closures capture the Rc<AnnotateServices> and the
 // tree/symbol ids; the CompilerContext is passed to flush and forwarded to each
@@ -788,7 +788,7 @@ impl AnnotateServices {
     }
 }
 
-/// Annotate batch 3.5b: attribute/annotation value conversion + repeated
+/// Annotate : attribute/annotation value conversion + repeated
 /// annotations + TypeAnnotate + annotation-type completer.
 impl AnnotateServices {
     /// Java: private void annotateNow(Symbol toAnnotate, List<JCAnnotation>
@@ -970,7 +970,7 @@ impl AnnotateServices {
     }
 }
 
-/// Annotate batch 3.5b: annotation element values.
+/// Annotate : annotation element values.
 impl AnnotateServices {
     /// Java: private List<Pair<MethodSymbol, Attribute>> attributeAnnotationValues(
     /// JCAnnotation a, Type expected, Env<AttrContext> env) (Annotate.java:513-550)
@@ -1169,7 +1169,7 @@ impl AnnotateServices {
     }
 }
 
-/// Annotate batch 3.5b: annotation element values + helpers.
+/// Annotate : annotation element values + helpers.
 impl AnnotateServices {
     /// Java: private Attribute attributeAnnotationValue(Type expectedElementType,
     /// JCExpression tree, Env<AttrContext> env) (Annotate.java:591-660)
@@ -1333,7 +1333,7 @@ impl AnnotateServices {
     }
 }
 
-/// Annotate batch 3.5b: class/enum/primitive/array annotation values +
+/// Annotate : class/enum/primitive/array annotation values +
 /// repeating-annotation containers.
 impl AnnotateServices {
     /// Java: private Attribute getAnnotationEnumValue(Type expectedElementType,
@@ -1491,7 +1491,7 @@ impl AnnotateServices {
     }
 }
 
-/// Annotate batch 3.5b: repeating annotations.
+/// Annotate : repeating annotations.
 #[derive(Clone)]
 pub struct AnnotatedContext {
     pub env: Rc<Env<AttrContext>>,
@@ -1602,7 +1602,7 @@ impl AnnotateServices {
                 );
             }
             // Java: if (!chk.isTypeAnnotation(annoTree, isTypeParam)) error... —
-            // TODO(TypeAnnotations batch): Check.isTypeAnnotation is not ported.
+            // TODO(TypeAnnotations): Check.isTypeAnnotation is not ported.
             let _ = is_type_param;
             if let AttributeKind::TypeCompound { synthesized, .. } = &mut ctx.attr_mut(at).kind {
                 *synthesized = true;
@@ -1668,7 +1668,7 @@ impl AnnotateServices {
     }
 }
 
-/// Annotate batch 3.5b: container lookup + TypeAnnotate + annotation-type
+/// Annotate : container lookup + TypeAnnotate + annotation-type
 /// completer + shared helpers.
 impl AnnotateServices {
     /// Java: private Type getContainingType(Attribute.Compound currentAnno,
@@ -2200,7 +2200,7 @@ impl AnnotateServices {
 }
 
 // Java: public static interface Annotate.AnnotationTypeCompleter is defined in the
-// batch-3.5a section above (AnnotationTypeCompleter); this file now contains the
+// -3.5a section above (AnnotationTypeCompleter); this file now contains the
 // full Annotate body.
 
 #[cfg(test)]

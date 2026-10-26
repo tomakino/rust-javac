@@ -7,7 +7,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES (§1): one Rust file per Java file of the package; the
+//! PORTING_RULES (Porting rules): one Rust file per Java file of the package; the
 //! package-info.java documentation is kept here.  PlatformDescription and
 //! PlatformProvider are traits, PlatformUtils keeps the provider selection (the
 //! ServiceLoader dependency is P6, see platform_utils.rs), and JDKPlatformProvider

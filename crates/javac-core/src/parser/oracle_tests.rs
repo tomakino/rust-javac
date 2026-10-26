@@ -448,7 +448,7 @@ fn tokens_lookup_and_scanner_helpers() {
 fn lexical_error_recovery_matches_the_oracle() {
     // The error-tokens sample of the oracle exercises the recovery paths: an
     // invalid character, an unterminated string literal, an unterminated char
-    // literal and an invalid unicode escape.  Reference lines (recorded by
+    // literal and an invalid unicode escape. Reference lines (recorded by
     // GenTokenOracle):
     let expected = [
         "TOKEN INT 0 3 name=int",

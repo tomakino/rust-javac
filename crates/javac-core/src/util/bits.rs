@@ -11,18 +11,18 @@ use std::fmt;
 
 use super::assert;
 
-//       ____________      reset    _________
-//      /  UNKNOWN   \   <-------- / UNINIT  \
-//      \____________/       |     \_________/
-//            |              |          |
-//            |assign        |          | any
-//            |        ___________      |
-//            ------> /  NORMAL   \ <----
-//                    \___________/     |
-//                            |         |
-//                            |         |
-//                            -----------
-//                               any
+// ____________ reset _________
+// / UNKNOWN \ <-------- / UNINIT \
+// \____________/ | \_________/
+// | | |
+// |assign | | any
+// | ___________ |
+// ------> / NORMAL \ <----
+// \___________/ |
+// | |
+// | |
+// -----------
+// any
 /// PORTING_RULES: Java enum constants keep their upstream names so that diffs against
 /// Bits.java stay mechanical.
 #[allow(non_camel_case_types)]
@@ -309,7 +309,7 @@ impl Bits {
     pub fn is_member(&self, x: i32) -> bool {
         assert::check(self.current_state != BitsState::UNKNOWN);
         let len = self.bits.len() as i32;
-        // Java: 0 <= x && x < (bits.length << wordshift) && ...
+        // Java: 0 <= x && x < (bits.length << wordshift) &&...
         // (int overflow of the shift follows Java semantics via wrapping_shl)
         0 <= x
             && x < len.wrapping_shl(WORDSHIFT)

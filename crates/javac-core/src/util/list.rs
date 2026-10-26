@@ -526,7 +526,7 @@ impl<A> List<A> {
         Z: Clone,
         F: FnMut(&A) -> Z,
     {
-        // Java: boolean changed = false; ... changed |= (z != a);
+        // Java: boolean changed = false;... changed |= (z != a);
         // PORTING_RULES: Java compares the mapped value with the input reference and returns
         // this when the mapper is the identity; Rust cannot compare values of unrelated types
         // and the list is immutable, so a fresh list with the same elements is returned instead.

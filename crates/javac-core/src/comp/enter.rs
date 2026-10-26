@@ -1,28 +1,28 @@
 // Origin: com/sun/tools/javac/comp/Enter.java @ 982d53c (jdk-17.0.19-ga)
 //
-// PORTING_RULES §19 registration:
+// Registration:
 // Ported in this file: the Enter structure, classEnv/topLevelEnv/getTopLevelEnv/
 // enterScope/moduleEnv, classEnter, visitTopLevel/visitClassDef/
 // visitTypeParameter/visitModuleDef/visitTree, classNameMatchesFileName/
-// duplicateClass, main/complete/newRound (see the batch report).
+// duplicateClass, main/complete/newRound (see the registration).
 //
 // NOT PORTED IN THIS STEP (registered; no substitute):
 // - Annotate instance: annotate.blockAnnotations/unblockAnnotations(%NoFlush)
-//   calls are TODO in the corresponding methods (Annotate batch);
+// calls are TODO in the corresponding methods (Annotate);
 // - TypeEnter instance: enterType/completionEnabled/uncompleted processing and
-//   ensureImportsChecked are TODO (TypeEnter/MemberEnter batch); visitClassDef
-//   therefore does not install the TypeEnter completer;
-// - Todo instance: todo.append of package/module envs is TODO (Todo batch);
+// ensureImportsChecked are TODO (TypeEnter/MemberEnter); visitClassDef
+// therefore does not install the TypeEnter completer;
+// - Todo instance: todo.append of package/module envs is TODO (Todo);
 // - Modules instance: module/package visibility checks, module-info handling,
-//   usesProvidesCompleter and isInModuleGraph are TODO (Modules batch);
+// usesProvidesCompleter and isInModuleGraph are TODO (Modules);
 // - JCTree.Visitor dispatch is expressed as a TreeKind match (registered
-//   adapter: the local tree arena has no accept()/Visitor);
+// adapter: the local tree arena has no accept()/Visitor);
 // - predefClassDef construction needs TreeMaker.ClassDef/Modifiers factories,
-//   which are not ported yet: the field stays None (registered);
-// - Scope.NamedImportScope/StarImportScope are not ported (Scope batch): the
-//   compilation unit import scopes stay None (registered);
+// which are not ported yet: the field stays None (registered);
+// - Scope.NamedImportScope/StarImportScope are not ported (Scope): the
+// compilation unit import scopes stay None (registered);
 // - UnenterScanner needs the JCTree.Visitor callback scanner (tree scanner
-//   batch): unenter() is unimplemented below.
+//): unenter() is unimplemented below.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -63,7 +63,7 @@ pub struct Enter {
     pub pkginfo_opt: crate::main::option::PkgInfo,
     pub type_envs: Rc<RefCell<TypeEnvs>>,
     /// Java: private JCClassDecl predefClassDef;
-    /// TODO(TreeMaker batch): TreeMaker.ClassDef/Modifiers factories are not
+    /// TODO(TreeMaker): TreeMaker.ClassDef/Modifiers factories are not
     /// ported; the field stays None (registered).
     pub predef_class_def: Option<TreeId>,
     /// Java: ListBuffer<ClassSymbol> uncompleted;
@@ -121,7 +121,7 @@ impl Enter {
     /// Java: public Env<AttrContext> getClassEnv(TypeSymbol sym)
     pub fn get_class_env(&self, sym: SymbolId) -> Option<Rc<Env<AttrContext>>> {
         let _local_env = self.get_env(sym)?;
-        // TODO(Lint batch): lint.augment(sym) is not ported (Lint::augment).
+        // TODO(Lint): lint.augment(sym) is not ported (Lint::augment).
         unimplemented!("TODO(Lint batch): Enter.getClassEnv lintEnv.augment")
     }
 
@@ -159,8 +159,8 @@ impl Enter {
         let packge = compilation_unit_package(ctx, tree).expect("tree.packge");
         let toplevel_scope = ctx.scope_create(Some(packge));
         // Java: tree.namedImportScope = new NamedImportScope(tree.packge);
-        //       tree.starImportScope = new StarImportScope(tree.packge);
-        // TODO(Scope batch): NamedImportScope/StarImportScope are not ported;
+        // tree.starImportScope = new StarImportScope(tree.packge);
+        // TODO(Scope): NamedImportScope/StarImportScope are not ported;
         // the fields stay None (registered).
         set_compilation_unit_scopes(ctx, tree, toplevel_scope);
         let mut info = AttrContext::new();
@@ -241,7 +241,7 @@ impl Enter {
         env: Option<Rc<Env<AttrContext>>>,
     ) -> Option<TypeId> {
         let prev_env = self.env.clone();
-        // TODO(Annotate batch): annotate.blockAnnotations();
+        // TODO(Annotate): annotate.blockAnnotations();
         self.env = env;
         let previous_result = self.result;
         self.result = None;
@@ -258,7 +258,7 @@ impl Enter {
                 ))
             }
         };
-        // TODO(Annotate batch): annotate.unblockAnnotations();
+        // TODO(Annotate): annotate.unblockAnnotations();
         self.env = prev_env;
         self.result = previous_result;
         result
@@ -325,8 +325,8 @@ impl Enter {
             set_compilation_unit_package(ctx, tree, syms.root_package);
             let top_env = self.top_level_env(ctx, tree);
             self.class_enter_list(ctx, syms, compilation_unit_defs(ctx, tree), Some(top_env));
-            // TODO(Modules batch): tree.modle.usesProvidesCompleter =
-            //     modules.getUsesProvidesCompleter();
+            // TODO(Modules): tree.modle.usesProvidesCompleter =
+            // modules.getUsesProvidesCompleter();
         } else {
             let pd = compilation_unit_package_decl(ctx, tree);
             if let Some(pd) = pd {
@@ -357,7 +357,7 @@ impl Enter {
                 let unnamed = module_unnamed_package(ctx, module).expect("unnamed package");
                 set_compilation_unit_package(ctx, tree, unnamed);
             }
-            // TODO(Modules batch): dependencyWithPackage / PackageInOtherModule
+            // TODO(Modules): dependencyWithPackage / PackageInOtherModule
             // check (syms.listPackageModules and module.visiblePackages).
             let packge = compilation_unit_package(ctx, tree).expect("tree.packge");
             // Java: tree.packge.complete(); // Find all classes in package.
@@ -392,7 +392,7 @@ impl Enter {
                 }
                 self.type_envs.borrow_mut().put(packge, package_env);
                 // Java: for (Symbol q = tree.packge; q != null && q.kind == PCK;
-                //             q = q.owner) q.flags_field |= EXISTS;
+                // q = q.owner) q.flags_field |= EXISTS;
                 let mut q = Some(packge);
                 while let Some(current) = q {
                     if ctx.sym(current).kind != crate::code::kinds::Kind::PCK {
@@ -433,7 +433,7 @@ impl Enter {
             }
             self.class_enter_list(ctx, syms, compilation_unit_defs(ctx, tree), Some(top_env.clone()));
             if add_env {
-                // TODO(Todo batch): todo.append(packageEnv);
+                // TODO(Todo): todo.append(packageEnv);
             }
         }
         self.log.borrow_mut().use_source(prev_source);
@@ -616,7 +616,7 @@ impl Enter {
         if let SymbolKind::ClassSymbol { members_field, .. } = &mut ctx.sym_mut(class).kind_data {
             *members_field = Some(members_scope);
         }
-        // TODO(Annotate batch): c.clearAnnotationMetadata();
+        // TODO(Annotate): c.clearAnnotationMetadata();
         let class_ty = ctx.sym(class).ty.expect("class type");
         if ctx.sym(owner).kind != crate::code::kinds::Kind::PCK
             && (ctx.sym(class).flags_field & flags::STATIC as i64) == 0
@@ -653,9 +653,9 @@ impl Enter {
             *typarams_field = Some(typarams.clone());
             *allparams_field = None;
         }
-        // TODO(TypeEnter/MemberEnter batch): c.completer = typeEnter;
+        // TODO(TypeEnter/MemberEnter): c.completer = typeEnter;
         // The two conditions are kept nested exactly like the upstream
-        // (if (!c.isDirectlyOrIndirectlyLocal() && uncompleted != null) ...);
+        // (if (!c.isDirectlyOrIndirectlyLocal() && uncompleted != null)...);
         // Rust let-chains would require a newer edition (registered).
         #[allow(clippy::collapsible_if)]
         if !crate::code::symbol::symbol_is_directly_or_indirectly_local(ctx, class) {
@@ -731,8 +731,8 @@ impl Enter {
         let module_env = self.module_env(ctx, tree, &env);
         let module = module_tree_symbol(ctx, tree).expect("tree.sym");
         self.type_envs.borrow_mut().put(module, module_env);
-        // TODO(Modules batch): if (modules.isInModuleGraph(tree.sym))
-        //     todo.append(moduleEnv);
+        // TODO(Modules): if (modules.isInModuleGraph(tree.sym))
+        // todo.append(moduleEnv);
         Ok(())
     }
 
@@ -755,17 +755,17 @@ impl Enter {
         trees: List<TreeId>,
         c: Option<SymbolId>,
     ) {
-        // TODO(Annotate batch): annotate.blockAnnotations();
+        // TODO(Annotate): annotate.blockAnnotations();
         let prev_uncompleted = self.uncompleted.take();
-        // TODO(TypeEnter batch): if (typeEnter.completionEnabled)
-        //     uncompleted = new ListBuffer<>();
+        // TODO(TypeEnter): if (typeEnter.completionEnabled)
+        // uncompleted = new ListBuffer<>();
         let result = self.class_enter_list(ctx, syms, trees, None);
         let _ = result;
-        // TODO(TypeEnter batch): complete the uncompleted classes in memberEnter
+        // TODO(TypeEnter): complete the uncompleted classes in memberEnter
         // and run ensureImportsChecked; not ported yet (registered).
         let _ = c;
         self.uncompleted = prev_uncompleted;
-        // TODO(Annotate batch): annotate.unblockAnnotations();
+        // TODO(Annotate): annotate.unblockAnnotations();
     }
 
     /// Java: public void newRound() { typeEnvs.clear(); }
@@ -775,8 +775,8 @@ impl Enter {
 
     /// Java: public void unenter(JCCompilationUnit topLevel, JCTree tree)
     pub fn unenter(&mut self, _ctx: &mut CompilerContext, _top_level: TreeId, _tree: TreeId) {
-        // TODO(Enter batch): UnenterScanner needs the JCTree.Visitor callback
-        // scanner (tree scanner batch); registered.
+        // TODO(Enter): UnenterScanner needs the JCTree.Visitor callback
+        // scanner (tree scanner); registered.
         unimplemented!("TODO(Enter batch): Enter.unenter (UnenterScanner)");
     }
 }
@@ -839,7 +839,7 @@ fn set_compilation_unit_scopes(ctx: &mut CompilerContext, tree: TreeId, toplevel
     } = &mut ctx.tree_mut(tree).kind
     {
         *slot = Some(toplevel_scope);
-        // TODO(Scope batch): NamedImportScope/StarImportScope (registered).
+        // TODO(Scope): NamedImportScope/StarImportScope (registered).
         *named_import_scope = None;
         *star_import_scope = None;
     }

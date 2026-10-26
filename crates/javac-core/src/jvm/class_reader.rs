@@ -1,23 +1,23 @@
 // Origin: com/sun/tools/javac/jvm/ClassReader.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of ClassReader.java):
+// Gap registration (method-level audit of ClassReader.java):
 // Dependency/phase: P2/S2-B (annotation/TypeAnnotation/Module/Directive readers,
-// ported in this batch) and P3 semantic batches (Annotate/Code/Types).
+// ported in this) and P3 semantic batches (Annotate/Code/Types).
 //
-// Ported in this file (S2-B, see the batch report for the mapping table):
+// Ported in this file (S2-B, see the registration for the mapping table):
 // - all 26 initAttributeReaders readers are wired in read_attribute: Code
-//   (readCode structure; Code object attach TODO), ConstantValue, Deprecated,
-//   Exceptions, InnerClasses (+skipInnerClasses), LocalVariableTable,
-//   SourceFile (+SourceFileObject), Annotation, Bridge, Synthetic, Signature,
-//   MethodParameters, EnclosingMethod (readEnclosingMethodAttr/simpleBinaryName/
-//   findMethod/isSameBinaryType), PermittedSubclasses, Record (+record accessor
-//   lookupMethod), Runtime[In]visible[Parameter]Annotations, AnnotationDefault,
-//   Runtime[In]visibleTypeAnnotations (readTypeAnnotation/readPosition/
-//   readTypePath), Module (readModule/readModuleFlags/readRequiresFlags/
-//   readExportsFlags/readOpensFlags/classNameMapper/interim uses+provides),
-//   ModuleResolution (readModuleResolutionFlags);
+// (readCode structure; Code object attach TODO), ConstantValue, Deprecated,
+// Exceptions, InnerClasses (+skipInnerClasses), LocalVariableTable,
+// SourceFile (+SourceFileObject), Annotation, Bridge, Synthetic, Signature,
+// MethodParameters, EnclosingMethod (readEnclosingMethodAttr/simpleBinaryName/
+// findMethod/isSameBinaryType), PermittedSubclasses, Record (+record accessor
+// lookupMethod), Runtime[In]visible[Parameter]Annotations, AnnotationDefault,
+// Runtime[In]visibleTypeAnnotations (readTypeAnnotation/readPosition/
+// readTypePath), Module (readModule/readModuleFlags/readRequiresFlags/
+// readExportsFlags/readOpensFlags/classNameMapper/interim uses+provides),
+// ModuleResolution (readModuleResolutionFlags);
 // - readAnnotationValue/readAnnotations/readCompoundAnnotation/readTypeToProxy,
-//   attachAnnotations/readParameterAnnotations/attachAnnotationDefault,
-//   attachTypeAnnotations + TypeAnnotationPosition/TypePathEntry.
+// attachAnnotations/readParameterAnnotations/attachAnnotationDefault,
+// attachTypeAnnotations + TypeAnnotationPosition/TypePathEntry.
 //
 // Annotation/TypeAnnotation values are read completely and kept as raw proxies
 // (pending_* fields in the ClassReader); attaching them to Symbols goes through
@@ -27,39 +27,39 @@
 // - NOT PORTED: instance (ClassReader.java:257)
 // - NOT PORTED: getEnclosingType (ClassReader.java:575)
 // - NOT PORTED: setEnclosingType (ClassReader.java:600)
-// - NOT PORTED: setFlagIfAttributeTrue (ClassReader.java:1479) — Annotate batch
-// - NOT PORTED: ProxyType (ClassReader.java:1840-1895) — module annotation batch
-// - NOT PORTED: AttributeReader.accept/toString of proxy classes (1834-1878) — Annotate batch
+// - NOT PORTED: setFlagIfAttributeTrue (ClassReader.java:1479) — Annotate
+// - NOT PORTED: ProxyType (ClassReader.java:1840-1895) — module annotation 
+// - NOT PORTED: AttributeReader.accept/toString of proxy classes (1834-1878) — Annotate
 // - NOT PORTED: visitConstant/visitClass/visitEnum/visitCompound/visitArray/
-//   visitEnumAttributeProxy/visitClassAttributeProxy/visitArrayAttributeProxy/
-//   visitCompoundAnnotationProxy (1989-2075) — Annotate batch
+// visitEnumAttributeProxy/visitClassAttributeProxy/visitArrayAttributeProxy/
+// visitCompoundAnnotationProxy (1989-2075) — Annotate
 // - NOT PORTED: AnnotationCompleter/AnnotationDefaultCompleter/TypeAnnotationCompleter/
-//   CompleterDeproxy run/toString (2099-2189) — Annotate batch
+// CompleterDeproxy run/toString (2099-2189) — Annotate
 // - NOT PORTED: addTypeAnnotationsToSymbol/visitClassSymbol/visitMethodSymbol/
-//   visitVarSymbol/visitSymbol/rewriteTypeParameters/addTypeAnnotations/
-//   typeParameterBound/methodFormalParameter/thrownType/classExtends/visitClassType/
-//   rewriteTypeParams/visitWildcardType/visitArrayType/visitType (2212-2473) — Annotate batch
-// - NOT PORTED: adjustMethodParams (2588) — readMethod this$n stripping batch
-// - NOT PORTED: parameter (2707) — initParameterNames batch
-// - NOT PORTED: AnnotationTypeMetadata/CompleterDeproxy (annotation batch)
+// visitVarSymbol/visitSymbol/rewriteTypeParameters/addTypeAnnotations/
+// typeParameterBound/methodFormalParameter/thrownType/classExtends/visitClassType/
+// rewriteTypeParams/visitWildcardType/visitArrayType/visitType (2212-2473) — Annotate
+// - NOT PORTED: adjustMethodParams (2588) — readMethod this$n stripping 
+// - NOT PORTED: parameter (2707) — initParameterNames
+// - NOT PORTED: AnnotationTypeMetadata/CompleterDeproxy (annotation)
 // - NOT PORTED: UsesProvidesCompleter class (3173) — result-equivalent tail path
-//   implemented directly in readClassFile (registered structural adapter)
+// implemented directly in readClassFile (registered structural adapter)
 // - NOT PORTED: ProxyType.getTag/cloneWithMetadata/resolve/toString (3209-3223)
 // - NOT PORTED: PackageInfoCompleter.complete (3261)
 // - NOT PORTED: SourceFileObject.equals/hashCode (3146/3154: value equality;
-//   the local object is an Rc identity holder, registered)
+// the local object is an Rc identity holder, registered)
 //
-// Registered adapters (not 1:1, see the batch report):
+// Registered adapters (not 1:1, see the registration):
 // - VarSymbol.data: Java Object -> Option<ConstValue> (ConstantValue reader);
 // - MethodParameters/AnnotationDefault/Annotate attachment: values read and
-//   kept in ClassReader pending_* fields (Symbol fields/Annotate not ported);
+// kept in ClassReader pending_* fields (Symbol fields/Annotate not ported);
 // - ModuleSymbol uses/provides: UsesProvidesCompleter completion performed in
-//   readClassFile tail (same resulting directives, structural adapter);
+// readClassFile tail (same resulting directives, structural adapter);
 // - SourceFileObject: URI(null,name,null) -> URI::create(name); unsupported
-//   operations mirror the UnsupportedOperationException semantics.
+// operations mirror the UnsupportedOperationException semantics.
 //
 // Attribute readers: 26/26 wired (no reader is skipped as unknown any more).
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! This class provides operations to read a classfile into an internal
 //! representation. The internal representation is anchored in a ClassSymbol
@@ -67,7 +67,7 @@
 //! in the classfile. Top-level Classes themselves appear as members of the
 //! scopes of PackageSymbols.
 //!
-//! PORTING_RULES batch status (P2/S1):
+//! PORTING_RULES status (P2/S1):
 //! * ported in this file: ClassReader structure/constructor (dependency injection
 //!   in place of the Context singletons), readClassFile / readClassBuffer
 //!   (magic, version, preview checks and the PoolReader wiring), buffer access
@@ -144,7 +144,7 @@ pub struct ClassReader {
     /// Java: protected WriteableScope typevars
     ///
     /// PORTING_RULES: Scope.WriteableScope is not ported yet (TODO(P3 scope
-    /// batch)); the field is kept as None and enterTypevars is unimplemented.
+    ///)); the field is kept as None and enterTypevars is unimplemented.
     typevars: Option<crate::ids::ScopeId>,
     /// Java: protected JavaFileObject currentClassFile = null
     pub current_class_file: Option<Rc<dyn JavaFileObject>>,
@@ -187,7 +187,7 @@ pub struct ClassReader {
     found_type_variables: List<crate::ids::TypeId>,
     /// Java: protected Map<Name, AttributeReader> attributeReaders
     attribute_readers: Vec<AttributeReaderDef>,
-    /// Java: int[] parameterNameIndices (MethodParameters/LVT batch)
+    /// Java: int[] parameterNameIndices (MethodParameters/LVT)
     parameter_name_indices: Option<Vec<i32>>,
     /// Java: int[] parameterAccessFlags
     parameter_access_flags: Option<Vec<i32>>,
@@ -201,7 +201,7 @@ pub struct ClassReader {
     interim_provides: List<(Name, List<Name>)>,
     /// Pending annotations read from classfile attributes (upstream stores
     /// CompoundAnnotationProxy lists and hands them to Annotate; the Annotate
-    /// batch is not ported yet, so the read values are kept here, registered).",
+    /// is not ported yet, so the read values are kept here, registered).",
     pending_annotations: Vec<(SymbolId, List<AnnotationValue>)>,
     /// Pending Runtime[In]visibleParameterAnnotations values.",
     pending_parameter_annotations: Vec<(SymbolId, Vec<List<AnnotationValue>>)>,
@@ -254,7 +254,7 @@ impl ClassReader {
             allow_sealed_types: Feature::SEALED_CLASSES.allowed_in_source(source),
             allow_records: Feature::RECORDS.allowed_in_source(source),
             // Java: lintClassfile = Lint.instance(context).isEnabled(LintCategory.CLASSFILE);
-            // Lint is not ported yet (TODO(Lint batch), registered); false keeps
+            // Lint is not ported yet (TODO(Lint), registered); false keeps
             // the upstream default when no -Xlint:classfile is requested.
             lint_classfile: false,
             save_parameter_names,
@@ -681,7 +681,7 @@ impl ClassReader {
     /// Java: Type noType (syms.noType): the ClassReader only needs the tag
     /// constant here; Types.noType is not represented in Symtab yet (TODO P3),
     /// so the arena slot is created from the shared Type::new (tag NONE). The
-    /// call sites that need the global singleton are registered in the batch
+    /// call sites that need the global singleton are registered in the
     /// report.
     fn no_type(&mut self, ctx: &mut CompilerContext) -> TypeId {
         if let Some(no_type) = self.no_type {
@@ -1132,8 +1132,8 @@ impl ClassReader {
         }
 
         // Java: if ((c.flags_field & Flags.ANNOTATION) != 0) c.setAnnotationTypeMetadata(
-        //           new AnnotationTypeMetadata(c, new CompleterDeproxy(c, target, repeatable)));
-        //       else c.setAnnotationTypeMetadata(AnnotationTypeMetadata.notAnAnnotationType());
+        // new AnnotationTypeMetadata(c, new CompleterDeproxy(c, target, repeatable)));
+        // else c.setAnnotationTypeMetadata(AnnotationTypeMetadata.notAnAnnotationType());
         // (ClassReader.java:2988-2995)
         if (ctx.sym(c).flags_field & flags::ANNOTATION as i64) != 0 {
             let completer: Rc<RefCell<dyn AnnotationTypeCompleter>> =
@@ -1151,9 +1151,9 @@ impl ClassReader {
         }
 
         // Java: if (c == currentModule.module_info) {
-        //             if (interimUses.nonEmpty() || interimProvides.nonEmpty()) {
-        //                 currentModule.usesProvidesCompleter = new UsesProvidesCompleter(...)
-        //             } }
+        // if (interimUses.nonEmpty() || interimProvides.nonEmpty()) {
+        // currentModule.usesProvidesCompleter = new UsesProvidesCompleter(...)
+        // } }
         //
         // PORTING_RULES adapter: UsesProvidesCompleter / ModuleSymbol.completer are not
         // ported yet, so the interim names are resolved to ClassSymbols and recorded as
@@ -1251,7 +1251,7 @@ impl ClassReader {
             } else {
                 // Java: badClassFile("wrong.version", major, minor, maxMajor, maxMinor);
                 // The generated accessor currently has no parameters (registered
-                // P4 diagnostic-contract deviation, see the batch report).
+                // P4 diagnostic-contract deviation, see the registration).
                 let key = Fragment::from(
                     crate::resources::compiler_properties::fragments::wrong_version(),
                 );
@@ -1441,7 +1441,7 @@ impl ClassReader {
         }
         if ctx.sym(c).is_record() {
             // Java: for (RecordComponent rc: c.getRecordComponents())
-            //     rc.accessor = lookupMethod(c, rc.name, List.nil());
+            // rc.accessor = lookupMethod(c, rc.name, List.nil());
             let components = match &ctx.sym(c).kind_data {
                 crate::code::symbol::SymbolKind::ClassSymbol { record_components, .. } => {
                     record_components.clone()
@@ -1788,7 +1788,7 @@ impl ClassReader {
             if rsym == syms.java_base && self.major_version >= Version::V54.major() {
                 if flags.contains(&crate::code::directive::RequiresFlag::TRANSITIVE) {
                     // The generated accessor currently has no parameters (registered
-                    // P4 diagnostic-contract deviation, see the batch report).
+                    // P4 diagnostic-contract deviation, see the registration).
                     let key = Fragment::from(
                         crate::resources::compiler_properties::fragments::bad_requires_flag(),
                     );
@@ -2001,7 +2001,7 @@ impl ClassReader {
         });
         if module_info == self.current_owner {
             // Java: return new ProxyType(i); — ProxyType is not ported yet (module
-            // annotation batch); registered TODO.
+            // annotation); registered TODO.
             unimplemented!("TODO(S2-B/ProxyType): ClassReader.ProxyType for module-info annotations");
         }
         self.get_type(ctx, syms, index)
@@ -2204,9 +2204,9 @@ impl ClassReader {
         }
         // Java: annotate.normal(new AnnotationCompleter(sym, proxies.toList()));
         // The queued closure runs AnnotationCompleter.run (deproxy + deprecated
-        // flags + setDeclarationAttributes/appendAttributes). §9 adapter: when
+        // flags + setDeclarationAttributes/appendAttributes). adapter adapter: when
         // the Annotate service is not injected yet the raw proxies are kept in
-        // pending_annotations for the Annotate-assembly batch.
+        // pending_annotations for the Annotate-assembly.
         let annotate = self.annotate.borrow().clone();
         match annotate {
             Some(annotate) => {
@@ -2363,7 +2363,7 @@ impl ClassReader {
         for _ in 0..num_attributes {
             proxies = proxies.append(self.read_type_annotation(ctx, syms)?);
         }
-        // TODO(Annotate batch): attachTypeAnnotations(sym, proxies)
+        // TODO(Annotate): attachTypeAnnotations(sym, proxies)
         // (TypeAnnotationCompleter is not ported yet); the read proxies are kept.
         self.pending_type_annotations.push((sym, proxies));
         Ok(())
@@ -2544,7 +2544,7 @@ impl ClassReader {
             // Java: readClassFile catches ArrayIndexOutOfBoundsException and maps it
             // to badClassFile("bad.class.file", c.flatname). The attribute length
             // bound is validated explicitly here (the full next* bounds-error
-            // mapping is a registered TODO for the hardening batch).
+            // mapping is a registered TODO for the hardening).
             let attr_end = (self.bp as i64) + (attr_len as i64);
             if attr_len < 0 || attr_end > self.buf.elems.len() as i64 {
                 let class_name = ctx
@@ -2886,7 +2886,7 @@ impl ClassReader {
     }
 
     /// Java: Code readCode(Symbol owner) (ClassReader.java:1373-1390)
-    /// TODO(P6/Code batch): jvm.Code is not ported, so the structure is read
+    /// TODO(P6/Code): jvm.Code is not ported, so the structure is read
     /// and nested member attributes are dispatched, but the Code object is not
     /// stored on the method symbol (registered).
     fn read_code(
@@ -3359,9 +3359,9 @@ pub(crate) enum AttributeReaderKind {
 /// Java: the ClassReader annotation proxy values (EnumAttributeProxy/
 /// ClassAttributeProxy/ArrayAttributeProxy/CompoundAnnotationProxy are
 /// Attribute subclasses upstream; the port keeps their raw read form until
-/// the Annotate batch attaches them).
+/// the Annotate attaches them).
 // The proxy fields are read from the classfile and only attached to Symbols by the
-// Annotate batch (not ported yet); they are kept as read values (registered).
+// Annotate (not ported yet); they are kept as read values (registered).
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) enum AnnotationValue {
@@ -3377,7 +3377,7 @@ pub(crate) enum AnnotationValue {
     Compound { ty: TypeId, values: List<(Name, AnnotationValue)> },
 }
 /// Java: TypeAnnotationProxy (read type annotation: compound value + position)
-// See AnnotationValue: the read proxy is kept until the Annotate batch.
+// See AnnotationValue: the read proxy is kept until the Annotate.
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) struct TypeAnnotationProxy {
@@ -3492,9 +3492,9 @@ fn class_file_of(
 // ---------------------------------------------------------------------------
 // Annotation deproxying (ClassReader.java:1900-2100, 3159-3200).
 // The upstream Attribute.Visitor proxy classes are expressed as matches on the
-// read AnnotationValue enum (registered §9 adapter: same values, same output
+// read AnnotationValue enum (registered adapter adapter: same values, same output
 // Attribute kinds; ProxyType is not ported, so resolvePossibleProxyType is the
-// identity until the module-annotation batch).
+// identity until the module-annotation).
 // ---------------------------------------------------------------------------
 
 /// Java: ClassReader.CompleterDeproxy (ClassReader.java:3159-3200)
@@ -3529,7 +3529,7 @@ impl AnnotationTypeCompleter for CompleterDeproxy {
         sym: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         assert_eq!(self.proxy_on, sym, "AssertionError: proxyOn == sym");
-        // §9 adapter: Types is value-held by ClassReader; the completer builds an
+        // adapter adapter: Types is value-held by ClassReader; the completer builds an
         // equivalent Types instance from the same Names service (Types has no
         // per-instance mutable state; see Types::with_names).
         let types = crate::code::types::Types::with_names(Rc::clone(&self.names));
@@ -4124,7 +4124,7 @@ mod tests {
         };
         // javap -private java.util.List: public interface, extends
         // java.util.Collection, 41 members (the descriptor-erased view; the
-        // Signature attribute is read by the S2 attribute batch).
+        // Signature attribute is read by the S2 attribute).
         assert_ne!(summary.flags & crate::code::flags::INTERFACE as i64, 0);
         assert_ne!(summary.flags & crate::code::flags::ABSTRACT as i64, 0);
         assert_eq!(
@@ -4233,12 +4233,12 @@ mod tests {
     #[test]
     fn signature_views_match_javap() {
         // javap -v data (development-time oracle):
-        //   java.util.List: class signature <E:Ljava/lang/Object;>Ljava/lang/Object;Ljava/util/Collection<TE;>;
-        //     boolean add(E): Signature (TE;)Z
-        //     <T> T[] toArray(T[]): Signature <T:Ljava/lang/Object;>([TT;)[TT;
-        //   java.lang.String: CASE_INSENSITIVE_ORDER Signature
-        //     Ljava/util/Comparator<Ljava/lang/String;>;
-        //     implements Comparable<java.lang.String>
+        // java.util.List: class signature <E:Ljava/lang/Object;>Ljava/lang/Object;Ljava/util/Collection<TE;>;
+        // boolean add(E): Signature (TE;)Z
+        // <T> T[] toArray(T[]): Signature <T:Ljava/lang/Object;>([TT;)[TT;
+        // java.lang.String: CASE_INSENSITIVE_ORDER Signature
+        // Ljava/util/Comparator<Ljava/lang/String;>;
+        // implements Comparable<java.lang.String>
         let Some(list) = parse_baseline("java.util.List") else {
             eprintln!("skipping: no baseline JDK 17 installation found");
             return;
@@ -5036,9 +5036,9 @@ mod tests {
     #[test]
     fn fixture_type_annotations() {
         // TypeAnnotated.class (javap -v RuntimeVisibleTypeAnnotations oracle):
-        //   field  -> FIELD
-        //   list   -> FIELD, location=[TYPE_ARGUMENT(0)]
-        //   method -> METHOD_RETURN, parameter -> METHOD_FORMAL_PARAMETER(0)
+        // field -> FIELD
+        // list -> FIELD, location=[TYPE_ARGUMENT(0)]
+        // method -> METHOD_RETURN, parameter -> METHOD_FORMAL_PARAMETER(0)
         let mut context = Context::new();
         let log = Log::instance(&mut context);
         let names = Rc::new(Names::new(false));

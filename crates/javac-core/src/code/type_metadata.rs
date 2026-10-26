@@ -2,13 +2,13 @@
 //
 // PORTING_RULES:
 // - TypeMetadata is an immutable EnumMap<Entry.Kind, Entry>; the port uses a
-//   BTreeMap keyed by EntryKind (unique key per kind, deterministic iteration).
+// BTreeMap keyed by EntryKind (unique key per kind, deterministic iteration).
 // - The Java EMPTY singleton identity comparisons map to the empty-contents
-//   check (EMPTY is the unique empty map and TypeMetadata is immutable).
-// - Attribute.Compound/TypeCompound references map to AttributeId (arena, §9).
+// check (EMPTY is the unique empty map and TypeMetadata is immutable).
+// - Attribute.Compound/TypeCompound references map to AttributeId (arena, adapter).
 // - Annotations.TO_BE_SET is modelled as annos: None (the Java code uses the
-//   empty-list identity to detect the to-be-set state); combine asserts that
-//   state exactly like the upstream Assert.
+// empty-list identity to detect the to-be-set state); combine asserts that
+// state exactly like the upstream Assert.
 
 use std::collections::BTreeMap;
 

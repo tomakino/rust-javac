@@ -109,7 +109,7 @@ impl CacheFSInfo {
     /// Java: protected Optional<BasicFileAttributes> maybeReadAttributes(Path file).
     pub fn maybe_read_attributes(&self, file: &FsPath) -> Option<FileAttributes> {
         // Java: try { return Optional.of(Files.readAttributes(...)); }
-        //       catch (IOException e) { return Optional.empty(); }
+        // catch (IOException e) { return Optional.empty(); }
         if !Files::exists(file) {
             return None;
         }

@@ -43,7 +43,7 @@ use crate::util::position::NOPOS;
 ///
 /// PORTING_RULES: the Java code holds an AbstractLog reference; the port uses
 /// this small trait so diagnostic_source has no dependency on abstract_log
-/// (the Log batch implements it for the concrete log). direct_error takes
+/// (the Log implements it for the concrete log). direct_error takes
 /// &self because the Java log owns mutable writers (the implementation is
 /// responsible for interior mutability).
 pub trait DiagnosticSourceLog {

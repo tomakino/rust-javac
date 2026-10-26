@@ -1,17 +1,17 @@
 // Origin: com/sun/tools/javac/code/Attribute.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: P3 semantic services (Attr/Annotate batches).
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P3 semantic services (Attr/Annotatees).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: getValue() (Attribute.java:57 and the overrides) — Java Object
-//   return type (the ported value domain is util::constants::ConstantValue, see
-//   below); the javax.lang.model AnnotationValue API layer batch.
+// return type (the ported value domain is util::constants::ConstantValue, see
+// below); the javax.lang.model AnnotationValue API layer.
 // - NOT PORTED: accept(AnnotationValueVisitor, P) (Attribute.java:62 and the
-//   overrides) — javax.lang.model visitor API layer batch.
+// overrides) — javax.lang.model visitor API layer.
 // - NOT PORTED: Compound.toString's type part / Enum.toString (Attribute.java:258/
-//   366) call Type.toString / Symbol.toString, which are not ported yet; the
-//   ported toString uses explicit unimplemented helpers (registered: Types/
-//   Symbol printing batch).
-// End of §19 gap registration.
+// 366) call Type.toString / Symbol.toString, which are not ported yet; the
+// ported toString uses explicit unimplemented helpers (registered: Types/
+// Symbol printing).
+// End of Gap registration.
 
 //! An annotation value.
 //!
@@ -350,7 +350,7 @@ impl Attribute {
 }
 
 /// Java: Type.toString()/Symbol.toString() — the display layers are not ported
-/// yet (Types/Symbol printing batch); explicit unimplemented helpers.
+/// yet (Types/Symbol printing); explicit unimplemented helpers.
 fn type_display(_ctx: &CompilerContext, _ty: TypeId) -> String {
     unimplemented!("TODO(Types/Symbol printing batch): Type.toString")
 }
@@ -651,7 +651,7 @@ mod tests {
 }
 
 /// Java: the Object returned by Attribute.getValue() (the AnnotationValue
-/// domain). PORTING_RULES §9 adapter: the union of the upstream return types
+/// domain). PORTING_RULES Porting rules adapter: the union of the upstream return types
 /// (Type / List<Attribute> / VarSymbol / String / this) is represented as an
 /// enum so callers can dispatch without any/object downcasts.
 #[derive(Clone, Debug)]
@@ -660,7 +660,7 @@ pub enum AttributeValue {
     Constant(ConstantValue),
     /// Java: Attribute.Class.getValue() -> Type
     Class(TypeId),
-    /// Java: Attribute.Array.getValue() -> List<Attribute> (arena ids, §9)
+    /// Java: Attribute.Array.getValue() -> List<Attribute> (arena ids, Porting rules)
     Array(Vec<AttributeId>),
     /// Java: Attribute.Enum.getValue() -> VarSymbol
     Enum(SymbolId),

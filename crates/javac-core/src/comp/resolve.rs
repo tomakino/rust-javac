@@ -10,13 +10,13 @@
 //!   (ADR 0001): Symtab/Types are passed as parameters, not stored global
 //!   singletons; the ported Resolve state keeps names/log/types/diags/source/
 //!   options only.
-//! * the Java overload sets become distinct Rust names (PORTING_RULES §3):
+//! * the Java overload sets become distinct Rust names (PORTING_RULES Porting rules):
 //!   isAccessible(Env, TypeSymbol) -> is_accessible_class,
 //!   isAccessible(Env, Type) -> is_accessible_type,
 //!   isAccessible(Env, Type, Symbol) -> is_accessible_member.
-//! * Resolve.instance(Context) is registered for the Context registration batch.
+//! * Resolve.instance(Context) is registered for the Context registration.
 //!
-//! Ported in the Resolve B batch (this file, §19 rows in the batch report):
+//! Ported in the Resolve B (this file, Porting rules rows in the report):
 //! - Resolve.methodResolutionSteps/MethodResolutionPhase (BASIC/BOX/VARARITY,
 //!   mergeResults), MethodResolutionContext/Candidate, InapplicableMethodException,
 //!   MethodCheckDiag, LookupFilter, InterfaceLookupPhase, superclasses;
@@ -44,17 +44,17 @@
 //!   ReferenceLookupResult/getMemberReference/resolveMemberReference/
 //!   ReferenceLookupHelper (Resolve.java:3000-3650; needs
 //!   Types.findDescriptorType + Attr member-reference wiring, FunctionDescriptor
-//!   batch);
+//!   );
 //! - MethodReferenceCheck.argumentsAcceptable body (Resolve.java:1000-1070,
 //!   same dependency);
 //! - selectBest inference-exception propagation (Resolve.java:1592-1593) and
-//!   AmbiguityError.mergeAbstracts (Types batch);
-//! - varargsAccessible isAccessible/reportMC diagnostics (Check batch);
+//!   AmbiguityError.mergeAbstracts (Types);
+//! - varargsAccessible isAccessible/reportMC diagnostics (Check);
 //! - verbose resolution diagnostics (reportVerboseResolutionDiagnostic/
-//!   VerboseResolutionMode): Log/Options batch;
-//! - MethodSymbol.implementation(hiddenIn path): Symbol batch;
+//!   VerboseResolutionMode): Log/Options;
+//! - MethodSymbol.implementation(hiddenIn path): Symbol;
 //! - Type.isUnion/UnionClassType and Types.overrideEquivalent/
-//!   Types.mergeAbstracts: Types batch.
+//!   Types.mergeAbstracts: Types.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -119,7 +119,7 @@ pub struct Resolve {
     /// Java: private MethodCheck resolveMethodCheck (default method check)
     pub default_method_check: Rc<RefCell<dyn MethodCheck>>,
     /// Java: WriteableScope polymorphicSignatureScope (Resolve.java:118; lazily
-    /// created on first use because the port Resolve has no Symtab field, §9).
+    /// created on first use because the port Resolve has no Symtab field, Porting rules).
     pub polymorphic_signature_scope: Option<ScopeId>,
 }
 
@@ -191,7 +191,7 @@ impl Resolve {
     }
 
     /// Java: public static Resolve instance(Context context) (Resolve.java:167)
-    /// TODO(Context registration batch): needs the Context service registry.
+    /// TODO(Context registration): needs the Context service registry.
     pub fn instance() -> Self {
         unimplemented!("TODO(Context registration batch): Resolve.instance")
     }
@@ -270,7 +270,7 @@ impl Resolve {
             if self.allow_modules {
                 let curr_module = env_toplevel_module(ctx, env).expect("toplevel module");
                 // Java: currModule.complete() — the ported symbol complete is a
-                // no-op for entered symbols (Completer batch registered).
+                // no-op for entered symbols (Completer registered).
                 let package = symbol_packge(ctx, c).expect("class package");
                 let package_module = package_module(ctx, package);
                 let visible = match &ctx.sym(curr_module).kind_data {
@@ -287,7 +287,7 @@ impl Resolve {
                     }
                     _ => Vec::new(),
                 };
-                // Java: currModule.complete() — TODO(Completer batch): the
+                // Java: currModule.complete() — TODO(Completer): the
                 // completer chain is not ported; entered modules are complete.
                 is_accessible = package_module == Some(curr_module)
                     || visible
@@ -368,7 +368,7 @@ impl Resolve {
             let bound = self.types.cvar_upper_bound(ctx, elemtype);
             return self.is_accessible_type(ctx, syms, env, bound, check_inner);
         }
-        // TODO(Types batch): t.isUnion() / UnionClassType alternative types.
+        // TODO(Types): t.isUnion() / UnionClassType alternative types.
         let tsym = ctx.typ(t).tsym.expect("type symbol");
         self.is_accessible_class(ctx, syms, env, tsym, check_inner)
     }
@@ -475,7 +475,7 @@ impl Resolve {
             return true;
         }
         // Java: ((MethodSymbol)sym).implementation(site.tsym, types, true)
-        // TODO(Symbol batch): MethodSymbol.implementation (binaryImplementation/
+        // TODO(Symbol): MethodSymbol.implementation (binaryImplementation/
         // overrides chain) is not ported yet.
         let _ = site;
         unimplemented!("TODO(Symbol batch): Resolve.notOverriddenIn implementation()")
@@ -797,7 +797,7 @@ impl Resolve {
             | crate::code::symbol::ResolveErrorData::Diamond { sym, .. } => {
                 // Java: InapplicableSymbolError.access -> createErrorType with the
                 // candidate's type; attrRecover.wrongMethodSymbolCandidate is
-                // registered with the Attr batch.
+                // registered with the Attr.
                 let original = ctx.sym(sym).ty;
                 let error_type =
                     self.types
@@ -905,7 +905,7 @@ impl Resolve {
             }
             crate::code::symbol::ResolveErrorData::BadMethodReference { sym, unbound_lookup } => {
                 // Java: BadMethodReferenceError.getDiagnostic (Resolve.java:4655-4675)
-                // §9: the fragment constructors are used (the generated resource
+                // adapter: the fragment constructors are used (the generated resource
                 // helper is the Fragment form of the upstream diags.create key).
                 if ctx.sym(sym).kind.is_resolution_error() {
                     return self.resolve_error_diagnostic(
@@ -1076,7 +1076,7 @@ impl Resolve {
                 // TODO(Resolve diagnostics detail): the upstream creates a
                 // MultilineDiagnostic with per-candidate InapplicableMethod
                 // fragments (JCDiagnostic.MultilineDiagnostic is registered
-                // with the JCDiagnostic batch).
+                // with the JCDiagnostic).
                 let kind_name = if name
                     .map(|name| *name == self.names.init)
                     .unwrap_or(false)
@@ -2248,7 +2248,7 @@ impl Resolve {
     /// Java: Symbol.clone(Symbol newOwner) for the VarSymbol case
     /// (Symbol.java:1676-1700). The upstream anonymous subclass only overrides
     /// baseSymbol/poolKey; the port copies the fields (baseSymbol/poolKey have
-    /// no local consumer yet; registered §9 adapter).
+    /// no local consumer yet; registered Porting rules adapter).
     fn clone_symbol_with_owner(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -2369,11 +2369,11 @@ impl Resolve {
                 }
             }
             Err(_failure) => {
-                // TODO(ClassFinder batch): the BadClassFile distinction is not
+                // TODO(ClassFinder): the BadClassFile distinction is not
                 // representable in the local CompletionFailure; recovery path.
                 match recovery {
                     RecoveryLoadClass::NoRecovery | RecoveryLoadClass::DoRecoveryLoadClass => {
-                        // TODO(Modules batch): doRecoveryLoadClass needs
+                        // TODO(Modules): doRecoveryLoadClass needs
                         // syms.getClassesForName/lookupInvisibleSymbol/moduleFinder.
                         if recovery == RecoveryLoadClass::DoRecoveryLoadClass {
                             unimplemented!(
@@ -2460,7 +2460,7 @@ impl Resolve {
                     .map(|scope| ctx.scope_get_symbols(scope, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true).is_empty())
                     .unwrap_or(true);
             if members_empty {
-                // TODO(Modules batch): lookupInvisibleSymbol (module scanning +
+                // TODO(Modules): lookupInvisibleSymbol (module scanning +
                 // syms.getAllModules/getPackagesForName) is not ported.
                 unimplemented!("TODO(Modules batch): Resolve.lookupInvisibleSymbol")
             }
@@ -2539,7 +2539,7 @@ impl Resolve {
                         },
                     );
                 } else if pos.is_some() {
-                    // TODO(Log batch): log.warning(pos, Warnings.IllegalRefTo
+                    // TODO(Log): log.warning(pos, Warnings.IllegalRefTo
                     // RestrictedType(names.yield)) — the local Log has no
                     // warning(Position) adapter yet.
                     unimplemented!("TODO(Log batch): Resolve.checkRestrictedType warning")
@@ -2792,7 +2792,7 @@ impl Resolve {
             // Java: argtypes = logResolveHelper.getArgumentTypes(errSym, sym,
             // name, argtypes)
             if log_resolve_helper == LogResolveHelper::Method {
-                // TODO(DeferredAttr batch): ResolveDeferredRecoveryMap needs the
+                // TODO(DeferredAttr): ResolveDeferredRecoveryMap needs the
                 // DeferredAttr machinery.
                 unimplemented!(
                     "TODO(DeferredAttr batch): LogResolveHelper.getArgumentTypes (ResolveDeferredRecoveryMap)"
@@ -3003,7 +3003,7 @@ fn kind_name_arg(
 
 /// Display placeholder for a Type argument (P4). The ported Type.toString is
 /// not available yet; the placeholder uses the type symbol display, which is
-/// the rendered text for the common declared-type case (registered §9).
+/// the rendered text for the common declared-type case (registered Porting rules).
 fn type_place_text(
     ctx: &crate::compiler_context::CompilerContext,
     ty: Option<TypeId>,
@@ -3442,7 +3442,7 @@ impl MethodCheckDiag {
 ///
 /// PORTING_RULES: the upstream methods throw InapplicableMethodException (and
 /// InferenceException from Infer); the port models both with MethodCheckFailure
-/// (§9 adapter registered).
+/// (Porting rules adapter registered).
 pub trait MethodCheck {
     /// Java: void argumentsAcceptable(Env, DeferredAttrContext, List<Type>,
     /// List<Type>, Warner)
@@ -3615,7 +3615,7 @@ fn method_check_diag(
     diags: &crate::util::jc_diagnostic::Factory,
     text: &str,
 ) -> crate::util::jc_diagnostic::JCDiagnostic {
-    // TODO(Check diagnostics batch, ADR 0002 P4): the upstream reportMC builds
+    // TODO(Check diagnostics , ADR 0002 P4): the upstream reportMC builds
     // a fragment with the MethodCheckDiag key and argument list; until the
     // diagnostic argument mapping is complete the fragment uses the
     // no.conforming.assignment.exists key with the placeholder text argument.
@@ -3635,7 +3635,7 @@ pub struct MethodCheckContext {
     /// Java: Warner rsWarner
     pub rs_warner: Rc<std::cell::RefCell<crate::util::warner::Warner>>,
     /// Java: MethodReferenceCheck's anonymous MethodCheckContext override keeps
-    /// the pending inference context (§9: the override is a field + branch in
+    /// the pending inference context (Porting rules: the override is a field + branch in
     /// compatible below).
     pub pending_inference: Option<Rc<crate::comp::infer::InferenceContext>>,
 }
@@ -3697,7 +3697,7 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         _found: TypeId,
         _req: TypeId,
     ) -> crate::util::warner::Warner {
-        // TODO(Lint/Check batch): the upstream returns the shared rsWarner; the
+        // TODO(Lint/Check): the upstream returns the shared rsWarner; the
         // ported Warner is not Clone, so a fresh Warner is returned and the
         // warning state is not shared (registered).
         let _ = &self.rs_warner;
@@ -3753,7 +3753,7 @@ impl MethodResultInfo {
                 crate::comp::deferred_attr::DeferredAttrFailure::Completion(_) => {
                     // Java: CompletionFailure propagates out of check; the
                     // ported method-check path only reports inference failures
-                    // (the CompletionFailure path is Attr batch, registered).
+                    // (the CompletionFailure path is Attr, registered).
                     MethodCheckFailure::Inapplicable(InapplicableMethodException::new(
                         method_check_diag(diags, "completion failure"),
                     ))
@@ -3779,7 +3779,7 @@ impl MethodResultInfo {
         }
         // Java: super.check(pos, chk.checkNonVoid(pos, capturedType)) — the
         // checkType compatibility re-check is performed above; checkNonVoid is
-        // registered (Check batch).
+        // registered (Check).
         Ok(captured_type)
     }
 }
@@ -3815,14 +3815,14 @@ impl From<InapplicableMethodException> for MethodCheckFailure {
 /// Java: class Resolve.MethodReferenceCheck (Resolve.java:1000-1070).
 ///
 /// PORTING_RULES: the reference-specific check context (pending inference
-/// variables in argtypes) depends on the member-reference resolution batch
+/// variables in argtypes) depends on the member-reference resolution
 /// (Resolve.java:3000-3200 + FunctionDescriptor): the port registers the class
 /// and the argumentsAcceptable entry, which is reached only from
 /// checkMethod for JCTree.Tag.REFERENCE trees.
 pub struct MethodReferenceCheck {
     /// Java: final InferenceContext pendingInferenceContext
     pub pending_inference_context: Rc<crate::comp::infer::InferenceContext>,
-    /// Java: JCDiagnostic.Factory diags (Resolve field; explicit §9 parameter
+    /// Java: JCDiagnostic.Factory diags (Resolve field; explicit Porting rules parameter
     /// holder so check_arg can build the failure diagnostic).
     pub diags: Rc<crate::util::jc_diagnostic::Factory>,
 }
@@ -4063,8 +4063,8 @@ impl Resolve {
                     MethodCheckFailure::Inference(ex)
                 }
                 crate::comp::deferred_attr::DeferredAttrFailure::Completion(_) => {
-                    // TODO(Attr batch): the CompletionFailure channel of
-                    // DeferredAttr.complete is registered with the Attr batch.
+                    // TODO(Attr): the CompletionFailure channel of
+                    // DeferredAttr.complete is registered with the Attr.
                     MethodCheckFailure::Inference(crate::comp::infer::InferenceException::new())
                 }
             })?;
@@ -4339,7 +4339,7 @@ impl Resolve {
             Err(MethodCheckFailure::Inference(_)) => {
                 // Java: InferenceException propagates out of selectBest; the
                 // ported selectBest returns a Symbol and the inference failure
-                // channel is registered with the Infer/Attr batch.
+                // channel is registered with the Infer/Attr.
                 unimplemented!(
                     "TODO(Resolve/Infer batch): selectBest InferenceException propagation (Resolve.java:1592-1593)"
                 )
@@ -4438,7 +4438,7 @@ impl Resolve {
     /// Java: boolean isAccessible(Env<AttrContext> env, Type site, Symbol sym)
     /// (Resolve.java:1042-1060) — the ported subset delegates to the ported
     /// accessibility check for members (Resolve A); the full upstream body adds
-    /// the protected/private owner walk registered with the Attr batch.
+    /// the protected/private owner walk registered with the Attr.
     fn is_accessible(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -4455,7 +4455,7 @@ impl Resolve {
     /// Java: Symbol mostSpecific(List<Type> argtypes, Symbol m1, Symbol m2,
     /// Env<AttrContext> env, Type site, boolean useVarargs)
     /// (Resolve.java:1668-1740): the MTH branch is complete except for
-    /// Types.overrideEquivalent/Symbol.overrides (registered Symbol batch).
+    /// Types.overrideEquivalent/Symbol.overrides (registered Symbol).
     #[allow(clippy::too_many_arguments)]
     fn most_specific(
         &mut self,
@@ -4489,9 +4489,9 @@ impl Resolve {
                 );
                 if m1_signature_more_specific && m2_signature_more_specific {
                     // Java: Type mt1 = types.memberType(site, m1);
-                    //       Type mt2 = types.memberType(site, m2);
-                    //       if (!types.overrideEquivalent(mt1, mt2)) ...
-                    // (registered with the Types/Symbol batch below)
+                    // Type mt2 = types.memberType(site, m2);
+                    // if (!types.overrideEquivalent(mt1, mt2))...
+                    // (registered with the Types/Symbol below)
 
                     unimplemented!(
                         "TODO(Symbol/Types batch): Types.overrideEquivalent + Symbol.overrides (Resolve.java:1723-1775)"
@@ -4654,11 +4654,11 @@ impl Resolve {
         resolve_context: &mut MethodResolutionContext,
     ) -> SymbolId {
         let filter = LookupFilter { abstractok };
-        // TODO(Scope/Resolve batch): upstream getSymbolsByName applies the
+        // TODO(Scope/Resolve): upstream getSymbolsByName applies the
         // LookupFilter inside the import-scope lookup; the ported filter is
         // applied after the lookup because the filter callback cannot borrow
         // the context while the scope query takes it (registered adapter; the
-        // FilterImportScope static-import filtering stays in the Scope batch).
+        // FilterImportScope static-import filtering stays in the Scope).
         let symbols = {
             let scope_ref = ctx.scope(scope).clone();
             scope_ref.get_symbols_by_name_full(
@@ -4885,10 +4885,10 @@ fn varargs_accessible(
     _t: TypeId,
     _diags: &crate::util::jc_diagnostic::Factory,
 ) -> Result<(), MethodCheckFailure> {
-    // TODO(Check/Resolve isAccessible batch): the upstream body registers a
+    // TODO(Check/Resolve isAccessible): the upstream body registers a
     // free-type listener and checks isAccessible(env, types.erasure(t)); the
     // isAccessible(Env,Type) and reportMC diagnostics are registered for the
-    // Check batch, so the accessibility check is registered here.
+    // Check, so the accessibility check is registered here.
     unimplemented!(
         "TODO(Check batch): Resolve.resolveMethodCheck.varargsAccessible (Resolve.java:880-900)"
     )
@@ -4896,7 +4896,7 @@ fn varargs_accessible(
 
 /// Java: class Resolve.MostSpecificCheck (Resolve.java:1122-1200): the
 /// argumentsAcceptable body is complete; the functional-interface specific
-/// branches depend on Types.findDescriptorType (FunctionDescriptor batch,
+/// branches depend on Types.findDescriptorType (FunctionDescriptor,
 /// registered inside the context below).
 pub struct MostSpecificCheck {
     /// Java: List<Type> actuals
@@ -5163,7 +5163,7 @@ fn types_parameter_types(
     }
 }
 
-/// Batch 5: the public wrapper of method_arguments_display used by
+///  the public wrapper of method_arguments_display used by
 /// Attr.checkMethod (upstream Resolve.methodArguments is package-visible).
 pub(crate) fn method_arguments_display_pub(
     ctx: &crate::compiler_context::CompilerContext,
@@ -5281,7 +5281,7 @@ pub trait LookupHelper {
 
     /// Java: void debug(DiagnosticPosition pos, Symbol sym) — the upstream
     /// body reports a verbose resolution diagnostic; verbose resolution is
-    /// registered with the Log/diagnostics batch, so the default is empty.
+    /// registered with the Log/diagnostics, so the default is empty.
     fn debug(&mut self, _ctx: &crate::compiler_context::CompilerContext, _sym: SymbolId) {}
 
     /// Java: abstract Symbol access(Env<AttrContext> env, DiagnosticPosition
@@ -5454,7 +5454,7 @@ impl LookupHelper for BasicLookupHelper {
         };
         if ctx.sym(sym).kind == crate::code::kinds::Kind::AMBIGUOUS {
             // Java: AmbiguityError.mergeAbstracts(site) — Types.mergeAbstracts
-            // is registered with the Types batch.
+            // is registered with the Types.
             unimplemented!(
                 "TODO(Types batch): AmbiguityError.mergeAbstracts (Resolve.java:3455-3459)"
             )
@@ -5515,7 +5515,7 @@ impl LookupHelper for BasicLookupHelper {
                     )
                 } else if (ctx.sym(sym).flags_field & crate::code::flags::SIGNATURE_POLYMORPHIC) != 0 {
                     // Java: env.info.pendingResolutionPhase = BASIC;
-                    //       findPolymorphicSignatureInstance(env, sym, argtypes)
+                    // findPolymorphicSignatureInstance(env, sym, argtypes)
                     env.info.borrow_mut().pending_resolution_phase =
                         Some(MethodResolutionPhase::BASIC);
                     unimplemented!(
@@ -5544,7 +5544,7 @@ impl LookupHelper for BasicLookupHelper {
                             self.typeargtypes.clone(),
                         )
                     } else {
-                        // final JCDiagnostic details = ...
+                        // final JCDiagnostic details =...
                         let sym = rs.new_diamond_error(ctx, sym);
                         let sym = rs.access_method(
                             ctx,
@@ -5686,7 +5686,7 @@ impl Resolve {
             use_varargs,
             resolve_context,
         );
-        // TODO(Check batch): FindConstructor also runs
+        // TODO(Check): FindConstructor also runs
         // chk.checkDeprecated(pos, env.info.scope.owner, sym) and
         // chk.checkPreview(pos, env.info.scope.owner, sym).
         let _ = (chk, env);
@@ -6728,8 +6728,8 @@ impl Resolve {
 }
 
 // ---------------------------------------------------------------------------
-// Batch 5: Resolve member-reference resolution family (Resolve.java:3000-3650).
-// §9 adapters: the upstream anonymous ReferenceChooser subclasses are the
+// Resolve member-reference resolution family (Resolve.java:3000-3650).
+// adapter adapters: the upstream anonymous ReferenceChooser subclasses are the
 // ReferenceChooserKind enum + Resolve methods; the HashMap identity maps are
 // Vec<(SymbolId, JCDiagnostic)>; the generated diagnostic constructors are used
 // where the upstream creates fragments.
@@ -6862,13 +6862,13 @@ impl ReferenceLookupResult {
     }
 }
 
-/// Java: MethodCheckDiag.ARITY_MISMATCH.regex() matching (§9: the Template
+/// Java: MethodCheckDiag.ARITY_MISMATCH.regex() matching (Porting rules: the Template
 /// regex is expressed as a suffix test on the diagnostic code).
 fn resolve_matches_method_check_diag(code: &str, _unused: bool) -> bool {
     code.ends_with("arg.length.mismatch") || code.ends_with("infer.arg.length.mismatch")
 }
 
-/// Java: InapplicableSymbolsError.MostSpecificMap.put(Candidate) (§9: Vec map).
+/// Java: InapplicableSymbolsError.MostSpecificMap.put(Candidate) (Porting rules: Vec map).
 fn resolve_map_candidates(
     ctx: &mut crate::compiler_context::CompilerContext,
     syms: &mut Symtab,
@@ -6908,7 +6908,7 @@ fn resolve_map_candidates(
     result
 }
 
-/// Java: InapplicableSymbolsError.filterCandidates (§9).
+/// Java: InapplicableSymbolsError.filterCandidates (Porting rules).
 fn resolve_filter_candidates(
     candidates: &[(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)],
 ) -> Vec<(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)> {
@@ -6927,7 +6927,7 @@ fn resolve_filter_candidates(
 }
 
 /// Java: Resolve.ReferenceChooser subclasses (basicReferenceChooser /
-/// structuralReferenceChooser) — §9 enum dispatch.
+/// structuralReferenceChooser) — Porting rules enum dispatch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReferenceChooserKind {
     Basic,
@@ -6935,11 +6935,11 @@ pub enum ReferenceChooserKind {
 }
 
 // ---------------------------------------------------------------------------
-// Batch 5: Resolve member-reference lookup helpers (Resolve.java:3480-3700)
+// Resolve member-reference lookup helpers (Resolve.java:3480-3700)
 // and Resolve.getMemberReference (Resolve.java:3000-3016).
 // ---------------------------------------------------------------------------
 
-/// Java: ReferenceLookupHelper subclass discriminator (§9).
+/// Java: ReferenceLookupHelper subclass discriminator (Porting rules).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReferenceHelperKind {
     Method,
@@ -6949,7 +6949,7 @@ pub enum ReferenceHelperKind {
 }
 
 /// Java: abstract class Resolve.ReferenceLookupHelper (Resolve.java:3485-3520)
-/// and its four concrete subclasses (§9: one struct + kind dispatch).
+/// and its four concrete subclasses (Porting rules: one struct + kind dispatch).
 #[derive(Clone)]
 pub struct ReferenceLookupHelper {
     pub reference_tree: TreeId,
@@ -7215,8 +7215,8 @@ impl LookupHelper for ReferenceLookupHelper {
             ),
             ReferenceHelperKind::ArrayConstructor => {
                 // Java: WriteableScope sc = WriteableScope.create(syms.arrayClass);
-                //   MethodSymbol arrayConstr = new MethodSymbol(PUBLIC, name, null, site.tsym);
-                //   arrayConstr.type = new MethodType(List.of(syms.intType), site, nil, syms.methodClass);
+                // MethodSymbol arrayConstr = new MethodSymbol(PUBLIC, name, null, site.tsym);
+                // arrayConstr.type = new MethodType(List.of(syms.intType), site, nil, syms.methodClass);
                 let scope = ctx.scope_create(Some(syms.array_class));
                 let site_tsym = ctx.typ(self.site).tsym.expect("array constructor site");
                 let array_constr = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
@@ -7919,7 +7919,7 @@ impl Resolve {
     }
 }
 
-/// §9 helper: the member-reference lookup location is the site type symbol.
+/// Porting rules helper: the member-reference lookup location is the site type symbol.
 fn site_tsym_or_err(
     ctx: &crate::compiler_context::CompilerContext,
     site: TypeId,
@@ -7955,7 +7955,7 @@ impl Resolve {
         kind: crate::code::kinds::KindSelector,
     ) -> SymbolId {
         // Java: return accessBase(findIdent(pos, env, name, kind), pos,
-        //     env.enclClass.sym.type, name, false);
+        // env.enclClass.sym.type, name, false);
         let found = self.find_ident(ctx, syms, pos.clone(), env, &name, kind);
         let encl_tree = env.encl_class.expect("resolving ident outside class");
         let encl_sym = crate::tree::tree_info::symbol(ctx, encl_tree).expect("enclosing class");
@@ -8156,7 +8156,7 @@ impl Resolve {
 }
 
 
-    /// §9 helper: public wrapper of findMemberType for Attr.attribIdent
+    /// Porting rules helper: public wrapper of findMemberType for Attr.attribIdent
     /// (Resolve.java:2461-2480).
     ///
     /// # Arguments
@@ -8343,7 +8343,7 @@ impl Resolve {
         }
     }
 
-    /// §9 helper: public wrapper of new StaticError(sym).
+    /// Porting rules helper: public wrapper of new StaticError(sym).
     ///
     /// # Arguments
     ///   - ctx: the compiler context;

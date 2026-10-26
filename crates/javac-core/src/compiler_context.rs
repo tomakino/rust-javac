@@ -7,7 +7,7 @@
 //! Borrow rules (ADR 0001 rules 3-4; all components must follow them):
 //! - CompilerContext exclusively owns the six arenas; component logic lives in functions/methods taking
 //!   ctx: &mut CompilerContext (Java x.field -> ctx.sym(x).field);
-//! - Rc<RefCell<...>> must not express the core object graph (except the PORTING_RULES §9 whitelist);
+//! - Rc<RefCell<...>> must not express the core object graph (except the PORTING_RULES Porting rules whitelist);
 //! - when several arenas are needed at once, split the borrow by field: Rust borrow checking is per field,
 //!   e.g. &mut ctx.scopes and &ctx.symbols can coexist;
 //! - accessor references borrow &self: while a reference is held the same ctx must not be borrowed mutably;
@@ -298,8 +298,8 @@ impl CompilerContext {
 
     // ------------------------------------------------------------------
     // Java: Scope.CompoundScope/ImportScope/NamedImportScope/StarImportScope
-    // (TypeEnter/ImportsPhase batch; the Scope import queries are registered
-    // TODO for the Scope query batch).
+    // (TypeEnter/ImportsPhase; the Scope import queries are registered
+    // TODO for the Scope query).
     // ------------------------------------------------------------------
 
     /// Java: CompoundScope.prependSubScope(Scope that)
@@ -464,9 +464,9 @@ impl CompilerContext {
 
     /// Java: ImportScope.finalizeScope()
     pub fn scope_finalize(&mut self, _scope: ScopeId) {
-        // TODO(Scope query batch): finalizeSingleScope needs the FilterImportScope
+        // TODO(Scope query): finalizeSingleScope needs the FilterImportScope
         // symbol queries (getSymbols over the origin scope), which need the
-        // SymbolImporter/TypeSymbol member lookups (Scope query batch).
+        // SymbolImporter/TypeSymbol member lookups (Scope query).
         unimplemented!("TODO(Scope query batch): ImportScope.finalizeScope");
     }
 

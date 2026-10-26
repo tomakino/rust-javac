@@ -73,7 +73,7 @@ impl FSInfo {
     /// Java: public Path getCanonicalFile(Path file).
     pub fn get_canonical_file(&self, file: &FsPath) -> FsPath {
         // Java: try { return file.toRealPath(); } catch (IOException e) {
-        //           return file.toAbsolutePath().normalize(); }
+        // return file.toAbsolutePath().normalize(); }
         match std::fs::canonicalize(file.as_path()) {
             Ok(real) => FsPath::from_path_buf(strip_verbatim_prefix(real)),
             Err(_) => match file.to_absolute_path() {

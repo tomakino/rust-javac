@@ -34,7 +34,7 @@
 //!   the DiagnosticFormatter implementation forwards to them;
 //! - BasicConfiguration(Options) needs the not-yet-ported Options and is not
 //!   provided (TODO: the diags.* option decoding is registered in the Options
-//!   batch); BasicConfiguration::new() is the ported no-options constructor,
+//!   ); BasicConfiguration::new() is the ported no-options constructor,
 //!   including the upstream behaviour that sourcePosition stays null (None)
 //!   until set.
 

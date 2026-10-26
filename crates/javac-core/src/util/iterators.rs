@@ -59,7 +59,7 @@ where
     /// Java: public boolean hasNext()
     pub fn has_next(&mut self) -> bool {
         // Java: if (currentIterator != null && !currentIterator.hasNext()) { update(); }
-        //       return currentIterator != null;
+        // return currentIterator != null;
         let need_update = match &mut self.current_iterator {
             CurrentIterator::Done => false,
             CurrentIterator::Empty => true,

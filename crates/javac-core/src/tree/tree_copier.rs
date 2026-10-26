@@ -1,34 +1,34 @@
 // Origin: com/sun/tools/javac/tree/TreeCopier.java @ 982d53c (jdk-17.0.19-ga)
 //
-// PORTING_RULES §19 mapping: every upstream visitXxx is ported 1:1 below.
-// §9 adapters (registered):
+// Registration mapping: every upstream visitXxx is ported 1:1 below.
+// adapter adapters (registered):
 // - the Java TreeMaker M.at(pos).Xxx(...) constructors are expressed by
-//   allocating the node in the arena with the same fields and the original pos
-//   (TreeMaker.make is exactly this allocation; the extra at(pos) bookkeeping is
-//   the node pos);
+// allocating the node in the arena with the same fields and the original pos
+// (TreeMaker.make is exactly this allocation; the extra at(pos) bookkeeping is
+// the node pos);
 // - the upstream generic parameter P is dropped (the port has no attribute
-//   payloads carried through the copy);
+// payloads carried through the copy);
 // - the two DeferredAttr anonymous copier subclasses (diamond NewClass and the
-//   MemberReference overloadKind forwarding) are expressed by the
-//   copy_speculative / copy_speculative_member_reference entry points on
-//   TreeCopier (see DeferredAttr).
+// MemberReference overloadKind forwarding) are expressed by the
+// copy_speculative / copy_speculative_member_reference entry points on
+// TreeCopier (see DeferredAttr).
 // - fields that the upstream constructors do not set (types, symbols,
-//   varargs element, poly kind, ...) get the JCTree constructor defaults of
-//   tree_maker.rs (STANDALONE poly kind, false completion flags, None symbols);
+// varargs element, poly kind,...) get the JCTree constructor defaults of
+// tree_maker.rs (STANDALONE poly kind, false completion flags, None symbols);
 // - visitClass: the upstream TreeCopier.visitClassDef calls
-//   M.at(pos).ClassDef(mods, name, typarams, extending, implementing, defs),
-//   i.e. the 6-argument TreeMaker overload, which passes List.nil() as the
-//   permitting list (TreeMaker.java:157-166). The local copy therefore uses
-//   List::nil() as well — this is the upstream behavior, not an approximation.
+// M.at(pos).ClassDef(mods, name, typarams, extending, implementing, defs),
+// i.e. the 6-argument TreeMaker overload, which passes List.nil() as the
+// permitting list (TreeMaker.java:157-166). The local copy therefore uses
+// List::nil() as well — this is the upstream behavior, not an approximation.
 // - visitLambdaExpression: the upstream TreeCopier copies via
-//   M.at(pos).Lambda(params, body); JCLambda(params, body) derives paramKind
-//   from the copied params (JCTree.java:1957-1966), so the copy must derive
-//   IMPLICIT/EXPLICIT from the copied params exactly like the local copy does.
+// M.at(pos).Lambda(params, body); JCLambda(params, body) derives paramKind
+// from the copied params (JCTree.java:1957-1966), so the copy must derive
+// IMPLICIT/EXPLICIT from the copied params exactly like the local copy does.
 // - visitCase: the upstream body computation checks
-//   "t.body instanceof JCExpression"; JCCase.body is declared JCExpression, so
-//   the check is exactly "body != null". The local Case.body is
-//   Option<TreeId> for that same field, so original_body.is_some() is the
-//   exact translation (registered §3: encoding difference only).
+// "t.body instanceof JCExpression"; JCCase.body is declared JCExpression, so
+// the check is exactly "body != null". The local Case.body is
+// Option<TreeId> for that same field, so original_body.is_some() is the
+// exact translation (registered Porting rules: encoding difference only).
 
 use std::rc::Rc;
 
@@ -41,14 +41,27 @@ use crate::tree::tree_maker::TreeMaker;
 use crate::util::list::List;
 use crate::util::position;
 
+/// Java: the AnalyzerCopier/TreeRewriter customization seam (adapter: the
+/// upstream Java subclasses override the copy visitor; the port expresses the
+/// overrides as this hook).
+pub trait TreeCopyHook {
+    /// Java: TreeRewriter.copy(Z tree): replace a matched tree before copying.
+    fn before_copy(&self, ctx: &mut CompilerContext, old: TreeId) -> Option<TreeId>;
+    /// Java: AnalyzerCopier.visitLambdaExpression/visitNewClass post-fixes.
+    fn after_copy(&self, ctx: &mut CompilerContext, old: TreeId, new: TreeId) -> TreeId;
+}
+
 /// Java: public class TreeCopier<P> implements TreeVisitor<JCTree,P>
 pub struct TreeCopier {
     /// Java: private TreeMaker M
     pub make: Rc<std::cell::RefCell<TreeMaker>>,
-    /// Java: DeferredAttr's anonymous copier subclass flag (§9): when set,
+    /// Java: DeferredAttr's anonymous copier subclass flag (adapter): when set,
     /// diamond new-class nodes are copied as speculative new classes (def set to
     /// null) and member references forward their overload kind.
     pub speculative: bool,
+    /// adapter: the Analyzer copier overrides (None for the plain/speculative
+    /// copiers, which keeps the existing copy behavior unchanged).
+    pub hook: Option<Rc<dyn TreeCopyHook>>,
 }
 
 impl TreeCopier {
@@ -78,10 +91,11 @@ impl TreeCopier {
         TreeCopier {
             make,
             speculative: false,
+            hook: None,
         }
     }
 
-    /// Java: the DeferredAttr anonymous TreeCopier subclass (§9 flag).
+    /// Java: the DeferredAttr anonymous TreeCopier subclass (adapter flag).
     ///
     /// # Arguments
     ///   - make: the TreeMaker cell.
@@ -107,6 +121,7 @@ impl TreeCopier {
         TreeCopier {
             make,
             speculative: true,
+            hook: None,
         }
     }
 
@@ -127,6 +142,18 @@ impl TreeCopier {
         result
     }
 
+    /// adapter helper: a copier with the Analyzer overrides installed.
+    pub fn with_hook(
+        make: Rc<std::cell::RefCell<TreeMaker>>,
+        hook: Rc<dyn TreeCopyHook>,
+    ) -> TreeCopier {
+        TreeCopier {
+            make,
+            speculative: false,
+            hook: Some(hook),
+        }
+    }
+
     fn mk(&self, ctx: &mut CompilerContext, pos: i32, tag: Tag, kind: TreeKind) -> TreeId {
         ctx.alloc_tree(JCTree {
             pos,
@@ -138,6 +165,19 @@ impl TreeCopier {
 
     /// Java: copy(t, p) dispatch (tree.accept(this, p)).
     pub fn copy_tree(&self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
+        if let Some(hook) = &self.hook
+            && let Some(replacement) = hook.before_copy(ctx, tree)
+        {
+            return replacement;
+        }
+        let new_tree = self.copy_tree_impl(ctx, tree);
+        if let Some(hook) = &self.hook {
+            return hook.after_copy(ctx, tree, new_tree);
+        }
+        new_tree
+    }
+
+    fn copy_tree_impl(&self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         match ctx.tree(tree).tag {
             Tag::ANNOTATED_TYPE => self.visit_annotated_type(ctx, tree),
             Tag::ANNOTATION | Tag::TYPE_ANNOTATION => self.visit_annotation(ctx, tree),
@@ -409,7 +449,7 @@ impl TreeCopier {
             _ => panic!("ClassCastException: JCCase expected"),
         };
         // Java: body = t.body instanceof JCExpression && t.stats.head.hasTag(YIELD)
-        //     ? ((JCYield)t.stats.head).value : t.stats.head (for RULE cases).
+        // ? ((JCYield)t.stats.head).value : t.stats.head (for RULE cases).
         // JCCase.body is declared JCExpression, so instanceof == (body != null);
         // the local Case.body Option<TreeId> encodes that same field, so
         // original_body.is_some() is the exact translation (file header).
@@ -1038,7 +1078,7 @@ impl TreeCopier {
         let pos = ctx.tree(tree).pos;
         // Java: DeferredAttr's copier forwards the overload kind (setOverloadKind
         // forwards to the original tree; getOverloadKind reads the original), so
-        // the speculative copy keeps the reference kind/poly kind (§9).
+        // the speculative copy keeps the reference kind/poly kind (adapter).
         let (kind, ref_poly_kind, owner_accessible, poly_kind, overload_kind) = if self.speculative {
             match &ctx.tree(tree).kind {
                 TreeKind::MemberReference {

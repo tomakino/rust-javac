@@ -7,11 +7,11 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES (§12/§14):
+//! PORTING_RULES (Porting rules/Porting rules):
 //! * Java interface -> Rust trait (used as `dyn PlatformDescription`).
 //!   The Java `PlatformDescription extends Closeable`: java.io.Closeable is not a
 //!   ported type, so the interface's own `close()` re-declaration is kept and the
-//!   checked `IOException` maps to `Result<(), javac_tools::error::Error>` (§12).
+//!   checked `IOException` maps to `Result<(), javac_tools::error::Error>` (Porting rules).
 //! * `JavaFileManager` -> `Rc<dyn JavaFileManager>`; `String` -> `JavaString`.
 //! * `PluginInfo<T>` is a Java nested interface; Rust traits cannot contain
 //!   types, so it is the top-level trait `PluginInfo<T>` of this module.
@@ -20,7 +20,7 @@
 //!   `Vec<Rc<dyn PluginInfo<Rc<dyn Plugin>>>>`: the Java generic `T` (the
 //!   plugin instance) is the shared-reference form of the ported trait object.
 //! * `Map<String, String> getOptions()` -> `Vec<(JavaString, JavaString)>`
-//!   (§14 Map mapping; the iteration order is the implementation's, as with the
+//!   (Porting rules Map mapping; the iteration order is the implementation's, as with the
 //!   upstream Map).
 
 use crate::util::java_string::JavaString;
@@ -91,7 +91,7 @@ pub trait PluginInfo<T> {
     /// to a collection by concatenating the map's keys, the '=' sign and the map's values.
     ///
     /// PORTING_RULES: Java {@code Map<String, String>} -> {@code Vec<(JavaString, JavaString)>}
-    /// (§14); the iteration order is the one of the implementation.
+    /// (Porting rules); the iteration order is the one of the implementation.
     ///
     /// @return the options
     fn get_options(&self) -> Vec<(JavaString, JavaString)>;

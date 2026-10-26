@@ -18,7 +18,7 @@
 //! PORTING_RULES:
 //! - the Java Log dependency (Log is not ported yet) becomes the
 //!   MandatoryWarningLog trait, exposing exactly the members used by the
-//!   upstream class; the Log batch implements the trait (registered section 9);
+//!   upstream class; the Log implements the trait (registered section 9);
 //!   a test mock implements it to exercise the de-duplication/aggregation
 //!   logic;
 //! - the Java HashSet<JavaFileObject> maps to Vec<Rc<dyn JavaFileObject>> with
@@ -30,7 +30,7 @@
 //!   revision C); the Source field is code::source::Source (Copy).
 //!
 //! NOT PORTED IN THIS STEP:
-//! - the concrete Log implementation (the Log batch); the trait documents the
+//! - the concrete Log implementation (the Log); the trait documents the
 //!   upstream members: currentSourceFile(), nwarnings, MaxWarnings,
 //!   mandatoryWarning/warning/mandatoryNote/note.
 
@@ -46,7 +46,7 @@ use crate::util::jc_diagnostic::{DiagnosticArg, DiagnosticPosition, Note, Warnin
 /// MandatoryWarningHandler.
 ///
 /// PORTING_RULES: the upstream class holds a concrete Log reference; the port
-/// uses a trait so the handler is testable and the Log batch can implement it
+/// uses a trait so the handler is testable and the Log can implement it
 /// (registered section 9).
 pub trait MandatoryWarningLog {
     /// Java: JavaFileObject currentSourceFile()

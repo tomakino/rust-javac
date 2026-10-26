@@ -1,5 +1,5 @@
 // Origin: com/sun/tools/javac/code/Symbol.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
+// Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: getRawAttributes (Symbol.java:146)
@@ -163,9 +163,9 @@
 // - NOT PORTED: visitVarSymbol (Symbol.java:2610)
 // - NOT PORTED: visitTypeSymbol (Symbol.java:2611)
 // - NOT PORTED: visitSymbol (Symbol.java:2612)
-// End of §19 gap registration.
-//         (the Kinds.Kind/KindSelector/KindName part comes from
-//          com/sun/tools/javac/code/Kinds.java; see the module note below)
+// End of Gap registration.
+// (the Kinds.Kind/KindSelector/KindName part comes from
+// com/sun/tools/javac/code/Kinds.java; see the module note below)
 
 //! A class representing Java symbols: packages, classes, methods, variables,
 //! types, packages. Each subclass is represented as a static inner class
@@ -183,7 +183,7 @@
 //! - the upstream concrete subclasses map 1:1 to SymbolKind variants;
 //! - the Kinds.Kind enum is needed by the Symbol.kind field and is declared in
 //!   the kinds module of this file for now (the parser/compiler need it before
-//!   the Kinds.java batch lands; it will move to code/kinds.rs then, registered
+//!   the Kinds.java lands; it will move to code/kinds.rs then, registered
 //!   in PORTING_RULES section 9).
 //!
 //! NOT PORTED IN THIS STEP (see docs/STATUS.md; no placeholder logic):
@@ -245,7 +245,7 @@ pub struct Symbol {
     /// initedMetadata(); Java null -> None).
     pub metadata: Option<crate::code::symbol_metadata::SymbolMetadata>,
     /// Java: the anonymous MethodSymbol baseSymbol() override used by the
-    /// polymorphic-signature instance symbols (Resolve.java:2800-2810); §9:
+    /// polymorphic-signature instance symbols (Resolve.java:2800-2810); Porting rules:
     /// the override is stored as a field and honored by base_symbol.
     pub base_symbol_override: Option<SymbolId>,
     /// The node-specific fields (one variant per upstream concrete subclass).
@@ -466,7 +466,7 @@ impl Symbol {
             }
             SymbolKind::ClassSymbol { .. } => {
                 // Java: ClassSymbol.reset() resets metadata (metadata = null).
-                // TODO(Annotate batch): SymbolMetadata is not ported yet; there is
+                // TODO(Annotate): SymbolMetadata is not ported yet; there is
                 // no metadata state to reset (registered gap).
             }
             _ => {}
@@ -767,7 +767,7 @@ impl ModuleResolutionFlags {
 /// Java: the AttrContext/Env state captured by resolution errors for the
 /// deferred diagnostics (Resolve.InvisibleSymbolError/AccessError keep the
 /// Env<AttrContext>; the port stores the fields the diagnostics read, a
-/// registered §9 adapter for the Rc<Env> reference).
+/// registered Porting rules adapter for the Rc<Env> reference).
 #[derive(Clone, Debug)]
 pub struct ResolveEnvSnapshot {
     pub tree: Option<TreeId>,
@@ -942,7 +942,7 @@ pub enum SymbolKind {
         /// The value parameter symbols.
         params: List<SymbolId>,
         /// Java: public Attribute defaultValue (Symbol.java:1780; null -> None)
-        /// — the annotation element default value (AttributeId, §9 arena).
+        /// — the annotation element default value (AttributeId, Porting rules arena).
         default_value: Option<crate::ids::AttributeId>,
     },
     /// Java: Symbol.MethodHandleSymbol
@@ -1155,7 +1155,7 @@ impl std::error::Error for CompletionFailure {}
 
 
 // ----------------------------------------------------------------------
-// Java: Symbol subclass constructors (P2 ClassReader batch). The ClassSymbol
+// Java: Symbol subclass constructors (P2 ClassReader). The ClassSymbol
 // constructor is produced by Symtab.enterClass (fullname/flatname); these
 // helpers cover the member symbols.
 // ----------------------------------------------------------------------
@@ -1214,7 +1214,7 @@ impl Symbol {
 
 
 // ----------------------------------------------------------------------
-// Java: Symbol accessor methods needed by the ClassReader batch.
+// Java: Symbol accessor methods needed by the ClassReader.
 // ----------------------------------------------------------------------
 impl Symbol {
     /// Java: public boolean hasOuterInstance()
@@ -1272,7 +1272,7 @@ impl Symbol {
 
 // ----------------------------------------------------------------------
 // Java: RecordComponent constructor + ClassSymbol.setRecordComponents
-// (Record attribute batch).
+// (Record attribute).
 // ----------------------------------------------------------------------
 impl Symbol {
     /// Java: public RecordComponent(Name name, Type type, Symbol owner)
@@ -1335,7 +1335,7 @@ impl Symbol {
     }
 }
 // ----------------------------------------------------------------------
-// Java: Symbol owner-chain helpers (P3/Enter batch). The upstream methods use
+// Java: Symbol owner-chain helpers (P3/Enter). The upstream methods use
 // the implicit `this`; the arena port takes the SymbolId and the context
 // (ADR 0001 explicit-context adapter).
 // ----------------------------------------------------------------------
@@ -1857,16 +1857,16 @@ impl Symbol {
 }
 
 // ---------------------------------------------------------------------------
-// Symbol batch 4: isSubClass/isMemberOf/isAccessibleIn/isInheritedIn/overrides/
+// Symbol : isSubClass/isMemberOf/isAccessibleIn/isInheritedIn/overrides/
 // implementation (Symbol.java:341/545/620-760/1389/1995-2200), 1:1.
 // The Java class hierarchy is expressed by dispatching on SymbolKind (registered
-// §9 adapter); the free functions carry the explicit Types/Symtab/CompilerContext
+// adapter adapter); the free functions carry the explicit Types/Symtab/CompilerContext
 // services (ADR 0001).
 // ---------------------------------------------------------------------------
 
 /// Java: public Symbol baseSymbol() (Symbol.java:341-343). The upstream override
 /// is materialized by Symbol.clone() subclasses; the port has no clone, so a
-/// symbol is its own base symbol (registered §9).
+/// symbol is its own base symbol (registered Porting rules).
 pub fn base_symbol(ctx: &crate::compiler_context::CompilerContext, sym: SymbolId) -> SymbolId {
     if let Some(over) = ctx.sym(sym).base_symbol_override {
         return over;
@@ -1954,7 +1954,7 @@ pub fn is_accessible_in(
                 break;
             }
             // Java: while (sup.type.hasTag(TYPEVAR))
-            //           sup = sup.type.getUpperBound().tsym;
+            // sup = sup.type.getUpperBound().tsym;
             let mut sup_ty = ctx.sym(sup_sym).ty.expect("supertype");
             while ctx
                 .typ(sup_ty)

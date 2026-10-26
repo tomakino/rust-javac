@@ -1,43 +1,43 @@
 // Origin: com/sun/tools/javac/code/ClassFinder.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of ClassFinder.java):
+// Gap registration (method-level audit of ClassFinder.java):
 // Dependency/phase: P2/S3 (ClassFinder body; the file layer JavaFileManager/
 // Locations/JavacFileManager/JRTIndex is ported in this crate and injected).
 //
 // Ported in this file:
 // - ClassFinder structure (fields for reader/log/names/file manager/dependencies/
-//   dcfh/source completer/current file+owner/profile/jrtIndex/flags);
+// dcfh/source completer/current file+owner/profile/jrtIndex/flags);
 // - getCompleter (via a Weak self reference, registered adapter), new
-//   (constructor; useCtProps/jrtIndex injection registered adapter),
-//   getSupplementaryFlags (jrtIndex==null path; Some path registered TODO),
-//   complete, completeOwners, completeEnclosing, fillIn(ClassSymbol),
-//   classFileNotFound, newCompletionFailure, loadClass, includeClassFile,
-//   preferredFileObject, getPackageFileKinds, extraFileActions,
-//   fillIn(PackageSymbol), scanModulePaths, scanUserPaths, scanPlatformPath,
-//   fillIn(package,location,files) and list();
+// (constructor; useCtProps/jrtIndex injection registered adapter),
+// getSupplementaryFlags (jrtIndex==null path; Some path registered TODO),
+// complete, completeOwners, completeEnclosing, fillIn(ClassSymbol),
+// classFileNotFound, newCompletionFailure, loadClass, includeClassFile,
+// preferredFileObject, getPackageFileKinds, extraFileActions,
+// fillIn(PackageSymbol), scanModulePaths, scanUserPaths, scanPlatformPath,
+// fillIn(package,location,files) and list();
 // - BadClassFile/BadEnclosingMethodAttr (previously ported).
 //
 // Still not ported (no substitutes):
 // - NOT PORTED: instance(Context) — the port injects dependencies in new();
 // - NOT PORTED: annotate.blockAnnotations/unblockAnnotationsNoFlush/flush
-//   calls in complete() — Annotate batch (registered TODO in the method);
+// calls in complete() — Annotate (registered TODO in the method);
 // - NOT PORTED: getSupplementaryFlags jrtIndex!=null path (JRTIndex.isInJRT
-//   needs the PathFileObject downcast; JRTIndex integration batch);
+// needs the PathFileObject downcast; JRTIndex integration);
 // - NOT PORTED: verbose path printing (StandardJavaFileManager.getLocationAsPaths
-//   is not part of the ported JavaFileManager trait);
+// is not part of the ported JavaFileManager trait);
 // - NOT PORTED: newCompletionFailure cached CompletionFailure reuse (the port
-//   allocates a fresh error value; the upstream reuse is a pure allocation
-//   optimization, registered adapter);
+// allocates a fresh error value; the upstream reuse is a pure allocation
+// optimization, registered adapter);
 // - NOT PORTED: module completer (Modules not ported; msym.complete() TODO).
 //
 // Registered adapters:
 // - getCompleter/thisCompleter -> Weak<RefCell<ClassFinder>> self reference
-//   (no Context singletons, ADR 0001);
+// (no Context singletons, ADR 0001);
 // - constructor useCtProps/jrtIndex computation -> jrt_index parameter supplied
-//   by the bootstrap;
+// by the bootstrap;
 // - Iterator<JavaFileObject> (list) -> Vec of filtered file objects (same
-//   filtering and HAS_RESOURCE marking);
+// filtering and HAS_RESOURCE marking);
 // - standard location comparisons -> Location.get_name() equality (StandardLocation
-//   values are singletons upstream).
+// values are singletons upstream).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -225,20 +225,20 @@ impl ClassFinder {
             self.dependencies
                 .borrow_mut()
                 .push(ctx, c, CompletionCause::CLASS_READER);
-            // TODO(Annotate batch): annotate.blockAnnotations();
+            // TODO(Annotate): annotate.blockAnnotations();
             let error_scope = ctx.scope_create_error(Some(c));
             if let SymData::ClassSymbol { members_field, .. } = &mut ctx.sym_mut(c).kind_data {
                 *members_field = Some(error_scope);
             }
             let result = self.complete_class_body(ctx, syms, c);
-            // TODO(Annotate batch): annotate.unblockAnnotationsNoFlush();
+            // TODO(Annotate): annotate.unblockAnnotationsNoFlush();
             self.dependencies.borrow_mut().pop();
             result?;
         } else if ctx.sym(sym).kind == SymKind::PCK {
             let p = sym;
             self.fill_in_package(ctx, syms, p)?;
         }
-        // TODO(Annotate batch): if (!reader.filling) annotate.flush();
+        // TODO(Annotate): if (!reader.filling) annotate.flush();
         Ok(())
     }
 
@@ -359,7 +359,7 @@ impl ClassFinder {
             }
         } else {
             // Java: if (!sourceCompleter.isTerminal()) sourceCompleter.complete(c);
-            //       else throw new IllegalStateException(...)
+            // else throw new IllegalStateException(...)
             let source_completer = self.source_completer.borrow().clone();
             match source_completer {
                 Some(completer) if !completer.borrow().is_terminal() => {
@@ -1389,7 +1389,7 @@ mod tests {
         let java_base = syms.java_base;
         // Test bootstrap: the upstream Modules sets the system module locations;
         // Modules is not ported yet, so the platform class location is installed
-        // here (registered adapter, see the batch report).
+        // here (registered adapter, see the registration).
         if let SymbolKind::ModuleSymbol { class_location, .. } =
             &mut ctx.sym_mut(java_base).kind_data
         {

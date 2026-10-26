@@ -1,9 +1,9 @@
 // Origin: com/sun/tools/javac/parser/JavadocTokenizer.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: dependent service batch (see docs/PLAN.md).
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: dependent service (see docs/PLAN.md).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: ensure (JavadocTokenizer.java:398)
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! An extension to the base lexical analyzer (JavaTokenizer) that captures and
 //! processes the contents of doc comments.
@@ -203,7 +203,7 @@ impl JavadocComment {
                 let mut reader = self.reader.borrow_mut();
                 // Consume whitespace from the beginning of each line.
                 reader.skip_whitespace();
-                // Are there stars here?  If so, consume them all
+                // Are there stars here? If so, consume them all
                 // and check for the end of comment.
                 if reader.is('*') {
                     reader.skip('*');
@@ -227,7 +227,7 @@ impl JavadocComment {
                     // This is the end of the comment, return the contents.
                     break 'outer_loop;
                 } else if reader.is_one_of('\n', '\r') {
-                    // We've seen a newline.  Add it to our buffer.
+                    // We've seen a newline. Add it to our buffer.
                     // (put_unit reads the position-tracking reader; release the
                     // mutable borrow first so the RefCell adapter is not re-entered.)
                     drop(reader);

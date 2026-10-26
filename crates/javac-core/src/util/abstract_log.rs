@@ -25,9 +25,9 @@
 //! - the DiagnosticSource parameter is now forwarded to the JCDiagnostic.Factory
 //!   calls exactly like the upstream methods (the source field and
 //!   getDiagnosticSource() were restored together with the diagnostic
-//!   formatter batch); the directError hook is expressed by the
+//!   formatter); the directError hook is expressed by the
 //!   DiagnosticSourceLog trait (see diagnostic_source.rs) and is wired by the
-//!   Log batch when the concrete log exists.
+//!   Log when the concrete log exists.
 
 use std::rc::Rc;
 
@@ -85,7 +85,7 @@ pub trait AbstractLog {
         {
             return existing;
         }
-        // TODO(Log batch): pass the log itself as DiagnosticSourceLog once the
+        // TODO(Log): pass the log itself as DiagnosticSourceLog once the
         // concrete Log exists (the Java code passes this).
         let source = Rc::new(DiagnosticSource::new(Rc::clone(&file), None));
         self.source_map().push((file, Rc::clone(&source)));

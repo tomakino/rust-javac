@@ -150,3 +150,4 @@ file/locations/classfinder 适配 helper、资源生成器。后续按优先级�
   session_usage/current_time/task_timer 仅附表,不解释、不作为调整范围/质量/验证的理由。
 - 注释规范(PORTING_RULES §26):新代码 100% /// 注释,与上游 Javadoc 对齐(摘要/参数/返回/异常/上游行号);旧代码随批次补。
 - 源码语言(PORTING_RULES §27):注释/运行时消息英文,禁止中文与『批N』标记进入 .rs;TODO 统一英文格式;历史中文注释按批次清理。
+- 注释规范补充(§28):源码注释禁止内部规则编号(§N)/批次标记;适配说明用英文自然语句,集中清单放 docs/ADAPTERS.md;历史标注随触及清理。

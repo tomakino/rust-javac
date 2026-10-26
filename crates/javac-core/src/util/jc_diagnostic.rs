@@ -29,7 +29,7 @@
 //!   upstream subclasses are Error / Warning / Note / Fragment newtypes used
 //!   by the Factory keys (Java type distinction is kept, registered section 9).
 //!
-//! PORTING_RULES (diagnostic formatter batch):
+//! PORTING_RULES (diagnostic formatter):
 //! - DiagnosticSource is now ported (util/diagnostic_source.rs), so the source
 //!   field, getSource() / getDiagnosticSource(), the line/column computation and
 //!   the upstream constructor check are restored; the Factory methods take the
@@ -43,16 +43,16 @@
 //!
 //! NOT PORTED IN THIS STEP (dependencies are not ported yet; no substitute
 //! logic is written, tracked in docs/STATUS.md):
-//! - Options (next batch): Factory::instance does not run initOptions (the
+//! - Options (next): Factory::instance does not run initOptions (the
 //!   onlySyntaxErrorsUnrecoverable option) and does not register an option
 //!   listener;
 //! - the deprecated static JCDiagnostic.fragment(key, args) /
 //!   getFragmentFormatter() helpers need JavacMessages.getDefaultMessages plus
 //!   the BasicDiagnosticFormatter (the formatter is ported; the deprecated
-//!   static helper batch is not) and are not provided;
-//! - Lint.LintCategory (code/Lint batch) is represented by the minimal
+//!   static helper is not) and are not provided;
+//! - Lint.LintCategory (code/Lint) is represented by the minimal
 //!   LintCategory holder at the bottom of this module; the full class moves to
-//!   code/lint.rs in the Lint batch (registered).
+//!   code/lint.rs in the Lint (registered).
 
 // The upstream setFlag switch is copied verbatim; the clippy style suggestion to
 // collapse the outer type check into the match is not applied (PORTING_RULES
@@ -369,7 +369,7 @@ fn contract_args_to_args(args: &[contract::DiagnosticArg]) -> Vec<DiagnosticArg>
 
 /// Java: Lint.LintCategory
 ///
-/// PORTING_RULES: the Lint batch ported the real class in code/lint.rs; the
+/// PORTING_RULES: the Lint ported the real class in code/lint.rs; the
 /// temporary dependency holder of the JCDiagnostic step is replaced by this
 /// re-export (registered section 9).
 pub use crate::code::lint::LintCategory;
@@ -385,7 +385,7 @@ pub struct JCDiagnostic {
     position: Option<Rc<dyn DiagnosticPosition>>,
     /// Java: private final DiagnosticInfo diagnosticInfo
     diagnostic_info: DiagnosticInfo,
-    /// Java: private final Set<DiagnosticFlag> flags (EnumSet -> Vec, §9).
+    /// Java: private final Set<DiagnosticFlag> flags (EnumSet -> Vec, Porting rules).
     flags: Vec<DiagnosticFlag>,
     /// Java: private final LintCategory lintCategory (null -> None)
     lint_category: Option<LintCategory>,
@@ -410,8 +410,8 @@ impl JCDiagnostic {
         position: Option<Rc<dyn DiagnosticPosition>>,
     ) -> JCDiagnostic {
         // Java: if (source == null && pos != null &&
-        //            pos.getPreferredPosition() != Position.NOPOS)
-        //     throw new IllegalArgumentException();
+        // pos.getPreferredPosition() != Position.NOPOS)
+        // throw new IllegalArgumentException();
         if source.is_none()
             && let Some(position) = &position
             && position.get_preferred_position() != NOPOS
@@ -780,7 +780,7 @@ pub struct Factory {
     formatter: Option<Rc<dyn DiagnosticFormatter<JCDiagnostic>>>,
     /// Java: final String prefix
     prefix: String,
-    /// Java: final Set<DiagnosticFlag> defaultErrorFlags (EnumSet -> Vec, §9)
+    /// Java: final Set<DiagnosticFlag> defaultErrorFlags (EnumSet -> Vec, Porting rules)
     default_error_flags: Vec<DiagnosticFlag>,
 }
 
@@ -789,7 +789,7 @@ impl Factory {
     ///
     /// Java: public static Factory instance(Context context)
     ///
-    /// TODO(Options batch): the upstream protected Factory(Context) initializes
+    /// TODO(Options): the upstream protected Factory(Context) initializes
     /// Options (onlySyntaxErrorsUnrecoverable) and registers an option listener;
     /// Options are not ported yet, so instance() only creates/registers the
     /// factory (registered in the module doc).

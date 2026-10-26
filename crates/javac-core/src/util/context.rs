@@ -1,9 +1,9 @@
 // Origin: com/sun/tools/javac/util/Context.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: P2/P3 utility-service batch.
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P2/P3 utility-service.
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: uncheckedCast (Context.java:201)
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! Support for an abstract context, modelled loosely after ThreadLocal
 //! but using a user-provided context instead of the current thread.

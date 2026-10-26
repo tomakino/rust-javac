@@ -9,37 +9,37 @@
 //! deletion without notice.</b>
 //!
 //! PORTING_RULES:
-//! - the Java PrintWriter table maps to Rc<RefCell<dyn std::io::Write>>
-//!   (interior mutability is white-listed for the log streams, registered
-//!   section 9); the Java println line separator is modelled as '\n' (the same
-//!   platform-independent decision as Pretty, registered);
-//! - Log is stored as Rc<RefCell<Log>> in the Context (the Java class is a
-//!   mutable shared object with a context key); Log::instance returns it and
-//!   registers the Options listener (the Java constructor registers it);
-//! - the DiagnosticHandler class hierarchy maps to the closed DiagnosticHandler
-//!   enum (Default / Discard / Deferred); the Java constructor-installs-itself
-//!   idiom maps to Log::install_diagnostic_handler and the Java
-//!   popDiagnosticHandler(h) maps to Log::pop_diagnostic_handler (registered);
-//!   Deferred uses VecDeque instead of a Queue and the filter is a
-//!   Box<dyn Fn(&JCDiagnostic) -> bool>;
-//! - Set<Pair<JavaFileObject,Integer>> -> Vec with Rc identity + integer
-//!   equality (JavaFileObject does not override equals);
-//!   Set<Pair<JavaFileObject,List<String>>> -> Vec with identity + list content
-//!   equality (registered);
-//! - Object varargs -> DiagnosticArg (Rc<dyn Any>) as in JCDiagnostic; localize
-//!   renders the arguments through java_value_to_string (a supported value set,
-//!   TODO for the remaining types; registered);
-//! - the Context keys: logKey -> Context::<RefCell<Log>>, outKey/errKey ->
-//!   Context::<LogOutput> (a WriterHandle newtype because Context keys are type
-//!   based), DiagnosticListener -> Context::<LogDiagnosticListener>;
-//! - NOT PORTED IN THIS STEP (dependencies not ported yet; no substitute):
-//!   * Main.javacBundleName (main/Main is not ported): the javac resource bundle
-//!     is not added to JavacMessages by the ported Log (TODO Main batch);
-//!   * Log.format(Locale, String, Object...) (java.util.Formatter, no javac call
-//!     site);
-//!   * the private useRawMessages test backdoor.
-//! - System.in prompt: the upstream interactive loop is ported literally
-//!   (a/A -> std::process::exit(-1), r/R -> return, x/X -> panic "user abort").
+//!   - the Java PrintWriter table maps to Rc<RefCell<dyn std::io::Write>>
+//!     (interior mutability is white-listed for the log streams, registered
+//!     section 9); the Java println line separator is modelled as '\n' (the same
+//!     platform-independent decision as Pretty, registered);
+//!   - Log is stored as Rc<RefCell<Log>> in the Context (the Java class is a
+//!     mutable shared object with a context key); Log::instance returns it and
+//!     registers the Options listener (the Java constructor registers it);
+//!   - the DiagnosticHandler class hierarchy maps to the closed DiagnosticHandler
+//!     enum (Default / Discard / Deferred); the Java constructor-installs-itself
+//!     idiom maps to Log::install_diagnostic_handler and the Java
+//!     popDiagnosticHandler(h) maps to Log::pop_diagnostic_handler (registered);
+//!     Deferred uses VecDeque instead of a Queue and the filter is a
+//!     Box<dyn Fn(&JCDiagnostic) -> bool>;
+//!   - Set<Pair<JavaFileObject,Integer>> -> Vec with Rc identity + integer
+//!     equality (JavaFileObject does not override equals);
+//!     Set<Pair<JavaFileObject,List<String>>> -> Vec with identity + list content
+//!     equality (registered);
+//!   - Object varargs -> DiagnosticArg (Rc<dyn Any>) as in JCDiagnostic; localize
+//!     renders the arguments through java_value_to_string (a supported value set,
+//!     TODO for the remaining types; registered);
+//!   - the Context keys: logKey -> Context::<RefCell<Log>>, outKey/errKey ->
+//!     Context::<LogOutput> (a WriterHandle newtype because Context keys are type
+//!     based), DiagnosticListener -> Context::<LogDiagnosticListener>;
+//!   - NOT PORTED IN THIS STEP (dependencies not ported yet; no substitute):
+//!     * Main.javacBundleName (main/Main is not ported): the javac resource bundle
+//!       is not added to JavacMessages by the ported Log (TODO Main);
+//!     * Log.format(Locale, String, Object...) (java.util.Formatter, no javac call
+//!       site);
+//!     * the private useRawMessages test backdoor.
+//!   - System.in prompt: the upstream interactive loop is ported literally
+//!     (a/A -> std::process::exit(-1), r/R -> return, x/X -> panic "user abort").
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -170,6 +170,10 @@ pub enum DiagnosticHandler {
         deferred: VecDeque<JCDiagnostic>,
         filter: Option<DiagnosticFilter>,
     },
+    /// Java: Analyzer.RewritingContext's anonymous DiagnosticHandler: report
+    /// only marks the rewriting as erroneous (adapter: the anonymous subclass is
+    /// this variant).
+    Analyzer { erroneous: std::rc::Rc<std::cell::Cell<bool>> },
 }
 
 impl DiagnosticHandler {
@@ -182,6 +186,7 @@ impl DiagnosticHandler {
             }
             DiagnosticHandler::Discard { prev } => *prev = handler,
             DiagnosticHandler::Deferred { prev, .. } => *prev = handler,
+            DiagnosticHandler::Analyzer { .. } => {}
         }
     }
 
@@ -191,6 +196,7 @@ impl DiagnosticHandler {
             DiagnosticHandler::Default => None,
             DiagnosticHandler::Discard { prev } => prev.take(),
             DiagnosticHandler::Deferred { prev, .. } => prev.take(),
+            DiagnosticHandler::Analyzer { .. } => None,
         }
     }
 
@@ -199,6 +205,9 @@ impl DiagnosticHandler {
         match self {
             DiagnosticHandler::Default => log.default_report(diag),
             DiagnosticHandler::Discard { .. } => {}
+            DiagnosticHandler::Analyzer { erroneous } => {
+                erroneous.set(true);
+            }
             DiagnosticHandler::Deferred {
                 prev,
                 deferred,
@@ -374,7 +383,7 @@ impl Log {
             .get::<LogDiagnosticListener>()
             .map(|listener| Rc::clone(&listener.0));
         let messages = JavacMessages::instance(context);
-        // TODO(Main batch): messages.add(Main.javacBundleName); (main/Main is
+        // TODO(Main): messages.add(Main.javacBundleName); (main/Main is
         // not ported yet, so the javac resources are not added here).
         let options = Options::instance(context);
         let mut log = Log {
@@ -409,7 +418,7 @@ impl Log {
     fn init_options(&mut self, options: &Options) {
         // Java: options.isSet(DOE) / isSet(PROMPT) - main/Option does not list
         // DOE/PROMPT yet, so the primary names (-doe / -prompt) are used
-        // (equivalently, TODO Option batch).
+        // (equivalently, TODO Option).
         self.dump_on_error = options.is_set("-doe");
         self.prompt_on_error = options.is_set("-prompt");
         self.emit_warnings = options.is_unset_choice(MainOption::XLINT_CUSTOM, "none");

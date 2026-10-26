@@ -1,6 +1,6 @@
 // Origin: com/sun/tools/javac/file/JavacFileManager.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: P2 ClassReader / API batch.
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P2 ClassReader / API.
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: preRegister (JavacFileManager.java:150)
 // - NOT PORTED: isValidName (JavacFileManager.java:235)
@@ -21,10 +21,10 @@
 // - NOT PORTED: hasNext (JavacFileManager.java:1300)
 // - NOT PORTED: asFiles (JavacFileManager.java:1311)
 // - NOT PORTED: hasNext (JavacFileManager.java:1319)
-// End of §19 gap registration.
+// End of Gap registration.
 //
-// clippy debt registration (pre-existing file-manager batch items, NOT S7b;
-// cleanup in the file-manager/classpath batch): capitalized-acronym names
+// clippy debt registration (pre-existing file-manager items, NOT S7b;
+// cleanup in the file-manager/classpath): capitalized-acronym names
 // FORWARD/REVERSE (upstream names kept, section 3), match-to-let 497,
 // sort_by_key 611, &PathBuf 814, ?-operator 836, length-comparison 947/971,
 // unused imports/path_buf/clone-to-slice in the test module (1230-1458).
@@ -34,7 +34,7 @@
 //!
 //! <p><b>This is NOT part of any supported API.</b>
 //!
-//! PORTING_RULES (S3c batch):
+//! PORTING_RULES (S3c):
 //! * Java JavacFileManager extends BaseFileManager implements StandardJavaFileManager; the Rust
 //!   value composes BaseFileManager (base: RefCell<...>) and implements the JavaFileManager and
 //!   StandardJavaFileManager traits (javac-tools).  The mutable shared object of javac is exposed
@@ -51,7 +51,7 @@
 //! * org.openjdk.javac's container abstraction: Java private interface Container with the nested
 //!   DirectoryContainer/JRTImageContainer/ArchiveContainer classes becomes a private Rust trait
 //!   plus structs.  Directory and JRT image containers are ported here; ArchiveContainer
-//!   (java.nio zip/jar FileSystem) is the second S3c batch (TODO in getContainer).
+//!   (java.nio zip/jar FileSystem) is the second S3c (TODO in getContainer).
 //! * FileObject downcast: Java uses instanceof PathFileObject to implement isSameFile /
 //!   inferBinaryName / asPath / contains.  Rust trait objects cannot be downcast, so every
 //!   PathFileObject created by this manager is registered in a thread-local name -> Weak table
@@ -61,13 +61,13 @@
 //! * io PathFactory: StandardJavaFileManager.setPathFactory stores an Option<Rc<dyn PathFactory>>;
 //!   the Locations-side PathFactory (Java locations.setPathFactory) is TODO(S3b follow-up).
 //! * jar/jmod/ct.sym containers, PathFileObject JAR/JRT content readers and SigJavaFileObject are
-//!   the second S3c batch (reported).  The directory and system-image containers, the container
+//!   the second S3c (reported).  The directory and system-image containers, the container
 //!   cache, location/search-path APIs, module location delegation and the whole JavaFileManager
 //!   surface are ported and tested here.
 //! * known gaps: getClassLoader (URLClassLoader/reflection, TODO(P6)); handleOption(String,
-//!   Iterator) (OptionHelper not ported, TODO(OptionHelper batch)); ServiceLoader; close's
+//!   Iterator) (OptionHelper not ported, TODO(OptionHelper)); ServiceLoader; close's
 //!   deferredClose path (daemon thread, TODO(P6)); multiReleaseValue archive file systems
-//!   (second batch).  Java warnings are not emitted (TODO(Log batch)).
+//!   (second).  Java warnings are not emitted (TODO(Log)).
 //! * user.dir (getFileForOutput fallback) -> std::env::current_dir (no JVM system property).
 
 use std::cell::{Cell, RefCell};
@@ -920,7 +920,7 @@ impl JavaFileManager for JavacFileManager {
         _remaining: &mut dyn Iterator<Item = JavaString>,
     ) -> bool {
         // Java: Option.lookup(current, javacFileManagerOptions) + Option.handleOption(OptionHelper);
-        // OptionHelper/GrumpyHelper are not ported (TODO(OptionHelper batch)); no substitute
+        // OptionHelper/GrumpyHelper are not ported (TODO(OptionHelper)); no substitute
         // handling is invented.
         unimplemented!(
             "TODO(OptionHelper batch): JavacFileManager.handleOption(String, Iterator)"

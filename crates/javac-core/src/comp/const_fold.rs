@@ -2,13 +2,13 @@
 //
 // PORTING_RULES:
 // - ADR 0001: the ported ConstFold takes the services explicitly; the upstream
-//   ConstFold.instance(Context)/(Context) constructor is registered with the
-//   Context registration batch.
-// - §9 adapter: the Java boolean constant value is Integer(0/1) upstream
-//   (ConstFold.b2i); the ported closed ConstantValue domain has a Boolean
-//   variant, so boolean results use ConstantValue::Boolean (same value domain).
+// ConstFold.instance(Context)/(Context) constructor is registered with the
+// Context registration.
+// - adapter adapter: the Java boolean constant value is Integer(0/1) upstream
+// (ConstFold.b2i); the ported closed ConstantValue domain has a Boolean
+// variant, so boolean results use ConstantValue::Boolean (same value domain).
 // - number conversions implement the java.lang.Number narrowing semantics used
-//   by the upstream intValue/longValue/floatValue/doubleValue helpers.
+// by the upstream intValue/longValue/floatValue/doubleValue helpers.
 
 use crate::code::symtab::Symtab;
 use crate::code::type_tag::TypeTag;

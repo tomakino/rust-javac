@@ -1,19 +1,19 @@
 // Origin: com/sun/tools/javac/tree/TreeMaker.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: tree batch (tree nodes/scanners for the corresponding upstream feature).
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: tree (tree nodes/scanners for the corresponding upstream feature).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: SpeculativeNewClass (TreeMaker.java:407) / classDeclRemoved
-//   (TreeMaker.java:417): the anonymous JCNewClass subclass override has no arena
-//   mapping yet (registered; the JCNewClass node has no classDeclRemoved flag).
+// (TreeMaker.java:417): the anonymous JCNewClass subclass override has no arena
+// mapping yet (registered; the JCNewClass node has no classDeclRemoved flag).
 // - NOT PORTED: Literal(Object) Byte/Short branches (TreeMaker.java:899-996):
-//   the ported tree::jc_tree::LiteralValue value domain has no Byte/Short
-//   variants (registered: literal value domain batch); the remaining wrapper
-//   types (Integer/Long/Float/Double/Character/Boolean/String) are ported.
+// the ported tree::jc_tree::LiteralValue value domain has no Byte/Short
+// variants (registered: literal value domain); the remaining wrapper
+// types (Integer/Long/Float/Double/Character/Boolean/String) are ported.
 // - The AnnotationBuilder (TreeMaker.java:929-996) is expressed as TreeMaker
-//   visitor methods (visit_constant_attribute/visit_class_attribute/...), the
-//   Rust equivalent of the Java inner class (registered adapter); the visitor
-//   dispatch is the AttributeKind match.
-// End of §19 gap registration.
+// visitor methods (visit_constant_attribute/visit_class_attribute/...), the
+// Rust equivalent of the Java inner class (registered adapter); the visitor
+// dispatch is the AttributeKind match.
+// End of Gap registration.
 
 //! A factory for JCTree nodes: the upstream TreeMaker keeps the current position and the
 //! toplevel tree, and its makeXxx methods allocate JCxxx values; the JCTree.Factory interface
@@ -21,29 +21,29 @@
 //!
 //! <p><b>This is NOT part of any supported API.</b>
 //!
-//! PORTING_RULES (S3 batch):
+//! PORTING_RULES (S3):
 //! * JCTree is a value in the CompilerContext tree arena: Java "new JCxxx(); tree.pos = pos"
 //!   becomes ctx.alloc_tree(JCTree { pos, ty: None, tag, kind }) (TreeId returned; see ADR 0001).
-//! * Java null child references are Option<TreeId>; child lists are List<TreeId>.  A Java
+//! * Java null child references are Option<TreeId>; child lists are List<TreeId>. A Java
 //!   null list argument (e.g. the JCExpression extending of a class) maps to Option too, but
 //!   the makeXxx list parameters are kept as List<TreeId> (callers pass List::nil()).
 //! * TreeMaker is a mutable shared object in javac (Parser keeps one); the Rust instance is
 //!   Rc<RefCell<TreeMaker>> (the interior-mutability whitelist used for Options/Log; registered).
 //! * Names is ported (util::names::Names), but the Java Names.instance(Context) adapter is not;
 //!   TreeMaker::instance reads an Option<Rc<Names>> from the Context (registered by the
-//!   caller when available) and the field stays None until then.  Types and Symtab are now
+//!   caller when available) and the field stays None until then. Types and Symtab are now
 //!   ported services but they are passed explicitly (the Types service is stateful and Symtab
 //!   is &mut at the call sites; ADR 0001); the upstream TreeMaker fields types/syms are
 //!   therefore not stored, and the Symbol/Type convenience factories (Ident(Symbol),
 //!   QualIdent, Type(Type), VarDef(VarSymbol), MethodDef(MethodSymbol), TypeParam, Param(s),
-//!   This/Super/ClassLiteral, Create, ...) take ctx/syms (and Types where required) as
+//!   This/Super/ClassLiteral, Create,...) take ctx/syms (and Types where required) as
 //!   explicit parameters (see TreeMaker.java:703-1144; the Attribute/constType based helpers
-//!   remain registered NOT PORTED, see the §19 list above).
+//!   remain registered NOT PORTED, see the Registration list above).
 //! * at(DiagnosticPosition) takes Option<&dyn DiagnosticPosition> (Java null means NOPOS);
 //!   getStartPosition -> DiagnosticPosition::get_start_position.
 //! * JCLambda/conditional/member-reference constructor defaults: the Java constructors set
 //!   PolyKind.STANDALONE and ParameterKind.EXPLICIT (JCLambda(..., body) constructor); these
-//!   are reproduced.  JCMemberReference.kind is null until Attr in the upstream parser
+//!   are reproduced. JCMemberReference.kind is null until Attr in the upstream parser
 //!   (JCMemberReference constructor does not set it); Rust models the null as Option::None.
 
 // The upstream Factory signatures are kept 1:1 (MethodDef has 9 arguments, plus the arena
@@ -201,7 +201,7 @@ impl TreeMaker {
 /// Java: JCTree.Factory — the node factory interface implemented by TreeMaker.
 ///
 /// PORTING_RULES: Java nested interface JCTree.Factory -> trait TreeFactory (Rust traits cannot
-/// be nested); every method takes the CompilerContext arena first, and returns TreeId.  Java
+/// be nested); every method takes the CompilerContext arena first, and returns TreeId. Java
 /// overloads are renamed with a suffix (docs/PORTING_RULES.md section 3): class_def (6 args) /
 /// class_def_permitting (7), method_def (with recvparam) / method_def_simple (without),
 /// var_def / var_def_declared_using_var, try_block / try_with_resources, modifiers_with_annotations,
@@ -716,7 +716,7 @@ impl TreeFactory for TreeMaker {
         init: StdOption<TreeId>,
         declared_using_var: bool,
     ) -> TreeId {
-        // Java: JCVariableDecl.declaredUsingVar has no Rust field yet (TODO(Symtab batch));
+        // Java: JCVariableDecl.declaredUsingVar has no Rust field yet (TODO(Symtab));
         // the flag is accepted and ignored until the field is added (reported).
         let _ = declared_using_var;
         self.var_def(ctx, mods, name, vartype, init)
@@ -2275,7 +2275,7 @@ impl TreeMaker {
     /// Java: public JCLiteral Literal(Object value) — TypeTag inferred from the
     /// wrapper type (the Attribute/constType part of the upstream method is
     /// registered NOT PORTED, see the file header; the constant type is not set
-    /// until the Types.constType batch).
+    /// until the Types.constType).
     pub fn literal_object(&mut self, ctx: &mut CompilerContext, value: LiteralValue) -> TreeId {
         let typetag = match &value {
             LiteralValue::Integer(_) => TypeTag::INT,
@@ -2320,7 +2320,7 @@ impl TreeMaker {
         if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP && self.toplevel.is_some() {
             // Java: the named/star import scopes and the package members are
             // queried; the Scope import query is not ported yet (registered
-            // TODO(Scope query batch)).
+            // TODO(Scope query)).
             unimplemented!(
                 "TODO(Scope query batch): TreeMaker.isUnqualifiable import/package scope lookups"
             )
@@ -2328,7 +2328,7 @@ impl TreeMaker {
         false
     }
 
-    /// Java: public Name paramName(int i)   { return names.fromString("x" + i); }
+    /// Java: public Name paramName(int i) { return names.fromString("x" + i); }
     pub fn param_name(&mut self, i: i32) -> Name {
         self.str_name(&format!("x{i}"))
     }
@@ -2665,6 +2665,19 @@ fn class_type_arguments(ctx: &CompilerContext, t: crate::ids::TypeId) -> List<cr
     }
 }
 
+
+impl TreeMaker {
+    /// adapter helper: public wrapper of the private block factory (JCTree.java:1040).
+    pub fn block_pub(&mut self, ctx: &mut CompilerContext, flags: i64, stats: List<TreeId>) -> TreeId {
+        self.block(ctx, flags, stats)
+    }
+
+    /// adapter helper: public wrapper of the private lambda factory (JCTree.java:1280).
+    pub fn lambda_pub(&mut self, ctx: &mut CompilerContext, params: List<TreeId>, body: TreeId) -> TreeId {
+        self.lambda(ctx, params, body)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{TreeFactory, TreeMaker};
@@ -2831,7 +2844,7 @@ mod tests {
     #[test]
     fn pretty_prints_maker_built_expressions_and_statements() {
         // NOTE: Pretty.printUnit is not used here: its import filtering needs isUsed/TreeScanner
-        // (unimplemented in the pretty batch, not part of this task).  The expression/statement
+        // (unimplemented in the pretty , not part of this task). The expression/statement
         // printers are complete, so the integration test covers those.
         let (mut ctx, mut maker) = new_maker();
         let one = maker

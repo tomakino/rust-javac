@@ -1,6 +1,6 @@
 // Origin: com/sun/tools/javac/tree/TreeInfo.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: tree batch (tree nodes/scanners for the corresponding upstream feature).
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: tree (tree nodes/scanners for the corresponding upstream feature).
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: getTree (TreeInfo.java:663)
 // - NOT PORTED: getStartPosition (TreeInfo.java:664)
@@ -19,7 +19,7 @@
 // - NOT PORTED: scan (TreeInfo.java:810)
 // - NOT PORTED: scan (TreeInfo.java:1308)
 // - NOT PORTED: visitAnnotation (TreeInfo.java:1314)
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! Utility class containing inspector methods for trees.
 //!
@@ -1043,7 +1043,7 @@ fn symbol_for_impl(ctx: &CompilerContext, node: TreeId) -> Option<SymbolId> {
 
 /// Java: public static DiagnosticPosition diagEndPos(JCTree tree)
 /// (TreeInfo.java:660-673): the ported diagnostic-position surface is the
-/// preferred start position (i32); see the module note (§9 adapter).
+/// preferred start position (i32); see the module note (Porting rules adapter).
 pub fn diag_end_pos(ctx: &CompilerContext, tree: TreeId) -> i32 {
     end_pos(ctx, tree)
 }
@@ -1076,7 +1076,7 @@ pub fn flags(ctx: &CompilerContext, tree: TreeId) -> i64 {
 
 /// Java: public static DiagnosticPosition diagnosticPositionFor(final Symbol
 /// sym, final JCTree tree) (TreeInfo.java:711-733): the ported surface is the
-/// tree start position (§9 adapter).
+/// tree start position (Porting rules adapter).
 pub fn diagnostic_position_for(
     ctx: &CompilerContext,
     _sym: crate::ids::SymbolId,
@@ -1557,7 +1557,7 @@ pub fn contains_type_annotation(ctx: &mut CompilerContext, e: TreeId) -> bool {
 }
 
 
-/// Batch 5 helper (§9 registered): mirrors "tree instanceof JCExpression"
+/// helper (Porting rules registered): mirrors "tree instanceof JCExpression"
 /// (JCTree.java class hierarchy) by the node tag. Used by Attr.PostAttrAnalyzer
 /// (Attr.java:5824-5930) which only initializes types of expression nodes.
 pub fn is_expression(ctx: &CompilerContext, tree: TreeId) -> bool {

@@ -1,12 +1,12 @@
 // Origin: com/sun/tools/javac/util/GraphUtils.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: P2/P3 utility-service batch.
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P2/P3 utility-service.
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: nodeAttributes (GraphUtils.java:84)
 // - NOT PORTED: dependencyAttributes (GraphUtils.java:88)
 // - NOT PORTED: formatProperties (GraphUtils.java:252)
 // - NOT PORTED: wrap (GraphUtils.java:258)
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! <p><b>This is NOT part of any supported API.
 //! If you write code that depends on this, you do so at your own risk.
@@ -280,7 +280,7 @@ impl<'a, D, N: TarjanNode<D, N> + PartialEq + 'a> Tarjan<'a, D, N> {
 }
 
 
-/// Tarjan SCC over an index graph (§9 adapter): the ported generic tarjan above
+/// Tarjan SCC over an index graph (Porting rules adapter): the ported generic tarjan above
 /// operates on &N references; the inference/deferred graphs keep their nodes in
 /// index arenas (stable node ids), so this faithful translation of the same
 /// algorithm (GraphUtils.java:171-235) works on dependency index lists.

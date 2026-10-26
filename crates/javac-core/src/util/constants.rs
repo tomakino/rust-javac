@@ -13,7 +13,7 @@
 //! call sites, registered in PORTING_RULES section 9); Type stays the ported
 //! code::type_::Type.
 //!
-//! PORTING_RULES §9.17: formatFloat/formatDouble use the JDK
+//! PORTING_RULES Porting rules.17: formatFloat/formatDouble use the JDK
 //! java.lang.FloatingDecimal semantics (Float.toString/Double.toString), ported
 //! 1:1 from jdk/internal/math/FloatingDecimal.java @ 982d53c in the
 //! javac-floating adapter crate (registered in docs/DEPENDENCIES.md).

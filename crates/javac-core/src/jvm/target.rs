@@ -14,7 +14,7 @@
 //!   Display (the derived Debug name), while the upstream `name` field is the
 //!   version string ("1.1", "5", ...) returned by `name()`.
 //! * `compareTo` is Rust's derived Ord (declaration order = version order).
-//! * TODO(Options/Option batch): `instance(Context)` uses the not yet ported
+//! * TODO(Options/Option): `instance(Context)` uses the not yet ported
 //!   Options/Options.instance and Option.TARGET ("--target -target"); it is left
 //!   as a single unimplemented entry point (no stand-in for Options).
 //!   All other methods are ported and tested.
@@ -211,7 +211,7 @@ impl Target {
 
     /// Value of platform release used to access multi-release jar files.
     ///
-    /// PORTING_RULES: Java String -> JavaString (§7).
+    /// PORTING_RULES: Java String -> JavaString (Porting rules).
     pub fn multi_release_value(self) -> JavaString {
         let value = self.ordinal() - Target::JDK1_1.ordinal() + 1;
         JavaString::from(value.to_string().as_str())
@@ -265,7 +265,7 @@ impl Target {
     /// }
     /// </pre>
     ///
-    /// TODO(Options/Option batch): Options.instance/options.get and
+    /// TODO(Options/Option): Options.instance/options.get and
     /// Option.TARGET ("--target -target") are not ported; the entry point stays
     /// unimplemented (no substitute Options is invented).
     pub fn instance(_context: &mut Context) -> Rc<Target> {

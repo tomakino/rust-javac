@@ -3,8 +3,8 @@
 // Adapter for: the minimal BaseFileManager surface injected into PathFileObject.
 // Why not 1:1: PathFileObject holds the upstream BaseFileManager instance; in Rust the
 // PathFileObject is created by a file manager that is still being ported (JavacFileManager
-// batch S3c), so the two operations PathFileObject performs on the manager are expressed
-// as this interface.  The 1:1 BaseFileManager struct (base_file_manager.rs, S3a) implements
+// S3c), so the two operations PathFileObject performs on the manager are expressed
+// as this interface. The 1:1 BaseFileManager struct (base_file_manager.rs, S3a) implements
 // it; the remaining upstream methods live on that struct.
 
 //! Minimal BaseFileManager interface for PathFileObject.

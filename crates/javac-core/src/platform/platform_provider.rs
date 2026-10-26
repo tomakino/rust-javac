@@ -9,17 +9,17 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES (§12/§14):
+//! PORTING_RULES (Porting rules/Porting rules):
 //! * Java interface -> Rust trait (used as `dyn PlatformProvider`; the providers are
 //!   shared references, `Rc<dyn PlatformProvider>`, because the Java API hands out
 //!   the same provider instance from the service loader).
-//! * `Iterable<String>` -> `Vec<JavaString>` (§14 Iterable mapping; the upstream
+//! * `Iterable<String>` -> `Vec<JavaString>` (Porting rules Iterable mapping; the upstream
 //!   consumer only tests membership, the order is kept as returned).
 //! * the nested Java class `PlatformProvider.PlatformNotSupported extends Exception`
 //!   -> struct `PlatformNotSupported` with Display and std::error::Error; a Rust trait
 //!   cannot hold nested types, so the class is declared at module level.
 //! * `getPlatform(...) throws PlatformNotSupported` -> `Result<_, PlatformNotSupported>`
-//!   (checked-exception mapping, §12): PlatformUtils catches it and returns null exactly as the
+//!   (checked-exception mapping, Porting rules): PlatformUtils catches it and returns null exactly as the
 //!   Java stream code does.  There is no message in the upstream exception.
 
 use crate::platform::platform_description::PlatformDescription;

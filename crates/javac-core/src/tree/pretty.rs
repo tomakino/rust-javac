@@ -10,7 +10,7 @@
 //! PORTING_RULES: ADR 0001 (arena + IDs):
 //! - the tree graph is printed through the CompilerContext; the upstream
 //!   JCTree.Visitor dispatch is reproduced by Pretty::dispatch (tag -> visit
-//!   method); the visitor trait itself lands in the visitor batch;
+//!   method); the visitor trait itself lands in the visitor;
 //! - Java IOException/UncheckedIOException become infallible: the output is an
 //!   in-memory JavaString buffer (Java Writer + StringWriter semantics), so the
 //!   copied algorithms drop their try/catch (registered section 9);
@@ -25,7 +25,7 @@
 //!   internal TreeScanner). The cdef != null path panics with a TODO message;
 //!   the cdef == null path (used by the tree pretty oracle) is fully ported.
 //!
-//! TODO(parser batch): compare the full Pretty output against the oracle data
+//! TODO(parser): compare the full Pretty output against the oracle data
 //! from tools/gen-tree-oracle once JavacParser/TreeMaker land (that data already
 //! covers the modern syntax samples).
 

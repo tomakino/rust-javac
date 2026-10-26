@@ -1,11 +1,11 @@
 // Origin: com/sun/tools/javac/file/BaseFileManager.java @ 982d53c (jdk-17.0.19-ga)
-// PORTING_RULES §19 gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: P2 ClassReader / API batch.
+// Gap registration (method-level audit of the ported upstream class):
+// Dependency/phase: P2 ClassReader / API.
 // Not yet ported upstream methods (no substitutes in this file):
 // - NOT PORTED: run (BaseFileManager.java:148)
 // - NOT PORTED: handleFileManagerOption (BaseFileManager.java:230)
 // - NOT PORTED: getValue (BaseFileManager.java:484)
-// End of §19 gap registration.
+// End of Gap registration.
 
 //! Utility methods for building a file manager.
 //! There are no references here to file-system specific objects such as
@@ -16,7 +16,7 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES (S3a batch):
+//! PORTING_RULES (S3a):
 //! * Java abstract class (implements JavaFileManager) -> Rust struct holding the shared
 //!   state; the JavaFileManager methods are provided by JavacFileManager (S3c), which
 //!   delegates the two methods BaseFileManager implements (handleOption/isSupportedOption).
@@ -39,9 +39,9 @@
 //!   cloneable identity and Java uses identity equality; the path-based key is the
 //!   registered approximation — content is validated by getLastModified, so only cache hit
 //!   rates can differ, never decoded content).
-//! * TODO(main/OptionHelper batch): handleOption(String, Iterator) needs Option.process and
+//! * TODO(main/OptionHelper): handleOption(String, Iterator) needs Option.process and
 //!   main.OptionHelper (not ported); handleOptions needs Log.error and the Errors
-//!   resource for IllegalArgumentForOption (Log has no error entry point in this batch).
+//!   resource for IllegalArgumentForOption (Log has no error entry point in this).
 //! * the MULTIRELEASE case of handleOption(Option, String) is ported 1:1 (Option.MULTIRELEASE
 //!   was restored at the Lead's decision); Locations.setMultiReleaseValue is a plain field
 //!   until the S3b handler chain stores it.
@@ -184,7 +184,7 @@ impl BaseFileManager {
     }
 
     /// Java: protected final Locations locations; (the field is exposed to JavacFileManager).
-    /// Not wired yet (TODO(file manager wiring batch)).
+    /// Not wired yet (TODO(file manager wiring)).
     #[allow(dead_code)]
     pub(crate) fn locations(&self) -> &Locations {
         &self.locations
@@ -241,7 +241,7 @@ impl BaseFileManager {
 
     /// Java: public boolean handleOption(String current, Iterator<String> remaining).
     ///
-    /// TODO(main/OptionHelper batch): needs Option.process/handleOption and main.OptionHelper.
+    /// TODO(main/OptionHelper): needs Option.process/handleOption and main.OptionHelper.
     pub fn handle_option(
         &self,
         _current: &str,
@@ -289,8 +289,8 @@ impl BaseFileManager {
 
     /// Java: public boolean handleOptions(Map<Option, String> map).
     ///
-    /// TODO(Log batch): needs log.error(Errors.IllegalArgumentForOption(...)) — the Log error
-    /// entry point is not ported in this batch; no substitute reporting is written.
+    /// TODO(Log): needs log.error(Errors.IllegalArgumentForOption(...)) — the Log error
+    /// entry point is not ported in this; no substitute reporting is written.
     pub fn handle_options(&self, _map: &[(JavacOption, JavaString)]) -> bool {
         unimplemented!(
             "TODO(Log batch): BaseFileManager.handleOptions needs Log.error and Errors.IllegalArgumentForOption"
@@ -299,7 +299,7 @@ impl BaseFileManager {
 
     /// Java: private String getDefaultEncodingName() { return Charset.defaultCharset().name(); }
     ///
-    /// TODO(charset batch): the javac-charset adapter does not implement
+    /// TODO(charset): the javac-charset adapter does not implement
     /// Charset.defaultCharset() yet (the JVM default charset has no Rust counterpart without
     /// the launcher's file.encoding handling); reported.
     #[allow(dead_code)]
@@ -327,7 +327,7 @@ impl BaseFileManager {
             None => match Charset::for_name(encoding_name) {
                 Ok(charset) => charset,
                 // Java: catch (IllegalCharsetNameException|UnsupportedCharsetException e)
-                //   { log.error(Errors.UnsupportedEncoding(encName)); return empty CharBuffer; }
+                // { log.error(Errors.UnsupportedEncoding(encName)); return empty CharBuffer; }
                 Err(_) => unimplemented!(
                     "TODO(Log batch): BaseFileManager.decode unsupported charset reporting needs log.error(Errors.UnsupportedEncoding)"
                 ),
@@ -359,7 +359,7 @@ impl BaseFileManager {
 
     // Java: public CharsetDecoder getDecoder(String, boolean).
     //
-    // TODO(charset batch): the streaming CharsetDecoder has no Rust form in the javac-charset
+    // TODO(charset): the streaming CharsetDecoder has no Rust form in the javac-charset
     // adapter; decode() above covers the whole-input conversion (not declared: getDecoder).
 
     /// Java: public ByteBuffer makeByteBuffer(InputStream in) throws IOException.

@@ -1,31 +1,31 @@
 // Origin: com/sun/tools/javac/comp/ArgumentAttr.java @ 982d53c (jdk-17.0.19-ga)
 //
-// PORTING_RULES §19 mapping (batch 5): this file ports
+// Registration mapping (): this file ports
 // - ArgumentAttr (instance/constructor/setResult/checkSpeculative/
-//   withLocalCacheContext/LocalCacheContext/attribArg/visitTree/processArg/
-//   visitParens/visitConditional/visitSwitchExpression/visitReference/
-//   visitLambda/visitApply/visitNewClass),
+// withLocalCacheContext/LocalCacheContext/attribArg/visitTree/processArg/
+// visitParens/visitConditional/visitSwitchExpression/visitReference/
+// visitLambda/visitApply/visitNewClass),
 // - the ArgumentType base class and its six concrete subclasses
-//   (ParensType/ConditionalType/SwitchExpressionType/ExplicitLambdaType/
-//   ResolvedMethodType/ResolvedConstructorType),
+// (ParensType/ConditionalType/SwitchExpressionType/ExplicitLambdaType/
+// ResolvedMethodType/ResolvedConstructorType),
 // - UniquePos.
-// §9 registered adapters:
+// adapter registered adapters:
 // - Java class inheritance (ArgumentType extends DeferredType, and the six
-//   subclasses) is expressed by the ArgumentTypeData payload carried by
-//   TypeKindData::Deferred plus kind dispatch in this file; the overridden
-//   DeferredType methods (complete/speculativeType/speculativeTree) dispatch on
-//   that payload in deferred_attr.rs;
+// subclasses) is expressed by the ArgumentTypeData payload carried by
+// TypeKindData::Deferred plus kind dispatch in this file; the overridden
+// DeferredType methods (complete/speculativeType/speculativeTree) dispatch on
+// that payload in deferred_attr.rs;
 // - Java Map<ResultInfo,Type> object identity is keyed by ResultInfo.id
-//   (attr.rs) in a Vec of (id, TypeId) pairs, preserving insertion order;
+// (attr.rs) in a Vec of (id, TypeId) pairs, preserving insertion order;
 // - Java Optional fields are Option fields; Java HashMap/LinkedHashMap caches
-//   are Vec/RefCell maps preserving the port cache policy (entries are removed
-//   on completion, see LocalCacheContext);
+// are Vec/RefCell maps preserving the port cache policy (entries are removed
+// on completion, see LocalCacheContext);
 // - the Java visitor dispatch becomes a match in ArgumentAttr::visit (the
-//   ported tree model has no visitor base class of its own);
+// ported tree model has no visitor base class of its own);
 // - explicit ctx/syms/env parameters follow ADR 0001;
 // - UniquePos identity uses (pos, DiagnosticSource identity); the port keys it
-//   by the source file identity (Rc::as_ptr of the JavaFileObject of
-//   log.current_source) because DiagnosticSource is value-copied in the port.
+// by the source file identity (Rc::as_ptr of the JavaFileObject of
+// log.current_source) because DiagnosticSource is value-copied in the port.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -73,7 +73,7 @@ pub enum ArgumentKind {
 /// populated scratch lists of SwitchExpressionType/ExplicitLambdaType.
 ///
 /// # Fields
-///   - kind: the concrete subclass (§9 enum dispatch);
+///   - kind: the concrete subclass (Porting rules enum dispatch);
 ///   - speculative_tree: the speculative pass tree (ArgumentAttr.java:330-350);
 ///   - speculative_types: ResultInfo->Type entries (ArgumentAttr.java:360-390);
 ///   - yield_expressions/argtypes/return_expressions: the lazily populated scratch lists.
@@ -88,7 +88,7 @@ pub struct ArgumentTypeData {
     pub kind: ArgumentKind,
     /// Java: T speculativeTree
     pub speculative_tree: TreeId,
-    /// Java: Map<ResultInfo, Type> speculativeTypes (§9: the ResultInfo
+    /// Java: Map<ResultInfo, Type> speculativeTypes (Porting rules: the ResultInfo
     /// identity is kept as Rc<ResultInfo> because the speculativeType scan
     /// reads each entry's DeferredAttrContext; insertion order preserved
     /// (upstream HashMap iteration order is unspecified)).
@@ -100,20 +100,20 @@ pub struct ArgumentTypeData {
     /// Java: ExplicitLambdaType.returnExpressions (Optional<List<JCReturn>>)
     pub return_expressions: Option<List<TreeId>>,
 }// ---------------------------------------------------------------------------
-// Batch 5: ArgumentAttr (ArgumentAttr.java:96-790). Explicit ctx/syms/attr/
+// ArgumentAttr (ArgumentAttr.java:96-790). Explicit ctx/syms/attr/
 // deferred parameters per ADR 0001; the tree visitor dispatch becomes an
-// ArgumentAttr::visit match (§9, no visitor base class in the ported model).
+// ArgumentAttr::visit match (adapter, no visitor base class in the ported model).
 // ---------------------------------------------------------------------------
 
 /// Java: public class ArgumentAttr (ArgumentAttr.java:96-790)
 ///
 /// # Fields
-///   - deferred: DeferredAttr service cell (§9, mutual recursion);
+///   - deferred: DeferredAttr service cell (Porting rules, mutual recursion);
 ///   - diags: JCDiagnostic.Factory;
 ///   - env: the current attribution environment (AttribArg save/restore);
 ///   - result: the attribution result;
 ///   - argument_type_cache: UniquePos -> ArgumentType cache;
-///   - flow: Flow service cell (§9).
+///   - flow: Flow service cell (Porting rules).
 ///
 /// # Panics
 ///   - none.
@@ -121,7 +121,7 @@ pub struct ArgumentTypeData {
 /// Upstream: ArgumentAttr.java:96-130.
 pub struct ArgumentAttr {
     /// Java: final DeferredAttr deferredAttr (cell: DeferredAttr and
-    /// ArgumentAttr are mutually recursive services, §9).
+    /// ArgumentAttr are mutually recursive services, Porting rules).
     pub deferred: Rc<RefCell<Option<Rc<RefCell<crate::comp::deferred_attr::DeferredAttrService>>>>>,
     /// Java: final JCDiagnostic.Factory diags
     pub diags: Rc<crate::util::jc_diagnostic::Factory>,
@@ -131,7 +131,7 @@ pub struct ArgumentAttr {
     pub result: Option<TypeId>,
     /// Java: Map<UniquePos, ArgumentType<?>> argumentTypeCache
     pub argument_type_cache: std::collections::HashMap<UniquePos, Rc<RefCell<ArgumentTypeData>>>,
-    /// Java: final Flow flow (cell: the wiring installs it; §9). Used by
+    /// Java: final Flow flow (cell: the wiring installs it; Porting rules). Used by
     /// attribSpeculativeLambda's flow.analyzeLambda call.
     pub flow: Rc<RefCell<Option<Rc<crate::comp::flow::Flow>>>>,
 }
@@ -140,7 +140,7 @@ pub struct ArgumentAttr {
 ///
 /// # Fields
 ///   - pos: source char offset;
-///   - source: source-file identity (the file object pointer, §9).
+///   - source: source-file identity (the file object pointer, Porting rules).
 ///
 /// # Panics
 ///   - none.
@@ -150,7 +150,7 @@ pub struct ArgumentAttr {
 pub struct UniquePos {
     /// Java: int pos
     pub pos: i32,
-    /// Java: DiagnosticSource source (identity by file pointer, §9)
+    /// Java: DiagnosticSource source (identity by file pointer, Porting rules)
     pub source: Option<usize>,
 }
 
@@ -242,7 +242,7 @@ impl ArgumentAttr {
     ///   - diags: the diagnostic factory.
     ///
     /// # Returns
-    ///   - the shared ArgumentAttr cell (§9 cell injection).
+    ///   - the shared ArgumentAttr cell (Porting rules cell injection).
     ///
     /// # Panics
     ///   - none.
@@ -417,7 +417,7 @@ impl ArgumentAttr {
         result
     }
 
-    /// Java: the JCTree visitor dispatch; visitTree delegates to Attr (§9 match).
+    /// Java: the JCTree visitor dispatch; visitTree delegates to Attr (Porting rules match).
     fn visit(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -455,7 +455,7 @@ impl ArgumentAttr {
 }
 
 impl ArgumentAttr {
-    /// §9: MethodAttrInfo with the processArg needsArgumentAttr override
+    /// Porting rules: MethodAttrInfo with the processArg needsArgumentAttr override
     /// (the current argument position is excluded).
     fn argument_result_info(
         &self,
@@ -743,7 +743,7 @@ impl ArgumentAttr {
     }
 }
 
-/// §9 helper: Type.isRaw() for the member-reference overload-kind check.
+/// Porting rules helper: Type.isRaw() for the member-reference overload-kind check.
 fn utils_is_raw_type(
     ctx: &crate::compiler_context::CompilerContext,
     types: &crate::code::types::Types,
@@ -876,7 +876,7 @@ impl ArgumentAttr {
         }
     }
 
-    /// §9 helper: plain DeferredType (no ArgumentType payload).
+    /// Porting rules helper: plain DeferredType (no ArgumentType payload).
     fn new_plain_deferred(
         &mut self,
         ctx: &mut CompilerContext,
@@ -896,7 +896,7 @@ impl ArgumentAttr {
         )
     }
 
-    /// §9 helper: DeferredType with the ArgumentType payload.
+    /// Porting rules helper: DeferredType with the ArgumentType payload.
     fn new_argument_deferred(
         &mut self,
         ctx: &mut CompilerContext,
@@ -924,7 +924,7 @@ impl ArgumentAttr {
     }
 }
 
-/// §9 helper: DeferredAttrFailure -> CompletionFailure (the upstream
+/// Porting rules helper: DeferredAttrFailure -> CompletionFailure (the upstream
 /// attribSpeculative throws CompletionFailure).
 fn deferred_failure_to_completion(
     failure: crate::comp::deferred_attr::DeferredAttrFailure,
@@ -1287,8 +1287,8 @@ impl ArgumentAttr {
             ArgumentKind::ResolvedMethod | ArgumentKind::ResolvedConstructor => {
                 // Java: ResolvedMemberType.overloadCheck (ArgumentAttr.java:660-680)
                 // Requires Infer.PartiallyInferredMethodType.check and the
-                // partial method type pipeline (Infer batch); registered as
-                // unimplemented per §16.
+                // partial method type pipeline (Infer); registered as
+                // unimplemented per Completeness rules.
                 unimplemented!(
                     "TODO(Infer batch): ArgumentAttr.ResolvedMemberType.overloadCheck needs Infer.PartiallyInferredMethodType.check (Infer.java:1063-1120) and the partial method type constraints",
                 )
@@ -1403,7 +1403,7 @@ impl ArgumentAttr {
     }
 }
 
-/// §9 helper: noType.
+/// Porting rules helper: noType.
 fn no_type_of(ctx: &mut CompilerContext) -> TypeId {
     crate::code::symtab::no_type_id(ctx)
 }
