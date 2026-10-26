@@ -3009,6 +3009,7 @@ impl DeferredAttrService {
                     init: None,
                     sym: None,
                     start_pos: 0,
+                    declared_using_var: false,
                 },
             });
             new_params = new_params.append(new_vd);

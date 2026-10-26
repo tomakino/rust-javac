@@ -2333,6 +2333,7 @@ mod tests {
                 init: Some(one),
                 sym: None,
                 start_pos: crate::util::position::NOPOS,
+                declared_using_var: false,
             },
             0,
         );
@@ -2476,6 +2477,7 @@ mod tests {
                 init: None,
                 sym: None,
                 start_pos: crate::util::position::NOPOS,
+                declared_using_var: false,
             },
             0,
         );

@@ -1896,6 +1896,7 @@ mod tests {
                 init: None,
                 sym: None,
                 start_pos: NOPOS,
+                declared_using_var: false,
             },
             1,
         );
@@ -1928,6 +1929,7 @@ mod tests {
                 init: None,
                 sym: None,
                 start_pos: NOPOS,
+                declared_using_var: false,
             },
             1,
         );

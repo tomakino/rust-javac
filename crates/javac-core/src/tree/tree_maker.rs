@@ -703,6 +703,7 @@ impl TreeFactory for TreeMaker {
                 init,
                 sym: None,
                 start_pos: position::NOPOS,
+                declared_using_var: false,
             },
         )
     }
@@ -716,10 +717,20 @@ impl TreeFactory for TreeMaker {
         init: StdOption<TreeId>,
         declared_using_var: bool,
     ) -> TreeId {
-        // Java: JCVariableDecl.declaredUsingVar has no Rust field yet (TODO(Symtab));
-        // the flag is accepted and ignored until the field is added (reported).
-        let _ = declared_using_var;
-        self.var_def(ctx, mods, name, vartype, init)
+        self.make(
+            ctx,
+            Tag::VARDEF,
+            TreeKind::VariableDecl {
+                mods: Some(mods),
+                name,
+                nameexpr: None,
+                vartype,
+                init,
+                sym: None,
+                start_pos: position::NOPOS,
+                declared_using_var,
+            },
+        )
     }
 
     fn receiver_var_def(
@@ -743,6 +754,7 @@ impl TreeFactory for TreeMaker {
                 init: None,
                 sym: None,
                 start_pos: position::NOPOS,
+                declared_using_var: false,
             },
         )
     }

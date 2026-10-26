@@ -18,6 +18,7 @@ pub mod symbol_metadata;
 pub mod symtab;
 pub mod target_type;
 pub mod type_annotation_position;
+pub mod type_annotations;
 pub mod type_;
 pub mod type_metadata;
 pub mod type_tag;

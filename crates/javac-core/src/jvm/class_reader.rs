@@ -2410,25 +2410,25 @@ impl ClassReader {
         let position = match target {
             TargetType::INSTANCEOF => {
                 let offset = self.next_char() as i32;
-                let mut position = Pos::instance_of(self.read_type_path(), -1);
+                let mut position = Pos::instance_of(self.read_type_path(), -1, None);
                 position.offset = offset;
                 position
             }
             TargetType::NEW => {
                 let offset = self.next_char() as i32;
-                let mut position = Pos::new_obj(self.read_type_path(), -1);
+                let mut position = Pos::new_obj(self.read_type_path(), -1, None);
                 position.offset = offset;
                 position
             }
             TargetType::CONSTRUCTOR_REFERENCE => {
                 let offset = self.next_char() as i32;
-                let mut position = Pos::constructor_ref(self.read_type_path(), -1);
+                let mut position = Pos::constructor_ref(self.read_type_path(), -1, None);
                 position.offset = offset;
                 position
             }
             TargetType::METHOD_REFERENCE => {
                 let offset = self.next_char() as i32;
-                let mut position = Pos::method_ref(self.read_type_path(), -1);
+                let mut position = Pos::method_ref(self.read_type_path(), -1, None);
                 position.offset = offset;
                 position
             }
@@ -2443,9 +2443,9 @@ impl ClassReader {
                     lvar_index.push(self.next_char() as i32);
                 }
                 let mut position = if target == TargetType::LOCAL_VARIABLE {
-                    Pos::local_variable(self.read_type_path(), -1)
+                    Pos::local_variable(self.read_type_path(), -1, None)
                 } else {
-                    Pos::resource_variable(self.read_type_path(), -1)
+                    Pos::resource_variable(self.read_type_path(), -1, None)
                 };
                 position.lvar_offset = Some(lvar_offset);
                 position.lvar_length = Some(lvar_length);
@@ -2454,45 +2454,45 @@ impl ClassReader {
             }
             TargetType::EXCEPTION_PARAMETER => {
                 let exception_index = self.next_char() as i32;
-                let mut position = Pos::exception_parameter(self.read_type_path(), -1);
+                let mut position = Pos::exception_parameter(self.read_type_path(), -1, None);
                 position.set_exception_index(exception_index);
                 position
             }
-            TargetType::METHOD_RECEIVER => Pos::method_receiver(self.read_type_path(), -1),
+            TargetType::METHOD_RECEIVER => Pos::method_receiver(self.read_type_path(), -1, None),
             TargetType::CLASS_TYPE_PARAMETER => {
                 let parameter_index = self.next_byte();
-                Pos::type_parameter(self.read_type_path(), parameter_index)
+                Pos::type_parameter(self.read_type_path(), parameter_index, None)
             }
             TargetType::METHOD_TYPE_PARAMETER => {
                 let parameter_index = self.next_byte();
-                Pos::method_type_parameter(self.read_type_path(), parameter_index)
+                Pos::method_type_parameter(self.read_type_path(), parameter_index, None)
             }
             TargetType::CLASS_TYPE_PARAMETER_BOUND => {
                 let parameter_index = self.next_byte();
                 let bound_index = self.next_byte();
-                Pos::type_parameter_bound(self.read_type_path(), parameter_index, bound_index)
+                Pos::type_parameter_bound(self.read_type_path(), parameter_index, bound_index, None)
             }
             TargetType::METHOD_TYPE_PARAMETER_BOUND => {
                 let parameter_index = self.next_byte();
                 let bound_index = self.next_byte();
-                Pos::method_type_parameter_bound(self.read_type_path(), parameter_index, bound_index)
+                Pos::method_type_parameter_bound(self.read_type_path(), parameter_index, bound_index, None)
             }
             TargetType::CLASS_EXTENDS => {
                 let type_index = self.next_char() as i32;
-                Pos::class_extends(self.read_type_path(), type_index, -1)
+                Pos::class_extends(self.read_type_path(), type_index, -1, None)
             }
             TargetType::THROWS => {
                 let type_index = self.next_char() as i32;
-                Pos::method_throws(self.read_type_path(), type_index, -1)
+                Pos::method_throws(self.read_type_path(), type_index, -1, None)
             }
             TargetType::METHOD_FORMAL_PARAMETER => {
                 let parameter_index = self.next_byte();
-                Pos::method_parameter(self.read_type_path(), parameter_index, -1)
+                Pos::method_parameter(self.read_type_path(), parameter_index, -1, None)
             }
             TargetType::CAST => {
                 let offset = self.next_char() as i32;
                 let type_index = self.next_byte();
-                let mut position = Pos::type_cast(self.read_type_path(), type_index, -1);
+                let mut position = Pos::type_cast(self.read_type_path(), type_index, -1, None);
                 position.offset = offset;
                 position
             }
@@ -2504,21 +2504,21 @@ impl ClassReader {
                 let type_index = self.next_byte();
                 let mut position = match target {
                     TargetType::CONSTRUCTOR_INVOCATION_TYPE_ARGUMENT => {
-                        Pos::constructor_invocation_type_arg(self.read_type_path(), type_index, -1)
+                        Pos::constructor_invocation_type_arg(self.read_type_path(), type_index, -1, None)
                     }
                     TargetType::METHOD_INVOCATION_TYPE_ARGUMENT => {
-                        Pos::method_invocation_type_arg(self.read_type_path(), type_index, -1)
+                        Pos::method_invocation_type_arg(self.read_type_path(), type_index, -1, None)
                     }
                     TargetType::CONSTRUCTOR_REFERENCE_TYPE_ARGUMENT => {
-                        Pos::constructor_ref_type_arg(self.read_type_path(), type_index, -1)
+                        Pos::constructor_ref_type_arg(self.read_type_path(), type_index, -1, None)
                     }
-                    _ => Pos::method_ref_type_arg(self.read_type_path(), type_index, -1),
+                    _ => Pos::method_ref_type_arg(self.read_type_path(), type_index, -1, None),
                 };
                 position.offset = offset;
                 position
             }
-            TargetType::METHOD_RETURN => Pos::method_return(self.read_type_path(), -1),
-            TargetType::FIELD => Pos::field(self.read_type_path(), -1),
+            TargetType::METHOD_RETURN => Pos::method_return(self.read_type_path(), -1, None),
+            TargetType::FIELD => Pos::field(self.read_type_path(), -1, None),
             TargetType::UNKNOWN => {
                 panic!("AssertionError: jvm.ClassReader: UNKNOWN target type should never occur!");
             }

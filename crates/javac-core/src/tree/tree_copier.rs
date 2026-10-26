@@ -1496,13 +1496,14 @@ impl TreeCopier {
     /// Java: public JCTree visitVariable(VariableTree node, P p)
     fn visit_variable(&self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         let __kind = ctx.tree(tree).kind.clone();
-        let (mods, name, nameexpr, vartype, init) = match &__kind {
+        let (mods, name, nameexpr, vartype, init, declared_using_var) = match &__kind {
             TreeKind::VariableDecl {
                 mods,
                 name,
                 nameexpr,
                 vartype,
                 init,
+                declared_using_var,
                 ..
             } => (
                 self.copy_opt(ctx, *mods),
@@ -1510,6 +1511,7 @@ impl TreeCopier {
                 self.copy_opt(ctx, *nameexpr),
                 self.copy_opt(ctx, *vartype),
                 self.copy_opt(ctx, *init),
+                *declared_using_var,
             ),
             _ => panic!("ClassCastException: JCVariableDecl expected"),
         };
@@ -1526,6 +1528,7 @@ impl TreeCopier {
                 init,
                 sym: None,
                 start_pos: position::NOPOS,
+                declared_using_var,
             },
         )
     }
@@ -1941,6 +1944,7 @@ mod tests {
                 init: None,
                 sym: None,
                 start_pos: crate::util::position::NOPOS,
+                declared_using_var: false,
             },
             0,
         );

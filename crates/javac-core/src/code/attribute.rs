@@ -579,6 +579,7 @@ mod tests {
         let position = TypeAnnotationPosition::field(
             crate::code::type_annotation_position::TypeAnnotationPosition::empty_path(),
             5,
+            None,
         );
         let type_compound_attr = ctx.alloc_attribute(Attribute::new(
             Some(syms.object_type),

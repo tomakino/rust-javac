@@ -160,68 +160,68 @@ impl TypeAnnotationPosition {
     }
 
     /// Java: public static TypeAnnotationPosition method_return(List<TypePathEntry> location, int pos)
-    pub fn method_return(location: List<TypePathEntry>, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::METHOD_RETURN, pos, i32::MIN, None, i32::MIN, i32::MIN, location)
+    pub fn method_return(location: List<TypePathEntry>, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::METHOD_RETURN, pos, i32::MIN, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition method_receiver(List<TypePathEntry> location, int pos)
-    pub fn method_receiver(location: List<TypePathEntry>, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::METHOD_RECEIVER, pos, i32::MIN, None, i32::MIN, i32::MIN, location)
+    pub fn method_receiver(location: List<TypePathEntry>, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::METHOD_RECEIVER, pos, i32::MIN, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition method_parameter(List<TypePathEntry> location, int parameter_index, int pos)
-    pub fn method_parameter(location: List<TypePathEntry>, parameter_index: i32, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::METHOD_FORMAL_PARAMETER, pos, parameter_index, None, i32::MIN, i32::MIN, location)
+    pub fn method_parameter(location: List<TypePathEntry>, parameter_index: i32, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::METHOD_FORMAL_PARAMETER, pos, parameter_index, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition method_ref(List<TypePathEntry> location, int pos)
-    pub fn method_ref(location: List<TypePathEntry>, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::METHOD_REFERENCE, pos, i32::MIN, None, i32::MIN, i32::MIN, location)
+    pub fn method_ref(location: List<TypePathEntry>, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::METHOD_REFERENCE, pos, i32::MIN, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition constructor_ref(List<TypePathEntry> location, int pos)
-    pub fn constructor_ref(location: List<TypePathEntry>, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::CONSTRUCTOR_REFERENCE, pos, i32::MIN, None, i32::MIN, i32::MIN, location)
+    pub fn constructor_ref(location: List<TypePathEntry>, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::CONSTRUCTOR_REFERENCE, pos, i32::MIN, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition field(List<TypePathEntry> location, int pos)
-    pub fn field(location: List<TypePathEntry>, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::FIELD, pos, i32::MIN, None, i32::MIN, i32::MIN, location)
+    pub fn field(location: List<TypePathEntry>, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::FIELD, pos, i32::MIN, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition local_variable(List<TypePathEntry> location, int pos)
-    pub fn local_variable(location: List<TypePathEntry>, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::LOCAL_VARIABLE, pos, i32::MIN, None, i32::MIN, i32::MIN, location)
+    pub fn local_variable(location: List<TypePathEntry>, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::LOCAL_VARIABLE, pos, i32::MIN, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition resource_variable(List<TypePathEntry> location, int pos)
-    pub fn resource_variable(location: List<TypePathEntry>, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::RESOURCE_VARIABLE, pos, i32::MIN, None, i32::MIN, i32::MIN, location)
+    pub fn resource_variable(location: List<TypePathEntry>, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::RESOURCE_VARIABLE, pos, i32::MIN, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition exception_parameter(List<TypePathEntry> location, int pos)
-    pub fn exception_parameter(location: List<TypePathEntry>, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::EXCEPTION_PARAMETER, pos, i32::MIN, None, i32::MIN, i32::MIN, location)
+    pub fn exception_parameter(location: List<TypePathEntry>, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::EXCEPTION_PARAMETER, pos, i32::MIN, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition new_obj(List<TypePathEntry> location, int pos)
-    pub fn new_obj(location: List<TypePathEntry>, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::NEW, pos, i32::MIN, None, i32::MIN, i32::MIN, location)
+    pub fn new_obj(location: List<TypePathEntry>, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::NEW, pos, i32::MIN, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition instance_of(List<TypePathEntry> location, int pos)
-    pub fn instance_of(location: List<TypePathEntry>, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::INSTANCEOF, pos, i32::MIN, None, i32::MIN, i32::MIN, location)
+    pub fn instance_of(location: List<TypePathEntry>, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::INSTANCEOF, pos, i32::MIN, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition class_extends(List<TypePathEntry> location, int type_index, int pos)
-    pub fn class_extends(location: List<TypePathEntry>, type_index: i32, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::CLASS_EXTENDS, pos, i32::MIN, None, type_index, i32::MIN, location)
+    pub fn class_extends(location: List<TypePathEntry>, type_index: i32, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::CLASS_EXTENDS, pos, i32::MIN, on_lambda, type_index, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition method_throws(List<TypePathEntry> location, int type_index, int pos)
-    pub fn method_throws(location: List<TypePathEntry>, type_index: i32, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::THROWS, pos, i32::MIN, None, type_index, i32::MIN, location)
+    pub fn method_throws(location: List<TypePathEntry>, type_index: i32, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::THROWS, pos, i32::MIN, on_lambda, type_index, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition typeCast(List<TypePathEntry> location, int type_index, int pos)
@@ -229,48 +229,49 @@ impl TypeAnnotationPosition {
         location: List<TypePathEntry>,
         type_index: i32,
         pos: i32,
+        on_lambda: Option<crate::ids::TreeId>,
     ) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::CAST, pos, i32::MIN, None, type_index, i32::MIN, location)
+        TypeAnnotationPosition::new(TargetType::CAST, pos, i32::MIN, on_lambda, type_index, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition method_invocation_type_arg(List<TypePathEntry> location, int type_index, int pos)
-    pub fn method_invocation_type_arg(location: List<TypePathEntry>, type_index: i32, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::METHOD_INVOCATION_TYPE_ARGUMENT, pos, i32::MIN, None, type_index, i32::MIN, location)
+    pub fn method_invocation_type_arg(location: List<TypePathEntry>, type_index: i32, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::METHOD_INVOCATION_TYPE_ARGUMENT, pos, i32::MIN, on_lambda, type_index, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition constructor_invocation_type_arg(List<TypePathEntry> location, int type_index, int pos)
-    pub fn constructor_invocation_type_arg(location: List<TypePathEntry>, type_index: i32, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::CONSTRUCTOR_INVOCATION_TYPE_ARGUMENT, pos, i32::MIN, None, type_index, i32::MIN, location)
+    pub fn constructor_invocation_type_arg(location: List<TypePathEntry>, type_index: i32, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::CONSTRUCTOR_INVOCATION_TYPE_ARGUMENT, pos, i32::MIN, on_lambda, type_index, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition method_ref_type_arg(List<TypePathEntry> location, int type_index, int pos)
-    pub fn method_ref_type_arg(location: List<TypePathEntry>, type_index: i32, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::METHOD_REFERENCE_TYPE_ARGUMENT, pos, i32::MIN, None, type_index, i32::MIN, location)
+    pub fn method_ref_type_arg(location: List<TypePathEntry>, type_index: i32, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::METHOD_REFERENCE_TYPE_ARGUMENT, pos, i32::MIN, on_lambda, type_index, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition constructor_ref_type_arg(List<TypePathEntry> location, int type_index, int pos)
-    pub fn constructor_ref_type_arg(location: List<TypePathEntry>, type_index: i32, pos: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::CONSTRUCTOR_REFERENCE_TYPE_ARGUMENT, pos, i32::MIN, None, type_index, i32::MIN, location)
+    pub fn constructor_ref_type_arg(location: List<TypePathEntry>, type_index: i32, pos: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::CONSTRUCTOR_REFERENCE_TYPE_ARGUMENT, pos, i32::MIN, on_lambda, type_index, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition type_parameter(List<TypePathEntry> location, int parameter_index)
-    pub fn type_parameter(location: List<TypePathEntry>, parameter_index: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::CLASS_TYPE_PARAMETER, -1, parameter_index, None, i32::MIN, i32::MIN, location)
+    pub fn type_parameter(location: List<TypePathEntry>, parameter_index: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::CLASS_TYPE_PARAMETER, -1, parameter_index, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition method_type_parameter(List<TypePathEntry> location, int parameter_index)
-    pub fn method_type_parameter(location: List<TypePathEntry>, parameter_index: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::METHOD_TYPE_PARAMETER, -1, parameter_index, None, i32::MIN, i32::MIN, location)
+    pub fn method_type_parameter(location: List<TypePathEntry>, parameter_index: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::METHOD_TYPE_PARAMETER, -1, parameter_index, on_lambda, i32::MIN, i32::MIN, location)
     }
 
     /// Java: public static TypeAnnotationPosition type_parameter_bound(List<TypePathEntry> location, int parameter_index, int bound_index)
-    pub fn type_parameter_bound(location: List<TypePathEntry>, parameter_index: i32, bound_index: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::CLASS_TYPE_PARAMETER_BOUND, -1, parameter_index, None, i32::MIN, bound_index, location)
+    pub fn type_parameter_bound(location: List<TypePathEntry>, parameter_index: i32, bound_index: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::CLASS_TYPE_PARAMETER_BOUND, -1, parameter_index, on_lambda, i32::MIN, bound_index, location)
     }
 
     /// Java: public static TypeAnnotationPosition method_type_parameter_bound(List<TypePathEntry> location, int parameter_index, int bound_index)
-    pub fn method_type_parameter_bound(location: List<TypePathEntry>, parameter_index: i32, bound_index: i32) -> TypeAnnotationPosition {
-        TypeAnnotationPosition::new(TargetType::METHOD_TYPE_PARAMETER_BOUND, -1, parameter_index, None, i32::MIN, bound_index, location)
+    pub fn method_type_parameter_bound(location: List<TypePathEntry>, parameter_index: i32, bound_index: i32, on_lambda: Option<crate::ids::TreeId>) -> TypeAnnotationPosition {
+        TypeAnnotationPosition::new(TargetType::METHOD_TYPE_PARAMETER_BOUND, -1, parameter_index, on_lambda, i32::MIN, bound_index, location)
     }
 
     /// Java: public boolean emitToClassfile()
