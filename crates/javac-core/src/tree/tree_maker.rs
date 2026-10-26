@@ -361,7 +361,11 @@ pub trait TreeFactory {
     ) -> TreeId;
     fn exec(&mut self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId;
     fn break_(&mut self, ctx: &mut CompilerContext, label: StdOption<Name>) -> TreeId;
-    fn yield_(&mut self, ctx: &mut CompilerContext, value: TreeId) -> TreeId;
+    fn yield_(
+        &mut self,
+        ctx: &mut CompilerContext,
+        value: StdOption<TreeId>,
+    ) -> TreeId;
     fn continue_(&mut self, ctx: &mut CompilerContext, label: StdOption<Name>) -> TreeId;
     fn return_(&mut self, ctx: &mut CompilerContext, expr: StdOption<TreeId>) -> TreeId;
     fn throw_(&mut self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId;
@@ -999,14 +1003,15 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn yield_(&mut self, ctx: &mut CompilerContext, value: TreeId) -> TreeId {
+    fn yield_(
+        &mut self,
+        ctx: &mut CompilerContext,
+        value: StdOption<TreeId>,
+    ) -> TreeId {
         self.make(
             ctx,
             Tag::YIELD,
-            TreeKind::Yield {
-                value: Some(value),
-                target: None,
-            },
+            TreeKind::Yield { value, target: None },
         )
     }
 

@@ -208,6 +208,26 @@ impl Type {
         tag == self.get_tag()
     }
 
+    /// Java: public boolean isFalse() (Type.java:780-786)
+    pub fn is_false(&self) -> bool {
+        self.tag == TypeTag::BOOLEAN
+            && match self.const_value.as_ref() {
+                Some(crate::util::constants::ConstantValue::Boolean(value)) => !*value,
+                Some(crate::util::constants::ConstantValue::Integer(value)) => *value == 0,
+                _ => false,
+            }
+    }
+
+    /// Java: public boolean isTrue() (Type.java:790-795)
+    pub fn is_true(&self) -> bool {
+        self.tag == TypeTag::BOOLEAN
+            && match self.const_value.as_ref() {
+                Some(crate::util::constants::ConstantValue::Boolean(value)) => *value,
+                Some(crate::util::constants::ConstantValue::Integer(value)) => *value != 0,
+                _ => false,
+            }
+    }
+
     /// Java: public boolean isNumeric()
     pub fn is_numeric(&self) -> bool {
         match &self.kind {

@@ -875,6 +875,12 @@ pub enum SymbolKind {
         /// Whether the permits clause was explicit.
         is_permitted_explicit: bool,
     },
+    /// Java: Symbol.BindingSymbol (Symbol.java:1861-1902) — a VarSymbol
+    /// subclass introduced by a pattern match binding.
+    BindingSymbol {
+        /// Java: List<BindingSymbol> aliases() — empty means List.of(this).
+        aliases: List<SymbolId>,
+    },
     /// Java: Symbol.VarSymbol
     VarSymbol {
         /// The variable's position (declaration order).
@@ -905,8 +911,6 @@ pub enum SymbolKind {
     },
     /// Java: Symbol.ParamSymbol (no fields).
     ParamSymbol,
-    /// Java: Symbol.BindingSymbol (no fields).
-    BindingSymbol,
     /// Java: Symbol.MethodSymbol
     ///
     /// PORTING_RULES: the upstream code field (jvm/Code) and defaultValue field
@@ -1715,6 +1719,66 @@ pub fn package_module(ctx: &CompilerContext, pkg: SymbolId) -> Option<SymbolId> 
         _ => None,
     }
 }
+
+/// Java: public BindingSymbol(long flags, Name name, Type type, Symbol
+/// owner) (Symbol.java:1874-1876): super(flags | HASINIT | MATCH_BINDING, ...).
+pub fn new_binding_symbol(
+    flags: i64,
+    name: Name,
+    ty: Option<TypeId>,
+    owner: Option<SymbolId>,
+) -> Symbol {
+    Symbol::new(
+        Kind::VAR,
+        flags | crate::code::flags::HASINIT as i64 | crate::code::flags::MATCH_BINDING,
+        name,
+        ty,
+        owner,
+        SymbolKind::BindingSymbol {
+            aliases: List::nil(),
+        },
+    )
+}
+
+/// Java: BindingSymbol.aliases() — empty aliases field means List.of(this)
+/// (Symbol.java:1880-1883).
+pub fn binding_symbol_aliases(
+    ctx: &CompilerContext,
+    sym: SymbolId,
+) -> List<SymbolId> {
+    match &ctx.sym(sym).kind_data {
+        SymbolKind::BindingSymbol { aliases } if !aliases.is_empty() => aliases.clone(),
+        _ => List::of(sym),
+    }
+}
+
+/// Java: BindingSymbol.isAliasFor(BindingSymbol b) (Symbol.java:1878-1880).
+pub fn binding_symbol_is_alias_for(
+    ctx: &CompilerContext,
+    sym: SymbolId,
+    other: SymbolId,
+) -> bool {
+    let aliases = binding_symbol_aliases(ctx, sym);
+    let mut current = binding_symbol_aliases(ctx, other);
+    while current.non_empty() {
+        if !aliases.iter().any(|alias| alias == *current.head()) {
+            return false;
+        }
+        current = current.tail();
+    }
+    true
+}
+
+/// Java: BindingSymbol.preserveBinding() (Symbol.java:1885-1887).
+pub fn binding_symbol_preserve(ctx: &mut CompilerContext, sym: SymbolId) {
+    ctx.sym_mut(sym).flags_field |= crate::code::flags::MATCH_BINDING_TO_OUTER;
+}
+
+/// Java: BindingSymbol.isPreserved() (Symbol.java:1889-1891).
+pub fn binding_symbol_is_preserved(ctx: &CompilerContext, sym: SymbolId) -> bool {
+    (ctx.sym(sym).flags_field & crate::code::flags::MATCH_BINDING_TO_OUTER) != 0
+}
+
 
 #[cfg(test)]
 mod tests {

@@ -1041,6 +1041,49 @@ fn symbol_for_impl(ctx: &CompilerContext, node: TreeId) -> Option<SymbolId> {
     }
 }
 
+/// Java: public static DiagnosticPosition diagEndPos(JCTree tree)
+/// (TreeInfo.java:660-673): the ported diagnostic-position surface is the
+/// preferred start position (i32); see the module note (§9 adapter).
+pub fn diag_end_pos(ctx: &CompilerContext, tree: TreeId) -> i32 {
+    end_pos(ctx, tree)
+}
+
+/// Java: public static long flags(JCTree tree) (TreeInfo.java:1028-1041)
+pub fn flags(ctx: &CompilerContext, tree: TreeId) -> i64 {
+    match &ctx.tree(tree).kind {
+        TreeKind::VariableDecl { mods, .. } => mods
+            .and_then(|mods| match &ctx.tree(mods).kind {
+                TreeKind::Modifiers { flags, .. } => Some(*flags),
+                _ => None,
+            })
+            .unwrap_or(0),
+        TreeKind::MethodDecl { mods, .. } => mods
+            .and_then(|mods| match &ctx.tree(mods).kind {
+                TreeKind::Modifiers { flags, .. } => Some(*flags),
+                _ => None,
+            })
+            .unwrap_or(0),
+        TreeKind::ClassDecl { mods, .. } => mods
+            .and_then(|mods| match &ctx.tree(mods).kind {
+                TreeKind::Modifiers { flags, .. } => Some(*flags),
+                _ => None,
+            })
+            .unwrap_or(0),
+        TreeKind::Block { flags, .. } => *flags,
+        _ => 0,
+    }
+}
+
+/// Java: public static DiagnosticPosition diagnosticPositionFor(final Symbol
+/// sym, final JCTree tree) (TreeInfo.java:711-733): the ported surface is the
+/// tree start position (§9 adapter).
+pub fn diagnostic_position_for(
+    ctx: &CompilerContext,
+    _sym: crate::ids::SymbolId,
+    tree: TreeId,
+) -> i32 {
+    get_start_pos(ctx, tree)
+}
 /// Java: public static boolean isDeclaration(JCTree node)
 pub fn is_declaration(ctx: &CompilerContext, node: TreeId) -> bool {
     let node = skip_parens(ctx, node);

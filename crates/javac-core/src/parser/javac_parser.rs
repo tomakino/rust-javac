@@ -4259,7 +4259,7 @@ impl JavacParser {
                         self.next_token();
                         let t = self.term_with_mode(ctx, EXPR);
                         self.accept(ctx, TokenKind::SEMI);
-                        let y = self.F.at(pos).yield_(ctx, t);
+                        let y = self.F.at(pos).yield_(ctx, Some(t));
                         let y = self.to_p(y);
                         return List::of(y);
                     }
@@ -4827,7 +4827,7 @@ impl JavacParser {
                     let value = self.parse_expression(ctx);
                     let value_pos = ctx.tree(value).pos;
                     let yielded = {
-                        let x = self.F.at(value_pos).yield_(ctx, value);
+                        let x = self.F.at(value_pos).yield_(ctx, Some(value));
                         self.to(x)
                     };
                     stats = List::of(yielded);

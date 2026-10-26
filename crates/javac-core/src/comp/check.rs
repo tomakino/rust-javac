@@ -35,6 +35,7 @@ use crate::resources::diagnostic_contract::ErrorInfo;
 use crate::util::jc_diagnostic::{Error as JCDiagnosticError, Factory};
 use crate::util::abstract_log::AbstractLog;
 use crate::util::log::Log;
+use crate::util::list::List;
 use crate::util::name::Name;
 use crate::util::names::Names;
 
@@ -89,6 +90,205 @@ impl Check {
             compiled: HashMap::new(),
             local_class_name_indexes: HashMap::new(),
         }
+    }
+
+
+    // ------------------------------------------------------------------
+    // Exception checking set utilities (Check.java:1578-1685). Ported here
+    // because the Flow batch (FlowAnalyzer) depends on them (registered §19).
+    // ------------------------------------------------------------------
+
+    /// Java: boolean subset(Type t, List<Type> ts) (Check.java:1585-1590)
+    pub fn subset(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        ts: &List<TypeId>,
+    ) -> bool {
+        ts.iter().any(|other| self.types.is_subtype(ctx, syms, t, other))
+    }
+
+    /// Java: boolean intersects(Type t, List<Type> ts) (Check.java:1594-1598)
+    pub fn intersects(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        ts: &List<TypeId>,
+    ) -> bool {
+        ts.iter().any(|other| {
+            self.types.is_subtype(ctx, syms, t, other)
+                || self.types.is_subtype(ctx, syms, other, t)
+        })
+    }
+
+    /// Java: List<Type> incl(Type t, List<Type> ts) (Check.java:1603-1605)
+    pub fn incl(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        ts: &List<TypeId>,
+    ) -> List<TypeId> {
+        if self.subset(ctx, syms, t, ts) {
+            ts.clone()
+        } else {
+            self.excl(ctx, syms, t, ts).prepend(t)
+        }
+    }
+
+    /// Java: List<Type> excl(Type t, List<Type> ts) (Check.java:1610-1619)
+    pub fn excl(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        ts: &List<TypeId>,
+    ) -> List<TypeId> {
+        let mut kept: List<TypeId> = List::nil();
+        for other in ts.iter() {
+            if !self.types.is_subtype(ctx, syms, other, t) {
+                kept = kept.append(other);
+            }
+        }
+        kept
+    }
+
+    /// Java: List<Type> union(List<Type> ts1, List<Type> ts2)
+    /// (Check.java:1624-1629)
+    pub fn union(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ts1: &List<TypeId>,
+        ts2: &List<TypeId>,
+    ) -> List<TypeId> {
+        let mut ts = ts1.clone();
+        for other in ts2.iter() {
+            ts = self.incl(ctx, syms, other, &ts);
+        }
+        ts
+    }
+
+    /// Java: List<Type> diff(List<Type> ts1, List<Type> ts2)
+    /// (Check.java:1634-1639)
+    pub fn diff(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ts1: &List<TypeId>,
+        ts2: &List<TypeId>,
+    ) -> List<TypeId> {
+        let mut ts = ts1.clone();
+        for other in ts2.iter() {
+            ts = self.excl(ctx, syms, other, &ts);
+        }
+        ts
+    }
+
+    /// Java: List<Type> intersect(List<Type> ts1, List<Type> ts2)
+    /// (Check.java:1645-1652)
+    pub fn intersect(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ts1: &List<TypeId>,
+        ts2: &List<TypeId>,
+    ) -> List<TypeId> {
+        let mut ts: List<TypeId> = List::nil();
+        for t in ts1.iter() {
+            if self.subset(ctx, syms, t, ts2) {
+                ts = self.incl(ctx, syms, t, &ts);
+            }
+        }
+        for t in ts2.iter() {
+            if self.subset(ctx, syms, t, ts1) {
+                ts = self.incl(ctx, syms, t, &ts);
+            }
+        }
+        ts
+    }
+
+    /// Java: boolean isUnchecked(ClassSymbol exc) (Check.java:1657-1663)
+    pub fn is_unchecked_class(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        exc: SymbolId,
+    ) -> bool {
+        if ctx.sym(exc).kind == crate::code::kinds::Kind::ERR {
+            return true;
+        }
+        let error_tsym = ctx
+            .typ(syms.error_type)
+            .tsym
+            .expect("error type symbol");
+        let runtime_exception_tsym = ctx
+            .typ(syms.runtime_exception_type)
+            .tsym
+            .expect("runtime exception type symbol");
+        crate::code::symbol::symbol_is_sub_class(ctx, &self.types, syms, exc, error_tsym)
+            || crate::code::symbol::symbol_is_sub_class(
+                ctx,
+                &self.types,
+                syms,
+                exc,
+                runtime_exception_tsym,
+            )
+    }
+
+    /// Java: boolean isUnchecked(Type exc) (Check.java:1667-1672)
+    pub fn is_unchecked_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        exc: TypeId,
+    ) -> bool {
+        if ctx.typ(exc).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
+            let supertype = self.types.supertype(ctx, syms, exc);
+            self.is_unchecked_type(ctx, syms, supertype)
+        } else if ctx.typ(exc).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            let tsym = ctx.typ(exc).tsym.expect("class type symbol");
+            self.is_unchecked_class(ctx, syms, tsym)
+        } else {
+            ctx.typ(exc).has_tag(crate::code::type_tag::TypeTag::BOT)
+        }
+    }
+
+    /// Java: boolean isChecked(Type exc) (Check.java:1674-1676)
+    pub fn is_checked_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        exc: TypeId,
+    ) -> bool {
+        !self.is_unchecked_type(ctx, syms, exc)
+    }
+
+    /// Java: boolean isUnchecked(DiagnosticPosition pos, Type exc)
+    /// (Check.java:1679-1686): the CompletionFailure channel is registered
+    /// (Java checked completion is not represented in the ported symbol layer).
+    pub fn is_unchecked_pos(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        _pos: i32,
+        exc: TypeId,
+    ) -> bool {
+        self.is_unchecked_type(ctx, syms, exc)
+    }
+
+    /// Java: boolean isHandled(Type exc, List<Type> handled)
+    /// (Check.java:1691-1693)
+    pub fn is_handled(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        exc: TypeId,
+        handled: &List<TypeId>,
+    ) -> bool {
+        self.is_unchecked_type(ctx, syms, exc) || self.subset(ctx, syms, exc, handled)
     }
 
     fn error_info(&self, info: ErrorInfo) -> JCDiagnosticError {
