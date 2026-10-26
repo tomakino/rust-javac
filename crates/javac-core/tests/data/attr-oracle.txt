@@ -1,0 +1,8 @@
+SAMPLE Sample.java
+TYPE 0 PRIM:INT
+TYPE 1 ARRAY[PRIM:INT]
+TYPE 2 DECL:java.lang.String
+TYPE 3 ARRAY[DECL:java.lang.String]
+TYPE 4 DECL:java.util.List<DECL:java.lang.String>
+TYPE 5 DECL:java.util.List<ARRAY[DECL:java.lang.String]>
+TYPE 6 DECL:java.util.List<DECL:java.util.List<DECL:java.lang.String>>

@@ -16,9 +16,11 @@
 //!   mapping difference (the upstream fac is only used for those fields and to
 //!   construct the comment readers, which only need the log);
 //! * Character.isJavaIdentifierStart / isJavaIdentifierPart /
-//!   isIdentifierIgnorable are approximated with the std char classification
-//!   (the Unicode identifier classification uses javac-unicode, the ported
-//!   JDK 17 java.lang.Character data tables; see javac-unicode/src/lib.rs);
+//!   isIdentifierIgnorable are the ported javac-unicode JDK 17 data tables
+//!   (javac-unicode/src/lib.rs; the tables are generated from the running
+//!   JDK 17 by tools/gen-unicode and covered by the full-table oracle test
+//!   crates/javac-unicode/tests/char_oracle.rs and the parser full-BMP
+//!   equivalence tests); no std char classification is used;
 //! * StringBuilder -> Vec<u16> (UTF-16 code units, 1:1 with the Java buffer);
 //! * a non-ASCII digit reports IllegalNonasciiDigit from UnicodeReader, as
 //!   upstream;

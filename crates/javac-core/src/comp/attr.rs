@@ -40,7 +40,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::code::deferred_lint_handler::DeferredLintHandler;
-use crate::code::kinds::KindSelector;
+use crate::code::kinds::{Kind, KindSelector};
 use crate::code::source::Feature;
 use crate::code::symbol::CompletionFailure;
 use crate::code::symtab::Symtab;
@@ -661,17 +661,230 @@ impl Attr {
         unimplemented!("TODO(Annotate/Types batch): Attr.visitTypeParameter")
     }
 
-    /// Java: public void visitIdent(JCIdent tree) (4182-...)
+    /// Java: public void visitIdent(JCIdent tree) (Attr.java:4182-4260)
     fn visit_ident(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let name = ident_name(ctx, tree);
+        let pt = self.pt();
+        let sym: SymbolId;
+        if pt
+            .map(|pt| {
+                let tag = ctx.typ(pt).get_tag();
+                tag == TypeTag::METHOD || tag == TypeTag::FORALL
+            })
+            .unwrap_or(false)
+        {
+            // TODO(Resolve batch): rs.resolveMethod(tree.pos(), env, tree.name,
+            //     pt().getParameterTypes(), pt().getTypeArguments());
+            unimplemented!("TODO(Resolve batch): Attr.visitIdent rs.resolveMethod")
+        } else if let Some(tree_sym) = ident_symbol(ctx, tree) {
+            if ctx.sym(tree_sym).kind != Kind::VAR {
+                sym = tree_sym;
+            } else {
+                unimplemented!("TODO(Resolve batch): Attr.visitIdent rs.resolveIdent (VAR)")
+            }
+        } else {
+            let _ = name;
+            unimplemented!("TODO(Resolve batch): Attr.visitIdent rs.resolveIdent")
+        }
+        set_ident_symbol(ctx, tree, sym);
+        let sym_kind = ctx.sym(sym).kind;
+        let kind_selector = sym_kind.to_selector();
+        let mut sym_env = Rc::clone(&env);
+        let encl_class = env.encl_class.expect("enclClass");
+        let encl_sym = class_tree_symbol(ctx, encl_class).expect("enclClass sym");
+        let encl_owner = ctx.sym(encl_sym).owner.expect("enclClass owner");
+        let names = Rc::clone(&self.names);
+        let mut no_outer_this_path = false;
+        let is_val_mth = kind_selector.contains(KindSelector::VAL);
+        if ctx.sym(encl_owner).kind != Kind::PCK
+            && is_val_mth
+            && ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::TYP)
+            && !name.content_equals(&names._this.to_java_string())
+            && !name.content_equals(&names._super.to_java_string())
+        {
+            while let Some(outer) = sym_env.outer.clone() {
+                let encl_class = sym_env.encl_class.expect("symEnv enclClass");
+                let encl_sym = class_tree_symbol(ctx, encl_class).expect("symEnv enclClass sym");
+                // TODO(Symbol/Types batch): sym.isMemberOf(symEnv.enclClass.sym,
+                //     types) needs Symbol.isSubClass/isInheritedIn/hiddenIn.
+                let is_member = symbol_is_member_of(ctx, &self.types, sym, encl_sym);
+                if is_member {
+                    break;
+                }
+                let flags_field = ctx.sym(encl_sym).flags_field;
+                if (flags_field & crate::code::flags::NOOUTERTHIS as i64) != 0 {
+                    no_outer_this_path = false;
+                }
+                sym_env = outer;
+            }
+        }
+        if sym_kind == Kind::VAR {
+            unimplemented!("TODO(Resolve batch): Attr.visitIdent variable checks")
+        }
+        let sym_owner = ctx.sym(sym).owner;
+        let sym_owner_is_typ = sym_owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::TYP);
+        let sym_is_static = (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) != 0;
+        if (sym_env.info.borrow().is_self_call || no_outer_this_path)
+            && is_val_mth
+            && sym_owner_is_typ
+            && !sym_is_static
+        {
+            unimplemented!("TODO(Check batch): Attr.visitIdent early ref error")
+        }
+        let env1 = Rc::clone(&env);
+        if sym_kind != Kind::ERR
+            && sym_kind != Kind::TYP
+            && sym_owner.is_some()
+            && sym_owner != Some(encl_sym)
+        {
+            unimplemented!("TODO(Resolve batch): Attr.visitIdent rs.isAccessible")
+        }
+        if env.info.borrow().is_serializable {
+            unimplemented!("TODO(Check batch): Attr.visitIdent serializable access")
+        }
+        let site = ctx.sym(encl_sym).ty.expect("enclClass type");
+        let _ = &env1;
+        let result_info = self.result_info.clone().expect("resultInfo");
+        Ok(self.check_id(ctx, syms, tree, site, sym, &env, &result_info))
+    }
+    /// Java: Type checkId(JCTree tree, Type site, Symbol sym,
+    /// Env<AttrContext> env, ResultInfo resultInfo) (Attr.java:4490-4496)
+    #[allow(clippy::too_many_arguments)]
+    fn check_id(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        site: TypeId,
+        sym: SymbolId,
+        env: &Rc<Env<AttrContext>>,
+        result_info: &ResultInfo,
+    ) -> TypeId {
+        let pt = result_info.pt;
+        let is_forall_or_method = pt
+            .map(|pt| {
+                let tag = ctx.typ(pt).get_tag();
+                tag == TypeTag::FORALL || tag == TypeTag::METHOD
+            })
+            .unwrap_or(false);
+        if is_forall_or_method {
+            return self.check_method_id_internal(ctx, syms, tree, site, sym, env, result_info);
+        }
+        self.check_id_internal(ctx, syms, tree, site, sym, pt, env, result_info)
+    }
+
+    /// Java: Type checkMethodIdInternal(...) (Attr.java:4498-4518)
+    #[allow(clippy::too_many_arguments)]
+    fn check_method_id_internal(
         &mut self,
         _ctx: &mut CompilerContext,
         _syms: &mut Symtab,
         _tree: TreeId,
-    ) -> Result<TypeId, CompletionFailure> {
-        // TODO(Resolve batch): Resolve.findIdent/findVar/... ; registered.
-        unimplemented!("TODO(Resolve batch): Attr.visitIdent")
+        _site: TypeId,
+        _sym: SymbolId,
+        _env: &Rc<Env<AttrContext>>,
+        _result_info: &ResultInfo,
+    ) -> TypeId {
+        // TODO(AttrRecover/Resolve batch): poly method recovery + checkIdInternal
+        // with the method prototype; registered.
+        unimplemented!("TODO(AttrRecover/Resolve batch): Attr.checkMethodIdInternal")
     }
 
+    /// Java: Type checkIdInternal(JCTree tree, Type site, Symbol sym, Type pt,
+    /// Env<AttrContext> env, ResultInfo resultInfo) (Attr.java:4520-4620)
+    #[allow(clippy::too_many_arguments)]
+    fn check_id_internal(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        site: TypeId,
+        sym: SymbolId,
+        pt: Option<TypeId>,
+        env: &Rc<Env<AttrContext>>,
+        result_info: &ResultInfo,
+    ) -> TypeId {
+        let pt_is_erroneous = pt
+            .map(|pt| ctx.typ(pt).has_tag(TypeTag::ERROR))
+            .unwrap_or(false);
+        if pt_is_erroneous {
+            return self.types.create_error_type_original(ctx, Some(site), syms);
+        }
+        let owntype: TypeId;
+        match ctx.sym(sym).kind {
+            Kind::TYP => {
+                let mut own = ctx.sym(sym).ty.expect("type symbol type");
+                if ctx.typ(own).has_tag(TypeTag::CLASS) {
+                    // TODO(Lint/Resolve batch): chk.checkForBadAuxiliaryClassAccess(
+                    //     tree.pos(), env, (ClassSymbol)sym);
+                    let own_outer = ctx.typ(own).get_enclosing_type();
+                    let sym_type = ctx.sym(sym).ty.expect("symbol type");
+                    let sym_type_args = type_arguments(ctx, sym_type);
+                    if !sym_type_args.is_empty() {
+                        own = self.types.erasure(ctx, syms, own);
+                    } else if let Some(own_outer) = own_outer.filter(|own_outer| {
+                        ctx.typ(*own_outer).has_tag(TypeTag::CLASS) && site != *own_outer
+                    }) {
+                        {
+                            let mut norm_outer = site;
+                            if ctx.typ(norm_outer).has_tag(TypeTag::CLASS) {
+                                // TODO(Types batch): types.asEnclosingSuper(site,
+                                //     ownOuter.tsym) is not ported.
+                                unimplemented!(
+                                    "TODO(Types batch): Attr.checkIdInternal types.asEnclosingSuper"
+                                )
+                            }
+                            if ctx.typ(norm_outer).has_tag(TypeTag::ERROR) {
+                                norm_outer = self.types.erasure(ctx, syms, own_outer);
+                            }
+                            if norm_outer != own_outer {
+                                own = ctx.alloc_type(crate::code::type_::Type::new(
+                                    TypeTag::CLASS,
+                                    ctx.typ(own).tsym,
+                                    crate::code::type_::TypeKindData::ClassType {
+                                        outer_field: Some(norm_outer),
+                                        typarams_field: Some(List::nil()),
+                                        allparams_field: None,
+                                        supertype_field: None,
+                                        interfaces_field: None,
+                                        all_interfaces_field: None,
+                                    },
+                                ));
+                            }
+                        }
+                    }
+                }
+                owntype = own;
+            }
+            Kind::VAR => {
+                unimplemented!("TODO(Resolve/Check batch): Attr.checkIdInternal VAR")
+            }
+            Kind::MTH => {
+                unimplemented!("TODO(Resolve/Check batch): Attr.checkIdInternal MTH")
+            }
+            Kind::PCK | Kind::ERR => {
+                owntype = ctx.sym(sym).ty.expect("symbol type");
+            }
+            other => panic!("AssertionError: unexpected kind: {:?} in tree", other),
+        }
+        // TODO(Check batch): chk.checkDeprecated/checkSunAPI/checkProfile/
+        //     checkPreview(pos, ...) are not ported yet (registered).
+        let _ = (env, ctx.sym(sym).name.clone());
+        self.check(
+            ctx,
+            syms,
+            tree,
+            owntype,
+            ctx.sym(sym).kind.to_selector(),
+            result_info,
+        )
+    }
     /// Java: public void visitParens(JCParens tree) (3922-...)
     fn visit_parens(
         &mut self,
@@ -1102,6 +1315,40 @@ fn _feature_allowed(feature: Feature, source: crate::code::source::Source) -> bo
 }
 
 
+/// Java: Symbol.isMemberOf(TypeSymbol clazz, Types types) (Symbol.java:552)
+/// TODO(Symbol/Types batch): isSubClass/isInheritedIn/hiddenIn are not ported;
+/// the call site in visitIdent only runs for inner classes (registered).
+fn symbol_is_member_of(
+    _ctx: &mut CompilerContext,
+    _types: &crate::code::types::Types,
+    _sym: SymbolId,
+    _clazz: SymbolId,
+) -> bool {
+    unimplemented!("TODO(Symbol/Types batch): Symbol.isMemberOf")
+}
+
+/// Java: JCIdent.name
+fn ident_name(ctx: &CompilerContext, tree: TreeId) -> crate::util::name::Name {
+    match &ctx.tree(tree).kind {
+        TreeKind::Ident { name, .. } => name.clone(),
+        _ => panic!("ClassCastException: JCIdent expected"),
+    }
+}
+
+/// Java: JCIdent.sym
+fn ident_symbol(ctx: &CompilerContext, tree: TreeId) -> Option<SymbolId> {
+    match &ctx.tree(tree).kind {
+        TreeKind::Ident { sym, .. } => *sym,
+        _ => None,
+    }
+}
+
+/// Java: tree.sym = sym
+fn set_ident_symbol(ctx: &mut CompilerContext, tree: TreeId, sym: SymbolId) {
+    if let TreeKind::Ident { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
+        *slot = Some(sym);
+    }
+}
 /// Java: JCTypeApply.clazz
 fn type_apply_clazz(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
     match &ctx.tree(tree).kind {
@@ -1137,8 +1384,6 @@ fn class_tree_symbol(ctx: &CompilerContext, tree: TreeId) -> Option<SymbolId> {
         _ => None,
     }
 }
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1214,9 +1459,6 @@ mod tests {
 
     #[test]
     fn predefined_result_infos_match_the_upstream_kinds() {
-        // The predefined ResultInfo kinds (Attr constructor): statInfo is NIL,
-        // varAssignmentInfo is ASG, unknownExprInfo is VAL, unknownTypeInfo is
-        // TYP, unknownTypeExprInfo is VAL_TYP.
         let stat_info = ResultInfo::new(KindSelector::NIL, None, test_check_context());
         assert_eq!(stat_info.pkind, KindSelector::NIL);
         let var_assignment = ResultInfo::new(KindSelector::ASG, None, test_check_context());
@@ -1249,7 +1491,11 @@ mod tests {
         assert!(Rc::ptr_eq(&same_context.check_context, &context));
         let new_pt = info.dup_pt_context(Some(TypeId::new(2)), Rc::clone(&context));
         assert_eq!(new_pt.pt, Some(TypeId::new(2)));
-        let new_mode = info.dup_pt_context_mode(Some(TypeId::new(3)), context, crate::comp::check::CheckMode::NORMAL);
+        let new_mode = info.dup_pt_context_mode(
+            Some(TypeId::new(3)),
+            context,
+            crate::comp::check::CheckMode::NORMAL,
+        );
         assert_eq!(new_mode.check_mode, crate::comp::check::CheckMode::NORMAL);
     }
 
@@ -1278,5 +1524,562 @@ mod tests {
             literal_value_to_constant(Some(LiteralValue::Character(65))),
             ConstantValue::Character(65)
         );
+    }
+    use std::io::Read;
+
+    use crate::parser::parser::Parser;
+    use crate::util::abstract_log::AbstractLog;
+
+    use javac_tools::error::Error as ToolsError;
+    use javac_tools::tools::file_object::FileObject;
+    use javac_tools::tools::java_file_manager::{
+        FileObjectRef, JavaFileManager, JavaFileObjectRef, Location, LocationRef,
+    };
+    use javac_tools::tools::java_file_object::{JavaFileObject, Kind};
+    use javac_tools::tools::option_checker::OptionChecker;
+    use javac_tools::uri::URI;
+
+    use crate::code::deferred_lint_handler::DeferredLintHandler;
+    use crate::code::dependencies::DummyDependencies;
+    use crate::code::preview::Preview;
+    use crate::code::source::Source;
+    use crate::comp::member_enter::MemberEnter;
+    use crate::comp::type_enter::TypeEnter;
+    use crate::comp::type_envs::TypeEnvs;
+    use crate::ids::TreeId;
+    use crate::jvm::target::Target;
+    use crate::parser::parser_factory::ParserFactory;
+    use crate::parser::scanner_factory::ScannerFactory;
+    use crate::tree::jc_tree::{Tag, TreeKind};
+    use crate::tree::tree_maker::TreeMaker;
+    use crate::util::context::Context;
+    use crate::util::javac_messages::JavacMessages;
+    use crate::util::jc_diagnostic::Factory;
+    use crate::util::list::List;
+    use crate::util::names::Names;
+    use crate::util::options::Options;
+
+    /// The development-time Attr oracle (tools/gen-attr-oracle).
+    const ATTR_ORACLE: &str =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/attr-oracle.txt"));
+
+    /// The same source as tools/gen-attr-oracle/GenAttrOracle.java.
+    const SAMPLE_SOURCE: &str = "package p;\nimport java.util.List;\nclass Sample {\n    int f1;\n    int[] f2;\n    String f3;\n    String[] f4;\n    List<String> f5;\n    List<String[]> f6;\n    List<List<String>> f7;\n}\n";
+
+    struct TestSourceFile {
+        name: javac_strings::JavaString,
+        base: String,
+        content: String,
+    }
+
+    impl FileObject for TestSourceFile {
+        fn to_uri(&self) -> URI {
+            URI::create(&javac_strings::JavaString::from(
+                format!("string:///{}", self.name.to_string_lossy()).as_str(),
+            ))
+        }
+        fn get_name(&self) -> javac_strings::JavaString {
+            self.name.clone()
+        }
+        fn open_input_stream(&self) -> Result<Box<dyn Read>, ToolsError> {
+            Err(ToolsError::UnsupportedOperationException)
+        }
+        fn open_output_stream(&self) -> Result<Box<dyn std::io::Write>, ToolsError> {
+            Err(ToolsError::UnsupportedOperationException)
+        }
+        fn open_reader(
+            &self,
+            _ignore_encoding_errors: bool,
+        ) -> Result<Box<dyn javac_tools::java_io::Reader>, ToolsError> {
+            Err(ToolsError::UnsupportedOperationException)
+        }
+        fn get_char_content(
+            &self,
+            _ignore_encoding_errors: bool,
+        ) -> Result<Option<javac_strings::JavaString>, ToolsError> {
+            Ok(Some(javac_strings::JavaString::from(self.content.as_str())))
+        }
+        fn open_writer(&self) -> Result<Box<dyn javac_tools::java_io::Writer>, ToolsError> {
+            Err(ToolsError::UnsupportedOperationException)
+        }
+        fn get_last_modified(&self) -> i64 {
+            0
+        }
+        fn delete(&self) -> bool {
+            false
+        }
+    }
+
+    impl JavaFileObject for TestSourceFile {
+        fn get_kind(&self) -> Kind {
+            Kind::SOURCE
+        }
+        fn is_name_compatible(
+            &self,
+            simple_name: &javac_strings::JavaString,
+            kind: Kind,
+        ) -> bool {
+            kind == Kind::SOURCE && simple_name.to_string_lossy() == self.base
+        }
+        fn get_nesting_kind(
+            &self,
+        ) -> Option<javac_tools::lang::model::element::nesting_kind::NestingKind> {
+            None
+        }
+        fn get_access_level(
+            &self,
+        ) -> Option<javac_tools::lang::model::element::modifier::Modifier> {
+            None
+        }
+    }
+
+    struct UnusedFileManager;
+
+    impl OptionChecker for UnusedFileManager {
+        fn is_supported_option(&self, _option: &javac_strings::JavaString) -> i32 {
+            0
+        }
+    }
+
+    impl JavaFileManager for UnusedFileManager {
+        fn get_class_loader(
+            &self,
+            _location: &dyn Location,
+        ) -> Option<Rc<dyn javac_tools::jdk::ClassLoader>> {
+            None
+        }
+        fn list(
+            &self,
+            _location: &dyn Location,
+            _package_name: &javac_strings::JavaString,
+            _kinds: &[Kind],
+            _recurse: bool,
+        ) -> Result<Vec<JavaFileObjectRef>, ToolsError> {
+            Ok(Vec::new())
+        }
+        fn infer_binary_name(
+            &self,
+            _location: &dyn Location,
+            _file: &JavaFileObjectRef,
+        ) -> Option<javac_strings::JavaString> {
+            None
+        }
+        fn is_same_file(&self, a: &FileObjectRef, b: &FileObjectRef) -> bool {
+            a.get_name().to_string_lossy() == b.get_name().to_string_lossy()
+        }
+        fn handle_option(
+            &self,
+            _current: &javac_strings::JavaString,
+            _remaining: &mut dyn Iterator<Item = javac_strings::JavaString>,
+        ) -> bool {
+            false
+        }
+        fn has_location(&self, _location: &dyn Location) -> bool {
+            false
+        }
+        fn get_java_file_for_input(
+            &self,
+            _location: &dyn Location,
+            _class_name: &javac_strings::JavaString,
+            _kind: Kind,
+        ) -> Result<Option<JavaFileObjectRef>, ToolsError> {
+            Err(ToolsError::UnsupportedOperationException)
+        }
+        fn get_java_file_for_output(
+            &self,
+            _location: &dyn Location,
+            _class_name: &javac_strings::JavaString,
+            _kind: Kind,
+            _sibling: Option<&FileObjectRef>,
+        ) -> Result<JavaFileObjectRef, ToolsError> {
+            Err(ToolsError::UnsupportedOperationException)
+        }
+        fn get_file_for_input(
+            &self,
+            _location: &dyn Location,
+            _package_name: &javac_strings::JavaString,
+            _relative_name: &javac_strings::JavaString,
+        ) -> Result<Option<FileObjectRef>, ToolsError> {
+            Err(ToolsError::UnsupportedOperationException)
+        }
+        fn get_file_for_output(
+            &self,
+            _location: &dyn Location,
+            _package_name: &javac_strings::JavaString,
+            _relative_name: &javac_strings::JavaString,
+            _sibling: Option<&FileObjectRef>,
+        ) -> Result<FileObjectRef, ToolsError> {
+            Err(ToolsError::UnsupportedOperationException)
+        }
+        fn flush(&self) -> Result<(), ToolsError> {
+            Ok(())
+        }
+        fn close(&self) -> Result<(), ToolsError> {
+            Ok(())
+        }
+        fn list_locations_for_modules(
+            &self,
+            _location: &dyn Location,
+        ) -> Result<Vec<Vec<LocationRef>>, ToolsError> {
+            Err(ToolsError::UnsupportedOperationException)
+        }
+    }
+
+    struct AttrHarness {
+        ctx: CompilerContext,
+        syms: Symtab,
+        names: Rc<Names>,
+        class_tree: TreeId,
+        env: Rc<Env<AttrContext>>,
+        attr: Attr,
+    }
+
+    fn build_attr_harness() -> AttrHarness {
+        let mut context = Context::new();
+        let log = Log::instance(&mut context);
+        let names = Rc::new(Names::new(false));
+        let messages = JavacMessages::instance(&mut context);
+        let diags = Rc::new(Factory::new(messages, "compiler"));
+        let options = Options::instance(&mut context);
+        let sourcefile: JavaFileObjectRef = Rc::new(TestSourceFile {
+            name: javac_strings::JavaString::from("Sample.java"),
+            base: String::from("Sample"),
+            content: SAMPLE_SOURCE.to_string(),
+        });
+        log.borrow_mut().use_source(Some(Rc::clone(&sourcefile)));
+        let scanner_factory =
+            ScannerFactory::new(&mut context, Rc::clone(&names), Source::DEFAULT);
+        let parser_factory = ParserFactory::new(
+            &mut context,
+            Rc::clone(&names),
+            Source::DEFAULT,
+            scanner_factory,
+            None,
+        );
+        let mut ctx = CompilerContext::new();
+        let mut parser = parser_factory.new_parser(
+            &mut ctx,
+            &javac_strings::JavaString::from(SAMPLE_SOURCE),
+            false,
+            true,
+            false,
+        );
+        let unit = parser.parse_compilation_unit(&mut ctx);
+        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, Source::JDK17);
+        let java_base = syms.java_base;
+        if let TreeKind::CompilationUnit {
+            modle,
+            sourcefile: slot,
+            ..
+        } = &mut ctx.tree_mut(unit).kind
+        {
+            *modle = Some(java_base);
+            *slot = Some(sourcefile);
+        }
+        let types = Rc::new(Types::new());
+        let chk = Rc::new(RefCell::new(Check::new(
+            Rc::clone(&names),
+            Rc::clone(&log),
+            Rc::clone(&diags),
+            Source::JDK17,
+            '$',
+            Rc::clone(&types),
+        )));
+        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
+        let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
+        let dependencies: Rc<RefCell<dyn crate::code::dependencies::Dependencies>> =
+            Rc::new(RefCell::new(DummyDependencies));
+        let make = Rc::new(RefCell::new(TreeMaker::new(Some(Rc::clone(&names)))));
+        let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
+        let enter = Rc::new(RefCell::new(Enter::new(
+            Rc::clone(&log),
+            Rc::clone(&names),
+            Rc::clone(&diags),
+            Rc::clone(&chk),
+            Rc::clone(&types),
+            None,
+            manager,
+            &options,
+        )));
+        let member_enter = Rc::new(RefCell::new(MemberEnter::new(
+            Rc::clone(&enter),
+            Rc::clone(&log),
+            Rc::clone(&chk),
+            Rc::clone(&types),
+            Rc::clone(&deferred),
+        )));
+        let type_enter = Rc::new(RefCell::new(TypeEnter::new(
+            Rc::clone(&names),
+            Rc::clone(&enter),
+            Rc::clone(&member_enter),
+            Rc::clone(&log),
+            Rc::clone(&chk),
+            Rc::clone(&types),
+            Rc::clone(&make),
+            Rc::clone(&deferred),
+            None,
+            Rc::clone(&type_envs),
+            Rc::clone(&dependencies),
+        )));
+        let preview = Preview::new(false, false);
+        let basic_handler = Rc::clone(&chk.borrow().basic_handler);
+        let attr = Attr::new(
+            Rc::clone(&names),
+            Rc::clone(&log),
+            Rc::clone(&chk),
+            Rc::clone(&member_enter),
+            Rc::clone(&type_enter),
+            Rc::clone(&make),
+            Rc::clone(&enter),
+            Rc::clone(&types),
+            Rc::clone(&diags),
+            Rc::clone(&deferred),
+            Rc::clone(&type_envs),
+            Rc::clone(&dependencies),
+            basic_handler,
+            Source::JDK17,
+            &options,
+            &preview,
+        );
+        enter.borrow_mut().main(&mut ctx, &mut syms, List::of(unit));
+        let class_tree = class_tree_in(&ctx, unit);
+        let class_sym = class_tree_symbol(&ctx, class_tree).expect("class symbol");
+        let top = enter.borrow().get_top_level_env(&mut ctx, unit);
+        let members_scope = match &ctx.sym(class_sym).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol {
+                members_field, ..
+            } => *members_field,
+            _ => None,
+        };
+        let mut info = crate::comp::attr_context::AttrContext::new();
+        info.scope = members_scope;
+        let env = Rc::new(Env {
+            next: None,
+            outer: top.outer.clone(),
+            tree: Some(class_tree),
+            toplevel: Some(unit),
+            encl_class: Some(class_tree),
+            encl_method: None,
+            info: Rc::new(RefCell::new(info)),
+            base_clause: false,
+        });
+        AttrHarness {
+            ctx,
+            syms,
+            names,
+            class_tree,
+            env,
+            attr,
+        }
+    }
+
+    fn class_tree_in(ctx: &CompilerContext, unit: TreeId) -> TreeId {
+        let defs = match &ctx.tree(unit).kind {
+            TreeKind::CompilationUnit { defs, .. } => defs.clone(),
+            _ => List::nil(),
+        };
+        let mut current = defs;
+        while current.non_empty() {
+            let def = *current.head();
+            if ctx.tree(def).has_tag(Tag::CLASSDEF) {
+                return def;
+            }
+            current = current.tail();
+        }
+        panic!("class declaration not found")
+    }
+
+    fn class_defs(ctx: &CompilerContext, class_tree: TreeId) -> List<TreeId> {
+        match &ctx.tree(class_tree).kind {
+            TreeKind::ClassDecl { defs, .. } => defs.clone(),
+            _ => List::nil(),
+        }
+    }
+
+    fn var_decl_type(ctx: &CompilerContext, var: TreeId) -> TreeId {
+        match &ctx.tree(var).kind {
+            TreeKind::VariableDecl {
+                vartype: Some(vartype),
+                ..
+            } => *vartype,
+            _ => panic!("variable declaration without a type"),
+        }
+    }
+
+    /// Collects the field type trees in member order (the oracle walks the
+    /// ClassTree members in the same order).
+    fn type_trees(ctx: &CompilerContext, class_tree: TreeId) -> Vec<TreeId> {
+        let mut result = Vec::new();
+        let mut current = class_defs(ctx, class_tree);
+        while current.non_empty() {
+            let def = *current.head();
+            if ctx.tree(def).has_tag(Tag::VARDEF) {
+                result.push(var_decl_type(ctx, def));
+            }
+            current = current.tail();
+        }
+        result
+    }
+
+    /// Pre-sets the java.lang/java.util symbols of the identifier type trees:
+    /// Resolve is not ported yet (registered: Attr.visitIdent identifier
+    /// resolution is the Resolve batch); the tree.sym fast path itself is the
+    /// upstream Attr.java:4190-4192 branch.
+    fn preset_type_idents(
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        names: &Names,
+        tree: TreeId,
+    ) {
+        match ctx.tree(tree).tag {
+            Tag::TYPEARRAY => {
+                if let TreeKind::ArrayTypeTree {
+                    elemtype: Some(elemtype),
+                } = &ctx.tree(tree).kind
+                {
+                    let elemtype = *elemtype;
+                    preset_type_idents(ctx, syms, names, elemtype);
+                }
+            }
+            Tag::TYPEAPPLY => {
+                let (clazz, arguments) = match &ctx.tree(tree).kind {
+                    TreeKind::TypeApply { clazz, arguments } => (*clazz, arguments.clone()),
+                    _ => unreachable!(),
+                };
+                if let Some(clazz) = clazz {
+                    preset_type_idents(ctx, syms, names, clazz);
+                }
+                let mut current = arguments;
+                while current.non_empty() {
+                    let argument = *current.head();
+                    preset_type_idents(ctx, syms, names, argument);
+                    current = current.tail();
+                }
+            }
+            Tag::IDENT => {
+                let name = match &ctx.tree(tree).kind {
+                    TreeKind::Ident { name, .. } => name.clone(),
+                    _ => unreachable!(),
+                };
+                let string_name = names.from_utf(b"String");
+                let object_name = names.from_utf(b"Object");
+                let list_name = names.from_utf(b"List");
+                let symbol = if name.content_equals(&string_name.to_java_string()) {
+                    ctx.typ(syms.string_type).tsym
+                } else if name.content_equals(&object_name.to_java_string()) {
+                    ctx.typ(syms.object_type).tsym
+                } else if name.content_equals(&list_name.to_java_string()) {
+                    ctx.typ(syms.list_type).tsym
+                } else {
+                    panic!(
+                        "unsupported identifier in the attr oracle source: {}",
+                        name.to_java_string().to_string_lossy()
+                    )
+                };
+                let symbol = symbol.expect("predefined type symbol");
+                if let TreeKind::Ident { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                    *slot = Some(symbol);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Gives java.util.List its declared type parameter (the real compiler fills
+    /// the generic signature from the class file reader; the harness injects
+    /// E = Object, the declared bound of List<E>; registered adapter).
+    fn inject_list_type_parameters(ctx: &mut CompilerContext, syms: &mut Symtab) {
+        let list_type = syms.list_type;
+        let object_type = syms.object_type;
+        if let crate::code::type_::TypeKindData::ClassType { typarams_field, .. } =
+            &mut ctx.typ_mut(list_type).kind
+        {
+            *typarams_field = Some(List::of(object_type));
+        }
+    }
+
+    fn encode_type(ctx: &CompilerContext, t: TypeId) -> String {
+        let tag = ctx.typ(t).get_tag();
+        match tag {
+            crate::code::type_tag::TypeTag::ARRAY => {
+                let elemtype = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => {
+                        elemtype.expect("array element type")
+                    }
+                    _ => panic!("array type expected"),
+                };
+                format!("ARRAY[{}]", encode_type(ctx, elemtype))
+            }
+            crate::code::type_tag::TypeTag::CLASS => {
+                let tsym = ctx.typ(t).tsym.expect("class type symbol");
+                let qualified = match &ctx.sym(tsym).kind_data {
+                    crate::code::symbol::SymbolKind::ClassSymbol { fullname, .. } => {
+                        fullname.to_java_string().to_string_lossy()
+                    }
+                    _ => ctx.sym(tsym).name.to_java_string().to_string_lossy(),
+                };
+                let arguments = type_arguments(ctx, t);
+                if arguments.is_empty() {
+                    format!("DECL:{qualified}")
+                } else {
+                    let mut encoded = String::from("DECL:");
+                    encoded.push_str(&qualified);
+                    encoded.push('<');
+                    let mut current = arguments;
+                    let mut first = true;
+                    while current.non_empty() {
+                        if !first {
+                            encoded.push(',');
+                        }
+                        first = false;
+                        let argument = *current.head();
+                        encoded.push_str(&encode_type(ctx, argument));
+                        current = current.tail();
+                    }
+                    encoded.push('>');
+                    encoded
+                }
+            }
+            crate::code::type_tag::TypeTag::ERROR => String::from("ERROR"),
+            _ => {
+                if ctx.typ(t).is_primitive() {
+                    format!("PRIM:{tag:?}")
+                } else {
+                    format!("{tag:?}:unsupported")
+                }
+            }
+        }
+    }
+
+    fn oracle_entries() -> Vec<String> {
+        ATTR_ORACLE
+            .lines()
+            .filter(|line| line.starts_with("TYPE "))
+            .map(|line| line.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn attr_type_attribution_matches_the_javac_oracle() {
+        let mut harness = build_attr_harness();
+        inject_list_type_parameters(&mut harness.ctx, &mut harness.syms);
+        let trees = type_trees(&harness.ctx, harness.class_tree);
+        let mut actual: Vec<String> = Vec::new();
+        for (index, tree) in trees.iter().enumerate() {
+            let tree = *tree;
+            preset_type_idents(&mut harness.ctx, &harness.syms, &harness.names, tree);
+            let ty = harness
+                .attr
+                .attrib_type(&mut harness.ctx, &mut harness.syms, tree, &harness.env);
+            actual.push(format!("TYPE {} {}", index, encode_type(&harness.ctx, ty)));
+        }
+        let expected = oracle_entries();
+        assert_eq!(actual.len(), expected.len(), "type tree count");
+        for (index, (actual_line, expected_line)) in actual.iter().zip(expected.iter()).enumerate() {
+            assert_eq!(
+                actual_line, expected_line,
+                "type tree #{index} attribution differs from the javac oracle"
+            );
+        }
     }
 }
