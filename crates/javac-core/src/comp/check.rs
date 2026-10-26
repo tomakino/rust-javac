@@ -1675,19 +1675,69 @@ impl Check {
     }
 
     /// Java: public void checkRedundantCast(Env<AttrContext> env,
-    /// final JCTypeCast tree) (Check.java:647-660)
-    ///
-    /// TODO(TreeInfo): requires TreeInfo.containsTypeAnnotation
-    /// (TypeAnnotationFinder) — not ported; registered.
+    /// final JCTypeCast tree) (Check.java:647-658).
     pub fn check_redundant_cast(
         &self,
-        _ctx: &mut CompilerContext,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         _env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
-        _tree: TreeId,
+        tree: TreeId,
     ) {
-        unimplemented!(
-            "TODO(TreeInfo batch): Check.checkRedundantCast needs TreeInfo.containsTypeAnnotation (Check.java:647-660)"
-        )
+        const IGNORE_ANNOTATED_CASTS: bool = true;
+        let (clazz, expr) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
+            _ => panic!("ClassCastException: JCTypeCast expected"),
+        };
+        let clazz = clazz.expect("cast type");
+        let expr = expr.expect("cast expression");
+        let tree_type = ctx.tree(tree).ty.expect("cast type");
+        if self.types.is_erroneous_type(ctx, syms, tree_type) {
+            return;
+        }
+        let expr_type = ctx.tree(expr).ty.expect("expression type");
+        let clazz_type = ctx.tree(clazz).ty.expect("cast class type");
+        if !self
+            .types
+            .is_same_type(ctx, syms, expr_type, clazz_type)
+        {
+            return;
+        }
+        if IGNORE_ANNOTATED_CASTS
+            && crate::tree::tree_info::contains_type_annotation(ctx, clazz)
+        {
+            return;
+        }
+        if is292_target_type_cast(ctx, tree) {
+            return;
+        }
+        // Java: deferredLintHandler.report(() -> { if (lint.isEnabled(CAST))
+        //     log.warning(CAST, tree.pos(), Warnings.RedundantCast(tree.clazz.type)); });
+        let lint = Rc::clone(&self.lint);
+        let log = Rc::clone(&self.log);
+        let pos = ctx.tree(tree).pos;
+        let redundant_cast = crate::resources::compiler_properties::warnings::redundant_cast(
+            crate::resources::diagnostic_contract::TypeArg::placeholder(type_display_str(
+                ctx, clazz_type,
+            )),
+        );
+        self.deferred_lint_handler
+            .borrow_mut()
+            .report(Box::new(move || {
+                if lint.is_enabled(crate::code::lint::LintCategory::CAST) {
+                    use crate::util::abstract_log::AbstractLog;
+                    let position: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
+                        Some(Rc::new(
+                            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                        ));
+                    let warning =
+                        crate::util::jc_diagnostic::Warning::from(redundant_cast.clone());
+                    log.borrow_mut().warning_lint_pos(
+                        crate::code::lint::LintCategory::CAST,
+                        position,
+                        warning,
+                    );
+                }
+            }));
     }
 
     /// Java: void validate(List<? extends JCTree> trees, Env<AttrContext> env)
@@ -9170,4 +9220,29 @@ impl Check {
             );
         }
     }
+}
+
+/// Java: String.valueOf(tree.clazz.type) for the RedundantCast warning argument.
+fn type_display_str(ctx: &mut CompilerContext, ty: TypeId) -> String {
+    crate::code::type_::type_to_string(ctx, ty)
+}
+
+/// Java: private boolean is292targetTypeCast(JCTypeCast tree) (Check.java:660-671).
+fn is292_target_type_cast(ctx: &mut CompilerContext, tree: TreeId) -> bool {
+    use crate::code::kinds::Kind;
+    let expr = match &ctx.tree(tree).kind {
+        crate::tree::jc_tree::TreeKind::TypeCast { expr, .. } => expr.expect("cast expression"),
+        _ => panic!("ClassCastException: JCTypeCast expected"),
+    };
+    let expr = crate::tree::tree_info::skip_parens(ctx, expr);
+    let crate::tree::jc_tree::TreeKind::MethodInvocation { meth, .. } = &ctx.tree(expr).kind else {
+        return false;
+    };
+    let method = *meth;
+    let Some(symbol) = crate::tree::tree_info::symbol(ctx, method.expect("method expression"))
+    else {
+        return false;
+    };
+    ctx.sym(symbol).kind == Kind::MTH
+        && (ctx.sym(symbol).flags_field & crate::code::flags::HYPOTHETICAL) != 0
 }

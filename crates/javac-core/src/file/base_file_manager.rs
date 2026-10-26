@@ -242,17 +242,50 @@ impl BaseFileManager {
         self.locations.is_default_system_modules_path()
     }
 
-    /// Java: public boolean handleOption(String current, Iterator<String> remaining).
+    /// Java: public boolean handleOption(String current, Iterator<String> remaining)
+    /// (BaseFileManager.java:190-247).
     ///
-    /// TODO(main/OptionHelper): needs Option.process/handleOption and main.OptionHelper.
+    /// PORTING_RULES: the upstream uncaught IllegalArgumentException
+    /// (Option.InvalidValueException wrapped in IllegalArgumentException) is
+    /// returned as Err(message); the JavaFileManager wrapper panics with it.
+    ///
+    /// # Arguments
+    ///   - current: the option string;
+    ///   - remaining: the remaining command line arguments.
+    ///
+    /// # Returns
+    ///   - Ok(false) when the option is not a file manager option;
+    ///   - Ok(true) when it was handled; Err(IllegalArgumentException message).
+    ///
+    /// # Panics
+    ///   - none.
     pub fn handle_option(
-        &self,
-        _current: &str,
-        _remaining: &mut dyn Iterator<Item = JavaString>,
-    ) -> bool {
-        unimplemented!(
-            "TODO(main/OptionHelper batch): BaseFileManager.handleOption needs Option.process"
-        )
+        &mut self,
+        current: &str,
+        remaining: &mut dyn Iterator<Item = JavaString>,
+    ) -> Result<bool, JavaString> {
+        // Java: OptionHelper helper = new GrumpyHelper(log) { get/put/remove ->
+        // options; handleFileManagerOption -> handleOption(option, value) };
+        let mut helper = BaseFileManagerOptionHelper {
+            options: self.options.clone(),
+            log: self.log.clone(),
+            applied: Vec::new(),
+        };
+        let Some(option) =
+            JavacOption::lookup_in(current, &JavacOption::get_javac_file_manager_options())
+        else {
+            return Ok(false);
+        };
+        let mut rest = remaining.map(|argument| argument.to_string_lossy());
+        if let Err(error) = option.handle_option(&mut helper, current, &mut rest) {
+            // Java: throw new IllegalArgumentException(e.getMessage(), e);
+            return Err(JavaString::from(error.get_message()));
+        }
+        let applied = helper.applied;
+        for (option, value) in applied {
+            self.handle_option_value(option, &value);
+        }
+        Ok(true)
     }
 
     /// Java: public int isSupportedOption(String option).
@@ -290,14 +323,30 @@ impl BaseFileManager {
         }
     }
 
-    /// Java: public boolean handleOptions(Map<Option, String> map).
+    /// Java: public boolean handleOptions(Map<Option, String> map)
+    /// (BaseFileManager.java:275-291).
     ///
-    /// TODO(Log): needs log.error(Errors.IllegalArgumentForOption(...)) — the Log error
-    /// entry point is not ported in this; no substitute reporting is written.
-    pub fn handle_options(&self, _map: &[(JavacOption, JavaString)]) -> bool {
-        unimplemented!(
-            "TODO(Log batch): BaseFileManager.handleOptions needs Log.error and Errors.IllegalArgumentForOption"
-        )
+    /// PORTING_RULES: the upstream catch (IllegalArgumentException) reports
+    /// Errors.IllegalArgumentForOption; the ported Locations.handleOption
+    /// reports through its own path instead of throwing (registered deviation,
+    /// see the ported Locations), so the catch branch has no throwing source.
+    ///
+    /// # Arguments
+    ///   - map: the option/value entries.
+    ///
+    /// # Returns
+    ///   - true if all the calls are successful.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn handle_options(&mut self, map: &[(JavacOption, JavaString)]) -> bool {
+        let mut ok = true;
+        for (option, value) in map {
+            let value = value.to_string_lossy();
+            let result = self.handle_option_value(*option, &value);
+            ok = ok & result;
+        }
+        ok
     }
 
     /// Java: private String getDefaultEncodingName() {
@@ -671,6 +720,42 @@ mod tests {
     }
 
     #[test]
+    fn handle_option_encodes_and_stores_file_manager_values() {
+        use crate::main::option::Option as JavacOption;
+        let mut context = crate::util::context::Context::new();
+        let options = crate::util::options::Options::instance(&mut context);
+        let log = crate::util::log::Log::instance(&mut context);
+        let mut manager =
+            BaseFileManager::new(None, FsPath::from_path_buf(std::path::PathBuf::from(".")));
+        manager.init_services(log, options, std::rc::Rc::new(
+            crate::file::cache_fs_info::CacheFSInfo::new(),
+        ));
+
+        // Java: BaseFileManager.handleOption(Option.ENCODING, value).
+        let mut rest = vec![js("UTF-16LE")].into_iter();
+        assert!(manager.handle_option("-encoding", &mut rest).expect("handled"));
+        assert_eq!(manager.get_encoding_name().to_string_lossy(), "UTF-16LE");
+
+        // An unknown option is not handled.
+        assert!(!manager
+            .handle_option("--definitely-not-an-option", &mut std::iter::empty())
+            .expect("not handled"));
+
+        // Java: handleOptions(Map<Option,String>): every entry is applied.
+        assert!(manager.handle_options(&[(JavacOption::ENCODING, js("UTF-8"))]));
+        assert_eq!(manager.get_encoding_name().to_string_lossy(), "UTF-8");
+    }
+
+    #[test]
+    fn handle_option_misses_are_not_errors() {
+        let mut manager =
+            BaseFileManager::new(None, FsPath::from_path_buf(std::path::PathBuf::from(".")));
+        assert!(!manager
+            .handle_option("--not-an-option", &mut std::iter::empty())
+            .expect("not handled"));
+    }
+
+    #[test]
     fn get_kind_matches_the_extension() {
         assert_eq!(BaseFileManager::get_kind_name("Hello.java"), Kind::SOURCE);
         assert_eq!(BaseFileManager::get_kind_name("Hello.class"), Kind::CLASS);
@@ -762,5 +847,54 @@ mod tests {
         );
         let result = std::panic::catch_unwind(|| BaseFileManager::null_check::<u32>(None));
         assert!(result.is_err());
+    }
+}
+
+/// Java: the anonymous OptionHelper created by BaseFileManager.handleOption
+/// (BaseFileManager.java:203-234): the value accessors delegate to the
+/// Options table and the file manager options are recorded for
+/// handleOption(Option, String).
+struct BaseFileManagerOptionHelper {
+    options: StdOption<Rc<Options>>,
+    log: StdOption<Rc<RefCell<crate::util::log::Log>>>,
+    applied: Vec<(JavacOption, String)>,
+}
+
+impl crate::main::option_helper::OptionHelper for BaseFileManagerOptionHelper {
+    fn get(&self, option: JavacOption) -> StdOption<String> {
+        self.options.as_ref().and_then(|options| options.get_option(option))
+    }
+
+    fn put(&mut self, name: &str, value: &str) {
+        if let Some(options) = &self.options {
+            options.put(name, value);
+        }
+    }
+
+    fn remove(&mut self, name: &str) {
+        if let Some(options) = &self.options {
+            options.remove(name);
+        }
+    }
+
+    fn handle_file_manager_option(&mut self, option: JavacOption, value: &str) -> bool {
+        self.applied.push((option, value.to_string()));
+        true
+    }
+
+    fn get_log(&self) -> StdOption<Rc<RefCell<crate::util::log::Log>>> {
+        self.log.clone()
+    }
+
+    fn get_own_name(&self) -> String {
+        panic!("IllegalStateException")
+    }
+
+    fn add_file(&mut self, _path: &javac_fs::Path) {
+        panic!("IllegalArgumentException")
+    }
+
+    fn add_class_name(&mut self, _name: &str) {
+        panic!("IllegalArgumentException")
     }
 }

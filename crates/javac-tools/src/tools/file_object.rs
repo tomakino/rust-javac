@@ -124,6 +124,13 @@ pub trait FileObject {
     /// @return true if and only if this file object is successfully
     /// deleted; false otherwise
     fn delete(&self) -> bool;
+
+    /// PORTING_RULES adapter: the upstream jrt FileSystem identity test
+    /// (JRTIndex.isInJRT(FileObject)) is expressed as a trait method because
+    /// Rust cannot downcast a JavaFileObject (registered adapter).
+    fn is_in_jrt(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

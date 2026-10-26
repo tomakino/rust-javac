@@ -6922,8 +6922,10 @@ impl Attr {
         let result = self.check(ctx, syms, tree, captured, KindSelector::VAL, &result_info);
         self.result = Some(result);
         if !is_poly {
-            // NOT PORTED: chk.checkRedundantCast(localEnv, tree) (Check.java:
-            // 3290-3310, Check); registered.
+            // Java: Attr.java:4073 chk.checkRedundantCast(localEnv, tree);
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_redundant_cast(ctx, &*syms, &local_env, tree);
         }
         Ok(result)
     }

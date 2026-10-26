@@ -704,6 +704,236 @@ enum ChoiceKind {
     ANYOF,
 }
 
+
+// ---------------------------------------------------------------------------
+// Java: Option.handleOption/process and Option.InvalidValueException
+// (Option.java:1130-1245) — the javacFileManagerOptions path used by
+// BaseFileManager.handleOption.
+// ---------------------------------------------------------------------------
+
+use crate::main::option_helper::OptionHelper;
+
+
+
+impl Option {
+    /// Java: private static int findSeparator(String word) (Option.java:1235-1245).
+    fn find_separator(word: &str) -> StdOption<usize> {
+        word.char_indices()
+            .find(|(_, ch)| *ch == ':' || *ch == '=')
+            .map(|(index, _)| index)
+    }
+
+    /// Java: public void handleOption(OptionHelper helper, String arg,
+    /// Iterator<String> rest) (Option.java:1142-1169).
+    pub fn handle_option(
+        &self,
+        helper: &mut dyn OptionHelper,
+        arg: &str,
+        rest: &mut dyn Iterator<Item = String>,
+    ) -> Result<(), InvalidValueException> {
+        if self.has_arg() {
+            let (option, operand) = if self.get_arg_kind() == ArgKind::ADJACENT {
+                // aliases not supported
+                let primary = self.primary_name();
+                (primary.to_string(), arg[primary.len()..].to_string())
+            } else if let StdOption::Some(sep) = Option::find_separator(arg) {
+                (arg[..sep].to_string(), arg[sep + 1..].to_string())
+            } else {
+                match rest.next() {
+                    StdOption::Some(operand) => (arg.to_string(), operand),
+                    StdOption::None => {
+                        return Err(helper.new_invalid_value_exception(
+                            crate::resources::compiler_properties::errors::req_arg(JavaString::from(
+                                self.primary_name(),
+                            )),
+                        ));
+                    }
+                }
+            };
+            self.process(helper, &option, &operand)
+        } else {
+            // Java: avoid processing the info options repeatedly.
+            if matches!(
+                self,
+                Option::HELP | Option::X | Option::VERSION | Option::FULLVERSION
+            ) && helper.get(*self).is_some()
+            {
+                return Ok(());
+            }
+            self.process_no_arg(helper, arg)
+        }
+    }
+
+    /// Java: public void process(OptionHelper helper, String option)
+    /// (Option.java:1178-1185).
+    fn process_no_arg(
+        &self,
+        helper: &mut dyn OptionHelper,
+        option: &str,
+    ) -> Result<(), InvalidValueException> {
+        if self.get_arg_kind() == ArgKind::NONE {
+            self.process(helper, self.primary_name(), option)
+        } else {
+            let sep = Option::find_separator(option).expect("separator in option with an argument");
+            self.process(helper, self.primary_name(), &option[sep + 1..])
+        }
+    }
+
+    /// Java: public void process(OptionHelper helper, String option, String arg)
+    /// (Option.java:1195-1218) plus the upstream FILEMANAGER overrides for the
+    /// option constants kept by the port (MODULE_SOURCE_PATH/PATCH_MODULE;
+    /// BOOT_CLASS_PATH/XBOOTCLASSPATH/EXTDIRS/ENDORSEDDIRS are not ported, see
+    /// the file header).
+    fn process(
+        &self,
+        helper: &mut dyn OptionHelper,
+        option: &str,
+        arg: &str,
+    ) -> Result<(), InvalidValueException> {
+        use crate::resources::compiler_properties::errors;
+        match self {
+            Option::MODULE_SOURCE_PATH => {
+                // Option.java:167-208.
+                if arg.is_empty() {
+                    return Err(helper.new_invalid_value_exception(errors::no_value_for_option(
+                        JavaString::from(option),
+                    )));
+                }
+                match helper.get(Option::MODULE_SOURCE_PATH) {
+                    StdOption::None => self.default_process(helper, arg),
+                    StdOption::Some(prev) => {
+                        if let StdOption::Some(arg_module) = module_specific_form(arg) {
+                            let repeated = prev
+                                .split('\0')
+                                .filter_map(module_specific_form)
+                                .any(|module| module == arg_module);
+                            if repeated {
+                                return Err(helper.new_invalid_value_exception(
+                                    errors::repeated_value_for_module_source_path(
+                                        JavaString::from(arg_module),
+                                    ),
+                                ));
+                            }
+                            self.default_process(helper, &format!("{prev}\0{arg}"));
+                        } else {
+                            let present = prev
+                                .split('\0')
+                                .any(|entry| module_specific_form(entry).is_none());
+                            if present {
+                                return Err(helper.new_invalid_value_exception(
+                                    errors::multiple_values_for_module_source_path(),
+                                ));
+                            }
+                            self.default_process(helper, &format!("{prev}\0{arg}"));
+                        }
+                    }
+                }
+                Ok(())
+            }
+            Option::PATCH_MODULE => {
+                // Option.java:216-251.
+                if arg.is_empty() {
+                    return Err(helper.new_invalid_value_exception(errors::no_value_for_option(
+                        JavaString::from(option),
+                    )));
+                }
+                match patch_module_form(arg) {
+                    StdOption::Some(arg_module_package) => {
+                        match helper.get(Option::PATCH_MODULE) {
+                            StdOption::None => self.default_process(helper, arg),
+                            StdOption::Some(prev) => {
+                                let repeated = prev
+                                    .split('\0')
+                                    .filter_map(patch_module_form)
+                                    .any(|module| module == arg_module_package);
+                                if repeated {
+                                    return Err(helper.new_invalid_value_exception(
+                                        errors::repeated_value_for_patch_module(JavaString::from(
+                                            arg_module_package,
+                                        )),
+                                    ));
+                                }
+                                self.default_process(helper, &format!("{prev}\0{arg}"));
+                            }
+                        }
+                        Ok(())
+                    }
+                    StdOption::None => Err(helper.new_invalid_value_exception(
+                        errors::bad_value_for_option(JavaString::from(option), JavaString::from(arg)),
+                    )),
+                }
+            }
+            _ => {
+                self.default_process(helper, arg);
+                Ok(())
+            }
+        }
+    }
+
+    /// Java: the default Option.process body (Option.java:1195-1218).
+    fn default_process(&self, helper: &mut dyn OptionHelper, arg: &str) {
+        if let StdOption::Some(choices) = self.choices() {
+            match self.choice_kind() {
+                StdOption::Some(ChoiceKind::ONEOF) => {
+                    let primary = self.primary_name();
+                    for choice in &choices {
+                        helper.remove(&format!("{primary}{choice}"));
+                    }
+                    let opt = format!("{primary}{arg}");
+                    helper.put(&opt, &opt);
+                    let name = &primary[..primary.len() - 1];
+                    helper.put(name, arg);
+                }
+                _ => {
+                    for a in arg.split(',').filter(|part| !part.is_empty()) {
+                        let opt = format!("{}{}", self.primary_name(), a);
+                        helper.put(&opt, &opt);
+                    }
+                }
+            }
+        }
+        helper.put(self.primary_name(), arg);
+        if self.group() == OptionGroup::FILEMANAGER {
+            helper.handle_file_manager_option(*self, arg);
+        }
+    }
+}
+
+/// Java: MODULE_SOURCE_PATH.getPattern() = Pattern.compile("([\\p{Alnum}$_.]+)=(.*)")
+/// The java.util.regex Pattern is not ported; this function implements the
+/// exact character-class match (registered adapter).
+fn module_specific_form(arg: &str) -> StdOption<&str> {
+    let sep = arg.find('=')?;
+    let module = &arg[..sep];
+    if module.is_empty() {
+        return StdOption::None;
+    }
+    if module
+        .chars()
+        .all(|ch| ch.is_alphanumeric() || matches!(ch, '$' | '_' | '.'))
+    {
+        StdOption::Some(module)
+    } else {
+        StdOption::None
+    }
+}
+
+/// Java: PATCH_MODULE.getPattern() = Pattern.compile("([^/]+)=(,*[^,].*)")
+/// (registered java.util.regex adapter).
+fn patch_module_form(arg: &str) -> StdOption<&str> {
+    let sep = arg.find('=')?;
+    let module = &arg[..sep];
+    if module.is_empty() || module.contains('/') {
+        return StdOption::None;
+    }
+    let value = &arg[sep + 1..];
+    let rest = value.trim_start_matches(',');
+    if rest.is_empty() || rest.starts_with(',') {
+        return StdOption::None;
+    }
+    StdOption::Some(module)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ArgKind, InvalidValueException, Option, OptionKind};
@@ -963,6 +1193,121 @@ mod tests {
         assert_eq!(Option::lookup_in("-Xlint", &candidates), None);
     }
 
+    use std::collections::HashMap;
+
+    struct RecordingHelper {
+        values: HashMap<String, String>,
+        file_manager_options: Vec<(Option, String)>,
+    }
+
+    impl RecordingHelper {
+        fn new() -> RecordingHelper {
+            RecordingHelper {
+                values: HashMap::new(),
+                file_manager_options: Vec::new(),
+            }
+        }
+    }
+
+    impl crate::main::option_helper::OptionHelper for RecordingHelper {
+        fn get(&self, option: Option) -> std::option::Option<String> {
+            self.values.get(option.primary_name()).cloned()
+        }
+
+        fn put(&mut self, name: &str, value: &str) {
+            self.values.insert(name.to_string(), value.to_string());
+        }
+
+        fn remove(&mut self, name: &str) {
+            self.values.remove(name);
+        }
+
+        fn handle_file_manager_option(&mut self, option: Option, value: &str) -> bool {
+            self.file_manager_options.push((option, value.to_string()));
+            true
+        }
+
+        fn get_log(
+            &self,
+        ) -> std::option::Option<std::rc::Rc<std::cell::RefCell<crate::util::log::Log>>> {
+            None
+        }
+
+        fn get_own_name(&self) -> String {
+            "javac".to_string()
+        }
+
+        fn add_file(&mut self, _path: &javac_fs::Path) {}
+
+        fn add_class_name(&mut self, _name: &str) {}
+    }
+
+    #[test]
+    fn module_source_path_composes_and_rejects_duplicate_modules() {
+        let mut helper = RecordingHelper::new();
+        let mut rest = vec!["src".to_string()].into_iter();
+        Option::MODULE_SOURCE_PATH
+            .handle_option(&mut helper, "--module-source-path", &mut rest)
+            .expect("first value");
+        assert_eq!(
+            helper
+                .values
+                .get(Option::MODULE_SOURCE_PATH.primary_name())
+                .expect("stored"),
+            "src"
+        );
+        assert_eq!(helper.file_manager_options.len(), 1);
+
+        let mut rest = std::iter::empty();
+        Option::MODULE_SOURCE_PATH
+            .handle_option(&mut helper, "--module-source-path=m1=src1", &mut rest)
+            .expect("module specific value");
+        assert!(helper
+            .values
+            .get(Option::MODULE_SOURCE_PATH.primary_name())
+            .expect("stored")
+            .contains('\0'));
+
+        let mut rest = std::iter::empty();
+        assert!(Option::MODULE_SOURCE_PATH
+            .handle_option(&mut helper, "--module-source-path=m1=src2", &mut rest)
+            .is_err());
+    }
+
+    #[test]
+    fn patch_module_rejects_duplicates_and_bad_values() {
+        let mut helper = RecordingHelper::new();
+        let mut rest = std::iter::empty();
+        Option::PATCH_MODULE
+            .handle_option(&mut helper, "--patch-module=m1=src", &mut rest)
+            .expect("first value");
+        let mut rest = std::iter::empty();
+        assert!(Option::PATCH_MODULE
+            .handle_option(&mut helper, "--patch-module=m1=other", &mut rest)
+            .is_err());
+        let mut rest = std::iter::empty();
+        assert!(Option::PATCH_MODULE
+            .handle_option(&mut helper, "--patch-module=invalid", &mut rest)
+            .is_err());
+    }
+
+    #[test]
+    fn encoding_option_requires_an_argument() {
+        let mut helper = RecordingHelper::new();
+        let mut rest = std::iter::empty();
+        assert!(Option::ENCODING
+            .handle_option(&mut helper, "-encoding", &mut rest)
+            .is_err());
+        let mut rest = vec!["UTF-8".to_string()].into_iter();
+        Option::ENCODING
+            .handle_option(&mut helper, "-encoding", &mut rest)
+            .expect("value");
+        assert_eq!(
+            helper.values.get(Option::ENCODING.primary_name()).map(String::as_str),
+            Some("UTF-8")
+        );
+    }
+
     #[test]
     fn display_reproduces_the_enum_constant_name() {
         assert_eq!(Option::G_NONE.to_string(), "G_NONE");
@@ -1008,4 +1353,5 @@ impl PkgInfo {
             },
         }
     }
+
 }

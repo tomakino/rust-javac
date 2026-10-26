@@ -209,11 +209,44 @@ impl ClassFinder {
         if self.jrt_index.is_none() || is_module_info {
             return 0;
         }
-        // TODO(S3/JRTIndex integration): the upstream checks
-        // jrtIndex.isInJRT(c.classfile) and reads CtSym flags; JRTIndex.is_in_jrt
-        // takes &PathFileObject and the JavaFileObject reference cannot be
-        // downcast locally (registered).
-        unimplemented!("TODO(S3/JRTIndex): getSupplementaryFlags jrtIndex path")
+        // Java: ClassFinder.java:244-271.
+        let Some(classfile) = class_classfile(ctx, c) else {
+            return 0;
+        };
+        if !classfile.is_in_jrt() {
+            return 0;
+        }
+        let Some(packge) = crate::code::symbol::symbol_packge(ctx, c) else {
+            return 0;
+        };
+        if let Some(flags) = self.supplementary_flags.borrow().get(&packge) {
+            return *flags;
+        }
+        let mut new_flags = 0i64;
+        let jrt_index = self.jrt_index.as_ref().expect("jrtIndex");
+        let package_name = ctx.sym(packge).flat_name().to_java_string();
+        if let Ok(ct_sym) = jrt_index.get_ct_sym(&package_name) {
+            // Java: Profile minProfile = Profile.DEFAULT; if (ctSym.proprietary)
+            // newFlags |= PROPRIETARY; if (ctSym.minProfile != null)
+            // minProfile = Profile.lookup(ctSym.minProfile);
+            let mut min_profile = crate::jvm::profile::Profile::DEFAULT;
+            if ct_sym.proprietary {
+                new_flags |= crate::code::flags::PROPRIETARY;
+            }
+            if let Some(min) = &ct_sym.min_profile {
+                min_profile = crate::jvm::profile::Profile::lookup(&min.to_string_lossy())
+                    .expect("profile");
+            }
+            if *self.profile != crate::jvm::profile::Profile::DEFAULT
+                && min_profile.value() > self.profile.value()
+            {
+                new_flags |= crate::code::flags::NOT_IN_PROFILE;
+            }
+        }
+        self.supplementary_flags
+            .borrow_mut()
+            .insert(packge, new_flags);
+        new_flags
     }
 
     /// Java: private void complete(Symbol sym) throws CompletionFailure

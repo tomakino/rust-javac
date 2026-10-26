@@ -932,15 +932,20 @@ impl JavaFileManager for JavacFileManager {
 
     fn handle_option(
         &self,
-        _current: &JavaString,
-        _remaining: &mut dyn Iterator<Item = JavaString>,
+        current: &JavaString,
+        remaining: &mut dyn Iterator<Item = JavaString>,
     ) -> bool {
-        // Java: Option.lookup(current, javacFileManagerOptions) + Option.handleOption(OptionHelper);
-        // OptionHelper/GrumpyHelper are not ported (TODO(OptionHelper)); no substitute
-        // handling is invented.
-        unimplemented!(
-            "TODO(OptionHelper batch): JavacFileManager.handleOption(String, Iterator)"
-        )
+        // Java: BaseFileManager.handleOption (inherited): the
+        // IllegalArgumentException thrown for an invalid value is a runtime
+        // exception that propagates to the caller.
+        match self
+            .base
+            .borrow_mut()
+            .handle_option(&current.to_string_lossy(), remaining)
+        {
+            Ok(handled) => handled,
+            Err(message) => panic!("IllegalArgumentException: {}", message.to_string_lossy()),
+        }
     }
 
     fn has_location(&self, location: &dyn Location) -> bool {

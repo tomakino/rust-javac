@@ -463,6 +463,11 @@ impl FileObject for PathFileObject {
         PathFileObject::get_name(self)
     }
 
+    /// The ported JRTFileObject construction marker (see JRTIndex.is_in_jrt).
+    fn is_in_jrt(&self) -> bool {
+        self.is_jrt()
+    }
+
     /// Java: public InputStream openInputStream() throws IOException.
     fn open_input_stream(&self) -> Result<Box<dyn Read>, Error> {
         self.file_manager.update_last_used_time();
@@ -862,7 +867,6 @@ mod tests {
 
     #[test]
     fn reader_writer_and_char_content_follow_the_file() {
-        use javac_tools::java_io::{Reader as _, Writer as _};
         let dir = temp_dir("reader-writer");
         std::fs::create_dir_all(&dir).expect("temp dir");
         let file = dir.join("A.java");
