@@ -9000,6 +9000,103 @@ impl ProjectionKind {
     }
 }
 
+impl Types {
+    /// Java: public MethodSymbol firstUnimplementedAbstract(ClassSymbol sym)
+    /// (Types.java:3095-3110).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - envs: the type environments (Enter.getEnv);
+    ///   - allow_default_methods: the DEFAULT_METHODS feature flag;
+    ///   - sym: the class symbol to inspect.
+    ///
+    /// # Returns
+    ///   - the first unimplemented abstract method, if any.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Adapter: the upstream try/catch CompletionFailure body is not represented
+    /// (the ported symbol layer reports completion failures explicitly).
+    /// Upstream: Types.java:3095-3155.
+    pub fn first_unimplemented_abstract(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        envs: &crate::comp::type_envs::TypeEnvs,
+        allow_default_methods: bool,
+        sym: SymbolId,
+    ) -> Option<SymbolId> {
+        let _ = envs;
+        self.first_unimplemented_abstract_impl(ctx, syms, allow_default_methods, sym, sym)
+    }
+
+    /// Java: private MethodSymbol firstUnimplementedAbstractImpl(ClassSymbol impl,
+    /// ClassSymbol c) (Types.java:3112-3155).
+    #[allow(clippy::collapsible_if)]
+    fn first_unimplemented_abstract_impl(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        allow_default_methods: bool,
+        impl_sym: SymbolId,
+        c: SymbolId,
+    ) -> Option<SymbolId> {
+        let mut undef: Option<SymbolId> = None;
+        let c_flags = ctx.sym(c).flags_field;
+        let is_abstract_or_interface = (c_flags
+            & ((crate::code::flags::ABSTRACT as i64) | (crate::code::flags::INTERFACE as i64)))
+            != 0;
+        if c == impl_sym || is_abstract_or_interface {
+            let members = match &ctx.sym(c).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+                _ => None,
+            };
+            if let Some(members) = members {
+                let symbols = ctx.scope_get_symbols(members, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true);
+                for absmeth in symbols {
+                    if ctx.sym(absmeth).kind != crate::code::kinds::Kind::MTH {
+                        continue;
+                    }
+                    let flags_value = ctx.sym(absmeth).flags_field;
+                    let abstract_default_private = crate::code::flags::ABSTRACT as i64
+                        | crate::code::flags::DEFAULT
+                        | crate::code::flags::PRIVATE as i64;
+                    if (flags_value & abstract_default_private) != crate::code::flags::ABSTRACT as i64 {
+                        continue;
+                    }
+                    let mut implmeth = crate::code::symbol::implementation(
+                        ctx,
+                        syms,
+                        self,
+                        absmeth,
+                        impl_sym,
+                        true,
+                    );
+                    if implmeth.is_none() || implmeth == Some(absmeth) {
+                        if allow_default_methods {
+                            let impl_type = ctx.sym(impl_sym).ty.expect("implementation type");
+                            let candidates =
+                                self.interface_candidates(ctx, syms, impl_type, absmeth);
+                            if let Some(prov) = candidates.first().copied() {
+                                if crate::code::symbol::overrides(
+                                    ctx, syms, self, prov, absmeth, impl_sym, true,
+                                ) {
+                                    implmeth = Some(prov);
+                                }
+                            }
+                        }
+                    }
+                    if implmeth.is_none() || implmeth == Some(absmeth) {
+                        undef = Some(absmeth);
+                        break;
+                    }
+                }
+            }
+        }
+        undef
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

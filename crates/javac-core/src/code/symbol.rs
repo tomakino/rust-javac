@@ -2443,6 +2443,121 @@ impl Symbol {
     }
 }
 
+
+impl Symbol {
+    /// Java: boolean isPermittedExplicit / permitted (ClassSymbol fields,
+    /// sealed classes; Symbol.java:1660-1680).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - sym: the class symbol.
+    ///
+    /// # Returns
+    ///   - the permitted subclasses list (empty for non-sealed classes).
+    ///
+    /// # Panics
+    ///   - none (non-class symbols return an empty list).
+    ///
+    /// Upstream: Symbol.java:1660-1680.
+    pub fn permitted_subs(ctx: &CompilerContext, sym: SymbolId) -> List<SymbolId> {
+        match &ctx.sym(sym).kind_data {
+            SymbolKind::ClassSymbol { permitted, .. } => permitted.clone(),
+            _ => List::nil(),
+        }
+    }
+
+    /// Java: boolean isPermittedExplicit (ClassSymbol field, sealed classes).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - sym: the class symbol.
+    ///
+    /// # Returns
+    ///   - the is_permitted_explicit flag.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Symbol.java:1660-1680.
+    pub fn is_permitted_explicit(ctx: &CompilerContext, sym: SymbolId) -> bool {
+        match &ctx.sym(sym).kind_data {
+            SymbolKind::ClassSymbol { is_permitted_explicit, .. } => *is_permitted_explicit,
+            _ => false,
+        }
+    }
+
+    /// Adapter: the enclosing module of the package/symbol (Symbol.packge().modle).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - sym: the symbol.
+    ///
+    /// # Returns
+    ///   - the module symbol when present.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Symbol.java:305-320 (PackageSymbol.modle).
+    pub fn symbol_module(ctx: &CompilerContext, sym: SymbolId) -> Option<SymbolId> {
+        match &ctx.sym(sym).kind_data {
+            SymbolKind::PackageSymbol { modle, .. } => *modle,
+            _ => None,
+        }
+    }
+}
+
+impl Symbol {
+    /// Java: public void markAbstractIfNeeded(Types types) (Symbol.java:1568-1582).
+    ///
+    /// # Arguments
+    ///   - ctx/syms/types: explicit services;
+    ///   - envs: the type environments (Types.enter.getEnv);
+    ///   - allow_default_methods: the DEFAULT_METHODS feature flag;
+    ///   - sym: the class symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Symbol.java:1568-1582.
+    pub fn mark_abstract_if_needed(
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        types: &crate::code::types::Types,
+        envs: &crate::comp::type_envs::TypeEnvs,
+        allow_default_methods: bool,
+        sym: SymbolId,
+    ) {
+        let c_ty = match ctx.sym(sym).ty {
+            Some(t) => t,
+            None => return,
+        };
+        if envs.get(sym).is_none() {
+            return;
+        }
+        let flags_value = ctx.sym(sym).flags_field;
+        if (flags_value & (crate::code::flags::ENUM as i64)) == 0 {
+            return;
+        }
+        let supertype = types.supertype(ctx, syms, c_ty);
+        let super_tsym = ctx.typ(supertype).tsym;
+        if super_tsym != Some(syms.enum_sym) {
+            return;
+        }
+        if (flags_value & ((crate::code::flags::FINAL as i64) | (crate::code::flags::ABSTRACT as i64))) != 0 {
+            return;
+        }
+        if types
+            .first_unimplemented_abstract(ctx, syms, envs, allow_default_methods, sym)
+            .is_some()
+        {
+            ctx.sym_mut(sym).flags_field |= crate::code::flags::ABSTRACT as i64;
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

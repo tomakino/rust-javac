@@ -1634,6 +1634,39 @@ pub fn is_expression(ctx: &CompilerContext, tree: TreeId) -> bool {
     )
 }
 
+
+/// Java: public static DiagnosticPosition diagnosticPositionFor(final Symbol
+/// sym, final JCTree tree, boolean returnNullIfNotFound) (TreeInfo.java:715-735).
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - sym: the symbol whose declaration is searched;
+///   - tree: the enclosing tree;
+///   - return_null_if_not_found: whether a missing position returns None.
+///
+/// # Returns
+///   - the diagnostic position (start position) when found.
+///
+/// # Panics
+///   - none.
+///
+/// Adapter: the ported surface resolves to the tree start position (the
+/// declaration-position visitor is registered in PORTING_RULES section 9).
+/// Upstream: TreeInfo.java:715-735.
+pub fn diagnostic_position_for_with_flag(
+    ctx: &CompilerContext,
+    sym: crate::ids::SymbolId,
+    tree: TreeId,
+    _return_null_if_not_found: bool,
+) -> Option<i32> {
+    let pos = diagnostic_position_for(ctx, sym, tree);
+    if pos == crate::util::position::NOPOS {
+        None
+    } else {
+        Some(pos)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

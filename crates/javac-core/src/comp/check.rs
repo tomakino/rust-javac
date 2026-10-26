@@ -4364,3 +4364,544 @@ fn type_list_display(ctx: &mut crate::compiler_context::CompilerContext, ts: &Li
     }
     format!("<{}>", parts.join(","))
 }
+impl Check {
+    /// Java: void checkNonCyclic(DiagnosticPosition pos, Type t) (Check.java:2374-2391).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position (None for the internal entry);
+    ///   - t: the type to check.
+    ///
+    /// # Returns
+    ///   - true when the check completed on all attributed classes.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Adapter: Symbol.isCompleted (Symbol.java:232, COMPLETE flag) is not
+    /// represented; the completion test uses the UNATTRIBUTED flag (registered).
+    /// Upstream: Check.java:2374-2391.
+    pub fn check_non_cyclic(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: Option<i32>,
+        t: TypeId,
+    ) -> bool {
+        self.check_non_cyclic_internal(ctx, syms, pos, t)
+    }
+}impl Check {
+    /// Java: void checkNonCyclic(DiagnosticPosition pos, TypeVar t) (Check.java:2393-2395).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - t: the type variable to check.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:2393-2410.
+    pub fn check_non_cyclic_typevar(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: Option<i32>,
+        t: TypeId,
+    ) {
+        self.check_non_cyclic1(ctx, syms, pos, t, List::nil());
+    }
+
+    /// Java: private void checkNonCyclic1(DiagnosticPosition pos, Type t,
+    /// List<TypeVar> seen) (Check.java:2412-2428).
+    fn check_non_cyclic1(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: Option<i32>,
+        t: TypeId,
+        seen: List<TypeId>,
+    ) {
+        let tsym = ctx.typ(t).tsym;
+        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
+            && tsym.map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::UNATTRIBUTED as i64) != 0).unwrap_or(false)
+        {
+            return;
+        }
+        let mut contains = false;
+        let mut current = seen.clone();
+        while current.non_empty() {
+            if *current.head() == t {
+                contains = true;
+            }
+            current = current.tail();
+        }
+        if contains {
+            // Java: tv.setUpperBound(types.createErrorType(t));
+            let error = self.types.create_error_type_original(ctx, Some(t), syms);
+            if let crate::code::type_::TypeKindData::TypeVar { bound: slot, .. } = &mut ctx.typ_mut(t).kind {
+                *slot = Some(error);
+            }
+            if let Some(pos) = pos {
+                let info = crate::resources::compiler_properties::errors::cyclic_inheritance(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        crate::comp::attr::type_display_of(ctx, t),
+                    ),
+                );
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+        } else if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
+            let seen = seen.prepend(t);
+            let bounds = self.types.get_bounds(ctx, syms, t);
+            let mut current = bounds;
+            while current.non_empty() {
+                let bound = *current.head();
+                self.check_non_cyclic1(ctx, syms, pos, bound, seen.clone());
+                current = current.tail();
+            }
+        }
+    }
+}impl Check {
+    /// Java: private boolean checkNonCyclicInternal(DiagnosticPosition pos, Type t)
+    /// (Check.java:2430-2470).
+    #[allow(clippy::collapsible_if)]
+    fn check_non_cyclic_internal(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: Option<i32>,
+        t: TypeId,
+    ) -> bool {
+        let mut complete = true;
+        let c = match ctx.typ(t).tsym {
+            Some(c) => c,
+            None => return true,
+        };
+        if (ctx.sym(c).flags_field & crate::code::flags::ACYCLIC as i64) != 0 {
+            return true;
+        }
+        if (ctx.sym(c).flags_field & crate::code::flags::LOCKED as i64) != 0 {
+            self.note_cyclic(ctx, syms, pos, c);
+        } else if !ctx.sym(c).ty.map(|c_ty| ctx.typ(c_ty).has_tag(crate::code::type_tag::TypeTag::ERROR)).unwrap_or(false) {
+            ctx.sym_mut(c).flags_field |= crate::code::flags::LOCKED as i64;
+            if let Some(c_ty) = ctx.sym(c).ty {
+                if ctx.typ(c_ty).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+                    let interfaces = self.types.interfaces(ctx, syms, c_ty);
+                    let mut current = interfaces;
+                    while current.non_empty() {
+                        complete &= self.check_non_cyclic_internal(ctx, syms, pos, *current.head());
+                        current = current.tail();
+                    }
+                    let (supertype_field, owner) = {
+                        let supertype_field = match &ctx.typ(c_ty).kind {
+                            crate::code::type_::TypeKindData::ClassType { supertype_field, .. } => *supertype_field,
+                            _ => None,
+                        };
+                        (supertype_field, ctx.sym(c).owner)
+                    };
+                    if let Some(st) = supertype_field {
+                        if ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+                            complete &= self.check_non_cyclic_internal(ctx, syms, pos, st);
+                        }
+                    }
+                    if let Some(owner) = owner {
+                        if ctx.sym(owner).kind == crate::code::kinds::Kind::TYP {
+                            if let Some(owner_ty) = ctx.sym(owner).ty {
+                                complete &= self.check_non_cyclic_internal(ctx, syms, pos, owner_ty);
+                            }
+                        }
+                    }
+                }
+            }
+            ctx.sym_mut(c).flags_field &= !(crate::code::flags::LOCKED as i64);
+        }
+        if complete {
+            // Adapter: isCompleted() (COMPLETE flag) is not represented; the
+            // completion test uses the UNATTRIBUTED flag (registered).
+            complete = (ctx.sym(c).flags_field & crate::code::flags::UNATTRIBUTED as i64) == 0;
+        }
+        if complete {
+            ctx.sym_mut(c).flags_field |= crate::code::flags::ACYCLIC as i64;
+        }
+        complete
+    }
+
+    /// Java: private void noteCyclic(DiagnosticPosition pos, ClassSymbol c)
+    /// (Check.java:2472-2490).
+    #[allow(clippy::collapsible_if)]
+    fn note_cyclic(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: Option<i32>,
+        c: SymbolId,
+    ) {
+        if let Some(pos) = pos {
+            let info = crate::resources::compiler_properties::errors::cyclic_inheritance(
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                    crate::comp::resolve::symbol_display_name(ctx, c),
+                ),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+        let c_ty = ctx.sym(c).ty.expect("class symbol type");
+        let interfaces = self.types.interfaces(ctx, syms, c_ty);
+        let mut new_interfaces: List<TypeId> = List::nil();
+        let mut current = interfaces;
+        while current.non_empty() {
+            let interface = *current.head();
+            let error = self.types.create_error_type_original(ctx, Some(interface), syms);
+            new_interfaces = new_interfaces.prepend(error);
+            current = current.tail();
+        }
+        let supertype = self.types.supertype(ctx, syms, c_ty);
+        let supertype_field_value = if ctx
+            .typ(supertype)
+            .has_tag(crate::code::type_tag::TypeTag::CLASS)
+        {
+            Some(self.types.create_error_type_original(ctx, Some(supertype), syms))
+        } else {
+            None
+        };
+        if let crate::code::type_::TypeKindData::ClassType {
+            interfaces_field,
+            supertype_field,
+            ..
+        } = &mut ctx.typ_mut(c_ty).kind
+        {
+            *interfaces_field = Some(new_interfaces);
+            if supertype_field_value.is_some() {
+                *supertype_field = supertype_field_value;
+            }
+        }
+        let error = self.types.create_error_type_original(ctx, Some(c_ty), syms);
+        ctx.sym_mut(c).ty = Some(error);
+        ctx.sym_mut(c).flags_field |= crate::code::flags::ACYCLIC as i64;
+    }
+}impl Check {
+    /// Java: void checkAllDefined(DiagnosticPosition pos, ClassSymbol c)
+    /// (Check.java:2245-2265).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - envs: the type environments (Types.enter.getEnv);
+    ///   - pos: the diagnostic position;
+    ///   - c: the class symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:2245-2265.
+    pub fn check_all_defined(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        envs: &crate::comp::type_envs::TypeEnvs,
+        pos: i32,
+        c: SymbolId,
+    ) {
+        let undef = self.types.first_unimplemented_abstract(
+            ctx,
+            syms,
+            envs,
+            crate::code::source::Feature::DEFAULT_METHODS
+                .allowed_in_source(crate::code::source::Source::JDK17),
+            c,
+        );
+        let undef = match undef {
+            Some(undef) => undef,
+            None => return,
+        };
+        let c_ty = ctx.sym(c).ty.expect("class symbol type");
+        let undef_flags = ctx.sym(undef).flags_field;
+        let undef_name = ctx.sym(undef).name.clone();
+        let undef_owner = ctx.sym(undef).owner;
+        let member_ty = self.types.member_type(ctx, syms, c_ty, undef);
+        let undef1 = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::MTH,
+            undef_flags,
+            undef_name,
+            Some(member_ty),
+            undef_owner,
+            crate::code::symbol::SymbolKind::MethodSymbol {
+                extra_params: List::nil(),
+                captured_locals: List::nil(),
+                params: List::nil(),
+                default_value: None,
+            },
+        ));
+        let location = ctx.sym(undef1).location();
+        let info = crate::resources::compiler_properties::errors::does_not_override_abstract(
+            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                crate::comp::resolve::symbol_display_name(ctx, c),
+            ),
+            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                crate::comp::resolve::symbol_display_name(ctx, undef1),
+            ),
+            crate::resources::diagnostic_contract::SymbolArg::placeholder(match location {
+                Some(location) => crate::comp::resolve::symbol_display_name(ctx, location),
+                None => String::new(),
+            }),
+        );
+        crate::util::abstract_log::AbstractLog::error_at(
+            &mut *self.log.borrow_mut(),
+            pos,
+            crate::util::jc_diagnostic::Error::from(info),
+        );
+    }
+}impl Check {
+    /// Java: void checkNonCyclicElements(JCClassDecl tree) (Check.java:3610-3623).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the annotation class declaration.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:3610-3623.
+    pub fn check_non_cyclic_elements(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) {
+        let sym = match crate::tree::tree_info::symbol(ctx, tree) {
+            Some(sym) => sym,
+            None => match &ctx.tree(tree).kind {
+                crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+                _ => return,
+            },
+        };
+        if (ctx.sym(sym).flags_field & crate::code::flags::ANNOTATION as i64) == 0 {
+            return;
+        }
+        assert!(
+            (ctx.sym(sym).flags_field & crate::code::flags::LOCKED as i64) == 0,
+            "AssertionError: annotation class already locked"
+        );
+        ctx.sym_mut(sym).flags_field |= crate::code::flags::LOCKED as i64;
+        let defs = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl { defs, .. } => defs.clone(),
+            _ => List::nil(),
+        };
+        let mut current = defs;
+        while current.non_empty() {
+            let def = *current.head();
+            current = current.tail();
+            if !ctx.tree(def).has_tag(crate::tree::jc_tree::Tag::METHODDEF) {
+                continue;
+            }
+            let restype = match &ctx.tree(def).kind {
+                crate::tree::jc_tree::TreeKind::MethodDecl { restype: Some(restype), .. } => match ctx.tree(*restype).ty {
+                    Some(t) => t,
+                    None => continue,
+                },
+                _ => continue,
+            };
+            self.check_annotation_res_type(ctx, ctx.tree(def).pos, restype);
+        }
+        ctx.sym_mut(sym).flags_field &= !(crate::code::flags::LOCKED as i64);
+        ctx.sym_mut(sym).flags_field |= crate::code::flags::ACYCLIC_ANN;
+    }
+
+    /// Java: void checkNonCyclicElementsInternal(DiagnosticPosition pos,
+    /// TypeSymbol tsym) (Check.java:3626-3648).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - tsym: the annotation type symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:3626-3648.
+    fn check_non_cyclic_elements_internal(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        pos: i32,
+        tsym: SymbolId,
+    ) {
+        if (ctx.sym(tsym).flags_field & crate::code::flags::ACYCLIC_ANN) != 0 {
+            return;
+        }
+        if (ctx.sym(tsym).flags_field & crate::code::flags::LOCKED as i64) != 0 {
+            let info = crate::resources::compiler_properties::errors::cyclic_annotation_element(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, tsym),
+                ),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+            return;
+        }
+        ctx.sym_mut(tsym).flags_field |= crate::code::flags::LOCKED as i64;
+        let members = match &ctx.sym(tsym).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+            _ => None,
+        };
+        if let Some(members) = members {
+            let symbols = ctx.scope_get_symbols(
+                members,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+            );
+            for member in symbols {
+                if ctx.sym(member).kind != crate::code::kinds::Kind::MTH {
+                    continue;
+                }
+                let member_ty = match ctx.sym(member).ty {
+                    Some(t) => t,
+                    None => continue,
+                };
+                let return_ty = self.types.get_return_type_public(ctx, member_ty);
+                self.check_annotation_res_type(ctx, pos, return_ty);
+            }
+        }
+        ctx.sym_mut(tsym).flags_field &= !(crate::code::flags::LOCKED as i64);
+        ctx.sym_mut(tsym).flags_field |= crate::code::flags::ACYCLIC_ANN;
+    }
+
+    /// Java: void checkAnnotationResType(DiagnosticPosition pos, Type type)
+    /// (Check.java:3650-3665).
+    #[allow(clippy::collapsible_if)]
+    fn check_annotation_res_type(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        pos: i32,
+        ty: TypeId,
+    ) {
+        match ctx.typ(ty).get_tag() {
+            crate::code::type_tag::TypeTag::CLASS => {
+                if let Some(tsym) = ctx.typ(ty).tsym {
+                    if (ctx.sym(tsym).flags_field & crate::code::flags::ANNOTATION as i64) != 0 {
+                        self.check_non_cyclic_elements_internal(ctx, pos, tsym);
+                    }
+                }
+            }
+            crate::code::type_tag::TypeTag::ARRAY => {
+                let elem = match &ctx.typ(ty).kind {
+                    crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => *elemtype,
+                    _ => None,
+                };
+                if let Some(elem) = elem {
+                    self.check_annotation_res_type(ctx, pos, elem);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Java: void checkCyclicConstructors(JCClassDecl tree) (Check.java:3667-3690).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - tree: the class declaration.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:3667-3690.
+    pub fn check_cyclic_constructors(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) {
+        let defs = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl { defs, .. } => defs.clone(),
+            _ => return,
+        };
+        let mut call_map: std::collections::HashMap<SymbolId, SymbolId> =
+            std::collections::HashMap::new();
+        let mut current = defs;
+        while current.non_empty() {
+            let def = *current.head();
+            current = current.tail();
+            let app = match crate::tree::tree_info::first_constructor_call(ctx, def) {
+                Some(app) => app,
+                None => continue,
+            };
+            let meth_sym = match &ctx.tree(def).kind {
+                crate::tree::jc_tree::TreeKind::MethodDecl { sym: Some(sym), .. } => *sym,
+                _ => continue,
+            };
+            let app_meth = match &ctx.tree(app).kind {
+                crate::tree::jc_tree::TreeKind::MethodInvocation { meth: Some(meth), .. } => *meth,
+                _ => continue,
+            };
+            let app_name = match crate::tree::tree_info::name(ctx, app_meth) {
+                Some(name) => name,
+                None => continue,
+            };
+            if app_name == self.names._this {
+                if let Some(callee) = crate::tree::tree_info::symbol(ctx, app_meth) {
+                    call_map.insert(meth_sym, callee);
+                }
+            } else {
+                ctx.sym_mut(meth_sym).flags_field |= crate::code::flags::ACYCLIC as i64;
+            }
+        }
+        let callers: Vec<SymbolId> = call_map.keys().copied().collect();
+        for caller in callers {
+            self.check_cyclic_constructor(ctx, tree, Some(caller), &mut call_map);
+        }
+    }
+
+    /// Java: private void checkCyclicConstructor(JCClassDecl tree, Symbol ctor,
+    /// Map<Symbol,Symbol> callMap) (Check.java:3695-3715).
+    fn check_cyclic_constructor(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+        ctor: Option<SymbolId>,
+        call_map: &mut std::collections::HashMap<SymbolId, SymbolId>,
+    ) {
+        let ctor = match ctor {
+            Some(ctor) => ctor,
+            None => return,
+        };
+        if (ctx.sym(ctor).flags_field & crate::code::flags::ACYCLIC as i64) == 0 {
+            if (ctx.sym(ctor).flags_field & crate::code::flags::LOCKED as i64) != 0 {
+                let pos = crate::tree::tree_info::diagnostic_position_for(ctx, ctor, tree);
+                let info = crate::resources::compiler_properties::errors::recursive_ctor_invocation();
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            } else {
+                ctx.sym_mut(ctor).flags_field |= crate::code::flags::LOCKED as i64;
+                let next = call_map.remove(&ctor);
+                self.check_cyclic_constructor(ctx, tree, next, call_map);
+                ctx.sym_mut(ctor).flags_field &= !(crate::code::flags::LOCKED as i64);
+            }
+            ctx.sym_mut(ctor).flags_field |= crate::code::flags::ACYCLIC as i64;
+        }
+    }
+}
