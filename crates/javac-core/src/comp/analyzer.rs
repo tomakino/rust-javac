@@ -1038,8 +1038,8 @@ impl<'a> StatementScanner<'a> {
         let copied_env = {
             let attr_rc = analyzer.attr_service();
             let mut attr = attr_rc.borrow_mut();
-            let syms = analyzer.syms.borrow();
-            attr.copy_env(ctx, &syms, &analyzer.types, env)
+            let mut syms = analyzer.syms.borrow_mut();
+            attr.copy_env(ctx, &mut syms, &analyzer.types, env)
         };
         StatementScanner {
             analyzer,
@@ -1084,8 +1084,8 @@ impl TreeScannerVisitor for StatementScanner<'_> {
                 let env = {
                     let attr_rc = self.analyzer.attr_service();
                     let mut attr = attr_rc.borrow_mut();
-                    let syms = self.analyzer.syms.borrow();
-                    let env = attr.copy_env(ctx, &syms, &self.analyzer.types, &self.env);
+                    let mut syms = self.analyzer.syms.borrow_mut();
+                    let env = attr.copy_env(ctx, &mut syms, &self.analyzer.types, &self.env);
                     drop(syms);
                     let env_scope = env.info.borrow().scope.expect("env scope");
                     if ctx.tree(tree).tag == Tag::VARDEF {

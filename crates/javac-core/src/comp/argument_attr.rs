@@ -886,9 +886,10 @@ impl ArgumentAttr {
     ) -> TypeId {
         let syms_rc = Rc::clone(&attr.syms);
         let types_rc = Rc::clone(&attr.types);
+        let mut syms_borrow = syms_rc.borrow_mut();
         crate::comp::deferred_attr::deferred_type_new(
             ctx,
-            &syms_rc.borrow(),
+            &mut syms_borrow,
             &types_rc,
             attr,
             tree,
@@ -907,14 +908,16 @@ impl ArgumentAttr {
     ) -> TypeId {
         let syms_rc = Rc::clone(&attr.syms);
         let types_rc = Rc::clone(&attr.types);
+        let mut syms_borrow = syms_rc.borrow_mut();
         let deferred_type = crate::comp::deferred_attr::deferred_type_new(
             ctx,
-            &syms_rc.borrow(),
+            &mut syms_borrow,
             &types_rc,
             attr,
             tree,
             env,
         );
+        drop(syms_borrow);
         if let crate::code::type_::TypeKindData::Deferred { argument, .. } =
             &mut ctx.typ_mut(deferred_type).kind
         {

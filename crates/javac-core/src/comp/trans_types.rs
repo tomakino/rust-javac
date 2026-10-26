@@ -298,10 +298,16 @@ impl TransTypes {
         }
         if !accessible {
             let env = self.env.clone().expect("env");
-            let syms = self.syms.borrow();
-            self.resolve
-                .borrow_mut()
-                .log_access_error_internal(ctx, &syms, &env, tree, target);
+            {
+                let mut syms_borrow = self.syms.borrow_mut();
+                self.resolve.borrow_mut().log_access_error_internal(
+                    ctx,
+                    &mut syms_borrow,
+                    &env,
+                    tree,
+                    target,
+                );
+            }
         }
         let pos = ctx.tree(tree).pos;
         let clazz_tree = {

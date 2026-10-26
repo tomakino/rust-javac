@@ -1708,7 +1708,7 @@ impl Resolve {
                 crate::code::scope::LookupKind::RECURSIVE,
                 &|_| true,
                 &self.types,
-                &*syms,
+                syms,
             );
             for candidate in candidates {
                 if ctx.sym(candidate).kind == Kind::VAR
@@ -1771,7 +1771,7 @@ impl Resolve {
                     crate::code::scope::LookupKind::RECURSIVE,
                     &|_| true,
                     &self.types,
-                    &*syms,
+                    syms,
                 );
                 for candidate in candidates {
                     if ctx.sym(candidate).kind == Kind::VAR
@@ -1843,7 +1843,7 @@ impl Resolve {
                 crate::code::scope::LookupKind::RECURSIVE,
                 &|_| true,
                 &self.types,
-                &*syms,
+                syms,
             );
             for current_symbol in candidates {
                 if ctx.sym(current_symbol).kind != Kind::VAR {
@@ -1913,7 +1913,7 @@ impl Resolve {
                 crate::code::scope::LookupKind::RECURSIVE,
                 &|_| true,
                 &self.types,
-                &*syms,
+                syms,
             );
             for candidate in candidates {
                 if ctx.sym(candidate).kind == Kind::TYP {
@@ -2003,7 +2003,7 @@ impl Resolve {
             crate::code::scope::LookupKind::RECURSIVE,
             &|_| true,
             &self.types,
-            &*syms,
+            syms,
         );
         for candidate in candidates {
             let flat_name = symbol_flat_name(ctx, candidate);
@@ -2213,7 +2213,7 @@ impl Resolve {
     fn new_access_error(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        _syms: &Symtab,
+        _syms: &mut Symtab,
         env: &Rc<Env<AttrContext>>,
         site: Option<TypeId>,
         sym: SymbolId,
@@ -2422,7 +2422,7 @@ impl Resolve {
     fn recovery_import_scope_lookup(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        _syms: &Symtab,
+        _syms: &mut Symtab,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
         recovery: RecoveryLoadClass,
@@ -6757,7 +6757,7 @@ impl Resolve {
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
             &self.types,
-            &*syms,
+            syms,
         ) {
             let sym_type = ctx.sym(sym).ty;
             if let Some(sym_type) = sym_type {
@@ -8514,7 +8514,7 @@ impl Resolve {
     pub fn log_access_error_internal(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &crate::code::symtab::Symtab,
+        syms: &mut crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
         tree: TreeId,
         target: TypeId,

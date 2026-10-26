@@ -200,8 +200,14 @@ pub struct Entry {
 /// The ImportFilter predicate (Scope.ImportFilter.accepts(origin, sym)); the
 /// compiler context is threaded explicitly because symbols live in the arena.
 #[allow(clippy::type_complexity)]
-pub type FilterImportFn =
-    Rc<dyn Fn(&mut crate::compiler_context::CompilerContext, ScopeId, SymbolId) -> bool>;
+pub type FilterImportFn = Rc<
+    dyn Fn(
+        &mut crate::compiler_context::CompilerContext,
+        &mut crate::code::symtab::Symtab,
+        ScopeId,
+        SymbolId,
+    ) -> bool,
+>;
 
 #[derive(Clone)]
 pub enum ScopeData {
@@ -968,7 +974,7 @@ impl Scope {
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
         types: &crate::code::types::Types,
-        syms: &crate::code::symtab::Symtab,
+        syms: &mut crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Vec<SymbolId> {
         if !matches!(&self.data, ScopeData::FilterImportScope { .. }) {
@@ -1091,7 +1097,7 @@ impl Scope {
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
         types: &crate::code::types::Types,
-        syms: &crate::code::symtab::Symtab,
+        syms: &mut crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Vec<SymbolId> {
         match &self.data {
@@ -1420,7 +1426,7 @@ impl Scope {
         self_id: ScopeId,
         sym: SymbolId,
         types: &crate::code::types::Types,
-        syms: &crate::code::symtab::Symtab,
+        syms: &mut crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> bool {
         let name = ctx.sym(sym).name.clone();
@@ -1442,7 +1448,7 @@ impl Scope {
         self_id: ScopeId,
         by_name: SymbolId,
         types: &crate::code::types::Types,
-        syms: &crate::code::symtab::Symtab,
+        syms: &mut crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Option<ScopeId> {
         match &self.data {
@@ -1499,7 +1505,7 @@ impl Scope {
         &self,
         by_name: SymbolId,
         types: &crate::code::types::Types,
-        syms: &crate::code::symtab::Symtab,
+        syms: &mut crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> bool {
         match &self.data {
@@ -1589,7 +1595,7 @@ pub(crate) fn probe_index(
 fn symbol_importer_import_from(
     ctx: &mut crate::compiler_context::CompilerContext,
     types: &crate::code::types::Types,
-    syms: &crate::code::symtab::Symtab,
+    syms: &mut crate::code::symtab::Symtab,
     inspect_super_types: bool,
     by_name: Option<&Name>,
     sf: &dyn Fn(SymbolId) -> bool,
@@ -1667,7 +1673,7 @@ fn query_filter_import_scope_members(
     sf: &dyn Fn(SymbolId) -> bool,
     lookup_kind: LookupKind,
     types: &crate::code::types::Types,
-    syms: &crate::code::symtab::Symtab,
+    syms: &mut crate::code::symtab::Symtab,
     ctx: &mut crate::compiler_context::CompilerContext,
 ) -> Vec<SymbolId> {
     let origin_owner = ctx.scope(origin).owner.expect("import origin owner");
@@ -1689,7 +1695,7 @@ fn query_filter_import_scope_members(
     for group in results {
         for sym in group {
             let accepted = match import_filter {
-                Some(filter) => filter(ctx, origin, sym),
+                Some(filter) => filter(ctx, syms, origin, sym),
                 None => panic!("AssertionError: FilterImportScope without filter"),
             };
             if accepted {

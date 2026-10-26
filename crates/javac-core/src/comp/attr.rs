@@ -654,7 +654,7 @@ impl Attr {
     pub fn copy_env(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         types: &crate::code::types::Types,
         env: &Rc<Env<AttrContext>>,
     ) -> Rc<Env<AttrContext>> {
@@ -675,7 +675,7 @@ impl Attr {
     fn copy_scope(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         types: &crate::code::types::Types,
         scope: Option<crate::ids::ScopeId>,
     ) -> Option<crate::ids::ScopeId> {

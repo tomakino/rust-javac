@@ -525,6 +525,13 @@ impl MiniCompiler {
                         .syms
                         .borrow_mut()
                         .enter_package(&mut self.ctx, java_base, name);
+                    // Java: Modules bootstrap records every module package in the
+                    // module's visiblePackages (the module reads its own packages).
+                    self.syms.borrow_mut().add_visible_package(
+                        &mut self.ctx,
+                        java_base,
+                        package_symbol,
+                    );
                     self.syms.borrow_mut().add_visible_package(
                         &mut self.ctx,
                         unnamed,

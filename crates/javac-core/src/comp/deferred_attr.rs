@@ -147,7 +147,7 @@ impl SpeculativeCache {
 /// are free functions taking the arena context.
 pub fn deferred_type_new(
     ctx: &mut CompilerContext,
-    syms: &Symtab,
+    syms: &mut Symtab,
     types: &Types,
     attr: &mut Attr,
     tree: TreeId,

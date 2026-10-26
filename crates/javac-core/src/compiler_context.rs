@@ -288,7 +288,7 @@ impl CompilerContext {
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
         types: &crate::code::types::Types,
-        syms: &crate::code::symtab::Symtab,
+        syms: &mut crate::code::symtab::Symtab,
     ) -> Vec<SymbolId> {
         let snapshot = self.scope(scope).clone();
         snapshot.get_symbols_by_name_full(scope, name, lookup_kind, filter, types, syms, self)
@@ -496,7 +496,7 @@ impl CompilerContext {
         &mut self,
         scope: ScopeId,
         types: &crate::code::types::Types,
-        syms: &crate::code::symtab::Symtab,
+        syms: &mut crate::code::symtab::Symtab,
     ) {
         let (sub_scopes, _name2_scopes) = match &self.scope(scope).data {
             crate::code::scope::ScopeData::ImportScope { sub_scopes, .. } => {
@@ -558,7 +558,7 @@ impl CompilerContext {
         &mut self,
         scope: ScopeId,
         types: &crate::code::types::Types,
-        syms: &crate::code::symtab::Symtab,
+        syms: &mut crate::code::symtab::Symtab,
     ) -> ScopeId {
         let (owner, statically_imported) = match &self.scope(scope).data {
             crate::code::scope::ScopeData::FilterImportScope {

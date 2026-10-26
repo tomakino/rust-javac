@@ -7046,14 +7046,31 @@ impl Check {
     pub fn import_accessible(
         &self,
         ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
         sym: SymbolId,
         packge: SymbolId,
     ) -> bool {
-        let flags_value = (ctx.sym(sym).flags_field & crate::code::flags::AccessFlags as i64) as i32;
+        // Java: sym.flags() completes ClassSymbol only (Symbol.java:1329-1332).
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP
+            && let Err(failure) = ctx.complete_class_symbol(syms, sym)
+        {
+            if failure.bad_class_file {
+                // Java: catch (ClassFinder.BadClassFile err) { throw err; }
+                panic!("BadClassFile: {}", failure.get_message().to_string_lossy());
+            }
+            // Java: catch (CompletionFailure ex) { return false; }
+            return false;
+        }
+        let flags_value =
+            (ctx.sym(sym).flags_field & crate::code::flags::AccessFlags as i64) as i32;
         match flags_value {
-            crate::code::flags::PUBLIC => true,
+            0 => crate::code::symbol::symbol_packge(ctx, sym) == Some(packge),
+            crate::code::flags::PROTECTED => {
+                crate::code::symbol::symbol_packge(ctx, sym) == Some(packge)
+            }
             crate::code::flags::PRIVATE => false,
-            _ => crate::code::symbol::symbol_packge(ctx, sym) == Some(packge),
+            crate::code::flags::PUBLIC => true,
+            _ => true,
         }
     }
 
@@ -7361,7 +7378,7 @@ impl Check {
             ctx.scope_get_symbols_by_name(members, name, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true);
         for sym in symbols {
             if ctx.sym(sym).is_static(ctx)
-                && self.import_accessible(ctx, sym, packge)
+                && self.import_accessible(ctx, syms, sym, packge)
                 && {
                     let syms_ref: &crate::code::symtab::Symtab = syms;
                     crate::code::symbol::is_member_of(ctx, syms_ref, &self.types, sym, origin)
@@ -7733,10 +7750,9 @@ impl Check {
         &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
-        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        _env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         tree: TreeId,
     ) {
-        let _ = env;
         use crate::code::flags;
         let (params, m) = match &ctx.tree(tree).kind {
             crate::tree::jc_tree::TreeKind::MethodDecl {
@@ -7746,10 +7762,7 @@ impl Check {
             } => (params.clone(), *sym),
             _ => return,
         };
-        let trust_me_tsym = self
-            .syms
-            .borrow()
-            .trust_me_type;
+        let trust_me_tsym = syms.trust_me_type;
         let trust_me_tsym = ctx.typ(trust_me_tsym).tsym.expect("SafeVarargs type");
         let has_trust_me = ctx.sym(m).attribute(ctx, trust_me_tsym).is_some();
         let is_var_args = (ctx.sym(m).flags_field & flags::VARARGS) != 0;

@@ -207,12 +207,11 @@ impl TypeEnter {
         self.check_imports_resolvable(ctx, syms, toplevel);
         self.check_imported_packages_observable(ctx, toplevel);
         let types = Rc::clone(&self.types);
-        let syms_snapshot: &Symtab = &*syms;
         if let Some(scope) = compilation_unit_named_import_scope(ctx, toplevel) {
-            ctx.scope_finalize(scope, &types, syms_snapshot);
+            ctx.scope_finalize(scope, &types, syms);
         }
         if let Some(scope) = compilation_unit_star_import_scope(ctx, toplevel) {
-            ctx.scope_finalize(scope, &types, syms_snapshot);
+            ctx.scope_finalize(scope, &types, syms);
         }
         self.log.borrow_mut().use_source(prev);
     }
@@ -377,19 +376,18 @@ impl TypeEnter {
         let syms_for_static = Rc::clone(&self.chk.borrow().syms);
         let chk_for_static = Rc::clone(&chk);
         let types_for_static = Rc::clone(&types);
-        self.static_import_filter = Some(Rc::new(move |ctx, origin, sym| {
+        self.static_import_filter = Some(Rc::new(move |ctx, syms, origin, sym| {
             let origin_owner = ctx.scope(origin).owner;
             ctx.sym(sym).is_static(ctx)
                 && chk_for_static
                     .borrow()
-                    .import_accessible(ctx, sym, packge_symbol)
+                    .import_accessible(ctx, syms, sym, packge_symbol)
                 && origin_owner
                     .map(|owner| {
-                        let syms_rc = Rc::clone(&syms_for_static);
-                        let syms = syms_rc.borrow();
+                        let syms_ref: &crate::code::symtab::Symtab = syms;
                         crate::code::symbol::is_member_of(
                             ctx,
-                            &syms,
+                            syms_ref,
                             &types_for_static,
                             sym,
                             owner,
@@ -398,11 +396,11 @@ impl TypeEnter {
                     .unwrap_or(false)
         }));
         let chk_for_type = Rc::clone(&chk);
-        self.type_import_filter = Some(Rc::new(move |ctx, _origin, sym| {
+        self.type_import_filter = Some(Rc::new(move |ctx, syms, _origin, sym| {
             ctx.sym(sym).kind == crate::code::kinds::Kind::TYP
                 && chk_for_type
                     .borrow()
-                    .import_accessible(ctx, sym, packge_symbol)
+                    .import_accessible(ctx, syms, sym, packge_symbol)
         }));
         // Import-on-demand java.lang.
         let java_lang = syms.enter_package(ctx, syms.java_base, self.names.java_lang.clone());
