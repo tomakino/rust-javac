@@ -921,7 +921,9 @@ impl ClassReader {
         }
         Err(self
             .bad_class_file(Fragment::from(
-                crate::resources::compiler_properties::fragments::undecl_type_var(),
+                crate::resources::compiler_properties::fragments::undecl_type_var(
+                    name.clone(),
+                ),
             ))
             .failure)
     }
@@ -1179,10 +1181,17 @@ impl ClassReader {
         {
             // Java: Name name = missingTypeVariables.head.tsym.name;
             // throw badClassFile("undecl.type.var", name);
-            // (the generated Fragment accessor currently takes no argument; the
-            // name argument is a registered P4 diagnostic-contract pending item)
+            // Java: Name name = missingTypeVariables.head.tsym.name;
             let key = Fragment::from(
-                crate::resources::compiler_properties::fragments::undecl_type_var(),
+                crate::resources::compiler_properties::fragments::undecl_type_var(
+                    ctx.sym(
+                        ctx.typ(*self.missing_type_variables.head())
+                            .tsym
+                            .expect("missing type variable symbol"),
+                    )
+                    .name
+                    .clone(),
+                ),
             );
             return Err(self.bad_class_file(key).failure);
         }
@@ -1296,7 +1305,7 @@ impl ClassReader {
         self.minor_version = self.next_char() as i32;
         self.major_version = self.next_char() as i32;
         let max_major = Version::max().major();
-        let _max_minor = Version::max().minor();
+        let max_minor = Version::max().minor();
         let preview_class_file = self.minor_version == PREVIEW_MINOR_VERSION;
         if self.major_version > max_major
             || self.major_version * 1000 + self.minor_version
@@ -1324,7 +1333,12 @@ impl ClassReader {
                 // The generated accessor currently has no parameters (registered
                 // P4 diagnostic-contract deviation, see the registration).
                 let key = Fragment::from(
-                    crate::resources::compiler_properties::fragments::wrong_version(),
+                crate::resources::compiler_properties::fragments::wrong_version(
+                    javac_strings::JavaString::from(format!("{}", self.major_version.to_string()).as_str()),
+                    javac_strings::JavaString::from(format!("{}", self.minor_version.to_string()).as_str()),
+                    javac_strings::JavaString::from(format!("{}", max_major.to_string()).as_str()),
+                    javac_strings::JavaString::from(format!("{}", max_minor.to_string()).as_str()),
+                ),
                 );
                 return Err(self.bad_class_file(key).failure);
             }

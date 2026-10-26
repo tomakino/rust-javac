@@ -6277,8 +6277,8 @@ pub mod fragments {
     /// undeclared type variable: {0}
     ///
     /// Java: Fragments.UndeclTypeVar()
-    pub fn undecl_type_var() -> FragmentInfo {
-        FragmentInfo::new("undecl.type.var", vec![])
+    pub fn undecl_type_var(arg0: Name) -> FragmentInfo {
+        FragmentInfo::new("undecl.type.var", vec![arg0.into_diagnostic_arg()])
     }
 
     /// unexpected constant pool tag: {0} at {1}
@@ -6564,8 +6564,21 @@ pub mod fragments {
     /// class file has wrong version {0}.{1}, should be {2}.{3}
     ///
     /// Java: Fragments.WrongVersion()
-    pub fn wrong_version() -> FragmentInfo {
-        FragmentInfo::new("wrong.version", vec![])
+    pub fn wrong_version(
+        arg0: JavaString,
+        arg1: JavaString,
+        arg2: JavaString,
+        arg3: JavaString,
+    ) -> FragmentInfo {
+        FragmentInfo::new(
+            "wrong.version",
+            vec![
+                arg0.into_diagnostic_arg(),
+                arg1.into_diagnostic_arg(),
+                arg2.into_diagnostic_arg(),
+                arg3.into_diagnostic_arg(),
+            ],
+        )
     }
 
     /// Processor {0} matches {1} and returns {2}.
@@ -8257,7 +8270,7 @@ pub static COMPILER_KEYS: &[(&str, &str, &str, usize)] = &[
     ("compiler.misc.unchecked.clash.with", "Fragment", "unchecked_clash_with", 4),
     ("compiler.misc.unchecked.implement", "Fragment", "unchecked_implement", 4),
     ("compiler.misc.unchecked.override", "Fragment", "unchecked_override", 4),
-    ("compiler.misc.undecl.type.var", "Fragment", "undecl_type_var", 0),
+    ("compiler.misc.undecl.type.var", "Fragment", "undecl_type_var", 1),
     ("compiler.misc.unexpected.const.pool.tag.at", "Fragment", "unexpected_const_pool_tag_at", 0),
     ("compiler.misc.unexpected.ret.val", "Fragment", "unexpected_ret_val", 0),
     ("compiler.misc.unicode.str.not.supported", "Fragment", "unicode_str_not_supported", 0),
@@ -8298,7 +8311,7 @@ pub static COMPILER_KEYS: &[(&str, &str, &str, usize)] = &[
     ("compiler.misc.where.typevar", "Fragment", "where_typevar", 4),
     ("compiler.misc.where.typevar.1", "Fragment", "where_typevar1", 4),
     ("compiler.misc.wrong.number.type.args", "Fragment", "wrong_number_type_args", 1),
-    ("compiler.misc.wrong.version", "Fragment", "wrong_version", 0),
+    ("compiler.misc.wrong.version", "Fragment", "wrong_version", 4),
     ("compiler.misc.x.print.processor.info", "Fragment", "x_print_processor_info", 3),
     ("compiler.misc.x.print.rounds", "Fragment", "x_print_rounds", 4),
     ("compiler.note.compressed.diags", "Note", "compressed_diags", 0),
@@ -8463,3 +8476,32 @@ pub static COMPILER_KEYS: &[(&str, &str, &str, usize)] = &[
     ("compiler.warn.varargs.unsafe.use.varargs.param", "Warning", "varargs_unsafe_use_varargs_param", 1),
     ("compiler.warn.warning", "Warning", "warning", 0),
 ];
+
+
+#[cfg(test)]
+mod p4_fragment_arguments {
+    use super::fragments;
+    use crate::util::names::Names;
+    use javac_strings::JavaString;
+
+    #[test]
+    fn undecl_type_var_takes_the_name_argument() {
+        let names = Names::new(false);
+        let name = names.from_string(&JavaString::from("T"));
+        let info = fragments::undecl_type_var(name);
+        assert_eq!(info.info().key(), "compiler.misc.undecl.type.var");
+        assert_eq!(info.info().args.len(), 1);
+    }
+
+    #[test]
+    fn wrong_version_takes_four_arguments() {
+        let info = fragments::wrong_version(
+            JavaString::from("61"),
+            JavaString::from("0"),
+            JavaString::from("60"),
+            JavaString::from("0"),
+        );
+        assert_eq!(info.info().key(), "compiler.misc.wrong.version");
+        assert_eq!(info.info().args.len(), 4);
+    }
+}
