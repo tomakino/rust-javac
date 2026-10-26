@@ -3594,6 +3594,10 @@ pub struct MethodCheckContext {
     pub deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
     /// Java: Warner rsWarner
     pub rs_warner: Rc<std::cell::RefCell<crate::util::warner::Warner>>,
+    /// Java: MethodReferenceCheck's anonymous MethodCheckContext override keeps
+    /// the pending inference context (§9: the override is a field + branch in
+    /// compatible below).
+    pub pending_inference: Option<Rc<crate::comp::infer::InferenceContext>>,
 }
 
 impl crate::comp::check::CheckContext for MethodCheckContext {
@@ -3607,6 +3611,19 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         warn: &mut crate::util::warner::Warner,
     ) -> bool {
         let _ = warn;
+        let mut found = found;
+        let mut req = req;
+        if let Some(pending) = &self.pending_inference {
+            // Java: found = pendingInferenceContext.asUndetVar(found);
+            found = pending.as_undet_var(ctx, syms, types, found);
+            // Java: if (found.hasTag(UNDETVAR) && req.isPrimitive()) req = boxedClass(req).type;
+            if ctx.typ(found).has_tag(crate::code::type_tag::TypeTag::UNDETVAR)
+                && ctx.typ(req).is_primitive()
+            {
+                let boxed = types.boxed_class_ro(ctx, syms, req);
+                req = ctx.sym(boxed).ty.expect("boxed type");
+            }
+        }
         let inference_context = &self.deferred_attr_context.inference_context;
         let found = inference_context.as_undet_var(ctx, syms, types, found);
         let req = inference_context.as_undet_var(ctx, syms, types, req);
@@ -3765,26 +3782,74 @@ impl From<InapplicableMethodException> for MethodCheckFailure {
 pub struct MethodReferenceCheck {
     /// Java: final InferenceContext pendingInferenceContext
     pub pending_inference_context: Rc<crate::comp::infer::InferenceContext>,
+    /// Java: JCDiagnostic.Factory diags (Resolve field; explicit §9 parameter
+    /// holder so check_arg can build the failure diagnostic).
+    pub diags: Rc<crate::util::jc_diagnostic::Factory>,
+}
+
+impl AbstractMethodCheck for MethodReferenceCheck {
+    #[allow(clippy::too_many_arguments)]
+    fn check_arg(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        types: &crate::code::types::Types,
+        attr: &mut crate::comp::attr::Attr,
+        chk: &crate::comp::check::Check,
+        pos: Option<crate::ids::TreeId>,
+        _varargs: bool,
+        actual: TypeId,
+        formal: TypeId,
+        deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
+        warn: &mut crate::util::warner::Warner,
+    ) -> Result<(), MethodCheckFailure> {
+        // Java: MethodReferenceCheck.methodCheckResult (Resolve.java:1030-1050)
+        let mut check_context = method_check_context(
+            !deferred_attr_context.phase.is_boxing_required(),
+            Rc::clone(&deferred_attr_context),
+            crate::util::warner::Warner::new(warn.pos()),
+        );
+        check_context.pending_inference = Some(Rc::clone(&self.pending_inference_context));
+        let mresult = MethodResultInfo {
+            pt: formal,
+            check_context: Rc::new(check_context),
+        };
+        let diags = Rc::clone(&self.diags);
+        mresult
+            .check(ctx, syms, types, attr, chk, &diags, pos, actual, warn)
+            .map(|_| ())
+    }
 }
 
 impl MethodCheck for MethodReferenceCheck {
     #[allow(clippy::too_many_arguments)]
     fn arguments_acceptable(
         &mut self,
-        _ctx: &mut crate::compiler_context::CompilerContext,
-        _syms: &mut crate::code::symtab::Symtab,
-        _types: &crate::code::types::Types,
-        _attr: &mut crate::comp::attr::Attr,
-        _chk: &crate::comp::check::Check,
-        _diags: &crate::util::jc_diagnostic::Factory,
-        _env: &Rc<Env<AttrContext>>,
-        _deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
-        _argtypes: crate::util::list::List<TypeId>,
-        _formals: crate::util::list::List<TypeId>,
-        _warn: &mut crate::util::warner::Warner,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        types: &crate::code::types::Types,
+        attr: &mut crate::comp::attr::Attr,
+        chk: &crate::comp::check::Check,
+        diags: &crate::util::jc_diagnostic::Factory,
+        env: &Rc<Env<AttrContext>>,
+        deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
+        argtypes: crate::util::list::List<TypeId>,
+        formals: crate::util::list::List<TypeId>,
+        warn: &mut crate::util::warner::Warner,
     ) -> Result<(), MethodCheckFailure> {
-        unimplemented!(
-            "TODO(Resolve member-reference/FunctionDescriptor batch): Resolve.MethodReferenceCheck.argumentsAcceptable (Resolve.java:1000-1070)"
+        abstract_method_check_arguments_acceptable(
+            self,
+            ctx,
+            syms,
+            types,
+            attr,
+            chk,
+            diags,
+            env,
+            Rc::clone(&deferred_attr_context),
+            argtypes,
+            formals,
+            warn,
         )
     }
 
@@ -4000,6 +4065,7 @@ impl Resolve {
                         pending_inference_context: Rc::clone(
                             result_info.check_context.inference_context(),
                         ),
+                        diags: Rc::clone(&self.diags),
                     },
                 )));
             }
@@ -4659,6 +4725,7 @@ fn method_check_context(
         strict,
         deferred_attr_context,
         rs_warner: Rc::new(RefCell::new(rs_warner)),
+        pending_inference: None,
     }
 }
 
@@ -4823,7 +4890,8 @@ impl MethodCheck for MostSpecificCheck {
                 strict: true,
                 deferred_attr_context: Rc::clone(&deferred_attr_context),
                 rs_warner: Rc::new(RefCell::new(crate::util::warner::Warner::new(warn.pos()))),
-            });
+                        pending_inference: None,
+        });
             let mresult = MethodResultInfo {
                 pt: *formals2.head(),
                 check_context,
@@ -6571,6 +6639,1125 @@ impl Resolve {
         }
         sym
     }
+}
+
+// ---------------------------------------------------------------------------
+// Batch 5: Resolve member-reference resolution family (Resolve.java:3000-3650).
+// §9 adapters: the upstream anonymous ReferenceChooser subclasses are the
+// ReferenceChooserKind enum + Resolve methods; the HashMap identity maps are
+// Vec<(SymbolId, JCDiagnostic)>; the generated diagnostic constructors are used
+// where the upstream creates fragments.
+// ---------------------------------------------------------------------------
+
+/// Java: enum Resolve.ReferenceLookupResult.StaticKind (Resolve.java:3178-3205)
+#[allow(non_camel_case_types)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StaticKind {
+    STATIC,
+    NON_STATIC,
+    BOTH,
+    UNDEFINED,
+}
+
+impl StaticKind {
+    /// Java: static StaticKind from(Symbol s)
+    fn from(ctx: &crate::compiler_context::CompilerContext, sym: SymbolId) -> StaticKind {
+        if ctx.sym(sym).flags_field & (crate::code::flags::STATIC as i64) != 0 {
+            StaticKind::STATIC
+        } else {
+            StaticKind::NON_STATIC
+        }
+    }
+
+    /// Java: static StaticKind reduce(StaticKind sk1, StaticKind sk2)
+    fn reduce(sk1: StaticKind, sk2: StaticKind) -> StaticKind {
+        if sk1 == StaticKind::UNDEFINED {
+            sk2
+        } else if sk2 == StaticKind::UNDEFINED || sk1 == sk2 {
+            sk1
+        } else {
+            StaticKind::BOTH
+        }
+    }
+}
+
+/// Java: static class Resolve.ReferenceLookupResult (Resolve.java:3174-3290)
+#[derive(Clone, Copy)]
+pub struct ReferenceLookupResult {
+    pub static_kind: StaticKind,
+    pub sym: SymbolId,
+}
+
+impl ReferenceLookupResult {
+    /// Java: ReferenceLookupResult(Symbol sym, MethodResolutionContext ctx)
+    pub fn new(
+        ctx: &crate::compiler_context::CompilerContext,
+        sym: SymbolId,
+        resolve_context: &MethodResolutionContext,
+    ) -> ReferenceLookupResult {
+        let static_kind = match ctx.sym(sym).kind {
+            crate::code::kinds::Kind::MTH | crate::code::kinds::Kind::AMBIGUOUS => {
+                let mut kind = StaticKind::UNDEFINED;
+                for candidate in &resolve_context.candidates {
+                    if candidate.is_applicable()
+                        && Some(candidate.step) == resolve_context.step
+                    {
+                        kind = StaticKind::reduce(kind, StaticKind::from(ctx, candidate.sym));
+                    }
+                }
+                kind
+            }
+            _ => StaticKind::UNDEFINED,
+        };
+        ReferenceLookupResult { static_kind, sym }
+    }
+
+    fn with_kind(sym: SymbolId, static_kind: StaticKind) -> ReferenceLookupResult {
+        ReferenceLookupResult { static_kind, sym }
+    }
+
+    /// Java: boolean isSuccess()
+    pub fn is_success(&self) -> bool {
+        self.static_kind != StaticKind::UNDEFINED
+    }
+
+    /// Java: boolean hasKind(StaticKind sk)
+    pub fn has_kind(&self, sk: StaticKind) -> bool {
+        self.static_kind == sk
+    }
+
+    /// Java: boolean canIgnore() (Resolve.java:3236-3260)
+    pub fn can_ignore(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+    ) -> bool {
+        match ctx.sym(self.sym).kind {
+            crate::code::kinds::Kind::ABSENT_MTH => true,
+            crate::code::kinds::Kind::WRONG_MTH => {
+                let base = crate::code::symbol::base_symbol(ctx, self.sym);
+                let data = crate::code::symbol::symbol_resolve_error_data(ctx, base).cloned();
+                match data {
+                    Some(crate::code::symbol::ResolveErrorData::Inapplicable { details, .. }) => {
+                        details
+                            .map(|details| {
+                                resolve_matches_method_check_diag(
+                                    &details.get_code_string(),
+                                    false,
+                                )
+                            })
+                            .unwrap_or(false)
+                    }
+                    _ => false,
+                }
+            }
+            crate::code::kinds::Kind::WRONG_MTHS => {
+                let base = crate::code::symbol::base_symbol(ctx, self.sym);
+                let data = crate::code::symbol::symbol_resolve_error_data(ctx, base).cloned();
+                match data {
+                    Some(crate::code::symbol::ResolveErrorData::InapplicableSymbols {
+                        candidates,
+                        ..
+                    }) => {
+                        let mapped = resolve_map_candidates(ctx, syms, types, &candidates);
+                        resolve_filter_candidates(&mapped).is_empty()
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// Java: static ReferenceLookupResult error(Symbol sym)
+    pub fn error(sym: SymbolId) -> ReferenceLookupResult {
+        ReferenceLookupResult::with_kind(sym, StaticKind::UNDEFINED)
+    }
+}
+
+/// Java: MethodCheckDiag.ARITY_MISMATCH.regex() matching (§9: the Template
+/// regex is expressed as a suffix test on the diagnostic code).
+fn resolve_matches_method_check_diag(code: &str, _unused: bool) -> bool {
+    code.ends_with("arg.length.mismatch") || code.ends_with("infer.arg.length.mismatch")
+}
+
+/// Java: InapplicableSymbolsError.MostSpecificMap.put(Candidate) (§9: Vec map).
+fn resolve_map_candidates(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    syms: &mut Symtab,
+    types: &crate::code::types::Types,
+    candidates: &[(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)],
+) -> Vec<(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)> {
+    let mut result: Vec<(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)> =
+        Vec::new();
+    for (cand_sym, cand_details) in candidates {
+        let mut overridden: Vec<SymbolId> = Vec::new();
+        let mut skip = false;
+        for (existing, _) in &result {
+            if existing == cand_sym {
+                continue;
+            }
+            let existing_owner = ctx.sym(*existing).owner.expect("candidate owner");
+            if crate::code::symbol::overrides(
+                ctx, syms, types, *cand_sym, *existing, existing_owner, false,
+            ) {
+                overridden.push(*existing);
+            } else {
+                let cand_owner = ctx.sym(*cand_sym).owner.expect("candidate owner");
+                if crate::code::symbol::overrides(
+                    ctx, syms, types, *existing, *cand_sym, cand_owner, false,
+                ) {
+                    skip = true;
+                    break;
+                }
+            }
+        }
+        if skip {
+            continue;
+        }
+        result.retain(|(sym, _)| !overridden.contains(sym));
+        result.push((*cand_sym, cand_details.clone()));
+    }
+    result
+}
+
+/// Java: InapplicableSymbolsError.filterCandidates (§9).
+fn resolve_filter_candidates(
+    candidates: &[(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)],
+) -> Vec<(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)> {
+    let mut result: Vec<(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)> =
+        Vec::new();
+    for (sym, details) in candidates {
+        let is_arity = details
+            .as_ref()
+            .map(|d| resolve_matches_method_check_diag(&d.get_code_string(), false))
+            .unwrap_or(false);
+        if !is_arity {
+            result.push((*sym, details.clone()));
+        }
+    }
+    result
+}
+
+/// Java: Resolve.ReferenceChooser subclasses (basicReferenceChooser /
+/// structuralReferenceChooser) — §9 enum dispatch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReferenceChooserKind {
+    Basic,
+    Structural,
+}
+
+// ---------------------------------------------------------------------------
+// Batch 5: Resolve member-reference lookup helpers (Resolve.java:3480-3700)
+// and Resolve.getMemberReference (Resolve.java:3000-3016).
+// ---------------------------------------------------------------------------
+
+/// Java: ReferenceLookupHelper subclass discriminator (§9).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReferenceHelperKind {
+    Method,
+    UnboundMethod,
+    ArrayConstructor,
+    Constructor,
+}
+
+/// Java: abstract class Resolve.ReferenceLookupHelper (Resolve.java:3485-3520)
+/// and its four concrete subclasses (§9: one struct + kind dispatch).
+#[derive(Clone)]
+pub struct ReferenceLookupHelper {
+    pub reference_tree: TreeId,
+    pub name: crate::util::name::Name,
+    pub site: TypeId,
+    pub argtypes: crate::util::list::List<TypeId>,
+    pub typeargtypes: Option<crate::util::list::List<TypeId>>,
+    pub max_phase: MethodResolutionPhase,
+    pub kind: ReferenceHelperKind,
+    /// Java: MethodReferenceLookupHelper.originalSite
+    pub original_site: TypeId,
+    /// Java: ConstructorReferenceLookupHelper.needsInference
+    pub needs_inference: bool,
+    pub method_not_found: SymbolId,
+}
+
+impl ReferenceLookupHelper {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_method(
+        reference_tree: TreeId,
+        name: crate::util::name::Name,
+        site: TypeId,
+        argtypes: crate::util::list::List<TypeId>,
+        typeargtypes: Option<crate::util::list::List<TypeId>>,
+        max_phase: MethodResolutionPhase,
+    ) -> ReferenceLookupHelper {
+        ReferenceLookupHelper {
+            reference_tree,
+            name,
+            site,
+            argtypes,
+            typeargtypes,
+            max_phase,
+            kind: ReferenceHelperKind::Method,
+            original_site: site,
+            needs_inference: false,
+            method_not_found: crate::ids::SymbolId::new(0),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_unbound_method(
+        reference_tree: TreeId,
+        name: crate::util::name::Name,
+        site: TypeId,
+        argtypes: crate::util::list::List<TypeId>,
+        typeargtypes: Option<crate::util::list::List<TypeId>>,
+        max_phase: MethodResolutionPhase,
+        original_site: TypeId,
+    ) -> ReferenceLookupHelper {
+        ReferenceLookupHelper {
+            kind: ReferenceHelperKind::UnboundMethod,
+            original_site,
+            ..ReferenceLookupHelper::new_method(
+                reference_tree, name, site, argtypes, typeargtypes, max_phase,
+            )
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_array_constructor(
+        reference_tree: TreeId,
+        name: crate::util::name::Name,
+        site: TypeId,
+        argtypes: crate::util::list::List<TypeId>,
+        typeargtypes: Option<crate::util::list::List<TypeId>>,
+        max_phase: MethodResolutionPhase,
+    ) -> ReferenceLookupHelper {
+        ReferenceLookupHelper {
+            kind: ReferenceHelperKind::ArrayConstructor,
+            ..ReferenceLookupHelper::new_method(
+                reference_tree, name, site, argtypes, typeargtypes, max_phase,
+            )
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_constructor(
+        reference_tree: TreeId,
+        name: crate::util::name::Name,
+        site: TypeId,
+        argtypes: crate::util::list::List<TypeId>,
+        typeargtypes: Option<crate::util::list::List<TypeId>>,
+        max_phase: MethodResolutionPhase,
+        needs_inference: bool,
+    ) -> ReferenceLookupHelper {
+        ReferenceLookupHelper {
+            kind: ReferenceHelperKind::Constructor,
+            needs_inference,
+            ..ReferenceLookupHelper::new_method(
+                reference_tree, name, site, argtypes, typeargtypes, max_phase,
+            )
+        }
+    }
+
+    /// Java: ReferenceLookupHelper unboundLookup(InferenceContext)
+    pub fn unbound_lookup(
+        &self,
+        rs: &Resolve,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        types: &crate::code::types::Types,
+        inference_context: &Rc<crate::comp::infer::InferenceContext>,
+    ) -> Option<ReferenceLookupHelper> {
+        match self.kind {
+            ReferenceHelperKind::Method => {
+                let expr = match &ctx.tree(self.reference_tree).kind {
+                    crate::tree::jc_tree::TreeKind::MemberReference { expr, .. } => *expr,
+                    _ => panic!("ClassCastException: JCMemberReference expected"),
+                };
+                if crate::tree::tree_info::is_static_selector(ctx, expr, &rs.names) {
+                    let head = if self.argtypes.is_empty() {
+                        None
+                    } else {
+                        Some(*self.argtypes.head())
+                    };
+                    let has_none = head
+                        .map(|t| ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::NONE))
+                        .unwrap_or(false);
+                    let first_subtype = head
+                        .map(|t| {
+                            let undet = inference_context.as_undet_var(ctx, syms, types, t);
+                            types.is_subtype_unchecked(ctx, syms, undet, self.original_site)
+                        })
+                        .unwrap_or(false);
+                    if has_none || first_subtype {
+                        Some(ReferenceLookupHelper::new_unbound_method(
+                            self.reference_tree,
+                            self.name.clone(),
+                            self.original_site,
+                            self.argtypes.clone(),
+                            self.typeargtypes.clone(),
+                            self.max_phase,
+                            self.original_site,
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            ReferenceHelperKind::UnboundMethod => Some(ReferenceLookupHelper::new_unbound_method(
+                self.reference_tree,
+                self.name.clone(),
+                self.site,
+                self.argtypes.clone(),
+                self.typeargtypes.clone(),
+                self.max_phase,
+                self.original_site,
+            )),
+            _ => None,
+        }
+    }
+
+    /// Java: JCMemberReference.ReferenceKind referenceKind(Symbol sym)
+    pub fn reference_kind(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        sym: SymbolId,
+    ) -> crate::tree::jc_tree::ReferenceKind {
+        use crate::tree::jc_tree::ReferenceKind;
+        match self.kind {
+            ReferenceHelperKind::Method | ReferenceHelperKind::UnboundMethod => {
+                if self.kind == ReferenceHelperKind::UnboundMethod {
+                    return ReferenceKind::UNBOUND;
+                }
+                if ctx.sym(sym).flags_field & (crate::code::flags::STATIC as i64) != 0 {
+                    ReferenceKind::STATIC
+                } else {
+                    let qualifier = match &ctx.tree(self.reference_tree).kind {
+                        crate::tree::jc_tree::TreeKind::MemberReference { expr, .. } => *expr,
+                        _ => None,
+                    };
+                    let sel_name = qualifier.and_then(|q| crate::tree::tree_info::name(ctx, q));
+                    if sel_name
+                        .as_ref()
+                        .map(|n| n.to_java_string().to_string_lossy() == "_super")
+                        .unwrap_or(false)
+                    {
+                        ReferenceKind::SUPER
+                    } else {
+                        ReferenceKind::BOUND
+                    }
+                }
+            }
+            ReferenceHelperKind::ArrayConstructor => ReferenceKind::ARRAY_CTOR,
+            ReferenceHelperKind::Constructor => {
+                let encl = ctx.typ(self.original_site).get_enclosing_type();
+                let none = encl
+                    .map(|e| ctx.typ(e).has_tag(crate::code::type_tag::TypeTag::NONE))
+                    .unwrap_or(false);
+                if none {
+                    ReferenceKind::TOPLEVEL
+                } else {
+                    ReferenceKind::IMPLICIT_INNER
+                }
+            }
+        }
+    }
+}
+
+impl LookupHelper for ReferenceLookupHelper {
+    fn name(&self) -> &crate::util::name::Name {
+        &self.name
+    }
+    fn site(&self) -> TypeId {
+        self.site
+    }
+    fn argtypes(&self) -> &crate::util::list::List<TypeId> {
+        &self.argtypes
+    }
+    fn typeargtypes(&self) -> &Option<crate::util::list::List<TypeId>> {
+        &self.typeargtypes
+    }
+    fn max_phase(&self) -> MethodResolutionPhase {
+        self.max_phase
+    }
+
+    fn lookup(
+        &mut self,
+        rs: &mut Resolve,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        types: &crate::code::types::Types,
+        attr: &mut crate::comp::attr::Attr,
+        chk: &crate::comp::check::Check,
+        infer: &Rc<crate::comp::infer::Infer>,
+        env: &Rc<Env<AttrContext>>,
+        phase: MethodResolutionPhase,
+        resolve_context: &mut MethodResolutionContext,
+    ) -> SymbolId {
+        match self.kind {
+            ReferenceHelperKind::Method | ReferenceHelperKind::UnboundMethod => rs.find_method(
+                ctx,
+                syms,
+                types,
+                attr,
+                chk,
+                infer,
+                env,
+                self.site,
+                self.name.clone(),
+                self.argtypes.clone(),
+                self.typeargtypes.clone(),
+                phase.is_boxing_required(),
+                phase.is_varargs_required(),
+                resolve_context,
+            ),
+            ReferenceHelperKind::ArrayConstructor => {
+                // Java: WriteableScope sc = WriteableScope.create(syms.arrayClass);
+                //   MethodSymbol arrayConstr = new MethodSymbol(PUBLIC, name, null, site.tsym);
+                //   arrayConstr.type = new MethodType(List.of(syms.intType), site, nil, syms.methodClass);
+                let scope = ctx.scope_create(Some(syms.array_class));
+                let site_tsym = ctx.typ(self.site).tsym.expect("array constructor site");
+                let array_constr = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+                    crate::code::kinds::Kind::MTH,
+                    crate::code::flags::PUBLIC as i64,
+                    self.name.clone(),
+                    None,
+                    Some(site_tsym),
+                    crate::code::symbol::SymbolKind::MethodSymbol {
+                        extra_params: crate::util::list::List::nil(),
+                        captured_locals: crate::util::list::List::nil(),
+                        params: crate::util::list::List::nil(),
+                        default_value: None,
+                    },
+                ));
+                let ctor_type = ctx.alloc_type(crate::code::type_::Type::new_method_type(
+                    crate::util::list::List::of(syms.int_type),
+                    self.site,
+                    crate::util::list::List::nil(),
+                    syms.method_class,
+                ));
+                ctx.sym_mut(array_constr).ty = Some(ctor_type);
+                ctx.scope_enter(scope, array_constr);
+                rs.find_method_in_scope(
+                    ctx,
+                    syms,
+                    types,
+                    attr,
+                    chk,
+                    infer,
+                    env,
+                    self.site,
+                    self.name.clone(),
+                    self.argtypes.clone(),
+                    self.typeargtypes.clone(),
+                    scope,
+                    rs.method_not_found,
+                    phase.is_boxing_required(),
+                    phase.is_varargs_required(),
+                    false,
+                    resolve_context,
+                )
+            }
+            ReferenceHelperKind::Constructor => {
+                let sym = if self.needs_inference {
+                    rs.find_diamond(
+                        ctx,
+                        syms,
+                        types,
+                        attr,
+                        chk,
+                        infer,
+                        env,
+                        self.site,
+                        self.argtypes.clone(),
+                        self.typeargtypes.clone(),
+                        phase.is_boxing_required(),
+                        phase.is_varargs_required(),
+                        resolve_context,
+                    )
+                } else {
+                    rs.find_method(
+                        ctx,
+                        syms,
+                        types,
+                        attr,
+                        chk,
+                        infer,
+                        env,
+                        self.site,
+                        self.name.clone(),
+                        self.argtypes.clone(),
+                        self.typeargtypes.clone(),
+                        phase.is_boxing_required(),
+                        phase.is_varargs_required(),
+                        resolve_context,
+                    )
+                };
+                if rs.enclosing_instance_missing(ctx, syms, types, env, self.site) {
+                    rs.new_resolve_error(
+                        ctx,
+                        crate::code::kinds::Kind::MISSING_ENCL,
+                        "BadConstructorReferenceError",
+                        crate::code::symbol::ResolveErrorData::BadConstructorReference { sym },
+                    )
+                } else {
+                    sym
+                }
+            }
+        }
+    }
+
+    fn access(
+        &mut self,
+        _rs: &mut Resolve,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        types: &crate::code::types::Types,
+        attr: &mut crate::comp::attr::Attr,
+        chk: &crate::comp::check::Check,
+        infer: &Rc<crate::comp::infer::Infer>,
+        env: &Rc<Env<AttrContext>>,
+        pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
+        location: Option<SymbolId>,
+        sym: SymbolId,
+        resolve_context: &mut MethodResolutionContext,
+    ) -> SymbolId {
+        let _ = (attr, infer, env, pos);
+        let mut sym = sym;
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::AMBIGUOUS {
+            let base = crate::code::symbol::base_symbol(ctx, sym);
+            let data = crate::code::symbol::symbol_resolve_error_data(ctx, base).cloned();
+            if let Some(crate::code::symbol::ResolveErrorData::Ambiguity { syms: syms_vec }) = data {
+                if let Some(merged) = types.merge_abstracts(
+                    ctx,
+                    syms,
+                    chk,
+                    syms_vec.as_slice(),
+                    self.site,
+                    true,
+                ) {
+                    sym = merged.symbol;
+                }
+            }
+        }
+        let _ = resolve_context;
+        let _ = location;
+        sym
+    }
+}
+
+impl Resolve {
+    /// Java: boolean enclosingInstanceMissing(Env<AttrContext> env, Type type)
+    /// (Resolve.java:3746-3752)
+    pub fn enclosing_instance_missing(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        types: &crate::code::types::Types,
+        env: &Rc<Env<AttrContext>>,
+        site: TypeId,
+    ) -> bool {
+        let is_class = ctx.typ(site).has_tag(crate::code::type_tag::TypeTag::CLASS);
+        let enclosing_is_class = ctx
+            .typ(site)
+            .get_enclosing_type()
+            .map(|encl| ctx.typ(encl).has_tag(crate::code::type_tag::TypeTag::CLASS))
+            .unwrap_or(false);
+        if !(is_class && enclosing_is_class) {
+            return false;
+        }
+        let tsym = ctx.typ(site).tsym.expect("class type symbol");
+        let encl = self.resolve_self_containing_internal(ctx, syms, types, env, tsym, false);
+        match encl {
+            None => true,
+            Some(encl) => ctx.sym(encl).kind.is_resolution_error(),
+        }
+    }
+
+    /// Java: private Symbol resolveSelfContainingInternal(Env<AttrContext> env,
+    /// Symbol member, boolean isSuperCall) (Resolve.java:3760-3800)
+    pub fn resolve_self_containing_internal(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        types: &crate::code::types::Types,
+        env: &Rc<Env<AttrContext>>,
+        member: SymbolId,
+        is_super_call: bool,
+    ) -> Option<SymbolId> {
+        let name = self.names._this.clone();
+        let mut env1 = if is_super_call {
+            env.outer.clone()
+        } else {
+            Some(Rc::clone(env))
+        };
+        let mut static_only = false;
+        while let Some(current) = env1.clone() {
+            if current.outer.is_none() {
+                break;
+            }
+            if self.is_static(&current) {
+                static_only = true;
+            }
+            if let Some(encl_tree) = current.encl_class {
+                if let Some(encl_sym) = class_decl_symbol(ctx, encl_tree) {
+                    let member_owner = ctx.sym(member).owner.expect("member owner");
+                    let member_encl = crate::code::symbol::symbol_encl_class(ctx, member_owner)
+                        .expect("member enclosing class");
+                    if crate::code::symbol::is_sub_class(
+                        ctx,
+                        syms,
+                        types,
+                        encl_sym,
+                        member_encl,
+                    ) {
+                        let scope = current.info.borrow().scope;
+                        if let Some(scope) = scope {
+                            if let Some(sym) = ctx.scope_find_first(scope, &name, &|_| true) {
+                                if static_only {
+                                    return Some(self.new_static_error(ctx, sym));
+                                }
+                                return Some(sym);
+                            }
+                        }
+                    }
+                    if ctx.sym(encl_sym).flags_field & (crate::code::flags::STATIC as i64) != 0 {
+                        static_only = true;
+                    }
+                }
+            }
+            env1 = current.outer.clone();
+        }
+        None
+    }
+
+}
+
+
+impl Resolve {
+    /// Java: ReferenceLookupHelper makeReferenceLookupHelper(JCMemberReference,
+    /// Type site, Name name, List<Type> argtypes, List<Type> typeargtypes,
+    /// MethodResolutionPhase maxPhase) (Resolve.java:3027-3045)
+    #[allow(clippy::too_many_arguments)]
+    pub fn make_reference_lookup_helper(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        reference_tree: TreeId,
+        site: TypeId,
+        name: crate::util::name::Name,
+        argtypes: crate::util::list::List<TypeId>,
+        typeargtypes: Option<crate::util::list::List<TypeId>>,
+        max_phase: MethodResolutionPhase,
+    ) -> ReferenceLookupHelper {
+        use crate::code::type_tag::TypeTag;
+        if name != self.names.init {
+            let skipped = self.skip_type_vars_capture(ctx, syms, types, site);
+            let mut helper = ReferenceLookupHelper::new_method(
+                reference_tree,
+                name,
+                skipped,
+                argtypes,
+                typeargtypes,
+                max_phase,
+            );
+            helper.original_site = site;
+            helper.method_not_found = self.method_not_found;
+            helper
+        } else if ctx.typ(site).has_tag(TypeTag::ARRAY) {
+            let mut helper = ReferenceLookupHelper::new_array_constructor(
+                reference_tree,
+                name,
+                site,
+                argtypes,
+                typeargtypes,
+                max_phase,
+            );
+            helper.method_not_found = self.method_not_found;
+            helper
+        } else {
+            let site_tsym = ctx.typ(site).tsym.expect("constructor reference site");
+            let is_raw = types.is_raw_type_public(ctx, site);
+            let (site2, needs_inference) = if is_raw {
+                let enclosing = ctx.typ(site).get_enclosing_type();
+                let tsym_type = ctx.sym(site_tsym).ty.expect("site type symbol type");
+                let enclosing_is_raw = enclosing
+                    .map(|encl| types.is_raw_type_public(ctx, encl))
+                    .unwrap_or(false);
+                let inner = ctx.sym(site_tsym).owner.map(|owner| {
+                    ctx.sym(owner).kind == crate::code::kinds::Kind::TYP
+                        && (ctx.sym(site_tsym).flags_field
+                            & (crate::code::flags::INTERFACE as i64))
+                            == 0
+                });
+                let type_args = if !(inner.unwrap_or(false) && enclosing_is_raw) {
+                    types.get_type_arguments_public(ctx, tsym_type)
+                } else {
+                    crate::util::list::List::nil()
+                };
+                let (outer_field, typarams_field, allparams_field, supertype_field,
+                    interfaces_field, all_interfaces_field) = match &ctx.typ(site).kind {
+                    crate::code::type_::TypeKindData::ClassType {
+                        outer_field,
+                        typarams_field,
+                        allparams_field,
+                        supertype_field,
+                        interfaces_field,
+                        all_interfaces_field,
+                        ..
+                    } => (
+                        *outer_field,
+                        typarams_field.clone(),
+                        allparams_field.clone(),
+                        *supertype_field,
+                        interfaces_field.clone(),
+                        all_interfaces_field.clone(),
+                    ),
+                    _ => panic!("ClassCastException: ClassType expected"),
+                };
+                let _ = typarams_field;
+                (
+                    ctx.alloc_type(crate::code::type_::Type::new(
+                        TypeTag::CLASS,
+                        Some(site_tsym),
+                        crate::code::type_::TypeKindData::ClassType {
+                            outer_field,
+                            typarams_field: Some(type_args),
+                            allparams_field,
+                            supertype_field,
+                            interfaces_field,
+                            all_interfaces_field,
+                        },
+                    )),
+                    true,
+                )
+            } else {
+                (site, false)
+            };
+            let mut helper = ReferenceLookupHelper::new_constructor(
+                reference_tree,
+                self.names.init.clone(),
+                site2,
+                argtypes,
+                typeargtypes,
+                max_phase,
+                needs_inference,
+            );
+            helper.original_site = site;
+            helper.method_not_found = self.method_not_found;
+            helper
+        }
+    }
+
+    /// Java: Types.skipTypeVars(site, capture=true).
+    fn skip_type_vars_capture(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        site: TypeId,
+    ) -> TypeId {
+        let mut site = site;
+        while ctx.typ(site).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
+            site = ctx.typ(site).get_upper_bound().expect("type var upper bound");
+        }
+        types.capture(ctx, syms, site)
+    }
+
+    /// Java: Symbol getMemberReference(DiagnosticPosition pos,
+    /// Env<AttrContext> env, JCMemberReference referenceTree, Type site,
+    /// Name name) (Resolve.java:3000-3016)
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_member_reference(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        attr: &mut crate::comp::attr::Attr,
+        chk: &crate::comp::check::Check,
+        infer: &Rc<crate::comp::infer::Infer>,
+        pos: i32,
+        env: &Rc<Env<AttrContext>>,
+        reference_tree: TreeId,
+        site: TypeId,
+        name: crate::util::name::Name,
+    ) -> SymbolId {
+        let site = types.capture(ctx, syms, site);
+        let mut helper = self.make_reference_lookup_helper(
+            ctx,
+            syms,
+            types,
+            reference_tree,
+            site,
+            name,
+            crate::util::list::List::nil(),
+            None,
+            MethodResolutionPhase::VARARITY,
+        );
+        let new_env = env.dup(env.tree, env.info.borrow().dup(None));
+        let nil_check: Rc<RefCell<dyn MethodCheck>> = Rc::new(RefCell::new(NilMethodCheck));
+        let sym = self.lookup_method_with_check(
+            ctx,
+            syms,
+            types,
+            attr,
+            chk,
+            infer,
+            &new_env,
+            Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
+            site_tsym_or_err(ctx, site),
+            nil_check,
+            &mut helper,
+        );
+        env.info.borrow_mut().pending_resolution_phase =
+            new_env.info.borrow().pending_resolution_phase;
+        sym
+    }
+
+    /// Java: Pair<Symbol, ReferenceLookupHelper> resolveMemberReference(
+    /// Env<AttrContext>, JCMemberReference, Type site, Name name, List<Type>
+    /// argtypes, List<Type> typeargtypes, Type descriptor, MethodCheck,
+    /// InferenceContext, ReferenceChooser) (Resolve.java:3071-3130)
+    #[allow(clippy::too_many_arguments)]
+    pub fn resolve_member_reference(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        attr: &mut crate::comp::attr::Attr,
+        chk: &crate::comp::check::Check,
+        infer: &Rc<crate::comp::infer::Infer>,
+        env: &Rc<Env<AttrContext>>,
+        pos: i32,
+        reference_tree: TreeId,
+        site: TypeId,
+        name: crate::util::name::Name,
+        argtypes: crate::util::list::List<TypeId>,
+        typeargtypes: Option<crate::util::list::List<TypeId>>,
+        descriptor: TypeId,
+        method_check: Rc<RefCell<dyn MethodCheck>>,
+        inference_context: &Rc<crate::comp::infer::InferenceContext>,
+        reference_chooser: ReferenceChooserKind,
+    ) -> (SymbolId, Option<ReferenceLookupHelper>) {
+        let bound_helper = self.make_reference_lookup_helper(
+            ctx,
+            syms,
+            types,
+            reference_tree,
+            site,
+            name,
+            argtypes.clone(),
+            typeargtypes.clone(),
+            MethodResolutionPhase::VARARITY,
+        );
+        let bound_env = env.dup(env.tree, env.info.borrow().dup(None));
+        let mut bound_context = MethodResolutionContext::new();
+        bound_context.method_check = Some(Rc::clone(&method_check));
+        let mut bound_helper = bound_helper;
+        let bound_sym = self.lookup_method(
+            ctx,
+            syms,
+            types,
+            attr,
+            chk,
+            infer,
+            &bound_env,
+            Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
+            site_tsym_or_err(ctx, site),
+            &mut bound_context,
+            &mut bound_helper,
+        );
+        let bound_res = ReferenceLookupResult::new(ctx, bound_sym, &bound_context);
+        let unbound_env = env.dup(env.tree, env.info.borrow().dup(None));
+        let unbound_helper = bound_helper.unbound_lookup(self, ctx, syms, types, inference_context);
+        let unbound_res = match &unbound_helper {
+            None => None,
+            Some(_) => {
+                let mut unbound_context = MethodResolutionContext::new();
+                unbound_context.method_check = Some(Rc::clone(&method_check));
+                let mut helper = unbound_helper.clone().expect("unbound helper");
+                let unbound_sym = self.lookup_method(
+                    ctx,
+                    syms,
+                    types,
+                    attr,
+                    chk,
+                    infer,
+                    &unbound_env,
+                    Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
+                    site_tsym_or_err(ctx, site),
+                    &mut unbound_context,
+                    &mut helper,
+                );
+                Some(ReferenceLookupResult::new(ctx, unbound_sym, &unbound_context))
+            }
+        };
+        let best_res = self.reference_chooser_result(
+            ctx,
+            syms,
+            types,
+            reference_chooser,
+            &bound_res,
+            unbound_res.as_ref(),
+        );
+        let unbound_selected = match &unbound_res {
+            Some(unbound) => best_res.sym == unbound.sym && best_res.static_kind == unbound.static_kind,
+            None => false,
+        };
+        env.info.borrow_mut().pending_resolution_phase = if unbound_selected {
+            unbound_env.info.borrow().pending_resolution_phase
+        } else {
+            bound_env.info.borrow().pending_resolution_phase
+        };
+        let mut result_sym = best_res.sym;
+        if !ctx.sym(result_sym).kind.is_resolution_error()
+            && ctx.sym(result_sym).flags_field & crate::code::flags::SIGNATURE_POLYMORPHIC != 0
+        {
+            env.info.borrow_mut().pending_resolution_phase = Some(MethodResolutionPhase::BASIC);
+            result_sym = self.find_polymorphic_signature_instance_with_type(
+                ctx,
+                syms,
+                types,
+                result_sym,
+                descriptor,
+            );
+        }
+        let chosen_helper = if unbound_selected { unbound_helper } else { Some(bound_helper) };
+        (result_sym, chosen_helper)
+    }
+
+    /// Java: ReferenceChooser.result(boundRes, unboundRes)
+    #[allow(clippy::too_many_arguments)]
+    fn reference_chooser_result(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        kind: ReferenceChooserKind,
+        bound: &ReferenceLookupResult,
+        unbound: Option<&ReferenceLookupResult>,
+    ) -> ReferenceLookupResult {
+        match unbound {
+            Some(unbound) => self.reference_chooser_unbound_result(ctx, syms, types, kind, bound, unbound),
+            None => self.reference_chooser_bound_result(ctx, syms, types, kind, bound),
+        }
+    }
+
+    fn reference_chooser_bound_result(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        kind: ReferenceChooserKind,
+        bound: &ReferenceLookupResult,
+    ) -> ReferenceLookupResult {
+        let error = match kind {
+            ReferenceChooserKind::Basic => {
+                if !bound.is_success() || bound.has_kind(StaticKind::NON_STATIC) {
+                    return *bound;
+                }
+                ReferenceLookupResult::error(self.bad_method_reference_error(ctx, bound.sym, false))
+            }
+            ReferenceChooserKind::Structural => {
+                if !bound.is_success() || !bound.has_kind(StaticKind::STATIC) {
+                    return *bound;
+                }
+                ReferenceLookupResult::error(self.bad_method_reference_error(ctx, bound.sym, false))
+            }
+        };
+        let _ = (syms, types);
+        error
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn reference_chooser_unbound_result(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        kind: ReferenceChooserKind,
+        bound: &ReferenceLookupResult,
+        unbound: &ReferenceLookupResult,
+    ) -> ReferenceLookupResult {
+        match kind {
+            ReferenceChooserKind::Basic => {
+                if bound.is_success()
+                    && ctx.sym(bound.sym).flags_field & (crate::code::flags::STATIC as i64) != 0
+                    && (!unbound.is_success() || unbound.has_kind(StaticKind::STATIC))
+                {
+                    return *bound;
+                }
+                if unbound.is_success()
+                    && ctx.sym(unbound.sym).flags_field & (crate::code::flags::STATIC as i64) == 0
+                    && (!bound.is_success() || bound.has_kind(StaticKind::NON_STATIC))
+                {
+                    return *unbound;
+                }
+                if bound.is_success() && unbound.is_success() {
+                    return ReferenceLookupResult::error(
+                        self.ambiguity_error(ctx, bound.sym, unbound.sym),
+                    );
+                }
+                if bound.is_success() || unbound.is_success() {
+                    return ReferenceLookupResult::error(self.bad_method_reference_error(
+                        ctx,
+                        if bound.is_success() { bound.sym } else { unbound.sym },
+                        true,
+                    ));
+                }
+                if bound.can_ignore(ctx, syms, types) && !unbound.can_ignore(ctx, syms, types) {
+                    *unbound
+                } else {
+                    *bound
+                }
+            }
+            ReferenceChooserKind::Structural => {
+                if bound.is_success() && !bound.has_kind(StaticKind::NON_STATIC) {
+                    return *bound;
+                }
+                if unbound.is_success() && !unbound.has_kind(StaticKind::STATIC) {
+                    return *unbound;
+                }
+                if bound.is_success() || unbound.is_success() {
+                    return ReferenceLookupResult::error(self.bad_method_reference_error(
+                        ctx,
+                        if bound.is_success() { bound.sym } else { unbound.sym },
+                        true,
+                    ));
+                }
+                if bound.can_ignore(ctx, syms, types) && !unbound.can_ignore(ctx, syms, types) {
+                    *unbound
+                } else {
+                    *bound
+                }
+            }
+        }
+    }
+
+    fn bad_method_reference_error(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        sym: SymbolId,
+        unbound_lookup: bool,
+    ) -> SymbolId {
+        self.new_resolve_error(
+            ctx,
+            crate::code::kinds::Kind::STATICERR,
+            "BadMethodReferenceError",
+            crate::code::symbol::ResolveErrorData::BadMethodReference { sym, unbound_lookup },
+        )
+    }
+}
+
+/// §9 helper: the member-reference lookup location is the site type symbol.
+fn site_tsym_or_err(
+    ctx: &crate::compiler_context::CompilerContext,
+    site: TypeId,
+) -> SymbolId {
+    ctx.typ(site).tsym.expect("site type symbol")
 }
 
 #[cfg(test)]
