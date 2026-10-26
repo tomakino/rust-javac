@@ -769,22 +769,6 @@ impl Resolve {
             .expect("resolve error symbol")
             .clone();
         match data {
-            crate::code::symbol::ResolveErrorData::Invalid { sym } => {
-                if ctx.sym(sym).kind.is_resolution_error()
-                    || !ctx.sym(sym).kind.matches(crate::code::kinds::KindSelector::TYP)
-                {
-                    sym
-                } else {
-                    let original = ctx.sym(sym).ty;
-                    let error_type = self.types.create_error_type(
-                        ctx,
-                        name.clone(),
-                        location,
-                        original,
-                    );
-                    ctx.typ(error_type).tsym.expect("error type symbol")
-                }
-            }
             crate::code::symbol::ResolveErrorData::Access { sym, .. }
             | crate::code::symbol::ResolveErrorData::Invisible { sym, .. }
             | crate::code::symbol::ResolveErrorData::Static { sym } => {
@@ -1171,15 +1155,6 @@ impl Resolve {
                     argtypes,
                     typeargtypes,
                 ),
-            crate::code::symbol::ResolveErrorData::Invalid { sym } => {
-                // Java: InvalidSymbolError is abstract; its concrete subclasses
-                // (AccessError/InvisibleSymbolError/StaticError) override
-                // getDiagnostic. A bare InvalidSymbolError has no diagnostic.
-                let _ = (syms, dkind, pos, location, site, name, sym);
-                unimplemented!(
-                    "TODO(Resolve access stage): InvalidSymbolError.getDiagnostic is abstract"
-                )
-            }
         }
     }
 

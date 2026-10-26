@@ -1114,7 +1114,7 @@ impl Attr {
                 let encl_sym = class_tree_symbol(ctx, encl_class).expect("symEnv enclClass sym");
                 // TODO(Symbol/Types): sym.isMemberOf(symEnv.enclClass.sym,
                 // types) needs Symbol.isSubClass/isInheritedIn/hiddenIn.
-                let is_member = symbol_is_member_of(ctx, &self.types, sym, encl_sym);
+                let is_member = symbol_is_member_of(ctx, &*syms, &self.types, sym, encl_sym);
                 if is_member {
                     break;
                 }
@@ -2627,9 +2627,9 @@ fn literal_value_to_constant(
     }
 }
 
-/// Java: Type.toString() — the display layer is not ported yet (registered).
-fn type_display(_ctx: &CompilerContext, _ty: TypeId) -> String {
-    unimplemented!("TODO(Types/Symbol printing batch): Type.toString")
+/// Java: Type.toString() (the display layer, code/type_.rs type_to_string).
+fn type_display(ctx: &CompilerContext, ty: TypeId) -> String {
+    crate::code::type_::type_to_string(ctx, ty)
 }
 
 /// Java: Feature::allowed_in_source helper is the ported Source feature check
@@ -2639,16 +2639,15 @@ fn _feature_allowed(feature: Feature, source: crate::code::source::Source) -> bo
 }
 
 
-/// Java: Symbol.isMemberOf(TypeSymbol clazz, Types types) (Symbol.java:552)
-/// TODO(Symbol/Types): isSubClass/isInheritedIn/hiddenIn are not ported;
-/// the call site in visitIdent only runs for inner classes (registered).
+/// Java: Symbol.isMemberOf(TypeSymbol clazz, Types types) (Symbol.java:552-558).
 fn symbol_is_member_of(
-    _ctx: &mut CompilerContext,
-    _types: &crate::code::types::Types,
-    _sym: SymbolId,
-    _clazz: SymbolId,
+    ctx: &mut CompilerContext,
+    syms: &crate::code::symtab::Symtab,
+    types: &crate::code::types::Types,
+    sym: SymbolId,
+    clazz: SymbolId,
 ) -> bool {
-    unimplemented!("TODO(Symbol/Types batch): Symbol.isMemberOf")
+    crate::code::symbol::is_member_of(ctx, syms, types, sym, clazz)
 }
 
 /// Java: JCIdent.name

@@ -794,7 +794,6 @@ pub enum ResolveErrorData {
     /// Resolve.ResolveError base
     SymbolNotFound,
     /// Resolve.InvalidSymbolError (the found symbol is invalid)
-    Invalid { sym: SymbolId },
     /// Resolve.AccessError (the symbol is not accessible from the site)
     Access {
         env: ResolveEnvSnapshot,
@@ -1479,7 +1478,6 @@ pub fn symbol_exists(ctx: &CompilerContext, symbol: SymbolId) -> bool {
     match &ctx.sym(symbol).kind_data {
         SymbolKind::ResolveError { data, .. } => matches!(
             **data,
-            ResolveErrorData::Invalid { .. }
                 | ResolveErrorData::Access { .. }
                 | ResolveErrorData::Invisible { .. }
                 | ResolveErrorData::Static { .. }
