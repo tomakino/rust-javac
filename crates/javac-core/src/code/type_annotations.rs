@@ -394,7 +394,55 @@ impl TypeAnnotations {
             },
         ));
     }
-}
+
+    /// Java: public void validateTypeAnnotationsSignatures(final Env<AttrContext> env,
+    /// final JCClassDecl tree) (TypeAnnotations.java:131-143).
+    ///
+    /// # Arguments
+    ///   - self: the shared TypeAnnotations handle;
+    ///   - env: the attribution environment;
+    ///   - tree: the class declaration.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the env toplevel must be a compilation unit.
+    ///
+    /// Upstream: TypeAnnotations.java:131-143.
+    pub fn validate_type_annotations_signatures(
+        self: &Rc<TypeAnnotations>,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        tree: crate::ids::TreeId,
+    ) {
+        let ta = Rc::clone(self);
+        let env = Rc::clone(env);
+        self.annotate.validate(Box::new(
+            move |ctx: &mut crate::compiler_context::CompilerContext| {
+                let toplevel = env.toplevel.expect("env toplevel");
+                let sourcefile = match &ctx.tree(toplevel).kind {
+                    crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => {
+                        sourcefile.clone()
+                    }
+                    _ => None,
+                };
+                let prev = crate::util::abstract_log::AbstractLog::use_source(
+                    &mut *ta.log.borrow_mut(),
+                    sourcefile,
+                );
+                {
+                    let attr = ta.attr.borrow();
+                    attr.validate_type_annotations(ctx, tree, true);
+                }
+                crate::util::abstract_log::AbstractLog::use_source(
+                    &mut *ta.log.borrow_mut(),
+                    prev,
+                );
+                Ok(())
+            },
+        ));
+    }
+    }
 
 /// Java: private class TypeAnnotationPositions extends TreeScanner
 /// (TypeAnnotations.java:257-1450).

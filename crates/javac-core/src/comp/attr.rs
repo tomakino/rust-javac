@@ -714,6 +714,7 @@ impl Attr {
             Tag::APPLY => self.visit_apply(ctx, syms, tree),
             Tag::SELECT => self.visit_select(ctx, syms, tree),
             Tag::NEWARRAY => self.visit_new_array(ctx, syms, tree),
+            Tag::NEWCLASS => self.visit_new_class(ctx, syms, tree),
             Tag::CONDEXPR => self.visit_conditional(ctx, syms, tree),
             Tag::ASSERT => self.visit_assert(ctx, syms, tree),
             Tag::LABELLED => self.visit_labeled(ctx, syms, tree),
@@ -10385,6 +10386,18 @@ pub fn wire_attr_services(
         Rc::clone(&deferred_cell),
         Rc::clone(&diags),
     );
+    // 9. TypeAnnotations (TypeAnnotations.java:105-118) — needs the Attr/Check
+    // handles after the Annotate service exists.
+    let type_annotations = Rc::new(crate::code::type_annotations::TypeAnnotations::new(
+        Rc::clone(&names),
+        Rc::clone(&log),
+        Rc::clone(&chk),
+        Rc::clone(&attr),
+        Rc::clone(&annotate),
+        Rc::clone(&types),
+        Rc::clone(&syms),
+        Rc::clone(&diags),
+    ));
     // install the services into the Attr cells
     {
         let a = attr.borrow();
@@ -10394,6 +10407,8 @@ pub fn wire_attr_services(
         *flow_cell.borrow_mut() = Some(flow);
         *analyzer_cell.borrow_mut() = Some(analyzer);
         *annotate_cell.borrow_mut() = Some(annotate);
+        *attr.borrow().type_annotations.borrow_mut() = Some(Rc::clone(&type_annotations));
+        *chk.borrow().type_annotations.borrow_mut() = Some(type_annotations);
         let deferred = match Rc::try_unwrap(deferred) {
             Ok(service) => service,
             Err(_) => panic!("AssertionError: fresh DeferredAttrService is shared"),
@@ -10606,6 +10621,7 @@ impl Attr {
             sig_only: bool,
         }
         tree_scanner_visitor_delegate!(TypeAnnotationsValidator<'a>, 'a);
+        #[allow(clippy::collapsible_if, clippy::too_many_lines)]
         impl<'a> TreeScannerVisitor for TypeAnnotationsValidator<'a> {
             /// Java: public void visitAnnotation(JCAnnotation tree) (Attr.java:5596-5599).
             fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -10614,7 +10630,13 @@ impl Attr {
                     let chk = chk_rc.borrow();
                     chk.validate_type_annotation(ctx, tree, false);
                 }
-                <Self as TreeScannerVisitor>::visit_annotation(self, ctx, tree);
+                // Java: super.visitAnnotation(tree);
+                let (annotation_type, args) = match &ctx.tree(tree).kind {
+                    TreeKind::Annotation { annotation_type, args, .. } => (*annotation_type, args.clone()),
+                    _ => (None, List::nil()),
+                };
+                self.scan(ctx, annotation_type);
+                self.scan_list(ctx, &args);
             }
 
             /// Java: public void visitAnnotatedType(JCAnnotatedType tree) (Attr.java:5600-5604).
@@ -10628,7 +10650,15 @@ impl Attr {
                     .map(|ty| ctx.typ(ty).has_tag(TypeTag::ERROR))
                     .unwrap_or(false);
                 if !has_error {
-                    <Self as TreeScannerVisitor>::visit_annotated_type(self, ctx, tree);
+                    // Java: super.visitAnnotatedType(tree);
+                    let (annotations, underlying) = match &ctx.tree(tree).kind {
+                        TreeKind::AnnotatedType { annotations, underlying_type } => {
+                            (annotations.clone(), *underlying_type)
+                        }
+                        _ => (List::nil(), None),
+                    };
+                    self.scan_list(ctx, &annotations);
+                    self.scan(ctx, underlying);
                 }
             }
 
@@ -10684,17 +10714,13 @@ impl Attr {
                         .map(|ty| ctx.typ(ty).has_tag(TypeTag::ERROR))
                         .unwrap_or(true);
                     if !recv_error {
-                        let (annotations, sym) = match &ctx.tree(recvparam).kind {
-                            TreeKind::VariableDecl { mods, sym, .. } => {
-                                let annotations = self.attr.modifiers_annotations(ctx, *mods);
-                                (*mods, *sym)
-                                ;
-                                (annotations, *sym)
-                            }
+                        let (recv_mods, recv_sym) = match &ctx.tree(recvparam).kind {
+                            TreeKind::VariableDecl { mods, sym, .. } => (*mods, *sym),
                             _ => return,
                         };
-                        if let Some(sym) = sym {
-                            self.check_for_declaration_annotations(ctx, &annotations, sym);
+                        let annotations = self.attr.modifiers_annotations(ctx, recv_mods);
+                        if let Some(recv_sym) = recv_sym {
+                            self.check_for_declaration_annotations(ctx, &annotations, recv_sym);
                         }
                     }
                 }
@@ -10724,9 +10750,13 @@ impl Attr {
                     }
                     _ => return,
                 };
-                if let (Some(vartype), Some(sym), Some(sym_ty)) = (vartype, sym, sym.and_then(|sym| ctx.sym(sym).ty)) {
-                    if ctx.tree(vartype).ty.is_some() {
-                        self.validate_annotated_type(ctx, vartype, sym_ty);
+                if let Some(vartype) = vartype {
+                    if let Some(sym) = sym {
+                        if let Some(sym_ty) = ctx.sym(sym).ty {
+                            if ctx.tree(vartype).ty.is_some() {
+                                self.validate_annotated_type(ctx, vartype, sym_ty);
+                            }
+                        }
                     }
                 }
                 self.scan(ctx, mods);
@@ -10747,7 +10777,13 @@ impl Attr {
                         self.validate_annotated_type(ctx, clazz, clazz_ty);
                     }
                 }
-                <Self as TreeScannerVisitor>::visit_type_cast(self, ctx, tree);
+                // Java: super.visitTypeCast(tree);
+                let (cast_clazz, cast_expr) = match &ctx.tree(tree).kind {
+                    TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
+                    _ => (None, None),
+                };
+                self.scan(ctx, cast_clazz);
+                self.scan(ctx, cast_expr);
             }
 
             /// Java: public void visitTypeTest(JCInstanceOf tree) (Attr.java:5655-5660).
@@ -10764,7 +10800,13 @@ impl Attr {
                         }
                     }
                 }
-                <Self as TreeScannerVisitor>::visit_type_test(self, ctx, tree);
+                // Java: super.visitTypeTest(tree);
+                let (test_expr, test_pattern) = match &ctx.tree(tree).kind {
+                    TreeKind::InstanceOf { expr, pattern } => (*expr, *pattern),
+                    _ => (None, None),
+                };
+                self.scan(ctx, test_expr);
+                self.scan(ctx, test_pattern);
             }
 
             /// Java: public void visitNewClass(JCNewClass tree) (Attr.java:5661-5676).
@@ -10797,7 +10839,18 @@ impl Attr {
                         self.validate_annotated_type(ctx, clazz, clazz_ty);
                     }
                 }
-                <Self as TreeScannerVisitor>::visit_new_class(self, ctx, tree);
+                // Java: super.visitNewClass(tree);
+                let (encl, typeargs, clazz, args, def) = match &ctx.tree(tree).kind {
+                    TreeKind::NewClass { encl, typeargs, clazz, args, def, .. } => {
+                        (*encl, typeargs.clone(), *clazz, args.clone(), *def)
+                    }
+                    _ => (None, List::nil(), None, List::nil(), None),
+                };
+                self.scan(ctx, encl);
+                self.scan_list(ctx, &typeargs);
+                self.scan(ctx, clazz);
+                self.scan_list(ctx, &args);
+                self.scan(ctx, def);
             }
 
             /// Java: public void visitNewArray(JCNewArray tree) (Attr.java:5677-5686).
@@ -10820,7 +10873,22 @@ impl Attr {
                         self.validate_annotated_type(ctx, elemtype, elem_ty);
                     }
                 }
-                <Self as TreeScannerVisitor>::visit_new_array(self, ctx, tree);
+                // Java: super.visitNewArray(tree);
+                let (elemtype, dims, annotations, dim_annotations, elems) = match &ctx.tree(tree).kind {
+                    TreeKind::NewArray { elemtype, dims, annotations, dim_annotations, elems, .. } => {
+                        (*elemtype, dims.clone(), annotations.clone(), dim_annotations.clone(), elems.clone())
+                    }
+                    _ => (None, List::nil(), List::nil(), List::nil(), None),
+                };
+                self.scan(ctx, elemtype);
+                self.scan_list(ctx, &dims);
+                self.scan_list(ctx, &annotations);
+                for dim_group in dim_annotations.iter() {
+                    self.scan_list(ctx, &dim_group);
+                }
+                if let Some(elems) = elems {
+                    self.scan_list(ctx, &elems);
+                }
             }
 
             /// Java: public void visitClassDef(JCClassDecl tree) (Attr.java:5687-5703).
@@ -10861,6 +10929,7 @@ impl Attr {
 
         }
 
+        #[allow(clippy::collapsible_if, clippy::too_many_lines)]
         impl<'a> TypeAnnotationsValidator<'a> {
             /// Java: private void checkForDeclarationAnnotations(List<? extends
             /// JCAnnotation> annotations, Symbol sym) (Attr.java:5795-5806).
@@ -11081,6 +11150,1576 @@ impl Attr {
         validator.scan(ctx, Some(tree));
     }
 }
+impl Attr {
+    /// Java: public void attribClass(DiagnosticPosition pos, ClassSymbol c)
+    /// (Attr.java:5191-5200).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position (file position);
+    ///   - c: the class symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the annotate service must be installed.
+    ///
+    /// Upstream: Attr.java:5191-5200.
+    pub fn attrib_class_with_pos(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        pos: i32,
+        c: SymbolId,
+    ) {
+        let annotate_rc = self
+            .annotate
+            .borrow()
+            .clone()
+            .expect("AssertionError: annotate service must be installed");
+        if let Err(failure) = annotate_rc.flush(ctx) {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.completion_error(ctx, pos, &failure, syms);
+            return;
+        }
+        self.attrib_class(ctx, syms, c);
+    }
+
+    /// Java: void attribClass(ClassSymbol c) throws CompletionFailure
+    /// (Attr.java:5202-5398).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - c: the class symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the env for the class must exist in the type environments.
+    ///
+    /// Upstream: Attr.java:5202-5398.
+    #[allow(clippy::too_many_lines, clippy::collapsible_if)]
+    fn attrib_class(&mut self, ctx: &mut CompilerContext, syms: &mut Symtab, c: SymbolId) {
+        let c_ty = match ctx.sym(c).ty {
+            Some(ty) => ty,
+            None => return,
+        };
+        if ctx.typ(c_ty).has_tag(TypeTag::ERROR) {
+            return;
+        }
+        // Check for cycles in the inheritance graph, which can arise from
+        // ill-formed class files.
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_non_cyclic(ctx, syms, None, c_ty);
+        }
+        let st = self.types.supertype(ctx, syms, c_ty);
+        let flags_value = ctx.sym(c).flags_field;
+        let compound_flag = crate::code::flags::COMPOUND as i64;
+        let super_owner_attributed = crate::code::flags::SUPER_OWNER_ATTRIBUTED as i64;
+        if (flags_value & compound_flag) == 0 && (flags_value & super_owner_attributed) == 0 {
+            // First, attribute superclass.
+            if ctx.typ(st).has_tag(TypeTag::CLASS) {
+                if let Some(st_tsym) = ctx.typ(st).tsym {
+                    self.attrib_class(ctx, syms, st_tsym);
+                }
+            }
+            // Next attribute owner, if it is a class.
+            let owner = ctx.sym(c).owner;
+            if let Some(owner) = owner {
+                if ctx.sym(owner).kind == crate::code::kinds::Kind::TYP {
+                    if let Some(owner_ty) = ctx.sym(owner).ty {
+                        if ctx.typ(owner_ty).has_tag(TypeTag::CLASS) {
+                            self.attrib_class(ctx, syms, owner);
+                        }
+                    }
+                }
+            }
+            ctx.sym_mut(c).flags_field |= super_owner_attributed;
+        }
+        // The previous operations might have attributed the current class
+        // if there was a cycle. So we test first whether the class is still
+        // UNATTRIBUTED.
+        let unattributed = crate::code::flags::UNATTRIBUTED as i64;
+        if (ctx.sym(c).flags_field & unattributed) != 0 {
+            ctx.sym_mut(c).flags_field &= !unattributed;
+            // Get environment current at the point of class definition.
+            let env = {
+                let type_envs = self.type_envs.borrow();
+                type_envs.get(c)
+            };
+            let env = match env {
+                Some(env) => env,
+                None => return,
+            };
+            let env_tree = {
+                env.tree.expect("class env tree")
+            };
+            // sealed-class checks (Attr.java:5230-5305)
+            let permitted = crate::code::symbol::Symbol::permitted_subs(ctx, c);
+            let is_permitted_explicit = crate::code::symbol::Symbol::is_permitted_explicit(ctx, c);
+            if ctx.sym(c).is_sealed()
+                && !ctx.sym(c).is_enum()
+                && !is_permitted_explicit
+                && permitted.is_empty()
+            {
+                let pos = crate::tree::tree_info::diagnostic_position_for(ctx, c, env_tree);
+                let info = crate::resources::compiler_properties::errors::sealed_class_must_have_subclasses();
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+            if ctx.sym(c).is_sealed() {
+                let mut permitted_types: Vec<SymbolId> = Vec::new();
+                let c_pkg = crate::code::symbol::packge(ctx, c);
+                let c_module = c_pkg.and_then(|pkg| crate::code::symbol::Symbol::symbol_module(ctx, pkg));
+                let unnamed_module = self.syms.borrow().unnamed_module;
+                let no_module = self.syms.borrow().no_module;
+                let sealed_in_unnamed = c_module == Some(unnamed_module) || c_module == Some(no_module);
+                let mut permitted_current = permitted.clone();
+                while permitted_current.non_empty() {
+                    let sub_type_sym = *permitted_current.head();
+                    permitted_current = permitted_current.tail();
+                    let mut is_type_var = false;
+                    let sub_ty = ctx.sym(sub_type_sym).ty;
+                    if sub_ty
+                        .map(|sub_ty| ctx.typ(sub_ty).has_tag(TypeTag::TYPEVAR))
+                        .unwrap_or(false)
+                    {
+                        is_type_var = true;
+                        let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
+                        let sub_display = sub_ty
+                            .map(|sub_ty| crate::comp::attr::type_display_of(ctx, sub_ty))
+                            .unwrap_or_default();
+                        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                            crate::resources::compiler_properties::fragments::is_a_type_variable(
+                                crate::resources::diagnostic_contract::TypeArg::placeholder(sub_display),
+                            ),
+                        ));
+                        let info = crate::resources::compiler_properties::errors::invalid_permits_clause(
+                            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
+                        );
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            sub_pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
+                    }
+                    if ctx.sym(sub_type_sym).is_anonymous() && !ctx.sym(c).is_enum() {
+                        let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
+                        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                            crate::resources::compiler_properties::fragments::anonymous(),
+                        ));
+                        let info = crate::resources::compiler_properties::errors::local_classes_cant_extend_sealed(
+                            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
+                        );
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            sub_pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
+                    }
+                    if permitted_types.contains(&sub_type_sym) {
+                        // Java: report the duplicated permits clause (position from the
+                        // permitting list); the ported surface uses the member position.
+                        let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
+                        let sub_display = ctx.sym(sub_type_sym).ty
+                            .map(|sub_ty| crate::comp::attr::type_display_of(ctx, sub_ty))
+                            .unwrap_or_default();
+                        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                            crate::resources::compiler_properties::fragments::is_duplicated(
+                                crate::resources::diagnostic_contract::TypeArg::placeholder(sub_display),
+                            ),
+                        ));
+                        let info = crate::resources::compiler_properties::errors::invalid_permits_clause(
+                            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
+                        );
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            sub_pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
+                    } else {
+                        permitted_types.push(sub_type_sym);
+                    }
+                    let sub_pkg = crate::code::symbol::packge(ctx, sub_type_sym);
+                    let sub_module = sub_pkg.and_then(|pkg| crate::code::symbol::Symbol::symbol_module(ctx, pkg));
+                    if sealed_in_unnamed {
+                        if sub_pkg != c_pkg {
+                            let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
+                            let info = crate::resources::compiler_properties::errors::class_in_unnamed_module_cant_extend_sealed_in_diff_package(
+                                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                    crate::comp::resolve::symbol_display_name(ctx, c),
+                                ),
+                            );
+                            crate::util::abstract_log::AbstractLog::error_at(
+                                &mut *self.log.borrow_mut(),
+                                sub_pos,
+                                crate::util::jc_diagnostic::Error::from(info),
+                            );
+                        }
+                    } else if sub_module != c_module {
+                        let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
+                        let info = crate::resources::compiler_properties::errors::class_in_module_cant_extend_sealed_in_diff_module(
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                crate::comp::resolve::symbol_display_name(ctx, c),
+                            ),
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                c_module
+                                    .map(|module| crate::comp::resolve::symbol_display_name(ctx, module))
+                                    .unwrap_or_default(),
+                            ),
+                        );
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            sub_pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
+                    }
+                    let c_tsym = ctx.typ(c_ty).tsym;
+                    if Some(sub_type_sym) == c_tsym
+                        || sub_ty
+                            .map(|sub_ty| self.types.is_super_type(ctx, syms, sub_ty, c_ty))
+                            .unwrap_or(false)
+                    {
+                        let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
+                        let same_class = Some(sub_type_sym) == c_tsym;
+                        let fragment = if same_class {
+                            self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                                crate::resources::compiler_properties::fragments::must_not_be_same_class(),
+                            ))
+                        } else {
+                            self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                                crate::resources::compiler_properties::fragments::must_not_be_supertype(
+                                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                        sub_ty
+                                            .map(|sub_ty| crate::comp::attr::type_display_of(ctx, sub_ty))
+                                            .unwrap_or_default(),
+                                    ),
+                                ),
+                            ))
+                        };
+                        let info = crate::resources::compiler_properties::errors::invalid_permits_clause(
+                            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
+                        );
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            sub_pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
+                    } else if !is_type_var {
+                        let sub_ty = match sub_ty {
+                            Some(sub_ty) => sub_ty,
+                            None => continue,
+                        };
+                        let direct = self.types.direct_supertypes(ctx, syms, sub_ty);
+                        let mut this_is_a_super = false;
+                        let mut direct_current = direct;
+                        while direct_current.non_empty() {
+                            if ctx.typ(*direct_current.head()).tsym == Some(c) {
+                                this_is_a_super = true;
+                            }
+                            direct_current = direct_current.tail();
+                        }
+                        if !this_is_a_super {
+                            let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
+                            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                                crate::resources::compiler_properties::fragments::doesnt_extend_sealed(
+                                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                        crate::comp::attr::type_display_of(ctx, sub_ty),
+                                    ),
+                                ),
+                            ));
+                            let info = crate::resources::compiler_properties::errors::invalid_permits_clause(
+                                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
+                            );
+                            crate::util::abstract_log::AbstractLog::error_at(
+                                &mut *self.log.borrow_mut(),
+                                sub_pos,
+                                crate::util::jc_diagnostic::Error::from(info),
+                            );
+                        }
+                    }
+                }
+            }
+            // sealed supertypes checks (Attr.java:5307-5345)
+            let direct = self.types.direct_supertypes(ctx, syms, c_ty);
+            let mut sealed_supers: Vec<SymbolId> = Vec::new();
+            let mut direct_current = direct.clone();
+            while direct_current.non_empty() {
+                let super_ty = *direct_current.head();
+                direct_current = direct_current.tail();
+                if let Some(tsym) = ctx.typ(super_ty).tsym {
+                    if ctx.sym(tsym).is_sealed() {
+                        sealed_supers.push(tsym);
+                    }
+                }
+            }
+            if sealed_supers.is_empty() {
+                if (ctx.sym(c).flags_field & crate::code::flags::NON_SEALED) != 0 {
+                    let mut has_error_super = false;
+                    let mut direct_current = direct;
+                    while direct_current.non_empty() {
+                        let super_ty = *direct_current.head();
+                        direct_current = direct_current.tail();
+                        if ctx.typ(super_ty).tsym.map(|tsym| ctx.sym(tsym).kind) == Some(crate::code::kinds::Kind::ERR) {
+                            has_error_super = true;
+                        }
+                    }
+                    if !has_error_super {
+                        let pos = crate::tree::tree_info::diagnostic_position_for(ctx, c, env_tree);
+                        let info = crate::resources::compiler_properties::errors::non_sealed_with_no_sealed_supertype(
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                crate::comp::resolve::symbol_display_name(ctx, c),
+                            ),
+                        );
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
+                    }
+                }
+            } else {
+                if crate::code::symbol::Symbol::is_directly_or_indirectly_local(ctx, c)
+                    && !ctx.sym(c).is_enum()
+                {
+                    let pos = crate::tree::tree_info::diagnostic_position_for(ctx, c, env_tree);
+                    let fragment = if ctx.sym(c).is_anonymous() {
+                        self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                            crate::resources::compiler_properties::fragments::anonymous(),
+                        ))
+                    } else {
+                        self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                            crate::resources::compiler_properties::fragments::local(),
+                        ))
+                    };
+                    let info = crate::resources::compiler_properties::errors::local_classes_cant_extend_sealed(
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
+                    );
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                }
+                if !self.types.is_compound_public(ctx, c_ty) {
+                    for supertype_sym in &sealed_supers {
+                        let permitted_of_super = crate::code::symbol::Symbol::permitted_subs(ctx, *supertype_sym);
+                        let c_tsym = ctx.typ(c_ty).tsym;
+                        if !permitted_of_super.iter().any(|permitted| Some(permitted) == c_tsym) {
+                            let pos = crate::tree::tree_info::diagnostic_position_for(ctx, c, env_tree);
+                            let info = crate::resources::compiler_properties::errors::cant_inherit_from_sealed(
+                                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                    crate::comp::resolve::symbol_display_name(ctx, *supertype_sym),
+                                ),
+                            );
+                            crate::util::abstract_log::AbstractLog::error_at(
+                                &mut *self.log.borrow_mut(),
+                                pos,
+                                crate::util::jc_diagnostic::Error::from(info),
+                            );
+                        }
+                    }
+                    if !ctx.sym(c).is_non_sealed() && !ctx.sym(c).is_final() && !ctx.sym(c).is_sealed() {
+                        let pos = crate::tree::tree_info::diagnostic_position_for(ctx, c, env_tree);
+                        let info = if ctx.sym(c).is_interface() {
+                            crate::resources::compiler_properties::errors::non_sealed_or_sealed_expected()
+                        } else {
+                            crate::resources::compiler_properties::errors::non_sealed_sealed_or_final_expected()
+                        };
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
+                    }
+                }
+            }
+            // The lint value for the env: look up the first enclosing env with lint set.
+            let mut lint_env = Rc::clone(&env);
+            loop {
+                let has_lint = lint_env.info.borrow().lint.is_some();
+                if has_lint {
+                    break;
+                }
+                let next = lint_env.next.clone();
+                match next {
+                    Some(next) => lint_env = next,
+                    None => break,
+                }
+            }
+            let lint_env_lint = lint_env.info.borrow().lint.clone();
+            if let Some(lint_env_lint) = lint_env_lint {
+                let augmented = lint_env_lint.augment(ctx, syms, ctx.sym(c));
+                env.info.borrow_mut().lint = Some(Rc::new(augmented));
+            }
+            let prev_lint = {
+                let chk_rc = Rc::clone(&self.chk);
+                let mut chk = chk_rc.borrow_mut();
+                let current = env.info.borrow().lint.clone();
+                match current {
+                    Some(current) => chk.set_lint(current),
+                    None => Rc::clone(&chk.lint),
+                }
+            };
+            let c_sourcefile = match &ctx.sym(c).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile.clone(),
+                _ => None,
+            };
+            let prev_source = crate::util::abstract_log::AbstractLog::use_source(
+                &mut *self.log.borrow_mut(),
+                c_sourcefile,
+            );
+            let prev_return_res = env.info.borrow().return_result.clone();
+            let mut failure: Option<crate::code::symbol::CompletionFailure> = None;
+            {
+                let deferred_rc = Rc::clone(&self.deferred_lint_handler);
+                let mut deferred = deferred_rc.borrow_mut();
+                let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+                    Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(env_tree).pos));
+                deferred.flush(&position);
+            }
+            env.info.borrow_mut().return_result = None;
+            // java.lang.Enum may not be subclassed by a non-enum
+            let st_tsym = ctx.typ(st).tsym;
+            let enum_flag = crate::code::flags::ENUM as i64;
+            if st_tsym == Some(self.syms.borrow().enum_sym)
+                && (ctx.sym(c).flags_field & (enum_flag | compound_flag)) == 0
+            {
+                let info = crate::resources::compiler_properties::errors::enum_no_subclassing();
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    ctx.tree(env_tree).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+            // Enums may not be extended by source-level classes
+            if let Some(st_tsym) = st_tsym {
+                if (ctx.sym(st_tsym).flags_field & enum_flag) != 0
+                    && (ctx.sym(c).flags_field & (enum_flag | compound_flag)) == 0
+                {
+                    let info = crate::resources::compiler_properties::errors::enum_types_not_extensible();
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        ctx.tree(env_tree).pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                }
+            }
+            if self.is_serializable(ctx, syms, c_ty) {
+                env.info.borrow_mut().is_serializable = true;
+            }
+            self.attrib_class_body(ctx, syms, &env, c);
+            {
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                chk.check_deprecated_annotation(ctx, syms, ctx.tree(env_tree).pos, c);
+                chk.check_class_override_equals_and_hash_if_needed(ctx, syms, ctx.tree(env_tree).pos, c);
+                chk.check_functional_interface(ctx, syms, env_tree, c);
+                chk.check_leaks_not_accessible(ctx, syms, &env, env_tree);
+            }
+            // finally
+            env.info.borrow_mut().return_result = prev_return_res;
+            crate::util::abstract_log::AbstractLog::use_source(
+                &mut *self.log.borrow_mut(),
+                prev_source,
+            );
+            {
+                let chk_rc = Rc::clone(&self.chk);
+                let mut chk = chk_rc.borrow_mut();
+                chk.set_lint(prev_lint);
+            }
+            let _ = failure.take();
+        }
+    }
+}
+
+impl Attr {
+    /// Java: private void attribClassBody(Env<AttrContext> env, ClassSymbol c)
+    /// (Attr.java:5398-5600).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - env: the class attribution environment;
+    ///   - c: the class symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the registered services must be installed.
+    ///
+    /// Upstream: Attr.java:5398-5600.
+    #[allow(clippy::too_many_lines, clippy::collapsible_if)]
+    fn attrib_class_body(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        env: &Rc<Env<AttrContext>>,
+        c: SymbolId,
+    ) {
+        let tree = env.tree.expect("class env tree");
+        let (mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
+            TreeKind::ClassDecl { mods, typarams, extending, implementing, defs, .. } => {
+                (*mods, typarams.clone(), *extending, implementing.clone(), defs.clone())
+            }
+            _ => return,
+        };
+        let tree_sym = match &ctx.tree(tree).kind {
+            TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+            _ => c,
+        };
+        assert!(c == tree_sym, "AssertionError: class symbol mismatch");
+        let c_ty = match ctx.sym(c).ty {
+            Some(ty) => ty,
+            None => return,
+        };
+        let allow_records = self.allow_records;
+        let allow_default_methods = self.allow_default_methods;
+        // Validate type parameters, supertype and interfaces.
+        self.attrib_stats(ctx, syms, typarams.clone(), env);
+        if !ctx.sym(c).is_anonymous() {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.validate_list(ctx, syms, env, &typarams);
+            if let Some(extending) = extending {
+                chk.validate(ctx, syms, env, extending);
+            }
+            chk.validate_list(ctx, syms, env, &implementing);
+        }
+        {
+            let envs = self.type_envs.borrow();
+            crate::code::symbol::Symbol::mark_abstract_if_needed(
+                ctx,
+                syms,
+                &self.types,
+                &envs,
+                allow_default_methods,
+                c,
+            );
+        }
+        let flags_value = ctx.sym(c).flags_field;
+        let abstract_or_interface = (crate::code::flags::ABSTRACT as i64)
+            | (crate::code::flags::INTERFACE as i64);
+        if (flags_value & abstract_or_interface) == 0 {
+            let envs = self.type_envs.borrow();
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_all_defined(ctx, syms, &envs, ctx.tree(tree).pos, c);
+        }
+        let annotation_flag = crate::code::flags::ANNOTATION as i64;
+        if (flags_value & annotation_flag) != 0 {
+            if implementing.non_empty() {
+                let head = *implementing.head();
+                let info = crate::resources::compiler_properties::errors::cant_extend_intf_annotation();
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    ctx.tree(head).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+            if typarams.non_empty() {
+                let head = *typarams.head();
+                let info = crate::resources::compiler_properties::errors::intf_annotation_cant_have_type_params(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        crate::comp::resolve::symbol_display_name(ctx, c),
+                    ),
+                );
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    ctx.tree(head).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+            // If this annotation type has a @Repeatable, validate
+            let repeatable = {
+                let mut metadata = match ctx.sym(c).get_annotation_type_metadata().cloned() {
+                    Some(metadata) => metadata,
+                    None => return,
+                };
+                metadata.get_repeatable(ctx, syms)
+            };
+            let repeatable = match repeatable {
+                Ok(repeatable) => repeatable,
+                Err(failure) => {
+                    let chk_rc = Rc::clone(&self.chk);
+                    let chk = chk_rc.borrow();
+                    chk.completion_error(ctx, ctx.tree(tree).pos, &failure, syms);
+                    return;
+                }
+            };
+            if let Some(repeatable) = repeatable {
+                let repeatable_ty = ctx.attr(repeatable).ty.expect("repeatable type");
+                let cb_pos = self.get_diagnostic_position(ctx, tree, repeatable_ty);
+                let cb_pos = cb_pos.expect("AssertionError: repeatable diagnostic position");
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                chk.validate_repeatable(ctx, syms, cb_pos, c, repeatable);
+            }
+        } else {
+            // Check that all extended classes and interfaces are compatible
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_compatible_supertypes(ctx, syms, ctx.tree(tree).pos, c_ty);
+            if allow_default_methods {
+                chk.check_default_method_clashes(ctx, syms, ctx.tree(tree).pos, c_ty);
+            }
+        }
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_class_bounds_type(ctx, syms, ctx.tree(tree).pos, c_ty);
+        }
+        ctx.tree_mut(tree).ty = Some(c_ty);
+        // Check that a generic class does not extend Throwable
+        let allparams = crate::code::types::allparams_of(ctx, c_ty);
+        let throwable_ty = self.syms.borrow().throwable_type;
+        if !allparams.is_empty() && self.types.is_subtype(ctx, syms, c_ty, throwable_ty) {
+            if let Some(extending) = extending {
+                let info = crate::resources::compiler_properties::errors::generic_throwable();
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    ctx.tree(extending).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+        }
+        // Check that all methods which implement some method conform to it.
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_implementations(ctx, syms, tree);
+        }
+        self.check_auto_closeable(ctx, syms, ctx.tree(tree).pos, env, c_ty);
+        // Attribute the declarations.
+        let mut defs_current = defs;
+        while defs_current.non_empty() {
+            let def = *defs_current.head();
+            defs_current = defs_current.tail();
+            self.attrib_stat(ctx, syms, def, env);
+            // Check that declarations in inner classes are not static (JLS 8.1.2)
+            // Make an exception for static constants.
+            let c_name_is_empty = ctx.sym(c).name.to_java_string().is_empty();
+            if !allow_records
+                && ctx.sym(c).owner.map(|owner| ctx.sym(owner).kind) != Some(crate::code::kinds::Kind::PCK)
+                && ((ctx.sym(c).flags_field & crate::code::flags::STATIC as i64) == 0
+                    || c_name_is_empty)
+                && (crate::tree::tree_info::flags(ctx, def)
+                    & ((crate::code::flags::STATIC as i64) | (crate::code::flags::INTERFACE as i64)))
+                    != 0
+            {
+                let mut sym: Option<SymbolId> = None;
+                if ctx.tree(def).has_tag(Tag::VARDEF) {
+                    if let TreeKind::VariableDecl { sym: Some(var_sym), .. } = &ctx.tree(def).kind {
+                        sym = Some(*var_sym);
+                    }
+                }
+                let is_static_constant = match sym {
+                    Some(sym) => {
+                        ctx.sym(sym).kind == crate::code::kinds::Kind::VAR
+                            && ctx.sym(sym).get_const_value().is_some()
+                    }
+                    None => false,
+                };
+                if !is_static_constant {
+                    let info = crate::resources::compiler_properties::errors::icls_cant_have_static_decl(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            crate::comp::resolve::symbol_display_name(ctx, c),
+                        ),
+                    );
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        ctx.tree(def).pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                }
+            }
+        }
+        // Check for cycles among non-initial constructors.
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_cyclic_constructors(ctx, tree);
+            chk.check_non_cyclic_elements(ctx, tree);
+        }
+        // Check for proper use of serialVersionUID
+        let serial_lint_enabled = env
+            .info
+            .borrow()
+            .lint
+            .as_ref()
+            .map(|lint| lint.is_enabled(crate::code::lint::LintCategory::SERIAL))
+            .unwrap_or(false);
+        let enum_or_interface = (crate::code::flags::ENUM as i64)
+            | (crate::code::flags::INTERFACE as i64);
+        if serial_lint_enabled
+            && self.is_serializable(ctx, syms, c_ty)
+            && (ctx.sym(c).flags_field & enum_or_interface) == 0
+            && !ctx.sym(c).is_anonymous()
+        {
+            self.check_serial_version_uid(ctx, syms, tree, c, env);
+        }
+        if self.allow_type_annos {
+            // Correctly organize the positions of the type annotations
+            let type_annotations_rc = self.type_annotations.borrow().clone();
+            if let Some(type_annotations_rc) = type_annotations_rc {
+                type_annotations_rc.organize_type_annotations_bodies(ctx, syms, tree);
+            }
+            // Check type annotations applicability rules
+            self.validate_type_annotations(ctx, tree, false);
+        }
+        let _ = mods;
+    }
+}
+
+impl Attr {
+    /// Java: public void visitNewClass(final JCNewClass tree) (Attr.java:2651-2879).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the new class creation tree.
+    ///
+    /// # Returns
+    ///   - the attributed type.
+    ///
+    /// # Panics
+    ///   - the registered services must be installed.
+    ///
+    /// Upstream: Attr.java:2651-2879.
+    #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::too_many_arguments)]
+    fn visit_new_class(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let mut owntype = self
+            .types
+            .create_error_type_original(ctx, ctx.tree(tree).ty, syms);
+        let env = self.env.clone().expect("env");
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let pt = self.pt().unwrap_or_else(|| self.no_type(ctx));
+        let info = env.info.borrow().dup_ctx();
+        let local_env = env.dup(Some(tree), info);
+        let (encl, typeargs, clazz, args, def, class_decl_removed) = match &ctx.tree(tree).kind {
+            TreeKind::NewClass { encl, typeargs, clazz, args, def, class_decl_removed, .. } => {
+                (*encl, typeargs.clone(), *clazz, args.clone(), *def, *class_decl_removed)
+            }
+            _ => return Ok(owntype),
+        };
+        let cdef = def;
+        let Some(mut clazz) = clazz else {
+            return Ok(owntype);
+        };
+        let mut clazzid: TreeId;
+        let mut annoclazzid: Option<TreeId> = None;
+        // Java: unpack TYPEAPPLY/ANNOTATED_TYPE to find the class identifier.
+        if ctx.tree(clazz).tag == Tag::TYPEAPPLY {
+            if let TreeKind::TypeApply { clazz: Some(inner), .. } = &ctx.tree(clazz).kind {
+                clazzid = *inner;
+                if ctx.tree(clazzid).tag == Tag::ANNOTATED_TYPE {
+                    if let TreeKind::AnnotatedType { underlying_type: Some(underlying), .. } = &ctx.tree(clazzid).kind {
+                        annoclazzid = Some(clazzid);
+                        clazzid = *underlying;
+                    }
+                }
+            } else {
+                return Ok(owntype);
+            }
+        } else if ctx.tree(clazz).tag == Tag::ANNOTATED_TYPE {
+            if let TreeKind::AnnotatedType { underlying_type: Some(underlying), .. } = &ctx.tree(clazz).kind {
+                annoclazzid = Some(clazz);
+                clazzid = *underlying;
+            } else {
+                return Ok(owntype);
+            }
+        } else {
+            clazzid = clazz;
+        }
+        let mut clazzid1 = clazzid;
+        if let Some(encl) = encl {
+            // Qualified new: the class name is prefixed with the qualifier type.
+            let encl_expr_ty = self.attrib_tree_use(
+                ctx,
+                syms,
+                encl,
+                &env,
+                self.unknown_expr_info.clone(),
+            );
+            let encl_pos = ctx.tree(encl).pos;
+            let encltype = {
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                chk.check_ref_type(ctx, encl_pos, encl_expr_ty)
+            };
+            let clazz_pos = ctx.tree(clazz).pos;
+            let clazz_name = match &ctx.tree(clazzid).kind {
+                TreeKind::Ident { name, .. } => name.clone(),
+                _ => panic!("ClassCastException: JCIdent expected"),
+            };
+            let encl_type_tree = {
+                let mut make = self.make.borrow_mut();
+                make.at(clazz_pos).type_from_type(ctx, syms, encltype)
+            };
+            let selected = {
+                let mut make = self.make.borrow_mut();
+                make.at(clazz_pos).select(ctx, encl_type_tree, clazz_name)
+            };
+            clazzid1 = selected;
+            if ctx.tree(clazz).tag == Tag::ANNOTATED_TYPE {
+                let annotations = match &ctx.tree(clazz).kind {
+                    TreeKind::AnnotatedType { annotations, .. } => annotations.clone(),
+                    _ => List::nil(),
+                };
+                let underlying_is_typeapply = match &ctx.tree(clazz).kind {
+                    TreeKind::AnnotatedType { underlying_type: Some(underlying), .. } => {
+                        ctx.tree(*underlying).tag == Tag::TYPEAPPLY
+                    }
+                    _ => false,
+                };
+                if underlying_is_typeapply {
+                    if let TreeKind::TypeApply { arguments, .. } = &ctx.tree(clazz).kind {
+                        clazzid1 = {
+                            let mut make = self.make.borrow_mut();
+                            make.at(tree_pos(ctx, tree)).type_apply(ctx, clazzid1, arguments.clone())
+                        };
+                    }
+                }
+                clazzid1 = {
+                    let mut make = self.make.borrow_mut();
+                    make.at(tree_pos(ctx, tree)).annotated_type(ctx, annotations, clazzid1)
+                };
+            } else if ctx.tree(clazz).tag == Tag::TYPEAPPLY {
+                let arguments = match &ctx.tree(clazz).kind {
+                    TreeKind::TypeApply { arguments, .. } => arguments.clone(),
+                    _ => List::nil(),
+                };
+                clazzid1 = {
+                    let mut make = self.make.borrow_mut();
+                    make.at(tree_pos(ctx, tree)).type_apply(ctx, clazzid1, arguments)
+                };
+            }
+            clazz = clazzid1;
+        }
+        // Attribute clazz expression and store symbol + type back into the tree.
+        let is_enum_init = crate::tree::tree_info::is_enum_init(ctx, env.tree.expect("env tree"));
+        env.info.borrow_mut().is_new_class = true;
+        let mut clazztype = if is_enum_init {
+            self.attrib_ident_as_enum_type(ctx, syms, &env, clazz)
+        } else {
+            self.attrib_type_use(ctx, syms, clazz, &env)
+        };
+        env.info.borrow_mut().is_new_class = false;
+        clazztype = {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_diamond(ctx, tree, clazztype)
+        };
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.validate(ctx, syms, &local_env, clazz);
+        }
+        if let Some(encl) = encl {
+            ctx.tree_mut(clazz).ty = Some(clazztype);
+            let clazzid1_sym = crate::tree::tree_info::symbol(ctx, clazzid1);
+            if let TreeKind::Ident { sym: slot, .. } = &mut ctx.tree_mut(clazzid).kind {
+                *slot = clazzid1_sym;
+            }
+            let clazzid_ty = clazzid1_sym.and_then(|sym| ctx.sym(sym).ty);
+            ctx.tree_mut(clazzid).ty = clazzid_ty;
+            if let Some(annoclazzid) = annoclazzid {
+                ctx.tree_mut(annoclazzid).ty = clazzid_ty;
+            }
+            if !ctx.typ(clazztype).has_tag(TypeTag::ERROR) {
+                let clazztype_tsym = ctx.typ(clazztype).tsym;
+                if cdef.is_some()
+                    && clazztype_tsym
+                        .map(|tsym| ctx.sym(tsym).is_interface())
+                        .unwrap_or(false)
+                {
+                    let info = crate::resources::compiler_properties::errors::anon_class_impl_intf_no_qual_for_new();
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        ctx.tree(encl).pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                } else if clazztype_tsym
+                    .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::STATIC as i64) != 0)
+                    .unwrap_or(false)
+                {
+                    let info = crate::resources::compiler_properties::errors::qualified_new_of_static_class(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            crate::comp::resolve::symbol_display_name(
+                                ctx,
+                                clazztype_tsym.expect("class type symbol"),
+                            ),
+                        ),
+                    );
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        ctx.tree(encl).pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                }
+            }
+        } else {
+            let clazztype_tsym = ctx.typ(clazztype).tsym;
+            let is_interface = clazztype_tsym
+                .map(|tsym| ctx.sym(tsym).is_interface())
+                .unwrap_or(false);
+            let encl_has_class = ctx
+                .typ(clazztype)
+                .get_enclosing_type()
+                .map(|encl_ty| ctx.typ(encl_ty).has_tag(TypeTag::CLASS))
+                .unwrap_or(false);
+            if !is_interface && encl_has_class {
+                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
+                let mut rs = rs_rc.borrow_mut();
+                let types_rc = Rc::clone(&self.types);
+                rs.resolve_implicit_this(
+                    ctx,
+                    syms,
+                    &types_rc,
+                    simple_diag_pos(ctx.tree(tree).pos),
+                    &env,
+                    clazztype,
+                    false,
+                );
+            }
+        }
+        // Attribute constructor arguments.
+        let (pkind, argtypes) = self.attrib_args(ctx, syms, KindSelector::VAL, args.clone(), &local_env);
+        let typeargtypes = self.attrib_types(ctx, syms, typeargs.clone(), &local_env);
+        if ctx.typ(clazztype).has_tag(TypeTag::CLASS) || ctx.typ(clazztype).has_tag(TypeTag::ERROR) {
+            // Enums may not be instantiated except implicitly
+            let clazztype_tsym = ctx.typ(clazztype).tsym.expect("class type symbol");
+            let enum_flag = crate::code::flags::ENUM as i64;
+            if (ctx.sym(clazztype_tsym).flags_field & enum_flag) != 0
+                && {
+                    let env_tree = env.tree.expect("env tree");
+                    if !ctx.tree(env_tree).has_tag(Tag::VARDEF) {
+                        true
+                    } else {
+                        match &ctx.tree(env_tree).kind {
+                            TreeKind::VariableDecl { mods: Some(mods), init, .. } => {
+                                let mods_flags = match &ctx.tree(*mods).kind {
+                                    TreeKind::Modifiers { flags, .. } => *flags,
+                                    _ => 0,
+                                };
+                                (mods_flags & enum_flag) == 0 || *init != Some(tree)
+                            }
+                            _ => true,
+                        }
+                    }
+                }
+            {
+                let info = crate::resources::compiler_properties::errors::enum_cant_be_instantiated();
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    ctx.tree(tree).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+            let is_diamond = crate::tree::tree_info::is_diamond(ctx, tree);
+            let is_speculative_diamond = is_diamond
+                && result_info.check_context.deferred_attr_context().mode
+                    == crate::comp::deferred_attr::AttrMode::SPECULATIVE;
+            let mut skip_non_diamond_path = false;
+            // Check that class is not abstract
+            let abstract_or_interface = (crate::code::flags::ABSTRACT as i64)
+                | (crate::code::flags::INTERFACE as i64);
+            if cdef.is_none()
+                && !is_speculative_diamond
+                && (ctx.sym(clazztype_tsym).flags_field & abstract_or_interface) != 0
+            {
+                let info = crate::resources::compiler_properties::errors::abstract_cant_be_instantiated(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        crate::comp::resolve::symbol_display_name(ctx, clazztype_tsym),
+                    ),
+                );
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    ctx.tree(tree).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+                skip_non_diamond_path = true;
+            } else if cdef.is_some() && ctx.sym(clazztype_tsym).is_interface() {
+                // Check that no constructor arguments are given to anonymous classes
+                if !argtypes.is_empty() {
+                    let head = *args.head();
+                    let info = crate::resources::compiler_properties::errors::anon_class_impl_intf_no_args();
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        ctx.tree(head).pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                }
+                if !typeargtypes.is_empty() {
+                    let head = *typeargs.head();
+                    let info = crate::resources::compiler_properties::errors::anon_class_impl_intf_no_typeargs();
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        ctx.tree(head).pos,
+                        crate::util::jc_diagnostic::Error::from(info),
+                    );
+                }
+                // Error recovery: pretend no arguments were supplied.
+                let _ = argtypes;
+                skip_non_diamond_path = true;
+            }
+            let _ = class_decl_removed;
+            if is_diamond {
+                // diamond inference (JLS 15.12.2.7)
+                let site = {
+                    let outer = ctx.typ(clazztype).get_enclosing_type();
+                    let tsym_ty = ctx.sym(clazztype_tsym).ty.expect("diamond class symbol type");
+                    let typarams = crate::code::types::get_type_arguments(ctx, tsym_ty);
+                    let metadata = ctx.typ(clazztype).get_metadata().cloned();
+                    let mut new_type = crate::code::type_::Type::new_class_type(
+                        outer,
+                        Some(typarams),
+                        clazztype_tsym,
+                    );
+                    if let Some(metadata) = metadata {
+                        new_type.metadata = Some(metadata);
+                    }
+                    ctx.alloc_type(new_type)
+                };
+                let diamond_env = local_env.dup(Some(tree), local_env.info.borrow().dup_ctx());
+                diamond_env.info.borrow_mut().select_super = cdef.is_some() || class_decl_removed;
+                diamond_env.info.borrow_mut().pending_resolution_phase = None;
+                let (constructor, constructor_base) = {
+                    let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
+                    let mut rs = rs_rc.borrow_mut();
+                    let chk_rc = Rc::clone(&self.chk);
+                    let chk = chk_rc.borrow();
+                    let infer_rc = Rc::clone(&self.infer);
+                    let types_rc = Rc::clone(&self.types);
+                    let constructor = rs.resolve_diamond(
+                        ctx,
+                        syms,
+                        &types_rc,
+                        self,
+                        &chk,
+                        &infer_rc,
+                        simple_diag_pos(ctx.tree(tree).pos),
+                        &diamond_env,
+                        site,
+                        argtypes.clone(),
+                        Some(typeargtypes.clone()),
+                    );
+                    let base = crate::code::symbol::base_symbol(ctx, constructor);
+                    (constructor, base)
+                };
+                if let TreeKind::NewClass { constructor: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                    *slot = Some(constructor_base);
+                }
+                let pt_for_template = pt;
+                let method_template = self.new_method_template(
+                    ctx,
+                    syms,
+                    pt_for_template,
+                    argtypes.clone(),
+                    Some(typeargtypes.clone()),
+                );
+                let diamond_check_context = Rc::new(DiamondCheckContext {
+                    enclosing: Rc::clone(&result_info.check_context),
+                    clazz,
+                    diags: Rc::clone(&self.diags),
+                    tsym: clazztype_tsym,
+                }) as Rc<dyn crate::comp::check::CheckContext>;
+                let diamond_result = result_info.dup_pt_context_mode(
+                    Some(method_template),
+                    diamond_check_context,
+                    crate::comp::check::CheckMode::NO_TREE_UPDATE,
+                );
+                let create_error = self.types.create_error_type_original(ctx, Some(clazztype), syms);
+                if let TreeKind::NewClass { constructor_type: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                    *slot = Some(create_error);
+                }
+                let constructor_type = self.check_id(
+                    ctx,
+                    syms,
+                    tree,
+                    site,
+                    constructor,
+                    &diamond_env,
+                    &diamond_result,
+                );
+                let created_error = self.types.create_error_type_original(ctx, Some(clazztype), syms);
+                ctx.tree_mut(clazz).ty = Some(created_error);
+                if !ctx.typ(constructor_type).has_tag(TypeTag::ERROR) {
+                    let constructor_ret = self.types.get_return_type_public(ctx, constructor_type);
+                    ctx.tree_mut(clazz).ty = Some(constructor_ret);
+                    let void_ty = self.syms.borrow().void_type;
+                    let constructor_type_void = self
+                        .types
+                        .create_method_type_with_return(ctx, constructor_type, void_ty);
+                    if let TreeKind::NewClass { constructor_type: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                        *slot = Some(constructor_type_void);
+                    }
+                }
+                let clazz_ty = ctx.tree(clazz).ty.expect("new class clazz type");
+                clazztype = {
+                    let chk_rc = Rc::clone(&self.chk);
+                    let chk = chk_rc.borrow();
+                    chk.check_class_type_no_bounds(ctx, ctx.tree(clazz).pos, clazz_ty, true)
+                };
+            } else if !skip_non_diamond_path {
+                let rs_env_config = local_env.dup(Some(tree), local_env.info.borrow().dup_ctx());
+                {
+                    let mut rs_env_info = rs_env_config.info.borrow_mut();
+                    rs_env_info.select_super = cdef.is_some();
+                    rs_env_info.pending_resolution_phase = None;
+                }
+                let constructor = {
+                    let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
+                    let mut rs = rs_rc.borrow_mut();
+                    let chk_rc = Rc::clone(&self.chk);
+                    let chk = chk_rc.borrow();
+                    let infer_rc = Rc::clone(&self.infer);
+                    let types_rc = Rc::clone(&self.types);
+                    rs.resolve_constructor(
+                        ctx,
+                        syms,
+                        &types_rc,
+                        self,
+                        &chk,
+                        &infer_rc,
+                        simple_diag_pos(ctx.tree(tree).pos),
+                        &local_env,
+                        clazztype,
+                        argtypes.clone(),
+                        Some(typeargtypes.clone()),
+                    )
+                };
+                if let TreeKind::NewClass { constructor: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                    *slot = Some(constructor);
+                }
+                if cdef.is_none() {
+                    let void_ty = self.syms.borrow().void_type;
+                    let method_template = self.new_method_template(
+                        ctx,
+                        syms,
+                        void_ty,
+                        argtypes.clone(),
+                        Some(typeargtypes.clone()),
+                    );
+                    let rs_env_config2 = local_env.dup(Some(tree), local_env.info.borrow().dup_ctx());
+                    let constructor_type = {
+                        let info = result_info.dup_pt_context_mode(
+                            Some(method_template),
+                            Rc::clone(&result_info.check_context),
+                            crate::comp::check::CheckMode::NO_TREE_UPDATE,
+                        );
+                        self.check_id(ctx, syms, tree, clazztype, constructor, &rs_env_config2, &info)
+                    };
+                    if let TreeKind::NewClass { constructor_type: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                        *slot = Some(constructor_type);
+                    }
+                }
+            }
+            if let Some(cdef) = cdef {
+                return self.visit_anonymous_class_definition(
+                    ctx,
+                    syms,
+                    tree,
+                    clazz,
+                    clazztype,
+                    cdef,
+                    &local_env,
+                    argtypes,
+                    typeargtypes,
+                    pkind,
+                );
+            }
+            let constructor_is_mth = match &ctx.tree(tree).kind {
+                TreeKind::NewClass { constructor: Some(constructor), .. } => {
+                    ctx.sym(*constructor).kind == crate::code::kinds::Kind::MTH
+                }
+                _ => false,
+            };
+            if constructor_is_mth {
+                owntype = clazztype;
+            }
+        }
+        let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &result_info);
+        let inference_context = Rc::clone(result_info.check_context.inference_context());
+        let constructor_type = match &ctx.tree(tree).kind {
+            TreeKind::NewClass { constructor_type, .. } => *constructor_type,
+            _ => None,
+        };
+        if let Some(constructor_type) = constructor_type {
+            if inference_context.free(ctx, syms, &self.types, constructor_type) {
+                // wait for inference to finish and then replace inference vars
+                let listener = Rc::new(ConstructorTypeListener {
+                    tree,
+                    constructor_type,
+                });
+                inference_context.add_free_type_listener(
+                    ctx,
+                    syms,
+                    &self.types,
+                    List::of(constructor_type),
+                    listener,
+                );
+            }
+        }
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.validate_list(ctx, syms, &local_env, &typeargs);
+        }
+        self.result = Some(result);
+        Ok(result)
+    }
+}
+
+/// Java: the FreeTypeListener replacing inference vars in the constructor type.
+pub struct ConstructorTypeListener {
+    /// Java: the new class tree.
+    pub tree: TreeId,
+    /// Java: the constructor type to instantiate.
+    pub constructor_type: TypeId,
+}
+
+impl crate::comp::infer::FreeTypeListener for ConstructorTypeListener {
+    fn types_inferred(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        inference_context: &crate::comp::infer::InferenceContext,
+    ) -> Result<(), crate::comp::infer::InferenceException> {
+        let instantiated = inference_context.as_inst_type(ctx, syms, types, self.constructor_type);
+        if let TreeKind::NewClass { constructor_type, .. } = &mut ctx.tree_mut(self.tree).kind {
+            *constructor_type = Some(instantiated);
+        }
+        Ok(())
+    }
+}
+
+/// Adapter: the tree position accessor.
+fn tree_pos(ctx: &CompilerContext, tree: TreeId) -> i32 {
+    ctx.tree(tree).pos
+}
+
+impl Attr {
+    /// Java: private void visitAnonymousClassDefinition(JCNewClass tree,
+    /// JCExpression clazz, Type clazztype, JCClassDecl cdef, Env<AttrContext>
+    /// localEnv, List<Type> argtypes, List<Type> typeargtypes, KindSelector pkind)
+    /// (Attr.java:2881-3010).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the new class tree;
+    ///   - clazz: the allocated class expression;
+    ///   - clazztype: the allocated class type;
+    ///   - cdef: the anonymous class declaration;
+    ///   - local_env: the local environment;
+    ///   - argtypes/typeargtypes: the attributed constructor arguments;
+    ///   - pkind: the argument kind selector.
+    ///
+    /// # Returns
+    ///   - the attributed type.
+    ///
+    /// # Panics
+    ///   - the registered services must be installed.
+    ///
+    /// Upstream: Attr.java:2881-3010.
+    #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::too_many_arguments)]
+    fn visit_anonymous_class_definition(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        clazz: TreeId,
+        clazztype: TypeId,
+        cdef: TreeId,
+        local_env: &Rc<Env<AttrContext>>,
+        argtypes: List<TypeId>,
+        typeargtypes: List<TypeId>,
+        pkind: KindSelector,
+    ) -> Result<TypeId, CompletionFailure> {
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let inference_context = Rc::clone(result_info.check_context.inference_context());
+        let is_diamond = crate::tree::tree_info::is_diamond(ctx, tree);
+        let constructor_type = match &ctx.tree(tree).kind {
+            TreeKind::NewClass { constructor_type, .. } => *constructor_type,
+            _ => None,
+        };
+        let clazz_ty = ctx.tree(clazz).ty;
+        let needs_listener = is_diamond
+            && (constructor_type
+                .map(|constructor_type| {
+                    inference_context.free(ctx, syms, &self.types, constructor_type)
+                })
+                .unwrap_or(false)
+                || clazz_ty
+                    .map(|clazz_ty| inference_context.free(ctx, syms, &self.types, clazz_ty))
+                    .unwrap_or(false));
+        if needs_listener {
+            // Java: the Attr.visitAnonymousClassDefinition re-entrant listener
+            // (Attr.java:2898-2920) needs the outer attribute state (an inner-class
+            // capture in Java). The ported Attr is borrowed mutably by the whole
+            // attribution stack, so re-entering it from an inference listener is
+            // not representable without an architecture change (registered as a
+            // dependency; the non-diamond paths are complete).
+            unimplemented!(
+                "TODO(Attr re-entrant listener): Attr.visitAnonymousClassDefinition diamond listener (Attr.java:2898-2920)"
+            )
+        }
+        let mut clazztype = clazztype;
+        if is_diamond && ctx.typ(clazztype).has_tag(TypeTag::CLASS) {
+            let invalid = {
+                let chk_rc = Rc::clone(&self.chk);
+                let chk = chk_rc.borrow();
+                chk.check_diamond_denotable(ctx, clazztype)
+            };
+            if !ctx.typ(clazztype).has_tag(TypeTag::ERROR) && !invalid.is_empty() {
+                let clazztype_tsym = ctx.typ(clazztype).tsym.expect("diamond class symbol");
+                let diamond_fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::diamond(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            crate::comp::resolve::symbol_display_name(ctx, clazztype_tsym),
+                        ),
+                    ),
+                ));
+                let invalid_args: Vec<crate::resources::diagnostic_contract::TypeArg> = invalid
+                    .iter()
+                    .map(|t| crate::resources::diagnostic_contract::TypeArg::placeholder(
+                        crate::comp::attr::type_display_of(ctx, *t),
+                    ))
+                    .collect();
+                let detail = if invalid.len() > 1 {
+                    crate::resources::compiler_properties::fragments::diamond_invalid_args(
+                        invalid_args,
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+                            diamond_fragment.clone(),
+                        )),
+                    )
+                } else {
+                    crate::resources::compiler_properties::fragments::diamond_invalid_arg(
+                        invalid_args,
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+                            diamond_fragment.clone(),
+                        )),
+                    )
+                };
+                let info = crate::resources::compiler_properties::errors::cant_apply_diamond1(
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+                        diamond_fragment,
+                    )),
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+                        self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(detail)),
+                    )),
+                );
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    ctx.tree(clazz).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+            // For <>(){}, inferred types must also be accessible.
+            let clazz_arguments = crate::code::types::get_type_arguments(ctx, clazztype);
+            let mut arguments_current = clazz_arguments;
+            while arguments_current.non_empty() {
+                let argument = *arguments_current.head();
+                arguments_current = arguments_current.tail();
+                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
+                let mut rs = rs_rc.borrow_mut();
+                let env_rc = self.env.clone().expect("env");
+                rs.check_accessible_type(ctx, syms, &env_rc, argument);
+            }
+        }
+        // If we already errored, be careful to avoid a further avalanche.
+        let clazztype_tsym = ctx.typ(clazztype).tsym.expect("anonymous class type symbol");
+        let implementing = ctx.sym(clazztype_tsym).is_interface()
+            || (ctx.typ(clazztype).has_tag(TypeTag::ERROR)
+                && {
+                    let original = match &ctx.typ(clazztype).kind {
+                        crate::code::type_::TypeKindData::ErrorType { original_type, .. } => {
+                            *original_type
+                        }
+                        _ => None,
+                    };
+                    match original {
+                        Some(original) => {
+                            !ctx.typ(original).has_tag(TypeTag::NONE)
+                                && ctx
+                                    .typ(original)
+                                    .tsym
+                                    .map(|tsym| ctx.sym(tsym).is_interface())
+                                    .unwrap_or(false)
+                        }
+                        None => false,
+                    }
+                });
+        if implementing {
+            if let TreeKind::ClassDecl { implementing: slot, .. } = &mut ctx.tree_mut(cdef).kind {
+                *slot = List::of(clazz);
+            }
+        } else if let TreeKind::ClassDecl { extending: slot, .. } = &mut ctx.tree_mut(cdef).kind {
+            *slot = Some(clazz);
+        }
+        if result_info.check_context.deferred_attr_context().mode
+            == crate::comp::deferred_attr::AttrMode::CHECK
+            && self.is_serializable(ctx, syms, clazztype)
+        {
+            local_env.info.borrow_mut().is_serializable = true;
+        }
+        self.attrib_stat(ctx, syms, cdef, local_env);
+        let mut finalargtypes = argtypes.clone();
+        // If an outer instance is given, prefix it to the constructor arguments.
+        let encl = match &ctx.tree(tree).kind {
+            TreeKind::NewClass { encl, .. } => *encl,
+            _ => None,
+        };
+        if let Some(encl) = encl {
+            if !ctx.sym(clazztype_tsym).is_interface() {
+                let encl_ty = ctx.tree(encl).ty.expect("enclosing expression type");
+                finalargtypes = finalargtypes.prepend(encl_ty);
+            }
+        }
+        if is_diamond && pkind.contains(KindSelector::POLY) {
+            let mut copied: List<TypeId> = List::nil();
+            let mut current = finalargtypes;
+            while current.non_empty() {
+                copied = copied.append(self.deferred_copier(ctx, *current.head()));
+                current = current.tail();
+            }
+            finalargtypes = copied;
+        }
+        let cdef_sym = match &ctx.tree(cdef).kind {
+            TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+            _ => return Ok(self.types.create_error_type_original(ctx, ctx.tree(tree).ty, syms)),
+        };
+        let cdef_ty = ctx.sym(cdef_sym).ty.expect("anonymous class type");
+        clazztype = if ctx.typ(clazztype).has_tag(TypeTag::ERROR) {
+            self.types.create_error_type_original(ctx, Some(cdef_ty), syms)
+        } else {
+            cdef_ty
+        };
+        let constructor = {
+            let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
+            let mut rs = rs_rc.borrow_mut();
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            let infer_rc = Rc::clone(&self.infer);
+            let types_rc = Rc::clone(&self.types);
+            rs.resolve_constructor(
+                ctx,
+                syms,
+                &types_rc,
+                self,
+                &chk,
+                &infer_rc,
+                simple_diag_pos(ctx.tree(tree).pos),
+                local_env,
+                clazztype,
+                finalargtypes.clone(),
+                Some(typeargtypes.clone()),
+            )
+        };
+        assert!(
+            !crate::code::kinds::Kind::is_resolution_error(ctx.sym(constructor).kind),
+            "AssertionError: constructor resolution error"
+        );
+        if let TreeKind::NewClass { constructor: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(constructor);
+        }
+        let constructor_type = {
+            let void_ty = self.syms.borrow().void_type;
+            let method_template = self.new_method_template(
+                ctx,
+                syms,
+                void_ty,
+                finalargtypes,
+                Some(typeargtypes),
+            );
+            let check_info = result_info.dup_pt_context_mode(
+                Some(method_template),
+                Rc::clone(&result_info.check_context),
+                crate::comp::check::CheckMode::NO_TREE_UPDATE,
+            );
+            self.check_id(ctx, syms, tree, clazztype, constructor, local_env, &check_info)
+        };
+        if let TreeKind::NewClass { constructor_type: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(constructor_type);
+        }
+        let constructor_is_mth = ctx.sym(constructor).kind == crate::code::kinds::Kind::MTH;
+        let owntype = if constructor_is_mth {
+            clazztype
+        } else {
+            self.types.create_error_type_original(ctx, ctx.tree(tree).ty, syms)
+        };
+        let no_inference_hook = result_info.dup_pt_context_mode(
+            result_info.pt,
+            Rc::clone(&result_info.check_context),
+            crate::comp::check::CheckMode::NO_INFERENCE_HOOK,
+        );
+        let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &no_inference_hook);
+        {
+            let typeargs_trees = match &ctx.tree(tree).kind {
+                TreeKind::NewClass { typeargs, .. } => typeargs.clone(),
+                _ => List::nil(),
+            };
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.validate_list(ctx, syms, local_env, &typeargs_trees);
+        }
+        self.result = Some(result);
+        Ok(result)
+    }
+
+    /// Java: the diamond deferred copier (DeferredAttr.treeCopier specialization of
+    /// Attr.deferredCopier): copies DEFERRED types, leaving other types unchanged.
+    fn deferred_copier(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
+        use crate::code::type_::TypeKindData;
+        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::DEFERRED) {
+            let (tree, env) = match &ctx.typ(t).kind {
+                TypeKindData::Deferred { tree, env, .. } => (*tree, Rc::clone(env)),
+                _ => return t,
+            };
+            let copied_tree = {
+                let service_rc = self.deferred_attr.borrow().clone();
+                match service_rc {
+                    Some(service_rc) => {
+                        let service = service_rc.borrow();
+                        service.tree_copier.copy_tree(ctx, tree)
+                    }
+                    None => tree,
+                }
+            };
+            let deferred = crate::code::type_::Type::new(
+                crate::code::type_tag::TypeTag::DEFERRED,
+                None,
+                TypeKindData::Deferred {
+                    tree: copied_tree,
+                    env,
+                    mode: None,
+                    not_pertinent: Vec::new(),
+                    speculative_cache: Rc::new(std::cell::RefCell::new(
+                        crate::comp::deferred_attr::SpeculativeCache { cache: Vec::new() },
+                    )),
+                    argument: None,
+                },
+            );
+            ctx.alloc_type(deferred)
+        } else {
+            t
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

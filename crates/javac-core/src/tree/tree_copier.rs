@@ -934,13 +934,14 @@ impl TreeCopier {
     /// Java: public JCTree visitNewClass(NewClassTree node, P p)
     fn visit_new_class(&self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         let __kind = ctx.tree(tree).kind.clone();
-        let (encl, typeargs, clazz, args, def) = match &__kind {
+        let (encl, typeargs, clazz, args, def, class_decl_removed) = match &__kind {
             TreeKind::NewClass {
                 encl,
                 typeargs,
                 clazz,
                 args,
                 def,
+                class_decl_removed,
                 ..
             } => (
                 self.copy_opt(ctx, *encl),
@@ -948,10 +949,33 @@ impl TreeCopier {
                 self.copy_opt(ctx, *clazz),
                 self.copy_list(ctx, args),
                 self.copy_opt(ctx, *def),
+                *class_decl_removed,
             ),
             _ => panic!("ClassCastException: JCNewClass expected"),
         };
         let pos = ctx.tree(tree).pos;
+        // Java: DeferredAttr.treeCopier.visitNewClass: the speculative copier
+        // replaces diamond new classes with a def-less SpeculativeNewClass.
+        if self.speculative && crate::tree::tree_info::is_diamond(ctx, tree) {
+            let copied = self.mk(
+                ctx,
+                pos,
+                Tag::NEWCLASS,
+                TreeKind::NewClass {
+                    encl,
+                    typeargs,
+                    clazz,
+                    args,
+                    def: None,
+                    constructor: None,
+                    varargs_element: None,
+                    constructor_type: None,
+                    poly_kind: PolyKind::STANDALONE,
+                    class_decl_removed: def.is_some() || class_decl_removed,
+                },
+            );
+            return copied;
+        }
         self.mk(
             ctx,
             pos,
@@ -966,6 +990,7 @@ impl TreeCopier {
                 varargs_element: None,
                 constructor_type: None,
                 poly_kind: PolyKind::STANDALONE,
+                class_decl_removed,
             },
         )
     }

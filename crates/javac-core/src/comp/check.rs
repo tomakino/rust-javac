@@ -94,6 +94,8 @@ pub struct Check {
     /// Java: final boolean warnOnAnyAccessToMembers (from -Xlint options);
     /// injected through the setter at wiring time (Adapter).
     pub warn_on_any_access_to_members: bool,
+    /// Java: final Source source (Check.java:200).
+    pub source: crate::code::source::Source,
     /// Java: Feature.PRIVATE_SAFE_VARARGS.allowedInSource(source) (Check.java:970-977)
     pub private_safe_varargs: bool,
 }
@@ -138,6 +140,7 @@ impl Check {
             syms,
             type_annotations: Rc::new(RefCell::new(None)),
             warn_on_any_access_to_members: false,
+            source,
         }
     }
 
@@ -4293,6 +4296,19 @@ impl Check {
 
     /// Java: void checkClassBounds(DiagnosticPosition pos, Map<TypeSymbol,Type>
     /// seensofar, Type type) (Check.java:2810-2840).
+    /// Adapter: public wrapper of checkClassBounds(DiagnosticPosition pos, Type type).
+    pub fn check_class_bounds_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        t: TypeId,
+    ) {
+        let mut seensofar: std::collections::HashMap<SymbolId, TypeId> =
+            std::collections::HashMap::new();
+        self.check_class_bounds(ctx, syms, pos, &mut seensofar, t);
+    }
+
     #[allow(clippy::collapsible_if)]
     fn check_class_bounds(
         &self,
@@ -6758,5 +6774,248 @@ impl Check {
         let name = ctx.sym(enum_sym).name.clone();
         name == self.names.TYPE_USE
             || (is_type_parameter && name == self.names.TYPE_PARAMETER)
+    }
+}impl Check {
+    /// Java: void checkCompatibleSupertypes(DiagnosticPosition pos, Type c)
+    /// (Check.java:2494-2507).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - c: the class type whose interfaces are checked.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:2494-2507.
+    pub fn check_compatible_supertypes(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        pos: i32,
+        c: TypeId,
+    ) {
+        let mut supertypes = self.types.interfaces(ctx, syms, c);
+        let supertype = self.types.supertype(ctx, syms, c);
+        if ctx.typ(supertype).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            let super_tsym = ctx.typ(supertype).tsym.expect("supertype symbol");
+            if (ctx.sym(super_tsym).flags_field & crate::code::flags::ABSTRACT as i64) != 0 {
+                supertypes = supertypes.prepend(supertype);
+            }
+        }
+        let mut supertypes_vec: Vec<TypeId> = Vec::new();
+        let mut current = supertypes;
+        while current.non_empty() {
+            supertypes_vec.push(*current.head());
+            current = current.tail();
+        }
+        for index in 0..supertypes_vec.len() {
+            let head = supertypes_vec[index];
+            if !crate::code::types::get_type_arguments(ctx, head).is_empty()
+                && !self.check_compatible_abstracts(ctx, syms, pos, head, head, c)
+            {
+                return;
+            }
+            for other in supertypes_vec.iter().take(index) {
+                if !self.check_compatible_abstracts(ctx, syms, pos, head, *other, c) {
+                    return;
+                }
+            }
+        }
+        self.check_compatible_concretes(ctx, syms, pos, c);
+    }
+}impl Check {
+    /// Java: Type checkDiamond(JCNewClass tree, Type t) (Check.java:843-867).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - tree: the new class tree;
+    ///   - t: the attributed class type.
+    ///
+    /// # Returns
+    ///   - the checked (possibly error) type.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:843-867.
+    pub fn check_diamond(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+        t: TypeId,
+    ) -> TypeId {
+        let clazz = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::NewClass { clazz: Some(clazz), .. } => *clazz,
+            _ => return t,
+        };
+        if !crate::tree::tree_info::is_diamond(ctx, tree)
+            || ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::ERROR)
+        {
+            return self.check_class_type_no_bounds(ctx, ctx.tree(clazz).pos, t, true);
+        }
+        let def = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::NewClass { def, .. } => *def,
+            _ => None,
+        };
+        if def.is_some()
+            && !crate::code::source::Feature::DIAMOND_WITH_ANONYMOUS_CLASS_CREATION
+                .allowed_in_source(self.source)
+        {
+            let feature_fragment = self.diags.fragment(
+                crate::code::source::Feature::DIAMOND_WITH_ANONYMOUS_CLASS_CREATION
+                    .fragment(self.source.name()),
+            );
+            let info = crate::resources::compiler_properties::errors::cant_apply_diamond1(
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                    crate::comp::attr::type_display_of(ctx, t),
+                ),
+                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                    std::rc::Rc::new(feature_fragment),
+                ),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                ctx.tree(clazz).pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+        let t_tsym = ctx.typ(t).tsym.expect("diamond class symbol");
+        let t_tsym_ty = ctx.sym(t_tsym).ty.expect("diamond class symbol type");
+        let type_arguments = crate::code::types::get_type_arguments(ctx, t_tsym_ty);
+        if type_arguments.is_empty() {
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::diamond_non_generic(
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                        crate::comp::attr::type_display_of(ctx, t),
+                    ),
+                ),
+            ));
+            let info = crate::resources::compiler_properties::errors::cant_apply_diamond1(
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                    crate::comp::attr::type_display_of(ctx, t),
+                ),
+                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                ctx.tree(clazz).pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+            return self
+                .types
+                .create_error_type_original(ctx, Some(t), &self.syms.borrow());
+        } else {
+            let typeargs_nonempty = match &ctx.tree(tree).kind {
+                crate::tree::jc_tree::TreeKind::NewClass { typeargs, .. } => !typeargs.is_empty(),
+                _ => false,
+            };
+            if typeargs_nonempty {
+                let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::diamond_and_explicit_params(
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, t),
+                        ),
+                    ),
+                ));
+                let info = crate::resources::compiler_properties::errors::cant_apply_diamond1(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        crate::comp::attr::type_display_of(ctx, t),
+                    ),
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
+                );
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    ctx.tree(clazz).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+                return self
+                    .types
+                    .create_error_type_original(ctx, Some(t), &self.syms.borrow());
+            }
+            t
+        }
+    }
+
+    /// Java: List<Type> checkDiamondDenotable(ClassType t) (Check.java:874-884).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - t: the inferred class type.
+    ///
+    /// # Returns
+    ///   - the non-denotable types.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:874-884.
+    pub fn check_diamond_denotable(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        t: TypeId,
+    ) -> Vec<TypeId> {
+        let allparams = crate::code::types::allparams_of(ctx, t);
+        let mut result: Vec<TypeId> = Vec::new();
+        for arg in allparams.iter() {
+            if !self.check_denotable(ctx, arg) {
+                result.push(arg);
+            }
+        }
+        result
+    }
+
+    /// Java: public boolean checkDenotable(Type t) (Check.java:886-928).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - t: the type to check.
+    ///
+    /// # Returns
+    ///   - true when the type is denotable.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:886-928.
+    pub fn check_denotable(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        t: TypeId,
+    ) -> bool {
+        use crate::code::type_::TypeKindData;
+        match &ctx.typ(t).kind {
+            TypeKindData::ClassType { .. }
+            | TypeKindData::ErasedClassType { .. }
+            | TypeKindData::UnionClassType { .. }
+            | TypeKindData::IntersectionClassType { .. } => {
+                if ctx.typ(t).is_union() || ctx.typ(t).is_intersection() {
+                    return false;
+                }
+                let allparams = crate::code::types::allparams_of(ctx, t);
+                for targ in allparams.iter() {
+                    if !self.check_denotable(ctx, targ) {
+                        return false;
+                    }
+                }
+                true
+            }
+            TypeKindData::TypeVar { .. } => ctx
+                .typ(t)
+                .tsym
+                .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::SYNTHETIC as i64) == 0)
+                .unwrap_or(false),
+            TypeKindData::CapturedType { .. } => false,
+            TypeKindData::ArrayType { elemtype, .. } => elemtype
+                .map(|elemtype| self.check_denotable(ctx, elemtype))
+                .unwrap_or(true),
+            TypeKindData::WildcardType { type_, .. } => type_
+                .map(|type_| self.check_denotable(ctx, type_))
+                .unwrap_or(true),
+            _ => true,
+        }
     }
 }

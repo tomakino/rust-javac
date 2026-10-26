@@ -774,6 +774,8 @@ pub enum TreeKind {
         constructor_type: Option<TypeId>,
         /// is this poly expression a 'true' poly expression?
         poly_kind: PolyKind,
+        /// Java: JCNewClass.classDeclRemoved (the speculative new class marker).
+        class_decl_removed: bool,
     },
     /// Java: JCTree.JCNewArray
     NewArray {

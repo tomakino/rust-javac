@@ -1104,6 +1104,7 @@ impl TreeFactory for TreeMaker {
                 varargs_element: None,
                 constructor_type: None,
                 poly_kind: PolyKind::STANDALONE,
+                class_decl_removed: false,
             },
         )
     }
@@ -1121,6 +1122,9 @@ impl TreeFactory for TreeMaker {
         let tree = self.new_class(ctx, encl, typeargs, clazz, args, def);
         if class_def_removed && let TreeKind::NewClass { def, .. } = &mut ctx.tree_mut(tree).kind {
             *def = None;
+        }
+        if let TreeKind::NewClass { class_decl_removed, .. } = &mut ctx.tree_mut(tree).kind {
+            *class_decl_removed = class_def_removed;
         }
         tree
     }

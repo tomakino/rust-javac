@@ -1185,6 +1185,11 @@ impl Types {
 
     /// Java: Type.isCompound() (Type: false; IntersectionClassType: true;
     /// UnionClassType: getLub().isCompound()).
+    /// Adapter: public wrapper of the ported isCompound.
+    pub fn is_compound_public(&self, ctx: &mut CompilerContext, t: TypeId) -> bool {
+        self.is_compound(ctx, t)
+    }
+
     fn is_compound(&self, ctx: &mut CompilerContext, t: TypeId) -> bool {
         match &ctx.typ(t).kind {
             TypeKindData::IntersectionClassType { .. } => true,
