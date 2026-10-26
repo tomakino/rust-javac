@@ -9249,6 +9249,30 @@ impl Types {
         }
     }
 }
+
+impl Types {
+    /// Java: public Type skipTypeVars(Type t, boolean capture) with capture=false
+    /// (Types.java:180-188; the ported private helper is the non-capturing path).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - t: the type to project.
+    ///
+    /// # Returns
+    ///   - the projection of t after skipping type variables.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:180-188.
+    pub fn skip_type_vars_public(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        t: TypeId,
+    ) -> TypeId {
+        self.skip_type_vars(ctx, t)
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

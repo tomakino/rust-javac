@@ -106,7 +106,7 @@ impl SymbolMetadata {
     /// Java: public void setAttributes(SymbolMetadata other)
     pub fn set_attributes(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &crate::compiler_context::CompilerContext,
         other: &SymbolMetadata,
     ) {
         self.set_declaration_attributes(other.get_declaration_attributes());

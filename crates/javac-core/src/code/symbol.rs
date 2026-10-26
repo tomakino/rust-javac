@@ -423,7 +423,7 @@ impl Symbol {
     /// Java: public void setAttributes(Symbol other)
     pub fn set_attributes(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
+        ctx: &crate::compiler_context::CompilerContext,
         other: &Symbol,
     ) {
         match &other.metadata {

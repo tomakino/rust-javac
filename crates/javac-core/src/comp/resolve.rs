@@ -8478,6 +8478,58 @@ impl Resolve {
     }
 }
 
+
+impl Resolve {
+    /// Java: public void logAccessErrorInternal(Env<AttrContext> env, JCTree tree,
+    /// Type type) (Resolve.java:3861-3866) — used by TransTypes when checking
+    /// the target type of a synthetic cast.
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - env: the attribution environment;
+    ///   - tree: the cast tree;
+    ///   - target: the cast target type.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the environment must belong to a class.
+    ///
+    /// Upstream: Resolve.java:3861-3866.
+    pub fn log_access_error_internal(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        env: &Rc<Env<AttrContext>>,
+        tree: TreeId,
+        target: TypeId,
+    ) {
+        let encl_tree = env.encl_class.expect("enclClass");
+        let encl_sym = match &ctx.tree(encl_tree).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+            _ => panic!("enclosing class"),
+        };
+        let encl_ty = ctx.sym(encl_sym).ty.expect("enclClass type");
+        let target_tsym = ctx.typ(target).tsym.expect("target type symbol");
+        let error = self.new_access_error(ctx, syms, env, Some(encl_ty), target_tsym);
+        let pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> = Some(Rc::new(
+            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+        ));
+        let empty_name = self.names.empty.clone();
+        self.log_resolve_error(
+            ctx,
+            syms,
+            error,
+            pos,
+            Some(encl_sym),
+            Some(encl_ty),
+            &empty_name,
+            None,
+            None,
+        );
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
