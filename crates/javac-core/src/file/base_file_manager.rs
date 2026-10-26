@@ -321,16 +321,20 @@ impl BaseFileManager {
     /// PORTING_RULES: the streaming CharsetDecoder of upstream getDecoder has no Rust
     /// counterpart in the javac-charset adapter (whole-input decode/encode); only decode()
     /// below is expressed (PathFileObject.openReader is a separate TODO).
-    fn get_charset(&self, encoding_name: &JavaString) -> Charset {
+    fn get_charset(&self, encoding_name: &JavaString) -> Result<Charset, crate::util::jc_diagnostic::Error> {
         match &self.charset {
-            Some(charset) => *charset,
+            Some(charset) => Ok(*charset),
             None => match Charset::for_name(encoding_name) {
-                Ok(charset) => charset,
-                // Java: catch (IllegalCharsetNameException|UnsupportedCharsetException e)
-                // { log.error(Errors.UnsupportedEncoding(encName)); return empty CharBuffer; }
-                Err(_) => unimplemented!(
-                    "TODO(Log batch): BaseFileManager.decode unsupported charset reporting needs log.error(Errors.UnsupportedEncoding)"
-                ),
+                Ok(charset) => Ok(charset),
+                // Java: BaseFileManager.java decode catch
+                // (IllegalCharsetNameException|UnsupportedCharsetException):
+                //   log.error(Errors.UnsupportedEncoding(encName));
+                //   return CharBuffer.allocate(1).flip();
+                Err(_) => Err(crate::util::jc_diagnostic::Error::from(
+                    crate::resources::compiler_properties::errors::unsupported_encoding(
+                        encoding_name.clone(),
+                    ),
+                )),
             },
         }
     }
@@ -343,7 +347,17 @@ impl BaseFileManager {
     /// entry point (not ported) and is a TODO panic.
     pub fn decode(&self, inbuf: &[u8], ignore_encoding_errors: bool) -> JavaString {
         let encoding_name = self.get_encoding_name();
-        let charset = self.get_charset(&encoding_name);
+        let charset = match self.get_charset(&encoding_name) {
+            Ok(charset) => charset,
+            Err(error) => {
+                if let Some(log) = &self.log {
+                    use crate::util::abstract_log::AbstractLog;
+                    log.borrow_mut().error_pos(None, error);
+                }
+                // Java: return CharBuffer.allocate(1).flip() (the empty buffer).
+                return JavaString::from("");
+            }
+        };
         let action = if ignore_encoding_errors {
             MalformedAction::Replace
         } else {
