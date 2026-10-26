@@ -14,6 +14,7 @@ pub mod enter;
 pub mod flow;
 pub mod infer;
 pub mod env;
+pub mod lower;
 pub mod match_bindings;
 pub mod member_enter;
 pub mod operators;
