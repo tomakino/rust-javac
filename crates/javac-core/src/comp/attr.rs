@@ -352,6 +352,10 @@ pub struct Attr {
     pub recovery_info: ResultInfo,
     /// Java: private Map<ClassSymbol, MethodSymbol> clinits (Attr.java:3484)
     pub clinits: RefCell<std::collections::HashMap<SymbolId, SymbolId>>,
+    /// Java: final AttrRecover attrRecover (Attr.java:629 area) — installed
+    /// lazily through a cell to break the Attr/AttrRecover cycle (§9).
+    pub attr_recover: Rc<RefCell<Option<Rc<RefCell<crate::comp::attr_recover::AttrRecover>>>>>,
+
     /// Java: final Symtab syms (injected service, ADR 0001)
     pub syms: Rc<RefCell<Symtab>>,
     /// Java: final Infer infer (injected service, ADR 0001)
@@ -437,6 +441,7 @@ impl Attr {
                 crate::comp::check::CheckMode::NORMAL,
             ),
             clinits: RefCell::new(std::collections::HashMap::new()),
+            attr_recover: Rc::new(RefCell::new(None)),
             syms,
             infer,
         }
@@ -985,23 +990,46 @@ impl Attr {
     #[allow(clippy::too_many_arguments)]
     fn check_method_id_internal(
         &mut self,
-        _ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
-        _tree: TreeId,
-        _site: TypeId,
-        _sym: SymbolId,
-        _env: &Rc<Env<AttrContext>>,
-        _result_info: &ResultInfo,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        site: TypeId,
+        sym: SymbolId,
+        env: &Rc<Env<AttrContext>>,
+        result_info: &ResultInfo,
     ) -> TypeId {
-        // TODO(AttrRecover/Resolve batch): poly method recovery + checkIdInternal
-        // with the method prototype; registered.
-        unimplemented!("TODO(AttrRecover/Resolve batch): Attr.checkMethodIdInternal")
+        // Java: if (resultInfo.pkind.contains(KindSelector.POLY))
+        //   return attrRecover.recoverMethodInvocation(tree, site, sym, env, resultInfo);
+        // else return checkIdInternal(tree, site, sym, resultInfo.pt, env, resultInfo);
+        if result_info.pkind.contains(crate::code::kinds::KindSelector::POLY) {
+            let recover_rc = self.attr_recover.borrow().clone();
+            let recover_rc = recover_rc.expect(
+                "AttrRecover instance is not installed on this Attr (service wiring pending)",
+            );
+            let chk_rc = Rc::clone(&self.chk);
+            let diags = Rc::clone(&self.diags);
+            let chk_guard = chk_rc.borrow();
+            let recover = recover_rc.borrow();
+            return recover.recover_method_invocation(
+                ctx,
+                syms,
+                self,
+                &chk_guard,
+                &diags,
+                tree,
+                site,
+                sym,
+                env,
+                result_info,
+            );
+        }
+        self.check_id_internal(ctx, syms, tree, site, sym, result_info.pt, env, result_info)
     }
 
     /// Java: Type checkIdInternal(JCTree tree, Type site, Symbol sym, Type pt,
     /// Env<AttrContext> env, ResultInfo resultInfo) (Attr.java:4520-4620)
     #[allow(clippy::too_many_arguments)]
-    fn check_id_internal(
+    pub(crate) fn check_id_internal(
         &mut self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,

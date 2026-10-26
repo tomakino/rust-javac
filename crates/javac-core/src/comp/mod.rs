@@ -3,6 +3,7 @@
 pub mod annotate;
 pub mod argument_attr;
 pub mod attr;
+pub mod attr_recover;
 pub mod attr_context;
 pub mod check;
 pub mod const_fold;
