@@ -242,6 +242,8 @@ pub struct Attr {
     pub basic_handler: Rc<dyn crate::comp::check::CheckContext>,
     /// Java: Type result
     pub result: Option<TypeId>,
+    /// Java: private JCTree breakTree = null (Attr.java:448)
+    pub break_tree: Option<TreeId>,
     /// Java: the predefined result infos (statInfo/unknownExprInfo/...)
     pub stat_info: ResultInfo,
     pub var_assignment_info: ResultInfo,
@@ -308,6 +310,7 @@ impl Attr {
             env: None,
             result_info: None,
             result: None,
+            break_tree: None,
             basic_handler: Rc::clone(&basic_handler),
             stat_info: ResultInfo::new(KindSelector::NIL, None, Rc::clone(&basic_handler)),
             var_assignment_info: ResultInfo::new(KindSelector::ASG, None, Rc::clone(&basic_handler)),
@@ -487,6 +490,16 @@ impl Attr {
             Tag::WILDCARD => self.visit_wildcard(ctx, syms, tree),
             Tag::TYPEPARAMETER => self.visit_type_parameter(ctx, syms, tree),
             Tag::ERRONEOUS => self.visit_erroneous(ctx, syms, tree),
+            Tag::SKIP => self.visit_skip(ctx, syms, tree),
+            Tag::EXEC => self.visit_exec(ctx, syms, tree),
+            Tag::BREAK => self.visit_break(ctx, syms, tree),
+            Tag::CONTINUE => self.visit_continue(ctx, syms, tree),
+            Tag::YIELD => self.visit_yield(ctx, syms, tree),
+            Tag::RETURN => self.visit_return(ctx, syms, tree),
+            Tag::THROW => self.visit_throw(ctx, syms, tree),
+            Tag::INDEXED => self.visit_indexed(ctx, syms, tree),
+            Tag::ASSIGN => self.visit_assign(ctx, syms, tree),
+            Tag::LABELLED => self.visit_labeled(ctx, syms, tree),
             other => {
                 let _ = other;
                 self.visit_tree(ctx, tree)
@@ -949,7 +962,7 @@ impl Attr {
             result_info,
         )
     }
-    /// Java: public void visitParens(JCParens tree) (3922-...)
+    /// Java: public void visitParens(JCParens tree) (Attr.java:3922-3928)
     fn visit_parens(
         &mut self,
         ctx: &mut CompilerContext,
@@ -962,7 +975,22 @@ impl Attr {
         };
         let env = self.env.clone().expect("env");
         let result_info = self.result_info.clone().expect("resultInfo");
-        Ok(self.attrib_tree_with(ctx, syms, expr, &env, result_info))
+        let owntype = self.attrib_tree_with(ctx, syms, expr, &env, result_info.clone());
+        let pkind = result_info.pkind;
+        let owntype = self.check(ctx, syms, tree, owntype, pkind, &result_info);
+        let symbol = crate::tree::tree_info::symbol(ctx, tree);
+        if let Some(symbol) = symbol {
+            let kind = ctx.sym(symbol).kind;
+            if kind.matches(crate::code::kinds::KindSelector::TYP_PCK)
+                && kind != crate::code::kinds::Kind::ERR
+            {
+                self.attr_error(
+                    ctx.tree(tree).pos,
+                    crate::resources::compiler_properties::errors::illegal_parenthesized_expression(),
+                );
+            }
+        }
+        Ok(owntype)
     }
 
     /// Java: public void visitErroneous(JCErroneous tree) (5123-5131)
@@ -986,6 +1014,592 @@ impl Attr {
         }
         ctx.tree_mut(tree).ty = Some(syms.err_type);
         Ok(syms.err_type)
+    }
+
+    // ------------------------------------------------------------------
+    // Attr batch B (first group): statement visitors + the entry points that
+    // do not need the Analyzer/Flow machinery (Attr.java:1420-1600, 1871-2470,
+    // 3922-4182). Methods whose upstream body needs a not-yet-ported service are
+    // registered with unimplemented! + TODO at the exact call site.
+    // ------------------------------------------------------------------
+
+    /// Java: log.error(DiagnosticPosition, JCDiagnostic.Error) helper — the
+    /// ported DiagnosticArg mapping and report call (ADR 0002 P4 placeholders).
+    fn attr_error(&self, pos: i32, info: crate::resources::diagnostic_contract::ErrorInfo) {
+        use crate::util::jc_diagnostic::DiagnosticType;
+        let args: Vec<crate::util::jc_diagnostic::DiagnosticArg> = info
+            .info()
+            .args
+            .iter()
+            .map(|arg| {
+                std::rc::Rc::new(javac_strings::JavaString::from(arg.0.as_str()))
+                    as crate::util::jc_diagnostic::DiagnosticArg
+            })
+            .collect();
+        let source = self.log.borrow().current_source();
+        let diagnostic = self.diags.create(
+            DiagnosticType::ERROR,
+            source,
+            Some(std::rc::Rc::new(
+                crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+            )),
+            info.info().code,
+            args,
+        );
+        self.log.borrow_mut().report(diagnostic);
+    }
+
+    /// Display placeholder for a Type diagnostic argument (ADR 0002 P4).
+    fn type_arg_placeholder(
+        ctx: &CompilerContext,
+        ty: TypeId,
+    ) -> crate::resources::diagnostic_contract::TypeArg {
+        let text = ctx
+            .typ(ty)
+            .tsym
+            .map(|tsym| crate::comp::resolve::symbol_display_name(ctx, tsym))
+            .unwrap_or_else(|| format!("{:?}", ctx.typ(ty).get_tag()));
+        crate::resources::diagnostic_contract::TypeArg::placeholder(text)
+    }
+
+    /// Java: public Type attribStat(JCTree tree, Env<AttrContext> env)
+    /// (Attr.java:749-756)
+    pub fn attrib_stat(
+        &mut self,
+        _ctx: &mut CompilerContext,
+        _syms: &mut Symtab,
+        _tree: TreeId,
+        _env: &Rc<Env<AttrContext>>,
+    ) -> TypeId {
+        // Java: Env<AttrContext> analyzeEnv = analyzer.copyEnvIfNeeded(tree, env);
+        //       Type result = attribTree(tree, env, statInfo);
+        //       analyzer.analyzeIfNeeded(tree, analyzeEnv);
+        //       attrRecover.doRecovery();
+        // The Analyzer (flow analysis) and AttrRecover are registered with the
+        // Flow/AttrRecover batch.
+        unimplemented!(
+            "TODO(Analyzer/AttrRecover batch): Attr.attribStat (Attr.java:749-756)"
+        )
+    }
+
+    /// Java: <T extends JCTree> void attribStats(List<T> trees,
+    /// Env<AttrContext> env) (Attr.java:770-774)
+    pub fn attrib_stats(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        trees: List<TreeId>,
+        env: &Rc<Env<AttrContext>>,
+    ) {
+        let mut current = trees;
+        while current.non_empty() {
+            let tree = *current.head();
+            self.attrib_stat(ctx, syms, tree, env);
+            current = current.tail();
+        }
+    }
+
+    /// Java: List<Type> attribExprs(List<JCExpression> trees,
+    /// Env<AttrContext> env, Type pt) (Attr.java:759-768)
+    pub fn attrib_exprs(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        trees: List<TreeId>,
+        env: &Rc<Env<AttrContext>>,
+        pt: Option<TypeId>,
+    ) -> List<TypeId> {
+        let mut result: List<TypeId> = List::nil();
+        let mut current = trees;
+        while current.non_empty() {
+            let tree = *current.head();
+            result = result.append(self.attrib_expr_with_type(ctx, syms, tree, env, pt));
+            current = current.tail();
+        }
+        result
+    }
+
+    /// Java: List<Type> attribAnyTypes(List<JCExpression> trees,
+    /// Env<AttrContext> env) (Attr.java:790-798)
+    pub fn attrib_any_types(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        trees: List<TreeId>,
+        env: &Rc<Env<AttrContext>>,
+    ) -> List<TypeId> {
+        let mut result: List<TypeId> = List::nil();
+        let mut current = trees;
+        while current.non_empty() {
+            let tree = *current.head();
+            result = result.append(self.attrib_type(ctx, syms, tree, env));
+            current = current.tail();
+        }
+        result
+    }
+
+    /// Java: public void visitSkip(JCSkip tree) (Attr.java:1420-1422)
+    fn visit_skip(
+        &mut self,
+        ctx: &mut CompilerContext,
+        _syms: &mut Symtab,
+        _tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        // Java: result = null; the ported visitor returns Type.noType for the
+        // null statement result (§9 adapter, registered).
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitExec(JCExpressionStatement tree)
+    /// (Attr.java:2282-2288)
+    fn visit_exec(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let expr = match &ctx.tree(tree).kind {
+            TreeKind::ExpressionStatement { expr } => expr.expect("exec expression"),
+            _ => panic!("ClassCastException: JCExpressionStatement expected"),
+        };
+        let env = self.env.clone().expect("env");
+        // Java: Env<AttrContext> localEnv = env.dup(tree); (shares env.info)
+        let local_env = env.dup_shared(Some(tree));
+        self.attrib_expr(ctx, syms, expr, &local_env);
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitBreak(JCBreak tree) (Attr.java:2290-2294)
+    fn visit_break(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let label = match &ctx.tree(tree).kind {
+            TreeKind::Break { label, .. } => label.clone(),
+            _ => panic!("ClassCastException: JCBreak expected"),
+        };
+        let env = self.env.clone().expect("env");
+        let pos = ctx.tree(tree).pos;
+        let target = self.find_jump_target(ctx, syms, pos, Tag::BREAK, label, &env);
+        if let TreeKind::Break { target: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = target;
+        }
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitContinue(JCContinue tree) (Attr.java:2308-2312)
+    fn visit_continue(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let label = match &ctx.tree(tree).kind {
+            TreeKind::Continue { label, .. } => label.clone(),
+            _ => panic!("ClassCastException: JCContinue expected"),
+        };
+        let env = self.env.clone().expect("env");
+        let pos = ctx.tree(tree).pos;
+        let target = self.find_jump_target(ctx, syms, pos, Tag::CONTINUE, label, &env);
+        if let TreeKind::Continue { target: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = target;
+        }
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitYield(JCYield tree) (Attr.java:2295-2307)
+    fn visit_yield(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let value = match &ctx.tree(tree).kind {
+            TreeKind::Yield { value, .. } => *value,
+            _ => panic!("ClassCastException: JCYield expected"),
+        };
+        let env = self.env.clone().expect("env");
+        let yield_result = env.info.borrow().yield_result.clone();
+        if let Some(result_info) = yield_result {
+            if let Some(value) = value {
+                self.attrib_tree_with(ctx, syms, value, &env, result_info);
+            }
+            let pos = ctx.tree(tree).pos;
+            let target = self.find_jump_target(ctx, syms, pos, Tag::YIELD, None, &env);
+            if let TreeKind::Yield { target: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                *slot = target;
+            }
+        } else {
+            let pos = ctx.tree(tree).pos;
+            let is_parens = value
+                .map(|value| ctx.tree(value).has_tag(Tag::PARENS))
+                .unwrap_or(false);
+            if is_parens {
+                self.attr_error(
+                    pos,
+                    crate::resources::compiler_properties::errors::no_switch_expression_qualify(),
+                );
+            } else {
+                self.attr_error(
+                    pos,
+                    crate::resources::compiler_properties::errors::no_switch_expression(),
+                );
+            }
+            if let Some(value) = value {
+                let info = self.unknown_expr_info.clone();
+                self.attrib_tree_with(ctx, syms, value, &env, info);
+            }
+        }
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitLabelled(JCLabeledStatement tree)
+    /// (Attr.java:1581-1597)
+    fn visit_labeled(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let (label, body) = match &ctx.tree(tree).kind {
+            TreeKind::LabeledStatement { label, body } => (label.clone(), *body),
+            _ => panic!("ClassCastException: JCLabeledStatement expected"),
+        };
+        let env = self.env.clone().expect("env");
+        // Check that label is not used in an enclosing statement.
+        let mut env1 = Rc::clone(&env);
+        while let Some(env1_tree) = env1.tree {
+            if ctx.tree(env1_tree).has_tag(Tag::CLASSDEF) {
+                break;
+            }
+            if ctx.tree(env1_tree).has_tag(Tag::LABELLED) {
+                let outer_label = match &ctx.tree(env1_tree).kind {
+                    TreeKind::LabeledStatement { label, .. } => label.clone(),
+                    _ => panic!("ClassCastException: JCLabeledStatement expected"),
+                };
+                if outer_label == label {
+                    self.attr_error(
+                        ctx.tree(tree).pos,
+                        crate::resources::compiler_properties::errors::label_already_in_use(
+                            label.clone(),
+                        ),
+                    );
+                    break;
+                }
+            }
+            match env1.next.clone() {
+                Some(next) => env1 = next,
+                None => break,
+            }
+        }
+        let body_env = env.dup_shared(Some(tree));
+        if let Some(body) = body {
+            self.attrib_stat(ctx, syms, body, &body_env);
+        }
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitReturn(JCReturn tree) (Attr.java:2414-2443)
+    #[allow(clippy::unnecessary_unwrap, clippy::collapsible_if)]
+    fn visit_return(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let expr = match &ctx.tree(tree).kind {
+            TreeKind::Return { expr } => *expr,
+            _ => panic!("ClassCastException: JCReturn expected"),
+        };
+        let env = self.env.clone().expect("env");
+        let pos = ctx.tree(tree).pos;
+        let return_result = env.info.borrow().return_result.clone();
+        if return_result.is_none() {
+            self.attr_error(
+                pos,
+                crate::resources::compiler_properties::errors::ret_outside_meth(),
+            );
+        } else if env.info.borrow().yield_result.is_some() {
+            self.attr_error(
+                pos,
+                crate::resources::compiler_properties::errors::return_outside_switch_expression(),
+            );
+        } else if !env.info.borrow().is_lambda
+            && !env.info.borrow().is_new_class
+            && env
+                .encl_method
+                .map(|encl_method| {
+                    crate::tree::tree_info::is_compact_constructor(ctx, encl_method)
+                })
+                .unwrap_or(false)
+        {
+            // Java: log.error(env.enclMethod,
+            //     Errors.InvalidCanonicalConstructorInRecord(Fragments.Compact,
+            //         env.enclMethod.sym.name,
+            //         Fragments.CanonicalCantHaveReturnStatement));
+            // Registered with the Records batch (Fragments.Compact/Canonical
+            // fragment helpers need the argument plumbing).
+            unimplemented!(
+                "TODO(Records batch): Attr.visitReturn invalid canonical constructor (Attr.java:2425-2428)"
+            )
+        } else {
+            let result_info = return_result.expect("returnResult");
+            if let Some(expr) = expr {
+                let pt = result_info.pt;
+                if pt
+                    .map(|pt| ctx.typ(pt).has_tag(TypeTag::VOID))
+                    .unwrap_or(false)
+                {
+                    let fragment = self
+                        .diags
+                        .fragment(
+                            crate::resources::compiler_properties::fragments::unexpected_ret_val()
+                                .into(),
+                        );
+                    result_info
+                        .check_context
+                        .report(ctx, ctx.tree(expr).pos, &fragment);
+                }
+                self.attrib_tree_with(ctx, syms, expr, &env, result_info);
+            } else if let Some(pt) = result_info.pt {
+                if !ctx.typ(pt).has_tag(TypeTag::VOID) && !ctx.typ(pt).has_tag(TypeTag::NONE) {
+                    let fragment = self
+                        .diags
+                        .fragment(
+                            crate::resources::compiler_properties::fragments::missing_ret_val(
+                                Self::type_arg_placeholder(ctx, pt),
+                            )
+                            .into(),
+                        );
+                    result_info.check_context.report(ctx, pos, &fragment);
+                }
+            }
+        }
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitThrow(JCThrow tree) (Attr.java:2445-2451)
+    fn visit_throw(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let expr = match &ctx.tree(tree).kind {
+            TreeKind::Throw { expr } => expr.expect("throw expression"),
+            _ => panic!("ClassCastException: JCThrow expected"),
+        };
+        let env = self.env.clone().expect("env");
+        let pt = if self.allow_poly {
+            None
+        } else {
+            Some(syms.throwable_type)
+        };
+        let owntype = self.attrib_expr_with_type(ctx, syms, expr, &env, pt);
+        if self.allow_poly {
+            let pos = ctx.tree(tree).pos;
+            let chk = self.chk.borrow();
+            chk.check_type(
+                ctx,
+                syms,
+                pos,
+                owntype,
+                syms.throwable_type,
+                &*self.basic_handler,
+            );
+        }
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitIndexed(JCArrayAccess tree)
+    /// (Attr.java:4169-4180)
+    fn visit_indexed(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let (indexed, index) = match &ctx.tree(tree).kind {
+            TreeKind::ArrayAccess { indexed, index } => (
+                indexed.expect("array access indexed expression"),
+                index.expect("array access index"),
+            ),
+            _ => panic!("ClassCastException: JCArrayAccess expected"),
+        };
+        let env = self.env.clone().expect("env");
+        let mut owntype = self
+            .types
+            .create_error_type_original(ctx, ctx.tree(tree).ty, syms);
+        let atype = self.attrib_expr(ctx, syms, indexed, &env);
+        self.attrib_expr_with_type(ctx, syms, index, &env, Some(syms.int_type));
+        if matches!(
+            ctx.typ(atype).kind,
+            crate::code::type_::TypeKindData::ArrayType { .. }
+        ) {
+            owntype = self.types.elemtype(ctx, syms, atype);
+        } else if !ctx.typ(atype).has_tag(TypeTag::ERROR) {
+            self.attr_error(
+                ctx.tree(tree).pos,
+                crate::resources::compiler_properties::errors::array_req_but_found(
+                    Self::type_arg_placeholder(ctx, atype),
+                ),
+            );
+        }
+        let pkind = self
+            .result_info
+            .as_ref()
+            .expect("resultInfo")
+            .pkind;
+        if !pkind.contains(crate::code::kinds::KindSelector::VAL) {
+            owntype = self.types.capture(ctx, syms, owntype);
+        }
+        let result_info = self.result_info.clone().expect("resultInfo");
+        Ok(self.check(ctx, syms, tree, owntype, crate::code::kinds::KindSelector::VAR, &result_info))
+    }
+
+    /// Java: public void visitAssign(JCAssign tree) (Attr.java:3930-3936)
+    fn visit_assign(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let (lhs, rhs) = match &ctx.tree(tree).kind {
+            TreeKind::Assign { lhs, rhs } => (
+                lhs.expect("assignment lhs"),
+                rhs.expect("assignment rhs"),
+            ),
+            _ => panic!("ClassCastException: JCAssign expected"),
+        };
+        let env = self.env.clone().expect("env");
+        let lhs_env = env.dup_shared(Some(tree));
+        let assignment_info = self.var_assignment_info.clone();
+        let owntype = self.attrib_tree_with(ctx, syms, lhs, &lhs_env, assignment_info);
+        let captured = self.types.capture(ctx, syms, owntype);
+        self.attrib_expr_with_type(ctx, syms, rhs, &env, Some(owntype));
+        let result_info = self.result_info.clone().expect("resultInfo");
+        Ok(self.check(
+            ctx,
+            syms,
+            tree,
+            captured,
+            crate::code::kinds::KindSelector::VAL,
+            &result_info,
+        ))
+    }
+
+    /// Java: private JCTree findJumpTarget(DiagnosticPosition pos,
+    /// JCTree.Tag tag, Name label, Env<AttrContext> env)
+    /// (Attr.java:2317-2328)
+    fn find_jump_target(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        pos: i32,
+        tag: Tag,
+        label: Option<crate::util::name::Name>,
+        env: &Rc<Env<AttrContext>>,
+    ) -> Option<TreeId> {
+        let (target, error) = self.find_jump_target_no_error(ctx, syms, tag, &label, env);
+        if let Some(error) = error {
+            self.attr_error(pos, error);
+        }
+        target
+    }
+
+    /// Java: private Pair<JCTree, JCDiagnostic.Error>
+    /// findJumpTargetNoError(Tag tag, Name label, Env<AttrContext> env)
+    /// (Attr.java:2339-2408)
+    fn find_jump_target_no_error(
+        &self,
+        ctx: &CompilerContext,
+        _syms: &mut Symtab,
+        tag: Tag,
+        label: &Option<crate::util::name::Name>,
+        env: &Rc<Env<AttrContext>>,
+    ) -> (
+        Option<TreeId>,
+        Option<crate::resources::diagnostic_contract::ErrorInfo>,
+    ) {
+        use crate::resources::compiler_properties::errors;
+        let mut env1 = Rc::clone(env);
+        let mut pending_error: Option<crate::resources::diagnostic_contract::ErrorInfo> = None;
+        while let Some(env1_tree) = env1.tree {
+            match ctx.tree(env1_tree).tag {
+                Tag::LABELLED => {
+                    let (labelled_label, labelled_body) = match &ctx.tree(env1_tree).kind {
+                        TreeKind::LabeledStatement { label, body } => {
+                            (label.clone(), *body)
+                        }
+                        _ => panic!("ClassCastException: JCLabeledStatement expected"),
+                    };
+                    if label.as_ref() == Some(&labelled_label) {
+                        if tag == Tag::CONTINUE {
+                            let is_loop = labelled_body
+                                .map(|body| {
+                                    matches!(
+                                        ctx.tree(body).tag,
+                                        Tag::DOLOOP
+                                            | Tag::WHILELOOP
+                                            | Tag::FORLOOP
+                                            | Tag::FOREACHLOOP
+                                    )
+                                })
+                                .unwrap_or(false);
+                            if !is_loop {
+                                pending_error = Some(errors::not_loop_label(labelled_label));
+                            }
+                            return (
+                                Some(crate::tree::tree_info::referenced_statement(
+                                    ctx, env1_tree,
+                                )),
+                                pending_error,
+                            );
+                        } else {
+                            return (Some(env1_tree), pending_error);
+                        }
+                    }
+                }
+                Tag::DOLOOP | Tag::WHILELOOP | Tag::FORLOOP | Tag::FOREACHLOOP => {
+                    if label.is_none() {
+                        return (Some(env1_tree), pending_error);
+                    }
+                }
+                Tag::SWITCH => {
+                    if label.is_none() && tag == Tag::BREAK {
+                        return (Some(env1_tree), None);
+                    }
+                }
+                Tag::SWITCH_EXPRESSION => {
+                    if tag == Tag::YIELD {
+                        return (Some(env1_tree), None);
+                    } else if tag == Tag::BREAK {
+                        pending_error = Some(errors::break_outside_switch_expression());
+                    } else {
+                        pending_error = Some(errors::continue_outside_switch_expression());
+                    }
+                }
+                Tag::LAMBDA | Tag::METHODDEF | Tag::CLASSDEF => break,
+                _ => {}
+            }
+            match env1.next.clone() {
+                Some(next) => env1 = next,
+                None => break,
+            }
+        }
+        if let Some(label) = label {
+            return (None, Some(errors::undef_label(label.clone())));
+        }
+        if let Some(error) = pending_error {
+            return (None, Some(error));
+        }
+        if tag == Tag::CONTINUE {
+            (None, Some(errors::cont_outside_loop()))
+        } else {
+            (None, Some(errors::break_outside_switch_loop()))
+        }
     }
 
     /// Java: public void visitTree(JCTree tree) (default: assert error)
@@ -2505,6 +3119,145 @@ mod tests {
             .map(|line| line.replace("ERR ", ""))
             .collect();
         assert_eq!(actual, expected);
+    }
+
+    const ATTR_B_SOURCE: &str = "\
+class Sample {
+    void m() {
+        label: while (true) {
+            break label;
+        }
+    }
+}
+";
+    fn first_class_defs(ctx: &CompilerContext, class_tree: TreeId) -> List<TreeId> {
+        match &ctx.tree(class_tree).kind {
+            TreeKind::ClassDecl { defs, .. } => defs.clone(),
+            _ => List::nil(),
+        }
+    }
+    fn method_body(ctx: &CompilerContext, method_tree: TreeId) -> Option<TreeId> {
+        match &ctx.tree(method_tree).kind {
+            TreeKind::MethodDecl { body, .. } => *body,
+            _ => None,
+        }
+    }
+    fn block_stats(ctx: &CompilerContext, block_tree: TreeId) -> List<TreeId> {
+        match &ctx.tree(block_tree).kind {
+            TreeKind::Block { stats, .. } => stats.clone(),
+            _ => List::nil(),
+        }
+    }
+    fn labeled_body(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
+        match &ctx.tree(tree).kind {
+            TreeKind::LabeledStatement { body, .. } => *body,
+            _ => None,
+        }
+    }
+    fn while_body(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
+        match &ctx.tree(tree).kind {
+            TreeKind::WhileLoop { body, .. } => *body,
+            _ => None,
+        }
+    }
+    /// Locate the labelled/while/break trees of ATTR_B_SOURCE.
+    fn attr_b_trees(harness: &AttrHarness) -> (TreeId, TreeId, TreeId) {
+        let class_defs = first_class_defs(&harness.ctx, harness.class_tree);
+        let mut current = class_defs;
+        let mut method = None;
+        while current.non_empty() {
+            let def = *current.head();
+            if harness.ctx.tree(def).has_tag(Tag::METHODDEF) {
+                method = Some(def);
+                break;
+            }
+            current = current.tail();
+        }
+        let method = method.expect("method definition");
+        let body = method_body(&harness.ctx, method).expect("method body");
+        let stats = block_stats(&harness.ctx, body);
+        let labelled = *stats.head();
+        let while_tree = labeled_body(&harness.ctx, labelled).expect("while loop");
+        let while_body_tree = while_body(&harness.ctx, while_tree).expect("while body");
+        let break_tree = *block_stats(&harness.ctx, while_body_tree).head();
+        (labelled, while_tree, break_tree)
+    }
+
+    #[test]
+    fn referenced_statement_skips_labels_to_the_loop() {
+        let harness = build_attr_harness_with_source(ATTR_B_SOURCE);
+        let (labelled, while_tree, _break_tree) = attr_b_trees(&harness);
+        let referenced =
+            crate::tree::tree_info::referenced_statement(&harness.ctx, labelled);
+        assert_eq!(referenced, while_tree);
+    }
+
+    #[test]
+    fn find_jump_target_resolves_an_unlabelled_break_to_the_loop() {
+        let mut harness = build_attr_harness_with_source(ATTR_B_SOURCE);
+        let (_labelled, while_tree, _break_tree) = attr_b_trees(&harness);
+        let mut info = crate::comp::attr_context::AttrContext::new();
+        info.scope = None;
+        let env = Rc::new(Env {
+            next: None,
+            outer: None,
+            tree: Some(while_tree),
+            toplevel: None,
+            encl_class: None,
+            encl_method: None,
+            info: Rc::new(RefCell::new(info)),
+            base_clause: false,
+        });
+        let (target, error) = harness.attr.find_jump_target_no_error(
+            &harness.ctx,
+            &mut harness.syms,
+            Tag::BREAK,
+            &None,
+            &env,
+        );
+        assert_eq!(target, Some(while_tree));
+        assert!(error.is_none());
+    }
+
+    #[test]
+    fn visit_break_sets_the_target_tree() {
+        let mut harness = build_attr_harness_with_source(ATTR_B_SOURCE);
+        let (labelled, while_tree, break_tree) = attr_b_trees(&harness);
+        // The env chain models the enclosing statements from innermost out:
+        // while (inner) -> label (outer) -> method/class environment.
+        let outer_env = Rc::new(Env {
+            next: None,
+            outer: None,
+            tree: Some(labelled),
+            toplevel: None,
+            encl_class: None,
+            encl_method: None,
+            info: Rc::new(RefCell::new(crate::comp::attr_context::AttrContext::new())),
+            base_clause: false,
+        });
+        let env = Rc::new(Env {
+            next: Some(outer_env),
+            outer: None,
+            tree: Some(while_tree),
+            toplevel: None,
+            encl_class: None,
+            encl_method: None,
+            info: Rc::new(RefCell::new(crate::comp::attr_context::AttrContext::new())),
+            base_clause: false,
+        });
+        let stat_info = harness.attr.stat_info.clone();
+        let result = harness
+            .attr
+            .attrib_tree(&mut harness.ctx, &mut harness.syms, break_tree, &env, stat_info)
+            .expect("break attribution");
+        let _ = result;
+        let target = match &harness.ctx.tree(break_tree).kind {
+            TreeKind::Break { target, .. } => *target,
+            _ => panic!("expected break tree"),
+        };
+        // Upstream findJumpTargetNoError returns the labelled statement itself
+        // for a labelled break (Attr.java:2352-2362).
+        assert_eq!(target, Some(labelled));
     }
 
 }

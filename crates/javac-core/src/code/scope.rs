@@ -439,6 +439,92 @@ impl Scope {
         (Rc::clone(table), Rc::clone(entries))
     }
 
+    /// Java: public WriteableScope leave() (Scope.ScopeImpl.leave,
+    /// Scope.java:382-400)
+    ///
+    /// Removes all entries of this scope from its shared table (if any) and
+    /// returns the enclosing scope. The ported Scope owns its data behind
+    /// Rc<RefCell<...>> shared handles; the next scope lives in the arena and is
+    /// updated through the explicit scopes parameter (registered §9 adapter).
+    pub fn leave(
+        &self,
+        self_id: ScopeId,
+        scopes: &mut Arena<Scope>,
+        symbols: &Arena<Symbol>,
+    ) -> Option<ScopeId> {
+        let (next, shared, table, elems, nelems, entries) = {
+            let ScopeData::ScopeImpl {
+                shared,
+                next,
+                table,
+                elems,
+                nelems,
+                entries,
+                ..
+            } = &self.data
+            else {
+                panic!("ClassCastException: not a ScopeImpl")
+            };
+            (
+                *next,
+                *shared,
+                Rc::clone(table),
+                *elems,
+                *nelems,
+                Rc::clone(entries),
+            )
+        };
+        let _ = self_id;
+        // Java: Assert.check(shared == 0);
+        assert_eq!(shared, 0, "AssertionError: shared == 0");
+        let next_id = next.expect("NullPointerException: leave() on an outermost scope");
+        let next_table = {
+            let next_scope = scopes.get(next_id.index());
+            match &next_scope.data {
+                ScopeData::ScopeImpl { table, .. } => table.clone(),
+                _ => panic!("ClassCastException: not a ScopeImpl"),
+            }
+        };
+        // Java: if (table != next.table) return next;
+        if !Rc::ptr_eq(&table, &next_table) {
+            return Some(next_id);
+        }
+        {
+            let mut table_ref = table.borrow_mut();
+            let entries_ref = entries.borrow();
+            let mask = table_ref.len() - 1;
+            let mut current = elems;
+            while let Some(entry_id) = current {
+                let entry = &entries_ref[entry_id.index() as usize];
+                let sym = entry.sym.expect("leave: entry without symbol");
+                let name = symbol_name(symbols, sym);
+                let hash = probe_index(&name, &table_ref, mask, &entries_ref, symbols);
+                table_ref[hash] = match entry.shadowed {
+                    Some(shadowed) => TableSlot::Entry(shadowed),
+                    None => TableSlot::Empty,
+                };
+                current = entry.next_sibling;
+            }
+        }
+        // Java: Assert.check(next.shared > 0); next.shared--; next.nelems = nelems;
+        {
+            let next_scope = scopes.get_mut(next_id.index());
+            match &mut next_scope.data {
+                ScopeData::ScopeImpl {
+                    shared: next_shared,
+                    nelems: next_nelems,
+                    ..
+                } => {
+                    assert!(*next_shared > 0, "AssertionError: next.shared > 0");
+                    *next_shared -= 1;
+                    *next_nelems = nelems;
+                }
+                _ => panic!("ClassCastException: not a ScopeImpl"),
+            }
+        }
+        Some(next_id)
+    }
+
     /// Java: protected Entry lookup(Name name, Predicate<Symbol> sf)
     pub fn lookup(&self, name: &Name, symbols: &Arena<Symbol>) -> Option<EntryId> {
         let slot = self.get_index(name, symbols);
@@ -2037,4 +2123,45 @@ mod tests {
         assert!(ctx.scope_lookup(inner, &run).is_some());
         assert!(ctx.scope_lookup(outer, &run).is_none());
     }
+    #[test]
+    fn leave_removes_entries_and_updates_next_scope() {
+        let table_handle = name_table();
+        let sym_id = SymbolId::new(0);
+        let owner_id = SymbolId::new(1);
+        let mut symbols = symbol_arena(
+            &table_handle,
+            &[
+                (sym_id, "x", Kind::VAR),
+                (owner_id, "Sample", Kind::TYP),
+            ],
+        );
+        let mut scopes: Arena<Scope> = Arena::new();
+        let outer_id = ScopeId::new(scopes.push(Scope::new_scope_impl(Some(owner_id))));
+        let mut outer = scopes.get(outer_id.index()).clone();
+        let outer_dup = outer.dup(outer_id, Some(owner_id));
+        *scopes.get_mut(outer_id.index()) = outer;
+        let inner_id = ScopeId::new(scopes.push(outer_dup));
+        {
+            let inner = scopes.get_mut(inner_id.index());
+            inner.enter(inner_id, sym_id, &symbols);
+        }
+        let x_name = name(&table_handle, "x");
+        {
+            let inner = scopes.get(inner_id.index());
+            assert!(inner.lookup(&x_name, &symbols).is_some());
+        }
+        let left = {
+            let inner = scopes.get(inner_id.index()).clone();
+            inner.leave(inner_id, &mut scopes, &symbols)
+        };
+        assert_eq!(left, Some(outer_id));
+        let outer_after = scopes.get(outer_id.index());
+        match &outer_after.data {
+            ScopeData::ScopeImpl { shared, .. } => assert_eq!(*shared, 0),
+            _ => panic!("expected ScopeImpl"),
+        }
+        assert!(outer_after.lookup(&x_name, &symbols).is_none());
+        let _ = &mut symbols;
+    }
+
 }

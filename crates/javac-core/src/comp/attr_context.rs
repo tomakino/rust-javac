@@ -50,8 +50,10 @@ pub struct AttrContext {
     pub lint: Option<Rc<Lint>>,
     /// Java: Symbol enclVar = null;
     pub encl_var: Option<SymbolId>,
-    // TODO(Attr batch): Attr.ResultInfo returnResult (not ported)
-    // TODO(Attr batch): Attr.ResultInfo yieldResult (not ported)
+    /// Java: Attr.ResultInfo returnResult = null;
+    pub return_result: Option<crate::comp::attr::ResultInfo>,
+    /// Java: Attr.ResultInfo yieldResult = null;
+    pub yield_result: Option<crate::comp::attr::ResultInfo>,
     /// Java: Type defaultSuperCallSite = null;
     pub default_super_call_site: Option<TypeId>,
     /// Java: JCTree preferredTreeForDiagnostics;
@@ -76,6 +78,8 @@ impl AttrContext {
             pending_resolution_phase: None,
             lint: None,
             encl_var: None,
+            return_result: None,
+            yield_result: None,
             default_super_call_site: None,
             preferred_tree_for_diagnostics: None,
         }
@@ -91,7 +95,8 @@ impl AttrContext {
             pending_resolution_phase: self.pending_resolution_phase,
             lint: self.lint.clone(),
             encl_var: self.encl_var,
-            // TODO(Attr batch): returnResult/yieldResult (Attr.ResultInfo not ported)
+            return_result: self.return_result.clone(),
+            yield_result: self.yield_result.clone(),
             default_super_call_site: self.default_super_call_site,
             is_serializable: self.is_serializable,
             is_lambda: self.is_lambda,

@@ -1493,7 +1493,7 @@ impl Resolve {
 
 /// Java: Symbol.toString-like display for the diagnostic argument placeholders
 /// (the generated SymbolArg is an opaque display placeholder before P4).
-fn symbol_display_name(
+pub(crate) fn symbol_display_name(
     ctx: &crate::compiler_context::CompilerContext,
     symbol: SymbolId,
 ) -> String {
