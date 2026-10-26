@@ -756,6 +756,16 @@ pub enum TypeKindData {
         speculative_cache: std::rc::Rc<
             std::cell::RefCell<crate::comp::deferred_attr::SpeculativeCache>,
         >,
+        /// Java: the ArgumentType state when this deferred type is an
+        /// ArgumentAttr.ArgumentType (a Java subclass of DeferredType): the
+        /// kind, the speculative tree and the ResultInfo-keyed speculative
+        /// types. §9 registered: Java subclassing is expressed by this optional
+        /// payload plus kind dispatch in argument_attr.rs.
+        argument: Option<
+            std::rc::Rc<
+                std::cell::RefCell<crate::comp::argument_attr::ArgumentTypeData>,
+            >,
+        >,
     },
 }
 

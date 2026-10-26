@@ -1,6 +1,7 @@
 //! com.sun.tools.javac.comp
 
 pub mod annotate;
+pub mod argument_attr;
 pub mod attr;
 pub mod attr_context;
 pub mod check;

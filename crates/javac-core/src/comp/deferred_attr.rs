@@ -154,6 +154,7 @@ pub fn deferred_type_new(
             mode: None,
             not_pertinent: Vec::new(),
             speculative_cache: Rc::new(RefCell::new(SpeculativeCache::default())),
+            argument: None,
         },
     ))
 }
@@ -164,6 +165,7 @@ type DeferredFields = (
     Option<AttrMode>,
     Vec<SymbolId>,
     Rc<RefCell<SpeculativeCache>>,
+    Option<Rc<RefCell<crate::comp::argument_attr::ArgumentTypeData>>>,
 );
 
 fn deferred_fields(ctx: &CompilerContext, t: TypeId) -> DeferredFields {
@@ -174,12 +176,14 @@ fn deferred_fields(ctx: &CompilerContext, t: TypeId) -> DeferredFields {
             mode,
             not_pertinent,
             speculative_cache,
+            argument,
         } => (
             *tree,
             Rc::clone(env),
             *mode,
             not_pertinent.clone(),
             Rc::clone(speculative_cache),
+            argument.clone(),
         ),
         _ => panic!("ClassCastException: not a DeferredType"),
     }
@@ -197,7 +201,7 @@ pub fn deferred_type_speculative_type(
     msym: Option<SymbolId>,
     phase: MethodResolutionPhase,
 ) -> Option<TypeId> {
-    let (_, _, _, _, cache) = deferred_fields(ctx, t);
+    let (_, _, _, _, cache, _) = deferred_fields(ctx, t);
     let entry = cache.borrow().get(msym, phase)?;
     ctx.tree(entry.speculative_tree).ty
 }
@@ -208,7 +212,7 @@ pub fn deferred_type_speculative_tree(
     t: TypeId,
     deferred_attr_context: &DeferredAttrContext,
 ) -> Option<TreeId> {
-    let (_, _, _, _, cache) = deferred_fields(ctx, t);
+    let (_, _, _, _, cache, _) = deferred_fields(ctx, t);
     cache
         .borrow()
         .get(deferred_attr_context.msym, deferred_attr_context.phase)
@@ -233,7 +237,7 @@ pub fn deferred_type_complete(
             )
         }
         AttrMode::CHECK => {
-            let (tree, env, _, _, _) = deferred_fields(ctx, t);
+            let (tree, env, _, _, _, _) = deferred_fields(ctx, t);
             attr.attrib_tree(ctx, syms, tree, &env, result_info.clone())
         }
     }
@@ -1009,7 +1013,7 @@ impl<T> DeferredTypeMap<T> {
 
     /// Java: protected Type typeOf(DeferredType dt, T p)
     pub fn type_of(&mut self, ctx: &mut CompilerContext, t: TypeId, _p: &T) -> Option<TypeId> {
-        let (tree, _, _, _, _) = deferred_fields(ctx, t);
+        let (tree, _, _, _, _, _) = deferred_fields(ctx, t);
         match self.deferred_attr_context.mode {
             AttrMode::CHECK => ctx.tree(tree).ty,
             AttrMode::SPECULATIVE => deferred_type_speculative_type(
@@ -1497,7 +1501,7 @@ impl CheckStuckPolicy {
             stuck_vars: Rc::new(RefCell::new(Vec::new())),
             dep_vars: Rc::new(RefCell::new(Vec::new())),
         };
-        let (tree, _, _, _, _) = deferred_fields(ctx, dt);
+        let (tree, _, _, _, _, _) = deferred_fields(ctx, dt);
         FilterScanner::scan(ctx, Some(tree), &mut policy, types);
         if !policy.stuck_vars.borrow().is_empty() {
             let stuck_vars = policy.stuck_vars.borrow().clone();
