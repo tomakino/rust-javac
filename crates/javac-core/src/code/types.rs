@@ -3233,7 +3233,7 @@ impl Types {
     pub fn is_castable(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
         s: TypeId,
     ) -> bool {
@@ -3252,7 +3252,7 @@ impl Types {
     pub fn is_castable_with_warn(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
         s: TypeId,
         warn: &mut crate::util::warner::Warner,
@@ -3266,7 +3266,7 @@ impl Types {
                 return true;
             }
             if ctx.typ(s).is_primitive() {
-                let boxed = self.boxed_class(ctx, syms, s);
+                let boxed = self.boxed_class_ro(ctx, syms, s);
                 let boxed_type = ctx.sym(boxed).ty.expect("boxed type");
                 return self.is_subtype(ctx, syms, boxed_type, t);
             }
@@ -3293,7 +3293,7 @@ impl Types {
     fn is_castable_visit(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
         s: TypeId,
         warn: &mut crate::util::warner::Warner,
@@ -3436,12 +3436,12 @@ impl Types {
                             self.rewrite_quantifiers(ctx, syms, b, low, no_rewrite);
                         let mut low_sub = {
                             let a_low_tsym = ctx.typ(a_low).tsym.expect("rewritten symbol");
-                            self.as_sub(ctx, &*syms, b_low, a_low_tsym)
+                            self.as_sub(ctx, syms, b_low, a_low_tsym)
                         };
                         let mut high_sub = low_sub.and_then(|low_sub| {
                             let a_high_tsym = ctx.typ(a_high).tsym.expect("rewritten symbol");
                             let _ = low_sub;
-                            self.as_sub(ctx, &*syms, b_high, a_high_tsym)
+                            self.as_sub(ctx, syms, b_high, a_high_tsym)
                         });
                         if high_sub.is_none() {
                             let rewrite = true;
@@ -3451,11 +3451,11 @@ impl Types {
                             b_low = self.rewrite_quantifiers(ctx, syms, b, low, rewrite);
                             low_sub = {
                                 let a_low_tsym = ctx.typ(a_low).tsym.expect("rewritten symbol");
-                                self.as_sub(ctx, &*syms, b_low, a_low_tsym)
+                                self.as_sub(ctx, syms, b_low, a_low_tsym)
                             };
                             high_sub = low_sub.and_then(|_unused| {
                                 let a_high_tsym = ctx.typ(a_high).tsym.expect("rewritten symbol");
-                                self.as_sub(ctx, &*syms, b_high, a_high_tsym)
+                                self.as_sub(ctx, syms, b_high, a_high_tsym)
                             });
                         }
                         if let (Some(low_sub), Some(high_sub)) = (low_sub, high_sub) {
@@ -3549,7 +3549,7 @@ impl Types {
     fn visit_compound_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         ct: TypeId,
         s: TypeId,
         reverse: bool,
@@ -5471,7 +5471,7 @@ impl Types {
     pub fn not_soft_subtype(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
         s: TypeId,
     ) -> bool {
@@ -5537,7 +5537,7 @@ impl Types {
     pub fn disjoint_types(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         ts: List<TypeId>,
         ss: List<TypeId>,
     ) -> bool {
@@ -5562,7 +5562,7 @@ impl Types {
     pub fn disjoint_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
         s: TypeId,
     ) -> bool {
@@ -5573,7 +5573,7 @@ impl Types {
     fn disjoint_type_cached(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
         s: TypeId,
         cache: &mut Vec<(TypeId, TypeId)>,
@@ -5644,7 +5644,7 @@ impl Types {
     fn not_soft_subtype_cached(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
         s: TypeId,
         cache: &mut Vec<(TypeId, TypeId)>,
@@ -5664,7 +5664,7 @@ impl Types {
     fn super_closure(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
         erasure_s: TypeId,
     ) -> List<TypeId> {
@@ -5689,7 +5689,7 @@ impl Types {
     fn give_warning(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         from: TypeId,
         to: TypeId,
     ) -> bool {
@@ -5730,7 +5730,7 @@ impl Types {
     fn side_cast(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         from: TypeId,
         to: TypeId,
         warn: &mut crate::util::warner::Warner,
@@ -5785,7 +5785,7 @@ impl Types {
     fn side_cast_final(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         from: TypeId,
         to: TypeId,
         warn: &mut crate::util::warner::Warner,
@@ -9114,7 +9114,7 @@ mod tests {
     fn types_relations_match_the_internal_api_oracle() {
         use crate::code::bound_kind::BoundKind;
         let data = include_str!("../../tests/data/types-relations-oracle.txt");
-        let (mut ctx, mut symtab, types) = build_with_types();
+        let (mut ctx, symtab, types) = build_with_types();
         let (list_tsym, _type_param) = install_list_type_parameter(&mut ctx, &symtab);
         let unbounded = new_wildcard_type(
             &mut ctx,
@@ -9197,7 +9197,7 @@ mod tests {
             let actual = match kind {
                 "SUB" => types.is_subtype(&mut ctx, &symtab, left_ty, right_ty),
                 "CONV" => types.is_convertible(&mut ctx, &symtab, left_ty, right_ty),
-                "CAST" => types.is_castable(&mut ctx, &mut symtab, left_ty, right_ty),
+                "CAST" => types.is_castable(&mut ctx, &symtab, left_ty, right_ty),
                 _ => continue,
             };
             assert_eq!(actual, expected, "{kind} {left} {right}");
@@ -9485,28 +9485,28 @@ mod tests {
 
     #[test]
     fn is_castable_with_warn_covers_the_primitive_relation() {
-        let (mut ctx, mut syms, types) = build_with_types();
+        let (mut ctx, syms, types) = build_with_types();
         let int_type = syms.int_type;
         let long_type = syms.long_type;
         let boolean_type = syms.boolean_type;
         let mut no_warn = crate::util::warner::Warner::new(None);
         assert!(types.is_castable_with_warn(
             &mut ctx,
-            &mut syms,
+            &syms,
             int_type,
             long_type,
             &mut no_warn
         ));
         assert!(!types.is_castable_with_warn(
             &mut ctx,
-            &mut syms,
+            &syms,
             boolean_type,
             int_type,
             &mut no_warn
         ));
         assert!(types.is_castable_with_warn(
             &mut ctx,
-            &mut syms,
+            &syms,
             int_type,
             int_type,
             &mut no_warn

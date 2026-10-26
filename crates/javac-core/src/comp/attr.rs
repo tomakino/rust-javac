@@ -692,6 +692,7 @@ impl Attr {
             _ => {}
         }
         match &ctx.tree(tree).tag {
+            Tag::TYPECAST => self.visit_type_cast(ctx, syms, tree),
             Tag::LITERAL => self.visit_literal(ctx, syms, tree),
             Tag::IDENT => self.visit_ident(ctx, syms, tree),
             Tag::PARENS => self.visit_parens(ctx, syms, tree),
@@ -6700,6 +6701,129 @@ impl Attr {
         let result_info = self.result_info.clone().expect("resultInfo");
         let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &result_info);
         self.result = Some(result);
+        Ok(result)
+    }
+}
+
+
+/// Java: the anonymous Check.NestedCheckContext in visitTypeCast
+/// (Attr.java:4044-4065) overriding compatible with isCastable (§9: the
+/// anonymous subclass is a named struct; Types.isCastable is the read-only
+/// castability path so the CheckContext `&Symtab` contract is preserved).
+pub struct CastCheckContext {
+    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
+    pub types: Rc<Types>,
+}
+
+impl crate::comp::check::CheckContext for CastCheckContext {
+    fn compatible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        found: TypeId,
+        req: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        let _ = types;
+        // Java: return types.isCastable(found, req, warn);
+        self.types.is_castable_with_warn(ctx, syms, found, req, warn)
+    }
+
+    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+        self.enclosing.report(ctx, pos, details);
+    }
+
+    fn check_warner(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> crate::util::warner::Warner {
+        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+    }
+
+    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
+        self.enclosing.inference_context()
+    }
+
+    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
+        self.enclosing.deferred_attr_context()
+    }
+}
+
+impl Attr {
+    /// Java: public void visitTypeCast(final JCTypeCast tree) (Attr.java:4044-4075).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the cast expression.
+    ///
+    /// # Returns
+    ///   - the cast type.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:4044-4075.
+    fn visit_type_cast(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let (clazz, expr) = match &ctx.tree(tree).kind {
+            TreeKind::TypeCast { clazz, expr } => (
+                clazz.expect("cast clazz"),
+                expr.expect("cast expr"),
+            ),
+            _ => panic!("ClassCastException: JCTypeCast expected"),
+        };
+        let env = self.env.clone().expect("env");
+        let clazztype = self.attrib_type_use(ctx, syms, clazz, &env);
+        // Java: chk.validate(tree.clazz, env, false);
+        // NOT PORTED: Check.validate/Validator (Check.java:1397-1525, Check batch);
+        // registered.
+        let local_env = env.dup(Some(tree), env.info.borrow().dup(env.info.borrow().scope));
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let expr_skipped = crate::tree::tree_info::skip_parens(ctx, expr);
+        let is_poly = self.allow_poly
+            && (ctx.tree(expr_skipped).has_tag(Tag::LAMBDA)
+                || ctx.tree(expr_skipped).has_tag(Tag::REFERENCE));
+        let cast_info = if is_poly {
+            ResultInfo::new(
+                KindSelector::VAL,
+                Some(clazztype),
+                Rc::new(CastCheckContext {
+                    enclosing: Rc::clone(&result_info.check_context),
+                    types: Rc::clone(&self.types),
+                }),
+            )
+        } else {
+            self.unknown_expr_info.clone()
+        };
+        let exprtype = self.attrib_tree_use(ctx, syms, expr, &local_env, cast_info);
+        let mut owntype = if is_poly {
+            clazztype
+        } else {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_castable(ctx, syms, ctx.tree(expr).pos, exprtype, clazztype)
+        };
+        let expr_const = ctx.typ(exprtype).const_value().cloned();
+        if expr_const.is_some() {
+            owntype = self.cfolder.coerce(ctx, syms, exprtype, owntype);
+        }
+        let captured = self.types.capture(ctx, syms, owntype);
+        let result = self.check(ctx, syms, tree, captured, KindSelector::VAL, &result_info);
+        self.result = Some(result);
+        if !is_poly {
+            // NOT PORTED: chk.checkRedundantCast(localEnv, tree) (Check.java:
+            // 3290-3310, Check batch); registered.
+        }
         Ok(result)
     }
 }
