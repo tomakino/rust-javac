@@ -268,6 +268,7 @@ impl Type {
             TypeKindData::ErrorType { .. }
                 | TypeKindData::UnknownType
                 | TypeKindData::UndetVar { .. }
+                | TypeKindData::PartiallyInferredMethodType { .. }
         )
     }
 
@@ -589,6 +590,24 @@ pub enum TypeKindData {
         all_interfaces_field: Option<List<TypeId>>,
         /// The original type (originalType).
         original_type: Option<TypeId>,
+    },
+    /// Java: Infer.PartiallyInferredMethodType (a MethodType that can be
+    /// checked against several targets; tag METHOD, isPartial=true)
+    PartiallyInferredMethodType {
+        /// The parameter types (same as the underlying MethodType)
+        argtypes: List<TypeId>,
+        /// The return type
+        restype: Option<TypeId>,
+        /// The thrown types
+        thrown: List<TypeId>,
+        /// The receiver type
+        recvtype: Option<TypeId>,
+        /// Java: final InferenceContext inferenceContext
+        inference_context: std::rc::Rc<crate::comp::infer::InferenceContext>,
+        /// Java: Env<AttrContext> env
+        env: std::rc::Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        /// Java: final Warner warn (shared mutable state, registered)
+        warn: std::rc::Rc<std::cell::RefCell<crate::util::warner::Warner>>,
     },
     /// Java: Type.UnknownType
     UnknownType,

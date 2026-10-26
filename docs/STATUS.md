@@ -144,3 +144,5 @@ file/locations/classfinder 适配 helper、资源生成器。后续按优先级�
   数据仅作监控(§21)。
 - 时间规则(PORTING_RULES §23):涉及时间的判断必须先调用 current_time 实测;每批汇报附实测时间戳/耗时;
   猜测时间视为未验证。
+- 监控工具(PORTING_RULES §24):current_time 取时/session_usage 看占用(以 estimated_next_request_tokens 为准)/task_timer 长任务计时
+  (start→query→stop,实测耗时报告,Host 内存不回压缩不持久)。

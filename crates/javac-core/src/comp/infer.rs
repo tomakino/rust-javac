@@ -1,4 +1,4 @@
-#![allow(clippy::result_large_err)]
+#![allow(clippy::result_large_err, clippy::needless_pass_by_ref_mut)]
 // Origin: com/sun/tools/javac/comp/Infer.java @ 982d53c (jdk-17.0.19-ga)
 //         com/sun/tools/javac/comp/InferenceContext.java @ 982d53c (jdk-17.0.19-ga)
 //
@@ -28,21 +28,21 @@
 //
 // NOT PORTED IN THIS FILE (registered: dependency batches; no substitutes are
 // written, the upstream signatures depend on services that are not ported yet):
-// - Infer.instantiateMethod/PartiallyInferredMethodType/check (Infer.java:
-//   166-260, 287-360): needs Resolve.MethodCheck.argumentsAcceptable,
-//   DeferredAttrContext.deferredAttrContext(msym,inferenceContext,resultInfo,warn),
-//   Attr.ResultInfo.checkContext.compatible/check, Warner.hasNonSilentLint and
-//   Log.note(Notes.DeferredMethodInst) — register: Resolve B / DeferredAttr /
-//   Attr batches;
+// Ported in the Resolve B batch (this file; §19 rows in the batch report):
+// - Infer.instantiateMethod (Infer.java:166-260) with the graph/legacy solver
+//   paths, PartiallyInferredMethodType/check (287-360);
+// - generateReturnConstraints/needsEagerInstantiation/
+//   generateReferenceToTargetConstraint/shouldPropagate/roots
+//   (Infer.java:257-520) — Log.note(Notes.DeferredMethodInst) remains registered
+//   (Log/Notes batch).
+// NOT PORTED (registered):
 // - Infer.instantiatePolymorphicSignatureInstance/ImplicitArgType (Infer.java:
-//   555-630): needs DeferredAttr.DeferredTypeMap and TreeInfo.skipParens;
+//   555-630): needs Attr tree tags and DeferredAttr.DeferredTypeMap wiring
+//   (Attr batch);
 // - Infer.instantiateFunctionalInterface (Infer.java:633-690): needs
 //   Types.findDescriptorType and Check.checkValidGenericType (FunctionDescriptor
 //   batch);
-// - Infer.generateReturnConstraints/needsEagerInstantiation/
-//   generateReferenceToTargetConstraint/shouldPropagate/roots/dumpGraphsIfNeeded
-//   (Infer.java:257-520, 360-390): need Attr.ResultInfo/CheckContext.compatible/
-//   Types.createMethodTypeWithReturn/Log.note (Attr batch);
+// - Infer.dumpGraphsIfNeeded (Infer.java:360-390): file dumping (Options batch);
 // - Infer.instance(Context)/Infer(Context) constructor: the port uses explicit
 //   service construction (ADR 0001), registered.
 
@@ -525,16 +525,30 @@ pub struct Infer {
     /// Java: final Names names (upstream from the constructor; needed by
     /// makeIntersectionType in instantiateAsUninferredVars)
     pub names: Option<Rc<Names>>,
+    /// Java: public static final Type anyPoly = new JCNoType()
+    /// (Infer.java:132; a dedicated NONE instance compared by identity)
+    pub any_poly: TypeId,
 }
 
 impl Infer {
     /// Ported service construction (ADR 0001: the Java instance(Context) /
     /// protected constructor registration is registered in the file header).
-    pub fn new(allow_graph_inference: bool, diags: Rc<Factory>, names: Rc<Names>) -> Rc<Infer> {
+    pub fn new(
+        ctx: &mut CompilerContext,
+        allow_graph_inference: bool,
+        diags: Rc<Factory>,
+        names: Rc<Names>,
+    ) -> Rc<Infer> {
+        let any_poly = ctx.alloc_type(crate::code::type_::Type::new(
+            TypeTag::NONE,
+            None,
+            TypeKindData::JCNoType,
+        ));
         Rc::new(Infer {
             allow_graph_inference,
             diags,
             names: Some(names),
+            any_poly,
         })
     }
 
@@ -1124,10 +1138,11 @@ impl InferenceContext {
     }
 
     /// Java: public final Type asUndetVar(Type t)
+    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn as_undet_var(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
     ) -> TypeId {
@@ -1140,10 +1155,11 @@ impl InferenceContext {
     }
 
     /// Java: final List<Type> asUndetVars(List<Type> ts)
+    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn as_undet_vars(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         ts: List<TypeId>,
     ) -> List<TypeId> {
@@ -1173,10 +1189,11 @@ impl InferenceContext {
     }
 
     /// Java: Type asInstType(Type t)
+    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn as_inst_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
     ) -> TypeId {
@@ -1191,10 +1208,11 @@ impl InferenceContext {
     }
 
     /// Java: List<Type> asInstTypes(List<Type> ts)
+    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn as_inst_types(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         ts: List<TypeId>,
     ) -> List<TypeId> {
@@ -3073,7 +3091,704 @@ fn check_compatible_upper_bounds(
 }
 
 
+
+
+
+// =====================================================================
+// Infer instantiateMethod / PartiallyInferredMethodType (Infer.java:166-370,
+// 391-520)
+// =====================================================================
+
+impl Infer {
+    /// Java: Type instantiateMethod(Env<AttrContext> env, List<Type> tvars,
+    /// MethodType mt, Attr.ResultInfo resultInfo, MethodSymbol msym,
+    /// List<Type> argtypes, boolean allowBoxing, boolean useVarargs,
+    /// Resolve.MethodResolutionContext resolveContext, Warner warn)
+    /// (Infer.java:166-250)
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::unnecessary_unwrap,
+        clippy::collapsible_if,
+        clippy::blocks_in_conditions
+    )]
+    pub fn instantiate_method(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        attr: &mut crate::comp::attr::Attr,
+        chk: &crate::comp::check::Check,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        tvars: List<TypeId>,
+        mt: TypeId,
+        result_info: Option<&crate::comp::attr::ResultInfo>,
+        msym: SymbolId,
+        argtypes: List<TypeId>,
+        allow_boxing: bool,
+        use_varargs: bool,
+        resolve_context: &mut crate::comp::resolve::MethodResolutionContext,
+        warn: &mut Warner,
+    ) -> Result<TypeId, InferenceException> {
+        let _ = (allow_boxing, use_varargs);
+        let inference_context =
+            InferenceContext::new(Rc::new(self.clone_shallow()), ctx, syms, types, tvars);
+        let defer_context = resolve_context.deferred_attr_context(
+            msym,
+            Rc::clone(&inference_context),
+            result_info,
+            None,
+        );
+        let deferred_context = Rc::new(defer_context);
+        // resolveContext.methodCheck.argumentsAcceptable(env, deferredAttrContext,
+        //         argtypes, mt.getParameterTypes(), warn);
+        let method_check = resolve_context
+            .method_check
+            .clone()
+            .unwrap_or_else(|| Rc::new(RefCell::new(crate::comp::resolve::NilMethodCheck)));
+        {
+            let mut check = method_check.borrow_mut();
+            check
+                .arguments_acceptable(
+                    ctx,
+                    syms,
+                    types,
+                    attr,
+                    chk,
+                    &self.diags,
+                    env,
+                    Rc::clone(&deferred_context),
+                    argtypes,
+                    types.get_parameter_types_public(ctx, mt),
+                    warn,
+                )
+                .map_err(|failure| match failure {
+                    crate::comp::resolve::MethodCheckFailure::Inference(ex) => ex,
+                    crate::comp::resolve::MethodCheckFailure::Inapplicable(_ex) => {
+                        InferenceException::new()
+                    }
+                })?;
+        }
+        if self.allow_graph_inference
+            && result_info.is_some()
+            && result_info.and_then(|ri| ri.pt) == Some(self.any_poly)
+        {
+            self.do_incorporation(ctx, syms, types, &inference_context, warn)?;
+            return Ok(partially_inferred_method_type(
+                ctx,
+                mt,
+                Rc::clone(&inference_context),
+                Rc::clone(env),
+                Rc::new(RefCell::new(Warner::new(warn.pos()))),
+            ));
+        } else if self.allow_graph_inference && result_info.is_some() {
+            // inject return constraints earlier
+            self.do_incorporation(ctx, syms, types, &inference_context, warn)?;
+            let result_info = result_info.expect("result info");
+            if !warn.has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED) {
+                let should = self.should_propagate(
+                    ctx,
+                    syms,
+                    types,
+                    types.get_return_type_public(ctx, mt),
+                    result_info,
+                    &inference_context,
+                );
+                let min_context = if should {
+                    let roots = self.roots(ctx, syms, types, mt, None);
+                    inference_context.min(ctx, syms, types, roots, false, warn)?
+                } else {
+                    Rc::clone(&inference_context)
+                };
+                let other = mt;
+                let new_restype = self.generate_return_constraints(
+                    ctx,
+                    syms,
+                    types,
+                    env.tree,
+                    result_info,
+                    other,
+                    &min_context,
+                )?;
+                let new_mt = types.create_method_type_with_return(ctx, mt, new_restype);
+                if should {
+                    let target_context =
+                        Rc::clone(result_info.check_context.inference_context());
+                    let inside_overload = result_info
+                        .check_context
+                        .deferred_attr_context()
+                        .inside_overload_phase();
+                    min_context.dup_to(
+                        ctx,
+                        syms,
+                        types,
+                        &target_context,
+                        inside_overload,
+                    );
+                    deferred_context
+            .complete(ctx, syms, types, attr, self)
+            .map_err(|failure| match failure {
+                crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => ex,
+                // TODO(Attr batch): the CompletionFailure channel of
+                // DeferredAttr.complete is registered with the Attr batch.
+                crate::comp::deferred_attr::DeferredAttrFailure::Completion(_) => {
+                    InferenceException::new()
+                }
+            })?;
+                    return Ok(new_mt);
+                }
+                let _ = new_mt;
+            }
+        }
+        deferred_context
+            .complete(ctx, syms, types, attr, self)
+            .map_err(|failure| match failure {
+                crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => ex,
+                // TODO(Attr batch): the CompletionFailure channel of
+                // DeferredAttr.complete is registered with the Attr batch.
+                crate::comp::deferred_attr::DeferredAttrFailure::Completion(_) => {
+                    InferenceException::new()
+                }
+            })?;
+        // minimize as yet undetermined type variables
+        if self.allow_graph_inference {
+            let context = Rc::clone(&inference_context);
+            context.solve(ctx, syms, types, warn)?;
+        } else {
+            inference_context.solve_legacy(
+                ctx,
+                syms,
+                types,
+                true,
+                &crate::comp::infer::legacy_inference_steps_eq_lower(),
+                warn,
+            )?;
+        }
+        let inst_mt = inference_context.as_inst_type(ctx, syms, types, mt);
+        if !self.allow_graph_inference
+            && !inference_context.restvars(ctx, syms, types).is_empty()
+            && result_info.is_some()
+            && !warn.has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED)
+        {
+            let result_info = result_info.expect("result info");
+            let new_restype = self.generate_return_constraints(
+                ctx,
+                syms,
+                types,
+                env.tree,
+                result_info,
+                inst_mt,
+                &inference_context,
+            )?;
+            let _ = new_restype;
+            inference_context.solve_legacy(
+                ctx,
+                syms,
+                types,
+                false,
+                &crate::comp::infer::legacy_inference_steps_eq_upper(),
+                warn,
+            )?;
+            return Ok(inference_context.as_inst_type(ctx, syms, types, mt));
+        }
+        // Java: if (resultInfo != null || !allowGraphInference) notifyChange();
+        if result_info.is_some() || !self.allow_graph_inference {
+            let context = Rc::clone(&inference_context);
+            context.notify_change(ctx, syms, types)?;
+        }
+        Ok(inst_mt)
+    }
+
+    /// A shallow copy of the Infer service for Rc-based context links (the
+    /// upstream object is shared; the ported Infer is stateless apart from the
+    /// services/any_poly — registered adapter).
+    fn clone_shallow(&self) -> Infer {
+        Infer {
+            allow_graph_inference: self.allow_graph_inference,
+            diags: Rc::clone(&self.diags),
+            names: self.names.clone(),
+            any_poly: self.any_poly,
+        }
+    }
+
+    /// Java: boolean shouldPropagate(Type restype, Attr.ResultInfo target,
+    /// InferenceContext inferenceContext) (Infer.java:257-264)
+    fn should_propagate(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        restype: TypeId,
+        target: &crate::comp::attr::ResultInfo,
+        inference_context: &Rc<InferenceContext>,
+    ) -> bool {
+        let target_context = target.check_context.inference_context();
+        if !Rc::ptr_eq(target_context, &crate::comp::infer::empty_context()) {
+            if !inference_context.free(ctx, syms, types, restype) {
+                return false;
+            }
+            let inference_vars = inference_context.inference_vars();
+            if !inference_vars.iter().any(|t| t == restype) {
+                return true;
+            }
+            if let Some(pt) = target.pt {
+                let uv = inference_context.as_undet_var(ctx, syms, types, restype);
+                return !self.needs_eager_instantiation(
+                    ctx,
+                    syms,
+                    types,
+                    uv,
+                    pt,
+                    inference_context,
+                );
+            }
+        }
+        false
+    }
+
+    /// Java: private List<Type> roots(MethodType mt,
+    /// DeferredAttrContext deferredAttrContext) (Infer.java:264-283)
+    #[allow(clippy::collapsible_if)]
+    fn roots(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        mt: TypeId,
+        deferred_attr_context: Option<&crate::comp::deferred_attr::DeferredAttrContext>,
+    ) -> List<TypeId> {
+        let _ = syms;
+        let mut roots: List<TypeId> = List::nil();
+        roots = roots.append(types.get_return_type_public(ctx, mt));
+        if let Some(deferred) = deferred_attr_context {
+            // Java: only in CHECK mode; the caller passes None when not needed.
+            let nodes = deferred.deferred_attr_nodes.borrow().clone();
+            for node in nodes {
+                for var in node.deferred_stuck_policy.stuck_vars() {
+                    roots = roots.append(var);
+                }
+                for var in node.deferred_stuck_policy.dep_vars() {
+                    roots = roots.append(var);
+                }
+            }
+            let mut thrown_vars: List<TypeId> = List::nil();
+            let inference_vars = deferred.inference_context.inference_vars();
+            for var in inference_vars.iter() {
+                let tsym = ctx.typ(var).tsym;
+                if let Some(tsym) = tsym {
+                    if (ctx.sym(tsym).flags_field & crate::code::flags::THROWS) != 0 {
+                        thrown_vars = thrown_vars.append(var);
+                    }
+                }
+            }
+            let mut current = thrown_vars;
+            while current.non_empty() {
+                let var = *current.head();
+                if !roots.iter().any(|r| r == var) {
+                    roots = roots.append(var);
+                }
+                current = current.tail();
+            }
+        }
+        roots
+    }
+
+    /// Java: Type generateReturnConstraints(JCTree tree, Attr.ResultInfo
+    /// resultInfo, MethodType mt, InferenceContext inferenceContext)
+    /// (Infer.java:391-430)
+    #[allow(clippy::too_many_arguments, clippy::blocks_in_conditions)]
+    fn generate_return_constraints(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        tree: Option<TreeId>,
+        result_info: &crate::comp::attr::ResultInfo,
+        mt: TypeId,
+        inference_context: &Rc<InferenceContext>,
+    ) -> Result<TypeId, InferenceException> {
+        let rs_context = Rc::clone(result_info.check_context.inference_context());
+        let mut from = types.get_return_type_public(ctx, mt);
+        let inference_vars = inference_context.inference_vars();
+        if types.contains_any(ctx, syms, from, &inference_vars)
+            && !Rc::ptr_eq(&rs_context, &crate::comp::infer::empty_context())
+        {
+            from = types.capture(ctx, syms, from);
+            let args = types.get_type_arguments_public(ctx, from);
+            for t in args.iter() {
+                if ctx.typ(t).has_tag(TypeTag::TYPEVAR) && ctx.typ(t).is_captured() {
+                    inference_context.add_var(ctx, syms, types, t);
+                }
+            }
+        }
+        let mut qtype = inference_context.as_undet_var(ctx, syms, types, from);
+        let mut to = result_info
+            .pt
+            .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
+        if ctx.typ(qtype).has_tag(TypeTag::VOID) {
+            to = syms.void_type;
+        } else if ctx.typ(to).has_tag(TypeTag::NONE) {
+            to = if ctx.typ(from).is_primitive() {
+                from
+            } else {
+                syms.object_type
+            };
+        } else if ctx.typ(qtype).has_tag(TypeTag::UNDETVAR) {
+            if self.needs_eager_instantiation(ctx, syms, types, qtype, to, inference_context)
+                && (self.allow_graph_inference || !ctx.typ(to).is_primitive())
+            {
+                to = self.generate_reference_to_target_constraint(
+                    ctx,
+                    syms,
+                    types,
+                    tree,
+                    qtype,
+                    to,
+                    result_info,
+                    inference_context,
+                )?;
+            }
+        } else if {
+            let free_pt = result_info
+                .pt
+                .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
+            rs_context.free(ctx, syms, types, free_pt)
+        } {
+            // propagation - cache captured vars
+            let captured = match tree {
+                Some(tree) => rs_context.cached_capture(
+                    ctx,
+                    syms,
+                    types,
+                    tree,
+                    from,
+                    !result_info.check_mode.update_tree_type(),
+                ),
+                None => types.capture(ctx, syms, from),
+            };
+            qtype = inference_context.as_undet_var(ctx, syms, types, captured);
+        }
+        let mut ret_warn = Warner::new(None);
+        let target = rs_context.as_undet_var(ctx, syms, types, to);
+        if !result_info.check_context.compatible(
+            ctx,
+            syms,
+            types,
+            qtype,
+            target,
+            &mut ret_warn,
+        ) || (!self.allow_graph_inference
+            && ret_warn.has_lint(crate::code::lint::LintCategory::UNCHECKED))
+        {
+            let diag = self.diags.fragment(
+                crate::resources::compiler_properties::fragments::infer_no_conforming_instance_exists(
+                    vec![],
+                    crate::resources::diagnostic_contract::TypeArg::placeholder("type"),
+                    crate::resources::diagnostic_contract::TypeArg::placeholder("type"),
+                )
+                .into(),
+            );
+            return Err(self.error(Some(diag)));
+        }
+        Ok(from)
+    }
+
+    /// Java: boolean needsEagerInstantiation(UndetVar from, Type to,
+    /// InferenceContext inferenceContext) (Infer.java:433-490)
+    #[allow(clippy::collapsible_if)]
+    fn needs_eager_instantiation(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        from: TypeId,
+        to: TypeId,
+        inference_context: &InferenceContext,
+    ) -> bool {
+        if ctx.typ(to).is_primitive() {
+            let bounds = types.undet_var_get_bounds(
+                ctx,
+                from,
+                &crate::code::type_::InferenceBound::values(),
+            );
+            for t in bounds.iter() {
+                let bound_as_primitive = types.unboxed_type_ro(ctx, syms, t);
+                if ctx.typ(bound_as_primitive).has_tag(TypeTag::NONE) {
+                    continue;
+                }
+                return true;
+            }
+            return false;
+        }
+        let capture_of_to = types.capture(ctx, syms, to);
+        if capture_of_to == to {
+            let bounds = types.undet_var_get_bounds(
+                ctx,
+                from,
+                &[
+                    crate::code::type_::InferenceBound::EQ,
+                    crate::code::type_::InferenceBound::LOWER,
+                ],
+            );
+            for t in bounds.iter() {
+                let capture_of_bound = types.capture(ctx, syms, t);
+                if capture_of_bound != t {
+                    return true;
+                }
+            }
+            let lower = types.undet_var_get_bounds(
+                ctx,
+                from,
+                &[crate::code::type_::InferenceBound::LOWER],
+            );
+            for a in lower.iter() {
+                for b in lower.iter() {
+                    if a != b
+                        && !inference_context.free(ctx, syms, types, a)
+                        && !inference_context.free(ctx, syms, types, b)
+                        && self.common_super_with_diff_parameterization(
+                            ctx, syms, types, a, b,
+                        )
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        if types.is_parameterized_type_of(ctx, to) {
+            let bound_kinds = [
+                crate::code::type_::InferenceBound::EQ,
+                crate::code::type_::InferenceBound::LOWER,
+            ];
+            let bounds = types.undet_var_get_bounds(ctx, from, &bound_kinds);
+            let to_tsym = ctx.typ(to).tsym.expect("parameterized type symbol");
+            for t in bounds.iter() {
+                if let Some(sup) = types.as_super(ctx, syms, t, to_tsym) {
+                    if is_raw_type_public(ctx, sup) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Java: boolean commonSuperWithDiffParameterization(Type t, Type s)
+    /// (Infer.java:494-499)
+    fn common_super_with_diff_parameterization(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        t: TypeId,
+        s: TypeId,
+    ) -> bool {
+        let supers = self.get_parameterized_supers(ctx, syms, types, t, s);
+        for pair in supers.iter() {
+            if !types.is_same_type(ctx, syms, pair.fst, pair.snd) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Java: Type generateReferenceToTargetConstraint(JCTree tree, UndetVar
+    /// from, Type to, Attr.ResultInfo resultInfo, InferenceContext
+    /// inferenceContext) (Infer.java:501-517)
+    #[allow(clippy::too_many_arguments)]
+    fn generate_reference_to_target_constraint(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        tree: Option<TreeId>,
+        from: TypeId,
+        to: TypeId,
+        result_info: &crate::comp::attr::ResultInfo,
+        inference_context: &Rc<InferenceContext>,
+    ) -> Result<TypeId, InferenceException> {
+        let qtype = types.undet_var_qtype(ctx, from);
+        let mut no_warnings = Warner::new(None);
+        let context = Rc::clone(inference_context);
+        context.solve_list(
+            ctx,
+            syms,
+            types,
+            List::of(qtype),
+            &mut no_warnings,
+        )?;
+        let context = Rc::clone(inference_context);
+        context.notify_change(ctx, syms, types)?;
+        let inst = types
+            .undet_var_get_inst(ctx, from)
+            .expect("instantiated undet var");
+        let rs_context = Rc::clone(result_info.check_context.inference_context());
+        let captured = match tree {
+            Some(tree) => rs_context.cached_capture(
+                ctx,
+                syms,
+                types,
+                tree,
+                inst,
+                !result_info.check_mode.update_tree_type(),
+            ),
+            None => types.capture(ctx, syms, inst),
+        };
+        let target = rs_context.as_undet_var(ctx, syms, types, to);
+        if types.is_convertible(ctx, syms, captured, target) {
+            Ok(syms.object_type)
+        } else {
+            Ok(to)
+        }
+    }
+}
+
+/// Helper: is_raw public view (Types.isRaw is private free function).
+fn is_raw_type_public(ctx: &CompilerContext, t: TypeId) -> bool {
+    let types = crate::code::types::Types::new();
+    types.is_raw_type_public(ctx, t)
+}
+
+/// Java: class Infer.PartiallyInferredMethodType (Infer.java:287-360)
+pub fn partially_inferred_method_type(
+    ctx: &mut CompilerContext,
+    mt: TypeId,
+    inference_context: Rc<InferenceContext>,
+    env: Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+    warn: Rc<RefCell<Warner>>,
+) -> TypeId {
+    match &ctx.typ(mt).kind {
+        TypeKindData::MethodType {
+            argtypes,
+            restype,
+            thrown,
+            recvtype,
+        } => {
+            let (argtypes, restype, thrown, recvtype) =
+                (argtypes.clone(), *restype, thrown.clone(), *recvtype);
+            ctx.alloc_type(crate::code::type_::Type::new(
+                TypeTag::METHOD,
+                None,
+                TypeKindData::PartiallyInferredMethodType {
+                    argtypes,
+                    restype,
+                    thrown,
+                    recvtype,
+                    inference_context,
+                    env,
+                    warn,
+                },
+            ))
+        }
+        _ => panic!("ClassCastException: MethodType expected"),
+    }
+}
+
+
+impl Infer {
+    /// Java: Infer.PartiallyInferredMethodType.check(Attr.ResultInfo)
+    /// (Infer.java:312-365).
+    ///
+    /// PORTING_RULES: the upstream method returns a Type and reports the
+    /// inference failure through ResultInfo.checkContext.report + Assert.error;
+    /// the ported path returns the InferenceException (the Attr batch caller
+    /// propagates/reports it) — registered §9 adapter.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::needless_pass_by_ref_mut,
+        clippy::collapsible_if
+    )]
+    pub fn partially_inferred_method_type_check(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        chk: &crate::comp::check::Check,
+        t: TypeId,
+        result_info: &crate::comp::attr::ResultInfo,
+    ) -> Result<TypeId, InferenceException> {
+        let (restype, inference_context, env, warn) = match &ctx.typ(t).kind {
+            TypeKindData::PartiallyInferredMethodType {
+                restype,
+                inference_context,
+                env,
+                warn,
+                ..
+            } => (
+                restype.expect("partially inferred return type"),
+                Rc::clone(inference_context),
+                Rc::clone(env),
+                Rc::clone(warn),
+            ),
+            _ => panic!("ClassCastException: PartiallyInferredMethodType expected"),
+        };
+        let mut no_warnings = Warner::new(None);
+        let saved_undet = inference_context.save(ctx, syms, types);
+        let unchecked = warn
+            .borrow()
+            .has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED);
+        let result: Result<TypeId, InferenceException> = (|| {
+            if !unchecked {
+                let should = self.should_propagate(
+                    ctx,
+                    syms,
+                    types,
+                    restype,
+                    result_info,
+                    &inference_context,
+                );
+                let min_context = if should {
+                    let roots = self.roots(ctx, syms, types, t, None);
+                    let mut warn_ref = warn.borrow_mut();
+                    inference_context.min(ctx, syms, types, roots, false, &mut warn_ref)?
+                } else {
+                    Rc::clone(&inference_context)
+                };
+                // Java: MethodType other = (MethodType)minContext.update(asMethodType())
+                // (update is the identity in the ported InferenceContext).
+                let other = t;
+                let new_restype = self.generate_return_constraints(
+                    ctx,
+                    syms,
+                    types,
+                    env.tree,
+                    result_info,
+                    other,
+                    &min_context,
+                )?;
+                if should {
+                    let target_context =
+                        Rc::clone(result_info.check_context.inference_context());
+                    let inside_overload = result_info
+                        .check_context
+                        .deferred_attr_context()
+                        .inside_overload_phase();
+                    min_context.dup_to(ctx, syms, types, &target_context, inside_overload);
+                    return Ok(new_restype);
+                }
+            }
+            let context = Rc::clone(&inference_context);
+            context.solve(ctx, syms, types, &mut no_warnings)?;
+            let inst_mt = context.as_inst_type(ctx, syms, types, t);
+            let mut ret = types.get_return_type_public(ctx, inst_mt);
+            if unchecked {
+                // inline logic from Attr.checkMethod - if unchecked conversion
+                // was required, erase return type _after_ resolution, and check
+                // against target
+                ret = types.erasure(ctx, syms, ret);
+            }
+            let pos = env
+                .tree
+                .map(|tree| ctx.tree(tree).pos)
+                .unwrap_or(crate::util::position::NOPOS);
+            Ok(result_info.check(ctx, syms, chk, pos, ret))
+        })();
+        inference_context.rollback(ctx, syms, types, saved_undet);
+        result
+    }
+}
+
 #[cfg(test)]
+#[allow(clippy::collapsible_if, clippy::blocks_in_conditions)]
 mod tests {
     use super::*;
     use crate::code::kinds::Kind;
@@ -3092,7 +3807,7 @@ mod tests {
         let mut jcontext = Context::new();
         let messages = JavacMessages::instance(&mut jcontext);
         let diags = Rc::new(Factory::new(messages, "compiler"));
-        let infer = Infer::new(graph_inference, diags, Rc::clone(&names));
+        let infer = Infer::new(&mut ctx, graph_inference, diags, Rc::clone(&names));
         (ctx, symtab, types, infer, names)
     }
 
@@ -3132,6 +3847,7 @@ mod tests {
         infer: &Rc<Infer>,
         names: &Names,
     ) -> (Rc<InferenceContext>, TypeId) {
+        let _ = &syms;
         let tvar = new_type_var(ctx, syms, names, "T", 0, syms.object_type);
         let context = InferenceContext::new(
             Rc::clone(infer),
@@ -3147,7 +3863,7 @@ mod tests {
     fn from_type_var_fun_creates_an_undet_var_with_the_declared_bound() {
         let (mut ctx, mut syms, types, infer, names) = harness(true);
         let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
-        let uv = context.as_undet_var(&mut ctx, &mut syms, &types, tvar);
+        let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         match &ctx.typ(uv).kind {
             TypeKindData::UndetVar { qtype, .. } => assert_eq!(*qtype, tvar),
             _ => panic!("expected an UndetVar"),
@@ -3162,7 +3878,7 @@ mod tests {
     fn eq_bound_solves_to_the_bound_type() {
         let (mut ctx, mut syms, types, infer, names) = harness(true);
         let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
-        let uv = context.as_undet_var(&mut ctx, &mut syms, &types, tvar);
+        let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         types.undet_var_add_bound(
             &mut ctx,
@@ -3187,7 +3903,7 @@ mod tests {
     fn lower_bound_solves_to_the_bound_type() {
         let (mut ctx, mut syms, types, infer, names) = harness(true);
         let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
-        let uv = context.as_undet_var(&mut ctx, &mut syms, &types, tvar);
+        let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         types.undet_var_add_bound(
             &mut ctx,
@@ -3211,7 +3927,7 @@ mod tests {
     fn upper_bound_solves_to_the_bound_type() {
         let (mut ctx, mut syms, types, infer, names) = harness(true);
         let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
-        let uv = context.as_undet_var(&mut ctx, &mut syms, &types, tvar);
+        let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         types.undet_var_add_bound(
             &mut ctx,
@@ -3235,7 +3951,7 @@ mod tests {
     fn save_and_rollback_restore_the_bounds_and_instances() {
         let (mut ctx, mut syms, types, infer, names) = harness(true);
         let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
-        let uv = context.as_undet_var(&mut ctx, &mut syms, &types, tvar);
+        let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         let int_type = syms.int_type;
         types.undet_var_add_bound(
@@ -3263,7 +3979,7 @@ mod tests {
             3
         );
         context.rollback(&mut ctx, &mut syms, &types, saved);
-        let uv_after = context.as_undet_var(&mut ctx, &mut syms, &types, tvar);
+        let uv_after = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         assert!(types.undet_var_get_inst(&ctx, uv_after).is_none());
         let object_type = syms.object_type;
         assert_eq!(
@@ -3301,7 +4017,7 @@ mod tests {
             List::of(tvar),
             listener.clone(),
         );
-        let uv = context.as_undet_var(&mut ctx, &mut syms, &types, tvar);
+        let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let object_type = syms.object_type;
         types.undet_var_set_inst(&mut ctx, &syms, uv, object_type);
         let mut syms_for_notify = syms;
@@ -3315,7 +4031,7 @@ mod tests {
     fn as_inst_type_replaces_inference_vars_with_their_instances() {
         let (mut ctx, mut syms, types, infer, names) = harness(true);
         let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
-        let uv = context.as_undet_var(&mut ctx, &mut syms, &types, tvar);
+        let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         types.undet_var_set_inst(&mut ctx, &syms, uv, string_type);
         let list_type = {
@@ -3334,7 +4050,7 @@ mod tests {
                 },
             ))
         };
-        let as_inst = context.as_inst_type(&mut ctx, &mut syms, &types, list_type);
+        let as_inst = context.as_inst_type(&mut ctx, &syms, &types, list_type);
         match &ctx.typ(as_inst).kind {
             TypeKindData::ClassType { typarams_field, .. } => {
                 assert_eq!(typarams_field.clone(), Some(List::of(string_type)));
@@ -3347,7 +4063,7 @@ mod tests {
     fn inference_steps_accept_relevant_undet_vars() {
         let (mut ctx, mut syms, types, infer, names) = harness(true);
         let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
-        let uv = context.as_undet_var(&mut ctx, &mut syms, &types, tvar);
+        let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         types.undet_var_add_bound(
             &mut ctx,
@@ -3445,7 +4161,7 @@ mod tests {
                 &types,
                 List::of(tvar),
             );
-            let uv = context.as_undet_var(&mut ctx, &mut syms, &types, tvar);
+            let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
             types.undet_var_add_bound(&mut ctx, &syms, uv, ib, bound, false);
             let mut warn = Warner::new(None);
             context

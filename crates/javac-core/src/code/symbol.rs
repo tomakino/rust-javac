@@ -801,6 +801,25 @@ pub enum ResolveErrorData {
     Ambiguity { syms: Vec<SymbolId> },
     /// Resolve.BadRestrictedTypeError
     BadRestrictedType { type_name: Name },
+    /// Resolve.InapplicableSymbolError (Resolve.java:4104-4183)
+    Inapplicable {
+        kind: Kind,
+        sym: SymbolId,
+        details: Option<crate::util::jc_diagnostic::JCDiagnostic>,
+    },
+    /// Resolve.InapplicableSymbolsError (Resolve.java:4183-4300)
+    InapplicableSymbols {
+        kind: Kind,
+        candidates: Vec<(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)>,
+    },
+    /// Resolve.DiamondError (Resolve.java:4313-4350)
+    Diamond {
+        kind: Kind,
+        sym: SymbolId,
+        details: Option<crate::util::jc_diagnostic::JCDiagnostic>,
+    },
+    /// Resolve.BadVarargsMethod (Resolve.java:4617-4650)
+    BadVarargs { delegated: SymbolId },
 }
 
 /// Java: public enum SymbolKind (Resolve.ResolveError hierarchy lives here).

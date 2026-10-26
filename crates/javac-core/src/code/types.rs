@@ -426,6 +426,12 @@ impl Types {
                 // through DeferredTypeMap before a relation is computed).
                 panic!("AssertionError: isSameType DEFERRED")
             }
+            TypeKindData::PartiallyInferredMethodType { .. } => {
+                // Java: PartiallyInferredMethodType extends MethodType
+                // (tag METHOD); the isSameType visitor dispatches to
+                // visitMethodType.
+                self.is_same_type_visit_method(ctx, syms, t, s)
+            }
         }
     }
 
@@ -1350,7 +1356,7 @@ impl Types {
 
     /// Java: public List<Type> newInstances(List<Type> tvars)
     /// (Types.java:3487-3496)
-    fn new_instances(
+    pub fn new_instances(
         &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
@@ -1386,6 +1392,51 @@ impl Types {
             current = current.tail();
         }
         result
+    }
+
+    /// Java: public Type createMethodTypeWithReturn(Type original,
+    /// Type newReturn) (Types.java:3535-3565; the anonymous baseType override
+    /// is registered: the local Type has no baseType concept, so the returned
+    /// MethodType does not carry a base type)
+    pub fn create_method_type_with_return(
+        &self,
+        ctx: &mut CompilerContext,
+        original: TypeId,
+        new_return: TypeId,
+    ) -> TypeId {
+        let kind = ctx.typ(original).kind.clone();
+        let tsym = ctx.typ(original).tsym;
+        let tag = ctx.typ(original).get_tag();
+        match &kind {
+            TypeKindData::MethodType {
+                argtypes,
+                thrown,
+                recvtype,
+                ..
+            } => ctx.alloc_type(crate::code::type_::Type::new(
+                TypeTag::METHOD,
+                tsym,
+                TypeKindData::MethodType {
+                    argtypes: argtypes.clone(),
+                    restype: Some(new_return),
+                    thrown: thrown.clone(),
+                    recvtype: *recvtype,
+                },
+            )),
+            TypeKindData::ForAll { tvars, qtype } => {
+                let qtype = qtype.expect("for-all qtype");
+                let new_qtype = self.create_method_type_with_return(ctx, qtype, new_return);
+                ctx.alloc_type(crate::code::type_::Type::new(
+                    TypeTag::FORALL,
+                    tsym,
+                    TypeKindData::ForAll {
+                        tvars: tvars.clone(),
+                        qtype: Some(new_qtype),
+                    },
+                ))
+            }
+            _ => panic!("IllegalArgumentException: Not a method type: {tag:?}"),
+        }
     }
 
     /// Java: public List<Type> substBounds(List<Type> tvars, List<Type> from,
@@ -2409,6 +2460,7 @@ impl Types {
                 }
             }
             TypeKindData::MethodType { .. }
+            | TypeKindData::PartiallyInferredMethodType { .. }
             | TypeKindData::PackageType
             | TypeKindData::ModuleType => {
                 panic!("AssertionError: isSubtype {:?}", ctx.typ(t).get_tag())
@@ -2800,7 +2852,7 @@ impl Types {
     pub fn is_convertible(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
         s: TypeId,
     ) -> bool {
@@ -2816,21 +2868,75 @@ impl Types {
         let s_undet = ctx.typ(s).has_tag(TypeTag::UNDETVAR);
         if t_undet || s_undet {
             return if t_undet {
-                let boxed = self.boxed_type_or_type(ctx, syms, s);
+                let boxed = self.boxed_type_or_type_ro(ctx, syms, s);
                 self.is_subtype(ctx, syms, t, boxed)
             } else {
-                let boxed = self.boxed_type_or_type(ctx, syms, t);
+                let boxed = self.boxed_type_or_type_ro(ctx, syms, t);
                 self.is_subtype(ctx, syms, boxed, s)
             };
         }
         if t_primitive {
-            let boxed = self.boxed_class(ctx, syms, t);
+            let boxed = self.boxed_class_ro(ctx, syms, t);
             let boxed_type = ctx.sym(boxed).ty.expect("boxed type");
             self.is_subtype(ctx, syms, boxed_type, s)
         } else {
-            let unboxed = self.unboxed_type(ctx, syms, t);
+            let unboxed = self.unboxed_type_ro(ctx, syms, t);
             self.is_subtype(ctx, syms, unboxed, s)
         }
+    }
+
+    /// The read-only counterpart of boxedClass: the boxed class symbols are
+    /// pre-entered by Symtab (syms.boxed_class_ids, §9 adapter), so relation
+    /// code that only holds &Symtab can obtain the symbol exactly like the
+    /// upstream syms.enterClass(java_base, boxedName) call.
+    pub fn boxed_class_ro(
+        &self,
+        ctx: &CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> SymbolId {
+        let tag = ctx.typ(t).get_tag();
+        syms.boxed_class_ids[tag as usize].unwrap_or_else(|| {
+            panic!("AssertionError: boxed class not entered for {:?}", tag)
+        })
+    }
+
+    /// The read-only counterpart of boxedTypeOrType (Types.java:4312-4317).
+    pub fn boxed_type_or_type_ro(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> TypeId {
+        if ctx.typ(t).is_primitive() {
+            let boxed = self.boxed_class_ro(ctx, syms, t);
+            ctx.sym(boxed).ty.expect("boxed type")
+        } else {
+            t
+        }
+    }
+
+    /// The read-only counterpart of unboxedType (same upstream body, using the
+    /// pre-entered boxed class symbols; §9 adapter).
+    #[allow(clippy::collapsible_if)]
+    pub fn unboxed_type_ro(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> TypeId {
+        if ctx.typ(t).has_tag(TypeTag::ERROR) {
+            return no_type_of(ctx, syms);
+        }
+        let boxed_ids = syms.boxed_class_ids.clone();
+        for (index, boxed) in boxed_ids.iter().enumerate() {
+            if let Some(boxed) = boxed {
+                if self.as_super(ctx, syms, t, *boxed).is_some() {
+                    return syms.type_of_tag[index].expect("typeOfTag entry");
+                }
+            }
+        }
+        no_type_of(ctx, syms)
     }
 
     /// Java: public Type boxedTypeOrType(Type t) (Types.java:4312-4317)
@@ -6486,6 +6592,46 @@ impl Types {
 // Infer.CheckUpperBounds (Types.java:3738-3750).
 // ---------------------------------------------------------------------------
 impl Types {
+    /// Java: MethodType.getParameterTypes() view (also for the ported
+    /// PartiallyInferredMethodType, which extends MethodType upstream).
+    pub fn get_parameter_types_public(
+        &self,
+        ctx: &CompilerContext,
+        t: TypeId,
+    ) -> List<TypeId> {
+        match &ctx.typ(t).kind {
+            TypeKindData::MethodType { argtypes, .. }
+            | TypeKindData::PartiallyInferredMethodType { argtypes, .. } => argtypes.clone(),
+            _ => List::nil(),
+        }
+    }
+
+    /// Java: MethodType.getReturnType() view (see above).
+    pub fn get_return_type_public(&self, ctx: &CompilerContext, t: TypeId) -> TypeId {
+        match &ctx.typ(t).kind {
+            TypeKindData::MethodType {
+                restype: Some(restype),
+                ..
+            }
+            | TypeKindData::PartiallyInferredMethodType {
+                restype: Some(restype),
+                ..
+            } => *restype,
+            _ => panic!("AssertionError: no return type"),
+        }
+    }
+
+    /// Java: boolean isRaw() view (Types.isRaw is a private helper).
+    pub fn is_raw_type_public(&self, ctx: &CompilerContext, t: TypeId) -> bool {
+        is_raw_type(ctx, t)
+    }
+
+    /// Java: public Type cvarUpperBound(Type t) — public wrapper used by
+    /// Resolve.MethodResultInfo.U(found).
+    pub fn cvar_upper_bound_of(&self, ctx: &CompilerContext, t: TypeId) -> TypeId {
+        cvar_upper_bound(ctx, t)
+    }
+
     /// Java: boolean isParameterized() view used by Infer.getParameterizedSupers.
     pub fn is_parameterized_type_of(&self, ctx: &CompilerContext, t: TypeId) -> bool {
         is_parameterized_type(ctx, t)
@@ -7214,7 +7360,7 @@ mod tests {
             let expected = parts[3] == "true";
             let actual = match kind {
                 "SUB" => types.is_subtype(&mut ctx, &symtab, left_ty, right_ty),
-                "CONV" => types.is_convertible(&mut ctx, &mut symtab, left_ty, right_ty),
+                "CONV" => types.is_convertible(&mut ctx, &symtab, left_ty, right_ty),
                 "CAST" => types.is_castable(&mut ctx, &mut symtab, left_ty, right_ty),
                 _ => continue,
             };

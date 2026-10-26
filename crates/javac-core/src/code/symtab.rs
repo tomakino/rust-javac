@@ -974,6 +974,10 @@ pub struct Symtab {
     pub type_of_tag: Vec<Option<TypeId>>,
     /// The name of the class that belongs to a basic type tag.
     pub boxed_name: Vec<Option<Name>>,
+    /// The boxed class symbols for each primitive tag (pre-entered from
+    /// boxed_name at construction; the read-only counterpart of
+    /// Types.boxedClass, registered §9 adapter).
+    pub boxed_class_ids: Vec<Option<SymbolId>>,
     /// Java: private final Map<Types.UniqueType, VarSymbol> classFields
     /// (Rust: UniqueType equivalence is expressed by the Types.hashCode value
     /// plus Types.isSameType, so the map key is the hash and each bucket holds
@@ -1328,7 +1332,26 @@ impl Symtab {
             );
             ctx.scope_enter(array_scope, array_clone_method);
 
-            Symtab {
+            // Java: Types.boxedClass(t) enters syms.enterClass(java_base,
+    // boxedName[tag]); the port pre-enters the same symbols at startup so
+    // that the read-only relation is available (registered §9 adapter).
+    let mut boxed_class_ids: Vec<Option<SymbolId>> =
+        vec![None; TypeTag::get_type_tag_count() as usize];
+    for (tag, boxed) in boxed_name.iter().enumerate() {
+        if let Some(name) = boxed {
+            let class = enter_class_full(
+                ctx,
+                &names,
+                &mut maps,
+                java_base,
+                name.clone(),
+                Some(no_symbol),
+            );
+            boxed_class_ids[tag] = Some(class);
+        }
+    }
+
+    Symtab {
                 byte_type,
                 char_type,
                 short_type,
@@ -1423,6 +1446,7 @@ impl Symtab {
                 auto_closeable_close,
                 type_of_tag,
                 boxed_name,
+        boxed_class_ids,
                 class_fields: HashMap::new(),
                 names: Rc::clone(&names),
                 maps,

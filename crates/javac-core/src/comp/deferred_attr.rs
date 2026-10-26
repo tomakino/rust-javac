@@ -375,7 +375,7 @@ impl DeferredAttrContext {
 impl DeferredAttrContext {
     /// Java: void complete() (DeferredAttr.java:602-635)
     pub fn complete(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         types: &Types,
@@ -439,7 +439,7 @@ impl DeferredAttrContext {
 
     /// Java: DeferredAttrNode pickDeferredNode() (DeferredAttr.java:657-662)
     fn pick_deferred_node(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         types: &Types,
@@ -464,7 +464,7 @@ impl DeferredAttrContext {
 
     /// Java: List<StuckNode> buildStuckGraph() (DeferredAttr.java:664-683)
     fn build_stuck_graph(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         types: &Types,
@@ -552,7 +552,7 @@ fn process_deferred_attr_node(
     attr: &mut Attr,
     infer: &crate::comp::infer::Infer,
     node: &DeferredAttrNode,
-    deferred_attr_context: &mut DeferredAttrContext,
+    deferred_attr_context: &DeferredAttrContext,
 ) -> Result<bool, DeferredAttrFailure> {
     match deferred_attr_context.mode {
         AttrMode::SPECULATIVE => {

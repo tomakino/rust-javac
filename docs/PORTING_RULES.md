@@ -713,3 +713,12 @@ Lead 对执行者的任何汇报持零信任态度:汇报中的断言、数字�
 - Lead 提交 checkpoint 时,commit message 可附 current_time 实测时间(如需时间戳)。
 - 汇报中出现的日期/时间必须来自实测;猜测的时间视为未验证。
 - 时间数据仅用于记录与调度,不得作为降低质量/省略验证/提前收尾的理由(与 §21 一致)。
+
+## 24. 监控工具使用纪律(current_time / session_usage / task_timer)
+
+- current_time:任何依赖『现在』的判断(相对日期、截止时间、已过多久、定时/周期、问候)直接调用;不跑 pwsh Get-Date。
+- session_usage:上下文/token 用量以 occupancy.estimated_next_request_tokens 为准(percent_used/remaining 由它算);
+  composition 三项之和≠occupancy,仅参考;lifetime 是计费数字,不是当前占用;提及上下文必须附实测(§22)。
+- task_timer:只在启动可能超过一次工具往返的任务前登记(构建、测试套件、长脚本、等待子代理);短命令与纯思考不登记;
+  需要『跑多久了』用 query;结束时 stop 并用实测 duration 报告,不估算;记录存 Host 进程内存、按会话隔离,插件热重载/进程重启会清空,
+  不作为持久存储;无预算/超时/提醒,是否『太久』由 started_at/duration 自行判断。
