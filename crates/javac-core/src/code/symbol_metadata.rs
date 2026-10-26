@@ -35,6 +35,7 @@ impl DeclState {
 }
 
 /// Java: public class SymbolMetadata
+#[derive(Clone)]
 pub struct SymbolMetadata {
     /// Java: private final Symbol sym
     sym: SymbolId,

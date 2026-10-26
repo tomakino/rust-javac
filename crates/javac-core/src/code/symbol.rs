@@ -225,6 +225,7 @@ use crate::util::name::Name;
 /// PORTING_RULES: the shared fields of the upstream Symbol class plus the
 /// node-specific fields (SymbolKind). The completer is represented (the metadata
 /// fields are not, see the module doc).
+#[derive(Clone)]
 pub struct Symbol {
     /// The kind of this symbol.
     pub kind: Kind,
@@ -800,6 +801,7 @@ pub enum ResolveErrorData {
 }
 
 /// Java: public enum SymbolKind (Resolve.ResolveError hierarchy lives here).
+#[derive(Clone)]
 pub enum SymbolKind {
     /// Java: Resolve.ResolveError (the resolution error is a Symbol subclass)
     ResolveError {
