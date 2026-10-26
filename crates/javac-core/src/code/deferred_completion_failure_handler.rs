@@ -116,6 +116,12 @@ impl Completer for DeferredCompleter {
     ) -> Result<(), CompletionFailure> {
         self.orig_completer.borrow_mut().complete(ctx, syms, sym)
     }
+
+    /// Java: instanceof DeferredCompleter is expressed by the Completer trait
+    /// method (adapter: Rust has no instanceof).
+    fn is_deferred_completer(&self) -> bool {
+        true
+    }
 }
 
 /// Java: DeferredCompletionFailureHandler.UserCodeHandler
@@ -313,10 +319,9 @@ impl DeferredCompletionFailureHandler {
     }
 
     /// Java: public boolean isDeferredCompleter(Completer c) { return c instanceof DeferredCompleter; }
-    pub fn is_deferred_completer(&self, _c: &dyn Completer) -> bool {
-        // PORTING_RULES adapter: Rust has no instanceof; DeferredCompleter is the only
-        // local completer wrapper, so callers can use the type check directly.
-        unimplemented!("TODO(P3): isDeferredCompleter needs the completer trait downcast")
+    pub fn is_deferred_completer(&self, c: &dyn Completer) -> bool {
+        // Java: return c instanceof DeferredCompleter (Symbol.java Completer).
+        c.is_deferred_completer()
     }
 }
 

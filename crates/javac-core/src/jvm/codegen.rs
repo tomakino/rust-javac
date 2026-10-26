@@ -4169,6 +4169,8 @@ fn literal_value_to_immediate(value: &crate::tree::jc_tree::LiteralValue) -> Imm
     use crate::tree::jc_tree::LiteralValue;
     match value {
         LiteralValue::Integer(v) => ImmediateValue::Int(*v),
+        LiteralValue::Byte(v) => ImmediateValue::Int(i32::from(*v)),
+        LiteralValue::Short(v) => ImmediateValue::Int(i32::from(*v)),
         LiteralValue::Long(v) => ImmediateValue::Long(*v),
         LiteralValue::Float(v) => ImmediateValue::Float(*v),
         LiteralValue::Double(v) => ImmediateValue::Double(*v),

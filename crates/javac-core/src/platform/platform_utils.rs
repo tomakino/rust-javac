@@ -109,7 +109,7 @@ mod tests {
 
     impl PlatformDescription for TestDescription {
         fn get_file_manager(&self) -> Rc<dyn JavaFileManager> {
-            unimplemented!("test fixture")
+            panic!("UnsupportedOperationException: get_file_manager (test fixture capacity)")
         }
         fn get_source_version(&self) -> JavaString {
             self.source_version.clone()

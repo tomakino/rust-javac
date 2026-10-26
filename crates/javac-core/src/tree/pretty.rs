@@ -1961,6 +1961,14 @@ impl Pretty {
                     self.print_java_string(&convert::quote(&v));
                     self.print("\"");
                 }
+                // Java: Pretty.java:1427-1428 (the default branch prints the
+                // value with quotes, so BYTE/SHORT print as "n").
+                Some(LiteralValue::Byte(v)) => {
+                    self.print(&format!("\"{}\"", v));
+                }
+                Some(LiteralValue::Short(v)) => {
+                    self.print(&format!("\"{}\"", v));
+                }
                 _ => self.print("\"\""),
             },
         }

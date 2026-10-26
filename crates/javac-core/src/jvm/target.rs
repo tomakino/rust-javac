@@ -268,10 +268,19 @@ impl Target {
     /// TODO(Options/Option): Options.instance/options.get and
     /// Option.TARGET ("--target -target") are not ported; the entry point stays
     /// unimplemented (no substitute Options is invented).
-    pub fn instance(_context: &mut Context) -> Rc<Target> {
-        unimplemented!(
-            "TODO(Options/Option batch): Target.instance (Options and Option.TARGET are not ported)"
-        )
+    pub fn instance(context: &mut Context) -> Rc<Target> {
+        if let Some(instance) = context.get::<Target>() {
+            return instance;
+        }
+        let options = crate::util::options::Options::instance(context);
+        let mut value = options
+            .get_option(crate::main::option::Option::TARGET)
+            .and_then(|target_string| Target::lookup(&target_string))
+            .unwrap_or(Target::DEFAULT);
+        let instance = Rc::new(value);
+        context.put(Rc::clone(&instance));
+        value = *instance;
+        instance
     }
 }
 
@@ -368,9 +377,16 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "TODO(Options/Option batch)")]
-    fn instance_needs_the_options_port() {
+    fn instance_reads_the_target_option_and_caches_the_value() {
+        // Java: Target.instance reads Option.TARGET and caches the instance.
         let mut context = crate::util::context::Context::new();
-        let _ = Target::instance(&mut context);
+        {
+            let options = crate::util::options::Options::instance(&mut context);
+            options.put_option(crate::main::option::Option::TARGET, "8");
+        }
+        let target = Target::instance(&mut context);
+        assert_eq!(*target, Target::JDK1_8);
+        let cached = Target::instance(&mut context);
+        assert!(std::rc::Rc::ptr_eq(&target, &cached));
     }
 }

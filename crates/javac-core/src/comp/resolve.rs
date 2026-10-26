@@ -4574,14 +4574,69 @@ impl Resolve {
                     use_varargs, note_warner,
                 );
                 if m1_signature_more_specific && m2_signature_more_specific {
-                    // Java: Type mt1 = types.memberType(site, m1);
-                    // Type mt2 = types.memberType(site, m2);
-                    // if (!types.overrideEquivalent(mt1, mt2))...
-                    // (registered with the Types/Symbol below)
-
-                    unimplemented!(
-                        "TODO(Symbol/Types batch): Types.overrideEquivalent + Symbol.overrides (Resolve.java:1723-1775)"
-                    );
+                    // Java: Resolve.java:1664-1705.
+                    let mt1 = types.member_type(ctx, syms, site, m1);
+                    let mt2 = types.member_type(ctx, syms, site, m2);
+                    if !types.override_equivalent(ctx, syms, mt1, mt2) {
+                        return self.ambiguity_error(ctx, m1, m2);
+                    }
+                    let m1_flags = ctx.sym(m1).flags_field;
+                    let m2_flags = ctx.sym(m2).flags_field;
+                    let m1_bridge = (m1_flags & crate::code::flags::BRIDGE) != 0;
+                    let m2_bridge = (m2_flags & crate::code::flags::BRIDGE) != 0;
+                    if m1_bridge != m2_bridge {
+                        return if m1_bridge { m2 } else { m1 };
+                    }
+                    if crate::code::symbol::base_symbol(ctx, m1)
+                        == crate::code::symbol::base_symbol(ctx, m2)
+                    {
+                        return m1;
+                    }
+                    let m1_owner = ctx.sym(m1).owner.expect("method owner");
+                    let m2_owner = ctx.sym(m2).owner.expect("method owner");
+                    if m1_owner != m2_owner {
+                        let m1_owner_ty = ctx.sym(m1_owner).ty.expect("owner type");
+                        let m2_owner_ty = ctx.sym(m2_owner).ty.expect("owner type");
+                        let m1_owner_interface =
+                            (ctx.sym(m1_owner).flags_field
+                                & crate::code::flags::INTERFACE as i64)
+                                != 0;
+                        let m2_owner_interface =
+                            (ctx.sym(m2_owner).flags_field
+                                & crate::code::flags::INTERFACE as i64)
+                                != 0;
+                        if types
+                            .as_super(ctx, &*syms, m1_owner_ty, m2_owner)
+                            .is_some()
+                            && (!m1_owner_interface || m2_owner_interface)
+                            && crate::code::symbol::overrides(
+                                ctx, syms, types, m1, m2, m1_owner, false,
+                            )
+                        {
+                            return m1;
+                        }
+                        if types
+                            .as_super(ctx, &*syms, m2_owner_ty, m1_owner)
+                            .is_some()
+                            && (!m2_owner_interface || m1_owner_interface)
+                            && crate::code::symbol::overrides(
+                                ctx, syms, types, m2, m1, m2_owner, false,
+                            )
+                        {
+                            return m2;
+                        }
+                    }
+                    let m1_abstract =
+                        (m1_flags & crate::code::flags::ABSTRACT as i64) != 0;
+                    let m2_abstract =
+                        (m2_flags & crate::code::flags::ABSTRACT as i64) != 0;
+                    if m1_abstract && !m2_abstract {
+                        return m2;
+                    }
+                    if m2_abstract && !m1_abstract {
+                        return m1;
+                    }
+                    return self.ambiguity_error(ctx, m1, m2);
                 }
                 if m1_signature_more_specific {
                     return m1;
@@ -5548,13 +5603,26 @@ impl LookupHelper for BasicLookupHelper {
                 resolve_context,
             ),
         };
-        if ctx.sym(sym).kind == crate::code::kinds::Kind::AMBIGUOUS {
-            // Java: AmbiguityError.mergeAbstracts(site) — Types.mergeAbstracts
-            // is registered with the Types.
-            unimplemented!(
-                "TODO(Types batch): AmbiguityError.mergeAbstracts (Resolve.java:3455-3459)"
-            )
-        }
+        // Java: Resolve.java:3453-3459 and 4603-4606:
+        // if (sym.kind == AMBIGUOUS) { AmbiguityError a_err = (AmbiguityError)sym.baseSymbol();
+        //     sym = a_err.mergeAbstracts(site); }
+        let sym = if ctx.sym(sym).kind == crate::code::kinds::Kind::AMBIGUOUS {
+            let error = base_symbol_id(ctx, sym);
+            let ambiguous_in_order = match crate::code::symbol::symbol_resolve_error_data(ctx, error) {
+                Some(crate::code::symbol::ResolveErrorData::Ambiguity { syms }) => {
+                    let mut symbols = syms.clone();
+                    symbols.reverse();
+                    symbols
+                }
+                _ => panic!("ClassCastException: AmbiguityError expected"),
+            };
+            match types.merge_abstracts(ctx, syms, chk, &ambiguous_in_order, self.site, true) {
+                Some(result) => result.symbol,
+                None => error,
+            }
+        } else {
+            sym
+        };
         sym
     }
 
@@ -5574,7 +5642,6 @@ impl LookupHelper for BasicLookupHelper {
         sym: SymbolId,
         resolve_context: &mut MethodResolutionContext,
     ) -> SymbolId {
-        let _ = (attr, chk, infer, types);
         match &self.access_kind {
             BasicAccessKind::Default => {
                 if ctx.sym(sym).kind.is_resolution_error() {
@@ -5614,8 +5681,21 @@ impl LookupHelper for BasicLookupHelper {
                     // findPolymorphicSignatureInstance(env, sym, argtypes)
                     env.info.borrow_mut().pending_resolution_phase =
                         Some(MethodResolutionPhase::BASIC);
-                    unimplemented!(
-                        "TODO(Attr/Infer batch): Resolve.findPolymorphicSignatureInstance (Resolve.java:2980-2995)"
+                    // Java: Resolve.java:2748-2749 (the access path):
+                    //   env.info.pendingResolutionPhase = BASIC;
+                    //   return findPolymorphicSignatureInstance(env, sym, argtypes);
+                    let diags = Rc::clone(&rs.diags);
+                    rs.find_polymorphic_signature_instance(
+                        ctx,
+                        syms,
+                        types,
+                        attr,
+                        chk,
+                        &diags,
+                        infer,
+                        env,
+                        sym,
+                        self.argtypes.clone(),
                     )
                 } else {
                     sym

@@ -2296,6 +2296,8 @@ impl TreeMaker {
     pub fn literal_object(&mut self, ctx: &mut CompilerContext, value: LiteralValue) -> TreeId {
         let typetag = match &value {
             LiteralValue::Integer(_) => TypeTag::INT,
+            LiteralValue::Byte(_) => TypeTag::BYTE,
+            LiteralValue::Short(_) => TypeTag::SHORT,
             LiteralValue::Long(_) => TypeTag::LONG,
             LiteralValue::Float(_) => TypeTag::FLOAT,
             LiteralValue::Double(_) => TypeTag::DOUBLE,
@@ -2450,12 +2452,8 @@ impl TreeMaker {
         let (typetag, value) = match &ctx.attr(attribute).kind {
             crate::code::attribute::AttributeKind::Constant { value } => match value {
                 ConstantValue::Integer(value) => (TypeTag::INT, LiteralValue::Integer(*value)),
-                ConstantValue::Byte(_) => {
-                    unimplemented!("TODO(literal value domain batch): Attribute.Constant Byte literal")
-                }
-                ConstantValue::Short(_) => {
-                    unimplemented!("TODO(literal value domain batch): Attribute.Constant Short literal")
-                }
+                ConstantValue::Byte(value) => (TypeTag::BYTE, LiteralValue::Byte(*value)),
+                ConstantValue::Short(value) => (TypeTag::SHORT, LiteralValue::Short(*value)),
                 ConstantValue::Long(value) => (TypeTag::LONG, LiteralValue::Long(*value)),
                 ConstantValue::Float(value) => (TypeTag::FLOAT, LiteralValue::Float(*value)),
                 ConstantValue::Double(value) => (TypeTag::DOUBLE, LiteralValue::Double(*value)),
@@ -2636,9 +2634,12 @@ impl TreeMaker {
             ConstantValue::Integer(value) => {
                 (TypeTag::INT, LiteralValue::Integer(*value), syms.int_type)
             }
-            ConstantValue::Byte(_) | ConstantValue::Short(_) => unimplemented!(
-                "TODO(literal value domain batch): TreeMaker.Literal(Object) Byte/Short"
-            ),
+            ConstantValue::Byte(value) => {
+                (TypeTag::BYTE, LiteralValue::Byte(*value), syms.byte_type)
+            }
+            ConstantValue::Short(value) => {
+                (TypeTag::SHORT, LiteralValue::Short(*value), syms.short_type)
+            }
             ConstantValue::Long(value) => (TypeTag::LONG, LiteralValue::Long(*value), syms.long_type),
             ConstantValue::Float(value) => {
                 (TypeTag::FLOAT, LiteralValue::Float(*value), syms.float_type)

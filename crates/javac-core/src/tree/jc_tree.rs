@@ -431,6 +431,10 @@ impl ReferenceKind {
 #[derive(Clone, Debug, PartialEq)]
 pub enum LiteralValue {
     Integer(i32),
+    /// Java Byte wrapper (the JCLiteral BYTE value domain).
+    Byte(i8),
+    /// Java Short wrapper (the JCLiteral SHORT value domain).
+    Short(i16),
     Long(i64),
     Float(f32),
     Double(f64),

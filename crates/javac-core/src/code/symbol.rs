@@ -1077,6 +1077,11 @@ pub trait Completer {
     fn is_terminal(&self) -> bool {
         false
     }
+
+    /// Java: instanceof DeferredCompleter (adapter: Rust has no instanceof).
+    fn is_deferred_completer(&self) -> bool {
+        false
+    }
 }
 
 /// Java: Symbol.Completer.NULL_COMPLETER (a terminal completer that does nothing).
@@ -2849,6 +2854,7 @@ pub fn external_type(
     } else {
         erased
     }
+
 }
 
 

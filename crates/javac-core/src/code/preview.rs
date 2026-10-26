@@ -568,33 +568,33 @@ mod tests {
 
     impl javac_tools::tools::file_object::FileObject for TestJavaFileObject {
         fn to_uri(&self) -> javac_tools::uri::URI {
-            unimplemented!("test fixture")
+            panic!("UnsupportedOperationException: to_uri (test fixture capacity)")
         }
         fn get_name(&self) -> JavaString {
             JavaString::from("Foo.class")
         }
         fn open_input_stream(&self) -> Result<Box<dyn std::io::Read>, javac_tools::error::Error> {
-            unimplemented!("test fixture")
+            panic!("UnsupportedOperationException: open_input_stream (test fixture capacity)")
         }
         fn open_output_stream(&self) -> Result<Box<dyn std::io::Write>, javac_tools::error::Error> {
-            unimplemented!("test fixture")
+            panic!("UnsupportedOperationException: open_output_stream (test fixture capacity)")
         }
         fn open_reader(
             &self,
             _ignore_encoding_errors: bool,
         ) -> Result<Box<dyn javac_tools::java_io::Reader>, javac_tools::error::Error> {
-            unimplemented!("test fixture")
+            panic!("UnsupportedOperationException: open_reader (test fixture capacity)")
         }
         fn get_char_content(
             &self,
             _ignore_encoding_errors: bool,
         ) -> Result<Option<JavaString>, javac_tools::error::Error> {
-            unimplemented!("test fixture")
+            panic!("UnsupportedOperationException: get_char_content (test fixture capacity)")
         }
         fn open_writer(
             &self,
         ) -> Result<Box<dyn javac_tools::java_io::Writer>, javac_tools::error::Error> {
-            unimplemented!("test fixture")
+            panic!("UnsupportedOperationException: open_writer (test fixture capacity)")
         }
         fn get_last_modified(&self) -> i64 {
             0

@@ -116,7 +116,7 @@ mod tests {
 
     impl PlatformDescription for NoopDescription {
         fn get_file_manager(&self) -> Rc<dyn JavaFileManager> {
-            unimplemented!("test fixture")
+            panic!("UnsupportedOperationException: get_file_manager (test fixture capacity)")
         }
         fn get_source_version(&self) -> JavaString {
             JavaString::from("17")
@@ -148,7 +148,7 @@ mod tests {
             vec![(JavaString::from("key"), JavaString::from("value"))]
         }
         fn get_plugin(&self) -> Rc<dyn Processor> {
-            unimplemented!("test fixture")
+            panic!("UnsupportedOperationException: get_plugin (test fixture capacity)")
         }
     }
 
@@ -162,7 +162,7 @@ mod tests {
             Vec::new()
         }
         fn get_plugin(&self) -> Rc<dyn Plugin> {
-            unimplemented!("test fixture")
+            panic!("UnsupportedOperationException: get_plugin (test fixture capacity)")
         }
     }
 

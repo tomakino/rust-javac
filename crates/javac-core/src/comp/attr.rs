@@ -2618,6 +2618,8 @@ fn literal_value_to_constant(
     use crate::util::constants::ConstantValue;
     match value.expect("literal value") {
         LiteralValue::Integer(value) => ConstantValue::Integer(value),
+        LiteralValue::Byte(value) => ConstantValue::Byte(value),
+        LiteralValue::Short(value) => ConstantValue::Short(value),
         LiteralValue::Long(value) => ConstantValue::Long(value),
         LiteralValue::Float(value) => ConstantValue::Float(value),
         LiteralValue::Double(value) => ConstantValue::Double(value),
@@ -14335,7 +14337,7 @@ mod tests {
             _pos: i32,
             _details: &crate::util::jc_diagnostic::JCDiagnostic,
         ) {
-            unimplemented!("test check context report")
+            panic!("UnsupportedOperationException: CheckContext.report (test fixture capacity)")
         }
 
         fn check_warner(

@@ -256,8 +256,8 @@ impl Lower {
         use crate::tree::jc_tree::LiteralValue;
         match value {
             ConstantValue::Integer(v) => LiteralValue::Integer(*v),
-            ConstantValue::Byte(v) => LiteralValue::Integer(*v as i32),
-            ConstantValue::Short(v) => LiteralValue::Integer(*v as i32),
+            ConstantValue::Byte(v) => LiteralValue::Byte(*v),
+            ConstantValue::Short(v) => LiteralValue::Short(*v),
             ConstantValue::Long(v) => LiteralValue::Long(*v),
             ConstantValue::Float(v) => LiteralValue::Float(*v),
             ConstantValue::Double(v) => LiteralValue::Double(*v),
@@ -6291,6 +6291,14 @@ impl Lower {
             LiteralValue::Integer(v) => {
                 let ty = self.syms.borrow().int_type;
                 (TypeTag::INT, ConstantValue::Integer(*v), ty)
+            }
+            LiteralValue::Byte(v) => {
+                let ty = self.syms.borrow().byte_type;
+                (TypeTag::BYTE, ConstantValue::Byte(*v), ty)
+            }
+            LiteralValue::Short(v) => {
+                let ty = self.syms.borrow().short_type;
+                (TypeTag::SHORT, ConstantValue::Short(*v), ty)
             }
             LiteralValue::Long(v) => {
                 let ty = self.syms.borrow().long_type;
