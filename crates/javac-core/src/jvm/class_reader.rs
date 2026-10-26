@@ -1326,9 +1326,21 @@ impl ClassReader {
         }
         if preview_class_file {
             if !self.preview.is_enabled() {
-                unimplemented!("TODO(P2/Log): preview.disabledError(JavaFileObject,int) wiring is unimplemented (Log batch)");
+                // Java: ClassReader.java:2938-2941
+                //   if (!preview.isEnabled()) log.error(preview.disabledError(currentClassFile, majorVersion));
+                let file = self
+                    .current_class_file
+                    .clone()
+                    .expect("ClassSymbol.classfile (upstream: non-null when completing)");
+                let error = self.preview.disabled_error_classfile(&*file, self.major_version);
+                AbstractLog::error_key(&mut *self.log.borrow_mut(), error);
             } else {
-                unimplemented!("TODO(P2/Log): preview.warnPreview(JavaFileObject,int) wiring is unimplemented (Log batch)");
+                // Java: ClassReader.java:2942 preview.warnPreview(c.classfile, majorVersion);
+                let file = self
+                    .current_class_file
+                    .clone()
+                    .expect("ClassSymbol.classfile (upstream: non-null when completing)");
+                self.preview.warn_preview_classfile(&*file, self.major_version);
             }
         }
         let mut pool_reader = PoolReader::new();
@@ -2639,7 +2651,7 @@ impl ClassReader {
         Ok(())
     }
     /// Java: AttributeReader.accepts(AttributeKind kind)
-    fn accepts(&self, position: usize, kind: AttributeKind) -> bool {
+    fn accepts(&mut self, position: usize, kind: AttributeKind) -> bool {
         let def = &self.attribute_readers[position];
         if !def.kinds.contains(&kind) {
             return false;
@@ -2660,7 +2672,32 @@ impl ClassReader {
             return true;
         }
         if self.lint_classfile && !self.warned_attrs.contains(&def.name) {
-            unimplemented!("TODO(P2/Log): FutureAttr classfile lint warning (Log/Lint batch)");
+            // Java: ClassReader.java:764-773:
+            //   JavaFileObject prev = log.useSource(currentClassFile);
+            //   try { log.warning(LintCategory.CLASSFILE, (DiagnosticPosition) null,
+            //           Warnings.FutureAttr(name, version.major, version.minor,
+            //                               majorVersion, minorVersion)); }
+            //   finally { log.useSource(prev); }
+            //   warnedAttrs.add(name);
+            let name = def.name.clone();
+            let version_major = def.version.major();
+            let version_minor = def.version.minor();
+            let current_file = self.current_class_file.clone();
+            let prev = AbstractLog::use_source(&mut *self.log.borrow_mut(), current_file);
+            let info = warnings::future_attr(
+                name.clone(),
+                version_major,
+                version_minor,
+                self.major_version,
+                self.minor_version,
+            );
+            self.log.borrow_mut().warning(
+                Some(crate::code::lint::LintCategory::CLASSFILE),
+                None,
+                warning_from_info(info),
+            );
+            AbstractLog::use_source(&mut *self.log.borrow_mut(), prev);
+            self.warned_attrs.insert(name);
         }
         false
     }
