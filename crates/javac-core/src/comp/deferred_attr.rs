@@ -840,6 +840,10 @@ pub struct DeferredTypeMap {
     /// Java: RecoveryDeferredTypeMap overrides typeOf to synthesize a type for a
     /// deferred type that has not yet been reduced (§9 flag).
     pub recovery: bool,
+    /// Java: Infer.ImplicitArgType extends DeferredTypeMap<Void> and overrides
+    /// visitType/visitClassType (§9 flag with no payload: the mode behavior is
+    /// fixed by the upstream subclass).
+    pub implicit_arg: bool,
 }
 
 /// The explicit context required by the recovery-capable mapping (§9 ADR 0001).
@@ -865,7 +869,16 @@ impl DeferredTypeMap {
                 None,
             )),
             recovery: false,
+            implicit_arg: false,
         }
+    }
+
+    /// Java: new Infer.ImplicitArgType(Symbol msym, MethodResolutionPhase phase)
+    /// — the mapping behavior is fixed (§9 flag).
+    pub fn new_implicit_arg(_msym: Option<SymbolId>, _phase: MethodResolutionPhase) -> DeferredTypeMap {
+        let mut map = DeferredTypeMap::new(AttrMode::SPECULATIVE, None, MethodResolutionPhase::BOX);
+        map.implicit_arg = true;
+        map
     }
 
     /// Java: new RecoveryDeferredTypeMap(...) — the same mapping with the
@@ -888,12 +901,46 @@ impl DeferredTypeMap {
         t: TypeId,
         pt: &Option<TypeId>,
     ) -> TypeId {
+        if self.implicit_arg {
+            // Java: Infer.ImplicitArgType.visitType:
+            //   if (t.hasTag(DEFERRED)) return visit(super.visitType(t, null));
+            //   else if (t.hasTag(BOT)) t = boxedClass(voidType).type;
+            //   return t;
+            // and visitClassType: return types.erasure(t) (§9: the class-type
+            // erasure branch is folded into implicit_arg_value).
+            let mapped = if ctx.typ(t).has_tag(TypeTag::DEFERRED) {
+                self.type_of_no_recovery(ctx, t)
+                    .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx))
+            } else {
+                t
+            };
+            return self.implicit_arg_value(ctx, dctx, mapped);
+        }
         if !ctx.typ(t).has_tag(TypeTag::DEFERRED) {
             self.visit_structural(ctx, dctx, t, pt)
         } else {
             self.type_of(ctx, dctx, t, pt)
                 .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx))
         }
+    }
+
+    /// Java: ImplicitArgType.visitType/visitClassType value mapping.
+    fn implicit_arg_value(
+        &self,
+        ctx: &mut CompilerContext,
+        dctx: &DeferredMapCtx,
+        t: TypeId,
+    ) -> TypeId {
+        use crate::code::type_tag::TypeTag;
+        if ctx.typ(t).has_tag(TypeTag::BOT) {
+            // infer as java.lang.Void for now
+            let boxed = dctx.types.boxed_class_ro(ctx, dctx.syms, dctx.syms.void_type);
+            return ctx.sym(boxed).ty.expect("boxed void type");
+        }
+        if ctx.typ(t).get_tag() == TypeTag::CLASS {
+            return dctx.types.erasure(ctx, dctx.syms, t);
+        }
+        t
     }
 
     /// Java: StructuralTypeMapping's structural variants (the traversal order

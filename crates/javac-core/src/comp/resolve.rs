@@ -73,7 +73,7 @@ use crate::code::type_tag::TypeTag;
 use crate::code::types::Types;
 use crate::comp::attr_context::AttrContext;
 use crate::comp::env::Env;
-use crate::ids::{SymbolId, TreeId, TypeId};
+use crate::ids::{ScopeId, SymbolId, TreeId, TypeId};
 use crate::tree::jc_tree::TreeKind;
 use crate::util::jc_diagnostic::Factory;
 use crate::util::list::List;
@@ -118,6 +118,9 @@ pub struct Resolve {
     pub options: Rc<Options>,
     /// Java: private MethodCheck resolveMethodCheck (default method check)
     pub default_method_check: Rc<RefCell<dyn MethodCheck>>,
+    /// Java: WriteableScope polymorphicSignatureScope (Resolve.java:118; lazily
+    /// created on first use because the port Resolve has no Symtab field, §9).
+    pub polymorphic_signature_scope: Option<ScopeId>,
 }
 
 impl Resolve {
@@ -183,6 +186,7 @@ impl Resolve {
             allow_modules,
             options,
             default_method_check,
+            polymorphic_signature_scope: None,
         }
     }
 
@@ -6370,6 +6374,123 @@ impl Resolve {
     }
 }
 
+impl Resolve {
+    /// Java: WriteableScope polymorphicSignatureScope (Resolve.java:118/152)
+    fn polymorphic_signature_scope_init(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &Symtab,
+    ) -> ScopeId {
+        if let Some(scope) = self.polymorphic_signature_scope {
+            return scope;
+        }
+        let scope = ctx.scope_create(Some(syms.no_symbol));
+        self.polymorphic_signature_scope = Some(scope);
+        scope
+    }
+
+    /// Java: Symbol findPolymorphicSignatureInstance(Env<AttrContext> env,
+    /// Symbol spMethod, List<Type> argtypes) (Resolve.java:2764-2770)
+    #[allow(clippy::too_many_arguments)]
+    pub fn find_polymorphic_signature_instance(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        attr: &mut crate::comp::attr::Attr,
+        chk: &crate::comp::check::Check,
+        diags: &crate::util::jc_diagnostic::Factory,
+        infer: &Rc<crate::comp::infer::Infer>,
+        env: &Rc<Env<AttrContext>>,
+        sp_method: SymbolId,
+        argtypes: crate::util::list::List<TypeId>,
+    ) -> SymbolId {
+        let mtype = infer.instantiate_polymorphic_signature_instance(
+            ctx, syms, types, attr, chk, diags, env, Some(sp_method), argtypes,
+        );
+        self.find_polymorphic_signature_instance_with_type(ctx, syms, types, sp_method, mtype)
+    }
+
+    /// Java: Symbol findPolymorphicSignatureInstance(final Symbol spMethod,
+    /// Type mtype) (Resolve.java:2772-2812)
+    pub fn find_polymorphic_signature_instance_with_type(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        types: &crate::code::types::Types,
+        sp_method: SymbolId,
+        mtype: TypeId,
+    ) -> SymbolId {
+        let scope = self.polymorphic_signature_scope_init(ctx, syms);
+        let sp_name = ctx.sym(sp_method).name.clone();
+        let sp_owner = ctx.sym(sp_method).owner;
+        let mut existing: Option<SymbolId> = None;
+        for sym in ctx.scope_get_symbols_by_name(
+            scope,
+            &sp_name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        ) {
+            let sym_type = ctx.sym(sym).ty;
+            if let Some(sym_type) = sym_type {
+                if types.is_same_type(ctx, syms, mtype, sym_type)
+                    && sp_owner == ctx.sym(sym).owner
+                {
+                    existing = Some(sym);
+                    break;
+                }
+            }
+        }
+        if let Some(sym) = existing {
+            return sym;
+        }
+        let sp_type = ctx.sym(sp_method).ty.expect("signature polymorphic method type");
+        let sp_return_type = types.get_return_type_public(ctx, sp_type);
+        let mut mtype = mtype;
+        if types.is_same_type(ctx, syms, sp_return_type, syms.object_type) {
+            // Polymorphic return, pass through mtype
+        } else {
+            let m_return_type = types.get_return_type_public(ctx, mtype);
+            if !types.is_same_type(ctx, syms, sp_return_type, m_return_type) {
+                let params = types.get_parameter_types_public(ctx, mtype);
+                let thrown = ctx.typ(mtype).get_thrown_types(ctx);
+                mtype = ctx.alloc_type(crate::code::type_::Type::new_method_type(
+                    params,
+                    sp_return_type,
+                    thrown,
+                    syms.method_class,
+                ));
+            }
+        }
+        let sp_flags = ctx.sym(sp_method).flags_field;
+        let flags = (crate::code::flags::ABSTRACT as i64)
+            | crate::code::flags::HYPOTHETICAL
+            | (sp_flags
+                & ((crate::code::flags::PUBLIC
+                    | crate::code::flags::PROTECTED
+                    | crate::code::flags::PRIVATE
+                    | crate::code::flags::STATIC) as i64));
+        let sym = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::MTH,
+            flags,
+            sp_name,
+            Some(mtype),
+            sp_owner,
+            crate::code::symbol::SymbolKind::MethodSymbol {
+                extra_params: crate::util::list::List::nil(),
+                captured_locals: crate::util::list::List::nil(),
+                params: crate::util::list::List::nil(),
+                default_value: None,
+            },
+        ));
+        ctx.sym_mut(sym).base_symbol_override = Some(sp_method);
+        if !types.is_erroneous_type(ctx, syms, mtype) {
+            ctx.scope_enter(scope, sym);
+        }
+        sym
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6612,3 +6733,4 @@ mod tests {
     }
 
 }
+

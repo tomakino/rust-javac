@@ -244,6 +244,10 @@ pub struct Symbol {
     /// Java: protected SymbolMetadata metadata (lazily created by
     /// initedMetadata(); Java null -> None).
     pub metadata: Option<crate::code::symbol_metadata::SymbolMetadata>,
+    /// Java: the anonymous MethodSymbol baseSymbol() override used by the
+    /// polymorphic-signature instance symbols (Resolve.java:2800-2810); §9:
+    /// the override is stored as a field and honored by base_symbol.
+    pub base_symbol_override: Option<SymbolId>,
     /// The node-specific fields (one variant per upstream concrete subclass).
     pub kind_data: SymbolKind,
 }
@@ -268,6 +272,7 @@ impl Symbol {
             erasure_field: None,
             completer: None,
             metadata: None,
+            base_symbol_override: None,
             kind_data,
         }
     }
@@ -1854,7 +1859,11 @@ impl Symbol {
 /// Java: public Symbol baseSymbol() (Symbol.java:341-343). The upstream override
 /// is materialized by Symbol.clone() subclasses; the port has no clone, so a
 /// symbol is its own base symbol (registered §9).
-pub fn base_symbol(_ctx: &crate::compiler_context::CompilerContext, sym: SymbolId) -> SymbolId {
+pub fn base_symbol(ctx: &crate::compiler_context::CompilerContext, sym: SymbolId) -> SymbolId {
+    if let Some(over) = ctx.sym(sym).base_symbol_override {
+        return over;
+    }
+    let _ = ctx;
     sym
 }
 

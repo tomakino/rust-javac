@@ -3910,6 +3910,110 @@ impl Infer {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Batch 5 prerequisite: Infer.instantiatePolymorphicSignatureInstance
+// (Infer.java:555-630) + the ImplicitArgType mapping (expressed through
+// DeferredTypeMap::new_implicit_arg, §9). Explicit ctx/syms/attr/chk/diags
+// parameters per ADR 0001.
+// ---------------------------------------------------------------------------
+impl Infer {
+    /// Java: Type instantiatePolymorphicSignatureInstance(Env<AttrContext> env,
+    /// MethodSymbol spMethod, Resolve.MethodResolutionContext resolveContext,
+    /// List<Type> argtypes) (Infer.java:555-630)
+    #[allow(clippy::too_many_arguments)]
+    pub fn instantiate_polymorphic_signature_instance(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        attr: &mut crate::comp::attr::Attr,
+        chk: &crate::comp::check::Check,
+        diags: &crate::util::jc_diagnostic::Factory,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        sp_method: Option<SymbolId>,
+        argtypes: crate::util::list::List<TypeId>,
+    ) -> TypeId {
+        let sp_type = match sp_method {
+            None => syms.object_type,
+            Some(sp_method) => {
+                let method_type = ctx.sym(sp_method).ty.expect("signature polymorphic method type");
+                types.get_return_type_public(ctx, method_type)
+            }
+        };
+        let restype = match env.next.as_ref().and_then(|next| next.tree) {
+            None => sp_type,
+            Some(next_tree) => match ctx.tree(next_tree).tag {
+                crate::tree::jc_tree::Tag::TYPECAST => {
+                    let (clazz, expr) = match &ctx.tree(next_tree).kind {
+                        crate::tree::jc_tree::TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
+                        _ => panic!("ClassCastException: JCTypeCast expected"),
+                    };
+                    let expr_matches = expr
+                        .map(|expr| crate::tree::tree_info::skip_parens(ctx, expr) == env.tree.unwrap_or(expr))
+                        .unwrap_or(false);
+                    let _ = expr_matches;
+                    let cast_expr_matches = match (expr, env.tree) {
+                        (Some(expr), Some(tree)) => {
+                            crate::tree::tree_info::skip_parens(ctx, expr) == tree
+                        }
+                        _ => false,
+                    };
+                    if cast_expr_matches {
+                        clazz.map(|clazz| ctx.tree(clazz).ty.expect("cast type")).unwrap_or(sp_type)
+                    } else {
+                        sp_type
+                    }
+                }
+                crate::tree::jc_tree::Tag::EXEC => {
+                    let expr = match &ctx.tree(next_tree).kind {
+                        crate::tree::jc_tree::TreeKind::ExpressionStatement { expr } => *expr,
+                        _ => panic!("ClassCastException: JCExpressionStatement expected"),
+                    };
+                    let exec_expr_matches = match (expr, env.tree) {
+                        (Some(expr), Some(tree)) => {
+                            crate::tree::tree_info::skip_parens(ctx, expr) == tree
+                        }
+                        _ => false,
+                    };
+                    if exec_expr_matches {
+                        syms.void_type
+                    } else {
+                        sp_type
+                    }
+                }
+                _ => sp_type,
+            },
+        };
+        let phase = crate::comp::resolve::MethodResolutionPhase::BOX;
+        let mut implicit_map = crate::comp::deferred_attr::DeferredTypeMap::new_implicit_arg(
+            sp_method,
+            phase,
+        );
+        let mut dctx = crate::comp::deferred_attr::DeferredMapCtx {
+            attr,
+            syms,
+            types,
+            chk,
+            diags,
+        };
+        let paramtypes = implicit_map.map(ctx, &mut dctx, &argtypes, &None);
+        let ex_type = match sp_method {
+            Some(sp_method) => {
+                let method_type = ctx.sym(sp_method).ty.expect("signature polymorphic method type");
+                ctx.typ(method_type).get_thrown_types(ctx)
+            }
+            None => crate::util::list::List::of(syms.throwable_type),
+        };
+        let ty = crate::code::type_::Type::new_method_type(
+            paramtypes,
+            restype,
+            ex_type,
+            syms.method_class,
+        );
+        ctx.alloc_type(ty)
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::collapsible_if, clippy::blocks_in_conditions)]
 mod tests {
@@ -4302,4 +4406,5 @@ mod tests {
     }
 
 }
+
 
