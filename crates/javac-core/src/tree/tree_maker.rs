@@ -5,13 +5,14 @@
 // - NOT PORTED: SpeculativeNewClass (TreeMaker.java:407) / classDeclRemoved
 //   (TreeMaker.java:417): the anonymous JCNewClass subclass override has no arena
 //   mapping yet (registered; the JCNewClass node has no classDeclRemoved flag).
-// - NOT PORTED: Annotations(List<Attribute.Compound>) (TreeMaker.java:889),
-//   Annotation(Attribute) (TreeMaker.java:1001), TypeAnnotation(Attribute)
-//   (TreeMaker.java:1005), Literal(Object) (TreeMaker.java:899) and the
-//   AnnotationBuilder visitor (TreeMaker.java:929-996: visitConstant/visitClass/
-//   visitEnum/visitError/visitCompound/visitCompoundInternal/
-//   visitTypeCompoundInternal/visitArray/translate x3): the Attribute model is
-//   not ported yet (Attribute batch).
+// - NOT PORTED: Literal(Object) Byte/Short branches (TreeMaker.java:899-996):
+//   the ported tree::jc_tree::LiteralValue value domain has no Byte/Short
+//   variants (registered: literal value domain batch); the remaining wrapper
+//   types (Integer/Long/Float/Double/Character/Boolean/String) are ported.
+// - The AnnotationBuilder (TreeMaker.java:929-996) is expressed as TreeMaker
+//   visitor methods (visit_constant_attribute/visit_class_attribute/...), the
+//   Rust equivalent of the Java inner class (registered adapter); the visitor
+//   dispatch is the AttributeKind match.
 // End of §19 gap registration.
 
 //! A factory for JCTree nodes: the upstream TreeMaker keeps the current position and the
@@ -2010,7 +2011,7 @@ impl TreeMaker {
         init: StdOption<TreeId>,
     ) -> TreeId {
         let ty = ctx.sym(v).ty.expect("variable type");
-        let annotations = self.raw_annotations(ctx, v);
+        let annotations = self.raw_annotations(ctx, syms, v);
         let mods = self.modifiers_with_annotations(ctx, ctx.sym(v).flags_field, annotations);
         let name = ctx.sym(v).name.clone();
         let vartype = self.type_expr(ctx, syms, ty);
@@ -2043,7 +2044,7 @@ impl TreeMaker {
         mtype: crate::ids::TypeId,
         body: StdOption<TreeId>,
     ) -> TreeId {
-        let annotations = self.raw_annotations(ctx, m);
+        let annotations = self.raw_annotations(ctx, syms, m);
         let mods = self.modifiers_with_annotations(ctx, ctx.sym(m).flags_field, annotations);
         let name = ctx.sym(m).name.clone();
         let names = self.names.as_ref().expect("TreeMaker.names").clone();
@@ -2336,14 +2337,308 @@ impl TreeMaker {
         names.from_utf(text.as_bytes())
     }
 
-    /// Java: Symbol.getRawAttributes() — the Attribute model is not ported yet.
+    /// Java: Symbol.getRawAttributes() -> Annotations(List<Attribute.Compound>)
     fn raw_annotations(
         &mut self,
-        _ctx: &mut CompilerContext,
-        _sym: crate::ids::SymbolId,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: crate::ids::SymbolId,
     ) -> List<TreeId> {
-        unimplemented!("TODO(Attribute batch): TreeMaker.Annotations(Symbol.getRawAttributes)")
+        let attributes = ctx.sym(sym).get_raw_attributes();
+        self.annotations_attributes(ctx, syms, attributes)
     }
+
+    // ------------------------------------------------------------------
+    // Java: TreeMaker.AnnotationBuilder + Annotations/Annotation/
+    // TypeAnnotation/Literal(Object) (TreeMaker.java:889-1005).
+    // ------------------------------------------------------------------
+
+    /// Java: public List<JCAnnotation> Annotations(List<Attribute.Compound>
+    /// attributes)
+    pub fn annotations_attributes(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attributes: List<crate::ids::AttributeId>,
+    ) -> List<TreeId> {
+        let mut result: List<TreeId> = List::nil();
+        let mut current = attributes;
+        while current.non_empty() {
+            let attribute = *current.head();
+            let annotation = self.annotation_attribute(ctx, syms, attribute);
+            result = result.append(annotation);
+            current = current.tail();
+        }
+        result
+    }
+
+    /// Java: public JCAnnotation Annotation(Attribute a) —
+    /// annotationBuilder.translate((Attribute.Compound) a)
+    pub fn annotation_attribute(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attribute: crate::ids::AttributeId,
+    ) -> TreeId {
+        self.visit_compound_internal(ctx, syms, attribute)
+    }
+
+    /// Java: public JCAnnotation TypeAnnotation(Attribute a) —
+    /// annotationBuilder.translate((Attribute.TypeCompound) a)
+    pub fn type_annotation_attribute(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attribute: crate::ids::AttributeId,
+    ) -> TreeId {
+        self.visit_type_compound_internal(ctx, syms, attribute)
+    }
+
+    /// Java: AnnotationBuilder.translate(Attribute a) / the Visitor dispatch.
+    fn translate_attribute(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attribute: crate::ids::AttributeId,
+    ) -> TreeId {
+        use crate::code::attribute::AttributeKind;
+        match &ctx.attr(attribute).kind {
+            AttributeKind::Constant { .. } => self.visit_constant_attribute(ctx, attribute),
+            AttributeKind::Class { .. } => self.visit_class_attribute(ctx, syms, attribute),
+            AttributeKind::Enum { .. } => self.visit_enum_attribute(ctx, syms, attribute),
+            AttributeKind::Error | AttributeKind::UnresolvedClass { .. } => {
+                self.visit_error_attribute(ctx, syms, attribute)
+            }
+            AttributeKind::Compound { .. } => self.visit_compound_attribute(ctx, syms, attribute),
+            AttributeKind::TypeCompound { .. } => {
+                self.visit_type_compound_internal(ctx, syms, attribute)
+            }
+            AttributeKind::Array { .. } => self.visit_array_attribute(ctx, syms, attribute),
+        }
+    }
+
+    /// Java: public void visitConstant(Attribute.Constant v) (AnnotationBuilder)
+    fn visit_constant_attribute(
+        &mut self,
+        ctx: &mut CompilerContext,
+        attribute: crate::ids::AttributeId,
+    ) -> TreeId {
+        use crate::util::constants::ConstantValue;
+        let (typetag, value) = match &ctx.attr(attribute).kind {
+            crate::code::attribute::AttributeKind::Constant { value } => match value {
+                ConstantValue::Integer(value) => (TypeTag::INT, LiteralValue::Integer(*value)),
+                ConstantValue::Byte(_) => {
+                    unimplemented!("TODO(literal value domain batch): Attribute.Constant Byte literal")
+                }
+                ConstantValue::Short(_) => {
+                    unimplemented!("TODO(literal value domain batch): Attribute.Constant Short literal")
+                }
+                ConstantValue::Long(value) => (TypeTag::LONG, LiteralValue::Long(*value)),
+                ConstantValue::Float(value) => (TypeTag::FLOAT, LiteralValue::Float(*value)),
+                ConstantValue::Double(value) => (TypeTag::DOUBLE, LiteralValue::Double(*value)),
+                ConstantValue::Character(value) => {
+                    (TypeTag::CHAR, LiteralValue::Character(*value))
+                }
+                ConstantValue::Boolean(value) => {
+                    (TypeTag::BOOLEAN, LiteralValue::Boolean(*value))
+                }
+                ConstantValue::String(value) => (TypeTag::CLASS, LiteralValue::String(value.clone())),
+            },
+            _ => panic!("ClassCastException: not a constant attribute"),
+        };
+        self.literal(ctx, typetag, Some(value))
+    }
+
+    /// Java: public void visitClass(Attribute.Class clazz) (AnnotationBuilder)
+    fn visit_class_attribute(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attribute: crate::ids::AttributeId,
+    ) -> TreeId {
+        let class_type = match &ctx.attr(attribute).kind {
+            crate::code::attribute::AttributeKind::Class { class_type } => {
+                class_type.expect("class attribute type")
+            }
+            _ => panic!("ClassCastException: not a class attribute"),
+        };
+        let tree = self.class_literal(ctx, syms, class_type);
+        ctx.tree_mut(tree).ty = Some(syms.class_type);
+        tree
+    }
+
+    /// Java: public void visitEnum(Attribute.Enum e) (AnnotationBuilder)
+    fn visit_enum_attribute(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attribute: crate::ids::AttributeId,
+    ) -> TreeId {
+        let value = match &ctx.attr(attribute).kind {
+            crate::code::attribute::AttributeKind::Enum { value } => value.expect("enum value"),
+            _ => panic!("ClassCastException: not an enum attribute"),
+        };
+        self.qual_ident(ctx, syms, value)
+    }
+
+    /// Java: public void visitError(Attribute.Error e) (AnnotationBuilder)
+    fn visit_error_attribute(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attribute: crate::ids::AttributeId,
+    ) -> TreeId {
+        match &ctx.attr(attribute).kind {
+            crate::code::attribute::AttributeKind::UnresolvedClass { class_type } => {
+                let class_type = class_type.expect("unresolved class type");
+                self.class_literal(ctx, syms, class_type)
+            }
+            _ => self.erroneous(ctx, List::nil()),
+        }
+    }
+
+    /// Java: public void visitCompound(Attribute.Compound compound)
+    /// (AnnotationBuilder dispatch)
+    fn visit_compound_attribute(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attribute: crate::ids::AttributeId,
+    ) -> TreeId {
+        self.visit_compound_internal(ctx, syms, attribute)
+    }
+
+    /// Java: public JCAnnotation visitCompoundInternal(Attribute.Compound
+    /// compound) (AnnotationBuilder)
+    fn visit_compound_internal(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attribute: crate::ids::AttributeId,
+    ) -> TreeId {
+        let (values, compound_type) = {
+            let attr = ctx.attr(attribute);
+            let values = match &attr.kind {
+                crate::code::attribute::AttributeKind::Compound { values, .. } => values.clone(),
+                _ => panic!("ClassCastException: not a compound attribute"),
+            };
+            (values, attr.ty.expect("compound type"))
+        };
+        let mut args: List<TreeId> = List::nil();
+        let mut current = values;
+        while current.non_empty() {
+            let pair = current.head();
+            let value_tree = self.translate_attribute(ctx, syms, pair.snd);
+            let method = self.ident_symbol(ctx, pair.fst);
+            let assign = self.assign(ctx, method, value_tree);
+            let value_type = ctx.tree(value_tree).ty;
+            ctx.tree_mut(assign).ty = value_type;
+            args = args.append(assign);
+            current = current.tail();
+        }
+        let annotation_type = self.type_expr(ctx, syms, compound_type);
+        self.annotation(ctx, annotation_type, args)
+    }
+
+    /// Java: public JCAnnotation visitTypeCompoundInternal(Attribute.TypeCompound
+    /// compound) (AnnotationBuilder)
+    fn visit_type_compound_internal(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attribute: crate::ids::AttributeId,
+    ) -> TreeId {
+        let (values, compound_type) = {
+            let attr = ctx.attr(attribute);
+            let values = match &attr.kind {
+                crate::code::attribute::AttributeKind::TypeCompound { values, .. } => {
+                    values.clone()
+                }
+                _ => panic!("ClassCastException: not a type compound attribute"),
+            };
+            (values, attr.ty.expect("type compound type"))
+        };
+        let mut args: List<TreeId> = List::nil();
+        let mut current = values;
+        while current.non_empty() {
+            let pair = current.head();
+            let value_tree = self.translate_attribute(ctx, syms, pair.snd);
+            let method = self.ident_symbol(ctx, pair.fst);
+            let assign = self.assign(ctx, method, value_tree);
+            let value_type = ctx.tree(value_tree).ty;
+            ctx.tree_mut(assign).ty = value_type;
+            args = args.append(assign);
+            current = current.tail();
+        }
+        let annotation_type = self.type_expr(ctx, syms, compound_type);
+        self.type_annotation(ctx, annotation_type, args)
+    }
+
+    /// Java: public void visitArray(Attribute.Array array) (AnnotationBuilder)
+    fn visit_array_attribute(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        attribute: crate::ids::AttributeId,
+    ) -> TreeId {
+        let (values, array_type) = {
+            let attr = ctx.attr(attribute);
+            let values = match &attr.kind {
+                crate::code::attribute::AttributeKind::Array { values } => values.clone(),
+                _ => panic!("ClassCastException: not an array attribute"),
+            };
+            (values, attr.ty.expect("array type"))
+        };
+        let mut elems: List<TreeId> = List::nil();
+        for value in values {
+            let elem = self.translate_attribute(ctx, syms, value);
+            elems = elems.append(elem);
+        }
+        let new_array = self.new_array(ctx, None, List::nil(), Some(elems));
+        ctx.tree_mut(new_array).ty = Some(array_type);
+        new_array
+    }
+
+    /// Java: public static JCLiteral Literal(Object value) (TreeMaker.java:899) —
+    /// the TypeTag/type inference part; see the file header for the Byte/Short
+    /// registration.
+    pub fn literal_constant(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        value: crate::util::constants::ConstantValue,
+    ) -> TreeId {
+        use crate::util::constants::ConstantValue;
+        let (typetag, literal_value, base_type) = match &value {
+            ConstantValue::Integer(value) => {
+                (TypeTag::INT, LiteralValue::Integer(*value), syms.int_type)
+            }
+            ConstantValue::Byte(_) | ConstantValue::Short(_) => unimplemented!(
+                "TODO(literal value domain batch): TreeMaker.Literal(Object) Byte/Short"
+            ),
+            ConstantValue::Long(value) => (TypeTag::LONG, LiteralValue::Long(*value), syms.long_type),
+            ConstantValue::Float(value) => {
+                (TypeTag::FLOAT, LiteralValue::Float(*value), syms.float_type)
+            }
+            ConstantValue::Double(value) => {
+                (TypeTag::DOUBLE, LiteralValue::Double(*value), syms.double_type)
+            }
+            ConstantValue::Character(value) => {
+                (TypeTag::CHAR, LiteralValue::Character(*value), syms.char_type)
+            }
+            ConstantValue::Boolean(value) => {
+                (TypeTag::BOOLEAN, LiteralValue::Boolean(*value), syms.boolean_type)
+            }
+            ConstantValue::String(value) => {
+                (TypeTag::CLASS, LiteralValue::String(value.clone()), syms.string_type)
+            }
+        };
+        let tree = self.literal(ctx, typetag, Some(literal_value));
+        let constant_type = ctx.type_const_type(base_type, value);
+        ctx.tree_mut(tree).ty = Some(constant_type);
+        tree
+    }
+
 }
 
 /// Java: Name equality (Name.contentEquals).
@@ -2648,6 +2943,88 @@ mod tests {
         // Java: paramName/typaramName.
         assert_eq!(maker.param_name(2).to_java_string(), name(&maker, "x2").to_java_string());
         assert_eq!(maker.typaram_name(0).to_java_string(), name(&maker, "A0").to_java_string());
+    }
+
+    #[test]
+    fn attribute_annotation_trees_and_literal_object() {
+        use crate::code::attribute::{Attribute, AttributeKind};
+        use crate::util::constants::ConstantValue;
+        let (mut ctx, mut syms, _types, mut maker) = new_maker_with_syms();
+        // Java: Literal(Object) — the constant type is attached to the tree.
+        let literal = maker.literal_constant(&mut ctx, &syms, ConstantValue::Integer(7));
+        assert_eq!(ctx.tree(literal).tag, Tag::LITERAL);
+        let constant_type = ctx.tree(literal).ty.expect("constant type");
+        assert_eq!(ctx.type_const_value(constant_type), Some(&ConstantValue::Integer(7)));
+        assert_eq!(ctx.type_base_type(constant_type), syms.int_type);
+        let string_literal = maker.literal_constant(
+            &mut ctx,
+            &syms,
+            ConstantValue::String(javac_strings::JavaString::from("s")),
+        );
+        assert_eq!(
+            ctx.type_base_type(ctx.tree(string_literal).ty.expect("string const type")),
+            syms.string_type
+        );
+
+        // Java: Annotations(List<Attribute.Compound>) — a compound annotation
+        // becomes Annotation(Type, [Assign(Ident(method), value)]).
+        let method = ctx.alloc_symbol(crate::code::symbol::Symbol::new_method_symbol(
+            0,
+            maker_at_name(&maker, "m"),
+            syms.int_type,
+            syms.java_base,
+        ));
+        let constant = ctx.alloc_attribute(Attribute::new(
+            Some(syms.int_type),
+            AttributeKind::Constant {
+                value: ConstantValue::Integer(7),
+            },
+        ));
+        let compound = ctx.alloc_attribute(Attribute::new(
+            Some(syms.int_type),
+            AttributeKind::Compound {
+                values: List::of(crate::util::pair::Pair::of(method, constant)),
+                position: None,
+                synthesized: false,
+            },
+        ));
+        let annotations = maker.annotations_attributes(&mut ctx, &syms, List::of(compound));
+        assert_eq!(annotations.length(), 1);
+        let annotation = *annotations.head();
+        assert_eq!(ctx.tree(annotation).tag, Tag::ANNOTATION);
+        let TreeKind::Annotation { args, .. } = &ctx.tree(annotation).kind else {
+            panic!("annotation");
+        };
+        assert_eq!(args.length(), 1);
+        let assign = *args.head();
+        assert_eq!(ctx.tree(assign).tag, Tag::ASSIGN);
+        let TreeKind::Assign { lhs, rhs } = &ctx.tree(assign).kind else {
+            panic!("assign");
+        };
+        assert_eq!(ctx.tree(lhs.expect("lhs")).tag, Tag::IDENT);
+        assert_eq!(ctx.tree(rhs.expect("rhs")).tag, Tag::LITERAL);
+
+        // Java: Symbol.getRawAttributes() -> Annotations; the metadata creation
+        // goes through the symbol arena id.
+        let sym = ctx.alloc_symbol(crate::code::symbol::Symbol::new_var_symbol(
+            0,
+            maker_at_name(&maker, "v"),
+            syms.int_type,
+            syms.java_base,
+        ));
+        let metadata = ctx.symbol_inited_metadata(sym);
+        metadata.set_declaration_attributes(List::of(compound));
+        let raw = maker.raw_annotations(&mut ctx, &syms, sym);
+        assert_eq!(raw.length(), 1);
+        assert_eq!(ctx.tree(*raw.head()).tag, Tag::ANNOTATION);
+    }
+
+    fn maker_at_name(maker: &TreeMaker, text: &str) -> crate::util::name::Name {
+        maker
+            .names
+            .as_ref()
+            .expect("names")
+            .from_utf(text.as_bytes())
     }
 
 }

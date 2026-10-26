@@ -240,6 +240,9 @@ pub struct Symbol {
     pub erasure_field: Option<TypeId>,
     /// Java: public Symbol.Completer completer (NULL_COMPLETER -> None)
     pub completer: Option<CompleterRef>,
+    /// Java: protected SymbolMetadata metadata (lazily created by
+    /// initedMetadata(); Java null -> None).
+    pub metadata: Option<crate::code::symbol_metadata::SymbolMetadata>,
     /// The node-specific fields (one variant per upstream concrete subclass).
     pub kind_data: SymbolKind,
 }
@@ -263,8 +266,170 @@ impl Symbol {
             owner,
             erasure_field: None,
             completer: None,
+            metadata: None,
             kind_data,
         }
+    }
+
+    /// Java: public List<Attribute.Compound> getRawAttributes()
+    pub fn get_raw_attributes(&self) -> List<crate::ids::AttributeId> {
+        match &self.metadata {
+            None => List::nil(),
+            Some(metadata) => metadata.get_declaration_attributes(),
+        }
+    }
+
+    /// Java: public List<Attribute.TypeCompound> getRawTypeAttributes()
+    pub fn get_raw_type_attributes(&self) -> List<crate::ids::AttributeId> {
+        match &self.metadata {
+            None => List::nil(),
+            Some(metadata) => metadata.get_type_attributes(),
+        }
+    }
+
+    /// Java: public Attribute.Compound attribute(Symbol anno)
+    pub fn attribute(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        anno: SymbolId,
+    ) -> Option<crate::ids::AttributeId> {
+        let attributes = self.get_raw_attributes();
+        let mut current = attributes;
+        while current.non_empty() {
+            let attribute = *current.head();
+            let attribute_type = ctx.attr(attribute).ty;
+            if attribute_type.and_then(|ty| ctx.typ(ty).tsym) == Some(anno) {
+                return Some(attribute);
+            }
+            current = current.tail();
+        }
+        None
+    }
+
+    /// Java: public boolean annotationsPendingCompletion()
+    pub fn annotations_pending_completion(&self) -> bool {
+        match &self.metadata {
+            None => false,
+            Some(metadata) => metadata.pending_completion(),
+        }
+    }
+
+    /// Java: public void appendAttributes(List<Attribute.Compound> l)
+    pub fn append_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
+        if !attributes.is_empty() {
+            self.inited_metadata().append(attributes);
+        }
+    }
+
+    /// Java: public void appendClassInitTypeAttributes(List<Attribute.TypeCompound> l)
+    pub fn append_class_init_type_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
+        if !attributes.is_empty() {
+            self.inited_metadata().append_class_init_type_attributes(attributes);
+        }
+    }
+
+    /// Java: public void appendInitTypeAttributes(List<Attribute.TypeCompound> l)
+    pub fn append_init_type_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
+        if !attributes.is_empty() {
+            self.inited_metadata().append_init_type_attributes(attributes);
+        }
+    }
+
+    /// Java: public void appendUniqueTypeAttributes(List<Attribute.TypeCompound> l)
+    pub fn append_unique_type_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
+        if !attributes.is_empty() {
+            self.inited_metadata().append_unique_types(attributes);
+        }
+    }
+
+    /// Java: public List<Attribute.TypeCompound> getClassInitTypeAttributes()
+    pub fn get_class_init_type_attributes(&self) -> List<crate::ids::AttributeId> {
+        match &self.metadata {
+            None => List::nil(),
+            Some(metadata) => metadata.get_class_init_type_attributes(),
+        }
+    }
+
+    /// Java: public List<Attribute.TypeCompound> getInitTypeAttributes()
+    pub fn get_init_type_attributes(&self) -> List<crate::ids::AttributeId> {
+        match &self.metadata {
+            None => List::nil(),
+            Some(metadata) => metadata.get_init_type_attributes(),
+        }
+    }
+
+    /// Java: public void setInitTypeAttributes(List<Attribute.TypeCompound> l)
+    pub fn set_init_type_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
+        self.inited_metadata().set_init_type_attributes(attributes);
+    }
+
+    /// Java: public void setClassInitTypeAttributes(List<Attribute.TypeCompound> l)
+    pub fn set_class_init_type_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
+        self.inited_metadata().set_class_init_type_attributes(attributes);
+    }
+
+    /// Java: public List<Attribute.Compound> getDeclarationAttributes()
+    pub fn get_declaration_attributes(&self) -> List<crate::ids::AttributeId> {
+        match &self.metadata {
+            None => List::nil(),
+            Some(metadata) => metadata.get_declaration_attributes(),
+        }
+    }
+
+    /// Java: public boolean hasAnnotations()
+    pub fn has_annotations(&self) -> bool {
+        match &self.metadata {
+            None => false,
+            Some(metadata) => !metadata.is_empty(),
+        }
+    }
+
+    /// Java: public boolean hasTypeAnnotations()
+    pub fn has_type_annotations(&self) -> bool {
+        match &self.metadata {
+            None => false,
+            Some(metadata) => !metadata.is_types_empty(),
+        }
+    }
+
+    /// Java: public void prependAttributes(List<Attribute.Compound> l)
+    pub fn prepend_attributes(&mut self, attributes: List<crate::ids::AttributeId>) {
+        if !attributes.is_empty() {
+            self.inited_metadata().prepend(attributes);
+        }
+    }
+
+    /// Java: public void resetAnnotations()
+    pub fn reset_annotations(&mut self) {
+        self.inited_metadata().reset();
+    }
+
+    /// Java: public void setAttributes(Symbol other)
+    pub fn set_attributes(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        other: &Symbol,
+    ) {
+        match &other.metadata {
+            None => {}
+            Some(other_metadata) => {
+                self.inited_metadata().set_attributes(ctx, other_metadata);
+            }
+        }
+    }
+
+    /// Java: protected SymbolMetadata initedMetadata() (Java: lazily creates the
+    /// SymbolMetadata bound to this symbol).
+    fn inited_metadata(&mut self) -> &mut crate::code::symbol_metadata::SymbolMetadata {
+        // The local Symbol does not know its own arena id; the metadata is keyed
+        // by the symbol when it is created at the well-known call sites (the
+        // PORTING_RULES adapter: the sym field is only used by
+        // SymbolMetadata.setAttributes's BRIDGE check). A metadata created here
+        // without an id reuses the first sentinel value SymbolId::new(0)
+        // is not acceptable, therefore the creation goes through
+        // CompilerContext::symbol_inited_metadata instead (see SymbolMetadata
+        // creation). Registered adapter.
+        unimplemented!("TODO(symbol arena batch): Symbol.initedMetadata (SymbolId of the symbol is required)")
     }
 
     /// Java: ModuleSymbol.reset() / ClassSymbol.reset()

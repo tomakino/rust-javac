@@ -67,12 +67,14 @@
 use crate::code::bound_kind::BoundKind;
 use crate::code::type_tag::TypeTag;
 use crate::ids::{SymbolId, TypeId};
+use crate::util::constants::ConstantValue;
 use crate::util::list::List;
 
 /// This class represents Java types (upstream abstract class Type).
 ///
 /// PORTING_RULES: the shared fields of the upstream Type class are the tag, the
 /// type symbol and the node-specific fields (TypeKindData).
+#[derive(Clone)]
 pub struct Type {
     /// The type tag (upstream: abstract TypeTag getTag(); subclasses store the
     /// tag either in a field or return a constant).
@@ -81,13 +83,59 @@ pub struct Type {
     pub tsym: Option<SymbolId>,
     /// The node-specific fields (one variant per upstream concrete subclass).
     pub kind: TypeKindData,
+    /// Java: the constValue() override of the constant type subclasses
+    /// (JCPrimitiveType/ClassType anonymous subclasses created by constType).
+    /// PORTING_RULES adapter: a const type is the same Type with a constant
+    /// value attached (the upstream anonymous subclasses only override
+    /// constValue and baseType; registered in section 9).
+    pub const_value: Option<ConstantValue>,
 }
 
 impl Type {
     /// Adapter constructor: the upstream constructors also take TypeMetadata,
     /// which is not ported yet (see the module doc).
     pub fn new(tag: TypeTag, tsym: Option<SymbolId>, kind: TypeKindData) -> Type {
-        Type { tag, tsym, kind }
+        Type {
+            tag,
+            tsym,
+            kind,
+            const_value: None,
+        }
+    }
+
+    /// Java: public Type constType(Object constValue) — the base Type rejects
+    /// it (AssertionError); JCPrimitiveType/ClassType create constant types,
+    /// NullType/ErrorType return this (NullType/ErrorType overrides);
+    /// ArrayType/TypeVar/WildcardType/... keep the base behavior
+    /// (AssertionError).
+    pub fn const_type(&self, value: ConstantValue) -> Type {
+        match self.tag {
+            TypeTag::BOOLEAN
+            | TypeTag::CHAR
+            | TypeTag::BYTE
+            | TypeTag::SHORT
+            | TypeTag::INT
+            | TypeTag::LONG
+            | TypeTag::FLOAT
+            | TypeTag::DOUBLE => {
+                let mut constant = self.clone();
+                constant.const_value = Some(value);
+                constant
+            }
+            TypeTag::CLASS => {
+                let mut constant = self.clone();
+                constant.const_value = Some(value);
+                constant
+            }
+            TypeTag::BOT | TypeTag::ERROR => self.clone(),
+            _ => panic!("AssertionError: constType on {}", self.tag),
+        }
+    }
+
+    /// Java: public Object constValue() (default null; the constant type
+    /// subclasses override). PORTING_RULES: Java null -> Option::None.
+    pub fn const_value(&self) -> Option<&ConstantValue> {
+        self.const_value.as_ref()
     }
 
     /// Java: public abstract TypeTag getTag()
@@ -334,6 +382,7 @@ impl Type {
 /// repeated in the subclasses that inherit from it (as in the Java class
 /// hierarchy). Field names keep the upstream names (snake_case).
 #[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
 pub enum TypeKindData {
     /// Java: Type.JCPrimitiveType (the primitive tag is Type.tag).
     JCPrimitiveType,

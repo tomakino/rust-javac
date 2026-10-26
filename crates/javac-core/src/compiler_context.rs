@@ -118,6 +118,57 @@ impl CompilerContext {
         self.scopes.get_mut(id.index())
     }
 
+    /// Java: Symbol.initedMetadata() — creates the SymbolMetadata bound to
+    /// the symbol arena id (the local Symbol does not carry its own id).
+    pub fn symbol_inited_metadata(
+        &mut self,
+        symbol: crate::ids::SymbolId,
+    ) -> &mut crate::code::symbol_metadata::SymbolMetadata {
+        if self.sym(symbol).metadata.is_none() {
+            self.sym_mut(symbol).metadata = Some(crate::code::symbol_metadata::SymbolMetadata::new(symbol));
+        }
+        self.sym_mut(symbol).metadata.as_mut().expect("metadata")
+    }
+
+    /// Java: Symbol.getRawAttributes() through the arena id.
+    pub fn symbol_get_raw_attributes(
+        &self,
+        symbol: crate::ids::SymbolId,
+    ) -> crate::util::list::List<crate::ids::AttributeId> {
+        self.sym(symbol).get_raw_attributes()
+    }
+
+    /// Java: Type.constType(Object constValue) — allocates the constant type.
+    pub fn type_const_type(
+        &mut self,
+        t: crate::ids::TypeId,
+        value: crate::util::constants::ConstantValue,
+    ) -> crate::ids::TypeId {
+        let constant = self.typ(t).const_type(value);
+        self.alloc_type(constant)
+    }
+
+    /// Java: Type.constValue().
+    pub fn type_const_value(
+        &self,
+        t: crate::ids::TypeId,
+    ) -> Option<&crate::util::constants::ConstantValue> {
+        self.typ(t).const_value()
+    }
+
+    /// Java: Type.baseType() — a constant type returns its tsym.type, every
+    /// other type returns itself.
+    pub fn type_base_type(&self, t: crate::ids::TypeId) -> crate::ids::TypeId {
+        let ty = self.typ(t);
+        if ty.const_value().is_some() {
+            ty.tsym
+                .and_then(|tsym| self.sym(tsym).ty)
+                .unwrap_or(t)
+        } else {
+            t
+        }
+    }
+
     /// Java: ctx.attr(id).
     pub fn attr(&self, id: AttributeId) -> &Attribute {
         self.attributes.get(id.index())
