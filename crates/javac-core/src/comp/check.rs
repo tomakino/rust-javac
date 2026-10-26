@@ -3118,3 +3118,634 @@ impl Check {
         );
     }
 }
+impl Check {
+    /// Java: private boolean isDeprecatedOverrideIgnorable(MethodSymbol m,
+    /// ClassSymbol origin) (Check.java:1900-1920).
+    fn is_deprecated_override_ignorable(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        m: SymbolId,
+        origin: SymbolId,
+    ) -> bool {
+        let mc = crate::code::symbol::symbol_encl_class(ctx, m);
+        let origin_type = ctx.sym(origin).ty.expect("origin type");
+        let st = self.types.supertype(ctx, syms, origin_type);
+        if !ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            return true;
+        }
+        let st_tsym = ctx.typ(st).tsym.expect("supertype symbol");
+        let stimpl = crate::code::symbol::implementation(ctx, syms, &self.types, m, st_tsym, false);
+        match mc {
+            Some(mc) if ctx.sym(mc).flags_field & (crate::code::flags::INTERFACE as i64) != 0 => {
+                let intfs = self.types.interfaces(ctx, syms, origin_type);
+                let mc_type = ctx.sym(mc).ty.expect("enclosing class type");
+                let contains = intfs.iter().any(|intf| self.types.is_same_type(ctx, syms, intf, mc_type));
+                if contains {
+                    false
+                } else {
+                    stimpl.is_some()
+                }
+            }
+            _ => stimpl != Some(m),
+        }
+    }
+
+    /// Java: List<Type> unhandled(List<Type> thrown, List<Type> handled)
+    /// (Check.java:1680-1685).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - thrown: the thrown types;
+    ///   - handled: the handled types.
+    ///
+    /// # Returns
+    ///   - the thrown types not handled.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:1680-1685.
+    pub fn unhandled(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        thrown: crate::util::list::List<TypeId>,
+        handled: crate::util::list::List<TypeId>,
+    ) -> crate::util::list::List<TypeId> {
+        let mut unhandled: crate::util::list::List<TypeId> = crate::util::list::List::nil();
+        let mut current = thrown;
+        while current.non_empty() {
+            let ty = *current.head();
+            if !self.is_handled(ctx, syms, ty, &handled) {
+                unhandled = unhandled.prepend(ty);
+            }
+            current = current.tail();
+        }
+        unhandled
+    }
+
+    /// Java: static int protection(long flags) (Check.java:1694-1705).
+    pub fn protection(flags_value: i64) -> i32 {
+        let access = flags_value & (crate::code::flags::AccessFlags as i64);
+        let access = access as i16 as i64;
+        if access == crate::code::flags::PRIVATE as i64 {
+            3
+        } else if access == crate::code::flags::PROTECTED as i64 {
+            1
+        } else if access == crate::code::flags::PUBLIC as i64 {
+            0
+        } else {
+            2
+        }
+    }
+
+    /// Java: Fragment cannotOverride(MethodSymbol m, MethodSymbol other)
+    /// (Check.java:1709-1721).
+    fn cannot_override(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        m: SymbolId,
+        other: SymbolId,
+    ) -> crate::resources::diagnostic_contract::FragmentInfo {
+        let mloc = crate::code::symbol::symbol_location(ctx, m).unwrap_or(m);
+        let oloc = crate::code::symbol::symbol_location(ctx, other).unwrap_or(other);
+        let other_owner = ctx.sym(other).owner;
+        let m_owner = ctx.sym(m).owner;
+        let owner_is_interface = |sym: Option<SymbolId>| {
+            sym.map(|sym| ctx.sym(sym).flags_field & (crate::code::flags::INTERFACE as i64) != 0)
+                .unwrap_or(false)
+        };
+        let args = |ctx: &crate::compiler_context::CompilerContext| {
+            (
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, m),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, mloc),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, other),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, oloc),
+                ),
+            )
+        };
+        let (a, b, c, d) = args(ctx);
+        if !owner_is_interface(other_owner) {
+            crate::resources::compiler_properties::fragments::cant_override(a, b, c, d)
+        } else if !owner_is_interface(m_owner) {
+            crate::resources::compiler_properties::fragments::cant_implement(a, b, c, d)
+        } else {
+            crate::resources::compiler_properties::fragments::clashes_with(a, b, c, d)
+        }
+    }
+
+    /// Java: Fragment uncheckedOverrides(MethodSymbol m, MethodSymbol other)
+    /// (Check.java:1726-1738).
+    fn unchecked_overrides(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        m: SymbolId,
+        other: SymbolId,
+    ) -> crate::resources::diagnostic_contract::FragmentInfo {
+        let mloc = crate::code::symbol::symbol_location(ctx, m).unwrap_or(m);
+        let oloc = crate::code::symbol::symbol_location(ctx, other).unwrap_or(other);
+        let other_owner = ctx.sym(other).owner;
+        let m_owner = ctx.sym(m).owner;
+        let owner_is_interface = |sym: Option<SymbolId>| {
+            sym.map(|sym| ctx.sym(sym).flags_field & (crate::code::flags::INTERFACE as i64) != 0)
+                .unwrap_or(false)
+        };
+        let arg = |ctx: &crate::compiler_context::CompilerContext| {
+            (
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, m),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, mloc),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, other),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, oloc),
+                ),
+            )
+        };
+        let (a, b, c, d) = arg(ctx);
+        if !owner_is_interface(other_owner) {
+            crate::resources::compiler_properties::fragments::unchecked_override(a, b, c, d)
+        } else if !owner_is_interface(m_owner) {
+            crate::resources::compiler_properties::fragments::unchecked_implement(a, b, c, d)
+        } else {
+            crate::resources::compiler_properties::fragments::unchecked_clash_with(a, b, c, d)
+        }
+    }
+
+    /// Java: Fragment varargsOverrides(MethodSymbol m, MethodSymbol other)
+    /// (Check.java:1743-1755).
+    fn varargs_overrides(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        m: SymbolId,
+        other: SymbolId,
+    ) -> crate::resources::diagnostic_contract::FragmentInfo {
+        let mloc = crate::code::symbol::symbol_location(ctx, m).unwrap_or(m);
+        let oloc = crate::code::symbol::symbol_location(ctx, other).unwrap_or(other);
+        let other_owner = ctx.sym(other).owner;
+        let m_owner = ctx.sym(m).owner;
+        let owner_is_interface = |sym: Option<SymbolId>| {
+            sym.map(|sym| ctx.sym(sym).flags_field & (crate::code::flags::INTERFACE as i64) != 0)
+                .unwrap_or(false)
+        };
+        let arg = |ctx: &crate::compiler_context::CompilerContext| {
+            (
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, m),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, mloc),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, other),
+                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    crate::comp::resolve::symbol_display_name(ctx, oloc),
+                ),
+            )
+        };
+        let (a, b, c, d) = arg(ctx);
+        if !owner_is_interface(other_owner) {
+            crate::resources::compiler_properties::fragments::varargs_override(a, b, c, d)
+        } else if !owner_is_interface(m_owner) {
+            crate::resources::compiler_properties::fragments::varargs_implement(a, b, c, d)
+        } else {
+            crate::resources::compiler_properties::fragments::varargs_clash_with(a, b, c, d)
+        }
+    }
+}
+impl Check {
+    /// Java: void checkOverride(JCTree tree, MethodSymbol m, MethodSymbol other,
+    /// ClassSymbol origin) (Check.java:1776-1895).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the tree providing positions;
+    ///   - m: the overriding method;
+    ///   - other: the overridden method;
+    ///   - origin: the class where checking started.
+    ///
+    /// # Returns
+    ///   - none (diagnostics are reported).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:1776-1895.
+    #[allow(clippy::too_many_arguments, clippy::collapsible_if)]
+    pub fn check_override(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        tree: TreeId,
+        m: SymbolId,
+        other: SymbolId,
+        origin: SymbolId,
+    ) {
+        use crate::code::flags;
+        use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg, TypeArg};
+        let m_flags = ctx.sym(m).flags_field;
+        let other_flags = ctx.sym(other).flags_field;
+        // Don't check overriding of synthetic methods or by bridge methods.
+        if (m_flags & ((flags::SYNTHETIC as i64) | flags::BRIDGE)) != 0
+            || (other_flags & (flags::SYNTHETIC as i64)) != 0
+        {
+            return;
+        }
+        let pos = crate::tree::tree_info::diagnostic_position_for(ctx, m, tree);
+        // Error if static method overrides instance method (JLS 8.4.6.2).
+        if (m_flags & (flags::STATIC as i64)) != 0 && (other_flags & (flags::STATIC as i64)) == 0 {
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                self.cannot_override(ctx, m, other),
+            ));
+            let info = crate::resources::compiler_properties::errors::override_static(
+                DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+            ctx.sym_mut(m).flags_field |= flags::BAD_OVERRIDE;
+            return;
+        }
+        // Error if instance method overrides static or final method (JLS 8.4.6.1).
+        if (other_flags & (flags::FINAL as i64)) != 0
+            || ((m_flags & (flags::STATIC as i64)) == 0
+                && (other_flags & (flags::STATIC as i64)) != 0)
+        {
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                self.cannot_override(ctx, m, other),
+            ));
+            let info = crate::resources::compiler_properties::errors::override_meth(
+                DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
+                self.as_flag_set_arg(other_flags & ((flags::FINAL as i64) | (flags::STATIC as i64))),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+            ctx.sym_mut(m).flags_field |= flags::BAD_OVERRIDE;
+            return;
+        }
+        let m_owner = ctx.sym(m).owner.expect("method owner");
+        if (ctx.sym(m_owner).flags_field & (flags::ANNOTATION as i64)) != 0 {
+            // handled in validateAnnotationMethod
+            return;
+        }
+        // Error if overriding method has weaker access (JLS 8.4.6.3).
+        let access_flags = flags::AccessFlags as i64;
+        if Self::protection(m_flags) > Self::protection(other_flags) {
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                self.cannot_override(ctx, m, other),
+            ));
+            let access = if (other_flags & access_flags) == 0 {
+                DiagnosticArg::from_display("package".to_string())
+            } else {
+                DiagnosticArg::from_display(
+                    self.as_flag_set_arg(other_flags & access_flags)
+                        .iter()
+                        .map(|flag| flag.0.clone())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                )
+            };
+            let info = crate::resources::compiler_properties::errors::override_weaker_access(
+                DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
+                access,
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+            ctx.sym_mut(m).flags_field |= flags::BAD_OVERRIDE;
+            return;
+        }
+        let origin_type = ctx.sym(origin).ty.expect("origin type");
+        let mt = self.types.member_type(ctx, syms, origin_type, m);
+        let ot = self.types.member_type(ctx, syms, origin_type, other);
+        let mtvars = ctx.typ(mt).get_type_arguments();
+        let otvars = ctx.typ(ot).get_type_arguments();
+        let mtres = self.types.get_return_type_public(ctx, mt);
+        let otres_unsubst = self.types.get_return_type_public(ctx, ot);
+        let otres_list = self.types.subst(ctx, syms, &crate::util::list::List::of(otres_unsubst), &otvars, &mtvars);
+        let otres = *otres_list.head();
+        let mut override_warner = crate::util::warner::Warner::new(None);
+        let result_types_ok = self.types.return_type_substitutable_with(
+            ctx,
+            syms,
+            mt,
+            ot,
+            otres,
+            &mut override_warner,
+        );
+        if !result_types_ok {
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                if (m_flags & (flags::STATIC as i64)) != 0 && (other_flags & (flags::STATIC as i64)) != 0 {
+                    crate::resources::compiler_properties::fragments::cant_hide(
+                        SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, m)),
+                        SymbolArg::placeholder(
+                            crate::comp::resolve::symbol_display_name(
+                                ctx,
+                                crate::code::symbol::symbol_location(ctx, m).unwrap_or(m),
+                            ),
+                        ),
+                        SymbolArg::placeholder(
+                            crate::comp::resolve::symbol_display_name(ctx, other),
+                        ),
+                        SymbolArg::placeholder(
+                            crate::comp::resolve::symbol_display_name(
+                                ctx,
+                                crate::code::symbol::symbol_location(ctx, other).unwrap_or(other),
+                            ),
+                        ),
+                    )
+                } else {
+                    self.cannot_override(ctx, m, other)
+                },
+            ));
+            let info = crate::resources::compiler_properties::errors::override_incompatible_ret(
+                DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
+                TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, mtres)),
+                TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, otres)),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+            ctx.sym_mut(m).flags_field |= flags::BAD_OVERRIDE;
+            return;
+        } else if override_warner.has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED) {
+            let warning = crate::resources::compiler_properties::warnings::override_unchecked_ret(
+                DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+                    self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        self.unchecked_overrides(ctx, m, other),
+                    )),
+                )),
+                TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, mtres)),
+                TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, otres)),
+            );
+            let diags_arg = DiagnosticArg::from_display(
+                warning.info().args.first().map(|arg| arg.to_text()).unwrap_or_default(),
+            );
+            let warning = crate::resources::compiler_properties::warnings::override_unchecked_ret(
+                diags_arg,
+                TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, mtres)),
+                TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, otres)),
+            );
+            self.warn_unchecked(pos, warning);
+        }
+        // Error if overriding method throws an exception not reported by the
+        // overridden method.
+        let otthrown_unsubst = ctx.typ(ot).get_thrown_types(ctx);
+        let otthrown = self.types.subst(ctx, syms, &otthrown_unsubst, &otvars, &mtvars);
+        let mtthrown = ctx.typ(mt).get_thrown_types(ctx);
+        let mut otthrown_erased: crate::util::list::List<TypeId> = crate::util::list::List::nil();
+        let mut erased_current = otthrown.clone();
+        while erased_current.non_empty() {
+            let item = *erased_current.head();
+            otthrown_erased = otthrown_erased.append(self.types.erasure(ctx, syms, item));
+            erased_current = erased_current.tail();
+        }
+        let unhandled_erased = self.unhandled(ctx, syms, mtthrown.clone(), otthrown_erased);
+        let unhandled_unerased = self.unhandled(ctx, syms, mtthrown, otthrown.clone());
+        if unhandled_erased.non_empty() {
+            let head = *unhandled_erased.head();
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                self.cannot_override(ctx, m, other),
+            ));
+            let info = crate::resources::compiler_properties::errors::override_meth_doesnt_throw(
+                DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
+                TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, head)),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+            ctx.sym_mut(m).flags_field |= flags::BAD_OVERRIDE;
+            return;
+        } else if unhandled_unerased.non_empty() {
+            let head = *unhandled_unerased.head();
+            let warning = crate::resources::compiler_properties::warnings::override_unchecked_thrown(
+                DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+                    self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        self.cannot_override(ctx, m, other),
+                    )),
+                )),
+                TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, head)),
+            );
+            self.warn_unchecked(pos, warning);
+            return;
+        }
+        // Optional warning if varargs don't agree.
+        if ((m_flags ^ other_flags) & flags::VARARGS) != 0
+            && self.lint.is_enabled(crate::code::lint::LintCategory::OVERRIDES)
+        {
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                self.varargs_overrides(ctx, m, other),
+            ));
+            let warning = if (m_flags & flags::VARARGS) != 0 {
+                crate::resources::compiler_properties::warnings::override_varargs_missing(
+                    DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
+                )
+            } else {
+                crate::resources::compiler_properties::warnings::override_varargs_extra(
+                    DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
+                )
+            };
+            let warning = crate::util::jc_diagnostic::Warning::from(warning);
+            crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                &mut *self.log.borrow_mut(),
+                Some(crate::code::lint::LintCategory::OVERRIDES),
+                Some(std::rc::Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                )),
+                warning,
+            );
+        }
+        // Warn if instance method overrides bridge method.
+        if (other_flags & flags::BRIDGE) != 0 {
+            let warning = crate::resources::compiler_properties::warnings::override_bridge(
+                DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+                    self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        self.unchecked_overrides(ctx, m, other),
+                    )),
+                )),
+            );
+            let warning = crate::util::jc_diagnostic::Warning::from(warning);
+            crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
+                &mut *self.log.borrow_mut(),
+                None,
+                Some(std::rc::Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                )),
+                warning,
+            );
+        }
+        // Warn if a deprecated method is overridden by a non-deprecated one.
+        if !self.is_deprecated_override_ignorable(ctx, syms, m, origin) {
+            // TODO(Check): checkDeprecated is not ported yet (Check.java:3520-3560,
+            // the deprecated warning family); registered.
+        }
+    }
+}
+
+impl Check {
+    /// Java: void checkImplementations(JCClassDecl tree) (Check.java:2456-2460).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the class definition.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the class declaration symbol is required.
+    ///
+    /// Upstream: Check.java:2456-2460.
+    pub fn check_implementations(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        tree: TreeId,
+    ) {
+        let sym = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+            _ => return,
+        };
+        self.check_implementations_for(ctx, syms, tree, sym, sym);
+    }
+
+    /// Java: void checkImplementations(JCTree tree, ClassSymbol origin,
+    /// ClassSymbol ic) (Check.java:2463-2490).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the tree for positions;
+    ///   - origin: the origin class;
+    ///   - ic: the class whose interfaces are checked.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:2463-2490.
+    #[allow(clippy::collapsible_if)]
+    pub fn check_implementations_for(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        tree: TreeId,
+        origin: SymbolId,
+        ic: SymbolId,
+    ) {
+        let ic_type = ctx.sym(ic).ty.expect("checked class type");
+        let mut closure = self.types.closure(ctx, syms, ic_type);
+        while closure.non_empty() {
+            let lc_type = *closure.head();
+            let lc = ctx.typ(lc_type).tsym.expect("closure class symbol");
+            if ctx.sym(lc).flags_field & (crate::code::flags::ABSTRACT as i64) != 0 {
+                let members = ctx.sym(lc).members().expect("members");
+                let symbols = ctx.scope_get_symbols(
+                    members,
+                    crate::code::scope::LookupKind::NON_RECURSIVE,
+                    &|_| true,
+                );
+                for sym in symbols {
+                    let flags_value = ctx.sym(sym).flags_field;
+                    let abs_meth = ctx.sym(sym).kind == crate::code::kinds::Kind::MTH;
+                    let abstract_static = flags_value
+                        & ((crate::code::flags::STATIC as i64) | (crate::code::flags::ABSTRACT as i64));
+                    if abs_meth && abstract_static == (crate::code::flags::ABSTRACT as i64) {
+                        let impl_meth =
+                            crate::code::symbol::implementation(ctx, syms, &self.types, sym, origin, false);
+                        if let Some(impl_meth) = impl_meth {
+                            if impl_meth != sym {
+                                let impl_owner = ctx.sym(impl_meth).owner;
+                                let origin_interface =
+                                    ctx.sym(origin).flags_field & (crate::code::flags::INTERFACE as i64);
+                                let impl_owner_interface = impl_owner
+                                    .map(|owner| {
+                                        ctx.sym(owner).flags_field
+                                            & (crate::code::flags::INTERFACE as i64)
+                                    })
+                                    .unwrap_or(0);
+                                if impl_owner_interface == origin_interface {
+                                    // don't check if implmeth is in a class, yet origin is
+                                    // an interface (Object case).
+                                    self.check_override(ctx, syms, tree, impl_meth, sym, origin);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            closure = closure.tail();
+        }
+    }
+
+    /// Java: void checkOverride(JCTree tree, Type site, ClassSymbol origin,
+    /// MethodSymbol m) (Check.java:2150-2160).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the tree providing positions;
+    ///   - site: the checked site type;
+    ///   - origin: the origin class;
+    ///   - m: the overriding method.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:2150-2160.
+    #[allow(clippy::collapsible_if)]
+    pub fn check_override_at(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        tree: TreeId,
+        site: TypeId,
+        origin: SymbolId,
+        m: SymbolId,
+    ) {
+        let c = ctx.typ(site).tsym.expect("site type symbol");
+        let name = ctx.sym(m).name.clone();
+        let members = ctx.sym(c).members().expect("site members");
+        let symbols = ctx.scope_get_symbols_by_name(
+            members,
+            &name,
+            crate::code::scope::LookupKind::RECURSIVE,
+            &|_| true,
+        );
+        for sym in symbols {
+            let overrides = crate::code::symbol::overrides(ctx, syms, &self.types, m, sym, origin, false);
+            if overrides {
+                if ctx.sym(sym).flags_field & (crate::code::flags::ABSTRACT as i64) == 0 {
+                    self.check_override(ctx, syms, tree, m, sym, origin);
+                }
+            }
+        }
+    }
+}
