@@ -63,7 +63,7 @@ mod tests {
         let info = errors::abstract_cant_be_instantiated(SymbolArg::from("X"));
         assert_eq!(info.info().code, "abstract.cant.be.instantiated");
         assert_eq!(info.info().args().len(), 1);
-        assert_eq!(info.info().args()[0].0, "X");
+        assert_eq!(info.info().args()[0].to_text(), "X");
     }
 
     #[test]
