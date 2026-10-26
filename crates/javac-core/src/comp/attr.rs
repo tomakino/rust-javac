@@ -506,7 +506,22 @@ impl Attr {
     // ------------------------------------------------------------------
 
     /// Java: Type check(final JCTree tree, final Type found, final KindSelector
-    /// ownkind, final ResultInfo resultInfo)
+    /// ownkind, final ResultInfo resultInfo) (Attr.java:240-272).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the attributed tree;
+    ///   - found: the found type;
+    ///   - ownkind: the found kind selector;
+    ///   - result_info: the expected result.
+    ///
+    /// # Returns
+    ///   - the checked type.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:240-272.
     fn check(
         &mut self,
         ctx: &mut CompilerContext,
@@ -516,66 +531,19 @@ impl Attr {
         ownkind: KindSelector,
         result_info: &ResultInfo,
     ) -> TypeId {
-        let inference_context = Rc::clone(result_info.check_context.inference_context());
-        let found_is_error = ctx.typ(found).has_tag(TypeTag::ERROR);
-        let pt_is_method_or_forall = result_info
-            .pt
-            .map(|pt| {
-                let tag = ctx.typ(pt).get_tag();
-                tag == TypeTag::METHOD || tag == TypeTag::FORALL
-            })
-            .unwrap_or(false);
-        let should_check = !found_is_error && !pt_is_method_or_forall;
-        let owntype = if should_check && !ownkind.subset(result_info.pkind) {
-            // Java: log.error(tree.pos(), Errors.UnexpectedType(
-            // resultInfo.pkind.kindNames(), ownkind.kindNames()));
-            // (Attr.java:518-525)
-            let expected = result_info
-                .pkind
-                .kind_names()
-                .into_iter()
-                .map(|kind| {
-                    crate::resources::diagnostic_contract::KindNameArg::placeholder(
-                        kind.name().to_string(),
-                    )
-                })
-                .collect();
-            let found_kinds = ownkind
-                .kind_names()
-                .into_iter()
-                .map(|kind| {
-                    crate::resources::diagnostic_contract::KindNameArg::placeholder(
-                        kind.name().to_string(),
-                    )
-                })
-                .collect();
-            crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
-                ctx.tree(tree).pos,
-                crate::util::jc_diagnostic::Error::from(
-                    crate::resources::compiler_properties::errors::unexpected_type(expected, found_kinds),
-                ),
-            );
-            self.types.create_error_type_original(ctx, Some(found), syms)
-        } else if self.allow_poly
-            && inference_context.free(ctx, syms, &self.types, found)
-        {
-            // TODO(Infer): owntype = shouldCheck ? resultInfo.pt : found;
-            // if (resultInfo.checkMode.installPostInferenceHook())
-            // inferenceContext.addFreeTypeListener(...) { check(...) };
-            // the listener recursion needs the mutable Attr reference;
-            // registered.
-            unimplemented!("TODO(Infer batch): Attr.check free type listener")
-        } else if should_check {
-            let chk = self.chk.borrow();
-            result_info.check(ctx, syms, &chk, ctx.tree(tree).pos, found)
-        } else {
-            found
-        };
-        if result_info.check_mode.update_tree_type() {
-            ctx.tree_mut(tree).ty = Some(owntype);
-        }
-        owntype
+        check_after_inference(
+            ctx,
+            syms,
+            tree,
+            found,
+            ownkind,
+            result_info.clone(),
+            &self.types,
+            &self.log,
+            &self.diags,
+            &self.chk,
+            self.allow_poly,
+        )
     }
 
     // ------------------------------------------------------------------
@@ -10088,6 +10056,336 @@ fn rs_error_diagnostic(
     )
 }
 
+/// Java: the FreeTypeListener registered by Attr.check when the found type
+/// still contains inference variables (Attr.java:252-258).
+pub struct CheckAfterInferenceListener {
+    pub tree: TreeId,
+    pub found: TypeId,
+    pub ownkind: KindSelector,
+    pub result_info: ResultInfo,
+    pub types: Rc<Types>,
+    pub log: Rc<RefCell<Log>>,
+    pub diags: Rc<Factory>,
+    pub chk: Rc<RefCell<Check>>,
+    pub allow_poly: bool,
+}
+
+impl crate::comp::infer::FreeTypeListener for CheckAfterInferenceListener {
+    /// Java: the listener lambda in Attr.check (Attr.java:252-258).
+    fn types_inferred(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        inference_context: &crate::comp::infer::InferenceContext,
+    ) -> Result<(), crate::comp::infer::InferenceException> {
+        let instantiated_found =
+            inference_context.as_inst_type(ctx, syms, types, self.found);
+        let instantiated_pt = self
+            .result_info
+            .pt
+            .map(|pt| inference_context.as_inst_type(ctx, syms, types, pt));
+        let pending_result = self.result_info.dup(instantiated_pt);
+        let _ = check_after_inference(
+            ctx,
+            syms,
+            self.tree,
+            instantiated_found,
+            self.ownkind,
+            pending_result,
+            &self.types,
+            &self.log,
+            &self.diags,
+            &self.chk,
+            self.allow_poly,
+        );
+        Ok(())
+    }
+}
+
+/// Java: Attr.check (Attr.java:240-272) — the listener-capable free form.
+#[allow(clippy::too_many_arguments)]
+fn check_after_inference(
+    ctx: &mut CompilerContext,
+    syms: &mut Symtab,
+    tree: TreeId,
+    found: TypeId,
+    ownkind: KindSelector,
+    result_info: ResultInfo,
+    types: &Rc<Types>,
+    log: &Rc<RefCell<Log>>,
+    diags: &Rc<Factory>,
+    chk_service: &Rc<RefCell<Check>>,
+    allow_poly: bool,
+) -> TypeId {
+    let inference_context = Rc::clone(result_info.check_context.inference_context());
+    let owntype: TypeId;
+    let should_check = !ctx.typ(found).has_tag(TypeTag::ERROR)
+        && !result_info
+            .pt
+            .map(|pt| {
+                let tag = ctx.typ(pt).get_tag();
+                tag == TypeTag::METHOD || tag == TypeTag::FORALL
+            })
+            .unwrap_or(false);
+    if should_check && !ownkind.subset(result_info.pkind) {
+        let expected = result_info
+            .pkind
+            .kind_names()
+            .into_iter()
+            .map(|kind| {
+                crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                    kind.name().to_string(),
+                )
+            })
+            .collect();
+        let found_kinds = ownkind
+            .kind_names()
+            .into_iter()
+            .map(|kind| {
+                crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                    kind.name().to_string(),
+                )
+            })
+            .collect();
+        crate::util::abstract_log::AbstractLog::error_at(
+            &mut *log.borrow_mut(),
+            ctx.tree(tree).pos,
+            crate::util::jc_diagnostic::Error::from(
+                crate::resources::compiler_properties::errors::unexpected_type(expected, found_kinds),
+            ),
+        );
+        owntype = types.create_error_type_original(ctx, Some(found), syms);
+    } else if allow_poly && inference_context.free(ctx, syms, types, found) {
+        // delay the check if there are inference variables in the found type
+        owntype = if should_check {
+            result_info.pt.unwrap_or_else(|| crate::code::symtab::no_type_id(ctx))
+        } else {
+            found
+        };
+        if result_info.check_mode.install_post_inference_hook() {
+            let listener = Rc::new(CheckAfterInferenceListener {
+                tree,
+                found,
+                ownkind,
+                result_info: result_info.clone(),
+                types: Rc::clone(types),
+                log: Rc::clone(log),
+                diags: Rc::clone(diags),
+                chk: Rc::clone(chk_service),
+                allow_poly,
+            });
+            inference_context.add_free_type_listener(
+                ctx,
+                syms,
+                types,
+                List::of(found),
+                listener,
+            );
+        }
+    } else {
+        owntype = if should_check {
+            let chk = chk_service.borrow();
+            result_info.check(ctx, syms, &chk, ctx.tree(tree).pos, found)
+        } else {
+            found
+        };
+    }
+    if result_info.check_mode.update_tree_type() {
+        ctx.tree_mut(tree).ty = Some(owntype);
+    }
+    owntype
+}
+
+/// Adapter: the service wiring for Attr (the Java Context-lazy construction of
+/// Resolve/Operators/AttrRecover/ArgumentAttr/DeferredAttr/Flow/Analyzer/Annotate,
+/// ADR 0001 explicit services). The caller owns the Rc-wrapped Attr and the
+/// compilation options/source; all mutually recursive cells are installed on
+/// the Attr handle.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - attr: the shared Attr handle;
+///   - options: the compilation options;
+///   - source: the source level;
+///   - finder: the class finder (optional).
+///
+/// # Returns
+///   - none.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: the Context-based instances wired by Attr.java:600-700 /
+/// Resolve.java:120-200 / DeferredAttr.java:112-230 / ArgumentAttr.java:112-130 /
+/// Flow.java:120-160 / Analyzer.java:120-140 / Annotate.java:100-130.
+pub fn wire_attr_services(
+    ctx: &mut CompilerContext,
+    attr: Rc<RefCell<Attr>>,
+    options: Rc<crate::util::options::Options>,
+    source: crate::code::source::Source,
+    finder: Option<Rc<crate::code::class_finder::ClassFinder>>,
+) {
+    let (
+        names,
+        log,
+        chk,
+        types,
+        syms,
+        diags,
+        make,
+        enter,
+        type_envs,
+        deferred_lint_handler,
+        cfolder,
+        infer,
+        lint,
+        rs_cell,
+        operators_cell,
+        recover_cell,
+        deferred_cell,
+        argument_cell,
+        analyzer_cell,
+        flow_cell,
+        annotate_cell,
+    ) = {
+        let a = attr.borrow();
+        let lint = Rc::clone(&a.chk.borrow().lint);
+        (
+            Rc::clone(&a.names),
+            Rc::clone(&a.log),
+            Rc::clone(&a.chk),
+            Rc::clone(&a.types),
+            Rc::clone(&a.syms),
+            Rc::clone(&a.diags),
+            Rc::clone(&a.make),
+            Rc::clone(&a.enter),
+            Rc::clone(&a.type_envs),
+            Rc::clone(&a.deferred_lint_handler),
+            Rc::clone(&a.cfolder),
+            Rc::clone(&a.infer),
+            lint,
+            Rc::clone(&a.rs),
+            Rc::clone(&a.operators),
+            Rc::clone(&a.attr_recover),
+            Rc::clone(&a.deferred_attr),
+            Rc::clone(&a.argument_attr),
+            Rc::clone(&a.analyzer),
+            Rc::clone(&a.flow),
+            Rc::clone(&a.annotate),
+        )
+    };
+    // 1. Resolve (Resolve.java:120-200)
+    let rs = Rc::new(RefCell::new(crate::comp::resolve::Resolve::new(
+        ctx,
+        Rc::clone(&names),
+        Rc::clone(&log),
+        Rc::clone(&types),
+        Rc::clone(&diags),
+        source,
+        Rc::clone(&options),
+        finder,
+    )));
+    // 2. Operators (Operators.java:100-140)
+    let operators = Rc::new(crate::comp::operators::Operators::new(
+        ctx,
+        &syms.borrow(),
+        Rc::clone(&names),
+        Rc::clone(&log),
+        Rc::clone(&diags),
+    ));
+    // 3. AttrRecover (AttrRecover.java:80-120)
+    let recover = Rc::new(RefCell::new(crate::comp::attr_recover::AttrRecover::new(
+        Rc::clone(&names),
+        Rc::clone(&make),
+        Rc::clone(&syms),
+        Rc::clone(&types),
+    )));
+    // 4. Flow (Flow.java:120-160)
+    let flow = Rc::new(crate::comp::flow::Flow::new(
+        ctx,
+        Rc::clone(&names),
+        Rc::clone(&log),
+        Rc::clone(&syms),
+        Rc::clone(&types),
+        Rc::clone(&chk),
+        Rc::clone(&rs),
+        Rc::clone(&diags),
+        lint.clone(),
+        source,
+    ));
+    // 5. Analyzer (Analyzer.java:120-140) — the Attr self-cell mirrors
+    // Context.get(Attr.class).
+    let attr_self_cell: Rc<RefCell<Option<Rc<RefCell<Attr>>>>> =
+        Rc::new(RefCell::new(Some(Rc::clone(&attr))));
+    let analyzer = Rc::new(RefCell::new(crate::comp::analyzer::Analyzer::new(
+        Rc::clone(&types),
+        Rc::clone(&log),
+        Rc::clone(&make),
+        Rc::clone(&syms),
+        Rc::clone(&attr_self_cell),
+        Rc::clone(&deferred_cell),
+        Rc::clone(&argument_cell),
+        &options,
+        source,
+    )));
+    // 6. Annotate (Annotate.java:100-130)
+    let annotate = Rc::new(crate::comp::annotate::Annotate::new(
+        ctx,
+        Rc::clone(&names),
+        Rc::clone(&log),
+        Rc::clone(&syms),
+        Rc::clone(&types),
+        Rc::clone(&chk),
+        Rc::clone(&attr),
+        Rc::clone(&cfolder),
+        Rc::clone(&deferred_lint_handler),
+        Rc::clone(&enter),
+        lint,
+        Rc::clone(&rs),
+        Rc::clone(&make),
+        Rc::clone(&type_envs),
+        Rc::clone(&diags),
+        source,
+    ));
+    // 7. DeferredAttr (DeferredAttr.java:112-230)
+    let deferred = crate::comp::deferred_attr::DeferredAttrService::new(
+        ctx,
+        Rc::clone(&annotate_cell),
+        Rc::clone(&diags),
+        Rc::clone(&enter),
+        Rc::clone(&infer),
+        Rc::clone(&log),
+        Rc::clone(&make),
+        Rc::clone(&types),
+        Rc::clone(&syms),
+        Rc::clone(&names),
+        crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler::instance(),
+    );
+    // 8. ArgumentAttr (ArgumentAttr.java:112-130)
+    let argument = crate::comp::argument_attr::ArgumentAttr::new(
+        Rc::clone(&deferred_cell),
+        Rc::clone(&diags),
+    );
+    // install the services into the Attr cells
+    {
+        let a = attr.borrow();
+        *rs_cell.borrow_mut() = Some(rs);
+        *operators_cell.borrow_mut() = Some(operators);
+        *recover_cell.borrow_mut() = Some(recover);
+        *flow_cell.borrow_mut() = Some(flow);
+        *analyzer_cell.borrow_mut() = Some(analyzer);
+        *annotate_cell.borrow_mut() = Some(annotate);
+        let deferred = match Rc::try_unwrap(deferred) {
+            Ok(service) => service,
+            Err(_) => panic!("AssertionError: fresh DeferredAttrService is shared"),
+        };
+        *deferred_cell.borrow_mut() = Some(Rc::new(RefCell::new(deferred)));
+        *argument_cell.borrow_mut() = Some(argument);
+        drop(a);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -10439,6 +10737,29 @@ mod tests {
         class_tree: TreeId,
         env: Rc<Env<AttrContext>>,
         attr: Attr,
+    }
+
+    #[test]
+    fn wiring_installs_the_services() {
+        let mut harness = build_attr_harness();
+        let attr = Rc::new(RefCell::new(harness.attr));
+        wire_attr_services(
+            &mut harness.ctx,
+            Rc::clone(&attr),
+            Rc::clone(&harness.options),
+            Source::JDK17,
+            None,
+        );
+        let a = attr.borrow();
+        assert!(a.rs.borrow().is_some(), "rs service");
+        assert!(a.operators.borrow().is_some(), "operators service");
+        assert!(a.attr_recover.borrow().is_some(), "attr_recover service");
+        assert!(a.flow.borrow().is_some(), "flow service");
+        assert!(a.analyzer.borrow().is_some(), "analyzer service");
+        assert!(a.annotate.borrow().is_some(), "annotate service");
+        assert!(a.deferred_attr.borrow().is_some(), "deferred_attr service");
+        assert!(a.argument_attr.borrow().is_some(), "argument_attr service");
+        drop(a);
     }
 
     fn build_attr_harness() -> AttrHarness {
