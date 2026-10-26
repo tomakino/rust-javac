@@ -1631,6 +1631,7 @@ impl TreeFactory for TreeMaker {
                 varargs_element: None,
                 ref_poly_kind: PolyKind::STANDALONE,
                 owner_accessible: false,
+                overload_kind: None,
                 referent_type: None,
                 poly_kind: PolyKind::STANDALONE,
                 target: None,

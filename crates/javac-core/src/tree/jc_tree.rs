@@ -50,7 +50,7 @@
 use std::rc::Rc;
 
 use javac_source::tree::case_tree::CaseKind;
-use javac_source::tree::member_reference_tree::ReferenceMode;
+pub use javac_source::tree::member_reference_tree::ReferenceMode;
 use javac_source::tree::module_tree::ModuleKind;
 use javac_tools::tools::java_file_manager::Location;
 use javac_tools::tools::java_file_object::JavaFileObject;
@@ -374,6 +374,14 @@ pub enum PolyKind {
 pub enum ParameterKind {
     IMPLICIT,
     EXPLICIT,
+}
+
+/// Java: JCTree.JCMemberReference.OverloadKind (JCTree.java:2420-2450)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OverloadKind {
+    UNOVERLOADED,
+    OVERLOADED,
+    ERROR,
 }
 
 /// Java: JCTree.JCMemberReference.ReferenceKind
@@ -886,6 +894,9 @@ pub enum TreeKind {
         mode: ReferenceMode,
         /// the reference kind (Java null before Attr -> None)
         kind: Option<ReferenceKind>,
+        /// Java: JCMemberReference.overloadKind (ArgumentAttr fills it; the
+        /// DeferredAttr stuck policies read it).
+        overload_kind: Option<OverloadKind>,
         /// the referenced name
         name: Name,
         /// the expression
@@ -1735,6 +1746,7 @@ mod tests {
             ref_poly_kind: PolyKind::POLY,
             owner_accessible: false,
             referent_type: None,
+            overload_kind: None,
             poly_kind: PolyKind::POLY,
             target: None,
         };

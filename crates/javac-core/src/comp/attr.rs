@@ -81,6 +81,7 @@ pub struct ResultInfo {
     /// Java: the ResultInfo subclass flavor (MethodAttrInfo is an inner subclass
     /// upstream; the port carries the flavor explicitly — registered §9).
     pub kind: ResultInfoKind,
+    pub argument_attr_exclude: Option<crate::comp::argument_attr::UniquePos>,
     /// Java: Attr.RecoveryInfo overrides check() to wrap the result in
     /// chk.checkNonVoid (Attr.java:598-620); expressed as a flag (§9 registered).
     pub check_non_void: bool,
@@ -131,6 +132,7 @@ impl ResultInfo {
             check_mode,
             check_non_void: false,
             kind: ResultInfoKind::Normal,
+            argument_attr_exclude: None,
             id: NEXT_RESULT_INFO_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
     }
@@ -153,8 +155,18 @@ impl ResultInfo {
 
     /// Java: protected boolean needsArgumentAttr(JCTree tree) — the base
     /// returns false; MethodAttrInfo overrides it to true (Attr.java:563-596).
-    pub fn needs_argument_attr(&self, _tree: TreeId) -> bool {
-        matches!(self.kind, ResultInfoKind::MethodAttr)
+    pub fn needs_argument_attr(
+        &self,
+        ctx: &CompilerContext,
+        tree: TreeId,
+    ) -> bool {
+        if !matches!(self.kind, ResultInfoKind::MethodAttr) {
+            return false;
+        }
+        match &self.argument_attr_exclude {
+            Some(exclude) => exclude.pos != ctx.tree(tree).pos,
+            None => true,
+        }
     }
 
     /// Java: protected Type check(final DiagnosticPosition pos, final Type
@@ -360,6 +372,13 @@ pub struct Attr {
     pub syms: Rc<RefCell<Symtab>>,
     /// Java: final Infer infer (injected service, ADR 0001)
     pub infer: Rc<crate::comp::infer::Infer>,
+    /// Java: final Resolve rs (cell: Resolve and Attr are mutually recursive
+    /// services, §9; installed by the wiring).
+    pub rs: Rc<RefCell<Option<Rc<RefCell<crate::comp::resolve::Resolve>>>>>,
+    /// Java: final ArgumentAttr argumentAttr (§9 cell, installed by the wiring).
+    pub argument_attr: Rc<RefCell<Option<Rc<RefCell<crate::comp::argument_attr::ArgumentAttr>>>>>,
+    /// Java: final DeferredAttr deferredAttr (§9 cell, installed by the wiring).
+    pub deferred_attr: Rc<RefCell<Option<Rc<RefCell<crate::comp::deferred_attr::DeferredAttrService>>>>>,
 }
 
 impl Attr {
@@ -441,6 +460,9 @@ impl Attr {
                 crate::comp::check::CheckMode::NORMAL,
             ),
             clinits: RefCell::new(std::collections::HashMap::new()),
+            rs: Rc::new(RefCell::new(None)),
+            argument_attr: Rc::new(RefCell::new(None)),
+            deferred_attr: Rc::new(RefCell::new(None)),
             attr_recover: Rc::new(RefCell::new(None)),
             syms,
             infer,
@@ -515,7 +537,7 @@ impl Attr {
     ) -> Result<TypeId, CompletionFailure> {
         let prev_env = self.env.clone();
         let prev_result_info = self.result_info.clone();
-        let needs_argument_attr = result_info.needs_argument_attr(tree);
+        let needs_argument_attr = result_info.needs_argument_attr(ctx, tree);
         self.env = Some(Rc::clone(env));
         self.result_info = Some(result_info);
         let result = if needs_argument_attr {
@@ -3793,6 +3815,28 @@ impl Attr {
 // per ADR 0001.
 // ---------------------------------------------------------------------------
 impl Attr {
+    /// Java: ResultInfo memberReferenceQualifierResult(JCMemberReference tree)
+    /// (Attr.java:3755-3761)
+    pub fn member_reference_qualifier_result(
+        &self,
+        ctx: &CompilerContext,
+        env: &Rc<Env<AttrContext>>,
+        tree: TreeId,
+    ) -> ResultInfo {
+        let mode = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::MemberReference { mode, .. } => *mode,
+            _ => panic!("ClassCastException: JCMemberReference expected"),
+        };
+        let _ = env;
+        let pkind = if mode == crate::tree::jc_tree::ReferenceMode::INVOKE {
+            KindSelector::VAL_TYP
+        } else {
+            KindSelector::TYP
+        };
+        let _ = ctx;
+        ResultInfo::new(pkind, None, Rc::clone(&self.basic_handler))
+    }
+
     /// Java: public Env<AttrContext> lambdaEnv(JCLambda that,
     /// Env<AttrContext> env) (Attr.java:3484-3560)
     pub fn lambda_env(

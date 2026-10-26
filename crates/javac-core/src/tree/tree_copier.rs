@@ -997,19 +997,20 @@ impl TreeCopier {
         // Java: DeferredAttr's copier forwards the overload kind (setOverloadKind
         // forwards to the original tree; getOverloadKind reads the original), so
         // the speculative copy keeps the reference kind/poly kind (§9).
-        let (kind, ref_poly_kind, owner_accessible, poly_kind) = if self.speculative {
+        let (kind, ref_poly_kind, owner_accessible, poly_kind, overload_kind) = if self.speculative {
             match &ctx.tree(tree).kind {
                 TreeKind::MemberReference {
                     kind,
                     ref_poly_kind,
                     owner_accessible,
                     poly_kind,
+                    overload_kind,
                     ..
-                } => (*kind, *ref_poly_kind, *owner_accessible, *poly_kind),
-                _ => (None, PolyKind::STANDALONE, false, PolyKind::STANDALONE),
+                } => (*kind, *ref_poly_kind, *owner_accessible, *poly_kind, *overload_kind),
+                _ => (None, PolyKind::STANDALONE, false, PolyKind::STANDALONE, None),
             }
         } else {
-            (None, PolyKind::STANDALONE, false, PolyKind::STANDALONE)
+            (None, PolyKind::STANDALONE, false, PolyKind::STANDALONE, None)
         };
         self.mk(
             ctx,
@@ -1026,6 +1027,7 @@ impl TreeCopier {
                 ref_poly_kind,
                 owner_accessible,
                 referent_type: None,
+                overload_kind,
                 poly_kind,
                 target: None,
             },

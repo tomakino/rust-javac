@@ -221,9 +221,9 @@ pub fn deferred_type_speculative_tree(
         .map(|entry| entry.speculative_tree)
 }
 
-/// Java: public Type complete(ResultInfo resultInfo, DeferredAttrContext
-/// deferredAttrContext) (DeferredAttr.java:309-330)
-pub fn deferred_type_complete(
+/// Java: DeferredType.complete base behavior (the ArgumentType override is in
+/// deferred_type_complete below).
+pub fn deferred_type_complete_base(
     ctx: &mut CompilerContext,
     syms: &mut Symtab,
     attr: &mut Attr,
@@ -233,15 +233,71 @@ pub fn deferred_type_complete(
 ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
     match deferred_attr_context.mode {
         AttrMode::SPECULATIVE => {
-            // Java: attribSpeculative(tree, env, resultInfo); speculativeCache.put(...)
-            unimplemented!(
-                "TODO(Attr/ArgumentAttr/Flow batch): DeferredAttr.attribSpeculative (DeferredAttr.java:466-518)"
-            )
+            // Java: JCTree speculativeTree = attribSpeculative(tree, env, resultInfo);
+            //       speculativeCache.put(speculativeTree, resultInfo);
+            //       return speculativeTree.type;
+            let (tree, env, mode, _, cache, _) = deferred_fields(ctx, t);
+            // Java: Assert.check(mode == null || mode == AttrMode.SPECULATIVE);
+            debug_assert!(mode.is_none() || mode == Some(AttrMode::SPECULATIVE));
+            let deferred = attr
+                .deferred_attr
+                .borrow()
+                .clone()
+                .expect("TODO(批6 wiring): Attr.deferred_attr service must be installed");
+            let result_info_rc = Rc::new(result_info.clone());
+            let speculative_tree = {
+                let mut deferred = deferred.borrow_mut();
+                deferred
+                    .attrib_speculative(ctx, syms, attr, tree, &env, result_info)
+                    .map_err(|failure| match failure {
+                        DeferredAttrFailure::Completion(failure) => failure,
+                        other => panic!("unexpected speculative attribution failure: {:?}", other),
+                    })?
+            };
+            cache.borrow_mut().put(speculative_tree, result_info_rc);
+            Ok(ctx
+                .tree(speculative_tree)
+                .ty
+                .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx)))
         }
         AttrMode::CHECK => {
             let (tree, env, _, _, _, _) = deferred_fields(ctx, t);
             attr.attrib_tree(ctx, syms, tree, &env, result_info.clone())
         }
+    }
+}
+
+/// Java: public Type complete(ResultInfo resultInfo, DeferredAttrContext
+/// deferredAttrContext) (DeferredAttr.java:309-330) — dispatches the
+/// ArgumentType override (ArgumentAttr.java:345-365) when present.
+pub fn deferred_type_complete(
+    ctx: &mut CompilerContext,
+    syms: &mut Symtab,
+    attr: &mut Attr,
+    t: TypeId,
+    result_info: &ResultInfo,
+    deferred_attr_context: &DeferredAttrContext,
+) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
+    let argument = deferred_fields(ctx, t).5;
+    match argument {
+        Some(data) => {
+            let argument_attr = attr
+                .argument_attr
+                .borrow()
+                .clone()
+                .expect("TODO(批6 wiring): Attr.argument_attr service must be installed");
+            let mut argument_attr = argument_attr.borrow_mut();
+            argument_attr.argument_type_complete(
+                ctx,
+                syms,
+                attr,
+                t,
+                &data,
+                result_info,
+                deferred_attr_context,
+            )
+        }
+        None => deferred_type_complete_base(ctx, syms, attr, t, result_info, deferred_attr_context),
     }
 }
 
@@ -2160,6 +2216,99 @@ impl DeferredAttrService {
             Ok(_) => Ok(tree),
             Err(failure) => Err(DeferredAttrFailure::from(failure)),
         }
+    }
+}
+
+impl DeferredAttrService {
+    /// Java: JCLambda attribSpeculativeLambda(JCLambda that, Env<AttrContext> env,
+    /// ResultInfo resultInfo) (DeferredAttr.java:434-468)
+    #[allow(clippy::too_many_arguments)]
+    pub fn attrib_speculative_lambda(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        attr: &mut Attr,
+        attr_recover: &mut crate::comp::attr_recover::AttrRecover,
+        rs: &mut crate::comp::resolve::Resolve,
+        chk: &crate::comp::check::Check,
+        diags: &crate::util::jc_diagnostic::Factory,
+        flow: &crate::comp::flow::Flow,
+        that: TreeId,
+        env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
+        result_info: &ResultInfo,
+    ) -> Result<TreeId, DeferredAttrFailure> {
+        use crate::tree::tree_maker::TreeFactory;
+        let (params, body, pos) = match &ctx.tree(that).kind {
+            crate::tree::jc_tree::TreeKind::Lambda { params, body, .. } => {
+                (params.clone(), *body, ctx.tree(that).pos)
+            }
+            _ => panic!("ClassCastException: JCLambda expected"),
+        };
+        let body = body.expect("lambda body");
+        let mut stats = params.clone();
+        let body_is_expression = ctx.tree(body).tag != crate::tree::jc_tree::Tag::BLOCK;
+        if body_is_expression {
+            let ret = {
+                let mut make = self.make.borrow_mut();
+                make.at(pos);
+                make.return_(ctx, Some(body))
+            };
+            stats = stats.append(ret);
+        } else {
+            stats = stats.append(body);
+        }
+        let lambda_block = {
+            let mut make = self.make.borrow_mut();
+            make.at(pos);
+            make.block(ctx, 0, stats)
+        };
+        let local_env = attr.lambda_env(ctx, syms, that, env);
+        local_env.info.borrow_mut().return_result = Some(result_info.clone());
+        let outcome = (|| -> Result<TreeId, DeferredAttrFailure> {
+            let speculative_tree = self.attrib_speculative(
+                ctx,
+                syms,
+                attr,
+                lambda_block,
+                &local_env,
+                result_info,
+            )?;
+            let spec_stats = match &ctx.tree(speculative_tree).kind {
+                crate::tree::jc_tree::TreeKind::Block { stats, .. } => stats.clone(),
+                _ => panic!("ClassCastException: JCBlock expected"),
+            };
+            let mut args: crate::util::list::List<TreeId> = crate::util::list::List::nil();
+            let mut all = spec_stats;
+            let mut last: TreeId = speculative_tree;
+            while all.non_empty() {
+                let stat = *all.head();
+                last = stat;
+                if ctx.tree(stat).tag == crate::tree::jc_tree::Tag::VARDEF {
+                    args = args.append(stat);
+                }
+                all = all.tail();
+            }
+            let lambda_body = if ctx.tree(last).tag == crate::tree::jc_tree::Tag::RETURN {
+                match &ctx.tree(last).kind {
+                    crate::tree::jc_tree::TreeKind::Return { expr } => expr.expect("return expr"),
+                    _ => last,
+                }
+            } else {
+                last
+            };
+            let speculative_lambda = {
+                let mut make = self.make.borrow_mut();
+                make.at(pos);
+                make.lambda(ctx, args, lambda_body)
+            };
+            attr.pre_flow(ctx, syms, attr_recover, rs, &self.infer, chk, diags, env, speculative_lambda);
+            flow.analyze_lambda(ctx, env, speculative_lambda, &self.make, false);
+            Ok(speculative_lambda)
+        })();
+        if let Some(scope) = local_env.info.borrow().scope {
+            ctx.scope_leave(scope);
+        }
+        outcome
     }
 }
 
