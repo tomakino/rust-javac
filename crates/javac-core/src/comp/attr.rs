@@ -389,6 +389,13 @@ pub struct Attr {
     pub operators: Rc<RefCell<Option<Rc<crate::comp::operators::Operators>>>>,
     /// Java: final ConstFold cfolder (Attr.java:634).
     pub cfolder: Rc<crate::comp::const_fold::ConstFold>,
+    /// Java: final Analyzer analyzer (service cell: Analyzer and Attr are
+    /// mutually recursive; the wiring installs it).
+    pub analyzer: Rc<RefCell<Option<Rc<RefCell<crate::comp::analyzer::Analyzer>>>>>,
+    /// Java: final Flow flow (service cell: installed by the wiring).
+    pub flow: Rc<RefCell<Option<Rc<crate::comp::flow::Flow>>>>,
+    /// Java: final Annotate annotate (service cell: installed by the wiring).
+    pub annotate: Rc<RefCell<Option<Rc<crate::comp::annotate::Annotate>>>>,
 }
 
 impl Attr {
@@ -481,6 +488,9 @@ impl Attr {
             ),
             operators: Rc::new(RefCell::new(None)),
             cfolder: Rc::new(crate::comp::const_fold::ConstFold::new()),
+            analyzer: Rc::new(RefCell::new(None)),
+            flow: Rc::new(RefCell::new(None)),
+            annotate: Rc::new(RefCell::new(None)),
             attr_recover: Rc::new(RefCell::new(None)),
             syms,
             infer,
@@ -692,6 +702,10 @@ impl Attr {
             _ => {}
         }
         match &ctx.tree(tree).tag {
+            Tag::BLOCK => self.visit_block(ctx, syms, tree),
+            Tag::DOLOOP => self.visit_do_loop(ctx, syms, tree),
+            Tag::WHILELOOP => self.visit_while_loop(ctx, syms, tree),
+            Tag::FORLOOP => self.visit_for_loop(ctx, syms, tree),
             Tag::TYPECAST => self.visit_type_cast(ctx, syms, tree),
             Tag::LITERAL => self.visit_literal(ctx, syms, tree),
             Tag::IDENT => self.visit_ident(ctx, syms, tree),
@@ -1527,20 +1541,50 @@ impl Attr {
     /// (Attr.java:749-756)
     pub fn attrib_stat(
         &mut self,
-        _ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
-        _tree: TreeId,
-        _env: &Rc<Env<AttrContext>>,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
         // Java: Env<AttrContext> analyzeEnv = analyzer.copyEnvIfNeeded(tree, env);
-        // Type result = attribTree(tree, env, statInfo);
-        // analyzer.analyzeIfNeeded(tree, analyzeEnv);
-        // attrRecover.doRecovery();
-        // The Analyzer (flow analysis) and AttrRecover are registered with the
-        // Flow/AttrRecover.
-        unimplemented!(
-            "TODO(Analyzer/AttrRecover batch): Attr.attribStat (Attr.java:749-756)"
-        )
+        let analyze_env = {
+            let analyzer_rc = self.analyzer.borrow().clone();
+            match analyzer_rc {
+                None => None,
+                Some(analyzer_rc) => {
+                    let mut analyzer = analyzer_rc.borrow_mut();
+                    analyzer.copy_env_if_needed(ctx, tree, env)
+                }
+            }
+        };
+        let stat_info = self.stat_info.clone();
+        let result = self.attrib_tree_use(ctx, syms, tree, env, stat_info);
+        // Java: analyzer.analyzeIfNeeded(tree, analyzeEnv);
+        if analyze_env.is_some()
+            && let Some(analyzer_rc) = self.analyzer.borrow().clone()
+        {
+            let mut analyzer = analyzer_rc.borrow_mut();
+            analyzer.analyze_if_needed(ctx, tree, analyze_env.as_ref());
+        }
+        // Java: attrRecover.doRecovery();
+        self.do_recovery(ctx, syms);
+        result
+    }
+
+    /// Java: attrRecover.doRecovery() — the ported recovery loop entry.
+    fn do_recovery(&mut self, ctx: &mut CompilerContext, syms: &mut Symtab) {
+        let Some(recover_rc) = self.attr_recover.borrow().clone() else {
+            return;
+        };
+        let recover = recover_rc.borrow();
+        let rs_rc = self.rs.borrow().clone();
+        let Some(rs_rc) = rs_rc else { return; };
+        let mut rs = rs_rc.borrow_mut();
+        let chk_rc = Rc::clone(&self.chk);
+        let chk = chk_rc.borrow();
+        let infer_rc = Rc::clone(&self.infer);
+        let diags = Rc::clone(&self.diags);
+        recover.do_recovery(ctx, syms, self, &mut rs, &infer_rc, &chk, &diags);
     }
 
     /// Java: <T extends JCTree> void attribStats(List<T> trees,
@@ -6945,6 +6989,259 @@ impl Attr {
             crate::tree::tree_scanner::TreeScannerVisitor::scan(&mut scanner, ctx, Some(init));
         }
         scanner.bad_inference_msg
+    }
+}
+
+impl Attr {
+    /// Java: void preFlow(JCTree tree) (the statement variant, Attr.java:2250-2280).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the statement tree.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the attrRecover service must be installed when queued.
+    ///
+    /// Upstream: Attr.java:2250-2280.
+    fn statement_pre_flow(&mut self, ctx: &mut CompilerContext, syms: &mut Symtab, tree: TreeId) {
+        self.do_recovery(ctx, syms);
+        let stuck_type = syms.stuck_type;
+        let mut analyzer = PostAttrAnalyzer {
+            syms,
+            names: &self.names,
+            pre_flow_stuck_type: Some(stuck_type),
+        };
+        crate::tree::tree_scanner::TreeScannerVisitor::scan(&mut analyzer, ctx, Some(tree));
+    }
+
+    /// Java: private boolean breaksOutOf(JCTree loop, JCTree body) (Attr.java:1521-1524).
+    fn breaks_out_of(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        loop_tree: TreeId,
+        body: TreeId,
+    ) -> bool {
+        self.statement_pre_flow(ctx, syms, body);
+        let flow_rc = self.flow.borrow().clone().expect("AssertionError: flow service must be installed");
+        let make = Rc::clone(&self.make);
+        let env = self.env.clone().expect("env");
+        flow_rc.breaks_out_of(ctx, &env, loop_tree, body, &make)
+    }
+
+    /// Java: void enterScope(Env<AttrContext> env) — the bindingEnvironment
+    /// without bindings. §9 helper over the ported scope dups.
+    fn dup_env_with_scope(&self, ctx: &mut CompilerContext, env: &Rc<Env<AttrContext>>, tree: Option<TreeId>, unshared_owner: Option<SymbolId>) -> Rc<Env<AttrContext>> {
+        let scope = env.info.borrow().scope.expect("env scope");
+        let new_scope = match unshared_owner {
+            Some(owner) => ctx.scope_dup_unshared(scope, Some(owner)),
+            None => ctx.scope_dup(scope, None),
+        };
+        let info = env.info.borrow().dup(Some(new_scope));
+        env.dup(tree, info)
+    }
+
+    /// Java: public void visitBlock(JCBlock tree) (Attr.java:1424-1464).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the block.
+    ///
+    /// # Returns
+    ///   - Type.noType (statement result).
+    ///
+    /// # Panics
+    ///   - the annotate/flow services must be installed for initializer blocks.
+    ///
+    /// Upstream: Attr.java:1424-1464.
+    fn visit_block(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let owner = env
+            .info
+            .borrow()
+            .scope
+            .and_then(|scope| ctx.scope(scope).owner);
+        let owner_kind = owner.map(|owner| ctx.sym(owner).kind);
+        let stats = match &ctx.tree(tree).kind {
+            TreeKind::Block { stats, .. } => stats.clone(),
+            _ => panic!("ClassCastException: JCBlock expected"),
+        };
+        let block_flags = match &ctx.tree(tree).kind {
+            TreeKind::Block { flags, .. } => *flags,
+            _ => 0,
+        };
+        if owner_kind == Some(crate::code::kinds::Kind::TYP)
+            || owner_kind == Some(crate::code::kinds::Kind::ERR)
+        {
+            // Block is a static or instance initializer; let the owner of the
+            // environment be a freshly created BLOCK-method.
+            let owner = owner.expect("block owner");
+            let strictfp = ctx.sym(owner).flags_field & (crate::code::flags::STRICTFP as i64);
+            let fake_owner = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+                crate::code::kinds::Kind::MTH,
+                block_flags | (crate::code::flags::BLOCK as i64) | strictfp,
+                self.names.empty.clone(),
+                None,
+                Some(owner),
+                crate::code::symbol::SymbolKind::MethodSymbol {
+                    extra_params: List::nil(),
+                    captured_locals: List::nil(),
+                    params: List::nil(),
+                    default_value: None,
+                },
+            ));
+            let local_env = self.dup_env_with_scope(ctx, &env, Some(tree), Some(fake_owner));
+            if (block_flags & (crate::code::flags::STATIC as i64)) != 0 {
+                local_env.info.borrow_mut().static_level += 1;
+            }
+            // Java: annotate.queueScanTreeAndTypeAnnotate(tree, localEnv,
+            //     localEnv.info.scope.owner, null); annotate.flush();
+            {
+                let annotate_rc = self
+                    .annotate
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: annotate service must be installed");
+                annotate_rc.services.queue_scan_tree_and_type_annotate(
+                    tree,
+                    &local_env,
+                    fake_owner,
+                    crate::util::position::NOPOS,
+                );
+                let _ = annotate_rc.flush(ctx);
+            }
+            self.attrib_stats(ctx, syms, stats, &local_env);
+            // Store init and clinit type annotations with the ClassSymbol.
+            let owner_scope = local_env.info.borrow().scope.expect("local env scope");
+            let scope_owner = ctx.scope(owner_scope).owner.expect("scope owner");
+            let tas = ctx.sym(scope_owner).get_raw_type_attributes();
+            if (block_flags & (crate::code::flags::STATIC as i64)) != 0 {
+                ctx.sym_mut(owner).append_class_init_type_attributes(tas);
+            } else {
+                ctx.sym_mut(owner).append_init_type_attributes(tas);
+            }
+        } else {
+            // Create a new local environment with a local scope.
+            let local_env = self.dup_env_with_scope(ctx, &env, Some(tree), None);
+            self.attrib_stats(ctx, syms, stats, &local_env);
+        }
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitDoLoop(JCDoWhileLoop tree) (Attr.java:1466-1476).
+    fn visit_do_loop(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let (body, cond) = match &ctx.tree(tree).kind {
+            TreeKind::DoWhileLoop { body, cond } => {
+                (body.expect("do body"), cond.expect("do cond"))
+            }
+            _ => panic!("ClassCastException: JCDoWhileLoop expected"),
+        };
+        let body_env = env.dup(Some(tree), env.info.borrow().dup(env.info.borrow().scope));
+        self.attrib_stat(ctx, syms, body, &body_env);
+        self.attrib_expr_with_type(ctx, syms, cond, &env, Some(syms.boolean_type));
+        if !self.breaks_out_of(ctx, syms, tree, body) {
+            // include condition's body when false after the while, if cannot get
+            // out of the loop
+            let cond_bindings = self.match_bindings.clone();
+            let scope = env.info.borrow().scope.expect("env scope");
+            let mut current = cond_bindings.bindings_when_false.clone();
+            while current.non_empty() {
+                ctx.scope_enter(scope, *current.head());
+                current = current.tail();
+            }
+        }
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitWhileLoop(JCWhileLoop tree) (Attr.java:1478-1492).
+    fn visit_while_loop(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let (cond, body) = match &ctx.tree(tree).kind {
+            TreeKind::WhileLoop { cond, body } => {
+                (cond.expect("while cond"), body.expect("while body"))
+            }
+            _ => panic!("ClassCastException: JCWhileLoop expected"),
+        };
+        self.attrib_expr_with_type(ctx, syms, cond, &env, Some(syms.boolean_type));
+        let cond_bindings = self.match_bindings.clone();
+        let while_env = self.binding_env(ctx, syms, &env, cond_bindings.bindings_when_true.clone());
+        let body_env = while_env.dup(Some(tree), while_env.info.borrow().dup(while_env.info.borrow().scope));
+        self.attrib_stat(ctx, syms, body, &body_env);
+        if !self.breaks_out_of(ctx, syms, tree, body) {
+            let scope = env.info.borrow().scope.expect("env scope");
+            let mut current = cond_bindings.bindings_when_false.clone();
+            while current.non_empty() {
+                ctx.scope_enter(scope, *current.head());
+                current = current.tail();
+            }
+        }
+        Ok(self.no_type(ctx))
+    }
+
+    /// Java: public void visitForLoop(JCForLoop tree) (Attr.java:1501-1530).
+    #[allow(clippy::too_many_arguments)]
+    fn visit_for_loop(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let (init, cond, step, body) = match &ctx.tree(tree).kind {
+            TreeKind::ForLoop { init, cond, step, body } => {
+                (init.clone(), *cond, step.clone(), body.expect("for body"))
+            }
+            _ => panic!("ClassCastException: JCForLoop expected"),
+        };
+        let loop_env = self.dup_env_with_scope(ctx, &env, env.tree, None);
+        self.attrib_stats(ctx, syms, init, &loop_env);
+        let mut cond_bindings = crate::comp::match_bindings::MatchBindings::empty();
+        if let Some(cond) = cond {
+            self.attrib_expr_with_type(ctx, syms, cond, &loop_env, Some(syms.boolean_type));
+            cond_bindings = self.match_bindings.clone();
+        }
+        let body_env = self.binding_env(ctx, syms, &loop_env, cond_bindings.bindings_when_true.clone());
+        // Java: bodyEnv.tree = tree; (before, we were not in loop!)
+        let body_env = Rc::new(Env {
+            next: body_env.next.clone(),
+            outer: body_env.outer.clone(),
+            tree: Some(tree),
+            toplevel: body_env.toplevel,
+            encl_class: body_env.encl_class,
+            encl_method: body_env.encl_method,
+            info: Rc::clone(&body_env.info),
+            base_clause: body_env.base_clause,
+        });
+        self.attrib_stats(ctx, syms, step, &body_env);
+        self.attrib_stat(ctx, syms, body, &body_env);
+        if !self.breaks_out_of(ctx, syms, tree, body) {
+            let scope = env.info.borrow().scope.expect("env scope");
+            let mut current = cond_bindings.bindings_when_false.clone();
+            while current.non_empty() {
+                ctx.scope_enter(scope, *current.head());
+                current = current.tail();
+            }
+        }
+        Ok(self.no_type(ctx))
     }
 }
 
