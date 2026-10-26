@@ -1999,6 +1999,80 @@ impl Types {
         true
     }
 
+    /// Java: public Type cvarUpperBound(Type t) (Types.java)
+    pub fn cvar_upper_bound(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
+        if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
+            let captured = ctx.typ(t).is_captured();
+            if captured {
+                let bound = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::TypeVar { bound, .. } => *bound,
+                    _ => None,
+                }
+                .expect("type variable bound");
+                return self.cvar_upper_bound(ctx, bound);
+            }
+            return t;
+        }
+        t
+    }
+
+    /// Java: public Type elemtype(Type t) (Types.java)
+    pub fn elemtype(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
+        match ctx.typ(t).get_tag() {
+            TypeTag::WILDCARD => {
+                let upper = self.wild_upper_bound(ctx, syms, t);
+                self.elemtype(ctx, syms, upper)
+            }
+            TypeTag::ARRAY => match &ctx.typ(t).kind {
+                crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => {
+                    elemtype.expect("array element type")
+                }
+                _ => unreachable!(),
+            },
+            TypeTag::FORALL => {
+                let qtype = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::ForAll { qtype, .. } => *qtype,
+                    _ => None,
+                }
+                .expect("forall qtype");
+                self.elemtype(ctx, syms, qtype)
+            }
+            _ => t,
+        }
+    }
+
+    /// Java: public boolean isSubSignature(Type t, Type s) —
+    /// hasSameArgs(t, s) || hasSameArgs(t, erasure(s)) (Types.java:2799).
+    pub fn is_sub_signature(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        s: TypeId,
+    ) -> bool {
+        if self.has_same_args(ctx, syms, t, s) {
+            return true;
+        }
+        let erased = self.erasure(ctx, syms, s);
+        self.has_same_args(ctx, syms, t, erased)
+    }
+
+    /// Java: public boolean isSubSignature(Type t, Type s, boolean strict) —
+    /// TODO(Types batch): the strict=false HasSameArgs variant is not ported.
+    pub fn is_sub_signature_strict(
+        &self,
+        _ctx: &mut CompilerContext,
+        _syms: &Symtab,
+        _t: TypeId,
+        _s: TypeId,
+        strict: bool,
+    ) -> bool {
+        if strict {
+            self.is_sub_signature(_ctx, _syms, _t, _s)
+        } else {
+            unimplemented!("TODO(Types batch): isSubSignature(t, s, strict=false)")
+        }
+    }
     /// Java: public boolean isConvertible(Type t, Type s)
     /// Java: public boolean Type.contains(Type t) — the base Type implementation
     /// is equalsIgnoreMetadata (the port maps it to isSameType); WildcardType

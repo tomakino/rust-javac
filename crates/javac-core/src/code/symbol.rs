@@ -1303,6 +1303,282 @@ pub fn symbol_is_static_or_instance_init(ctx: &CompilerContext, symbol: SymbolId
     )
 }
 
+
+/// Java: public boolean exists() — ErrorSymbol (ErrSymbol) is the only symbol
+/// that does not exist; the port keys on the symbol kind (registered adapter).
+pub fn symbol_exists(ctx: &CompilerContext, symbol: SymbolId) -> bool {
+    ctx.sym(symbol).kind != crate::code::kinds::Kind::ERR
+}
+
+/// Java: public ClassSymbol outermostClass() (Symbol.java:523)
+pub fn symbol_outermost_class(ctx: &CompilerContext, symbol: SymbolId) -> Option<SymbolId> {
+    let mut sym = symbol;
+    let mut previous: Option<SymbolId> = None;
+    while ctx.sym(sym).kind != crate::code::kinds::Kind::PCK {
+        previous = Some(sym);
+        match ctx.sym(sym).owner {
+            Some(owner) => sym = owner,
+            None => break,
+        }
+    }
+    previous
+}
+
+/// Java: public boolean isEnclosedBy(ClassSymbol clazz) (Symbol.java:559)
+pub fn symbol_is_enclosed_by(ctx: &CompilerContext, symbol: SymbolId, clazz: SymbolId) -> bool {
+    let mut sym = symbol;
+    while ctx.sym(sym).kind != crate::code::kinds::Kind::PCK {
+        if sym == clazz {
+            return true;
+        }
+        match ctx.sym(sym).owner {
+            Some(owner) => sym = owner,
+            None => return false,
+        }
+    }
+    false
+}
+
+/// Java: public boolean isSubClass(Symbol base, Types types) — the ClassSymbol
+/// implementation (Symbol.java:1389); the base Symbol implementation is an
+/// AssertionError (only ClassSymbols are queried).
+pub fn symbol_is_sub_class(
+    ctx: &mut CompilerContext,
+    types: &crate::code::types::Types,
+    syms: &crate::code::symtab::Symtab,
+    symbol: SymbolId,
+    base: SymbolId,
+) -> bool {
+    if ctx.sym(symbol).kind != crate::code::kinds::Kind::TYP {
+        panic!("AssertionError: isSubClass");
+    }
+    if symbol == base {
+        return true;
+    }
+    let base_interface =
+        (ctx.sym(base).flags_field & crate::code::flags::INTERFACE as i64) != 0;
+    let self_ty = ctx.sym(symbol).ty.expect("class symbol type");
+    if base_interface {
+        let mut t = self_ty;
+        while ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            let interfaces = types.interfaces(ctx, syms, t);
+            let mut current = interfaces;
+            while current.non_empty() {
+                let interface = *current.head();
+                let reachable = ctx
+                    .typ(interface)
+                    .tsym
+                    .map(|tsym| symbol_is_sub_class(ctx, types, syms, tsym, base))
+                    .unwrap_or(false);
+                if reachable {
+                    return true;
+                }
+                current = current.tail();
+            }
+            t = types.supertype(ctx, syms, t);
+        }
+        false
+    } else {
+        let mut t = self_ty;
+        while ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+            if ctx.typ(t).tsym == Some(base) {
+                return true;
+            }
+            t = types.supertype(ctx, syms, t);
+        }
+        false
+    }
+}
+
+/// Java: public final boolean isAccessibleIn(Symbol clazz, Types types)
+/// (Symbol.java:616)
+pub fn symbol_is_accessible_in(
+    ctx: &mut CompilerContext,
+    types: &crate::code::types::Types,
+    syms: &crate::code::symtab::Symtab,
+    symbol: SymbolId,
+    clazz: SymbolId,
+) -> bool {
+    let access = ctx.sym(symbol).flags_field & crate::code::flags::AccessFlags as i64;
+    use crate::code::flags;
+    if access == flags::PUBLIC as i64 {
+        return true;
+    }
+    if access == flags::PRIVATE as i64 {
+        return ctx.sym(symbol).owner == Some(clazz);
+    }
+    if access == flags::PROTECTED as i64 {
+        // we model interfaces as extending Object
+        return (ctx.sym(clazz).flags_field & flags::INTERFACE as i64) == 0;
+    }
+    if access != 0 {
+        return true;
+    }
+    let this_package = symbol_packge(ctx, symbol).expect("symbol package");
+    let mut sup = Some(clazz);
+    while let Some(mut current) = sup {
+        if Some(current) == ctx.sym(symbol).owner {
+            break;
+        }
+        // while (sup.type.hasTag(TYPEVAR)) sup = sup.type.getUpperBound().tsym;
+        loop {
+            let current_ty = ctx.sym(current).ty.expect("super type");
+            if !ctx.typ(current_ty).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
+                break;
+            }
+            let bound = match &ctx.typ(current_ty).kind {
+                crate::code::type_::TypeKindData::TypeVar { bound, .. } => *bound,
+                _ => None,
+            }
+            .expect("type variable bound");
+            current = ctx.typ(bound).tsym.expect("type variable bound symbol");
+        }
+        let current_ty = ctx.sym(current).ty.expect("super type");
+        if ctx.typ(current_ty).has_tag(crate::code::type_tag::TypeTag::ERROR) {
+            return true; // error recovery
+        }
+        if (ctx.sym(current).flags_field & flags::COMPOUND as i64) != 0 {
+            sup = ctx.typ(current_ty).tsym;
+            continue;
+        }
+        if symbol_packge(ctx, current) != Some(this_package) {
+            return false;
+        }
+        let next = types.supertype(ctx, syms, current_ty);
+        sup = ctx.typ(next).tsym;
+    }
+    (ctx.sym(clazz).flags_field & flags::INTERFACE as i64) == 0
+}
+
+/// Java: public boolean isInheritedIn(Symbol clazz, Types types)
+/// (Symbol.java:651)
+pub fn symbol_is_inherited_in(
+    ctx: &mut CompilerContext,
+    types: &crate::code::types::Types,
+    syms: &crate::code::symtab::Symtab,
+    symbol: SymbolId,
+    clazz: SymbolId,
+) -> bool {
+    symbol_is_accessible_in(ctx, types, syms, symbol, clazz)
+}
+
+/// Java: private boolean hiddenIn(ClassSymbol clazz, Types types)
+/// (Symbol.java:567)
+pub fn symbol_hidden_in(
+    ctx: &mut CompilerContext,
+    types: &crate::code::types::Types,
+    syms: &crate::code::symtab::Symtab,
+    symbol: SymbolId,
+    clazz: SymbolId,
+) -> bool {
+    let hidden = symbol_hidden_in_internal(ctx, types, syms, symbol, clazz);
+    let hidden = hidden.expect("hiddenInInternal result");
+    hidden != symbol
+}
+
+/// Java: private Symbol hiddenInInternal(ClassSymbol currentClass, Types types)
+/// (Symbol.java:582)
+fn symbol_hidden_in_internal(
+    ctx: &mut CompilerContext,
+    types: &crate::code::types::Types,
+    syms: &crate::code::symtab::Symtab,
+    symbol: SymbolId,
+    current_class: SymbolId,
+) -> Option<SymbolId> {
+    if ctx.sym(symbol).owner == Some(current_class) {
+        return Some(symbol);
+    }
+    let name = ctx.sym(symbol).name.clone();
+    let kind = ctx.sym(symbol).kind;
+    if let Some(scope) = ctx.sym(current_class).members() {
+        let symbols = ctx.scope_get_symbols_by_name(
+            scope,
+            &name,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        for candidate in symbols {
+            if ctx.sym(candidate).kind == kind
+                && (kind != crate::code::kinds::Kind::MTH
+                    || ((ctx.sym(candidate).flags_field & crate::code::flags::STATIC as i64) != 0
+                        && types.is_sub_signature(
+                            ctx,
+                            syms,
+                            ctx.sym(candidate).ty.expect("candidate type"),
+                            ctx.sym(symbol).ty.expect("symbol type"),
+                        )))
+            {
+                return Some(candidate);
+            }
+        }
+    }
+    let current_ty = ctx.sym(current_class).ty.expect("current class type");
+    let supertype = types.supertype(ctx, syms, current_ty);
+    let mut supers = types.interfaces(ctx, syms, current_ty).prepend(supertype);
+    let mut hidden_sym: Option<SymbolId> = None;
+    while supers.non_empty() {
+        let st = *supers.head();
+        supers = supers.tail();
+        let tsym = match (ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS), ctx.typ(st).tsym) {
+            (true, Some(tsym)) => tsym,
+            _ => continue,
+        };
+        let result = symbol_hidden_in_internal(ctx, types, syms, symbol, tsym);
+        if result == Some(symbol) {
+            return Some(symbol);
+        } else if let Some(other) = result {
+            hidden_sym = Some(other);
+        }
+    }
+    hidden_sym
+}
+
+/// Java: public boolean isMemberOf(TypeSymbol clazz, Types types)
+/// (Symbol.java:552)
+pub fn symbol_is_member_of(
+    ctx: &mut CompilerContext,
+    types: &crate::code::types::Types,
+    syms: &crate::code::symtab::Symtab,
+    symbol: SymbolId,
+    clazz: SymbolId,
+) -> bool {
+    if ctx.sym(symbol).owner == Some(clazz) {
+        return true;
+    }
+    let owner = ctx.sym(symbol).owner.expect("symbol owner");
+    symbol_is_sub_class(ctx, types, syms, clazz, owner)
+        && symbol_is_inherited_in(ctx, types, syms, symbol, clazz)
+        && !symbol_hidden_in(ctx, types, syms, symbol, clazz)
+}
+
+/// Java: public Symbol location(Type site, Types types) (Symbol.java:330)
+pub fn symbol_location_site(
+    ctx: &mut CompilerContext,
+    types: &crate::code::types::Types,
+    syms: &crate::code::symtab::Symtab,
+    symbol: SymbolId,
+    site: TypeId,
+) -> Option<SymbolId> {
+    let owner = ctx.sym(symbol).owner?;
+    let owner_name = ctx.sym(owner).name.clone();
+    if owner_name.is_empty() {
+        return symbol_location(ctx, symbol);
+    }
+    let Some(owner_ty) = ctx.sym(owner).ty else {
+        return Some(owner);
+    };
+    if !ctx.typ(owner_ty).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+        return Some(owner);
+    }
+    let Some(ownertype) = types.as_outer_super(ctx, syms, site, owner) else {
+        return Some(owner);
+    };
+    match ctx.typ(ownertype).tsym {
+        Some(tsym) => Some(tsym),
+        None => Some(owner),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
