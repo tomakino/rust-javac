@@ -199,3 +199,4 @@ mod tests {
         assert!(std::panic::catch_unwind(|| TargetType::from_target_type_value(0x4C)).is_err());
     }
 }
+

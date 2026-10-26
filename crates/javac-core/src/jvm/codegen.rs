@@ -145,6 +145,9 @@ pub struct Gen {
     pub code: Option<Rc<RefCell<Code>>>,
     /// The item factory of the current method.
     pub items: Option<Rc<RefCell<Items>>>,
+    /// The code objects of the generated methods, indexed by symbol.
+    pub method_codes: Rc<RefCell<HashMap<SymbolId, Rc<RefCell<Code>>>>>,
+
     /// The attribution environment of the current class.
     pub attr_env: Option<Rc<Env<AttrContext>>>,
     /// The top level tree.
@@ -271,6 +274,7 @@ impl Gen {
             disable_virtualized_private_invoke,
             code: None,
             items: None,
+            method_codes: Rc::new(RefCell::new(HashMap::new())),
             attr_env: None,
             toplevel: None,
             nerrs: 0,
@@ -1703,6 +1707,9 @@ impl Gen {
             Rc::clone(&self.pool_writer),
         )));
         self.code = Some(Rc::clone(&code));
+        self.method_codes
+            .borrow_mut()
+            .insert(meth, Rc::clone(&code));
         self.items = Some(Rc::new(RefCell::new(Items::new(
             Rc::clone(&self.pool_writer),
             Rc::clone(&code),

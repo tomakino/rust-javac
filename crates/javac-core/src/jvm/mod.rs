@@ -4,6 +4,7 @@ pub mod byte_codes;
 pub mod code;
 pub mod codegen;
 pub mod class_file;
+pub mod class_writer;
 pub mod cr_table;
 pub mod items;
 pub mod crt_flags;
