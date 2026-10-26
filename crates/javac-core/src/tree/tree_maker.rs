@@ -2864,7 +2864,8 @@ mod tests {
             crate::jvm::target::Target::JDK1_17,
             crate::code::source::Source::JDK17,
         );
-        (ctx, syms, crate::code::types::Types::new(), TreeMaker::new(Some(names)))
+        let types = crate::code::types::Types::with_names(Rc::clone(&names));
+        (ctx, syms, types, TreeMaker::new(Some(names)))
     }
 
     #[test]

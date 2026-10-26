@@ -1302,7 +1302,7 @@ mod tests {
             *modle = Some(java_base);
             *slot = Some(sourcefile as Rc<dyn JavaFileObject>);
         }
-        let types = Rc::new(crate::code::types::Types::new());
+        let types = Rc::new(crate::code::types::Types::with_names(Rc::clone(&harness.names)));
         let chk = Rc::new(RefCell::new(Check::new(
             Rc::clone(&harness.names),
             Rc::clone(&harness.log),

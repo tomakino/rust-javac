@@ -1,0 +1,47 @@
+SAMPLE RelSample
+PARAM i false
+PARAM l false
+PARAM s false
+PARAM o false
+PARAM ls true
+PARAM lo true
+PARAM lu true
+PARAM les true
+PARAM lss true
+PARAM sa false
+PARAM ia false
+PARAM oa false
+PARAM inner false
+SUB i l true
+SUB i i true
+SUB i s false
+SUB s o true
+SUB ls lo false
+SUB ls lu true
+SUB ls les true
+SUB ls lss true
+SUB ls o true
+SUB sa oa true
+SUB sa o true
+SUB ia oa false
+SUB ia o true
+SUB inner inner true
+SUB les ls false
+SUB lss ls false
+CONV i l true
+CONV l i false
+CONV i s false
+CONV s o true
+CONV ls lo false
+CONV ls lu true
+CONV sa oa true
+CONV ia oa false
+CONV i s false
+CONV s i false
+CAST s o true
+CAST ls lo false
+CAST ls lu true
+CAST ia sa false
+CAST sa ia false
+CAST i l true
+CAST inner o true

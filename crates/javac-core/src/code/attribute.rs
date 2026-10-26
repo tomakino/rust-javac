@@ -508,7 +508,8 @@ mod tests {
         let names = Rc::new(Names::new(false));
         let mut ctx = CompilerContext::new();
         let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, Source::JDK17);
-        (ctx, syms, Types::new(), names)
+        let types = Types::with_names(Rc::clone(&names));
+        (ctx, syms, types, names)
     }
 
     fn name(names: &Names, text: &str) -> Name {

@@ -2866,7 +2866,11 @@ impl MethodResolutionPhase {
         let prev_kind = ctx.sym(prev).kind;
         let sym_kind = ctx.sym(sym).kind;
         // Java: Assert.check(bestSoFar.kind.isResolutionError() &&
-        // bestSoFar.kind != AMBIGUOUS)
+        // bestSoFar.kind != AMBIGUOUS) (Resolve.java:4872-4874)
+        assert!(
+            prev_kind.is_resolution_error() && prev_kind != Kind::AMBIGUOUS,
+            "AssertionError: mergeResults invariant"
+        );
         if !sym_kind.is_resolution_error() {
             // varargs resolution successful
             return sym;
@@ -3155,6 +3159,33 @@ mod tests {
             MethodResolutionPhase::VARARITY.merge_results(&ctx, wrong_mth, absent_mth),
             wrong_mth
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "mergeResults invariant")]
+    fn method_resolution_phase_merge_results_checks_the_invariant() {
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        // A non-resolution-error symbol as bestSoFar violates the upstream
+        // Assert.check (Resolve.java:4872).
+        let ok = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+            Kind::MTH,
+            0,
+            names().from_utf(b"ok"),
+            None,
+            None,
+            crate::code::symbol::SymbolKind::TypeSymbol,
+        ));
+        let absent = error_symbol(&mut ctx, Kind::ABSENT_MTH);
+        let _ = MethodResolutionPhase::VARARITY.merge_results(&ctx, ok, absent);
+    }
+
+    #[test]
+    #[should_panic(expected = "mergeResults invariant")]
+    fn method_resolution_phase_merge_results_rejects_ambiguous_best() {
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let ambiguous = error_symbol(&mut ctx, Kind::AMBIGUOUS);
+        let absent = error_symbol(&mut ctx, Kind::ABSENT_MTH);
+        let _ = MethodResolutionPhase::VARARITY.merge_results(&ctx, ambiguous, absent);
     }
 
     #[test]

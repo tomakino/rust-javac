@@ -1783,7 +1783,7 @@ mod tests {
             *modle = Some(java_base);
             *slot = Some(Rc::clone(&sourcefile));
         }
-        let types = Rc::new(Types::new());
+        let types = Rc::new(Types::with_names(Rc::clone(&names)));
         let chk = Rc::new(RefCell::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
@@ -2304,7 +2304,6 @@ mod tests {
 
     #[test]
     fn resolve_error_keys_match_the_javac_oracle() {
-        use crate::code::kinds::KindSelector;
         use crate::comp::resolve::Resolve;
         use crate::util::jc_diagnostic::DiagnosticType;
         let mut harness = build_attr_harness_with_source(RESOLVE_SAMPLE_SOURCE);

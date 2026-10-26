@@ -1678,7 +1678,7 @@ mod tests {
             Target::JDK1_17,
             Source::JDK17,
         );
-        let types = Rc::new(Types::new());
+        let types = Rc::new(Types::with_names(Rc::clone(&names)));
         let chk = Rc::new(RefCell::new(crate::comp::check::Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
