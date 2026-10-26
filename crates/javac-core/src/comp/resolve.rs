@@ -2537,6 +2537,7 @@ impl Resolve {
         mut best_so_far: SymbolId,
         name: &crate::util::name::Name,
     ) -> SymbolId {
+        use crate::util::mandatory_warning_handler::MandatoryWarningLog;
         let kind = ctx.sym(best_so_far).kind;
         if kind == Kind::TYP || kind == Kind::ABSENT_TYP {
             if self.allow_local_variable_type_inference && *name == self.names.var {
@@ -2560,11 +2561,19 @@ impl Resolve {
                             type_name: self.names.r#yield.clone(),
                         },
                     );
-                } else if pos.is_some() {
-                    // TODO(Log): log.warning(pos, Warnings.IllegalRefTo
-                    // RestrictedType(names.yield)) — the local Log has no
-                    // warning(Position) adapter yet.
-                    unimplemented!("TODO(Log batch): Resolve.checkRestrictedType warning")
+                } else if let Some(pos) = pos {
+                    // Java: Resolve.java:2503-2505
+                    //   else if (pos != null)
+                    //       log.warning(pos, Warnings.IllegalRefToRestrictedType(names.yield));
+                    let info =
+                        crate::resources::compiler_properties::warnings::illegal_ref_to_restricted_type(
+                            self.names.r#yield.clone(),
+                        );
+                    self.log.borrow_mut().warning(
+                        None,
+                        Some(pos),
+                        crate::comp::check::warning_from_info(info),
+                    );
                 }
             }
         }
