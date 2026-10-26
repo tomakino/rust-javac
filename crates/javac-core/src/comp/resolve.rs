@@ -7927,6 +7927,49 @@ fn site_tsym_or_err(
     ctx.typ(site).tsym.expect("site type symbol")
 }
 
+impl Resolve {
+    /// Java: Symbol resolveIdent(DiagnosticPosition pos, Env<AttrContext> env,
+    /// Name name, KindSelector kind) (Resolve.java:2676-2690)
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - pos: the diagnostic position;
+    ///   - env: the attribution environment;
+    ///   - name: the identifier;
+    ///   - kind: the expected kind selector.
+    ///
+    /// # Returns
+    ///   - the resolved (and access-checked) symbol.
+    ///
+    /// # Panics
+    ///   - the environment must have an enclosing class (upstream cast).
+    ///
+    /// Upstream: Resolve.java:2676-2690.
+    pub fn resolve_ident(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
+        env: &Rc<Env<AttrContext>>,
+        name: crate::util::name::Name,
+        kind: crate::code::kinds::KindSelector,
+    ) -> SymbolId {
+        // Java: return accessBase(findIdent(pos, env, name, kind), pos,
+        //     env.enclClass.sym.type, name, false);
+        let found = self.find_ident(ctx, syms, pos.clone(), env, &name, kind);
+        let encl_tree = env.encl_class.expect("resolving ident outside class");
+        let encl_sym = crate::tree::tree_info::symbol(ctx, encl_tree).expect("enclosing class");
+        let site = ctx.sym(encl_sym).ty;
+        let location = env
+            .info
+            .borrow()
+            .scope
+            .and_then(|scope| ctx.scope(scope).owner);
+        self.access_base(ctx, syms, found, pos, location, site, &name, false)
+    }
+
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -8169,4 +8212,5 @@ mod tests {
     }
 
 }
+
 

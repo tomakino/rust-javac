@@ -2838,3 +2838,39 @@ impl Check {
 fn last_of(ts: &List<TypeId>) -> TypeId {
     ts.last().expect("non-empty list")
 }
+impl Check {
+    /// Java: void earlyRefError(DiagnosticPosition pos, Symbol sym)
+    /// (Check.java:335-337).
+    ///
+    /// # Arguments
+    ///   - pos: the diagnostic position;
+    ///   - sym: the referenced symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Check.java:335-337.
+    pub fn early_ref_error(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        log: &std::rc::Rc<std::cell::RefCell<crate::util::log::Log>>,
+        pos: i32,
+        sym: SymbolId,
+    ) {
+        let info = crate::resources::compiler_properties::errors::cant_ref_before_ctor_called(
+            crate::resources::diagnostic_contract::DiagnosticArg::Text(
+                ctx.sym(sym).name.to_java_string().to_string_lossy().to_string(),
+            ),
+        );
+        crate::util::abstract_log::AbstractLog::error_at(
+            &mut *log.borrow_mut(),
+            pos,
+            crate::util::jc_diagnostic::Error::from(info),
+        );
+    }
+
+}
+

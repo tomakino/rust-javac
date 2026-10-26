@@ -495,11 +495,36 @@ impl Attr {
             .unwrap_or(false);
         let should_check = !found_is_error && !pt_is_method_or_forall;
         let owntype = if should_check && !ownkind.subset(result_info.pkind) {
-            // TODO(KindNames/printing batch): log.error(tree.pos(),
-            //     Errors.UnexpectedType(resultInfo.pkind.kindNames(),
-            //     ownkind.kindNames())) — the ported DiagnosticArg has no
-            //     KindNameArg value constructor yet; registered.
-            unimplemented!("TODO(KindNames batch): Attr.check unexpected type")
+            // Java: log.error(tree.pos(), Errors.UnexpectedType(
+            //     resultInfo.pkind.kindNames(), ownkind.kindNames()));
+            // (Attr.java:518-525)
+            let expected = result_info
+                .pkind
+                .kind_names()
+                .into_iter()
+                .map(|kind| {
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                        kind.name().to_string(),
+                    )
+                })
+                .collect();
+            let found_kinds = ownkind
+                .kind_names()
+                .into_iter()
+                .map(|kind| {
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                        kind.name().to_string(),
+                    )
+                })
+                .collect();
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                ctx.tree(tree).pos,
+                crate::util::jc_diagnostic::Error::from(
+                    crate::resources::compiler_properties::errors::unexpected_type(expected, found_kinds),
+                ),
+            );
+            self.types.create_error_type_original(ctx, Some(found), syms)
         } else if self.allow_poly
             && inference_context.free(ctx, syms, &self.types, found)
         {
@@ -541,9 +566,19 @@ impl Attr {
         self.env = Some(Rc::clone(env));
         self.result_info = Some(result_info);
         let result = if needs_argument_attr {
-            // TODO(ArgumentAttr batch): result = argumentAttr.attribArg(tree,
-            //     env) (Attr.java:674-676); registered.
-            unimplemented!("TODO(ArgumentAttr batch): Attr.attribTree argumentAttr.attribArg")
+            // Java: result = argumentAttr.attribArg(tree, env); (Attr.java:674-676)
+            let argument_attr = self
+                .argument_attr
+                .borrow()
+                .clone()
+                .expect("AssertionError: argumentAttr service must be installed");
+            let mut argument_attr = argument_attr.borrow_mut();
+            let log_rc = Rc::clone(&self.log);
+            let log = log_rc.borrow();
+            match argument_attr.attrib_arg(ctx, syms, self, &log, tree, env) {
+                Ok(result) => Ok(result.expect("AssertionError: argument attribution result")),
+                Err(failure) => Err(failure),
+            }
         } else {
             self.visit(ctx, syms, tree)
         };
@@ -813,12 +848,31 @@ impl Attr {
                     class_type,
                 ));
             } else {
-                // TODO(Check/Types + printing batch): log.error(tree.pos(),
-                //     Errors.WrongNumberTypeArgs(Integer.toString(formals.length())))
-                //     / Errors.TypeDoesntTakeParams(clazztype.tsym)); the
-                //     DiagnosticArg/SymbolArg mapping needs the printing layer;
-                //     registered. Keeps the upstream error type.
-                unimplemented!("TODO(Check/Types + printing batch): Attr.visitTypeApply wrong number of type args")
+                // Java: log.error(tree.pos(), Errors.WrongNumberTypeArgs(
+                //     Integer.toString(formals.length()))) / Errors.TypeDoesntTakeParams(
+                //     clazztype.tsym); (Attr.java:2125-2135)
+                let formals_len = list_len_type(&formals);
+                let diag = crate::resources::compiler_properties::errors::wrong_number_type_args(
+                    crate::util::java_string::JavaString::from(formals_len.to_string().as_str()),
+                );
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    ctx.tree(tree).pos,
+                    crate::util::jc_diagnostic::Error::from(diag),
+                );
+                let clazz_tsym = ctx.typ(clazztype).tsym;
+                if let Some(clazz_tsym) = clazz_tsym {
+                    let diag = crate::resources::compiler_properties::errors::type_doesnt_take_params(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            ctx.sym(clazz_tsym).name.to_java_string().to_string_lossy().to_string(),
+                        ),
+                    );
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        ctx.tree(tree).pos,
+                        crate::util::jc_diagnostic::Error::from(diag),
+                    );
+                }
             }
         }
         let result_info = self.result_info.clone().expect("resultInfo");
@@ -1051,6 +1105,7 @@ impl Attr {
     /// Java: Type checkIdInternal(JCTree tree, Type site, Symbol sym, Type pt,
     /// Env<AttrContext> env, ResultInfo resultInfo) (Attr.java:4520-4620)
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::needless_late_init)]
     pub(crate) fn check_id_internal(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1115,10 +1170,129 @@ impl Attr {
                 owntype = own;
             }
             Kind::VAR => {
-                unimplemented!("TODO(Resolve/Check batch): Attr.checkIdInternal VAR")
+                // Java: VarSymbol v = (VarSymbol)sym; (Attr.java:4560-4600)
+                // NOT PORTED: VarSymbol.getConstValue (Symbol.java:1190-1210,
+                // ConstValue batch) — the constant-value sub-branch is skipped
+                // and registered; everything else follows the upstream body.
+                let sym_ty = ctx.sym(sym).ty.expect("symbol type");
+                let encl_var = env.info.borrow().encl_var;
+                if encl_var.is_some() && ctx.typ(sym_ty).has_tag(TypeTag::NONE) {
+                    // self reference to implicitly typed variable declaration
+                    let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::local_self_ref(),
+                    ));
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        ctx.tree(tree).pos,
+                        crate::util::jc_diagnostic::Error::from(
+                            crate::resources::compiler_properties::errors::cant_infer_local_var_type(
+                                ctx.sym(sym).name.clone(),
+                                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                                    Rc::new(diag),
+                                ),
+                            ),
+                        ),
+                    );
+                    let error = self.types.create_error_type_original(ctx, Some(sym_ty), syms);
+                    ctx.sym_mut(sym).ty = Some(error);
+                    return error;
+                }
+                // Test (4): if symbol is an instance field of a raw type,
+                // which is being assigned to, issue an unchecked warning if
+                // its type changes under erasure.
+                let pkind = result_info.pkind;
+                let owner = ctx.sym(sym).owner;
+                let site_is_class_or_typevar = ctx.typ(site).has_tag(TypeTag::CLASS)
+                    || ctx.typ(site).has_tag(TypeTag::TYPEVAR);
+                if crate::code::kinds::KindSelector::ASG.subset(pkind)
+                    && owner
+                        .map(|owner| ctx.sym(owner).kind == crate::code::kinds::Kind::TYP)
+                        .unwrap_or(false)
+                    && ctx.sym(sym).flags_field & (crate::code::flags::STATIC as i64) == 0
+                    && site_is_class_or_typevar
+                {
+                    let owner = owner.expect("variable owner");
+                    let s = self.types.as_outer_super(ctx, syms, site, owner);
+                    if let Some(s) = s {
+                        let sym_type = ctx.sym(sym).ty.expect("symbol type");
+                        let erased = self.types.erasure(ctx, syms, sym_type);
+                        if self.types.is_raw_type_public(ctx, s)
+                            && !self.types.is_same_type(ctx, syms, sym_type, erased)
+                        {
+                            let warning =
+                                crate::resources::compiler_properties::warnings::unchecked_assign_to_var(
+                                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                        ctx.sym(sym).name.to_java_string().to_string_lossy().to_string(),
+                                    ),
+                                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                        crate::comp::attr::type_display_of(ctx, s),
+                                    ),
+                                );
+                            self.chk.borrow().warn_unchecked(ctx.tree(tree).pos, warning);
+                        }
+                    }
+                }
+                let name = ctx.sym(sym).name.clone();
+                let mut own = if ctx
+                    .sym(sym)
+                    .owner
+                    .map(|owner| ctx.sym(owner).kind == crate::code::kinds::Kind::TYP)
+                    .unwrap_or(false)
+                    && name != self.names._this
+                    && name != self.names._super
+                {
+                    self.types.member_type(ctx, syms, site, sym)
+                } else {
+                    ctx.sym(sym).ty.expect("symbol type")
+                };
+                // NOT PORTED: if (v.getConstValue() != null &&
+                // isStaticReference(tree)) owntype = owntype.constType(...)
+                // (Symbol/ConstValue batch; registered).
+                if pkind == crate::code::kinds::KindSelector::VAL {
+                    own = self.types.capture(ctx, syms, own);
+                }
+                owntype = own;
             }
             Kind::MTH => {
-                unimplemented!("TODO(Resolve/Check batch): Attr.checkIdInternal MTH")
+                // Java: owntype = checkMethod(site, sym, new ResultInfo(
+                //     resultInfo.pkind, resultInfo.pt.getReturnType(),
+                //     resultInfo.checkContext, resultInfo.checkMode),
+                //     env, TreeInfo.args(env.tree), resultInfo.pt.getParameterTypes(),
+                //     resultInfo.pt.getTypeArguments()); (Attr.java:4630-4640)
+                let pt = result_info.pt.expect("method result type");
+                let restype = self.types.get_return_type_public(ctx, pt);
+                let argtypes = self.types.get_parameter_types_public(ctx, pt);
+                let targs = self.types.get_type_arguments_public(ctx, pt);
+                let new_ri = ResultInfo::new_with_mode(
+                    result_info.pkind,
+                    Some(restype),
+                    Rc::clone(&result_info.check_context),
+                    result_info.check_mode,
+                );
+                let rs_rc = self
+                    .rs
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: rs service must be installed");
+                let mut rs = rs_rc.borrow_mut();
+                let infer_rc = Rc::clone(&self.infer);
+                let argtrees = env
+                    .tree
+                    .and_then(|tree| crate::tree::tree_info::args(ctx, tree));
+                let value = self.check_method(
+                    ctx,
+                    syms,
+                    &mut rs,
+                    &infer_rc,
+                    site,
+                    sym,
+                    &new_ri,
+                    env,
+                    argtrees.as_ref(),
+                    argtypes,
+                    Some(targs),
+                );
+                owntype = value;
             }
             Kind::PCK | Kind::ERR => {
                 owntype = ctx.sym(sym).ty.expect("symbol type");
@@ -4086,6 +4260,165 @@ impl Attr {
     }
 }
 
+impl Attr {
+    #[allow(dead_code)]
+    /// Java: boolean isAssignableAsBlankFinal(VarSymbol v, Env<AttrContext> env)
+    /// (Attr.java:276-300).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - env: the attribution environment;
+    ///   - v: the blank final variable.
+    ///
+    /// # Returns
+    ///   - true when the blank final can be assigned in env.
+    ///
+    /// # Panics
+    ///   - the environment scope must have an owner.
+    ///
+    /// Upstream: Attr.java:276-300.
+    fn is_assignable_as_blank_final(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        env: &Rc<Env<AttrContext>>,
+        v: SymbolId,
+    ) -> bool {
+        let owner = env
+            .info
+            .borrow()
+            .scope
+            .and_then(|scope| ctx.scope(scope).owner)
+            .expect("AssertionError: enclosing scope owner");
+        let owner_name = ctx.sym(owner).name.clone();
+        let owner_kind = ctx.sym(owner).kind;
+        let owner_flags = ctx.sym(owner).flags_field;
+        let v_owner = ctx.sym(v).owner;
+        let v_static = ctx.sym(v).flags_field & (crate::code::flags::STATIC as i64) != 0;
+        let is_assignable = v_owner == Some(owner)
+            || ((owner_name == self.names.init
+                || owner_kind == crate::code::kinds::Kind::VAR
+                || (owner_flags & (crate::code::flags::BLOCK as i64)) != 0)
+                && v_owner == ctx.sym(owner).owner
+                && v_static == self.resolve_is_static(ctx, env));
+        let inside_compact_constructor = env.encl_method.map(|method| {
+            crate::tree::tree_info::is_compact_constructor(ctx, method)
+        }).unwrap_or(false);
+        is_assignable && !inside_compact_constructor
+    }
+
+    #[allow(dead_code)]
+    /// §9 helper: Resolve.isStatic(env) without a Resolve instance (the
+    /// upstream Attr calls its own static Resolve.isStatic).
+    fn resolve_is_static(
+        &self,
+        _ctx: &crate::compiler_context::CompilerContext,
+        env: &Rc<Env<AttrContext>>,
+    ) -> bool {
+        let outer = env.outer.as_ref().expect("env.outer");
+        env.info.borrow().static_level > outer.info.borrow().static_level
+    }
+
+    #[allow(dead_code)]
+    /// Java: boolean isStaticReference(JCTree tree) (Attr.java:322-333).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - tree: the SELECT/IDENT tree.
+    ///
+    /// # Returns
+    ///   - true when the tree is a static reference (a non-type select or an ident).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:322-333.
+    fn is_static_reference(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) -> bool {
+        if ctx.tree(tree).tag == crate::tree::jc_tree::Tag::SELECT {
+            let selected = match &ctx.tree(tree).kind {
+                crate::tree::jc_tree::TreeKind::FieldAccess { selected, .. } => *selected,
+                _ => None,
+            };
+            if let Some(selected) = selected
+                && let Some(lsym) = crate::tree::tree_info::symbol(ctx, selected)
+                && ctx.sym(lsym).kind != crate::code::kinds::Kind::TYP
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    #[allow(dead_code)]
+    /// Java: void checkAssignable(DiagnosticPosition pos, VarSymbol v,
+    /// JCTree base, Env<AttrContext> env) (Attr.java:308-330).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - env: the attribution environment;
+    ///   - pos: the diagnostic position;
+    ///   - v: the assigned variable;
+    ///   - base: the select base (null when not a select).
+    ///
+    /// # Returns
+    ///   - none (errors are reported).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Attr.java:308-330.
+    fn check_assignable(
+        &mut self,
+        ctx: &crate::compiler_context::CompilerContext,
+        env: &Rc<Env<AttrContext>>,
+        pos: i32,
+        v: SymbolId,
+        base: Option<TreeId>,
+    ) {
+        let v_flags = ctx.sym(v).flags_field;
+        if ctx.sym(v).name == self.names._this {
+            let info = crate::resources::compiler_properties::errors::cant_assign_val_to_this();
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        } else if (v_flags & (crate::code::flags::FINAL as i64)) != 0
+            && ((v_flags & (crate::code::flags::HASINIT as i64)) != 0
+                || !(match base {
+                    None => true,
+                    Some(base) => crate::tree::tree_info::is_this_qualifier(ctx, base),
+                } && self.is_assignable_as_blank_final(ctx, env, v)))
+        {
+            let info = crate::resources::compiler_properties::errors::cant_assign_val_to_final_var(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                    ctx.sym(v).name.to_java_string().to_string_lossy().to_string(),
+                ),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+        }
+    }
+
+}
+
+
+/// §9 helper: the length of a List<Type> (used by the type-argument arity error).
+fn list_len_type(list: &List<TypeId>) -> usize {
+    let mut current = list.clone();
+    let mut n = 0;
+    while current.non_empty() {
+        n += 1;
+        current = current.tail();
+    }
+    n
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5305,4 +5638,3 @@ class Sample {
     }
 
 }
-
