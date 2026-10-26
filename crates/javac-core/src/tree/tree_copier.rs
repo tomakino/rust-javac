@@ -14,7 +14,21 @@
 //   TreeCopier (see DeferredAttr).
 // - fields that the upstream constructors do not set (types, symbols,
 //   varargs element, poly kind, ...) get the JCTree constructor defaults of
-//   tree_maker.rs (STANDALONE poly kind, false completion flags, None symbols).
+//   tree_maker.rs (STANDALONE poly kind, false completion flags, None symbols);
+// - visitClass: the upstream TreeCopier.visitClassDef calls
+//   M.at(pos).ClassDef(mods, name, typarams, extending, implementing, defs),
+//   i.e. the 6-argument TreeMaker overload, which passes List.nil() as the
+//   permitting list (TreeMaker.java:157-166). The local copy therefore uses
+//   List::nil() as well — this is the upstream behavior, not an approximation.
+// - visitLambdaExpression: the upstream TreeCopier copies via
+//   M.at(pos).Lambda(params, body); JCLambda(params, body) derives paramKind
+//   from the copied params (JCTree.java:1957-1966), so the copy must derive
+//   IMPLICIT/EXPLICIT from the copied params exactly like the local copy does.
+// - visitCase: the upstream body computation checks
+//   "t.body instanceof JCExpression"; JCCase.body is declared JCExpression, so
+//   the check is exactly "body != null". The local Case.body is
+//   Option<TreeId> for that same field, so original_body.is_some() is the
+//   exact translation (registered §3: encoding difference only).
 
 use std::rc::Rc;
 
@@ -338,7 +352,10 @@ impl TreeCopier {
             _ => panic!("ClassCastException: JCCase expected"),
         };
         // Java: body = t.body instanceof JCExpression && t.stats.head.hasTag(YIELD)
-        //     ? ((JCYield)t.stats.head).value : t.stats.head (for RULE cases)
+        //     ? ((JCYield)t.stats.head).value : t.stats.head (for RULE cases).
+        // JCCase.body is declared JCExpression, so instanceof == (body != null);
+        // the local Case.body Option<TreeId> encodes that same field, so
+        // original_body.is_some() is the exact translation (file header).
         let original_body = match &__kind {
             TreeKind::Case { body, .. } => *body,
             _ => None,
@@ -408,6 +425,9 @@ impl TreeCopier {
             _ => panic!("ClassCastException: JCClassDecl expected"),
         };
         let pos = ctx.tree(tree).pos;
+        // Java: M.at(pos).ClassDef(...6 args) -> TreeMaker.ClassDef passes
+        // List.nil() as permitting (TreeMaker.java:157-166), so nil is the
+        // upstream value here (see file header).
         self.mk(
             ctx,
             pos,
@@ -866,8 +886,9 @@ impl TreeCopier {
             }
             _ => panic!("ClassCastException: JCLambda expected"),
         };
-        // Java: M.at(t.pos).Lambda(params, body) — the local TreeMaker.Lambda
-        // derives paramKind exactly like JCLambda(params, body) (see tree_maker).
+        // Java: M.at(t.pos).Lambda(params, body) — JCLambda(params, body)
+        // derives paramKind from the copied params (JCTree.java:1957-1966), so
+        // this derivation is the upstream constructor behavior (file header).
         let pos = ctx.tree(tree).pos;
         let param_kind = if params.is_empty() {
             crate::tree::jc_tree::ParameterKind::EXPLICIT
@@ -1601,3 +1622,335 @@ impl TreeCopier {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tree::jc_tree::JCTree;
+    use crate::tree::tree_maker::TreeMaker;
+    use crate::util::name::Name;
+    use crate::util::name::NameTableHandle;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    fn make_name(table: &Rc<NameTableHandle>, text: &str) -> Name {
+        let units: Vec<u16> = text.encode_utf16().collect();
+        table.from_chars(&units, 0, units.len() as i32)
+    }
+
+    fn tree(ctx: &mut CompilerContext, tag: Tag, kind: TreeKind, pos: i32) -> TreeId {
+        ctx.alloc_tree(JCTree {
+            pos,
+            ty: None,
+            tag,
+            kind,
+        })
+    }
+
+    fn empty() -> List<TreeId> {
+        List::nil()
+    }
+
+    fn copier() -> TreeCopier {
+        TreeCopier::new(Rc::new(RefCell::new(TreeMaker::new(None))))
+    }
+
+    fn ident(ctx: &mut CompilerContext, table: &Rc<NameTableHandle>, text: &str) -> TreeId {
+        tree(
+            ctx,
+            Tag::IDENT,
+            TreeKind::Ident {
+                name: make_name(table, text),
+                sym: None,
+            },
+            0,
+        )
+    }
+
+    #[test]
+    fn copy_deep_copies_and_shares_names() {
+        let mut ctx = CompilerContext::new();
+        let table = NameTableHandle::unshared();
+        let a = ident(&mut ctx, &table, "a");
+        let b = ident(&mut ctx, &table, "b");
+        let binary = tree(
+            &mut ctx,
+            Tag::PLUS,
+            TreeKind::Binary {
+                lhs: Some(a),
+                rhs: Some(b),
+                operator: None,
+            },
+            7,
+        );
+        let copier = copier();
+        let copied = copier
+            .copy(&mut ctx, Some(binary))
+            .expect("copy produced a node");
+        assert_ne!(copied, binary);
+        let copied_node = ctx.tree(copied);
+        assert_eq!(copied_node.pos, 7);
+        assert_eq!(copied_node.tag, Tag::PLUS);
+        let (lhs, rhs) = match &copied_node.kind {
+            TreeKind::Binary { lhs, rhs, .. } => (*lhs, *rhs),
+            _ => panic!("expected a binary expression"),
+        };
+        assert_ne!(lhs, Some(a));
+        assert_ne!(rhs, Some(b));
+        // The name is shared with the original (Java: Names are shared).
+        match (&ctx.tree(lhs.expect("copied lhs")).kind, &ctx.tree(a).kind) {
+            (
+                TreeKind::Ident {
+                    name: copied_name, ..
+                },
+                TreeKind::Ident {
+                    name: original_name,
+                    ..
+                },
+            ) => {
+                assert_eq!(
+                    copied_name.to_java_string().to_string_lossy(),
+                    original_name.to_java_string().to_string_lossy()
+                );
+            }
+            _ => panic!("expected identifiers"),
+        }
+        // Mutating the copy leaves the original untouched.
+        let new_a = ident(&mut ctx, &table, "c");
+        if let TreeKind::Binary { lhs: slot, .. } = &mut ctx.tree_mut(copied).kind {
+            *slot = Some(new_a);
+        }
+        match &ctx.tree(binary).kind {
+            TreeKind::Binary { lhs, .. } => assert_eq!(*lhs, Some(a)),
+            _ => panic!("expected a binary expression"),
+        }
+    }
+
+    #[test]
+    fn copy_class_with_annotations_and_method() {
+        let mut ctx = CompilerContext::new();
+        let table = NameTableHandle::unshared();
+        let annotation_type = ident(&mut ctx, &table, "A");
+        let annotation = tree(
+            &mut ctx,
+            Tag::ANNOTATION,
+            TreeKind::Annotation {
+                annotation_type: Some(annotation_type),
+                args: empty(),
+                attribute: None,
+            },
+            0,
+        );
+        let mods = tree(
+            &mut ctx,
+            Tag::MODIFIERS,
+            TreeKind::Modifiers {
+                flags: 0,
+                annotations: List::of(annotation),
+            },
+            0,
+        );
+        let method = tree(
+            &mut ctx,
+            Tag::METHODDEF,
+            TreeKind::MethodDecl {
+                mods: None,
+                name: make_name(&table, "m"),
+                restype: None,
+                typarams: empty(),
+                recvparam: None,
+                params: empty(),
+                thrown: empty(),
+                body: None,
+                default_value: None,
+                sym: None,
+                completes_normally: true,
+            },
+            0,
+        );
+        let class = tree(
+            &mut ctx,
+            Tag::CLASSDEF,
+            TreeKind::ClassDecl {
+                mods: Some(mods),
+                name: make_name(&table, "C"),
+                typarams: empty(),
+                extending: None,
+                implementing: empty(),
+                permitting: empty(),
+                defs: List::of(method),
+                sym: None,
+            },
+            3,
+        );
+        let copier = copier();
+        let copied = copier
+            .copy(&mut ctx, Some(class))
+            .expect("copy produced a node");
+        assert_ne!(copied, class);
+        let (copied_mods, copied_defs) = match &ctx.tree(copied).kind {
+            TreeKind::ClassDecl { mods, defs, .. } => (*mods, defs.clone()),
+            _ => panic!("expected a class declaration"),
+        };
+        let copied_mods = copied_mods.expect("copied mods");
+        assert_ne!(copied_mods, mods);
+        let copied_annotations = match &ctx.tree(copied_mods).kind {
+            TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+            _ => panic!("expected modifiers"),
+        };
+        assert_eq!(copied_annotations.length(), 1);
+        assert_ne!(copied_annotations.get(0), annotation);
+        assert_eq!(copied_defs.length(), 1);
+        assert_ne!(copied_defs.get(0), method);
+        // Copying a list preserves the order and produces fresh nodes.
+        let list = List::of2(annotation, method);
+        let copied_list = copier.copy_list(&mut ctx, &list);
+        assert_eq!(copied_list.length(), 2);
+        assert_ne!(copied_list.get(0), copied_list.get(1));
+    }
+
+    #[test]
+    fn copy_lambda_and_case() {
+        let mut ctx = CompilerContext::new();
+        let table = NameTableHandle::unshared();
+        let body = ident(&mut ctx, &table, "x");
+        let param = tree(
+            &mut ctx,
+            Tag::VARDEF,
+            TreeKind::VariableDecl {
+                mods: None,
+                name: make_name(&table, "p"),
+                nameexpr: None,
+                vartype: None,
+                init: None,
+                sym: None,
+                start_pos: crate::util::position::NOPOS,
+            },
+            0,
+        );
+        let lambda = tree(
+            &mut ctx,
+            Tag::LAMBDA,
+            TreeKind::Lambda {
+                params: List::of(param),
+                body: Some(body),
+                can_complete_normally: true,
+                param_kind: crate::tree::jc_tree::ParameterKind::EXPLICIT,
+                poly_kind: PolyKind::POLY,
+                target: None,
+            },
+            0,
+        );
+        let copier = copier();
+        let copied_lambda = copier
+            .copy(&mut ctx, Some(lambda))
+            .expect("copy produced a node");
+        assert_ne!(copied_lambda, lambda);
+        match &ctx.tree(copied_lambda).kind {
+            TreeKind::Lambda {
+                params,
+                body: copied_body,
+                param_kind,
+                poly_kind,
+                ..
+            } => {
+                // Java: JCLambda(params, body) derives paramKind from the params
+                // (JCTree.java:1957-1966); the copied params carry no vartype, so
+                // the copy is IMPLICIT, like the upstream TreeCopier.
+                assert_eq!(*param_kind, crate::tree::jc_tree::ParameterKind::IMPLICIT);
+                assert_eq!(*poly_kind, PolyKind::STANDALONE);
+                assert_eq!(params.length(), 1);
+                assert_ne!(params.get(0), param);
+                assert_ne!(*copied_body, Some(body));
+            }
+            _ => panic!("expected a lambda"),
+        }
+        // Case with rule kind keeps the body computed from the statement.
+        let exec = tree(
+            &mut ctx,
+            Tag::EXEC,
+            TreeKind::ExpressionStatement { expr: Some(body) },
+            0,
+        );
+        let case = tree(
+            &mut ctx,
+            Tag::CASE,
+            TreeKind::Case {
+                case_kind: javac_source::tree::case_tree::CaseKind::RULE,
+                labels: empty(),
+                stats: List::of(exec),
+                body: None,
+                completes_normally: true,
+            },
+            0,
+        );
+        let copied_case = copier
+            .copy(&mut ctx, Some(case))
+            .expect("copy produced a node");
+        assert_ne!(copied_case, case);
+        match &ctx.tree(copied_case).kind {
+            TreeKind::Case {
+                case_kind,
+                stats,
+                body,
+                ..
+            } => {
+                assert_eq!(*case_kind, javac_source::tree::case_tree::CaseKind::RULE);
+                assert_eq!(stats.length(), 1);
+                assert_ne!(stats.get(0), exec);
+                assert!(body.is_some());
+            }
+            _ => panic!("expected a case"),
+        }
+    }
+
+    #[test]
+    fn copy_compilation_unit_drops_metadata() {
+        let mut ctx = CompilerContext::new();
+        let table = NameTableHandle::unshared();
+        let package_name = ident(&mut ctx, &table, "p");
+        let import = tree(
+            &mut ctx,
+            Tag::IMPORT,
+            TreeKind::Import {
+                static_import: false,
+                qualid: Some(package_name),
+                import_scope: None,
+            },
+            0,
+        );
+        let unit = tree(
+            &mut ctx,
+            Tag::TOPLEVEL,
+            TreeKind::CompilationUnit {
+                defs: List::of(import),
+                sourcefile: None,
+                modle: None,
+                locn: None,
+                packge: None,
+                toplevel_scope: None,
+                named_import_scope: None,
+                star_import_scope: None,
+                line_map: None,
+                doc_comments: None,
+                end_positions: None,
+            },
+            0,
+        );
+        let copier = copier();
+        let copied = copier
+            .copy(&mut ctx, Some(unit))
+            .expect("copy produced a node");
+        assert_ne!(copied, unit);
+        match &ctx.tree(copied).kind {
+            TreeKind::CompilationUnit {
+                defs, sourcefile, ..
+            } => {
+                assert_eq!(defs.length(), 1);
+                assert_ne!(defs.get(0), import);
+                assert!(sourcefile.is_none());
+            }
+            _ => panic!("expected a compilation unit"),
+        }
+    }
+}

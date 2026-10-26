@@ -2397,6 +2397,12 @@ struct UnusedFileManager;
             Rc::clone(&annotate_cell),
         )));
         let basic_handler = Rc::clone(&check.borrow().basic_handler);
+        let infer = crate::comp::infer::Infer::new(
+            &mut ctx,
+            Feature::GRAPH_INFERENCE.allowed_in_source(Source::JDK17),
+            Rc::clone(&diags),
+            Rc::clone(&names),
+        );
         let attr = Rc::new(RefCell::new(Attr::new(
             Rc::clone(&names),
             Rc::clone(&log),
@@ -2411,6 +2417,8 @@ struct UnusedFileManager;
             Rc::clone(&type_envs),
             Rc::clone(&dependencies),
             basic_handler,
+            Rc::clone(&syms),
+            Rc::clone(&infer),
             Source::JDK17,
             &options,
             &crate::code::preview::Preview::new(false, false),

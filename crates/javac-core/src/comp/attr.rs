@@ -76,11 +76,25 @@ pub struct ResultInfo {
     pub check_context: Rc<dyn crate::comp::check::CheckContext>,
     /// Java: final CheckMode checkMode
     pub check_mode: crate::comp::check::CheckMode,
+    /// Java: the ResultInfo subclass flavor (MethodAttrInfo is an inner subclass
+    /// upstream; the port carries the flavor explicitly — registered §9).
+    pub kind: ResultInfoKind,
     /// The identity of this ResultInfo (the upstream ArgumentType.speculativeTypes
     /// map is keyed by ResultInfo object identity; Rust needs an explicit id).
     /// §9 registered adapter: unique ids are assigned by new_with_mode, so every
     /// dup(...) call gets a fresh identity like the upstream constructors.
     pub id: u64,
+}
+
+/// Java: the ResultInfo subclass flavor (ResultInfo / Attr.MethodAttrInfo —
+/// registered §9: Java subclassing is expressed by this enum).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ResultInfoKind {
+    /// Java: plain Attr.ResultInfo
+    #[default]
+    Normal,
+    /// Java: Attr.MethodAttrInfo
+    MethodAttr,
 }
 
 /// Monotonic ResultInfo identity counter (§9 adapter, see ResultInfo::id).
@@ -110,15 +124,31 @@ impl ResultInfo {
             pt,
             check_context,
             check_mode,
+            kind: ResultInfoKind::Normal,
             id: NEXT_RESULT_INFO_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
     }
 
-    /// Java: protected boolean needsArgumentAttr(JCTree tree) (the upstream
-    /// default returns false; MethodAttrInfo overrides it — registered for the
-    /// ArgumentAttr batch).
+    /// Java: Attr.MethodAttrInfo(CheckContext checkContext) (Attr.java:568-571)
+    /// — super(KindSelector.VAL, Infer.anyPoly, checkContext).
+    pub fn method_attr_info(
+        check_context: Rc<dyn crate::comp::check::CheckContext>,
+        any_poly: TypeId,
+    ) -> ResultInfo {
+        let mut info = ResultInfo::new_with_mode(
+            KindSelector::VAL,
+            Some(any_poly),
+            check_context,
+            crate::comp::check::CheckMode::NORMAL,
+        );
+        info.kind = ResultInfoKind::MethodAttr;
+        info
+    }
+
+    /// Java: protected boolean needsArgumentAttr(JCTree tree) — the base
+    /// returns false; MethodAttrInfo overrides it to true (Attr.java:563-596).
     pub fn needs_argument_attr(&self, _tree: TreeId) -> bool {
-        false
+        matches!(self.kind, ResultInfoKind::MethodAttr)
     }
 
     /// Java: protected Type check(final DiagnosticPosition pos, final Type
@@ -153,11 +183,26 @@ impl ResultInfo {
         &self,
         check_context: Rc<dyn crate::comp::check::CheckContext>,
     ) -> ResultInfo {
+        if matches!(self.kind, ResultInfoKind::MethodAttr) {
+            // Java: MethodAttrInfo.dup(CheckContext) -> new MethodAttrInfo(newContext)
+            let mut info = ResultInfo::new_with_mode(
+                self.pkind,
+                self.pt,
+                check_context,
+                self.check_mode,
+            );
+            info.kind = ResultInfoKind::MethodAttr;
+            return info;
+        }
         ResultInfo::new_with_mode(self.pkind, self.pt, check_context, self.check_mode)
     }
 
     /// Java: protected ResultInfo dup(Type newPt)
     pub fn dup(&self, new_pt: Option<TypeId>) -> ResultInfo {
+        if matches!(self.kind, ResultInfoKind::MethodAttr) {
+            // Java: MethodAttrInfo.dup(Type) throws IllegalStateException.
+            panic!("IllegalStateException");
+        }
         ResultInfo::new_with_mode(
             self.pkind,
             new_pt,
@@ -168,6 +213,12 @@ impl ResultInfo {
 
     /// Java: protected ResultInfo dup(CheckContext newContext)
     pub fn dup_context(&self, new_context: Rc<dyn crate::comp::check::CheckContext>) -> ResultInfo {
+        if matches!(self.kind, ResultInfoKind::MethodAttr) {
+            // Java: MethodAttrInfo.dup(CheckContext) -> new MethodAttrInfo(newContext)
+            let mut info = ResultInfo::new_with_mode(self.pkind, self.pt, new_context, self.check_mode);
+            info.kind = ResultInfoKind::MethodAttr;
+            return info;
+        }
         ResultInfo::new_with_mode(
             self.pkind,
             self.pt,
@@ -182,6 +233,9 @@ impl ResultInfo {
         new_pt: Option<TypeId>,
         new_context: Rc<dyn crate::comp::check::CheckContext>,
     ) -> ResultInfo {
+        if matches!(self.kind, ResultInfoKind::MethodAttr) {
+            panic!("IllegalStateException");
+        }
         ResultInfo::new_with_mode(self.pkind, new_pt, new_context, self.check_mode)
     }
 
@@ -193,11 +247,17 @@ impl ResultInfo {
         new_context: Rc<dyn crate::comp::check::CheckContext>,
         new_mode: crate::comp::check::CheckMode,
     ) -> ResultInfo {
+        if matches!(self.kind, ResultInfoKind::MethodAttr) {
+            panic!("IllegalStateException");
+        }
         ResultInfo::new_with_mode(self.pkind, new_pt, new_context, new_mode)
     }
 
     /// Java: protected ResultInfo dup(CheckMode newMode)
     pub fn dup_mode(&self, new_mode: crate::comp::check::CheckMode) -> ResultInfo {
+        if matches!(self.kind, ResultInfoKind::MethodAttr) {
+            panic!("IllegalStateException");
+        }
         ResultInfo::new_with_mode(
             self.pkind,
             self.pt,
@@ -259,6 +319,16 @@ pub struct Attr {
     pub unknown_expr_info: ResultInfo,
     pub unknown_type_info: ResultInfo,
     pub unknown_type_expr_info: ResultInfo,
+    /// Java: final ResultInfo methodAttrInfo (Attr.java:629)
+    pub method_attr_info: ResultInfo,
+    /// Java: final ResultInfo recoveryInfo (Attr.java:633)
+    pub recovery_info: ResultInfo,
+    /// Java: private Map<ClassSymbol, MethodSymbol> clinits (Attr.java:3484)
+    pub clinits: RefCell<std::collections::HashMap<SymbolId, SymbolId>>,
+    /// Java: final Symtab syms (injected service, ADR 0001)
+    pub syms: Rc<RefCell<Symtab>>,
+    /// Java: final Infer infer (injected service, ADR 0001)
+    pub infer: Rc<crate::comp::infer::Infer>,
 }
 
 impl Attr {
@@ -278,6 +348,8 @@ impl Attr {
         type_envs: Rc<RefCell<TypeEnvs>>,
         dependencies: Rc<RefCell<dyn Dependencies>>,
         basic_handler: Rc<dyn crate::comp::check::CheckContext>,
+        syms: Rc<RefCell<Symtab>>,
+        infer: Rc<crate::comp::infer::Infer>,
         source: crate::code::source::Source,
         options: &crate::util::options::Options,
         preview: &crate::code::preview::Preview,
@@ -293,6 +365,7 @@ impl Attr {
         let allow_records = Feature::RECORDS.allowed_in_source(source);
         let allow_pattern_switch = (preview.is_enabled() || !preview.is_preview(Feature::PATTERN_SWITCH))
             && Feature::PATTERN_SWITCH.allowed_in_source(source);
+        let recovery_type = syms.borrow().recovery_type;
         Attr {
             names,
             log,
@@ -326,6 +399,19 @@ impl Attr {
             unknown_expr_info: ResultInfo::new(KindSelector::VAL, None, Rc::clone(&basic_handler)),
             unknown_type_info: ResultInfo::new(KindSelector::TYP, None, Rc::clone(&basic_handler)),
             unknown_type_expr_info: ResultInfo::new(KindSelector::VAL_TYP, None, Rc::clone(&basic_handler)),
+            method_attr_info: ResultInfo::method_attr_info(Rc::clone(&basic_handler), infer.any_poly),
+            recovery_info: ResultInfo::new_with_mode(
+                KindSelector::VAL,
+                Some(recovery_type),
+                Rc::new(RecoveryCheckContext {
+                    enclosing: Rc::clone(&basic_handler),
+                    deferred_attr_context: crate::comp::deferred_attr::empty_deferred_attr_context(),
+                }),
+                crate::comp::check::CheckMode::NORMAL,
+            ),
+            clinits: RefCell::new(std::collections::HashMap::new()),
+            syms,
+            infer,
         }
     }
 
@@ -2531,6 +2617,13 @@ mod tests {
         )));
         let preview = Preview::new(false, false);
         let basic_handler = Rc::clone(&chk.borrow().basic_handler);
+        let infer = crate::comp::infer::Infer::new(
+            &mut ctx,
+            crate::code::source::Feature::GRAPH_INFERENCE
+                .allowed_in_source(crate::code::source::Source::JDK17),
+            Rc::clone(&diags),
+            Rc::clone(&names),
+        );
         let attr = Attr::new(
             Rc::clone(&names),
             Rc::clone(&log),
@@ -2545,6 +2638,8 @@ mod tests {
             Rc::clone(&type_envs),
             Rc::clone(&dependencies),
             basic_handler,
+            Rc::clone(&syms),
+            Rc::clone(&infer),
             Source::JDK17,
             &options,
             &preview,
@@ -3283,4 +3378,50 @@ class Sample {
         assert_eq!(target, Some(labelled));
     }
 
+}
+
+/// Java: Attr.RecoveryInfo's anonymous CheckContext (Attr.java:598-620): a
+/// NestedCheckContext whose deferredAttrContext is the empty deferred context.
+/// Registered §9: the anonymous subclass is a named struct.
+pub struct RecoveryCheckContext {
+    pub enclosing: Rc<dyn crate::comp::check::CheckContext>,
+    pub deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
+}
+
+impl crate::comp::check::CheckContext for RecoveryCheckContext {
+    fn compatible(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        found: TypeId,
+        req: TypeId,
+        warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        self.enclosing.compatible(ctx, syms, types, found, req, warn)
+    }
+
+    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+        self.enclosing.report(ctx, pos, details);
+    }
+
+    fn check_warner(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> crate::util::warner::Warner {
+        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+    }
+
+    fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
+        self.enclosing.inference_context()
+    }
+
+    fn deferred_attr_context(&self) -> &Rc<crate::comp::deferred_attr::DeferredAttrContext> {
+        &self.deferred_attr_context
+    }
 }
