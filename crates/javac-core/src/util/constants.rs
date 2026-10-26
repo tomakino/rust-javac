@@ -48,6 +48,20 @@ pub enum ConstantValue {
 }
 
 impl ConstantValue {
+    /// Return the Java display form of this constant value.
+    ///
+    /// # Arguments
+    ///   - none.
+    ///
+    /// # Returns
+    ///   - the display string.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn display(&self) -> String {
+        self.to_display()
+    }
+
     /// Java: Object.toString() / String.valueOf(Object) for the wrapped value.
     fn to_display(&self) -> String {
         match self {

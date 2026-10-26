@@ -10870,3 +10870,74 @@ impl Types {
         }
     }
 }
+
+impl Types {
+    /// Return the base type of a type (the unannotated / primitive form).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - t: the type.
+    ///
+    /// # Returns
+    ///   - the base type (the type symbol type for class types).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn base_type(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
+        match &ctx.typ(t).kind {
+            TypeKindData::ClassType { .. }
+            | TypeKindData::ErasedClassType { .. }
+            | TypeKindData::UnionClassType { .. }
+            | TypeKindData::IntersectionClassType { .. } => {
+                let tsym = ctx.typ(t).tsym.expect("class type symbol");
+                ctx.sym(tsym).ty.expect("class symbol type")
+            }
+            TypeKindData::UndetVar {
+                inst: Some(inst), ..
+            } => self.base_type(ctx, *inst),
+            TypeKindData::UndetVar { inst: None, .. } => t,
+            _ => t,
+        }
+    }
+
+    /// Return the string representation of a compile-time constant type.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - t: the constant type.
+    ///
+    /// # Returns
+    ///   - the string value of the constant.
+    ///
+    /// # Panics
+    ///   - the type is not a compile-time constant type.
+    pub fn string_value(&self, ctx: &mut CompilerContext, t: TypeId) -> crate::util::java_string::JavaString {
+        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::BOT) {
+            return crate::util::java_string::JavaString::from("null");
+        }
+        let constant = ctx
+            .typ(t)
+            .const_value()
+            .expect("AssertionError: non-constant type");
+        use crate::code::type_tag::TypeTag;
+        match ctx.typ(t).get_tag() {
+            TypeTag::BOOLEAN => {
+                let truthy = match constant {
+                    crate::util::constants::ConstantValue::Boolean(v) => *v,
+                    crate::util::constants::ConstantValue::Integer(v) => *v != 0,
+                    other => panic!("AssertionError: boolean constant expected: {:?}", other),
+                };
+                crate::util::java_string::JavaString::from(if truthy { "true" } else { "false" })
+            }
+            TypeTag::CHAR => {
+                let unit = match constant {
+                    crate::util::constants::ConstantValue::Character(v) => *v,
+                    crate::util::constants::ConstantValue::Integer(v) => *v as u16,
+                    other => panic!("AssertionError: char constant expected: {:?}", other),
+                };
+                crate::util::java_string::JavaString::from_units(vec![unit])
+            }
+            _ => crate::util::java_string::JavaString::from(constant.display().as_str()),
+        }
+    }
+}
