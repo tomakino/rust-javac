@@ -1,14 +1,25 @@
 // Origin: com/sun/tools/javac/comp/Check.java @ 982d53c (jdk-17.0.19-ga)
 //
-// PORTING_RULES §19 registration: this file ports the subset of Check that is
-// required by the Enter batch (class enter symbol/flags/duplicate checks).
-// NOT PORTED IN THIS STEP (registered; dependencies: Resolve/DeferredAttr/Infer/
-// TypeAnnotations/Attr/Preview/MandatoryWarningHandler/DeferredLintHandler and
-// the whole type-checking body of Check):
-// - the Check constructor dependencies (Resolve/DeferredAttr/Infer/
-//   TypeAnnotations/Preview/lint handlers) and the constructors themselves;
-// - every other Check method (type checking, annotations checks, lambda/method
-//   checks, warnings, sunApiHandler, ...).
+// PORTING_RULES §19 registration: this file ports the Check subset required by
+// the Enter/Flow batches (class enter symbol/flags/duplicate checks, the
+// exception set utilities, and the batch-3 methods below).
+//
+// PORTED IN THE BATCH-3 STEP:
+// - typeTagError / checkNonVoid / checkClassOrArrayType / asTypeParam /
+//   checkNullOrRefType / checkEmptyIf / checkDivZero / warnDivZero /
+//   duplicateErasureError / varargsDuplicateError (Check.java:288-291,
+//   700-717, 723-727, 814-822, 1007-1016, 371-375, 3718-3737, 3783-3787).
+// STILL NOT PORTED (registered; dependencies in brackets):
+// - checkCastable (Check.java:632-645) [Types.isCastable(Type, Type, Warner)];
+// - checkRedundantCast (Check.java:647-660) [TreeInfo.containsTypeAnnotation,
+//   DeferredLintHandler wiring via Attr];
+// - validate/Validator (Check.java:1397-1525) [firstIncompatibleTypeArg,
+//   checkClassBounds, TreeInfo.containsTypeAnnotation, JCTree.Visitor scanner];
+// - checkUnique MTH branches [Check holds no Symtab service yet; the caller
+//   passes no Symtab (ADR 0001 service wiring pending)];
+// - the rest of the upstream Check body (type checking beyond the ported
+//   subset, annotation checks, lambda/method checks, warnings, sunApiHandler,
+//   ...).
 // The ported methods keep the upstream bodies and error keys; where a dependency
 // is not ported the branch is marked TODO and not executed (no substitute).
 
@@ -20,6 +31,8 @@ use crate::code::symbol::{
     symbol_encl_class, symbol_is_directly_or_indirectly_local, symbol_is_static_or_instance_init,
     symbol_location, symbol_packge, SymbolKind,
 };
+use crate::code::deferred_lint_handler::DeferredLintHandler;
+use crate::code::lint::{Lint, LintCategory};
 use crate::code::symtab::Symtab;
 use crate::code::types::Types;
 use crate::comp::deferred_attr::DeferredAttrContext;
@@ -29,12 +42,15 @@ use crate::util::jc_diagnostic::JCDiagnostic;
 use crate::util::warner::Warner;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{ScopeId, SymbolId, TreeId};
-use crate::resources::compiler_properties::errors;
+use crate::resources::compiler_properties::{errors, fragments, warnings};
 use crate::resources::diagnostic_contract::{DiagnosticArg, FlagArg, KindNameArg, SymbolArg};
 use crate::resources::diagnostic_contract::ErrorInfo;
 use crate::util::jc_diagnostic::{Error as JCDiagnosticError, Factory};
 use crate::util::abstract_log::AbstractLog;
+use crate::util::constants::ConstantValue;
+use crate::util::jc_diagnostic::{SimpleDiagnosticPosition, Warning};
 use crate::util::log::Log;
+use crate::util::mandatory_warning_handler::MandatoryWarningLog;
 use crate::util::list::List;
 use crate::util::name::Name;
 use crate::util::names::Names;
@@ -58,6 +74,10 @@ pub struct Check {
     pub types: Rc<Types>,
     /// Java: CheckContext basicHandler = new CheckContext() {...}
     pub basic_handler: Rc<dyn CheckContext>,
+    // PORTING_RULES §9 adapter: the upstream Check fields lint
+    // (Check.java:187), deferredLintHandler (Check.java:193) and the Symtab
+    // service are passed explicitly to the methods that need them (ADR 0001);
+    // no state copy is kept in the ported Check.
 }
 
 impl Check {
@@ -998,26 +1018,42 @@ impl Check {
     /// Java: Type typeTagError(DiagnosticPosition pos, JCDiagnostic required,
     /// Object found)
     ///
-    /// TODO(Check/Types + printing batch): the upstream body logs
-    /// Errors.TypeFoundReq(found, required) — the Object found is a Type or a
-    /// JCDiagnostic fragment and the diagnostic argument mapping needs
-    /// Type.toString (Types/Symbol printing batch) — and returns
-    /// types.createErrorType(found instanceof Type ? type : syms.errType).
-    /// Registered; no substitute diagnostic text is produced.
+    /// Java: Type typeTagError(DiagnosticPosition pos, JCDiagnostic required,
+    /// Object found) (Check.java:1007-1016)
+    ///
+    /// PORTING_RULES §9 adapter: the Java Object found (a Type or a
+    /// JCDiagnostic fragment) maps to the FoundArg enum.
     fn type_tag_error(
         &self,
-        _ctx: &mut CompilerContext,
-        _pos: i32,
-        _required: JCDiagnostic,
-        _found: DiagnosticArg,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        pos: i32,
+        required: JCDiagnostic,
+        found: FoundArg,
     ) -> crate::ids::TypeId {
-        unimplemented!("TODO(Check/Types + printing batch): Check.typeTagError")
+        let required_arg =
+            DiagnosticArg::from_display(required.get_message(None).to_string_lossy());
+        let found_arg = match &found {
+            FoundArg::Type(t) => match ctx.typ(*t).tsym {
+                Some(tsym) => DiagnosticArg::from_display(
+                    crate::comp::resolve::symbol_display_name(ctx, tsym),
+                ),
+                None => DiagnosticArg::from_display("type"),
+            },
+            FoundArg::Fragment(arg) => arg.clone(),
+        };
+        self.report_error(pos, errors::type_found_req(found_arg, required_arg));
+        match found {
+            FoundArg::Type(t) => self.types.create_error_type_original(ctx, Some(t), syms),
+            FoundArg::Fragment(_) => syms.err_type,
+        }
     }
 
     /// Java: Type checkClassType(DiagnosticPosition pos, Type t)
     pub fn check_class_type(
         &self,
         ctx: &mut CompilerContext,
+        syms: &Symtab,
         pos: i32,
         t: crate::ids::TypeId,
     ) -> crate::ids::TypeId {
@@ -1030,12 +1066,8 @@ impl Check {
                 .fragment(crate::util::jc_diagnostic::Fragment::from(
                     crate::resources::compiler_properties::fragments::type_req_class(),
                 ));
-            let found = if tag == crate::code::type_tag::TypeTag::TYPEVAR {
-                DiagnosticArg::from_display("type parameter")
-            } else {
-                DiagnosticArg::from_display("type")
-            };
-            return self.type_tag_error(ctx, pos, required, found);
+            let found = self.as_type_param(ctx, t);
+            return self.type_tag_error(ctx, syms, pos, required, found);
         }
         t
     }
@@ -1044,11 +1076,12 @@ impl Check {
     pub fn check_class_type_no_bounds(
         &self,
         ctx: &mut CompilerContext,
+        syms: &Symtab,
         pos: i32,
         t: crate::ids::TypeId,
         no_bounds: bool,
     ) -> crate::ids::TypeId {
-        let t = self.check_class_type(ctx, pos, t);
+        let t = self.check_class_type(ctx, syms, pos, t);
         if no_bounds {
             {
                 let mut args = ctx.typ(t).get_type_arguments();
@@ -1063,12 +1096,7 @@ impl Check {
                             .fragment(crate::util::jc_diagnostic::Fragment::from(
                                 crate::resources::compiler_properties::fragments::type_req_exact(),
                             ));
-                        return self.type_tag_error(
-                            ctx,
-                            pos,
-                            required,
-                            DiagnosticArg::from_display("type"),
-                        );
+                        return self.type_tag_error(ctx, syms, pos, required, FoundArg::Type(t));
                     }
                     args = args.tail();
                 }
@@ -1136,6 +1164,7 @@ impl Check {
     pub fn check_ref_type(
         &self,
         ctx: &mut CompilerContext,
+        syms: &Symtab,
         pos: i32,
         t: TypeId,
     ) -> TypeId {
@@ -1145,7 +1174,7 @@ impl Check {
         let required = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
             crate::resources::compiler_properties::fragments::type_req_ref(),
         ));
-        self.type_tag_error(ctx, pos, required, DiagnosticArg::from_display("type"))
+        self.type_tag_error(ctx, syms, pos, required, FoundArg::Type(t))
     }
 
 }
@@ -1315,4 +1344,334 @@ impl CheckContext for BasicCheckContext {
     fn deferred_attr_context(&self) -> &Rc<DeferredAttrContext> {
         &self.deferred_empty
     }
+}
+
+/// Java: the Object found parameter of Check.typeTagError (a Type or a
+/// JCDiagnostic fragment, Check.java:1007).
+///
+/// PORTING_RULES §9 adapter: Rust needs the union represented explicitly.
+pub enum FoundArg {
+    /// Java: Object found instanceof Type
+    Type(TypeId),
+    /// Java: Object found instanceof JCDiagnostic (a fragment)
+    Fragment(crate::resources::diagnostic_contract::DiagnosticArg),
+}
+
+impl Check {
+    /// Java: Object asTypeParam(Type t) (Check.java:723-727)
+    fn as_type_param(&self, ctx: &mut CompilerContext, t: TypeId) -> FoundArg {
+        if ctx
+            .typ(t)
+            .has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
+        {
+            // Java: diags.fragment(Fragments.TypeParameter(t)) — the P4
+            // argument mapping keeps the diagnostic text placeholder.
+            FoundArg::Fragment(DiagnosticArg::from_display("type parameter"))
+        } else {
+            FoundArg::Type(t)
+        }
+    }
+
+    /// Java: Type checkNonVoid(DiagnosticPosition pos, Type t)
+    /// (Check.java:700-708)
+    pub fn check_non_void(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        pos: i32,
+        t: TypeId,
+    ) -> TypeId {
+        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::VOID) {
+            self.report_error(pos, errors::void_not_allowed_here());
+            self.types.create_error_type_original(ctx, Some(t), syms)
+        } else {
+            t
+        }
+    }
+
+    /// Java: Type checkClassOrArrayType(DiagnosticPosition pos, Type t)
+    /// (Check.java:709-717)
+    pub fn check_class_or_array_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        pos: i32,
+        t: TypeId,
+    ) -> TypeId {
+        let tag = ctx.typ(t).get_tag();
+        if tag != crate::code::type_tag::TypeTag::CLASS
+            && tag != crate::code::type_tag::TypeTag::ARRAY
+            && tag != crate::code::type_tag::TypeTag::ERROR
+        {
+            let required = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                fragments::type_req_class_array(),
+            ));
+            let found = self.as_type_param(ctx, t);
+            return self.type_tag_error(ctx, syms, pos, required, found);
+        }
+        t
+    }
+
+    /// Java: Type checkNullOrRefType(DiagnosticPosition pos, Type t)
+    /// (Check.java:814-822)
+    pub fn check_null_or_ref_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        pos: i32,
+        t: TypeId,
+    ) -> TypeId {
+        if ctx.typ(t).is_reference()
+            || ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::BOT)
+        {
+            t
+        } else {
+            let required = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                fragments::type_req_ref(),
+            ));
+            self.type_tag_error(ctx, syms, pos, required, FoundArg::Type(t))
+        }
+    }
+
+    /// Java: void checkEmptyIf(JCIf tree) (Check.java:3733-3737)
+    pub fn check_empty_if(&self, ctx: &mut CompilerContext, lint: &Lint, tree: TreeId) {
+        let (thenpart, elsepart) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::If {
+                thenpart,
+                elsepart,
+                ..
+            } => (*thenpart, *elsepart),
+            _ => panic!("expected an if statement"),
+        };
+        let Some(thenpart) = thenpart else {
+            return;
+        };
+        if ctx.tree(thenpart).has_tag(crate::tree::jc_tree::Tag::SKIP)
+            && elsepart.is_none()
+            && lint.is_enabled(LintCategory::EMPTY)
+        {
+            self.log.borrow_mut().warning(
+                Some(LintCategory::EMPTY),
+                Some(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(thenpart).pos))),
+                warning_from_info(warnings::empty_if()),
+            );
+        }
+    }
+
+    /// Java: void checkDivZero(final DiagnosticPosition pos, Symbol operator,
+    /// Type operand) (Check.java:3718-3731)
+    pub fn check_div_zero(
+        &self,
+        ctx: &mut CompilerContext,
+        lint: &Rc<Lint>,
+        deferred_lint_handler: &Rc<RefCell<DeferredLintHandler>>,
+        pos: i32,
+        operator: SymbolId,
+        operand: TypeId,
+    ) {
+        let zero_value = match ctx.typ(operand).const_value() {
+            Some(ConstantValue::Integer(value)) => *value == 0,
+            Some(ConstantValue::Byte(value)) => *value == 0,
+            Some(ConstantValue::Short(value)) => *value == 0,
+            Some(ConstantValue::Long(value)) => *value == 0,
+            Some(ConstantValue::Character(value)) => *value == 0,
+            _ => false,
+        };
+        if zero_value
+            && ctx
+                .typ(operand)
+                .get_tag()
+                .is_sub_range_of(crate::code::type_tag::TypeTag::LONG)
+        {
+            let opcode = match &ctx.sym(operator).kind_data {
+                SymbolKind::OperatorSymbol { opcode, .. } => *opcode,
+                _ => return,
+            };
+            if opcode == crate::jvm::byte_codes::IDIV
+                || opcode == crate::jvm::byte_codes::LDIV
+                || opcode == crate::jvm::byte_codes::IMOD
+                || opcode == crate::jvm::byte_codes::LMOD
+            {
+                let log = Rc::clone(&self.log);
+                let lint = Rc::clone(lint);
+                deferred_lint_handler
+                    .borrow_mut()
+                    .report(Box::new(move || warn_div_zero(&log, &lint, pos)));
+            }
+        }
+    }
+
+    /// Java: void warnDivZero(DiagnosticPosition pos) (Check.java:288-291)
+    ///
+    /// Java: void duplicateErasureError(DiagnosticPosition pos, Symbol sym1,
+    /// Symbol sym2) (Check.java:3783-3787)
+    pub fn duplicate_erasure_error(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        sym1: SymbolId,
+        sym2: SymbolId,
+    ) {
+        let erroneous = |ctx: &CompilerContext, sym: SymbolId| {
+            ctx.sym(sym)
+                .ty
+                .map(|ty| {
+                    matches!(
+                        &ctx.typ(ty).kind,
+                        crate::code::type_::TypeKindData::ErrorType { .. }
+                    )
+                })
+                .unwrap_or(false)
+        };
+        if !erroneous(ctx, sym1) && !erroneous(ctx, sym2) {
+            self.report_error(
+                pos,
+                errors::name_clash_same_erasure(symbol_place_check(ctx, sym1), symbol_place_check(ctx, sym2)),
+            );
+        }
+    }
+
+    /// Java: void varargsDuplicateError(DiagnosticPosition pos, Symbol sym1,
+    /// Symbol sym2) (Check.java:371-375)
+    pub fn varargs_duplicate_error(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        sym1: SymbolId,
+        sym2: SymbolId,
+    ) {
+        let erroneous = |ctx: &CompilerContext, sym: SymbolId| {
+            ctx.sym(sym)
+                .ty
+                .map(|ty| {
+                    matches!(
+                        &ctx.typ(ty).kind,
+                        crate::code::type_::TypeKindData::ErrorType { .. }
+                    )
+                })
+                .unwrap_or(false)
+        };
+        if !erroneous(ctx, sym1) && !erroneous(ctx, sym2) {
+            let location = symbol_location(ctx, sym2).unwrap_or(sym2);
+            self.report_error(
+                pos,
+                errors::array_and_varargs(
+                    symbol_place_check(ctx, sym1),
+                    symbol_place_check(ctx, sym2),
+                    symbol_place_check(ctx, location),
+                ),
+            );
+        }
+    }
+
+    /// Java: Type checkCastable(DiagnosticPosition pos, Type found, Type req)
+    /// (Check.java:632-645)
+    ///
+    /// TODO(Types batch): the upstream passes castWarner(pos, found, req) to
+    /// types.isCastable so the unchecked-cast warning is reported through the
+    /// ConversionWarner; the ported Types.isCastable has no Warner parameter.
+    /// Registered (no substitute warning path).
+    pub fn check_castable(
+        &self,
+        _ctx: &mut CompilerContext,
+        _pos: i32,
+        _found: TypeId,
+        _req: TypeId,
+        _check_context: &dyn crate::comp::check::CheckContext,
+    ) -> TypeId {
+        unimplemented!(
+            "TODO(Types batch): Check.checkCastable needs Types.isCastable(Type, Type, Warner) (Check.java:632-645)"
+        )
+    }
+
+    /// Java: public void checkRedundantCast(Env<AttrContext> env,
+    /// final JCTypeCast tree) (Check.java:647-660)
+    ///
+    /// TODO(TreeInfo batch): requires TreeInfo.containsTypeAnnotation
+    /// (TypeAnnotationFinder) — not ported; registered.
+    pub fn check_redundant_cast(
+        &self,
+        _ctx: &mut CompilerContext,
+        _env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        _tree: TreeId,
+    ) {
+        unimplemented!(
+            "TODO(TreeInfo batch): Check.checkRedundantCast needs TreeInfo.containsTypeAnnotation (Check.java:647-660)"
+        )
+    }
+
+    /// Java: void validate(JCTree tree, Env<AttrContext> env, boolean
+    /// checkRaw) (Check.java:1397-1407) and class Validator
+    /// (Check.java:1421-1525)
+    ///
+    /// TODO(Types/Check batch): the Validator requires firstIncompatibleTypeArg,
+    /// checkClassBounds, TreeInfo.containsTypeAnnotation and the JCTree.Visitor
+    /// subclass navigation; registered (no partial validator).
+    pub fn validate(
+        &self,
+        _ctx: &mut CompilerContext,
+        _env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        _tree: TreeId,
+    ) {
+        unimplemented!(
+            "TODO(Types/Check batch): Check.validate/Validator (Check.java:1397-1525)"
+        )
+    }
+
+    /// Java: void validate(List<? extends JCTree> trees, Env<AttrContext> env)
+    /// (Check.java:1406-1410)
+    pub fn validate_list(
+        &self,
+        ctx: &mut CompilerContext,
+        env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        trees: &List<TreeId>,
+    ) {
+        for tree in trees.iter() {
+            self.validate(ctx, env, tree);
+        }
+    }
+}
+
+/// Java: void warnDivZero(DiagnosticPosition pos) (Check.java:288-291)
+fn warn_div_zero(log: &Rc<RefCell<Log>>, lint: &Rc<Lint>, pos: i32) {
+    if lint.is_enabled(LintCategory::DIVZERO) {
+        log.borrow_mut().warning(
+            Some(LintCategory::DIVZERO),
+            Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
+            warning_from_info(warnings::div_zero()),
+        );
+    }
+}
+
+/// Build the JCDiagnostic.Warning logging key from the generated WarningInfo
+/// (ADR 0002 P4 adapter: the generated accessors carry the diagnostic info;
+/// the argument mapping renders the known value types as display text).
+fn warning_from_info(
+    info: crate::resources::diagnostic_contract::WarningInfo,
+) -> Warning {
+    let args: Vec<crate::util::jc_diagnostic::DiagnosticArg> = info
+        .info()
+        .args
+        .iter()
+        .map(|arg| {
+            Rc::new(javac_strings::JavaString::from(arg.0.as_str()))
+                as crate::util::jc_diagnostic::DiagnosticArg
+        })
+        .collect();
+    Warning(crate::util::jc_diagnostic::DiagnosticInfo::of(
+        crate::util::jc_diagnostic::DiagnosticType::WARNING,
+        "compiler",
+        info.info().code,
+        args,
+    ))
+}
+
+/// Diagnostic SymbolArg placeholder (ADR 0002 P4).
+fn symbol_place_check(
+    ctx: &CompilerContext,
+    sym: SymbolId,
+) -> crate::resources::diagnostic_contract::SymbolArg {
+    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+        crate::comp::resolve::symbol_display_name(ctx, sym),
+    )
 }

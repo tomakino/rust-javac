@@ -28,6 +28,18 @@ impl<A, B> Pair<A, B> {
     }
 }
 
+/// §9 adapter: Rust value semantics require an explicit copy constructor;
+/// the Java Pair is an immutable two-field data carrier, so the copy is
+/// behaviourally identical.
+impl<A: Clone, B: Clone> Clone for Pair<A, B> {
+    fn clone(&self) -> Self {
+        Pair {
+            fst: self.fst.clone(),
+            snd: self.snd.clone(),
+        }
+    }
+}
+
 impl<A: PartialEq, B: PartialEq> PartialEq for Pair<A, B> {
     fn eq(&self, other: &Self) -> bool {
         // Java: other instanceof Pair<?,?> pair && Objects.equals(fst, pair.fst) && Objects.equals(snd, pair.snd)

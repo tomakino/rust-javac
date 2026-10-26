@@ -33,7 +33,6 @@ use crate::code::source::Feature;
 use crate::code::symtab::Symtab;
 use crate::code::type_tag::TypeTag;
 use crate::code::types::Types;
-use crate::comp::attr::Attr;
 use crate::comp::attr_context::AttrContext;
 use crate::comp::check::Check;
 use crate::comp::env::Env;
@@ -502,7 +501,6 @@ pub struct Flow {
     pub rs: Rc<RefCell<Resolve>>,
     pub diags: Rc<Factory>,
     pub lint: Rc<Lint>,
-    pub attr: Rc<RefCell<Attr>>,
     pub attr_env: Rc<RefCell<Option<Rc<Env<AttrContext>>>>>,
     pub make: Rc<RefCell<Option<Rc<RefCell<TreeMaker>>>>>,
     pub allow_effectively_final_in_inner_classes: bool,
@@ -520,7 +518,6 @@ impl Flow {
         rs: Rc<RefCell<Resolve>>,
         diags: Rc<Factory>,
         lint: Rc<Lint>,
-        attr: Rc<RefCell<Attr>>,
         source: crate::code::source::Source,
     ) -> Flow {
         let _ = ctx;
@@ -533,7 +530,6 @@ impl Flow {
             rs,
             diags,
             lint,
-            attr,
             attr_env: Rc::new(RefCell::new(None)),
             make: Rc::new(RefCell::new(None)),
             allow_effectively_final_in_inner_classes:
@@ -601,7 +597,7 @@ impl Flow {
     /// Java: Lint.augment(tree.sym) — Lint.augment is registered with the
     /// Attribute/Symtab batch (unimplemented at that entry).
     pub fn augmented_lint(&self, ctx: &CompilerContext, sym: SymbolId) -> Rc<Lint> {
-        Rc::new(self.lint.augment(ctx.sym(sym)))
+        Rc::new(self.lint.augment(ctx, &self.syms.borrow(), ctx.sym(sym)))
     }
 }
 
@@ -5283,4 +5279,110 @@ mod tests {
         probe.excl(1);
         assert_eq!(probe.next_bit(0), -1);
     }
+    #[test]
+    fn analyze_tree_runs_on_an_empty_class_without_panicking() {
+        use crate::code::source::Source;
+        use crate::code::symtab::Symtab;
+        use crate::code::type_::Type;
+        use crate::code::types::Types;
+        use crate::comp::attr_context::AttrContext;
+        use crate::comp::check::Check;
+        use crate::comp::env::Env;
+        use crate::comp::resolve::Resolve;
+        use crate::jvm::target::Target;
+        use crate::tree::jc_tree::JCTree;
+        use crate::util::context::Context;
+        use crate::util::javac_messages::JavacMessages;
+        use crate::util::options::Options;
+
+        let mut ctx = CompilerContext::new();
+        let mut jcontext = Context::new();
+        let names = Rc::new(Names::new(false));
+        let log = Log::instance(&mut jcontext);
+        let source = Source::JDK17;
+        let syms = Rc::new(RefCell::new(Symtab::new(
+            &mut ctx,
+            Rc::clone(&names),
+            Target::DEFAULT,
+            source,
+        )));
+        let types = Rc::new(Types::with_names(Rc::clone(&names)));
+        let messages = JavacMessages::instance(&mut jcontext);
+        let diags = Rc::new(Factory::new(messages, "compiler"));
+        let lint = Lint::instance(&mut jcontext);
+        let check = Rc::new(RefCell::new(Check::new(
+            Rc::clone(&names),
+            Rc::clone(&log),
+            Rc::clone(&diags),
+            source,
+            '$',
+            Rc::clone(&types),
+        )));
+        let options = Options::instance(&mut jcontext);
+        let resolve = Rc::new(RefCell::new(Resolve::new(
+            &mut ctx,
+            Rc::clone(&names),
+            Rc::clone(&log),
+            Rc::clone(&types),
+            Rc::clone(&diags),
+            source,
+            options,
+            None,
+        )));
+        let flow = Flow::new(
+            &mut ctx,
+            Rc::clone(&names),
+            Rc::clone(&log),
+            Rc::clone(&syms),
+            Rc::clone(&types),
+            check,
+            resolve,
+            Rc::clone(&diags),
+            Rc::clone(&lint),
+            source,
+        );
+        let make = Rc::new(RefCell::new(TreeMaker::new(Some(Rc::clone(&names)))));
+        // An empty ClassDecl with a class symbol exercises every analyzer's
+        // class/method entry point, including the ported Lint.augment.
+        let no_type = ctx.alloc_type(Type::new(
+            TypeTag::NONE,
+            None,
+            crate::code::type_::TypeKindData::JCNoType,
+        ));
+        let class_sym = crate::code::symtab::new_class_symbol(
+            &mut ctx,
+            0,
+            names.empty.clone(),
+            None,
+            no_type,
+        );
+        let class = ctx.alloc_tree(JCTree {
+            pos: 1,
+            ty: None,
+            tag: Tag::CLASSDEF,
+            kind: TreeKind::ClassDecl {
+                mods: None,
+                name: names.empty.clone(),
+                typarams: List::nil(),
+                extending: None,
+                implementing: List::nil(),
+                permitting: List::nil(),
+                defs: List::nil(),
+                sym: Some(class_sym),
+            },
+        });
+        let env: Rc<Env<AttrContext>> = Rc::new(Env {
+            next: None,
+            outer: None,
+            tree: Some(class),
+            toplevel: None,
+            encl_class: Some(class),
+            encl_method: None,
+            info: Rc::new(RefCell::new(AttrContext::new())),
+            base_clause: false,
+        });
+        flow.analyze_tree(&mut ctx, &env, &make);
+        assert_eq!(log.borrow().nerrors, 0);
+    }
+
 }

@@ -28,22 +28,28 @@
 //! * Java protected Lint(Lint other) copy constructor -> pub(crate) new_from;
 //!   suppress(LintCategory...) -> suppress(&[LintCategory]); toString -> Display
 //!   with the EnumSet format ("[A, B]").
-//! * TODO(Options batch): instance(Context) and the protected Lint(Context)
-//!   constructor initialize the categories from Options (-Xlint/-Xlint:all/none/
-//!   custom/-preview) and Source.instance; Options/main.Option are not ported yet,
-//!   so instance stays a single unimplemented entry point (no substitute Options).
-//! * TODO(Attribute/Symtab batch): augment(Attribute.Compound), augment(Symbol) and
-//!   the AugmentVisitor need Attribute.Compound (only AttributeKind/Visitor exist so
-//!   far), Symtab.instance and Symbol.getDeclarationAttributes; the Symbol overload
-//!   is declared and unimplemented, the Compound overload is not declared until the
-//!   Attribute node types are ported.  No substitute logic is written.
+//! * instance(Context) and the protected Lint(Context) constructor are ported:
+//!   the categories are initialized from Options (-Xlint/-Xlint:all/none/custom/
+//!   -preview) and Source.instance (both are ported now).
+//! * augment(Attribute.Compound)/augment(Symbol) and the AugmentVisitor are
+//!   ported against the ported Attribute node types + Symbol.getDeclarationAttributes
+//!   (ADR 0001: the visitor takes CompilerContext/Symtab explicitly).
 
 use std::collections::BTreeSet;
 use std::fmt;
 use std::rc::Rc;
 
+use crate::code::attribute::{Attribute, AttributeKind};
+use crate::code::source::{Feature, Source};
+use crate::code::symtab::Symtab;
 use crate::code::symbol::Symbol;
+use crate::compiler_context::CompilerContext;
+use crate::ids::AttributeId;
+use crate::util::constants::ConstantValue;
+use crate::main::option::Option as MainOption;
 use crate::util::context::Context;
+use crate::util::list::List;
+use crate::util::options::Options;
 
 /// A class for handling -Xlint suboptions and @SuppressWarnings.
 pub struct Lint {
@@ -70,10 +76,58 @@ impl Lint {
     /// TODO(Options batch): the constructor reads Options (-Xlint/-Xlint:all/none/
     /// custom/-preview) and Source.instance; both depend on the not yet ported
     /// Options/main.Option.  No substitute Options is invented.
-    pub fn instance(_context: &mut Context) -> Rc<Lint> {
-        unimplemented!(
-            "TODO(Options batch): Lint.instance (Options, -Xlint and Source.instance are not ported)"
-        )
+    pub fn instance(context: &mut Context) -> Rc<Lint> {
+        if let Some(instance) = context.get::<Lint>() {
+            return instance;
+        }
+        let lint = Rc::new(Lint::new_for_context(context));
+        context.put(Rc::clone(&lint));
+        lint
+    }
+
+    /// Java: protected Lint(Context context) (Lint.java:131-180).
+    fn new_for_context(context: &mut Context) -> Lint {
+        let options = Options::instance(context);
+        let mut values: BTreeSet<LintCategory> = BTreeSet::new();
+        if options.is_set_option(MainOption::XLINT)
+            || options.is_set_choice(MainOption::XLINT_CUSTOM, "all")
+        {
+            // If -Xlint or -Xlint:all is given, enable all categories by default.
+            values = LintCategory::values().into_iter().collect();
+        } else if options.is_set_choice(MainOption::XLINT_CUSTOM, "none") {
+            // if -Xlint:none is given, disable all categories by default
+        } else {
+            let source = Source::instance(context);
+            if *source >= Source::JDK9 {
+                values.insert(LintCategory::DEP_ANN);
+            }
+            if Feature::REDUNDANT_STRICTFP.allowed_in_source(*source) {
+                values.insert(LintCategory::STRICTFP);
+            }
+            values.insert(LintCategory::REQUIRES_TRANSITIVE_AUTOMATIC);
+            values.insert(LintCategory::OPENS);
+            values.insert(LintCategory::MODULE);
+            values.insert(LintCategory::REMOVAL);
+            if !options.is_set_option(MainOption::PREVIEW) {
+                values.insert(LintCategory::PREVIEW);
+            }
+            values.insert(LintCategory::SYNCHRONIZATION);
+        }
+        // Look for specific overrides
+        for lc in LintCategory::values() {
+            if options.is_set_choice(MainOption::XLINT_CUSTOM, lc.option()) {
+                values.insert(lc);
+            } else if options.is_set_choice(
+                MainOption::XLINT_CUSTOM,
+                &format!("-{}", lc.option()),
+            ) {
+                values.remove(&lc);
+            }
+        }
+        Lint {
+            values,
+            suppressed_values: BTreeSet::new(),
+        }
     }
 
     /// Java: protected Lint(Lint other).
@@ -98,16 +152,40 @@ impl Lint {
     }
 
     /// Returns the result of combining the values in this object with
+    /// the given annotation.
+    ///
+    /// Java: public Lint augment(Attribute.Compound attr) (Lint.java:65-67).
+    /// PORTING_RULES §9 adapter: the upstream AugmentVisitor is a context
+    /// singleton; the ported visitor takes the compiler context and symtab
+    /// explicitly (ADR 0001).
+    pub fn augment_compound(&self, ctx: &CompilerContext, syms: &Symtab, attr: AttributeId) -> Lint {
+        augment_visitor_augment_compound(ctx, syms, self, attr)
+    }
+
+    /// Returns the result of combining the values in this object with
     /// the metadata on the given symbol.
     ///
-    /// TODO(Attribute/Symtab batch): the upstream walks the declaration
-    /// attributes through the AugmentVisitor (Symtab/Attribute not ported) and
-    /// then removes DEPRECATION for deprecated symbols; the entry point is kept
-    /// unimplemented (no substitute logic).
-    pub fn augment(&self, _sym: &Symbol) -> Lint {
-        unimplemented!(
-            "TODO(Attribute/Symtab batch): Lint.augment(Symbol) (AugmentVisitor/Symtab/Attribute.Compound are not ported)"
-        )
+    /// Java: public Lint augment(Symbol sym) (Lint.java:73-81).
+    pub fn augment(&self, ctx: &CompilerContext, syms: &Symtab, sym: &Symbol) -> Lint {
+        let mut lint = augment_visitor_augment_list(
+            ctx,
+            syms,
+            self,
+            &sym.get_declaration_attributes(),
+        );
+        if sym.is_deprecated() {
+            // Java: if (l == this) l = new Lint(this); then remove/add
+            // DEPRECATION. The ported augmentor always yields a copy
+            // (Lint::new_from), which the §9 adapter treats as the
+            // "l != this" branch; the resulting category sets are identical.
+            let mut values = lint.values.clone();
+            let mut suppressed = lint.suppressed_values.clone();
+            values.remove(&LintCategory::DEPRECATION);
+            suppressed.insert(LintCategory::DEPRECATION);
+            lint.values = values;
+            lint.suppressed_values = suppressed;
+        }
+        lint
     }
 
     /// Checks if a warning category is enabled. A warning category may be enabled
@@ -386,8 +464,132 @@ impl fmt::Display for LintCategory {
     }
 }
 
+
+/// Java: protected static class Lint.AugmentVisitor implements
+/// Attribute.Visitor (Lint.java:337-445).
+struct AugmentVisitor<'a> {
+    ctx: &'a CompilerContext,
+    syms: &'a Symtab,
+    parent: &'a Lint,
+    lint: Option<Lint>,
+}
+
+impl<'a> AugmentVisitor<'a> {
+    fn new(ctx: &'a CompilerContext, syms: &'a Symtab, parent: &'a Lint) -> AugmentVisitor<'a> {
+        AugmentVisitor {
+            ctx,
+            syms,
+            parent,
+            lint: None,
+        }
+    }
+
+    /// Java: private void suppress(LintCategory lc) (Lint.java:378-384)
+    fn suppress(&mut self, lc: LintCategory) {
+        if self.lint.is_none() {
+            self.lint = Some(Lint::new_from(self.parent));
+        }
+        let lint = self.lint.as_mut().expect("augmented lint");
+        lint.suppressed_values.insert(lc);
+        lint.values.remove(&lc);
+    }
+
+    /// Java: Attribute.Visitor.visitArray (Lint.java:420-425)
+    fn walk_array(&mut self, array: &Attribute) {
+        if let AttributeKind::Array { values } = &array.kind {
+            let mut index = 0;
+            while index < values.len() {
+                let value = values[index];
+                let attribute = self.ctx.attr(value);
+                self.walk(attribute);
+                index += 1;
+            }
+        }
+    }
+
+    fn walk(&mut self, attribute: &Attribute) {
+        match &attribute.kind {
+            AttributeKind::Constant { value } => {
+                // Java: visitConstant (Lint.java:388-393)
+                let string_tsym = self.ctx.typ(self.syms.string_type).tsym;
+                let attribute_tsym = attribute.ty.and_then(|ty| self.ctx.typ(ty).tsym);
+                if attribute_tsym == string_tsym
+                    && let ConstantValue::String(text) = value
+                    && let Some(lc) = LintCategory::get(&text.to_string_lossy())
+                {
+                    self.suppress(lc);
+                }
+            }
+            AttributeKind::Compound { values, .. } | AttributeKind::TypeCompound { values, .. } => {
+                // Java: visitCompound (Lint.java:405-418)
+                let compound_tsym = attribute.ty.and_then(|ty| self.ctx.typ(ty).tsym);
+                let suppress_warnings_tsym = self
+                    .ctx
+                    .typ(self.syms.suppress_warnings_type)
+                    .tsym;
+                if compound_tsym == suppress_warnings_tsym {
+                    let values = values.clone();
+                    let mut index = 0;
+                    while index < values.length() {
+                        let pair = values.get(index);
+                        let method = self.ctx.sym(pair.fst);
+                        if method.name.to_string() == "value" {
+                            let value = self.ctx.attr(pair.snd);
+                            self.walk(value);
+                        }
+                        index += 1;
+                    }
+                }
+            }
+            AttributeKind::Array { .. } => {
+                // Java: visitArray (Lint.java:420-425)
+                self.walk_array(attribute);
+            }
+            AttributeKind::Class { .. } => {
+                // Java: visitClass (Lint.java:395-396): no-op.
+            }
+            AttributeKind::Enum { .. } => {
+                // Java: visitEnum (Lint.java:427-428): no-op.
+            }
+            AttributeKind::Error | AttributeKind::UnresolvedClass { .. } => {
+                // Java: visitError (Lint.java:430-431): no-op.
+            }
+        }
+    }
+}
+
+/// Java: AugmentVisitor.augment(Lint parent, Attribute.Compound attr)
+/// (Lint.java:351-358)
+fn augment_visitor_augment_compound(
+    ctx: &CompilerContext,
+    syms: &Symtab,
+    parent: &Lint,
+    attr: AttributeId,
+) -> Lint {
+    let mut visitor = AugmentVisitor::new(ctx, syms, parent);
+    visitor.walk(ctx.attr(attr));
+    visitor.lint.unwrap_or_else(|| Lint::new_from(parent))
+}
+
+/// Java: AugmentVisitor.augment(Lint parent, List<Attribute.Compound> attrs)
+/// (Lint.java:360-368)
+fn augment_visitor_augment_list(
+    ctx: &CompilerContext,
+    syms: &Symtab,
+    parent: &Lint,
+    attrs: &List<AttributeId>,
+) -> Lint {
+    let mut visitor = AugmentVisitor::new(ctx, syms, parent);
+    for attr in attrs.iter() {
+        visitor.walk(ctx.attr(attr));
+    }
+    visitor.lint.unwrap_or_else(|| Lint::new_from(parent))
+}
+
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use super::{Lint, LintCategory};
 
     fn make_lint(values: &[LintCategory], suppressed: &[LintCategory]) -> Lint {
@@ -493,9 +695,21 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "TODO(Options batch)")]
-    fn instance_needs_the_options_port() {
+    fn instance_is_a_singleton_from_the_context() {
         let mut context = crate::util::context::Context::new();
-        let _ = Lint::instance(&mut context);
+        let first = Lint::instance(&mut context);
+        let second = Lint::instance(&mut context);
+        assert!(Rc::ptr_eq(&first, &second));
+        // Defaults: -Xlint not set -> only the on-by-default categories are
+        // enabled (Source default is the latest; DEP_ANN/STRICTFP included).
+        assert!(first.is_enabled(LintCategory::DEP_ANN));
+        assert!(first.is_enabled(LintCategory::MODULE));
+        assert!(first.is_enabled(LintCategory::OPENS));
+        assert!(first.is_enabled(LintCategory::REMOVAL));
+        assert!(first.is_enabled(LintCategory::SYNCHRONIZATION));
+        assert!(first.is_enabled(LintCategory::PREVIEW));
+        assert!(!first.is_enabled(LintCategory::CAST));
+        assert!(!first.is_enabled(LintCategory::RAW));
+        assert!(!first.is_suppressed(LintCategory::CAST));
     }
 }

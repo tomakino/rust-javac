@@ -585,7 +585,10 @@ impl Attr {
         let env = self.env.clone().expect("env");
         let clazz_type = self.attrib_type_use(ctx, syms, clazz, &env);
         let clazz_pos = ctx.tree(clazz).pos;
-        let clazztype = self.chk.borrow().check_class_type(ctx, clazz_pos, clazz_type);
+        let clazztype = self
+            .chk
+            .borrow()
+            .check_class_type(ctx, syms, clazz_pos, clazz_type);
 
         // Attribute type parameters
         let arguments = type_apply_arguments(ctx, tree);

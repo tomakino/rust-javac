@@ -41,7 +41,9 @@ use crate::jvm::target::Target;
 use crate::resources::compiler_properties::{errors, fragments};
 use crate::resources::diagnostic_contract::DiagnosticArg;
 use crate::util::assert;
+use crate::main::option::Option as MainOption;
 use crate::util::context::Context;
+use crate::util::options::Options;
 use crate::util::java_string::JavaString;
 use crate::util::jc_diagnostic::{Error, Fragment};
 
@@ -240,13 +242,19 @@ impl Source {
     /// }
     /// </pre>
     ///
-    /// TODO(Options/Option batch): Options.instance/options.get and Option.SOURCE
-    /// ("--source -source") are not ported; the entry point stays unimplemented
-    /// (no substitute Options is invented).
-    pub fn instance(_context: &mut Context) -> Rc<Source> {
-        unimplemented!(
-            "TODO(Options/Option batch): Source.instance (Options and Option.SOURCE are not ported)"
-        )
+    pub fn instance(context: &mut Context) -> Rc<Source> {
+        if let Some(instance) = context.get::<Source>() {
+            return instance;
+        }
+        let options = Options::instance(context);
+        let source_string = options.get_option(MainOption::SOURCE);
+        let source = source_string
+            .as_deref()
+            .and_then(Source::lookup)
+            .unwrap_or(Source::DEFAULT);
+        let instance = Rc::new(source);
+        context.put(Rc::clone(&instance));
+        instance
     }
 }
 
@@ -816,9 +824,12 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "TODO(Options/Option batch)")]
-    fn instance_needs_the_options_port() {
+    fn instance_is_cached_and_defaults_to_the_latest_source() {
         let mut context = crate::util::context::Context::new();
-        let _ = Source::instance(&mut context);
+        let first = Source::instance(&mut context);
+        let second = Source::instance(&mut context);
+        assert!(std::rc::Rc::ptr_eq(&first, &second));
+        assert_eq!(*first, Source::DEFAULT);
+        assert_eq!(*first, Source::JDK17);
     }
 }
