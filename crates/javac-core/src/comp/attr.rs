@@ -76,7 +76,15 @@ pub struct ResultInfo {
     pub check_context: Rc<dyn crate::comp::check::CheckContext>,
     /// Java: final CheckMode checkMode
     pub check_mode: crate::comp::check::CheckMode,
+    /// The identity of this ResultInfo (the upstream ArgumentType.speculativeTypes
+    /// map is keyed by ResultInfo object identity; Rust needs an explicit id).
+    /// §9 registered adapter: unique ids are assigned by new_with_mode, so every
+    /// dup(...) call gets a fresh identity like the upstream constructors.
+    pub id: u64,
 }
+
+/// Monotonic ResultInfo identity counter (§9 adapter, see ResultInfo::id).
+static NEXT_RESULT_INFO_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl ResultInfo {
     /// Java: ResultInfo(KindSelector pkind, Type pt) — the upstream 2-arg
@@ -102,6 +110,7 @@ impl ResultInfo {
             pt,
             check_context,
             check_mode,
+            id: NEXT_RESULT_INFO_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
     }
 
