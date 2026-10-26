@@ -61,12 +61,42 @@ impl BasicConstant {
         BasicConstant { tag, data }
     }
 
-    /// Java: static LoadableConstant Int(int i) (PoolConstant.java:65-67).
+/// Create a pool constant describing the given `int` value.
+///
+/// Java: static LoadableConstant Int(int i). The constant is a BasicConstant with
+/// tag CONSTANT_Integer whose pool key is the boxed integer; two equal integers
+/// therefore share one constant-pool entry.
+///
+/// # Arguments
+///   - i: the integer value.
+///
+/// # Returns
+///   - the basic loadable constant.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: PoolConstant.java:65-67.
     pub fn int(i: i32) -> BasicConstant {
         BasicConstant::new(crate::jvm::class_file::CONSTANT_INTEGER, PoolKey::Integer(i))
     }
 
-    /// Java: static LoadableConstant Float(float f) (PoolConstant.java:72-74).
+/// Create a pool constant describing the given `float` value.
+///
+/// Java: static LoadableConstant Float(float f). The value is stored as its raw
+/// bit pattern so that pool-key equality follows Java Float.equals semantics
+/// (NaN == NaN and +0.0 != -0.0 in the constant pool).
+///
+/// # Arguments
+///   - f: the float value.
+///
+/// # Returns
+///   - the basic loadable constant.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: PoolConstant.java:72-74.
     pub fn float(f: f32) -> BasicConstant {
         BasicConstant::new(
             crate::jvm::class_file::CONSTANT_FLOAT,
@@ -74,12 +104,42 @@ impl BasicConstant {
         )
     }
 
-    /// Java: static LoadableConstant Long(long l) (PoolConstant.java:79-81).
+/// Create a pool constant describing the given `long` value.
+///
+/// Java: static LoadableConstant Long(long l). The constant carries
+/// tag CONSTANT_Long; JVMS 4.4.5 counts such entries as two slots in the pool,
+/// which is handled by the pool writer, not by this key.
+///
+/// # Arguments
+///   - l: the long value.
+///
+/// # Returns
+///   - the basic loadable constant.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: PoolConstant.java:79-81.
     pub fn long(l: i64) -> BasicConstant {
         BasicConstant::new(crate::jvm::class_file::CONSTANT_LONG, PoolKey::Long(l))
     }
 
-    /// Java: static LoadableConstant Double(double d) (PoolConstant.java:86-88).
+/// Create a pool constant describing the given `double` value.
+///
+/// Java: static LoadableConstant Double(double d). As for Float, the raw bits are
+/// used for the pool key so that the constant-pool deduplication matches Java
+/// Double.equals semantics.
+///
+/// # Arguments
+///   - d: the double value.
+///
+/// # Returns
+///   - the basic loadable constant.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: PoolConstant.java:86-88.
     pub fn double(d: f64) -> BasicConstant {
         BasicConstant::new(
             crate::jvm::class_file::CONSTANT_DOUBLE,
@@ -87,19 +147,58 @@ impl BasicConstant {
         )
     }
 
-    /// Java: static LoadableConstant String(String s) (PoolConstant.java:93-95).
+/// Create a pool constant describing the given `String` value.
+///
+/// Java: static LoadableConstant String(String s). The constant uses
+/// tag CONSTANT_String and a string pool key; the same text used by several
+/// instructions is merged into a single constant-pool entry.
+///
+/// # Arguments
+///   - s: the string value.
+///
+/// # Returns
+///   - the basic loadable constant.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: PoolConstant.java:93-95.
     pub fn string(s: JavaString) -> BasicConstant {
         BasicConstant::new(crate::jvm::class_file::CONSTANT_STRING, PoolKey::String(s))
     }
 }
 
 impl PoolConstant for BasicConstant {
-    /// Java: public Object poolKey(Types types) (PoolConstant.java:121-124).
+/// Return the constant-pool entry key of this basic constant.
+///
+/// Java: public Object poolKey(Types types). The upstream default would return
+/// the constant itself; BasicConstant overrides it with the boxed payload so that
+/// structurally equal values deduplicate in the constant pool.
+///
+/// # Returns
+///   - the payload pool key.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: PoolConstant.java:121-124.
     fn pool_key(&self) -> PoolKey {
         self.data.clone()
     }
 
-    /// Java: public int poolTag() (PoolConstant.java:116-119).
+/// Return the JVMS constant-pool tag of this basic constant.
+///
+/// Java: public int poolTag(). The tag determines how the pool writer encodes the
+/// entry (CONSTANT_Integer, CONSTANT_Float, CONSTANT_Long, CONSTANT_Double or
+/// CONSTANT_String for the LoadableConstant.BasicConstant family).
+///
+/// # Returns
+///   - the constant-pool tag.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: PoolConstant.java:116-119.
     fn pool_tag(&self) -> i32 {
         self.tag
     }

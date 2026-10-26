@@ -9273,6 +9273,495 @@ impl Types {
         self.skip_type_vars(ctx, t)
     }
 }
+
+/// Java: public static class InvalidSignatureException extends RuntimeException
+/// (Types.java:5046-5061).
+///
+/// The generator reports types that cannot appear in a JVM signature (e.g.
+/// compound/intersection class types or captured type variables) by returning
+/// this exception value, which carries the offending type exactly like the
+/// upstream RuntimeException field.
+#[derive(Clone, Debug)]
+pub struct InvalidSignatureException {
+    /// Java: private final transient Type type (Types.java:5050).
+    pub type_: TypeId,
+}
+
+impl InvalidSignatureException {
+    /// Return the type that could not be assembled into a signature.
+    ///
+    /// Java: public Type type() (Types.java:5058-5060). The value is the
+    /// constructor argument reported by reportIllegalSignature; callers use it
+    /// to attach the diagnostic to the offending type tree.
+    ///
+    /// # Returns
+    ///   - the type that caused the signature error.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:5058-5060.
+    pub fn type_(&self) -> TypeId {
+        self.type_
+    }
+}
+
+/// Java: public static abstract class SignatureGenerator (Types.java:5044-5244).
+///
+/// Assembles the JVM generic signature of a type into a caller-provided buffer.
+/// The upstream abstract class is modelled as a trait: implementations supply
+/// the buffer append primitives and the class-reference hook, while the
+/// signature grammar itself is ported as default methods so that subclasses
+/// such as Lower.LowerSignatureGenerator only override the append primitives.
+pub trait SignatureGenerator {
+    /// Append one character to the signature buffer.
+    ///
+    /// Java: protected abstract void append(char ch) (Types.java:5067). The
+    /// concrete buffer decides whether characters are widened to UTF-8 bytes
+    /// (StringBuilder) or emitted directly (the Lower signature generator).
+    ///
+    /// # Arguments
+    ///   - ch: the character to append.
+    ///
+    /// # Panics
+    ///   - none; buffer overflow handling is the implementation's concern.
+    ///
+    /// Upstream: Types.java:5067.
+    fn append_char(&mut self, ch: char);
+
+    /// Append a pre-encoded UTF-8 byte sequence to the signature buffer.
+    ///
+    /// Java: protected abstract void append(byte[] ba) (Types.java:5068). Used
+    /// for externalized class names so that the internal JVM encoding is
+    /// produced without a second conversion step.
+    ///
+    /// # Arguments
+    ///   - ba: the bytes to append.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:5068.
+    fn append_bytes(&mut self, ba: &[u8]);
+
+    /// Append a name to the signature buffer.
+    ///
+    /// Java: protected abstract void append(Name name) (Types.java:5069). The
+    /// implementation decides the encoding (upstream uses the name table bytes).
+    ///
+    /// # Arguments
+    ///   - name: the name to append.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:5069.
+    fn append_name(&mut self, name: &crate::util::name::Name);
+
+    /// Hook invoked when a class name is referenced from a signature.
+    ///
+    /// Java: protected void classReference(ClassSymbol c) (Types.java:5070-5072).
+    /// The upstream default is a no-op; the class-writer subclass records the
+    /// referenced class so that the constant pool entry can be created later.
+    ///
+    /// # Arguments
+    ///   - _c: the referenced class symbol.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:5070-5072.
+    fn class_reference(&mut self, _c: SymbolId) {}
+
+    /// Return the Types service that owns this generator.
+    ///
+    /// Java: private final Types types (Types.java:5063) — the ported trait
+    /// exposes it to the default signature methods so that a generator can be
+    /// created once and reused for many trees.
+    ///
+    /// # Returns
+    ///   - the shared Types service.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:5063-5076.
+    fn types(&self) -> &Types;
+
+    /// Report a type that is illegal in a generic signature.
+    ///
+    /// Java: protected void reportIllegalSignature(Type t) (Types.java:5078-5080).
+    /// The upstream method throws InvalidSignatureException; the ported trait
+    /// returns the same payload as an error so that callers propagate it without
+    /// panics (the Lower caller converts it into the JVMS error path).
+    ///
+    /// # Arguments
+    ///   - t: the offending type.
+    ///
+    /// # Returns
+    ///   - Err(InvalidSignatureException) carrying t.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:5078-5080.
+    fn report_illegal_signature(
+        &mut self,
+        t: TypeId,
+    ) -> Result<(), InvalidSignatureException> {
+        Err(InvalidSignatureException { type_: t })
+    }
+
+    /// Assemble the generic signature of a type.
+    ///
+    /// Java: public void assembleSig(Type type) (Types.java:5085-5165). The
+    /// method walks the Java type tag and appends the corresponding JVMS 4.7.9.1
+    /// signature grammar: primitive/void codes, L<class>; for classes, [ for
+    /// arrays, (args)ret^throws for methods, wildcard bound markers, T<var>; for
+    /// type variables and <params>qtype for foralls. Compound class types and
+    /// captured type variables are reported as illegal signatures.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table (used by the Types helpers);
+    ///   - t: the type whose signature is assembled.
+    ///
+    /// # Returns
+    ///   - Ok(()) when the type was appended, Err(InvalidSignatureException) for
+    ///     types that cannot appear in a signature.
+    ///
+    /// # Panics
+    ///   - the type tag is not handled by the signature grammar (assertion,
+    ///     mirroring the upstream AssertionError default branch).
+    ///
+    /// Upstream: Types.java:5085-5165.
+    fn assemble_sig(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        t: TypeId,
+    ) -> Result<(), InvalidSignatureException> {
+        use crate::code::type_tag::TypeTag;
+        match ctx.typ(t).get_tag() {
+            TypeTag::BYTE => self.append_char('B'),
+            TypeTag::SHORT => self.append_char('S'),
+            TypeTag::CHAR => self.append_char('C'),
+            TypeTag::INT => self.append_char('I'),
+            TypeTag::LONG => self.append_char('J'),
+            TypeTag::FLOAT => self.append_char('F'),
+            TypeTag::DOUBLE => self.append_char('D'),
+            TypeTag::BOOLEAN => self.append_char('Z'),
+            TypeTag::VOID => self.append_char('V'),
+            TypeTag::CLASS => {
+                if self.types().is_compound_public(ctx, t) {
+                    self.report_illegal_signature(t)?;
+                }
+                self.append_char('L');
+                self.assemble_class_sig(ctx, syms, t)?;
+                self.append_char(';');
+            }
+            TypeTag::ARRAY => {
+                let elemtype = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => *elemtype,
+                    _ => panic!("AssertionError: array type expected"),
+                };
+                self.append_char('[');
+                if let Some(elemtype) = elemtype {
+                    self.assemble_sig(ctx, syms, elemtype)?;
+                }
+            }
+            TypeTag::METHOD => {
+                let (argtypes, restype, thrown) = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::MethodType {
+                        argtypes,
+                        restype,
+                        thrown,
+                        ..
+                    } => (argtypes.clone(), *restype, thrown.clone()),
+                    _ => panic!("AssertionError: method type expected"),
+                };
+                self.append_char('(');
+                self.assemble_sig_list(ctx, syms, argtypes)?;
+                self.append_char(')');
+                if let Some(restype) = restype {
+                    self.assemble_sig(ctx, syms, restype)?;
+                }
+                if self.has_type_var(ctx, thrown.clone()) {
+                    let mut current = thrown;
+                    while current.non_empty() {
+                        self.append_char('^');
+                        self.assemble_sig(ctx, syms, *current.head())?;
+                        current = current.tail();
+                    }
+                }
+            }
+            TypeTag::WILDCARD => {
+                let (kind, bounded) = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::WildcardType { kind, type_, .. } => {
+                        (*kind, *type_)
+                    }
+                    _ => panic!("AssertionError: wildcard type expected"),
+                };
+                match kind {
+                    crate::code::bound_kind::BoundKind::SUPER => {
+                        self.append_char('-');
+                        if let Some(bounded) = bounded {
+                            self.assemble_sig(ctx, syms, bounded)?;
+                        }
+                    }
+                    crate::code::bound_kind::BoundKind::EXTENDS => {
+                        self.append_char('+');
+                        if let Some(bounded) = bounded {
+                            self.assemble_sig(ctx, syms, bounded)?;
+                        }
+                    }
+                    crate::code::bound_kind::BoundKind::UNBOUND => self.append_char('*'),
+                }
+            }
+            TypeTag::TYPEVAR => {
+                if ctx.typ(t).is_captured() {
+                    self.report_illegal_signature(t)?;
+                }
+                let tsym = ctx.typ(t).tsym.expect("type variable symbol");
+                self.append_char('T');
+                let name = ctx.sym(tsym).name.clone();
+                self.append_name(&name);
+                self.append_char(';');
+            }
+            TypeTag::FORALL => {
+                let (tvars, qtype) = match &ctx.typ(t).kind {
+                    crate::code::type_::TypeKindData::ForAll { tvars, qtype } => {
+                        (tvars.clone(), *qtype)
+                    }
+                    _ => panic!("AssertionError: forall type expected"),
+                };
+                self.assemble_params_sig(ctx, syms, tvars)?;
+                if let Some(qtype) = qtype {
+                    self.assemble_sig(ctx, syms, qtype)?;
+                }
+            }
+            other => panic!("AssertionError: typeSig {:?}", other),
+        }
+        Ok(())
+    }
+
+    /// Check whether a type list mentions a type variable.
+    ///
+    /// Java: public boolean hasTypeVar(List<Type> l) (Types.java:5170-5178). The
+    /// result decides whether a method's throws clause is appended after the
+    /// return type (JVMS 4.7.9.1 only emits ^throwable for generic throws).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - l: the type list to scan.
+    ///
+    /// # Returns
+    ///   - true when one element has the TYPEVAR tag.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:5170-5178.
+    fn has_type_var(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        mut l: List<TypeId>,
+    ) -> bool {
+        while l.non_empty() {
+            if ctx
+                .typ(*l.head())
+                .has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
+            {
+                return true;
+            }
+            l = l.tail();
+        }
+        false
+    }
+
+    /// Assemble the class portion of a signature (after the leading 'L').
+    ///
+    /// Java: public void assembleClassSig(Type type) (Types.java:5180-5214). For
+    /// a member class whose enclosing type carries type parameters the upstream
+    /// grammar emits the enclosing type followed by '.' (or '$' for local and
+    /// anonymous classes, whose flat name carries the synthetic separator);
+    /// otherwise the externalized flat name is appended. Type arguments follow
+    /// in angle brackets when the class is parameterized.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - t: the class type whose class part is assembled.
+    ///
+    /// # Returns
+    ///   - Ok(()) when appended, Err(InvalidSignatureException) for illegal
+    ///     compound/intersection class types reached through nested calls.
+    ///
+    /// # Panics
+    ///   - the type is not a class type, or a class symbol lacks an owner.
+    ///
+    /// Upstream: Types.java:5180-5214.
+    fn assemble_class_sig(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        t: TypeId,
+    ) -> Result<(), InvalidSignatureException> {
+        let tsym = ctx.typ(t).tsym.expect("class symbol");
+        self.class_reference(tsym);
+        let outer = ctx
+            .typ(t)
+            .get_enclosing_type()
+            .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
+        let outer_allparams = crate::code::types::allparams_of(ctx, outer);
+        if !outer_allparams.is_empty() {
+            let owner = ctx.sym(tsym).owner.expect("class owner");
+            let empty_name = self
+                .types()
+                .names
+                .as_ref()
+                .expect("Types.names")
+                .empty
+                .to_java_string();
+            let raw_outer = ctx.sym(owner).kind == crate::code::kinds::Kind::MTH
+                || ctx.sym(tsym).name.content_equals(&empty_name);
+            let outer_sig_type = if raw_outer {
+                self.types().erasure(ctx, syms, outer)
+            } else {
+                outer
+            };
+            self.assemble_class_sig(ctx, syms, outer_sig_type)?;
+            self.append_char(if raw_outer { '$' } else { '.' });
+            let flatname = class_flatname(ctx, tsym);
+            if raw_outer {
+                let owner_encl = crate::code::symbol::symbol_encl_class(ctx, owner)
+                    .expect("owner enclosing class");
+                let owner_flat = class_flatname(ctx, owner_encl);
+                let start = owner_flat.get_byte_length() + 1;
+                let sub = flatname.sub_name(start, flatname.get_byte_length());
+                self.append_name(&sub);
+            } else {
+                let name = ctx.sym(tsym).name.clone();
+                self.append_name(&name);
+            }
+        } else {
+            let flatname = class_flatname(ctx, tsym);
+            let external = crate::jvm::class_file::externalize_name(&flatname);
+            self.append_bytes(&external);
+        }
+        let args = ctx.typ(t).get_type_arguments();
+        if !args.is_empty() {
+            self.append_char('<');
+            self.assemble_sig_list(ctx, syms, args)?;
+            self.append_char('>');
+        }
+        Ok(())
+    }
+
+    /// Assemble the formal type-parameter section of a generic signature.
+    ///
+    /// Java: public void assembleParamsSig(List<Type> typarams)
+    /// (Types.java:5216-5232). Emits '<' then, for each type variable, its name
+    /// followed by the bounds in JVMS form: a ':' before the first bound when it
+    /// is an interface, and one ':' per bound otherwise.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table (for Types.getBounds);
+    ///   - typarams: the type variables.
+    ///
+    /// # Returns
+    ///   - Ok(()) when appended, Err(InvalidSignatureException) for illegal bound
+    ///     types.
+    ///
+    /// # Panics
+    ///   - a type parameter has no symbol.
+    ///
+    /// Upstream: Types.java:5216-5232.
+    fn assemble_params_sig(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        typarams: List<TypeId>,
+    ) -> Result<(), InvalidSignatureException> {
+        self.append_char('<');
+        let mut current = typarams;
+        while current.non_empty() {
+            let tvar = *current.head();
+            let tsym = ctx.typ(tvar).tsym.expect("type variable symbol");
+            let name = ctx.sym(tsym).name.clone();
+            self.append_name(&name);
+            let bounds = self.types().get_bounds(ctx, syms, tvar);
+            if !bounds.is_empty() {
+                let bounds_head = *bounds.head();
+                if let Some(bounds_tsym) = ctx.typ(bounds_head).tsym
+                    && (ctx.sym(bounds_tsym).flags_field
+                        & crate::code::flags::INTERFACE as i64)
+                        != 0
+                {
+                    self.append_char(':');
+                }
+            }
+            let mut bounds_current = bounds;
+            while bounds_current.non_empty() {
+                self.append_char(':');
+                self.assemble_sig(ctx, syms, *bounds_current.head())?;
+                bounds_current = bounds_current.tail();
+            }
+            current = current.tail();
+        }
+        self.append_char('>');
+        Ok(())
+    }
+
+    /// Assemble the signatures of a type list.
+    ///
+    /// Java: public void assembleSig(List<Type> types) (Types.java:5234-5240).
+    /// Each element is assembled in order; this is used for method parameters,
+    /// class type arguments and type-parameter bounds.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - types: the type list.
+    ///
+    /// # Returns
+    ///   - Ok(()) when all types were appended, Err(InvalidSignatureException) for
+    ///     the first illegal type.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Types.java:5234-5240.
+    fn assemble_sig_list(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        mut types: List<TypeId>,
+    ) -> Result<(), InvalidSignatureException> {
+        while types.non_empty() {
+            self.assemble_sig(ctx, syms, *types.head())?;
+            types = types.tail();
+        }
+        Ok(())
+    }
+
+}
+
+/// Return the flat name of a class symbol (Symbol.ClassSymbol.flatname).
+///
+/// The helper mirrors the upstream field access used by the signature
+/// generator; a non-class symbol is an internal invariant violation.
+fn class_flatname(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> crate::util::name::Name {
+    match &ctx.sym(sym).kind_data {
+        crate::code::symbol::SymbolKind::ClassSymbol { flatname, .. } => flatname.clone(),
+        _ => panic!("ClassCastException: class symbol expected"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

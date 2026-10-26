@@ -149,7 +149,11 @@ pub fn externalize(buf: &[u8], offset: i32, len: i32) -> Vec<u8> {
 // the Name port (they are trivial wrappers around the byte[] versions above).
 
 
-/// Java: public static byte[] internalize(Name name) (ClassFile.java:164-166).
+/// Return the external representation of `name`, converting '/' to '.'.
+///
+/// Java: public static byte[] internalize(Name name). The ported Name is a
+/// shared-table name, so the byte offset/length pair is read through the Name
+/// accessors and copied into a fresh vector; the result never aliases the table.
 ///
 /// # Arguments
 ///   - name: the external name.
@@ -169,7 +173,11 @@ pub fn internalize_name(name: &crate::util::name::Name) -> Vec<u8> {
     )
 }
 
-/// Java: public static byte[] externalize(Name name) (ClassFile.java:190-192).
+/// Return the external representation of `name`, converting '.' to '/'.
+///
+/// Java: public static byte[] externalize(Name name). This is the inverse of
+/// `internalize_name`; it is used by the signature generator and the class-file
+/// writer to emit JVMS internal names from the compiler's dotted names.
 ///
 /// # Arguments
 ///   - name: the internal name.

@@ -2594,7 +2594,19 @@ pub enum AccessCode {
 }
 
 impl AccessCode {
-    /// Java: public final int code (Symbol.java:2472).
+/// Return the numeric access code assigned to this enum constant.
+///
+/// Java: public final int code. The values follow the upstream numbering:
+/// dereference is 0, assignment is 2, pre/post increment/decrement occupy the
+/// even numbers 4..=10 and FIRSTASGOP starts the compound-assignment range at 12.
+///
+/// # Returns
+///   - the upstream access code.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Symbol.java:2472-2473.
     pub fn code(self) -> i32 {
         match self {
             AccessCode::UNKNOWN => -1,
@@ -2608,7 +2620,18 @@ impl AccessCode {
         }
     }
 
-    /// Java: public final Tag tag (Symbol.java:2473).
+/// Return the operator tag associated with this access code.
+///
+/// Java: public final Tag tag. UNKNOWN, DEREF and FIRSTASGOP map to Tag.NO_TAG;
+/// the assignment and increment/decrement access codes map to their own tags.
+///
+/// # Returns
+///   - the associated tree tag.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Symbol.java:2473.
     pub fn tag(self) -> crate::tree::jc_tree::Tag {
         match self {
             AccessCode::UNKNOWN | AccessCode::DEREF | AccessCode::FIRSTASGOP => {
@@ -2622,7 +2645,19 @@ impl AccessCode {
         }
     }
 
-    /// Java: public static final int numberOfAccessCodes (Symbol.java:2474).
+/// Return the number of access-code slots used by the backend tables.
+///
+/// Java: public static final int numberOfAccessCodes. The value is derived from
+/// the bytecode ranges exactly as upstream: binary operators, string_add, and the
+/// shift-with-long-count opcodes each contribute two access codes.
+///
+/// # Returns
+///   - the number of access-code slots.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Symbol.java:2474-2476.
     pub fn number_of_access_codes() -> i32 {
         (crate::jvm::byte_codes::LUSHRL - crate::jvm::byte_codes::ISHLL
             + crate::jvm::byte_codes::LXOR
@@ -2633,8 +2668,22 @@ impl AccessCode {
             + 2
     }
 
-    /// Java: public static AccessCode getFromCode(int code)
-    /// (Symbol.java:2482-2489).
+/// Map a numeric access code back to its enum constant.
+///
+/// Java: public static AccessCode getFromCode(int code). The lookup walks the
+/// fixed enum values and returns UNKNOWN when the code does not correspond to a
+/// declared constant, mirroring the upstream fallback.
+///
+/// # Arguments
+///   - code: the numeric access code.
+///
+/// # Returns
+///   - the matching access code or UNKNOWN.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Symbol.java:2482-2489.
     pub fn get_from_code(code: i32) -> AccessCode {
         for a_code in [
             AccessCode::UNKNOWN,
@@ -2653,7 +2702,24 @@ impl AccessCode {
         AccessCode::UNKNOWN
     }
 
-    /// Java: static int from(Tag tag, int opcode) (Symbol.java:2491-2513).
+/// Compute the access code for an operator tag and bytecode opcode.
+///
+/// Java: static int from(Tag tag, int opcode). Increment/decrement tags map to
+/// their fixed codes; binary operators map to `(opcode - iadd) * 2 + FIRSTASGOP`;
+/// string addition and the shift-with-long-count range use the corresponding
+/// upstream offsets; any other opcode yields -1.
+///
+/// # Arguments
+///   - tag: the operator tree tag;
+///   - opcode: the backend bytecode opcode.
+///
+/// # Returns
+///   - the derived access code, or -1 when the opcode is not an access operator.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Symbol.java:2491-2513.
     pub fn from(tag: crate::tree::jc_tree::Tag, opcode: i32) -> i32 {
         match tag {
             crate::tree::jc_tree::Tag::PREINC => return AccessCode::PREINC.code(),
@@ -2675,18 +2741,23 @@ impl AccessCode {
 }
 
 impl Symbol {
-    /// Java: public int getAccessCode(Tag tag) (Symbol.java:2442-2449).
-    ///
-    /// # Arguments
-    ///   - tag: the operator tree tag.
-    ///
-    /// # Returns
-    ///   - the cached/derived operator access code.
-    ///
-    /// # Panics
-    ///   - the symbol must be an OperatorSymbol.
-    ///
-    /// Upstream: Symbol.java:2442-2449.
+/// Return the (cached) access code of this operator symbol for a tree tag.
+///
+/// Java: public int getAccessCode(Tag tag). The first call computes the code via
+/// AccessCode.from(tag, opcode) and caches it on the OperatorSymbol; cached values
+/// are reused unless the tag is an increment/decrement unary operator, which must
+/// recompute because its direction is encoded in the tag.
+///
+/// # Arguments
+///   - tag: the operator tree tag.
+///
+/// # Returns
+///   - the cached or newly derived access code.
+///
+/// # Panics
+///   - the symbol is not an OperatorSymbol.
+///
+/// Upstream: Symbol.java:2442-2449.
     pub fn get_access_code(&mut self, tag: crate::tree::jc_tree::Tag) -> i32 {
         let (opcode, access_code) = match &self.kind_data {
             SymbolKind::OperatorSymbol {
