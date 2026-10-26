@@ -384,6 +384,11 @@ pub struct Attr {
     pub match_bindings: crate::comp::match_bindings::MatchBindings,
     /// Java: final MatchBindingsComputer matchBindingsComputer (Attr.java:632).
     pub match_bindings_computer: crate::comp::match_bindings::MatchBindingsComputer,
+    /// Java: final Operators operators (§9 cell: Operators is built after Attr; the
+    /// wiring installs it).
+    pub operators: Rc<RefCell<Option<Rc<crate::comp::operators::Operators>>>>,
+    /// Java: final ConstFold cfolder (Attr.java:634).
+    pub cfolder: Rc<crate::comp::const_fold::ConstFold>,
 }
 
 impl Attr {
@@ -474,6 +479,8 @@ impl Attr {
             match_bindings_computer: crate::comp::match_bindings::MatchBindingsComputer::new(
                 mb_log, mb_diags,
             ),
+            operators: Rc::new(RefCell::new(None)),
+            cfolder: Rc::new(crate::comp::const_fold::ConstFold::new()),
             attr_recover: Rc::new(RefCell::new(None)),
             syms,
             infer,
@@ -675,6 +682,15 @@ impl Attr {
         syms: &mut Symtab,
         tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
+        // Java: the operator visitors are dispatched by JCTree.accept on the
+        // concrete JCUnary/JCBinary/JCAssignOp classes; the port dispatches on
+        // the TreeKind variant first (the operator tag is the node's tag).
+        match &ctx.tree(tree).kind {
+            TreeKind::AssignOp { .. } => return self.visit_assignop(ctx, syms, tree),
+            TreeKind::Unary { .. } => return self.visit_unary(ctx, syms, tree),
+            TreeKind::Binary { .. } => return self.visit_binary(ctx, syms, tree),
+            _ => {}
+        }
         match &ctx.tree(tree).tag {
             Tag::LITERAL => self.visit_literal(ctx, syms, tree),
             Tag::IDENT => self.visit_ident(ctx, syms, tree),
@@ -6465,6 +6481,227 @@ fn remove_class_params(ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         return remove_class_params(ctx, clazz);
     }
     tree
+}
+
+impl Attr {
+    /// Java: public void visitAssignop(JCAssignOp tree) (Attr.java:3937-3952).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the compound assignment.
+    ///
+    /// # Returns
+    ///   - the result type.
+    ///
+    /// # Panics
+    ///   - the operators service must be installed (wiring).
+    ///
+    /// Upstream: Attr.java:3937-3952.
+    #[allow(clippy::collapsible_if)]
+    fn visit_assignop(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let (lhs, rhs, tag) = match &ctx.tree(tree).kind {
+            TreeKind::AssignOp { lhs, rhs, .. } => (
+                lhs.expect("assignop lhs"),
+                rhs.expect("assignop rhs"),
+                ctx.tree(tree).tag,
+            ),
+            _ => panic!("ClassCastException: JCAssignOp expected"),
+        };
+        let env = self.env.clone().expect("env");
+        let var_info = self.var_assignment_info.clone();
+        let owntype = self.attrib_tree_use(ctx, syms, lhs, &env, var_info);
+        let operand = self.attrib_expr(ctx, syms, rhs, &env);
+        let operator = {
+            let ops = self.operators.borrow().clone().expect("AssertionError: operators service must be installed");
+            let no_assign = tag.no_assign_op();
+            ops.resolve_binary(ctx, syms, &self.types, ctx.tree(tree).pos, no_assign, owntype, operand)
+        };
+        if let TreeKind::AssignOp { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(operator);
+        }
+        let no_op = self.operators.borrow().clone().map(|ops| ops.no_op_symbol).expect("AssertionError: operators service must be installed");
+        if operator != no_op
+            && !ctx.typ(owntype).has_tag(TypeTag::ERROR)
+            && !ctx.typ(operand).has_tag(TypeTag::ERROR)
+        {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_div_zero(ctx, ctx.tree(rhs).pos, operator, operand);
+            let operator_type = ctx.sym(operator).ty.expect("operator type");
+            let operator_ret = self.types.get_return_type_public(ctx, operator_type);
+            chk.check_castable(ctx, syms, ctx.tree(rhs).pos, operator_ret, owntype);
+        }
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &result_info);
+        self.result = Some(result);
+        Ok(result)
+    }
+
+    /// Java: public void visitUnary(JCUnary tree) (Attr.java:3954-3980).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the unary expression.
+    ///
+    /// # Returns
+    ///   - the result type.
+    ///
+    /// # Panics
+    ///   - the operators service must be installed (wiring).
+    ///
+    /// Upstream: Attr.java:3954-3980.
+    #[allow(clippy::collapsible_if)]
+    fn visit_unary(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let (arg, tag) = match &ctx.tree(tree).kind {
+            TreeKind::Unary { arg, .. } => (arg.expect("unary arg"), ctx.tree(tree).tag),
+            _ => panic!("ClassCastException: JCUnary expected"),
+        };
+        let env = self.env.clone().expect("env");
+        let argtype = if tag.is_inc_or_dec_unary_op() {
+            let var_info = self.var_assignment_info.clone();
+            self.attrib_tree_use(ctx, syms, arg, &env, var_info)
+        } else {
+            let attr_type = self.attrib_expr(ctx, syms, arg, &env);
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = chk_rc.borrow();
+            chk.check_non_void(ctx, ctx.tree(arg).pos, attr_type)
+        };
+        let operator = {
+            let ops = self.operators.borrow().clone().expect("AssertionError: operators service must be installed");
+            ops.resolve_unary(ctx, syms, &self.types, ctx.tree(tree).pos, tag, argtype)
+        };
+        if let TreeKind::Unary { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(operator);
+        }
+        let mut owntype = self.types.create_error_type_original(ctx, ctx.tree(tree).ty, syms);
+        let no_op = self.operators.borrow().clone().map(|ops| ops.no_op_symbol).expect("AssertionError: operators service must be installed");
+        if operator != no_op && !ctx.typ(argtype).has_tag(TypeTag::ERROR) {
+            owntype = if tag.is_inc_or_dec_unary_op() {
+                ctx.tree(arg).ty.unwrap_or_else(|| self.no_type(ctx))
+            } else {
+                let operator_type = ctx.sym(operator).ty.expect("operator type");
+                self.types.get_return_type_public(ctx, operator_type)
+            };
+            let opc = match &ctx.sym(operator).kind_data {
+                crate::code::symbol::SymbolKind::OperatorSymbol { opcode, .. } => *opcode,
+                _ => 0,
+            };
+            if ctx.typ(argtype).const_value().is_some() {
+                if let Some(ctype) = self.cfolder.fold1(ctx, syms, opc, argtype) {
+                    owntype = self.cfolder.coerce(ctx, syms, ctype, owntype);
+                }
+            }
+        }
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &result_info);
+        self.result = Some(result);
+        self.match_bindings = self.match_bindings_computer.unary(tag, &self.match_bindings);
+        Ok(result)
+    }
+
+    /// Java: public void visitBinary(JCBinary tree) (Attr.java:3982-4042).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the binary expression.
+    ///
+    /// # Returns
+    ///   - the result type.
+    ///
+    /// # Panics
+    ///   - the operators service must be installed (wiring).
+    ///
+    /// Upstream: Attr.java:3982-4042.
+    #[allow(clippy::collapsible_if)]
+    fn visit_binary(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let (lhs, rhs, tag) = match &ctx.tree(tree).kind {
+            TreeKind::Binary { lhs, rhs, .. } => (
+                lhs.expect("binary lhs"),
+                rhs.expect("binary rhs"),
+                ctx.tree(tree).tag,
+            ),
+            _ => panic!("ClassCastException: JCBinary expected"),
+        };
+        let env = self.env.clone().expect("env");
+        let chk_rc = Rc::clone(&self.chk);
+        let left_attr = self.attrib_expr(ctx, syms, lhs, &env);
+        let left = {
+            let chk = chk_rc.borrow();
+            chk.check_non_void(ctx, ctx.tree(lhs).pos, left_attr)
+        };
+        let lhs_bindings = self.match_bindings.clone();
+        let propagated: List<SymbolId> = match tag {
+            Tag::AND => lhs_bindings.bindings_when_true.clone(),
+            Tag::OR => lhs_bindings.bindings_when_false.clone(),
+            _ => List::nil(),
+        };
+        let rhs_env = self.binding_env(ctx, syms, &env, propagated);
+        let right_attr = self.attrib_expr(ctx, syms, rhs, &rhs_env);
+        let right = {
+            let chk = chk_rc.borrow();
+            chk.check_non_void(ctx, ctx.tree(rhs).pos, right_attr)
+        };
+        let rhs_bindings = self.match_bindings.clone();
+        self.match_bindings = self.match_bindings_computer.binary(ctx, tag, ctx.tree(tree).pos, &lhs_bindings, &rhs_bindings);
+        let operator = {
+            let ops = self.operators.borrow().clone().expect("AssertionError: operators service must be installed");
+            ops.resolve_binary(ctx, syms, &self.types, ctx.tree(tree).pos, tag, left, right)
+        };
+        if let TreeKind::Binary { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
+            *slot = Some(operator);
+        }
+        let mut owntype = self.types.create_error_type_original(ctx, ctx.tree(tree).ty, syms);
+        let no_op = self.operators.borrow().clone().map(|ops| ops.no_op_symbol).expect("AssertionError: operators service must be installed");
+        if operator != no_op
+            && !ctx.typ(left).has_tag(TypeTag::ERROR)
+            && !ctx.typ(right).has_tag(TypeTag::ERROR)
+        {
+            let operator_type = ctx.sym(operator).ty.expect("operator type");
+            owntype = self.types.get_return_type_public(ctx, operator_type);
+            let opc = match &ctx.sym(operator).kind_data {
+                crate::code::symbol::SymbolKind::OperatorSymbol { opcode, .. } => *opcode,
+                _ => 0,
+            };
+            if ctx.typ(left).const_value().is_some() && ctx.typ(right).const_value().is_some() {
+                if let Some(ctype) = self.cfolder.fold2(ctx, syms, opc, left, right) {
+                    owntype = self.cfolder.coerce(ctx, syms, ctype, owntype);
+                }
+            }
+            if opc == crate::jvm::byte_codes::IF_ACMPEQ || opc == crate::jvm::byte_codes::IF_ACMPNE {
+                let mut warn = crate::util::warner::Warner::new(None);
+                if !self.types.is_castable_with_warn(ctx, syms, left, right, &mut warn) {
+                    self.attr_error(
+                        ctx.tree(tree).pos,
+                        crate::resources::compiler_properties::errors::incomparable_types(
+                            Self::type_arg_placeholder(ctx, left),
+                            Self::type_arg_placeholder(ctx, right),
+                        ),
+                    );
+                }
+            }
+            let chk = chk_rc.borrow();
+            chk.check_div_zero(ctx, ctx.tree(rhs).pos, operator, right);
+        }
+        let result_info = self.result_info.clone().expect("resultInfo");
+        let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &result_info);
+        self.result = Some(result);
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
