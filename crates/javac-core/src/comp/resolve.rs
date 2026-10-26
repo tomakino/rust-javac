@@ -4962,6 +4962,15 @@ fn types_parameter_types(
     }
 }
 
+/// Batch 5: the public wrapper of method_arguments_display used by
+/// Attr.checkMethod (upstream Resolve.methodArguments is package-visible).
+pub(crate) fn method_arguments_display_pub(
+    ctx: &crate::compiler_context::CompilerContext,
+    argtypes: Option<crate::util::list::List<TypeId>>,
+) -> String {
+    method_arguments_display(ctx, argtypes)
+}
+
 fn method_arguments_display(
     ctx: &crate::compiler_context::CompilerContext,
     argtypes: Option<crate::util::list::List<TypeId>>,

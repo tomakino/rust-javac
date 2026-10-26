@@ -3403,6 +3403,346 @@ impl Attr {
     }
 }
 
+
+
+// ---------------------------------------------------------------------------
+// Batch 5 prerequisite: Attr.checkMethod (Attr.java:4774-4895).
+// §9 adapters: explicit ctx/syms/rs/infer parameters (ADR 0001);
+// Sym.erasure(types) -> types.erasure(sym.type); the anonymous
+// InapplicableSymbolError subclass -> the ported ResolveErrorData::Inapplicable
+// symbol + resolve_error_diagnostic.
+// ---------------------------------------------------------------------------
+impl Attr {
+    /// Java: public Type checkMethod(Type site, final Symbol sym, ResultInfo
+    /// resultInfo, Env<AttrContext> env, final List<JCExpression> argtrees,
+    /// List<Type> argtypes, List<Type> typeargtypes) (Attr.java:4774-4895)
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::drop_non_drop)] // the drops release borrows early (Attr/Check)
+    pub fn check_method(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        rs: &mut crate::comp::resolve::Resolve,
+        infer: &Rc<crate::comp::infer::Infer>,
+        site: TypeId,
+        sym: SymbolId,
+        result_info: &ResultInfo,
+        env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
+        argtrees: Option<&List<TreeId>>,
+        mut argtypes: List<TypeId>,
+        typeargtypes: Option<List<TypeId>>,
+    ) -> TypeId {
+        use crate::code::flags;
+        use crate::code::type_tag::TypeTag;
+        use crate::resources::diagnostic_contract::{SymbolArg, TypeArg};
+        let types = Rc::clone(&self.types);
+        let chk_rc = Rc::clone(&self.chk);
+        let diags = Rc::clone(&self.diags);
+        let names = Rc::clone(&self.names);
+        let env_tree = env.tree.expect("env tree");
+        let tree_pos = ctx.tree(env_tree).pos;
+        let sym_flags = ctx.sym(sym).flags_field;
+        // Test (5): if symbol is an instance method of a raw type, issue an
+        // unchecked warning if its argument types change under erasure.
+        if sym_flags & (flags::STATIC as i64) == 0
+            && (ctx.typ(site).has_tag(TypeTag::CLASS) || ctx.typ(site).has_tag(TypeTag::TYPEVAR))
+        {
+            let owner = ctx.sym(sym).owner.expect("method owner");
+            if let Some(s) = types.as_outer_super(ctx, syms, site, owner)
+                && types.is_raw_type_public(ctx, s)
+            {
+                    let sym_type = ctx.sym(sym).ty.expect("method type");
+                    let erased = types.erasure(ctx, syms, sym_type);
+                    let sym_params = types.get_parameter_types_public(ctx, sym_type);
+                    let erased_params = types.get_parameter_types_public(ctx, erased);
+                    if !types.is_same_types(ctx, syms, &sym_params, &erased_params) {
+                        chk_rc.borrow().warn_unchecked(
+                            tree_pos,
+                            crate::resources::compiler_properties::warnings::unchecked_call_mbr_of_raw_type(
+                                SymbolArg::placeholder(
+                                    crate::comp::resolve::symbol_display_name(ctx, sym),
+                                ),
+                                TypeArg::placeholder(type_display_of(ctx, s)),
+                            ),
+                        );
+                    }
+            }
+        }
+        // Java: if (env.info.defaultSuperCallSite != null) { ... }
+        let default_super_call_site = env.info.borrow().default_super_call_site;
+        if let Some(default_super) = default_super_call_site {
+            let encl_tree = env.encl_class.expect("enclClass");
+            let encl_type = ctx.tree(encl_tree).ty.expect("enclosing class type");
+            let supers = types
+                .interfaces(ctx, syms, encl_type)
+                .prepend(types.supertype(ctx, syms, encl_type));
+            for sup in supers.iter() {
+                let sup_tsym = ctx.typ(sup).tsym.expect("supertype symbol");
+                let sym_encl = crate::code::symbol::symbol_encl_class(ctx, sym)
+                    .expect("method enclosing class");
+                if !crate::code::symbol::is_sub_class(ctx, syms, &types, sup_tsym, sym_encl) {
+                    continue;
+                }
+                if types.is_same_type(ctx, syms, sup, default_super) {
+                    continue;
+                }
+                let cand = types.interface_candidates(ctx, syms, sup, sym);
+                if let Some(head) = cand.first().copied()
+                    && head != sym
+                    && crate::code::symbol::overrides(ctx, syms, &types, head, sym, sup_tsym, true)
+                {
+                        let diag = diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                            crate::resources::compiler_properties::fragments::overridden_default(
+                                SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(
+                                    ctx, sym,
+                                )),
+                                TypeArg::placeholder(type_display_of(ctx, sup)),
+                            ),
+                        ));
+                        let err = crate::resources::compiler_properties::errors::illegal_default_super_call(
+                            crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                                type_display_of(ctx, default_super),
+                            ),
+                            crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                                diag.get_message(None).to_string(),
+                            ),
+                        );
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            tree_pos,
+                            crate::util::jc_diagnostic::Error::from(err),
+                        );
+                        break;
+                }
+            }
+            env.info.borrow_mut().default_super_call_site = None;
+        }
+        // Java: if (sym.isStatic() && site.isInterface() && env.tree.hasTag(APPLY)) ...
+        let env_tag = ctx.tree(env_tree).tag;
+        let site_is_interface = ctx
+            .typ(site)
+            .tsym
+            .map(|tsym| ctx.sym(tsym).is_interface())
+            .unwrap_or(false);
+        if sym_flags & (flags::STATIC as i64) != 0
+            && site_is_interface
+            && env_tag == Tag::APPLY
+        {
+            let meth = match &ctx.tree(env_tree).kind {
+                crate::tree::jc_tree::TreeKind::MethodInvocation { meth, .. } => *meth,
+                _ => panic!("ClassCastException: JCMethodInvocation expected"),
+            };
+            if let Some(meth) = meth
+                && ctx.tree(meth).tag == Tag::SELECT
+            {
+                    let selected = match &ctx.tree(meth).kind {
+                        crate::tree::jc_tree::TreeKind::FieldAccess { selected, .. } => *selected,
+                        _ => panic!("ClassCastException: JCFieldAccess expected"),
+                    };
+                    if !crate::tree::tree_info::is_static_selector(ctx, selected, &names) {
+                        let err = crate::resources::compiler_properties::errors::illegal_static_intf_meth_call(
+                            TypeArg::placeholder(type_display_of(ctx, site)),
+                        );
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            tree_pos,
+                            crate::util::jc_diagnostic::Error::from(err),
+                        );
+                }
+            }
+        }
+        // Compute the identifier's instantiated type (Resolve.checkMethod).
+        let mut note_warner = crate::util::warner::Warner::new(None);
+        let chk_guard = chk_rc.borrow();
+        let resolution = rs.check_method(
+            ctx,
+            syms,
+            &types,
+            self,
+            &chk_guard,
+            infer,
+            env,
+            site,
+            sym,
+            result_info,
+            argtypes.clone(),
+            typeargtypes.clone(),
+            &mut note_warner,
+        );
+        drop(chk_guard);
+        let owntype = match resolution {
+            Ok(owntype) => owntype,
+            Err(crate::comp::resolve::MethodCheckFailure::Inference(ex)) => {
+                if let Some(diag) = ex.get_diagnostic() {
+                    result_info.check_context.report(ctx, tree_pos, &diag);
+                }
+                return types.create_error_type_original(ctx, Some(site), syms);
+            }
+            Err(crate::comp::resolve::MethodCheckFailure::Inapplicable(ex)) => {
+                let diag = ex.get_diagnostic().clone();
+                let err_symbol = crate::code::symbol::symbol_new_resolve_error(
+                    ctx,
+                    crate::code::kinds::Kind::ERR,
+                    names.empty.clone(),
+                    "inapplicable method",
+                    crate::code::symbol::ResolveErrorData::Inapplicable {
+                        kind: crate::code::kinds::Kind::MTH,
+                        sym,
+                        details: Some(diag),
+                    },
+                );
+                // Java: argtypes2 = argtypes.map(new ResolveDeferredRecoveryMap(...));
+                let phase = env
+                    .info
+                    .borrow()
+                    .pending_resolution_phase
+                    .unwrap_or(crate::comp::resolve::MethodResolutionPhase::BOX);
+                let chk_guard = chk_rc.borrow();
+                let mut dctx = crate::comp::deferred_attr::DeferredMapCtx {
+                    attr: self,
+                    syms,
+                    types: &types,
+                    chk: &chk_guard,
+                    diags: &diags,
+                };
+                let mut recovery_map = crate::comp::deferred_attr::ResolveDeferredRecoveryMap::new(
+                    crate::comp::deferred_attr::AttrMode::CHECK,
+                    Some(sym),
+                    phase,
+                );
+                let mut argtypes2: List<TypeId> = List::nil();
+                for t in argtypes.iter() {
+                    argtypes2 = argtypes2.append(recovery_map.visit(ctx, &mut dctx, t, &None));
+                }
+                drop(dctx);
+                drop(chk_guard);
+                let err_diag = rs.resolve_error_diagnostic(
+                    ctx,
+                    syms,
+                    err_symbol,
+                    crate::util::jc_diagnostic::DiagnosticType::ERROR,
+                    Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                        tree_pos,
+                    ))),
+                    Some(sym),
+                    Some(site),
+                    Some(&ctx.sym(sym).name.clone()),
+                    Some(argtypes2),
+                    typeargtypes.clone(),
+                );
+                if let Some(err_diag) = err_diag {
+                    self.log.borrow_mut().report(err_diag);
+                }
+                return types.create_error_type_original(ctx, Some(site), syms);
+            }
+        };
+        // Java: DeferredTypeMap checkDeferredMap = ...; argtypes = argtypes.map(checkDeferredMap);
+        let phase = env
+            .info
+            .borrow()
+            .pending_resolution_phase
+            .unwrap_or(crate::comp::resolve::MethodResolutionPhase::BOX);
+        let chk_guard = chk_rc.borrow();
+        let mut dctx = crate::comp::deferred_attr::DeferredMapCtx {
+            attr: self,
+            syms,
+            types: &types,
+            chk: &chk_guard,
+            diags: &diags,
+        };
+        let mut check_deferred_map = crate::comp::deferred_attr::DeferredTypeMap::new(
+            crate::comp::deferred_attr::AttrMode::CHECK,
+            Some(sym),
+            phase,
+        );
+        argtypes = check_deferred_map.map(ctx, &mut dctx, &argtypes, &None);
+        drop(dctx);
+        drop(chk_guard);
+        let owntype = if note_warner
+            .has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED)
+        {
+            let sym_type = ctx.sym(sym).ty.expect("method type");
+            let sym_params = types.get_parameter_types_public(ctx, sym_type);
+            let kind = crate::code::kinds::kind_name(ctx.sym(sym), ctx);
+            let method_name = ctx.sym(sym).name.clone();
+            let location = ctx.sym(sym).owner.expect("location");
+            let location_kind = crate::code::kinds::kind_name(ctx.sym(location), ctx);
+            chk_rc.borrow().warn_unchecked(
+                tree_pos,
+                crate::resources::compiler_properties::warnings::unchecked_meth_invocation_applied(
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
+                    method_name,
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        crate::comp::resolve::method_arguments_display_pub(ctx, Some(sym_params)),
+                    ),
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        crate::comp::resolve::method_arguments_display_pub(ctx, Some(argtypes.clone())),
+                    ),
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                        location_kind.to_string(),
+                    ),
+                    SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, location)),
+                ),
+            );
+            let any_poly = result_info.pt == Some(infer.any_poly);
+            let is_partial = ctx.typ(owntype).is_partial();
+            if !any_poly || ctx.typ(owntype).get_tag() != TypeTag::METHOD || !is_partial {
+                let params = types.get_parameter_types_public(ctx, owntype);
+                let ret = types.get_return_type_public(ctx, owntype);
+                let thrown = ctx.typ(owntype).get_thrown_types(ctx);
+                let erased_ret = types.erasure(ctx, syms, ret);
+                let mut erased_thrown: List<TypeId> = List::nil();
+                for t in thrown.iter() {
+                    erased_thrown = erased_thrown.append(types.erasure(ctx, syms, t));
+                }
+                let ty = crate::code::type_::Type::new_method_type(
+                    params,
+                    erased_ret,
+                    erased_thrown,
+                    syms.method_class,
+                );
+                ctx.alloc_type(ty)
+            } else {
+                owntype
+            }
+        } else {
+            owntype
+        };
+        // Java: PolyKind pkind = ...; TreeInfo.setPolyKind(env.tree, pkind);
+        let sym_type = ctx.sym(sym).ty.expect("method type");
+        let sym_ret = types.get_return_type_public(ctx, sym_type);
+        let pkind = if ctx.typ(sym_type).has_tag(TypeTag::FORALL) {
+            let tvars = match &ctx.typ(sym_type).kind {
+                crate::code::type_::TypeKindData::ForAll { tvars, .. } => tvars.clone(),
+                _ => List::nil(),
+            };
+            if types.contains_any(ctx, syms, sym_ret, &tvars) {
+                crate::tree::jc_tree::PolyKind::POLY
+            } else {
+                crate::tree::jc_tree::PolyKind::STANDALONE
+            }
+        } else {
+            crate::tree::jc_tree::PolyKind::STANDALONE
+        };
+        crate::tree::tree_info::set_poly_kind(ctx, env_tree, pkind);
+        if result_info.pt == Some(infer.any_poly) {
+            return owntype;
+        }
+        let last_varargs = env.info.borrow().last_resolve_varargs();
+        chk_rc.borrow().check_method(
+            ctx,
+            syms,
+            owntype,
+            sym,
+            env,
+            argtrees,
+            &argtypes,
+            last_varargs,
+            result_info.check_context.inference_context(),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

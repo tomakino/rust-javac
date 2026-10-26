@@ -824,42 +824,87 @@ fn check_with_policy(
 /// for the type variants (identity for non-deferred types, structural recursion
 /// for class/array/wildcard/method/forall, visitTypeVar for captured types)
 /// (§9 adapter registered).
-pub struct DeferredTypeMap<T> {
-    pub deferred_attr_context: DeferredAttrContext,
-    pub marker: std::marker::PhantomData<T>,
+/// Java: class DeferredAttr.DeferredTypeMap<T> / RecoveryDeferredTypeMap
+///
+/// PORTING_RULES §9 adapters:
+/// - the upstream generic parameter T (Void for the plain mapping, Type for the
+///   recovery mapping) is unified to Option<TypeId> (the Java nullable Type / the
+///   Void payload is unused); the two concrete classes are one struct plus the
+///   recovery flag, and the RecoveryDeferredTypeMap override of typeOf is the
+///   flag-dispatched recovery branch in type_of;
+/// - the upstream StructuralTypeMapping visitor dispatch is reproduced
+///   explicitly (as before); the recovery path needs the Attr/Check services
+///   explicitly (ADR 0001) through DeferredMapCtx.
+pub struct DeferredTypeMap {
+    pub deferred_attr_context: Rc<DeferredAttrContext>,
+    /// Java: RecoveryDeferredTypeMap overrides typeOf to synthesize a type for a
+    /// deferred type that has not yet been reduced (§9 flag).
+    pub recovery: bool,
 }
 
-impl<T> DeferredTypeMap<T> {
+/// The explicit context required by the recovery-capable mapping (§9 ADR 0001).
+pub struct DeferredMapCtx<'a> {
+    pub attr: &'a mut Attr,
+    pub syms: &'a mut Symtab,
+    pub types: &'a Types,
+    pub chk: &'a crate::comp::check::Check,
+    pub diags: &'a crate::util::jc_diagnostic::Factory,
+}
+
+impl DeferredTypeMap {
     /// Java: protected DeferredTypeMap(AttrMode mode, Symbol msym,
-    /// MethodResolutionPhase phase)
-    pub fn new(mode: AttrMode, msym: Option<SymbolId>, phase: MethodResolutionPhase) -> DeferredTypeMap<T> {
+    /// MethodResolutionPhase phase) (DeferredAttr.java:1000-1010)
+    pub fn new(mode: AttrMode, msym: Option<SymbolId>, phase: MethodResolutionPhase) -> DeferredTypeMap {
         DeferredTypeMap {
-            deferred_attr_context: DeferredAttrContext::new(
+            deferred_attr_context: Rc::new(DeferredAttrContext::new(
                 mode,
                 msym,
                 phase,
                 crate::comp::infer::empty_context(),
                 Some(crate::comp::deferred_attr::empty_deferred_attr_context()),
                 None,
-            ),
-            marker: std::marker::PhantomData,
+            )),
+            recovery: false,
         }
     }
 
-    /// Java: public Type visitType(Type t, T p)
-    pub fn visit(&mut self, ctx: &mut CompilerContext, t: TypeId, p: &T) -> TypeId {
+    /// Java: new RecoveryDeferredTypeMap(...) — the same mapping with the
+    /// recovery override enabled (§9).
+    pub fn new_recovery(
+        mode: AttrMode,
+        msym: Option<SymbolId>,
+        phase: MethodResolutionPhase,
+    ) -> DeferredTypeMap {
+        let mut map = DeferredTypeMap::new(mode, msym, phase);
+        map.recovery = true;
+        map
+    }
+
+    /// Java: public Type visitType(Type t, Type pt)
+    pub fn visit(
+        &mut self,
+        ctx: &mut CompilerContext,
+        dctx: &mut DeferredMapCtx,
+        t: TypeId,
+        pt: &Option<TypeId>,
+    ) -> TypeId {
         if !ctx.typ(t).has_tag(TypeTag::DEFERRED) {
-            self.visit_structural(ctx, t, p)
+            self.visit_structural(ctx, dctx, t, pt)
         } else {
-            self.type_of(ctx, t, p)
+            self.type_of(ctx, dctx, t, pt)
                 .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx))
         }
     }
 
-    /// Java: StructuralTypeMapping's structural variants (only the nodes that
-    /// can contain a deferred type need to be re-created; the traversal order
+    /// Java: StructuralTypeMapping's structural variants (the traversal order
     /// follows Type.StructuralTypeMapping).
-    fn visit_structural(&mut self, ctx: &mut CompilerContext, t: TypeId, p: &T) -> TypeId {
+    fn visit_structural(
+        &mut self,
+        ctx: &mut CompilerContext,
+        dctx: &mut DeferredMapCtx,
+        t: TypeId,
+        pt: &Option<TypeId>,
+    ) -> TypeId {
         let kind = ctx.typ(t).kind.clone();
         let tsym_opt = ctx.typ(t).tsym;
         let tag_opt = ctx.typ(t).tag;
@@ -884,8 +929,8 @@ impl<T> DeferredTypeMap<T> {
                     }
                     _ => List::nil(),
                 };
-                let outer1 = outer.map(|outer| self.visit(ctx, outer, p));
-                let typarams1 = self.map(ctx, &typarams, p);
+                let outer1 = outer.map(|outer| self.visit(ctx, dctx, outer, pt));
+                let typarams1 = self.map(ctx, dctx, &typarams, pt);
                 if list_same_types(&typarams, &typarams1) {
                     t
                 } else {
@@ -917,7 +962,7 @@ impl<T> DeferredTypeMap<T> {
                     Some(e) => *e,
                     None => return t,
                 };
-                let elem1 = self.visit(ctx, elem, p);
+                let elem1 = self.visit(ctx, dctx, elem, pt);
                 if elem1 == elem {
                     t
                 } else {
@@ -927,16 +972,20 @@ impl<T> DeferredTypeMap<T> {
                         tsym,
                         TypeKindData::ArrayType {
                             elemtype: Some(elem1),
-                varargs: false,
+                            varargs: false,
                         },
                     ))
                 }
             }
-            TypeKindData::WildcardType { type_, kind, bound } => {
+            TypeKindData::WildcardType {
+                type_,
+                kind,
+                bound,
+            } => {
                 let Some(type_) = *type_ else {
                     return t;
                 };
-                let type1 = self.visit(ctx, type_, p);
+                let type1 = self.visit(ctx, dctx, type_, pt);
                 if type1 == type_ {
                     t
                 } else {
@@ -958,9 +1007,9 @@ impl<T> DeferredTypeMap<T> {
                 thrown,
                 ..
             } => {
-                let argtypes1 = self.map(ctx, argtypes, p);
-                let restype1 = restype.map(|r| self.visit(ctx, r, p));
-                let thrown1 = self.map(ctx, thrown, p);
+                let argtypes1 = self.map(ctx, dctx, argtypes, pt);
+                let restype1 = restype.map(|r| self.visit(ctx, dctx, r, pt));
+                let thrown1 = self.map(ctx, dctx, thrown, pt);
                 if list_same_types(argtypes, &argtypes1)
                     && restype1 == *restype
                     && list_same_types(thrown, &thrown1)
@@ -984,7 +1033,7 @@ impl<T> DeferredTypeMap<T> {
                 let Some(qtype) = *qtype else {
                     return t;
                 };
-                let qtype1 = self.visit(ctx, qtype, p);
+                let qtype1 = self.visit(ctx, dctx, qtype, pt);
                 if qtype1 == qtype {
                     t
                 } else {
@@ -1004,16 +1053,41 @@ impl<T> DeferredTypeMap<T> {
     }
 
     /// Java: List<Type> map(List<Type> ts, T p) (TypeMapping.visit(List))
-    pub fn map(&mut self, ctx: &mut CompilerContext, ts: &List<TypeId>, p: &T) -> List<TypeId> {
+    pub fn map(
+        &mut self,
+        ctx: &mut CompilerContext,
+        dctx: &mut DeferredMapCtx,
+        ts: &List<TypeId>,
+        pt: &Option<TypeId>,
+    ) -> List<TypeId> {
         let mut result: List<TypeId> = List::nil();
         for t in ts.iter() {
-            result = result.append(self.visit(ctx, t, p));
+            result = result.append(self.visit(ctx, dctx, t, pt));
         }
         result
     }
 
     /// Java: protected Type typeOf(DeferredType dt, T p)
-    pub fn type_of(&mut self, ctx: &mut CompilerContext, t: TypeId, _p: &T) -> Option<TypeId> {
+    pub fn type_of(
+        &mut self,
+        ctx: &mut CompilerContext,
+        dctx: &mut DeferredMapCtx,
+        t: TypeId,
+        pt: &Option<TypeId>,
+    ) -> Option<TypeId> {
+        let owntype = self.type_of_no_recovery(ctx, t);
+        if self.recovery
+            && owntype
+                .map(|ty| ty == crate::code::symtab::no_type_id(ctx))
+                .unwrap_or(true)
+        {
+            return self.recover(ctx, dctx, t, pt);
+        }
+        owntype
+    }
+
+    /// Java: DeferredTypeMap.typeOf (the base implementation).
+    fn type_of_no_recovery(&mut self, ctx: &mut CompilerContext, t: TypeId) -> Option<TypeId> {
         let (tree, _, _, _, _, _) = deferred_fields(ctx, t);
         match self.deferred_attr_context.mode {
             AttrMode::CHECK => ctx.tree(tree).ty,
@@ -1023,6 +1097,62 @@ impl<T> DeferredTypeMap<T> {
                 self.deferred_attr_context.msym,
                 self.deferred_attr_context.phase,
             ),
+        }
+    }
+
+    /// Java: private Type recover(DeferredType dt, Type pt)
+    /// (DeferredAttr.java:1073-1085)
+    fn recover(
+        &mut self,
+        ctx: &mut CompilerContext,
+        dctx: &mut DeferredMapCtx,
+        dt: TypeId,
+        pt: &Option<TypeId>,
+    ) -> Option<TypeId> {
+        let tree = deferred_fields(ctx, dt).0;
+        let is_lambda_or_member_ref = matches!(
+            ctx.tree(tree).tag,
+            crate::tree::jc_tree::Tag::REFERENCE | crate::tree::jc_tree::Tag::LAMBDA
+        );
+        let is_functional_interface = pt
+            .map(|pt| {
+                let tsym = ctx.typ(pt).tsym.expect("pt tsym");
+                dctx.types
+                    .is_functional_interface(ctx, dctx.syms, dctx.diags, dctx.chk, tsym)
+            })
+            .unwrap_or(false);
+        let needs_recovery_type =
+            pt.is_none() || (is_lambda_or_member_ref && !is_functional_interface);
+        let pt_recovery = if needs_recovery_type {
+            dctx.syms.recovery_type
+        } else {
+            pt.expect("pt")
+        };
+        // Java: dt.check(attr.new RecoveryInfo(deferredAttrContext, ptRecovery) {
+        //   check(pos, found) => chk.checkNonVoid(pos, super.check(pos, found)) });
+        let recovery_info = {
+            let mut info = crate::comp::attr::ResultInfo::new_with_mode(
+                crate::code::kinds::KindSelector::VAL,
+                Some(pt_recovery),
+                Rc::new(crate::comp::attr::RecoveryCheckContext {
+                    enclosing: Rc::clone(&dctx.chk.basic_handler),
+                    deferred_attr_context: Rc::clone(&self.deferred_attr_context),
+                }),
+                crate::comp::check::CheckMode::NORMAL,
+            );
+            info.check_non_void = true;
+            info
+        };
+        let _ = deferred_type_check(ctx, dctx.syms, dctx.types, dctx.attr, dt, &recovery_info);
+        // Java: return super.visit(dt);
+        let owntype = self.type_of_no_recovery(ctx, dt);
+        if owntype
+            .map(|ty| ty == crate::code::symtab::no_type_id(ctx))
+            .unwrap_or(true)
+        {
+            Some(crate::code::symtab::no_type_id(ctx))
+        } else {
+            owntype
         }
     }
 }
@@ -1044,9 +1174,13 @@ fn list_same_types(a: &List<TypeId>, b: &List<TypeId>) -> bool {
 }
 
 /// Java: public class DeferredAttr.RecoveryDeferredTypeMap extends
-/// DeferredTypeMap<Type>
+/// DeferredTypeMap<Type> (DeferredAttr.java:1035-1090)
+///
+/// §9: the Java subclass is the ported DeferredTypeMap with recovery=true (the
+/// typeOf override is dispatched in DeferredTypeMap::type_of); the
+/// visitMethodType override is reproduced here.
 pub struct RecoveryDeferredTypeMap {
-    pub base: DeferredTypeMap<Option<TypeId>>,
+    pub base: DeferredTypeMap,
 }
 
 impl RecoveryDeferredTypeMap {
@@ -1058,34 +1192,39 @@ impl RecoveryDeferredTypeMap {
         phase: MethodResolutionPhase,
     ) -> RecoveryDeferredTypeMap {
         RecoveryDeferredTypeMap {
-            base: DeferredTypeMap::new(mode, msym, phase),
+            base: DeferredTypeMap::new_recovery(mode, msym, phase),
         }
     }
 
     /// Java: public Type visitType(Type t, Type pt)
-    pub fn visit(&mut self, ctx: &mut CompilerContext, t: TypeId, pt: &Option<TypeId>) -> TypeId {
-        self.base.visit(ctx, t, pt)
+    pub fn visit(
+        &mut self,
+        ctx: &mut CompilerContext,
+        dctx: &mut DeferredMapCtx,
+        t: TypeId,
+        pt: &Option<TypeId>,
+    ) -> TypeId {
+        self.base.visit(ctx, dctx, t, pt)
     }
 
     /// Java: protected Type typeOf(DeferredType dt, Type pt)
-    pub fn type_of(&mut self, ctx: &mut CompilerContext, t: TypeId, pt: &Option<TypeId>) -> Option<TypeId> {
-        let owntype = self.base.type_of(ctx, t, pt);
-        match owntype {
-            Some(ty) if ty != crate::code::symtab::no_type_id(ctx) => Some(ty),
-            _ => {
-                // Java: recover(dt, pt) — registered (Attr/Check batch)
-                unimplemented!(
-                    "TODO(Attr/Check batch): RecoveryDeferredTypeMap.recover (DeferredAttr.java:1073-1085)"
-                )
-            }
-        }
+    pub fn type_of(
+        &mut self,
+        ctx: &mut CompilerContext,
+        dctx: &mut DeferredMapCtx,
+        t: TypeId,
+        pt: &Option<TypeId>,
+    ) -> Option<TypeId> {
+        self.base.type_of(ctx, dctx, t, pt)
     }
 
     /// Java: public Type visitMethodType(Type.MethodType t, Type pt)
+    /// (DeferredAttr.java:1092-1120)
     #[allow(clippy::collapsible_if)]
     pub fn visit_method_type(
         &mut self,
         ctx: &mut CompilerContext,
+        dctx: &mut DeferredMapCtx,
         t: TypeId,
         pt: &Option<TypeId>,
     ) -> TypeId {
@@ -1115,21 +1254,18 @@ impl RecoveryDeferredTypeMap {
                             } => (argtypes.clone(), *restype, thrown.clone()),
                             _ => unreachable!(),
                         };
-                        let m_argtypes = match &ctx.typ(mtype).kind {
-                            TypeKindData::MethodType { argtypes, .. } => argtypes.clone(),
+                        let (m_argtypes, m_restype, m_thrown) = match &ctx.typ(mtype).kind {
+                            TypeKindData::MethodType {
+                                argtypes,
+                                restype,
+                                thrown,
+                                ..
+                            } => (argtypes.clone(), *restype, thrown.clone()),
                             _ => unreachable!(),
                         };
-                        let m_restype = match &ctx.typ(mtype).kind {
-                            TypeKindData::MethodType { restype, .. } => *restype,
-                            _ => unreachable!(),
-                        };
-                        let m_thrown = match &ctx.typ(mtype).kind {
-                            TypeKindData::MethodType { thrown, .. } => thrown.clone(),
-                            _ => unreachable!(),
-                        };
-                        let argtypes1 = self.map_paired(ctx, &argtypes, &m_argtypes);
-                        let restype1 = restype.map(|r| self.visit(ctx, r, &m_restype));
-                        let thrown1 = self.map_paired(ctx, &thrown, &m_thrown);
+                        let argtypes1 = self.map_paired(ctx, dctx, &argtypes, &m_argtypes);
+                        let restype1 = restype.map(|r| self.visit(ctx, dctx, r, &m_restype));
+                        let thrown1 = self.map_paired(ctx, dctx, &thrown, &m_thrown);
                         if list_same_types(&argtypes, &argtypes1)
                             && restype1 == restype
                             && list_same_types(&thrown, &thrown1)
@@ -1151,12 +1287,13 @@ impl RecoveryDeferredTypeMap {
                 }
             }
         }
-        self.base.visit(ctx, t, pt)
+        self.base.visit(ctx, dctx, t, pt)
     }
 
     fn map_paired(
         &mut self,
         ctx: &mut CompilerContext,
+        dctx: &mut DeferredMapCtx,
         ts: &List<TypeId>,
         ps: &List<TypeId>,
     ) -> List<TypeId> {
@@ -1169,13 +1306,73 @@ impl RecoveryDeferredTypeMap {
             } else {
                 None
             };
-            result = result.append(self.visit(ctx, *ts_cur.head(), &p));
+            result = result.append(self.visit(ctx, dctx, *ts_cur.head(), &p));
             ts_cur = ts_cur.tail();
             if ps_cur.non_empty() {
                 ps_cur = ps_cur.tail();
             }
         }
         result
+    }
+}
+
+/// Java: class Resolve.ResolveDeferredRecoveryMap extends
+/// DeferredAttr.RecoveryDeferredTypeMap (Resolve.java:2639-2660)
+///
+/// §9: the Java subclass overrides typeOf; the port exposes the same override as
+/// type_of with the base mapping embedded.
+pub struct ResolveDeferredRecoveryMap {
+    pub base: RecoveryDeferredTypeMap,
+}
+
+impl ResolveDeferredRecoveryMap {
+    /// Java: public ResolveDeferredRecoveryMap(AttrMode mode, Symbol msym,
+    /// MethodResolutionPhase step)
+    pub fn new(
+        mode: AttrMode,
+        msym: Option<SymbolId>,
+        phase: MethodResolutionPhase,
+    ) -> ResolveDeferredRecoveryMap {
+        ResolveDeferredRecoveryMap {
+            base: RecoveryDeferredTypeMap::new(mode, msym, phase),
+        }
+    }
+
+    /// Java: public Type visitType(Type t, Type pt)
+    pub fn visit(
+        &mut self,
+        ctx: &mut CompilerContext,
+        dctx: &mut DeferredMapCtx,
+        t: TypeId,
+        pt: &Option<TypeId>,
+    ) -> TypeId {
+        self.base.visit(ctx, dctx, t, pt)
+    }
+
+    /// Java: protected Type typeOf(DeferredType dt, Type pt)
+    /// (Resolve.java:2646-2658)
+    pub fn type_of(
+        &mut self,
+        ctx: &mut CompilerContext,
+        dctx: &mut DeferredMapCtx,
+        dt: TypeId,
+        pt: &Option<TypeId>,
+    ) -> Option<TypeId> {
+        let res = self.base.type_of(ctx, dctx, dt, pt)?;
+        if !dctx.types.is_erroneous_type(ctx, dctx.syms, res) {
+            let tree = deferred_fields(ctx, dt).0;
+            match ctx.tree(tree).tag {
+                crate::tree::jc_tree::Tag::LAMBDA | crate::tree::jc_tree::Tag::REFERENCE => {
+                    return Some(dt);
+                }
+                crate::tree::jc_tree::Tag::CONDEXPR => {
+                    let recovery_type = dctx.syms.recovery_type;
+                    return if res == recovery_type { Some(dt) } else { Some(res) };
+                }
+                _ => {}
+            }
+        }
+        Some(res)
     }
 }
 

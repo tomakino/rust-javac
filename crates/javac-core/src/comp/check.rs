@@ -2329,7 +2329,7 @@ impl Check {
 impl Check {
     /// Java: void warnUnchecked(DiagnosticPosition pos, Warning warnKey)
     /// (Check.java:262-268)
-    fn warn_unchecked(&self, pos: i32, warn_key: crate::resources::diagnostic_contract::WarningInfo) {
+    pub(crate) fn warn_unchecked(&self, pos: i32, warn_key: crate::resources::diagnostic_contract::WarningInfo) {
         if !self.lint.is_suppressed(LintCategory::UNCHECKED) {
             self.log.borrow_mut().warning(
                 Some(LintCategory::UNCHECKED),
