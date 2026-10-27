@@ -5621,6 +5621,7 @@ mod tests {
             Rc::clone(&deferred),
             Rc::clone(&syms),
         )));
+        crate::comp::check::attach_self(&check);
         let options = Options::instance(&mut jcontext);
         let resolve = Rc::new(RefCell::new(Resolve::new(
             &mut ctx,
@@ -5738,6 +5739,7 @@ mod tests {
             Rc::clone(&deferred),
             Rc::clone(&syms),
         )));
+        crate::comp::check::attach_self(&check);
         let options = Options::instance(&mut jcontext);
         let resolve = Rc::new(RefCell::new(Resolve::new(
             &mut ctx,

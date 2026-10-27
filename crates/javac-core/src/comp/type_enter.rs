@@ -3515,6 +3515,7 @@ mod tests {
             Rc::clone(&deferred),
             Rc::clone(&syms),
         )));
+        crate::comp::check::attach_self(&chk);
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let todo = crate::comp::todo::Todo::instance(&mut context);
         let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));

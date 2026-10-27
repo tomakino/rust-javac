@@ -2378,6 +2378,7 @@ struct UnusedFileManager;
             Rc::clone(&deferred),
             Rc::clone(&syms),
         )));
+        crate::comp::check::attach_self(&check);
         let make = Rc::new(RefCell::new(TreeMaker::new(Some(Rc::clone(&names)))));
         let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
         let dependencies: Rc<RefCell<dyn Dependencies>> = Rc::new(RefCell::new(DummyDependencies));

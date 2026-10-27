@@ -81,6 +81,10 @@ pub struct Check {
     pub types: Rc<Types>,
     /// Java: CheckContext basicHandler = new CheckContext() {...}
     pub basic_handler: Rc<dyn CheckContext>,
+    /// The shared self handle used by the free-type listener (Java: the
+    /// listener closes over Check.this; the port stores a weak self reference so
+    /// the listener does not keep the Check alive — registered adapter).
+    pub self_ref: RefCell<std::rc::Weak<RefCell<Check>>>,
     /// Java: private Lint lint (Check.java:187) — restored to the upstream
     /// field shape (, Porting rules official structure).
     pub lint: Rc<Lint>,
@@ -104,6 +108,78 @@ pub struct Check {
     /// Java: private final Enter enter (Check.java:116) — injected at wiring
     /// time to avoid the Check/Enter construction cycle.
     pub enter: RefCell<Option<Rc<RefCell<Enter>>>>,
+}
+
+
+/// Installs the shared weak self handle on a Check instance (the free-type
+/// listener needs to call back into the same Check; Java closes over Check.this,
+/// the port stores a weak reference and this helper wires it at construction).
+///
+/// # Arguments
+///   - check: the shared Check handle just constructed.
+///
+/// # Returns
+///   - none.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Check.java:604-609 (the listener captures Check.this).
+pub fn attach_self(check: &Rc<RefCell<Check>>) {
+    let borrowed = check.borrow();
+    *borrowed.self_ref.borrow_mut() = Rc::downgrade(check);
+}
+
+/// Java: the lambda passed to addFreeTypeListener in Check.checkType
+/// (Check.java:606-609). The listener re-checks the instantiated found/required
+/// types once the inference variables are solved.
+struct CheckFreeTypeListener {
+    /// The Check instance that registered the listener (weak: the Java lambda
+    /// keeps Check alive through the enclosing instance; the port follows the
+    /// weak-reference adapter used by the service cells).
+    check: std::rc::Weak<RefCell<Check>>,
+    /// The diagnostic position passed to checkType.
+    pos: i32,
+    /// The found type to instantiate.
+    found: TypeId,
+    /// The required type to instantiate.
+    req: TypeId,
+    /// The check context of the replayed check.
+    check_context: Rc<dyn CheckContext>,
+}
+
+impl crate::comp::infer::FreeTypeListener for CheckFreeTypeListener {
+    /// Java: void typesInferred(InferenceContext inferenceContext):
+    /// checkType(pos, solvedContext.asInstType(found),
+    /// solvedContext.asInstType(req), checkContext) (Check.java:604-609).
+    ///
+    /// # Arguments
+    ///   - ctx/syms/types: the compiler services;
+    ///   - inference_context: the solved inference context.
+    ///
+    /// # Returns
+    ///   - Ok(()) when the replayed check completes.
+    ///
+    /// # Panics
+    ///   - none; a dropped Check stops the replay (the listener is dropped with it).
+    ///
+    /// Upstream: Check.java:604-609.
+    fn types_inferred(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        types: &Types,
+        inference_context: &InferenceContext,
+    ) -> Result<(), crate::comp::infer::InferenceException> {
+        let Some(check) = self.check.upgrade() else {
+            return Ok(());
+        };
+        let found = inference_context.as_inst_type(ctx, syms, types, self.found);
+        let req = inference_context.as_inst_type(ctx, syms, types, self.req);
+        let check = check.borrow();
+        let _ = check.check_type(ctx, syms, self.pos, found, req, Rc::clone(&self.check_context));
+        Ok(())
+    }
 }
 
 impl Check {
@@ -132,6 +208,7 @@ impl Check {
             diags,
             types,
             basic_handler,
+            self_ref: RefCell::new(std::rc::Weak::new()),
             allow_records:
                 crate::code::source::Feature::RECORDS.allowed_in_source(source),
             allow_sealed:
@@ -1192,7 +1269,7 @@ impl Check {
         found: TypeId,
         req: TypeId,
     ) -> TypeId {
-        self.check_type(ctx, syms, pos, found, req, &*self.basic_handler)
+        self.check_type(ctx, syms, pos, found, req, Rc::clone(&self.basic_handler))
     }
 
     /// Java: Type checkType(DiagnosticPosition pos, Type found, Type req,
@@ -1204,17 +1281,29 @@ impl Check {
         pos: i32,
         found: TypeId,
         req: TypeId,
-        check_context: &dyn CheckContext,
+        check_context: Rc<dyn CheckContext>,
     ) -> TypeId {
         let inference_context = check_context.inference_context();
         if inference_context.free(ctx, syms, &self.types, req)
             || inference_context.free(ctx, syms, &self.types, found)
         {
-            // TODO(Infer): inferenceContext.addFreeTypeListener(List.of(req,
-            // found), solvedContext -> checkType(pos, solvedContext.asInstType
-            // (found), solvedContext.asInstType(req), checkContext)); the
-            // listener needs the mutable Attr/Check recursion; registered.
-            unimplemented!("TODO(Infer batch): Check.checkType free type listener");
+            // Java: inferenceContext.addFreeTypeListener(List.of(req, found),
+            // solvedContext -> checkType(pos, solvedContext.asInstType(found),
+            // solvedContext.asInstType(req), checkContext)) (Check.java:604-609).
+            let listener = Rc::new(CheckFreeTypeListener {
+                check: self.self_ref.borrow().clone(),
+                pos,
+                found,
+                req,
+                check_context: Rc::clone(&check_context),
+            });
+            inference_context.add_free_type_listener(
+                ctx,
+                syms,
+                &self.types,
+                List::of(req).append(found),
+                listener as Rc<dyn crate::comp::infer::FreeTypeListener>,
+            );
         }
         if ctx.typ(req).has_tag(crate::code::type_tag::TypeTag::ERROR) {
             return req;
@@ -9304,4 +9393,175 @@ fn is292_target_type_cast(ctx: &mut CompilerContext, tree: TreeId) -> bool {
     };
     ctx.sym(symbol).kind == Kind::MTH
         && (ctx.sym(symbol).flags_field & crate::code::flags::HYPOTHETICAL) != 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::code::kinds::Kind;
+    use crate::code::symtab::Symtab as TestSymtab;
+    use crate::comp::infer::InferenceContext;
+    use crate::util::context::Context;
+    use crate::util::javac_messages::JavacMessages;
+
+    struct FreeTypeCheckContext {
+        deferred: Rc<DeferredAttrContext>,
+        inference: Rc<InferenceContext>,
+        compatible_calls: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+
+    impl CheckContext for FreeTypeCheckContext {
+        fn inference_context(&self) -> &Rc<InferenceContext> {
+            &self.inference
+        }
+
+        fn compatible(
+            &self,
+            _ctx: &mut CompilerContext,
+            _syms: &TestSymtab,
+            _types: &Types,
+            _found: TypeId,
+            _req: TypeId,
+            _warn: &mut Warner,
+        ) -> bool {
+            self.compatible_calls
+                .set(self.compatible_calls.get() + 1);
+            true
+        }
+
+        fn report(
+            &self,
+            _ctx: &mut CompilerContext,
+            _pos: i32,
+            _details: &JCDiagnostic,
+        ) {
+        }
+
+        fn check_warner(
+            &self,
+            _ctx: &mut CompilerContext,
+            _syms: &TestSymtab,
+            _types: &Types,
+            _pos: i32,
+            _found: TypeId,
+            _req: TypeId,
+        ) -> Warner {
+            Warner::new(None)
+        }
+
+        fn deferred_attr_context(&self) -> &Rc<DeferredAttrContext> {
+            &self.deferred
+        }
+    }
+
+    #[test]
+    fn free_type_listener_rechecks_the_instantiated_types() {
+        use crate::code::source::Source;
+        use crate::code::type_::Type;
+        use crate::code::type_::TypeKindData;
+        use crate::code::types::Types;
+        use crate::jvm::target::Target;
+
+        let mut ctx = CompilerContext::new();
+        let mut jcontext = Context::new();
+        let names = Rc::new(crate::util::names::Names::new(false));
+        let log = crate::util::log::Log::instance(&mut jcontext);
+        let source = Source::JDK17;
+        let syms = Rc::new(RefCell::new(TestSymtab::new(
+            &mut ctx,
+            Rc::clone(&names),
+            Target::DEFAULT,
+            source,
+        )));
+        let types = Rc::new(Types::with_names(Rc::clone(&names)));
+        let messages = JavacMessages::instance(&mut jcontext);
+        let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
+        let lint = crate::code::lint::Lint::instance(&mut jcontext);
+        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
+        let check = Rc::new(RefCell::new(Check::new(
+            Rc::clone(&names),
+            Rc::clone(&log),
+            Rc::clone(&diags),
+            source,
+            '$',
+            Rc::clone(&types),
+            Rc::clone(&lint),
+            Rc::clone(&deferred),
+            Rc::clone(&syms),
+        )));
+        crate::comp::check::attach_self(&check);
+        attach_self(&check);
+        let (object_type, string_type) = {
+            let syms = syms.borrow();
+            (syms.object_type, syms.string_type)
+        };
+        let tvar = {
+            let name = names.from_utf(b"T");
+            let symbol = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+                Kind::TYP,
+                0,
+                name,
+                None,
+                Some(syms.borrow().no_symbol),
+                crate::code::symbol::SymbolKind::TypeVariableSymbol,
+            ));
+            let ty = ctx.alloc_type(Type::new(
+                TypeTag::TYPEVAR,
+                Some(symbol),
+                TypeKindData::TypeVar {
+                    bound: Some(object_type),
+                    lower: Some(syms.borrow().bot_type),
+                },
+            ));
+            ctx.sym_mut(symbol).ty = Some(ty);
+            ty
+        };
+        let infer = crate::comp::infer::Infer::new(
+            &mut ctx,
+            true,
+            Rc::clone(&diags),
+            Rc::clone(&names),
+        );
+        let mut syms_guard = syms.borrow_mut();
+        let inference = InferenceContext::new(
+            Rc::clone(&infer),
+            &mut ctx,
+            &mut syms_guard,
+            &types,
+            List::of(tvar),
+        );
+        drop(syms_guard);
+        assert!(
+            inference.free(&mut ctx, &syms.borrow(), &types, tvar),
+            "the type variable is free in the context"
+        );
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
+        let check_context: Rc<dyn CheckContext> = Rc::new(FreeTypeCheckContext {
+            inference: Rc::clone(&inference),
+            deferred: crate::comp::deferred_attr::empty_deferred_attr_context(),
+            compatible_calls: Rc::clone(&calls),
+        });
+        // The listener is registered; the immediate check also consults the
+        // context once.
+        check.borrow().check_type(
+            &mut ctx,
+            &syms.borrow(),
+            0,
+            tvar,
+            tvar,
+            Rc::clone(&check_context),
+        );
+        assert_eq!(calls.get(), 1, "the immediate check runs");
+        let uv = inference.as_undet_var(&mut ctx, &syms.borrow(), &types, tvar);
+        types.undet_var_set_inst(&mut ctx, &syms.borrow(), uv, string_type);
+        let mut syms_for_notify = syms.borrow_mut();
+        inference
+            .notify_change(&mut ctx, &mut syms_for_notify, &types)
+            .expect("notify_change");
+        assert_eq!(
+            calls.get(),
+            2,
+            "the free type listener re-checks the instantiated types"
+        );
+    }
 }

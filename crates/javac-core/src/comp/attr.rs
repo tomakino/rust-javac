@@ -185,7 +185,7 @@ impl ResultInfo {
             Some(pt) => pt,
             None => crate::code::symtab::no_type_id(ctx),
         };
-        let result = chk.check_type(ctx, syms, pos, found, pt, &*self.check_context);
+        let result = chk.check_type(ctx, syms, pos, found, pt, Rc::clone(&self.check_context));
         if self.check_non_void {
             // Java: RecoveryInfo overrides check() to wrap the result with
             // chk.checkNonVoid (Attr.java:598-620); adapter flag-based expression.
@@ -2159,7 +2159,7 @@ impl Attr {
                 pos,
                 owntype,
                 syms.throwable_type,
-                &*self.basic_handler,
+                Rc::clone(&self.basic_handler),
             );
         }
         Ok(self.no_type(ctx))
@@ -7871,7 +7871,7 @@ impl Attr {
                     vartype_pos,
                     class_type,
                     syms.throwable_type,
-                    &*self.basic_handler,
+                    Rc::clone(&self.basic_handler),
                 );
             }
             self.attrib_stat(ctx, syms, catch_body, &catch_env);
@@ -8207,7 +8207,7 @@ impl Attr {
                 ctx.tree(expr).pos,
                 elemtype,
                 var_sym_ty,
-                &*self.basic_handler,
+                Rc::clone(&self.basic_handler),
             );
         }
         // Java: loopEnv.tree = tree; (before, we were not in loop!)
@@ -13894,7 +13894,7 @@ impl Attr {
                     ctx.tree(thrown_tree).pos,
                     thrown_ty,
                     throwable_ty,
-                    self.basic_handler.as_ref(),
+                    Rc::clone(&self.basic_handler),
                 );
             }
         }
@@ -15351,6 +15351,7 @@ mod tests {
             Rc::clone(&deferred),
             Rc::clone(&syms),
         )));
+        crate::comp::check::attach_self(&chk);
         let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
         let dependencies: Rc<RefCell<dyn crate::code::dependencies::Dependencies>> =
             Rc::new(RefCell::new(DummyDependencies));

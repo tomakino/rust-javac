@@ -244,6 +244,7 @@ impl MiniCompiler {
             Rc::clone(&deferred_lint_handler),
             Rc::clone(&syms),
         )));
+        crate::comp::check::attach_self(&chk);
         let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
         let enter = Rc::new(RefCell::new(Enter::new(
             Rc::clone(&log),
