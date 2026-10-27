@@ -4,7 +4,7 @@
 // - NOT PORTED: isTerminal (Symtab.java:324)
 // - NOT PORTED: isTerminal (Symtab.java:358)
 // - NOT PORTED: accept (Symtab.java:447)
-// - NOT PORTED: getAllModules (Symtab.java:871)
+// - getAllModules ported in S3 (Symtab.java:871-873).
 // - NOT PORTED: getClassesForName (Symtab.java:875)
 // - NOT PORTED: getPackagesForName (Symtab.java:879)
 // End of Gap registration supplement.
@@ -1603,6 +1603,67 @@ impl Symtab {
         get_module_in(&self.maps, name)
     }
 
+    /// Java: public Collection<ModuleSymbol> getAllModules() (Symtab.java:871-873).
+    ///
+    /// # Arguments
+    ///   - none.
+    ///
+    /// # Returns
+    ///   - every entered module symbol (insertion order; upstream HashMap values
+    ///     is unordered — registered adapter).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Symtab.java:871-873.
+    pub fn get_all_modules(&self) -> Vec<SymbolId> {
+        self.maps.modules.iter().map(|(_, module)| *module).collect()
+    }
+
+    /// Java: public Iterable<ClassSymbol> getClassesForName(Name candidate)
+    /// (Symtab.java:875-877).
+    ///
+    /// # Arguments
+    ///   - candidate: the class flat name.
+    ///
+    /// # Returns
+    ///   - the classes with that flat name in every module (insertion order).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Symtab.java:875-877.
+    pub fn get_classes_for_name(&self, candidate: &Name) -> Vec<SymbolId> {
+        self.maps
+            .classes
+            .iter()
+            .find(|(name, _)| name.to_java_string() == candidate.to_java_string())
+            .map(|(_, modules)| modules.iter().map(|(_, class)| *class).collect())
+            .unwrap_or_default()
+    }
+
+    /// Java: public Iterable<PackageSymbol> getPackagesForName(Name candidate)
+    /// (Symtab.java:879-881).
+    ///
+    /// # Arguments
+    ///   - candidate: the package full name.
+    ///
+    /// # Returns
+    ///   - the packages with that full name in every module (insertion order).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Symtab.java:879-881.
+    pub fn get_packages_for_name(&self, candidate: &Name) -> Vec<SymbolId> {
+        self.maps
+            .packages
+            .iter()
+            .find(|(name, _)| name.to_java_string() == candidate.to_java_string())
+            .map(|(_, modules)| modules.iter().map(|(_, package)| *package).collect())
+            .unwrap_or_default()
+    }
+
     /// Java: public ModuleSymbol inferModule(Name packageName)
     pub fn infer_module(&self, ctx: &CompilerContext, package_name: &Name) -> Option<SymbolId> {
         if package_name.is_empty() {
@@ -2091,5 +2152,39 @@ mod tests {
             }
             _ => panic!("class type expected"),
         }
+    }
+
+    fn build_with_names() -> (CompilerContext, Symtab, Rc<Names>) {
+        let mut ctx = CompilerContext::new();
+        let names = Rc::new(Names::new(false));
+        let symtab = Symtab::new(&mut ctx, Rc::clone(&names), Target::DEFAULT, Source::JDK17);
+        (ctx, symtab, names)
+    }
+
+    /// Java: Symtab.getAllModules/getClassesForName/getPackagesForName
+    /// (Symtab.java:871-881): the module-wide tables are visible through the
+    /// queries.
+    #[test]
+    fn module_class_and_package_queries_cover_all_modules() {
+        let (mut ctx, mut symtab, names) = build_with_names();
+        let first = symtab.enter_module(&mut ctx, names.from_utf(b"m1"));
+        let second = symtab.enter_module(&mut ctx, names.from_utf(b"m2"));
+        let package_name = names.from_utf(b"pkg");
+        let first_package = symtab.enter_package(&mut ctx, first, package_name.clone());
+        let second_package = symtab.enter_package(&mut ctx, second, package_name.clone());
+        let flat_name = names.from_utf(b"pkg.C");
+        let first_class = symtab.enter_class_flat(&mut ctx, first, flat_name.clone());
+        let second_class = symtab.enter_class_flat(&mut ctx, second, flat_name.clone());
+        let modules = symtab.get_all_modules();
+        assert!(modules.contains(&first), "m1 in getAllModules");
+        assert!(modules.contains(&second), "m2 in getAllModules");
+        let packages = symtab.get_packages_for_name(&package_name);
+        assert!(packages.contains(&first_package));
+        assert!(packages.contains(&second_package));
+        let classes = symtab.get_classes_for_name(&flat_name);
+        assert!(classes.contains(&first_class));
+        assert!(classes.contains(&second_class));
+        assert!(symtab.get_classes_for_name(&names.from_utf(b"pkg.Missing")).is_empty());
+        assert!(symtab.get_packages_for_name(&names.from_utf(b"missing")).is_empty());
     }
 }
