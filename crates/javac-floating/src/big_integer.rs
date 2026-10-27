@@ -3320,19 +3320,24 @@ impl BigInteger {
 
     /// Java: private static String Long.toString(long, int) for the small
     /// digit groups.
-    fn long_to_string(mut value: i64, radix: i32) -> String {
-        assert!(value >= 0);
+    fn long_to_string(value: i64, radix: i32) -> String {
         if value == 0 {
             return String::from("0");
         }
+        let negative = value < 0;
+        let mut magnitude = value.unsigned_abs();
         let mut digits = Vec::new();
-        while value > 0 {
-            let digit = (value % radix as i64) as i32;
+        while magnitude > 0 {
+            let digit = (magnitude % radix as u64) as i32;
             digits.push(crate::digit_helper::for_digit(digit, radix));
-            value /= radix as i64;
+            magnitude /= radix as u64;
         }
         digits.reverse();
-        digits.iter().collect()
+        let mut result: String = digits.iter().collect();
+        if negative {
+            result.insert(0, '-');
+        }
+        result
     }
 }
 

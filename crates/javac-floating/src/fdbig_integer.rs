@@ -252,7 +252,7 @@ impl FDBigInteger {
     /// Java: public int getNormalizationBias()
     pub(crate) fn get_normalization_bias(&self) -> i32 {
         if self.n_words == 0 {
-            panic!("Zero value cannot be normalized");
+            panic!("IllegalArgumentException: Zero value cannot be normalized");
         }
         let zeros = (self.data[(self.n_words - 1) as usize] as u32).leading_zeros() as i32;
         if zeros < 4 { 28 + zeros } else { zeros - 4 }
@@ -413,7 +413,7 @@ impl FDBigInteger {
             }
             return 0;
         } else if th_size > s_size {
-            panic!("disparate values");
+            panic!("IllegalArgumentException: disparate values");
         }
         // estimate q the obvious way. We will usually be
         // right. If not, then we're only off by a little and

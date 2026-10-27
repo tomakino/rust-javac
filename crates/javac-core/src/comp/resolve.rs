@@ -37,7 +37,7 @@
 //! - access errors/ambiguity helpers (new_access_error/new_ambiguity_error/
 //!   new_static_error/resolve_error_access/resolve_error_diagnostic).
 //!
-//! NOT YET PORTED IN THIS FILE (registered; each with unimplemented! + TODO):
+//! NOT YET PORTED IN THIS FILE (registered; each with a not-yet-ported marker + TODO):
 //! - member-reference resolution: makeReferenceLookupHelper/
 //!   MethodReferenceLookupHelper/UnboundMethodReferenceLookupHelper/
 //!   ArrayConstructorReferenceLookupHelper/ConstructorReferenceLookupHelper/

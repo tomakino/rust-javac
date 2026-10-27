@@ -72,7 +72,7 @@
 //!   in place of the Context singletons), readClassFile / readClassBuffer
 //!   (magic, version, preview checks and the PoolReader wiring), buffer access
 //!   (nextChar/nextByte/nextInt), skipMember, adjust*Flags, badClassFile.
-//! * NOT ported yet (unimplemented! with TODO below): readClass and the
+//! * NOT ported yet (not-yet-ported marker with TODO below): readClass and the
 //!   attribute readers / signature state machine (S2), annotation and type
 //!   annotation attributes (S3), Annotate/ClassFinder/file-manager wiring.
 //!   These methods carry explicit TODO markers; no substitutes are provided.

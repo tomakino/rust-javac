@@ -1720,7 +1720,7 @@ impl Attr {
     // Attr B (first group): statement visitors + the entry points that
     // do not need the Analyzer/Flow machinery (Attr.java:1420-1600, 1871-2470,
     // 3922-4182). Methods whose upstream body needs a not-yet-ported service are
-    // registered with unimplemented! + TODO at the exact call site.
+    // registered with a not-yet-ported marker + TODO at the exact call site.
     // ------------------------------------------------------------------
 
     /// Java: log.error(DiagnosticPosition, JCDiagnostic.Error) helper — the

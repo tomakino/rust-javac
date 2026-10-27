@@ -22,7 +22,7 @@
 //!   newReferenceTree(String) needs parser.ReferenceParser;
 //!   newErroneousTree(String, DiagnosticSource, String, Object...) needs the
 //!   upstream self-referencing diagnostic position. Both are left
-//!   unimplemented! (registered, no replacement algorithm is written);
+//!   a not-yet-ported marker (registered, no replacement algorithm is written);
 //! - TODO(P6): getSentenceBreak uses trees.getBreakIterator() upstream; until
 //!   JavacTrees/BreakIterator are ported the upstream breakIterator == null path
 //!   (defaultSentenceBreak) is used and registered as a difference;
