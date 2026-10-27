@@ -445,14 +445,23 @@ impl MemberEnter {
         let parent_scope = env.info.borrow().scope.expect("env.info.scope");
         let local_scope = ctx.scope_dup_unshared(parent_scope, Some(method));
         let mut info = env.info.borrow().dup(Some(local_scope));
-        if ctx.sym(method).ty.is_some() {
-            // TODO(Attr): localEnv.info.returnResult = attr.new ResultInfo(
+        if let Some(method_ty) = ctx.sym(method).ty {
+            // Java: localEnv.info.returnResult = attr.new ResultInfo(
             // KindSelector.VAL, tree.sym.type.getReturnType());
+            // (MemberEnter.java:242-246)
+            let return_type = ctx.typ(method_ty).get_return_type(ctx);
+            let basic_handler = self.chk.borrow().basic_handler.clone();
+            info.return_result = Some(crate::comp::attr::ResultInfo::new(
+                crate::code::kinds::KindSelector::VAL,
+                return_type,
+                basic_handler,
+            ));
         }
         if (method_decl_mods_flags(ctx, tree) & flags::STATIC as i64) != 0 {
             info.static_level += 1;
         }
-        // TODO(Attr): localEnv.info.yieldResult = null;
+        // Java: localEnv.info.yieldResult = null; (MemberEnter.java:248)
+        info.yield_result = None;
         Rc::new(Env {
             next: None,
             outer: Some(Rc::clone(env)),

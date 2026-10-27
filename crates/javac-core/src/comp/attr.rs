@@ -727,6 +727,7 @@ impl Attr {
             _ => {}
         }
         match &ctx.tree(tree).tag {
+            Tag::TYPETEST => self.visit_type_test(ctx, syms, tree),
             Tag::BINDINGPATTERN => self.visit_binding_pattern(ctx, syms, tree),
             Tag::PARENTHESIZEDPATTERN => self.visit_parenthesized_pattern(ctx, syms, tree),
             Tag::GUARDPATTERN => self.visit_guard_pattern(ctx, syms, tree),
@@ -8415,6 +8416,127 @@ impl Attr {
     ///   - the annotate service must be installed.
     ///
     /// Upstream: Attr.java:4132-4148.
+    /// Java: public void visitTypeTest(JCInstanceOf tree) (Attr.java:4076-4113).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler services;
+    ///   - tree: the instanceof tree.
+    ///
+    /// # Returns
+    ///   - the boolean type of the type test.
+    ///
+    /// # Panics
+    ///   - the tree is not an instanceof or the pattern tree is malformed.
+    ///
+    /// Upstream: Attr.java:4076-4113.
+    fn visit_type_test(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let env = self.env.clone().expect("env");
+        let (expr, pattern) = match &ctx.tree(tree).kind {
+            TreeKind::InstanceOf {
+                expr: Some(expr),
+                pattern: Some(pattern),
+            } => (*expr, *pattern),
+            _ => panic!("AssertionError: JCInstanceOf without expr/pattern"),
+        };
+        let expr_pos = ctx.tree(expr).pos;
+        let exprtype = self.attrib_expr(ctx, syms, expr, &env);
+        let exprtype = {
+            let chk = self.chk.borrow();
+            chk.check_null_or_ref_type(ctx, syms, expr_pos, exprtype)
+        };
+        let pattern_tag = ctx.tree(pattern).tag;
+        let (clazztype, type_tree) = if pattern_tag == Tag::BINDINGPATTERN
+            || pattern_tag == Tag::PARENTHESIZEDPATTERN
+        {
+            let unknown = self.unknown_expr_info.clone();
+            self.attrib_tree_use(ctx, syms, pattern, &env, unknown);
+            let clazztype = ctx.tree(pattern).ty.expect("pattern type");
+            let expr_bad = ctx
+                .typ(exprtype)
+                .has_tag(crate::code::type_tag::TypeTag::ERROR);
+            let clazz_bad = ctx
+                .typ(clazztype)
+                .has_tag(crate::code::type_tag::TypeTag::ERROR);
+            if self.types.is_subtype(ctx, syms, exprtype, clazztype) && !expr_bad && !clazz_bad {
+                let info = crate::resources::compiler_properties::errors::instanceof_pattern_no_subtype(
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(
+                        ctx, exprtype,
+                    )),
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(
+                        ctx, clazztype,
+                    )),
+                );
+                self.log.borrow_mut().error_at(
+                    ctx.tree(tree).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
+            let primary = crate::tree::tree_info::primary_pattern_tree(ctx, pattern);
+            let var = match &ctx.tree(primary).kind {
+                TreeKind::BindingPattern { var: Some(var) } => *var,
+                _ => panic!("AssertionError: primary pattern tree has no binding"),
+            };
+            let vartype = match &ctx.tree(var).kind {
+                TreeKind::VariableDecl {
+                    vartype: Some(vartype),
+                    ..
+                } => *vartype,
+                _ => panic!("AssertionError: binding pattern variable without a type"),
+            };
+            (clazztype, vartype)
+        } else {
+            let clazztype = self.attrib_type(ctx, syms, pattern, &env);
+            {
+                let chk = self.chk.borrow();
+                chk.validate_with(ctx, syms, &env, pattern, false);
+            }
+            (clazztype, pattern)
+        };
+        let mut clazztype = if ctx
+            .typ(clazztype)
+            .has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
+        {
+            clazztype
+        } else {
+            let chk = self.chk.borrow();
+            chk.check_class_or_array_type(ctx, syms, ctx.tree(type_tree).pos, clazztype)
+        };
+        if !ctx
+            .typ(clazztype)
+            .has_tag(crate::code::type_tag::TypeTag::ERROR)
+            && !self.types.is_reifiable(ctx, syms, clazztype)
+        {
+            let mut valid = false;
+            if self.allow_reifiable_types_in_instanceof {
+                valid = self.check_castable_pattern(ctx, syms, expr_pos, exprtype, clazztype);
+            } else {
+                let feature_error =
+                    crate::code::source::Feature::REIFIABLE_TYPES_INSTANCEOF
+                        .error(&self.source_name);
+                self.log.borrow_mut().error_flag_at(
+                    crate::util::jc_diagnostic::DiagnosticFlag::SOURCE_LEVEL,
+                    ctx.tree(tree).pos,
+                    feature_error,
+                );
+                self.allow_reifiable_types_in_instanceof = true;
+            }
+            if !valid {
+                clazztype = self.types.create_error_type_original(ctx, Some(clazztype), syms);
+            }
+        }
+        {
+            let chk = self.chk.borrow();
+            chk.check_castable(ctx, syms, expr_pos, exprtype, clazztype);
+        }
+        let result_info = self.result_info.clone().expect("resultInfo");
+        Ok(self.check(ctx, syms, tree, syms.boolean_type, KindSelector::VAL, &result_info))
+    }
+
     fn visit_binding_pattern(
         &mut self,
         ctx: &mut CompilerContext,
@@ -9241,11 +9363,22 @@ impl Attr {
             self.basic_handler.report(ctx, pos, &fragment);
             false
         } else if warn.has_lint(crate::code::lint::LintCategory::UNCHECKED) {
-            // Java: chk.warnUnchecked(pos, Warnings.UncheckedCast(...))
-            // TODO(Check): the unchecked-cast warning in checkCastablePattern is
-            // registered with the Check service integration; the warner lint is
-            // propagated to the enclosing context here.
-            true
+            // Java: log.error(pos, Errors.InstanceofReifiableNotSafe(exprType,
+            // pattType)); return false; (Attr.java:4123-4126)
+            let info = crate::resources::compiler_properties::errors::instanceof_reifiable_not_safe(
+                crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(
+                    ctx, expr_type,
+                )),
+                crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(
+                    ctx, patt_type,
+                )),
+            );
+            crate::util::abstract_log::AbstractLog::error_at(
+                &mut *self.log.borrow_mut(),
+                pos,
+                crate::util::jc_diagnostic::Error::from(info),
+            );
+            false
         } else {
             true
         }
