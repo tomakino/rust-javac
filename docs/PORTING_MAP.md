@@ -20,3 +20,13 @@ Status: template only; entries are appended by the executing agent and reviewed 
 | `code/symbol.rs::OperatorSymbol::AccessCode` + `Symbol::get_access_code` | `Symbol.java:2442-2513` | enum adaptation, cached access code |
 | `jvm/class_file.rs::{internalize_name, externalize_name}` | `ClassFile.java:164-166 / 190-192` | Name overloads |
 | `code/types.rs::InvalidSignatureException/type_/SignatureGenerator` | `Types.java:5044-5240` | abstract class → trait; exception → Result |
+
+## A0b entries: LambdaToMethod (new code)
+
+| Local symbol | Upstream location | Notes |
+|---|---|---|
+| `comp/lambda_to_method.rs::LambdaToMethod` (all inner classes) | `LambdaToMethod.java` (whole file) | 1:1 port; TreeTranslator base embedded (registered adapter) |
+| `comp/lambda_to_method.rs::contains_lambda` | `JavaCompiler.desugar` ScanNested/hasLambdas | recursive LAMBDA/REFERENCE scan adapter |
+| `jvm/pool_constant.rs::LoadableConstantRef::MethodType` | `PoolConstant.java` (Type implements LoadableConstant) | CONSTANT_MethodType |
+| `comp/trans_patterns.rs` (whole file) | `TransPatterns.java` | 1:1 port (A0.2) |
+| `comp/tree_hasher.rs`, `comp/tree_differ.rs` | `TreeHasher.java`, `TreeDiffer.java` | 1:1 ports |
