@@ -647,11 +647,62 @@ impl MiniCompiler {
 }
 
 /// Return the JDK home directory used by the file manager.
+///
+/// Java: `System.getProperty("java.home")` names the JDK running javac. The
+/// port has no JVM, so the host JDK is discovered instead (registered adapter):
+/// `JAVA_HOME` when it contains a system image, then a `javac`/`java` launcher
+/// on `PATH`, then the baseline JDK 17 path used by the test suite.
+///
+/// # Returns
+///   - the JDK home path.
+///
+/// # Panics
+///   - when no JDK home with `lib/modules` or `jmods` exists on this host.
 fn java_home() -> FsPath {
-    match std::env::var_os("JAVA_HOME") {
-        Some(home) => FsPath::from_path_buf(PathBuf::from(home)),
-        None => FsPath::from_path_buf(std::env::temp_dir()),
+    fn is_jdk_home(home: &Path) -> bool {
+        home.join("lib").join("modules").is_file() || home.join("jmods").is_dir()
     }
+    if let Some(home) = std::env::var_os("JAVA_HOME") {
+        let home = PathBuf::from(home);
+        if is_jdk_home(&home) {
+            return FsPath::from_path_buf(home);
+        }
+    }
+    if let Some(home) = java_home_from_path() {
+        return FsPath::from_path_buf(home);
+    }
+    let baseline =
+        PathBuf::from(r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot");
+    if is_jdk_home(&baseline) {
+        return FsPath::from_path_buf(baseline);
+    }
+    panic!("no JDK home with lib/modules or jmods found; set JAVA_HOME");
+}
+
+/// Locate a JDK home from a `javac`/`java` launcher on `PATH`.
+fn java_home_from_path() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for directory in std::env::split_paths(&path) {
+        for launcher in ["javac", "java"] {
+            let candidate = directory.join(format!(
+                "{launcher}{}",
+                std::env::consts::EXE_SUFFIX
+            ));
+            if !candidate.is_file() {
+                continue;
+            }
+            if directory.file_name().is_none_or(|name| name != "bin") {
+                continue;
+            }
+            let Some(home) = directory.parent() else {
+                continue;
+            };
+            if home.join("lib").join("modules").is_file() || home.join("jmods").is_dir() {
+                return Some(home.to_path_buf());
+            }
+        }
+    }
+    None
 }
 
 /// Convert a string literal to a Java string.
