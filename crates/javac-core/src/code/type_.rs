@@ -1450,6 +1450,7 @@ pub fn type_to_string(ctx: &CompilerContext, ty: TypeId) -> String {
     type_to_string_into(ctx, ty, &mut sb);
     sb
 }
+
 #[cfg(test)]
 mod tests {
 

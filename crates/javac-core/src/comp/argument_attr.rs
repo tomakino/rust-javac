@@ -400,13 +400,15 @@ impl ArgumentAttr {
     /// # Panics
     ///   - none (completion failures are returned).
     ///
-    /// Upstream: ArgumentAttr.java:232-242.
+    /// Port adapter: the Log is passed as its Rc<RefCell<Log>> because the
+    /// argument attribution may report diagnostics while the caller holds no
+    /// Log borrow.
     pub fn attrib_arg(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
-        log: &crate::util::log::Log,
+        log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
         env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
@@ -423,7 +425,7 @@ impl ArgumentAttr {
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
-        log: &crate::util::log::Log,
+        log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         use crate::tree::jc_tree::Tag;
@@ -461,10 +463,10 @@ impl ArgumentAttr {
         &self,
         attr: &Attr,
         ctx: &crate::compiler_context::CompilerContext,
-        log: &crate::util::log::Log,
+        log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
     ) -> ResultInfo {
-        let pos = UniquePos::new(ctx, log, tree);
+        let pos = UniquePos::new(ctx, &log.borrow(), tree);
         let mut info = attr.method_attr_info.clone();
         info.argument_attr_exclude = Some(pos);
         info
@@ -476,7 +478,7 @@ impl ArgumentAttr {
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
-        log: &crate::util::log::Log,
+        log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         self.process_arg_with_speculation(ctx, syms, attr, log, tree, |speculative_tree| {
@@ -497,7 +499,7 @@ impl ArgumentAttr {
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
-        log: &crate::util::log::Log,
+        log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         self.process_arg_with_speculation(ctx, syms, attr, log, tree, |speculative_tree| {
@@ -519,7 +521,7 @@ impl ArgumentAttr {
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
-        log: &crate::util::log::Log,
+        log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         self.process_arg_with_speculation(ctx, syms, attr, log, tree, |speculative_tree| {
@@ -540,7 +542,7 @@ impl ArgumentAttr {
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
-        log: &crate::util::log::Log,
+        log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         let typeargs_empty = match &ctx.tree(tree).kind {
@@ -578,7 +580,7 @@ impl ArgumentAttr {
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
-        log: &crate::util::log::Log,
+        log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         if crate::tree::tree_info::is_diamond(ctx, tree) {
@@ -612,7 +614,7 @@ impl ArgumentAttr {
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
-        log: &crate::util::log::Log,
+        log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         let explicit = match &ctx.tree(tree).kind {
@@ -638,7 +640,7 @@ impl ArgumentAttr {
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
-        _log: &crate::util::log::Log,
+        _log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         // perform arity-based check
@@ -760,11 +762,11 @@ impl ArgumentAttr {
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
-        log: &crate::util::log::Log,
+        log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
         factory: impl FnOnce(TreeId) -> ArgumentTypeData,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
-        let pos = UniquePos::new(ctx, log, tree);
+        let pos = UniquePos::new(ctx, &log.borrow(), tree);
         if let Some(finished) = self.process_arg_cached(ctx, attr, tree, pos.clone())? {
             return Ok(Some(finished));
         }
@@ -798,10 +800,10 @@ impl ArgumentAttr {
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
-        log: &crate::util::log::Log,
+        log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
-        let pos = UniquePos::new(ctx, log, tree);
+        let pos = UniquePos::new(ctx, &log.borrow(), tree);
         if let Some(finished) = self.process_arg_cached(ctx, attr, tree, pos.clone())? {
             return Ok(Some(finished));
         }

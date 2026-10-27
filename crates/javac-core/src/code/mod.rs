@@ -11,6 +11,7 @@ pub mod flags;
 pub mod kinds;
 pub mod module_finder;
 pub mod lint;
+pub mod printer;
 pub mod preview;
 pub mod scope;
 pub mod source;

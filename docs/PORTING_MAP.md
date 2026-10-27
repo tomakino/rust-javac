@@ -30,3 +30,27 @@ Status: template only; entries are appended by the executing agent and reviewed 
 | `jvm/pool_constant.rs::LoadableConstantRef::MethodType` | `PoolConstant.java` (Type implements LoadableConstant) | CONSTANT_MethodType |
 | `comp/trans_patterns.rs` (whole file) | `TransPatterns.java` | 1:1 port (A0.2) |
 | `comp/tree_hasher.rs`, `comp/tree_differ.rs` | `TreeHasher.java`, `TreeDiffer.java` | 1:1 ports |
+
+## D4 entries: Resolve verbose resolution + fatal diagnostics (new code)
+
+| Local symbol | Upstream location | Notes |
+|---|---|---|
+| `comp/resolve.rs::VerboseResolutionMode` | `Resolve.java:180-213` | enum + debug.verboseResolution parsing |
+| `comp/resolve.rs::Resolve::report_verbose_resolution_diagnostic` | `Resolve.java:215-262` | verbose note with candidate subdiagnostics |
+| `comp/resolve.rs::Resolve::get_verbose_applicable_candidate_diag` | `Resolve.java:264-275` | applicable candidate fragment |
+| `comp/resolve.rs::Resolve::get_verbose_inapplicable_candidate_diag` | `Resolve.java:277-279` | inapplicable candidate fragment |
+| `comp/resolve.rs::Resolve::dump_method_reference_search_results` | `Resolve.java:3133-3167` | debug.dumpMethodReferenceSearchResults |
+| `comp/resolve.rs::Resolve::inapplicable_candidate_detail` | `Resolve.java:4280-4295` | InapplicableMethod fragments (Port adapter: declared-type display) |
+| `code/symbol.rs::InapplicableSymbolCandidate` | `Resolve.java:4938-5006` (Candidate) | step/mtype/details snapshot for diagnostics |
+| `comp/resolve.rs::resolve_map_candidates` / `resolve_filter_candidates` | `Resolve.java:4239-4278` | MostSpecificMap/filterCandidates adapters (code-suffix arity match) |
+| `comp/argument_attr.rs` Log parameter (`Rc<RefCell<Log>>`) | `ArgumentAttr.java:232-242` | Port adapter: no long-lived Log borrow across attribution |
+| `util/fatal_error.rs::FatalError::from_diagnostic` / `fatal_error_diagnostic` | `FatalError.java:42-55` | diagnostic message construction |
+| `comp/resolve.rs::Resolve::resolve_internal_field` | `Resolve.java:1471-1477` | fatal error when the field cannot be located |
+| `code/types.rs::Types::get_return_type_public` ERROR case | `Type.java:2393` | ErrorType.getReturnType returns the type itself |
+
+## D4 type display (diagnostic form)
+
+| Local symbol | Upstream location | Notes |
+|---|---|---|
+| `code/printer.rs::visit_type` | `Printer.visit(Type)` (`code/Printer.java`) | qualified class names, enclosing types, type args, array/wildcard/captured/method-type rules |
+| `code/printer.rs::visit_symbol` | `Printer.visitMethodSymbol` (`code/Printer.java`) | constructors/initializers use the owner name; `<type-vars>name(args)`; varargs `...` |

@@ -10622,6 +10622,271 @@ mod diagnostics_tests {
     }
 
     #[test]
+    fn verbose_resolution_reports_failure_note_and_candidates() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { void f(T t) {} void f(Runnable r) {} void g() { f(new Object()); } }\n",
+            )],
+            |options| {
+                options.put("debug.verboseResolution", "all");
+                options.put("should-stop.ifNoError", "FLOW");
+            },
+        );
+        let note = diagnostics
+            .iter()
+            .find(|d| d.get_code_string() == "compiler.note.verbose.resolve.multi.1")
+            .expect("verbose.resolve.multi.1 missing");
+        let message = note.get_message(None).to_string_lossy();
+        // Matches the JDK 17 diagnostic text for this source.
+        assert_eq!(
+            message.lines().next().unwrap_or_default(),
+            "erroneous resolution for method f in type T"
+        );
+        assert!(message.contains("with actuals: java.lang.Object"));
+        assert!(!note.get_subdiagnostics().is_empty());
+    }
+
+    fn collect_diagnostic_codes(
+        diagnostic: &crate::util::jc_diagnostic::JCDiagnostic,
+        codes: &mut Vec<String>,
+    ) {
+        codes.push(diagnostic.get_code_string());
+        for arg in diagnostic.get_args() {
+            if let Ok(nested) = arg.clone().downcast::<crate::util::jc_diagnostic::JCDiagnostic>() {
+                collect_diagnostic_codes(&nested, codes);
+            }
+        }
+        let mut subs = diagnostic.get_subdiagnostics();
+        while subs.non_empty() {
+            let sub = subs.head().clone();
+            subs = subs.tail();
+            collect_diagnostic_codes(&sub, codes);
+        }
+    }
+
+    #[test]
+    fn verbose_resolution_reports_applicable_and_partial_inst_sig() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { <G> void f(G g) {} void g() { f(\"s\"); } }\n",
+            )],
+            |options| {
+                options.put("debug.verboseResolution", "all");
+            },
+        );
+        let mut codes: Vec<String> = Vec::new();
+        for diagnostic in &diagnostics {
+            collect_diagnostic_codes(diagnostic, &mut codes);
+        }
+        assert!(codes.iter().any(|c| c == "compiler.misc.applicable.method.found.1"));
+        assert!(codes.iter().any(|c| c.ends_with("partial.inst.sig")));
+    }
+
+    #[test]
+    fn method_reference_dump_reports_bound_results() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { void f() {} void g() { Runnable r = this::f; r.run(); } }\n",
+            )],
+            |options| {
+                options.put("debug.dumpMethodReferenceSearchResults", "true");
+            },
+        );
+        let note = diagnostics
+            .iter()
+            .find(|d| d.get_code_string() == "compiler.note.method.ref.search.results.multi")
+            .expect("method.ref.search.results.multi missing");
+        assert!(!note.get_subdiagnostics().is_empty());
+    }
+
+    #[test]
+    fn fatal_error_diagnostics_format_the_fragment() {
+        let (compiler, _diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T {}\n")],
+            |_options| {},
+        );
+        let name = compiler
+            .names
+            .from_string(&javac_strings::JavaString::from("f"));
+        let fragment = compiler.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+            crate::resources::compiler_properties::fragments::fatal_err_cant_locate_meth(name),
+        ));
+        let error = crate::util::fatal_error::FatalError::from_diagnostic(&fragment);
+        assert_eq!(error.message, "Fatal Error: Unable to find method f");
+        let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::util::fatal_error::fatal_error_diagnostic(&fragment);
+        }));
+        assert!(payload.is_err());
+    }
+
+    #[test]
+    fn inapplicable_symbols_error_lists_candidate_details() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { void f(T t) {} void f(Runnable r) {} void g() { f(new Object()); } }\n",
+            )],
+            |options| {
+                options.put("should-stop.ifNoError", "FLOW");
+            },
+        );
+        let error = diagnostics
+            .iter()
+            .find(|d| d.get_code_string() == "compiler.err.cant.apply.symbols")
+            .expect("cant.apply.symbols missing");
+        let message = error.get_message(None).to_string_lossy();
+        // Matches the JDK 17 diagnostic text for this source.
+        assert_eq!(
+            message.lines().next().unwrap_or_default(),
+            "no suitable method found for f(java.lang.Object)"
+        );
+        assert!(message.contains("is not applicable"));
+        // Candidate details come from the non-verbose inapplicable-method
+        // path; the JDK 17 output for this source names the signatures.
+        assert!(message.contains("method T.f(T) is not applicable"));
+        assert!(message.contains("method T.f(java.lang.Runnable) is not applicable"));
+        let mut sub_count = 0;
+        let mut subs = error.get_subdiagnostics();
+        while subs.non_empty() {
+            assert_eq!(subs.head().get_code_string(), "compiler.misc.inapplicable.method");
+            sub_count += 1;
+            subs = subs.tail();
+        }
+        assert!(sub_count >= 2, "expected at least two inapplicable candidates");
+    }
+
+    fn collect_diagnostic_texts(
+        diagnostic: &crate::util::jc_diagnostic::JCDiagnostic,
+        texts: &mut Vec<String>,
+    ) {
+        texts.push(diagnostic.get_message(None).to_string_lossy());
+        for arg in diagnostic.get_args() {
+            if let Ok(nested) = arg.clone().downcast::<crate::util::jc_diagnostic::JCDiagnostic>() {
+                collect_diagnostic_texts(&nested, texts);
+            }
+        }
+        let mut subs = diagnostic.get_subdiagnostics();
+        while subs.non_empty() {
+            let sub = subs.head().clone();
+            subs = subs.tail();
+            collect_diagnostic_texts(&sub, texts);
+        }
+    }
+
+    #[test]
+    fn diagnostic_type_display_covers_all_type_forms() {
+        let source = r#"class T<G> {
+            static class In {}
+            class NonStatic {}
+            void f(int x) {}
+            void f(java.util.List<String> x) {}
+            void f(Object a, String b) {}
+            void f(java.util.Map<String,String> x) {}
+            void f(G x) {}
+            void f(In x) {}
+            void f(NonStatic x) {}
+            void f(String... x) {}
+            void arr(String[] x) {}
+            void wild(java.util.List<? extends Number> x) {}
+            void g(
+                java.util.List<String> l,
+                java.util.Map<String,String> m,
+                java.util.List<? extends Number> w) {
+                f(1);
+                f(l);
+                f("a", "b");
+                f(m);
+                wild(w);
+                arr(new String[0]);
+                f(new Object());
+            }
+        }"#;
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", source)],
+            |options| {
+                options.put("debug.verboseResolution", "all");
+                options.put("should-stop.ifNoError", "FLOW");
+            },
+        );
+        let mut texts: Vec<String> = Vec::new();
+        for diagnostic in &diagnostics {
+            collect_diagnostic_texts(diagnostic, &mut texts);
+        }
+        let joined = texts.join("\n");
+        for expected in [
+            "with actuals: int",
+            "with actuals: java.util.List<java.lang.String>",
+            "with actuals: java.lang.String,java.lang.String",
+            "with actuals: java.util.Map<java.lang.String,java.lang.String>",
+            "with actuals: java.lang.String[]",
+            "f(java.lang.String...)",
+            "f(T<G>.NonStatic)",
+            "f(T.In)",
+            "f(G)",
+            "f(java.util.Map<java.lang.String,java.lang.String>)",
+            "f(java.lang.Object,java.lang.String)",
+            "f(java.util.List<java.lang.String>)",
+            "f(int)",
+            "wild(java.util.List<? extends java.lang.Number>)",
+        ] {
+            assert!(joined.contains(expected), "missing {expected:?} in diagnostics:\n{joined}");
+        }
+        let error = diagnostics
+            .iter()
+            .find(|d| d.get_code_string() == "compiler.err.cant.apply.symbols")
+            .expect("cant.apply.symbols missing");
+        let message = error.get_message(None).to_string_lossy();
+        assert_eq!(
+            message.lines().next().unwrap_or_default(),
+            "no suitable method found for f(java.lang.Object)"
+        );
+        for expected in [
+            "method T.f(java.lang.String...) is not applicable",
+            "method T.f(T<G>.NonStatic) is not applicable",
+            "method T.f(T.In) is not applicable",
+            "method T.f(G) is not applicable",
+            "method T.f(java.util.Map<java.lang.String,java.lang.String>) is not applicable",
+            "method T.f(java.lang.Object,java.lang.String) is not applicable",
+            "method T.f(java.util.List<java.lang.String>) is not applicable",
+            "method T.f(int) is not applicable",
+        ] {
+            assert!(message.contains(expected), "missing {expected:?} in error:\n{message}");
+        }
+    }
+    #[test]
+    fn verbose_resolution_reports_success_note() {
+        let (compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { void f() {} void f(int x) {} void g() { f(); } }\n",
+            )],
+            |options| {
+                options.put("debug.verboseResolution", "all");
+            },
+        );
+        let note = diagnostics
+            .iter()
+            .find(|d| {
+                d.get_code_string() == "compiler.note.verbose.resolve.multi"
+                    && d.get_message(None)
+                        .to_string_lossy()
+                        .starts_with("resolving method f in type T")
+            })
+            .expect("verbose.resolve.multi for f missing");
+        let message = note.get_message(None).to_string_lossy();
+        // Matches the JDK 17 diagnostic text for this source.
+        assert_eq!(
+            message.lines().next().unwrap_or_default(),
+            "resolving method f in type T to candidate 1"
+        );
+        assert!(message.contains("with actuals: no arguments"));
+        assert_eq!(compiler.last_compiled_classes.len(), 1);
+    }
+
+    #[test]
     fn should_stop_if_no_error_at_attr_skips_attribution_and_generation() {
         let (compiler, diagnostics) = compile_with_diagnostics(
             &[("T.java", "class T {}\n")],

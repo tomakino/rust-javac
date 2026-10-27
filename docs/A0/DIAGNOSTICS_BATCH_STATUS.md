@@ -57,3 +57,36 @@
 - cargo check 0 errors;cargo test --workspace --all-targets → 1119 passed / 0 failed;clippy errors=0(warnings 208);unimplemented/unreachable=0。
 - JDK17 oracle:guard → compiler.err.cant.ref.non.effectively.final.var: x, (compiler.misc.guard);inner class → (compiler.misc.inner.cls);lambda → (compiler.misc.lambda)。guard/lambda 本地 e2e 与之一致。
 - git:5 文件(flow/attr/check/mini_compiler/member_enter),166 insertions/34 deletions。
+
+## D4 Resolve verbose resolution + fatal diagnostics (完成)
+### 实现
+- comp/resolve.rs:VerboseResolutionMode(debug.verboseResolution 解析:all/逗号分隔/-mode);report_verbose_resolution_diagnostic(SUCCESS/FAILURE、Object init、predef、internal 过滤;candidates 的 applicable/inapplicable 子诊断;verbose.resolve.multi(.1) note + MultilineDiagnostic);get_verbose_applicable/inapplicable_candidate_diag;dump_method_reference_search_results(debug.dumpMethodReferenceSearchResults,bound/unbound、applicable.method.found.2/.3 + partial.inst.sig/static/non_static/bound/unbound);InapplicableSymbolsError 多候选诊断(MostSpecificMap/filterCandidates/candidateDetails 的 InapplicableMethod 片段,COMPRESSED flag)。
+- comp/resolve.rs:fatal 3 条 — resolve_internal_field 新增;resolve_internal_method/constructorfatal 改为 Fragments.FatalErrCantLocate* + FatalError(JCDiagnostic) 构造;util/fatal_error.rs 增加 from_diagnostic/fatal_error_diagnostic。
+- 依赖修复(测试触发):Attr.visit_apply 的 ERROR 类型返回类型(types.get_return_type_public 增加 ErrorType 分支);ArgumentAttr 的 Log 参数改为 Rc<RefCell<Log>>(避免 attribution 期间长期借用 Log);find_fun_in_import_scope/diamond 的 Scope 查询改用 get_symbols_by_name_full(FilterImportScope 要求)。
+### 验证
+- cargo check 0;cargo test --workspace --all-targets:1132 passed/0 failed;clippy errors=0(warnings 208,与 D3 基线一致);unimplemented/unreachable=0。
+- 真实触发 e2e:verbose success/failure note + applicable/inapplicable 子诊断 + partial.inst.sig;方法引用 bound dump(non.static/bound fragments);多候选 cant.apply.symbols + inapplicable.method 子诊断;fatal 单元(消息 "Fatal Error: Unable to find method f")。
+- fatal 触发路径登记:resolve_internal_field/constructor 本地无调用者(不可从源码触发);resolve_internal_method 仅编译器合成路径(失败不可从源码构造)→ 单元构造验证 FatalError 消息 + 代码路径审计。
+### 注释执行清单(§35)
+- 新增/修改文件:7 个(resolve.rs、symbol.rs、fatal_error.rs、types.rs、argument_attr.rs、attr.rs、check.rs)+ docs 2 个。
+- 上游 javadoc 原文保留:3 处(FatalError 构造器、resolveInternalField 的英文 javadoc;其余新增单元以英文职责说明 + Port note)。
+- 模板噪音清理:删除 D4 新增/触及处的 `Java: <signature>`/文件行号锚点 16 处(enum/report/dump/detail/fatal/field/return-type/access/getDiagnostic doc);新增 Port note/Port adapter 11 处;测试内调试输出全部移除(0 eprintln)。
+- PORTING_MAP 新增条目:12 条(D4 entries)。
+
+### D4 参数占位偏差登记(逐条;diagnostic_contract 仅 placeholder,后续 P4)
+- `site`(verbose note 参数): 用 Printer.visit_type/class 文本,上游传 TypeSymbol 对象;显示文本与真实 oracle 一致(qualified)。
+- `inst`(partial.inst.sig 参数): 用类型显示文本,上游传实例化 Type 对象。
+- `methodArguments`(verbose/错误诊断参数): 用现有 method_arguments_display 文本("no arguments"/类型逗号分隔),上游为 Type/树对象的 LocalizedString/列表。
+- 候选 `sym`(not.applicable.method.found/inapplicable.method): SymbolArg placeholder 只含名字(如 "f"),上游 Symbol 显示带参数签名("f(int)");本地 asMemberOf placeholder 用成员签名文本(name(params))替代 Types.memberType(后者在 ERROR 类型上 panic,既有缺口)。
+- `kindName`: 用 log.localize_key(kindname.*) 的本地化文本,上游传 KindName 对象。
+- 以上均要求 diagnostic_contract 支持真 Symbol/Type/KindName 参数对象(ADR 0002 P4);已列入后续修复项,当前不伪造对象。
+
+### D4 显示层(Printer.visit(Type)/visitMethodSymbol)
+- 新增 `code/printer.rs`(1:1 移植 code/Printer.java 相关 visit 方法):visitClassType(qualified longform、enclosing `T.In`/`T<G>.NonStatic`、type args `<...>` join(",")、compound/anonymous)、visitMethodType、visitWildcardType、visitArrayType(`[]`)、visitCapturedType(本地化 captureof、稳定 arena id)、visitForAll、visitUndetVar、visitErrorType/visitTypeVar/visitModuleType/visitType(tsym.name/type.none)、visitMethodSymbol(构造器/初始化器用 owner 名、`<tvars>name(args)`、varargs `...`)。
+- `resolve.rs::type_display_str` → `printer::visit_type`;`method_symbol_display` → `printer::visit_symbol`(传 names);删除 earlier simple 文本实现(type_.rs simple helpers 已移除)。
+- 非 verbose 单候选错误 kindName 已本地化(`kindname.method`→method、`kindname.class`→class),与多候选一致。
+- 真实 oracle 命令:`javac -J-Duser.language=en -XDrawDiagnostics -XDdebug.verboseResolution=all -XDshould-stop.ifNoError=FLOW -d <tmp> T.java`(JDK17 17.0.19);原始输出类型文本:java.lang.Object、java.util.List<java.lang.String>、java.util.List<? extends java.lang.Number>、java.util.Map<java.lang.String,java.lang.String>、java.lang.String[]、T.In、T<G>.NonStatic、f(java.lang.String...)、f(int)。测试 `diagnostic_type_display_covers_all_type_forms` 断言这些文本(verbose with actuals + 候选;非 verbose 首行 + 候选行)。
+- 普通模式(无 -XDrawDiagnostics)与 raw 模式的参数显示不同;按 Lead 指定以 raw/Printer 规则为准(qualified)。
+- 依赖/后续:diagnostic_contract 仍只有 placeholder(Symbol/Type/KindName 对象无);Printer 映射登记 PORTING_MAP;typed-arg(P4)后续。captured 实参显示(capture#id of ...)出现在本地 wildcard 实参上(oracle raw 该 actuals 显示通配符文本),属既有 attr 捕获差异,登记观察项;Deferred/Proxy 文本保留本地实现并登记。
+- 残留显示适配(登记,后续 P4/类型注解批次):Printer.printAnnotations 尚未移植,类型参数上的类型注解前缀当前不显示;visitClassSymbol/visitPackageSymbol 等符号级 printer 未实现(当前诊断符号参数仍走 SymbolArg 文本/placeholder,不调用它们)。
+- 显示层调用点:`resolve.rs` type_display_str(inapplicable 错误 found args/owner type)→printer::visit_type;method_arguments_display(错误 required/found、verbose actuals)→printer 类型文本 join(",")(formatIterable 一致);method_symbol_display(verbose 候选/InapplicableMethod 详情)→printer::visit_symbol。

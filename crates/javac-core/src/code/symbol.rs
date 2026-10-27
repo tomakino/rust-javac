@@ -754,6 +754,23 @@ pub struct ResolveEnvSnapshot {
     pub visiting_service_implementation: bool,
 }
 
+/// The candidate fields needed by the inapplicable-symbols diagnostic
+/// mapping.
+///
+/// Port note: upstream Resolve.Candidate (the symbol itself is the map key).
+#[derive(Clone, Debug)]
+pub struct InapplicableSymbolCandidate {
+    /// Java: final MethodResolutionPhase step (the ordinal; comp::resolve
+    /// converts it back).
+    pub step: u8,
+    /// Java: final Symbol sym
+    pub sym: SymbolId,
+    /// Java: final Type mtype
+    pub mtype: Option<TypeId>,
+    /// Java: final JCDiagnostic details
+    pub details: Option<crate::util::jc_diagnostic::JCDiagnostic>,
+}
+
 /// Java: the Resolve.ResolveError subclass payload (Resolve.java:3909-4700).
 /// The hierarchical Java classes map to this tagged payload stored in the
 /// SymbolKind::ResolveError variant (the error object stays a Symbol, as
@@ -793,7 +810,7 @@ pub enum ResolveErrorData {
     /// Resolve.InapplicableSymbolsError (Resolve.java:4183-4300)
     InapplicableSymbols {
         kind: Kind,
-        candidates: Vec<(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)>,
+        candidates: Vec<InapplicableSymbolCandidate>,
     },
     /// Resolve.DiamondError (Resolve.java:4313-4350)
     Diamond {
@@ -3917,7 +3934,7 @@ mod tests {
         use crate::jvm::target::Target;
         let mut ctx = CompilerContext::new();
         let names = Rc::new(crate::util::names::Names::new(false));
-        let mut syms = Symtab::new(
+        let syms = Symtab::new(
             &mut ctx,
             Rc::clone(&names),
             Target::JDK1_17,

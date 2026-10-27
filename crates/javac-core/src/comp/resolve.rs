@@ -81,6 +81,78 @@ use crate::util::log::Log;
 use crate::util::names::Names;
 use crate::util::options::Options;
 
+/// The verbose resolution diagnostic modes selected by the
+/// debug.verboseResolution option.
+///
+/// Port note: upstream VerboseResolutionMode.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[allow(non_camel_case_types)]
+pub enum VerboseResolutionMode {
+    SUCCESS,
+    FAILURE,
+    APPLICABLE,
+    INAPPLICABLE,
+    DEFERRED_INST,
+    PREDEF,
+    OBJECT_INIT,
+    INTERNAL,
+}
+
+impl VerboseResolutionMode {
+    /// The option spelling of the mode.
+    pub fn opt(self) -> &'static str {
+        match self {
+            VerboseResolutionMode::SUCCESS => "success",
+            VerboseResolutionMode::FAILURE => "failure",
+            VerboseResolutionMode::APPLICABLE => "applicable",
+            VerboseResolutionMode::INAPPLICABLE => "inapplicable",
+            VerboseResolutionMode::DEFERRED_INST => "deferred-inference",
+            VerboseResolutionMode::PREDEF => "predef",
+            VerboseResolutionMode::OBJECT_INIT => "object-init",
+            VerboseResolutionMode::INTERNAL => "internal",
+        }
+    }
+
+    /// Every mode, in declaration order.
+    pub fn values() -> [VerboseResolutionMode; 8] {
+        [
+            VerboseResolutionMode::SUCCESS,
+            VerboseResolutionMode::FAILURE,
+            VerboseResolutionMode::APPLICABLE,
+            VerboseResolutionMode::INAPPLICABLE,
+            VerboseResolutionMode::DEFERRED_INST,
+            VerboseResolutionMode::PREDEF,
+            VerboseResolutionMode::OBJECT_INIT,
+            VerboseResolutionMode::INTERNAL,
+        ]
+    }
+
+    /// Parses the debug.verboseResolution option into the enabled modes.
+    ///
+    /// Port note: upstream VerboseResolutionMode.getVerboseResolutionMode.
+    pub fn get_verbose_resolution_mode(
+        options: &crate::util::options::Options,
+    ) -> Vec<VerboseResolutionMode> {
+        let mut result: Vec<VerboseResolutionMode> = Vec::new();
+        let Some(value) = options.get("debug.verboseResolution") else {
+            return result;
+        };
+        if value.contains("all") {
+            result = Self::values().to_vec();
+        }
+        let args: Vec<&str> = value.split(',').collect();
+        for mode in Self::values() {
+            if args.contains(&mode.opt()) {
+                if !result.contains(&mode) {
+                    result.push(mode);
+                }
+            } else if args.contains(&format!("-{}", mode.opt()).as_str()) {
+                result.retain(|candidate| *candidate != mode);
+            }
+        }
+        result
+    }
+}
 /// Java: public class Resolve (comp/Resolve.java:93)
 pub struct Resolve {
     /// Java: private final SymbolNotFoundError varNotFound (ABSENT_VAR).
@@ -138,6 +210,9 @@ pub struct Resolve {
     /// applicability check of the active lookup; the port stores it next to
     /// current_resolution_step for signatureMoreSpecific; registered adapter).
     pub current_method_check: Option<Rc<RefCell<dyn MethodCheck>>>,
+    pub verbose_resolution_mode: Vec<VerboseResolutionMode>,
+    pub dump_method_reference_search_results: bool,
+    pub compact_method_diags: bool,
 }
 
 impl Resolve {
@@ -155,6 +230,16 @@ impl Resolve {
         finder: Option<Rc<crate::code::class_finder::ClassFinder>>,
     ) -> Self {
         let allow_modules = Feature::MODULES.allowed_in_source(source);
+        let verbose_resolution_mode =
+            VerboseResolutionMode::get_verbose_resolution_mode(&options);
+        let dump_method_reference_search_results =
+            options.is_set("debug.dumpMethodReferenceSearchResults");
+        let xdiags_compact =
+            options.is_set_choice(crate::main::option::Option::XDIAGS, "compact");
+        let xdiags_verbose =
+            options.is_set_choice(crate::main::option::Option::XDIAGS, "verbose");
+        let compact_method_diags =
+            xdiags_compact || (!xdiags_verbose && !xdiags_compact && !options.is_set("rawDiagnostics"));
         let var_not_found = crate::code::symbol::symbol_new_resolve_error(
             ctx,
             Kind::ABSENT_VAR,
@@ -207,6 +292,9 @@ impl Resolve {
             polymorphic_signature_scope: None,
             current_resolution_step: None,
             current_method_check: None,
+            verbose_resolution_mode,
+            dump_method_reference_search_results,
+            compact_method_diags,
             attr_cell: Rc::new(RefCell::new(None)),
             module_finder: Rc::new(RefCell::new(None)),
         }
@@ -669,8 +757,9 @@ impl Resolve {
 /// # Panics
 ///   - none beyond the registered unimplemented dependencies.
 ///
-/// Upstream: Resolve.java:4110-4160 (ResolveError.access overrides).
-///
+/// Resolves an access error to its access result.
+    ///
+    /// Port note: upstream ResolveError.access overrides.
     pub fn resolve_error_access(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -740,7 +829,7 @@ impl Resolve {
             crate::code::symbol::ResolveErrorData::InapplicableSymbols { candidates, .. } => {
                 let original = candidates
                     .first()
-                    .and_then(|(sym, _)| ctx.sym(*sym).ty)
+                    .and_then(|candidate| ctx.sym(candidate.sym).ty)
                     .unwrap_or_else(|| ctx.sym(syms.err_symbol).ty.expect("err symbol type"));
                 let error_type =
                     self.types
@@ -787,8 +876,9 @@ impl Resolve {
 /// # Panics
 ///   - none beyond the registered unimplemented dependencies.
 ///
-/// Upstream: Resolve.java:4160-4370 (getDiagnostic overrides).
-///
+/// Builds the diagnostic of a resolve error.
+    ///
+    /// Port note: upstream getDiagnostic overrides.
     pub fn resolve_error_diagnostic(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -985,7 +1075,7 @@ impl Resolve {
                 Some(self.inapplicable_symbol_diagnostic(ctx, syms, dkind, pos, site, argtypes.clone(), sym, details))
             }
             crate::code::symbol::ResolveErrorData::InapplicableSymbols { kind: _, candidates } => {
-                // Java: InapplicableSymbolsError.getDiagnostic (Resolve.java:4195-4255)
+                // Java: InapplicableSymbolsError.getDiagnostic (Resolve.java:4195-4237)
                 if candidates.is_empty() {
                     return self.symbol_not_found_diagnostic(
                         ctx,
@@ -1000,48 +1090,109 @@ impl Resolve {
                         typeargtypes,
                     );
                 }
-                if candidates.len() == 1 {
-                    let (sym, details) = candidates[0].clone();
-                    return Some(self.inapplicable_symbol_diagnostic(
-                        ctx, syms, dkind, pos, site, argtypes.clone(), sym, details,
-                    ));
-                }
-                // TODO(Resolve diagnostics detail): the upstream creates a
-                // MultilineDiagnostic with per-candidate InapplicableMethod
-                // fragments (JCDiagnostic.MultilineDiagnostic is registered
-                // with the JCDiagnostic).
-                let kind_name = if name
-                    .map(|name| *name == self.names.init)
-                    .unwrap_or(false)
-                {
-                    crate::code::kinds::KindName::CONSTRUCTOR
+                let types = Rc::clone(&self.types);
+                let mapped = resolve_map_candidates(ctx, syms, &types, &candidates);
+                let mut filtered = if self.compact_method_diags {
+                    resolve_filter_candidates(&mapped)
                 } else {
-                    crate::code::kinds::Kind::WRONG_MTH.absent_kind()
+                    mapped.clone()
                 };
-                let simple_name = name
-                    .cloned()
-                    .unwrap_or_else(|| self.names.init.clone());
-                let found_args: Vec<crate::resources::diagnostic_contract::TypeArg> = argtypes
-                    .map(|argtypes| {
-                        let mut out = Vec::new();
-                        let mut current = argtypes;
-                        while current.non_empty() {
-                            out.push(crate::resources::diagnostic_contract::TypeArg::placeholder(
-                                type_display_str(ctx, *current.head()),
-                            ));
-                            current = current.tail();
-                        }
-                        out
-                    })
-                    .unwrap_or_default();
-                let info = errors::cant_apply_symbols(
-                    crate::resources::diagnostic_contract::SymbolKindArg::placeholder(
-                        kind_name.name(),
-                    ),
-                    simple_name,
-                    found_args,
-                );
-                Some(self.factory_error(dkind, pos, info))
+                if filtered.is_empty() {
+                    filtered = mapped.clone();
+                }
+                let truncated = mapped.len() != filtered.len();
+                if filtered.len() > 1 {
+                    let kind_name = if name
+                        .map(|name| *name == self.names.init)
+                        .unwrap_or(false)
+                    {
+                        crate::code::kinds::KindName::CONSTRUCTOR
+                    } else {
+                        crate::code::kinds::Kind::WRONG_MTH.absent_kind()
+                    };
+                    let simple_name = name
+                        .cloned()
+                        .unwrap_or_else(|| self.names.init.clone());
+                    let found_args: Vec<crate::resources::diagnostic_contract::TypeArg> =
+                        argtypes
+                            .map(|argtypes| {
+                                let mut out = Vec::new();
+                                let mut current = argtypes;
+                                while current.non_empty() {
+                                    out.push(
+                                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                            type_display_str(ctx, *current.head()),
+                                        ),
+                                    );
+                                    current = current.tail();
+                                }
+                                out
+                            })
+                            .unwrap_or_default();
+                    let kind_display =
+                        self.log.borrow().localize_key(kind_name.name(), Vec::new());
+                    let info = errors::cant_apply_symbols(
+                        crate::resources::diagnostic_contract::SymbolKindArg::placeholder(
+                            kind_display,
+                        ),
+                        simple_name,
+                        found_args,
+                    );
+                    let mut main = self.factory_error(dkind, pos, info);
+                    if truncated {
+                        main.set_flag(crate::util::jc_diagnostic::DiagnosticFlag::COMPRESSED);
+                    }
+                    let mut details: Vec<crate::util::jc_diagnostic::JCDiagnostic> = Vec::new();
+                    for (sym, detail) in &filtered {
+                        details.push(self.inapplicable_candidate_detail(
+                            ctx,
+                            syms,
+                            &types,
+                            site,
+                            *sym,
+                            detail.clone(),
+                        ));
+                    }
+                    // The upstream candidateDetails prepends every entry (members
+                    // are visited in reverse scope order); the list is reversed
+                    // to restore source order before reporting.
+                    details.reverse();
+                    let multiline = crate::util::jc_diagnostic::MultilineDiagnostic::new(
+                        &main,
+                        crate::util::list::List::from_iterable(details),
+                    );
+                    return Some(multiline.as_diagnostic().clone());
+                }
+                if filtered.len() == 1 {
+                    let (sym, details) = filtered[0].clone();
+                    let mut diagnostic = self.inapplicable_symbol_diagnostic(
+                        ctx,
+                        syms,
+                        dkind,
+                        pos,
+                        site,
+                        argtypes.clone(),
+                        sym,
+                        details,
+                    );
+                    if truncated {
+                        diagnostic
+                            .set_flag(crate::util::jc_diagnostic::DiagnosticFlag::COMPRESSED);
+                    }
+                    return Some(diagnostic);
+                }
+                self.symbol_not_found_diagnostic(
+                    ctx,
+                    syms,
+                    self.method_not_found,
+                    dkind,
+                    pos,
+                    location,
+                    site,
+                    name,
+                    argtypes,
+                    typeargtypes,
+                )
             }
             crate::code::symbol::ResolveErrorData::Diamond { kind: _, sym: _, details } => {
                 // Java: DiamondError.getDiagnostic (Resolve.java:4330-4350)
@@ -1072,6 +1223,46 @@ impl Resolve {
         }
     }
 
+    /// Builds one InapplicableMethod fragment for an inapplicable candidate.
+    ///
+    /// Port note: upstream InapplicableSymbolsError.candidateDetails entry.
+    #[allow(clippy::too_many_arguments)]
+    fn inapplicable_candidate_detail(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &Symtab,
+        types: &crate::code::types::Types,
+        site: Option<TypeId>,
+        sym: SymbolId,
+        detail: Option<crate::util::jc_diagnostic::JCDiagnostic>,
+    ) -> crate::util::jc_diagnostic::JCDiagnostic {
+        use crate::resources::compiler_properties::fragments;
+        use crate::resources::diagnostic_contract::{DiagnosticArg, KindNameArg, SymbolArg};
+        use crate::util::jc_diagnostic::Fragment;
+        let kind_name = crate::code::kinds::kind_name(ctx.sym(sym), ctx);
+        let kind_display = self.log.borrow().localize_key(kind_name.name(), Vec::new());
+        let location = ctx
+            .sym(sym)
+            .owner
+            .map(|owner| symbol_display_name(ctx, owner))
+            .unwrap_or_default();
+        // Port adapter: the asMemberOf(site) parameter is rendered as the
+        // member signature (name plus parameter types) because the local
+        // Types.memberType panics on ERROR-typed members while this diagnostic
+        // is built inside attribution.
+        let _ = (syms, types, site);
+        let member = method_symbol_display(ctx, self.names.as_ref(), sym);
+        let detail_arg = match detail {
+            Some(diag) => DiagnosticArg::JCDiagnostic(Rc::new(diag)),
+            None => DiagnosticArg::from_display("null"),
+        };
+        self.diags.fragment(Fragment::from(fragments::inapplicable_method(
+            KindNameArg::placeholder(kind_display),
+            SymbolArg::placeholder(location),
+            SymbolArg::placeholder(member),
+            detail_arg,
+        )))
+    }
     /// Java: InapplicableSymbolError.getDiagnostic (Resolve.java:4124-4152) —
     /// the methodArguments formatting keeps the ADR 0002 P4 display placeholder.
     #[allow(clippy::too_many_arguments)]
@@ -1102,12 +1293,18 @@ impl Resolve {
         let found_display = method_arguments_display(ctx, argtypes);
         let owner_type = ctx.sym(ws_owner).ty;
         let info = errors::cant_apply_symbol(
-            SymbolKindArg::placeholder(crate::code::kinds::kind_name(ctx.sym(ws), ctx).name()),
+            SymbolKindArg::placeholder(
+                self.log
+                    .borrow()
+                    .localize_key(crate::code::kinds::kind_name(ctx.sym(ws), ctx).name(), Vec::new()),
+            ),
             diagnostic_name,
             DiagnosticArg::from_display(required_display),
             DiagnosticArg::from_display(found_display),
             SymbolKindArg::placeholder(
-                crate::code::kinds::kind_name(ctx.sym(ws_owner), ctx).name(),
+                self.log
+                    .borrow()
+                    .localize_key(crate::code::kinds::kind_name(ctx.sym(ws_owner), ctx).name(), Vec::new()),
             ),
             TypeArg::placeholder(
                 owner_type
@@ -5629,13 +5826,15 @@ impl Resolve {
         resolve_context: &MethodResolutionContext,
         kind: crate::code::kinds::Kind,
     ) -> SymbolId {
-        let candidates: Vec<(
-            SymbolId,
-            Option<crate::util::jc_diagnostic::JCDiagnostic>,
-        )> = resolve_context
+        let candidates: Vec<crate::code::symbol::InapplicableSymbolCandidate> = resolve_context
             .inapplicable_candidates()
             .into_iter()
-            .map(|candidate| (candidate.sym, candidate.details))
+            .map(|candidate| crate::code::symbol::InapplicableSymbolCandidate {
+                step: candidate.step.ordinal() as u8,
+                sym: candidate.sym,
+                mtype: candidate.mtype,
+                details: candidate.details,
+            })
             .collect();
         crate::code::symbol::symbol_new_resolve_error(
             ctx,
@@ -5710,15 +5909,24 @@ fn base_symbol_id(ctx: &crate::compiler_context::CompilerContext, sym: SymbolId)
 // ---------------------------------------------------------------------------
 
 fn type_display_str(ctx: &crate::compiler_context::CompilerContext, ty: TypeId) -> String {
-    match &ctx.typ(ty).kind {
-        crate::code::type_::TypeKindData::ClassType { .. }
-        | crate::code::type_::TypeKindData::ErasedClassType { .. } => ctx
-            .typ(ty)
-            .tsym
-            .map(|tsym| symbol_display_name(ctx, tsym))
-            .unwrap_or_default(),
-        _ => format!("{:?}", ctx.typ(ty).get_tag()),
-    }
+    // The diagnostic Type printer (qualified class names, enclosing types,
+    // type arguments and the other Type visitor branches).
+    crate::code::printer::visit_type(ctx, ty)
+}
+
+/// The source-like rendering of a method symbol: `<type-vars>name(parameters)`.
+///
+/// Port adapter: the diagnostic formatter prints Symbol arguments through the
+/// Symbol rendering; the ported formatter only receives pre-rendered text.
+fn method_symbol_display(
+    ctx: &crate::compiler_context::CompilerContext,
+    names: &Names,
+    sym: SymbolId,
+) -> String {
+    // The upstream diagnostic printer renders method symbols through
+    // Printer.visitMethodSymbol (constructors and initializers use the owner
+    // name; generic methods carry their type variables; varargs use "...").
+    crate::code::printer::visit_symbol(ctx, names, sym)
 }
 
 fn types_parameter_types(
@@ -5753,8 +5961,8 @@ fn method_arguments_display(
     argtypes: Option<crate::util::list::List<TypeId>>,
 ) -> String {
     match argtypes {
-        None => "(no arguments)".to_string(),
-        Some(argtypes) if argtypes.is_empty() => "(no arguments)".to_string(),
+        None => "no arguments".to_string(),
+        Some(argtypes) if argtypes.is_empty() => "no arguments".to_string(),
         Some(argtypes) => {
             let mut parts: Vec<String> = Vec::new();
             let mut current = argtypes;
@@ -5762,7 +5970,7 @@ fn method_arguments_display(
                 parts.push(type_display_str(ctx, *current.head()));
                 current = current.tail();
             }
-            format!("({})", parts.join(","))
+            parts.join(",")
         }
     }
 }
@@ -5855,10 +6063,20 @@ pub trait LookupHelper {
         resolve_context: &mut MethodResolutionContext,
     ) -> SymbolId;
 
-    /// Java: void debug(DiagnosticPosition pos, Symbol sym) — the upstream
-    /// body reports a verbose resolution diagnostic; verbose resolution is
-    /// registered with the Log/diagnostics, so the default is empty.
-    fn debug(&mut self, _ctx: &crate::compiler_context::CompilerContext, _sym: SymbolId) {}
+    /// Java: abstract void debug(DiagnosticPosition pos, Symbol sym)
+    /// (Resolve.java:3473-3476): BasicLookupHelper reports the verbose
+    /// resolution diagnostic; the other helpers keep the default empty body.
+    #[allow(unused_variables)]
+    fn debug(
+        &mut self,
+        rs: &mut Resolve,
+        ctx: &crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
+        resolve_context: &MethodResolutionContext,
+        sym: SymbolId,
+    ) {
+    }
 
     /// Java: abstract Symbol access(Env<AttrContext> env, DiagnosticPosition
     /// pos, Symbol location, Symbol sym)
@@ -5949,6 +6167,29 @@ impl LookupHelper for BasicLookupHelper {
 
     fn max_phase(&self) -> MethodResolutionPhase {
         self.max_phase
+    }
+
+    fn debug(
+        &mut self,
+        rs: &mut Resolve,
+        ctx: &crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
+        resolve_context: &MethodResolutionContext,
+        sym: SymbolId,
+    ) {
+        // Java: BasicLookupHelper.debug (Resolve.java:3473-3476)
+        rs.report_verbose_resolution_diagnostic(
+            ctx,
+            syms,
+            resolve_context,
+            pos,
+            &self.name,
+            self.site,
+            &self.argtypes,
+            &self.typeargtypes,
+            sym,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -6331,11 +6572,13 @@ impl Resolve {
         let symbols = {
             let scope_ref = ctx.scope(members).clone();
             
-            scope_ref.get_symbols_by_name(
+            scope_ref.get_symbols_by_name_full(
                 members,
                 &self.names.init.clone(),
                 crate::code::scope::LookupKind::NON_RECURSIVE,
                 &|_| true,
+                types,
+                syms,
                 ctx,
             )
         };
@@ -6477,6 +6720,44 @@ impl Resolve {
         )
     }
 
+        /// Resolve a field identifier, throw a fatal error if not found.
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - env: the attribution environment;
+    ///   - site: the type to search;
+    ///   - name: the field name.
+    ///
+    /// # Returns
+    ///   - the field symbol.
+    ///
+    /// # Panics
+    ///   - a fatal error when the field cannot be located.
+    ///
+    /// Port note: upstream resolveInternalField.
+    pub fn resolve_internal_field(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &Symtab,
+        env: &Rc<Env<AttrContext>>,
+        site: TypeId,
+        name: crate::util::name::Name,
+    ) -> SymbolId {
+        let c = ctx.typ(site).tsym.expect("internal field site symbol");
+        let sym = self.find_field(ctx, syms, env, site, &name, c);
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::VAR {
+            sym
+        } else {
+            // A failure to locate the field is fatal.
+            crate::util::fatal_error::fatal_error_diagnostic(&self.diags.fragment(
+                crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::fatal_err_cant_locate_field(
+                        name,
+                    ),
+                ),
+            ))
+        }
+    }
     /// Java: public MethodSymbol resolveInternalMethod(DiagnosticPosition pos,
     /// Env<AttrContext> env, Type site, Name name, List<Type> argtypes,
     /// List<Type> typeargtypes) (Resolve.java:2822-2835)
@@ -6501,6 +6782,7 @@ impl Resolve {
         resolve_context.internal_resolution = true;
         resolve_context.method_check = Some(Rc::clone(&self.default_method_check));
         let location = ctx.typ(site).tsym.expect("internal method site symbol");
+        let fatal_name = name.clone();
         let mut helper = BasicLookupHelper::new(
             name,
             site,
@@ -6525,8 +6807,14 @@ impl Resolve {
         if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH {
             sym
         } else {
-            // Java: throw new FatalError(diags.fragment(Fragments.FatalErrCantLocateMeth(name)))
-            panic!("FatalError: cannot locate method")
+            // A failure to locate the method is fatal.
+            crate::util::fatal_error::fatal_error_diagnostic(&self.diags.fragment(
+                crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::fatal_err_cant_locate_meth(
+                        fatal_name,
+                    ),
+                ),
+            ))
         }
     }
 
@@ -6620,8 +6908,16 @@ impl Resolve {
         if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH {
             sym
         } else {
-            // Java: throw new FatalError(diags.fragment(Fragments.FatalErrCantLocateCtor(site)))
-            panic!("FatalError: cannot locate constructor")
+            // A failure to locate the constructor is fatal.
+            crate::util::fatal_error::fatal_error_diagnostic(&self.diags.fragment(
+                crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::fatal_err_cant_locate_ctor(
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            type_display_str(ctx, site),
+                        ),
+                    ),
+                ),
+            ))
         }
     }
 
@@ -6713,6 +7009,278 @@ impl Resolve {
     /// Symbol location, MethodResolutionContext resolveContext,
     /// LookupHelper lookupHelper) (Resolve.java:3694-3710)
     #[allow(clippy::too_many_arguments)]
+    /// Dumps the method-reference lookup results (bound or unbound) as a note.
+    ///
+    /// Port note: upstream dumpMethodReferenceSearchResults.
+    fn dump_method_reference_search_results(
+        &mut self,
+        ctx: &crate::compiler_context::CompilerContext,
+        reference_tree: TreeId,
+        resolve_context: &MethodResolutionContext,
+        best_so_far: SymbolId,
+        bound: bool,
+    ) {
+        use crate::resources::compiler_properties::{fragments, notes};
+        use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg, TypeArg};
+        use crate::util::jc_diagnostic::{Fragment, MultilineDiagnostic, Note};
+        let mut sub_diags: Vec<crate::util::jc_diagnostic::JCDiagnostic> = Vec::new();
+        let mut pos = 0i32;
+        let mut most_specific_pos = -1i32;
+        for candidate in &resolve_context.candidates {
+            if resolve_context.step != Some(candidate.step) || !candidate.is_applicable() {
+                continue;
+            }
+            let mut sub_diag: Option<crate::util::jc_diagnostic::JCDiagnostic> = None;
+            if let Some(sym_ty) = ctx.sym(candidate.sym).ty {
+                if ctx.typ(sym_ty).has_tag(crate::code::type_tag::TypeTag::FORALL) {
+                    let inst = candidate.mtype.unwrap_or(sym_ty);
+                    sub_diag = Some(self.diags.fragment(Fragment::from(
+                        fragments::partial_inst_sig(TypeArg::placeholder(type_display_str(ctx, inst))),
+                    )));
+                }
+            }
+            let static_kind = if ctx.sym(candidate.sym).is_static(ctx) {
+                fragments::r#static()
+            } else {
+                fragments::non_static()
+            };
+            let static_arg =
+                DiagnosticArg::JCDiagnostic(Rc::new(self.diags.fragment(Fragment::from(static_kind))));
+            let sym_display = symbol_display_name(ctx, candidate.sym);
+            let info = match &sub_diag {
+                None => fragments::applicable_method_found2(
+                    pos,
+                    static_arg,
+                    SymbolArg::placeholder(sym_display),
+                ),
+                Some(diag) => fragments::applicable_method_found3(
+                    pos,
+                    static_arg,
+                    SymbolArg::placeholder(sym_display),
+                    DiagnosticArg::JCDiagnostic(Rc::new(diag.clone())),
+                ),
+            };
+            sub_diags.push(self.diags.fragment(Fragment::from(info)));
+            if candidate.sym == best_so_far {
+                most_specific_pos = pos;
+            }
+            pos += 1;
+        }
+        let bound_info = if bound { fragments::bound() } else { fragments::unbound() };
+        let bound_arg =
+            DiagnosticArg::JCDiagnostic(Rc::new(self.diags.fragment(Fragment::from(bound_info))));
+        let mut pretty = crate::tree::pretty::Pretty::new(false);
+        pretty.print_expr(ctx, reference_tree);
+        let reference_display = pretty.get_out().to_string_lossy();
+        let note = notes::method_ref_search_results_multi(
+            bound_arg,
+            javac_strings::JavaString::from(reference_display.as_str()),
+            most_specific_pos,
+        );
+        let source = self.log.borrow().current_source();
+        let main = self.diags.note(
+            source,
+            Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                ctx.tree(reference_tree).pos,
+            ))),
+            Note::from(note),
+        );
+        let multiline = MultilineDiagnostic::new(
+            &main,
+            crate::util::list::List::from_iterable(sub_diags),
+        );
+        self.log
+            .borrow_mut()
+            .report(multiline.as_diagnostic().clone());
+    }
+    /// Reports the verbose resolution note for a method lookup result.
+    ///
+    /// Port note: upstream reportVerboseResolutionDiagnostic.
+    #[allow(clippy::too_many_arguments)]
+    pub fn report_verbose_resolution_diagnostic(
+        &mut self,
+        ctx: &crate::compiler_context::CompilerContext,
+        syms: &Symtab,
+        resolve_context: &MethodResolutionContext,
+        dpos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
+        name: &crate::util::name::Name,
+        site: TypeId,
+        argtypes: &crate::util::list::List<TypeId>,
+        typeargtypes: &Option<crate::util::list::List<TypeId>>,
+        best_so_far: SymbolId,
+    ) {
+        use crate::resources::compiler_properties::notes;
+        use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg};
+        use crate::util::jc_diagnostic::{MultilineDiagnostic, Note};
+        let success = !ctx.sym(best_so_far).kind.is_resolution_error();
+        let enabled_modes = self.verbose_resolution_mode.clone();
+        let mode_enabled = |mode: VerboseResolutionMode| enabled_modes.contains(&mode);
+        let required_mode = if success {
+            VerboseResolutionMode::SUCCESS
+        } else {
+            VerboseResolutionMode::FAILURE
+        };
+        if !mode_enabled(required_mode) {
+            return;
+        }
+        let is_init = ctx
+            .sym(best_so_far)
+            .name
+            .content_equals(&self.names.init.to_java_string());
+        let object_tsym = ctx.typ(syms.object_type).tsym;
+        let skip = (is_init
+            && ctx.sym(best_so_far).owner == object_tsym
+            && !mode_enabled(VerboseResolutionMode::OBJECT_INIT))
+            || (ctx.sym(syms.predef_class).ty == Some(site)
+                && !mode_enabled(VerboseResolutionMode::PREDEF))
+            || (resolve_context.internal_resolution
+                && !mode_enabled(VerboseResolutionMode::INTERNAL));
+        if skip {
+            return;
+        }
+        let mut sub_diags: Vec<crate::util::jc_diagnostic::JCDiagnostic> = Vec::new();
+        let mut pos = 0i32;
+        let mut most_specific_pos = -1i32;
+        for candidate in &resolve_context.candidates {
+            if resolve_context.step != Some(candidate.step) {
+                continue;
+            }
+            let applicable = candidate.is_applicable();
+            if applicable && !mode_enabled(VerboseResolutionMode::APPLICABLE) {
+                continue;
+            }
+            if !applicable && !mode_enabled(VerboseResolutionMode::INAPPLICABLE) {
+                continue;
+            }
+            let sub_diag = if applicable {
+                self.get_verbose_applicable_candidate_diag(
+                    ctx,
+                    pos,
+                    candidate.sym,
+                    candidate.mtype,
+                )
+            } else {
+                self.get_verbose_inapplicable_candidate_diag(
+                    ctx,
+                    pos,
+                    candidate.sym,
+                    candidate.details.clone(),
+                )
+            };
+            sub_diags.push(sub_diag);
+            if candidate.sym == best_so_far {
+                most_specific_pos = pos;
+            }
+            pos += 1;
+        }
+        let step = resolve_context
+            .step
+            .map(|step| format!("{:?}", step))
+            .unwrap_or_default();
+        let site_display = ctx
+            .typ(site)
+            .tsym
+            .map(|tsym| ctx.sym(tsym).name.to_java_string().to_string_lossy())
+            .unwrap_or_default();
+        let argtypes_display = method_arguments_display(ctx, Some(argtypes.clone()));
+        let targs_display = method_arguments_display(ctx, typeargtypes.clone());
+        let site_arg = SymbolArg::placeholder(site_display);
+        let step_string = javac_strings::JavaString::from(step.as_str());
+        let note = if success {
+            notes::verbose_resolve_multi(
+                name.clone(),
+                site_arg,
+                most_specific_pos,
+                step_string,
+                DiagnosticArg::from_display(argtypes_display),
+                DiagnosticArg::from_display(targs_display),
+            )
+        } else {
+            notes::verbose_resolve_multi1(
+                name.clone(),
+                site_arg,
+                (),
+                step_string,
+                DiagnosticArg::from_display(argtypes_display),
+                DiagnosticArg::from_display(targs_display),
+            )
+        };
+        let source = self.log.borrow().current_source();
+        let main = self.diags.note(source, dpos, Note::from(note));
+        let multiline = MultilineDiagnostic::new(
+            &main,
+            crate::util::list::List::from_iterable(sub_diags),
+        );
+        self.log
+            .borrow_mut()
+            .report(multiline.as_diagnostic().clone());
+    }
+
+    /// Builds the verbose diagnostic of one applicable candidate.
+    ///
+    /// Port note: upstream getVerboseApplicableCandidateDiag.
+    fn get_verbose_applicable_candidate_diag(
+        &mut self,
+        ctx: &crate::compiler_context::CompilerContext,
+        pos: i32,
+        sym: SymbolId,
+        inst: Option<TypeId>,
+    ) -> crate::util::jc_diagnostic::JCDiagnostic {
+        use crate::resources::compiler_properties::fragments;
+        use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg, TypeArg};
+        use crate::util::jc_diagnostic::Fragment;
+        let sym_ty = ctx.sym(sym).ty;
+        let mut sub_diag: Option<crate::util::jc_diagnostic::JCDiagnostic> = None;
+        if let Some(sym_ty) = sym_ty {
+            if ctx.typ(sym_ty).has_tag(crate::code::type_tag::TypeTag::FORALL) {
+                let inst = inst.unwrap_or(sym_ty);
+                sub_diag = Some(self.diags.fragment(Fragment::from(
+                    fragments::partial_inst_sig(TypeArg::placeholder(type_display_str(ctx, inst))),
+                )));
+            }
+        }
+        let sym_display = method_symbol_display(ctx, self.names.as_ref(), sym);
+        let info = match &sub_diag {
+            None => fragments::applicable_method_found(
+                pos,
+                SymbolArg::placeholder(sym_display),
+                (),
+            ),
+            Some(diag) => fragments::applicable_method_found1(
+                pos,
+                SymbolArg::placeholder(sym_display),
+                DiagnosticArg::JCDiagnostic(Rc::new(diag.clone())),
+            ),
+        };
+        self.diags.fragment(Fragment::from(info))
+    }
+
+    /// Builds the verbose diagnostic of one inapplicable candidate.
+    ///
+    /// Port note: upstream getVerboseInapplicableCandidateDiag.
+    fn get_verbose_inapplicable_candidate_diag(
+        &mut self,
+        ctx: &crate::compiler_context::CompilerContext,
+        pos: i32,
+        sym: SymbolId,
+        sub_diag: Option<crate::util::jc_diagnostic::JCDiagnostic>,
+    ) -> crate::util::jc_diagnostic::JCDiagnostic {
+        use crate::resources::compiler_properties::fragments;
+        use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg};
+        use crate::util::jc_diagnostic::Fragment;
+        let sym_display = method_symbol_display(ctx, self.names.as_ref(), sym);
+        let details = match sub_diag {
+            Some(diag) => DiagnosticArg::JCDiagnostic(Rc::new(diag)),
+            None => DiagnosticArg::from_display("null"),
+        };
+        self.diags.fragment(Fragment::from(
+            fragments::not_applicable_method_found(
+                pos,
+                SymbolArg::placeholder(sym_display),
+                details,
+            ),
+        ))
+    }
     pub fn lookup_method(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -6760,7 +7328,7 @@ impl Resolve {
                     phase,
                     resolve_context,
                 );
-                helper.debug(ctx, sym);
+                helper.debug(&mut *self, ctx, syms, pos.clone(), &*resolve_context, sym);
                 best_so_far = phase.merge_results(ctx, best_so_far, sym);
                 env.info.borrow_mut().pending_resolution_phase =
                     if prev_best == best_so_far { prev_phase } else { Some(phase) };
@@ -7170,11 +7738,13 @@ impl Resolve {
         let symbols = {
             let scope_ref = ctx.scope(scope).clone();
             
-            scope_ref.get_symbols_by_name(
+            scope_ref.get_symbols_by_name_full(
                 scope,
                 name,
                 crate::code::scope::LookupKind::NON_RECURSIVE,
                 &|_| true,
+                types,
+                syms,
                 ctx,
             )
         };
@@ -7517,31 +8087,36 @@ fn resolve_matches_method_check_diag(code: &str, _unused: bool) -> bool {
     code.ends_with("arg.length.mismatch") || code.ends_with("infer.arg.length.mismatch")
 }
 
-/// Java: InapplicableSymbolsError.MostSpecificMap.put(Candidate) (Porting rules: Vec map).
+/// Keeps only the most specific inapplicable candidates.
+///
+/// Port adapter: the upstream LinkedHashMap keyed by Symbol is a Vec of pairs
+/// that preserves insertion order.
 fn resolve_map_candidates(
     ctx: &mut crate::compiler_context::CompilerContext,
     syms: &Symtab,
     types: &crate::code::types::Types,
-    candidates: &[(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)],
+    candidates: &[crate::code::symbol::InapplicableSymbolCandidate],
 ) -> Vec<(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)> {
     let mut result: Vec<(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)> =
         Vec::new();
-    for (cand_sym, cand_details) in candidates {
+    for candidate in candidates {
+        let cand_sym = candidate.sym;
+        let cand_details = &candidate.details;
         let mut overridden: Vec<SymbolId> = Vec::new();
         let mut skip = false;
         for (existing, _) in &result {
-            if existing == cand_sym {
+            if *existing == cand_sym {
                 continue;
             }
             let existing_owner = ctx.sym(*existing).owner.expect("candidate owner");
             if crate::code::symbol::overrides(
-                ctx, syms, types, *cand_sym, *existing, existing_owner, false,
+                ctx, syms, types, cand_sym, *existing, existing_owner, false,
             ) {
                 overridden.push(*existing);
             } else {
-                let cand_owner = ctx.sym(*cand_sym).owner.expect("candidate owner");
+                let cand_owner = ctx.sym(cand_sym).owner.expect("candidate owner");
                 if crate::code::symbol::overrides(
-                    ctx, syms, types, *existing, *cand_sym, cand_owner, false,
+                    ctx, syms, types, *existing, cand_sym, cand_owner, false,
                 ) {
                     skip = true;
                     break;
@@ -7552,12 +8127,14 @@ fn resolve_map_candidates(
             continue;
         }
         result.retain(|(sym, _)| !overridden.contains(sym));
-        result.push((*cand_sym, cand_details.clone()));
+        result.push((cand_sym, cand_details.clone()));
     }
     result
 }
 
-/// Java: InapplicableSymbolsError.filterCandidates (Porting rules).
+/// Drops candidates whose details are arity mismatches.
+///
+/// Port adapter: the upstream Template regex match is a code-suffix test.
 fn resolve_filter_candidates(
     candidates: &[(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)],
 ) -> Vec<(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)> {
@@ -8403,6 +8980,15 @@ impl Resolve {
             &mut bound_helper,
         );
         let bound_res = ReferenceLookupResult::new(ctx, bound_sym, &bound_context);
+        if self.dump_method_reference_search_results {
+            self.dump_method_reference_search_results(
+                ctx,
+                reference_tree,
+                &bound_context,
+                bound_sym,
+                true,
+            );
+        }
         let unbound_env = env.dup(env.tree, env.info.borrow().dup(None));
         let unbound_helper = bound_helper.unbound_lookup(self, ctx, syms, types, inference_context);
         let unbound_res = match &unbound_helper {
@@ -8424,6 +9010,15 @@ impl Resolve {
                     &mut unbound_context,
                     &mut helper,
                 );
+                if self.dump_method_reference_search_results {
+                    self.dump_method_reference_search_results(
+                        ctx,
+                        reference_tree,
+                        &unbound_context,
+                        unbound_sym,
+                        false,
+                    );
+                }
                 Some(ReferenceLookupResult::new(ctx, unbound_sym, &unbound_context))
             }
         };

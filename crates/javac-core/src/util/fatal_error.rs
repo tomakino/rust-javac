@@ -30,8 +30,16 @@ impl FatalError {
         FatalError { message: message.into(), cause: Some(cause) }
     }
 
-    // TODO(P0+): Java constructors FatalError(JCDiagnostic) and FatalError(JCDiagnostic, Throwable)
-    // are added as soon as util::JCDiagnostic is ported (they format the diagnostic via d.toString()).
+    /// Construct a FatalError with the specified detail message.
+    ///
+    /// # Arguments
+    ///   - diagnostic: a diagnostic containing the reason for failure.
+    pub fn from_diagnostic(diagnostic: &crate::util::jc_diagnostic::JCDiagnostic) -> Self {
+        FatalError::new(diagnostic.get_message(None).to_string_lossy())
+    }
+
+    // TODO(P0+): Java constructor FatalError(JCDiagnostic, Throwable) is added
+    // when the exception cause chain is ported (util::JCDiagnostic is ported).
 }
 
 impl std::fmt::Display for FatalError {
@@ -44,4 +52,13 @@ impl std::fmt::Display for FatalError {
 #[track_caller]
 pub fn fatal_error(message: impl Into<String>) -> ! {
     panic_any(FatalError::new(message))
+}
+
+/// Constructs and throws a FatalError from a diagnostic.
+///
+/// # Arguments
+///   - diagnostic: a diagnostic containing the reason for failure.
+#[track_caller]
+pub fn fatal_error_diagnostic(diagnostic: &crate::util::jc_diagnostic::JCDiagnostic) -> ! {
+    panic_any(FatalError::from_diagnostic(diagnostic))
 }

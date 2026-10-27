@@ -7211,7 +7211,10 @@ impl Types {
         }
     }
 
-    /// Java: MethodType.getReturnType() view (see above).
+    /// The return type of a method type (or the delegated type's return type).
+    ///
+    /// Port adapter: the ERROR case returns the type itself, matching
+    /// ErrorType.getReturnType.
     pub fn get_return_type_public(&self, ctx: &CompilerContext, t: TypeId) -> TypeId {
         match &ctx.typ(t).kind {
             TypeKindData::MethodType {
@@ -7225,6 +7228,13 @@ impl Types {
             // Java: DelegatedType.getReturnType() delegates to qtype.
             TypeKindData::ForAll { qtype: Some(qtype), .. } => {
                 self.get_return_type_public(ctx, *qtype)
+            }
+            // Java: ErrorType.getReturnType() returns this.
+            _ if ctx
+                .typ(t)
+                .has_tag(crate::code::type_tag::TypeTag::ERROR) =>
+            {
+                t
             }
             _ => panic!("AssertionError: no return type tag={:?}", ctx.typ(t).get_tag()),
         }

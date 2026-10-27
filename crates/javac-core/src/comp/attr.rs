@@ -637,8 +637,7 @@ impl Attr {
                 .expect("AssertionError: argumentAttr service must be installed");
             let mut argument_attr = argument_attr.borrow_mut();
             let log_rc = Rc::clone(&self.log);
-            let log = log_rc.borrow();
-            match argument_attr.attrib_arg(ctx, syms, self, &log, tree, env) {
+            match argument_attr.attrib_arg(ctx, syms, self, &log_rc, tree, env) {
                 Ok(result) => Ok(result.expect("AssertionError: argument attribution result")),
                 Err(failure) => Err(failure),
             }
