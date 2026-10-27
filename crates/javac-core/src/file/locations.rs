@@ -632,7 +632,7 @@ impl Locations {
             ),
             handler(
                 StandardLocation::NATIVE_HEADER_OUTPUT,
-                Vec::new(),
+                vec![JavacOption::H],
                 HandlerKind::Output(OutputState {
                     output_dir: None,
                     module_table: None,

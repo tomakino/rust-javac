@@ -86,6 +86,9 @@ pub struct TreeMaker {
     /// Java: Symtab syms (the shared symbol table; registered adapter: linked
     /// in at wiring time instead of read from Context).
     pub syms: StdOption<Rc<RefCell<crate::code::symtab::Symtab>>>,
+    /// Java: Symtab.rootPackage (captured at wiring so qual_ident does not
+    /// need to borrow the shared Symtab; registered adapter).
+    pub root_package: StdOption<crate::ids::SymbolId>,
     // Java: Types types; Symtab syms; — not declared yet, see the file header (TODO).
 }
 
@@ -98,6 +101,7 @@ impl TreeMaker {
             names,
             types: None,
             syms: None,
+            root_package: None,
         }
     }
 
@@ -108,13 +112,18 @@ impl TreeMaker {
         types: StdOption<Rc<Types>>,
         syms: StdOption<Rc<RefCell<crate::code::symtab::Symtab>>>, 
     ) -> TreeMaker {
-        TreeMaker {
+        let mut maker = TreeMaker {
             pos: position::FIRSTPOS,
             toplevel,
             names,
             types,
             syms,
+            root_package: None,
+        };
+        if let Some(syms) = &maker.syms {
+            maker.root_package = Some(syms.borrow().root_package);
         }
+        maker
     }
 
     /// Java: public static TreeMaker instance(Context context) — cached in the Context.
@@ -131,12 +140,14 @@ impl TreeMaker {
 
     /// Java: public TreeMaker forToplevel(JCCompilationUnit toplevel).
     pub fn for_toplevel(&self, toplevel: StdOption<TreeId>) -> TreeMaker {
-        TreeMaker::new_for_toplevel(
+        let mut maker = TreeMaker::new_for_toplevel(
             toplevel,
             self.names.clone(),
             self.types.clone(),
             self.syms.clone(),
-        )
+        );
+        maker.root_package = self.root_package;
+        maker
     }
 
     /// Java: public TreeMaker at(int pos).
@@ -1879,12 +1890,13 @@ impl TreeMaker {
         &mut self,
         ctx: &mut CompilerContext,
         types: &Types,
+        syms: &mut crate::code::symtab::Symtab,
         ctor: crate::ids::SymbolId,
         args: List<TreeId>,
     ) -> TreeId {
         let owner = ctx.sym(ctor).owner.expect("constructor owner");
         let owner_type = ctx.sym(owner).ty.expect("constructor owner type");
-        let t = self.with_syms(|syms| types.erasure(ctx, syms, owner_type));
+        let t = types.erasure(ctx, syms, owner_type);
         let class_expr = self.type_expr(ctx, t);
         let tree = self.new_class(ctx, None, List::nil(), class_expr, args, None);
         if let TreeKind::NewClass { constructor, .. } = &mut ctx.tree_mut(tree).kind {
@@ -2344,7 +2356,7 @@ impl TreeMaker {
         if name_equals(&symbol_name, &names.empty) || owner.is_none() {
             return true;
         }
-        let root_package = self.with_syms(|syms| syms.root_package);
+        let root_package = self.root_package.expect("TreeMaker.rootPackage");
         if owner == Some(root_package) {
             return true;
         }
@@ -2378,20 +2390,16 @@ impl TreeMaker {
             let lookup = |ctx: &mut CompilerContext,
                           scope: crate::ids::ScopeId|
              -> StdOption<bool> {
-                self.with_syms(|syms| {
-                    let candidates = ctx.scope_get_symbols_by_name_full(
-                        scope,
-                        &name,
-                        crate::code::scope::LookupKind::NON_RECURSIVE,
-                        &|_| true,
-                        &types,
-                        syms,
-                    );
-                    if candidates.is_empty() {
-                        return None;
-                    }
-                    Some(candidates.len() == 1 && candidates[0] == sym)
-                })
+                let candidates = ctx.scope_get_symbols_by_name(
+                    scope,
+                    &name,
+                    crate::code::scope::LookupKind::NON_RECURSIVE,
+                    &|_| true,
+                );
+                if candidates.is_empty() {
+                    return None;
+                }
+                Some(candidates.len() == 1 && candidates[0] == sym)
             };
             if let StdOption::Some(scope) = named_import_scope {
                 if let StdOption::Some(result) = lookup(ctx, scope) {
@@ -3077,6 +3085,7 @@ mod tests {
         let types = Rc::new(crate::code::types::Types::with_names(Rc::clone(&names)));
         let mut maker = TreeMaker::new(Some(names));
         maker.syms = Some(Rc::clone(&syms));
+        maker.root_package = Some(syms.borrow().root_package);
         maker.types = Some(Rc::clone(&types));
         (ctx, syms, types, maker)
     }

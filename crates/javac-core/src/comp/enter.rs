@@ -24,7 +24,7 @@
 // - UnenterScanner needs the JCTree.Visitor callback scanner (tree scanner
 //): unenter() is unimplemented below.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use javac_tools::tools::java_file_manager::JavaFileManager;
@@ -66,14 +66,17 @@ pub struct Enter {
     /// TODO(TreeMaker): TreeMaker.ClassDef/Modifiers factories are not
     /// ported; the field stays None (registered).
     pub predef_class_def: Option<TreeId>,
-    /// Java: ListBuffer<ClassSymbol> uncompleted;
-    pub uncompleted: Option<Vec<SymbolId>>,
-    /// Java: ListBuffer<JCCompilationUnit> unfinishedModules
-    pub unfinished_modules: Vec<TreeId>,
-    /// Java: protected Env<AttrContext> env;
-    pub env: Option<Rc<Env<AttrContext>>>,
-    /// Java: Type result;
-    pub result: Option<TypeId>,
+    /// Java: ListBuffer<ClassSymbol> uncompleted (interior mutability).
+    pub uncompleted: RefCell<Option<Vec<SymbolId>>>,
+    /// Java: ListBuffer<JCCompilationUnit> unfinishedModules (interior
+    /// mutability).
+    pub unfinished_modules: RefCell<Vec<TreeId>>,
+    /// Java: protected Env<AttrContext> env (interior mutability so the
+    /// re-entrant TypeEnter/MemberEnter completion can borrow Enter while
+    /// Enter.complete drives it; registered adapter).
+    pub env: RefCell<Option<Rc<Env<AttrContext>>>>,
+    /// Java: Type result (interior mutability, see env).
+    pub result: Cell<Option<TypeId>>,
     /// Java: Annotate annotate (installed after construction, adapter cell).
     pub annotate: Rc<RefCell<Option<Rc<crate::comp::annotate::Annotate>>>>,
     /// Java: TypeEnter typeEnter (installed after construction, adapter cell).
@@ -114,10 +117,10 @@ impl Enter {
             pkginfo_opt: crate::main::option::PkgInfo::get(options),
             type_envs,
             predef_class_def: None,
-            uncompleted: None,
-            unfinished_modules: Vec::new(),
-            env: None,
-            result: None,
+            uncompleted: RefCell::new(None),
+            unfinished_modules: RefCell::new(Vec::new()),
+            env: RefCell::new(None),
+            result: Cell::new(None),
             annotate: Rc::new(RefCell::new(None)),
             type_enter: Rc::new(RefCell::new(None)),
             todo,
@@ -138,6 +141,23 @@ impl Enter {
     ///   - none.
     pub fn set_modules(&mut self, modules: Rc<crate::comp::modules::Modules>) {
         *self.modules.borrow_mut() = Some(modules);
+    }
+
+    /// Installs the predefClassDef tree built from Symtab.predefClass by the
+    /// bootstrap (Java: Enter constructor builds it with make.ClassDef;
+    /// Enter.java:130-134; the local wiring builds it because the TreeFactory
+    /// methods are private trait implementations; registered adapter).
+    ///
+    /// # Arguments
+    ///   - tree: the predefined class declaration.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn set_predef_class(&mut self, tree: TreeId) {
+        self.predef_class_def = Some(tree);
     }
 
     /// Java: public Env<AttrContext> getEnv(TypeSymbol sym)
@@ -289,20 +309,20 @@ impl Enter {
 
     /// Java: Type classEnter(JCTree tree, Env<AttrContext> env)
     pub(crate) fn class_enter(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         tree: TreeId,
         env: Option<Rc<Env<AttrContext>>>,
     ) -> Option<TypeId> {
-        let prev_env = self.env.clone();
+        let prev_env = self.env.borrow().clone();
         // TODO(Annotate): annotate.blockAnnotations();
-        self.env = env;
-        let previous_result = self.result;
-        self.result = None;
+        *self.env.borrow_mut() = env;
+        let previous_result = self.result.get();
+        self.result.set(None);
         let visit_result = self.visit(ctx, syms, tree);
         let result = match visit_result {
-            Ok(()) => self.result,
+            Ok(()) => self.result.get(),
             Err(failure) => {
                 // Java: return chk.completionError(tree.pos(), ex);
                 Some(self.chk.borrow().completion_error(
@@ -314,15 +334,15 @@ impl Enter {
             }
         };
         // TODO(Annotate): annotate.unblockAnnotations();
-        self.env = prev_env;
-        self.result = previous_result;
+        *self.env.borrow_mut() = prev_env;
+        self.result.set(previous_result);
         result
     }
 
     /// Java: <T extends JCTree> List<Type> classEnter(List<T> trees,
     /// Env<AttrContext> env)
     pub(crate) fn class_enter_list(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         trees: List<TreeId>,
@@ -341,7 +361,7 @@ impl Enter {
     }
 
     fn visit(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         tree: TreeId,
@@ -357,7 +377,7 @@ impl Enter {
 
     /// Java: public void visitTopLevel(JCCompilationUnit tree)
     fn visit_top_level(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         tree: TreeId,
@@ -541,7 +561,7 @@ impl Enter {
             }
         }
         self.log.borrow_mut().use_source(prev_source);
-        self.result = None;
+        self.result.set(None);
         Ok(())
     }
 
@@ -571,12 +591,12 @@ impl Enter {
 
     /// Java: public void visitClassDef(JCClassDecl tree)
     fn visit_class_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         tree: TreeId,
     ) -> Result<(), CompletionFailure> {
-        let env = self.env.clone().expect("env");
+        let env = self.env.borrow().clone().expect("env");
         let scope = self.enter_scope(ctx, &env);
         let owner = ctx.scope(scope).owner.expect("scope owner");
         let tree_name = class_tree_name(ctx, tree);
@@ -627,7 +647,7 @@ impl Enter {
                 .borrow()
                 .check_unique_class_name(ctx, ctx.tree(tree).pos, &tree_name, scope)
         {
-            self.result = None;
+            self.result.set(None);
             return Ok(());
         } else if ctx.sym(owner).kind == crate::code::kinds::Kind::TYP {
             // We are seeing a member class.
@@ -651,7 +671,7 @@ impl Enter {
                     );
                     let tsym = ctx.typ(err_type).tsym.expect("error type symbol");
                     set_class_tree_symbol(ctx, tree, tsym);
-                    self.result = Some(err_type);
+                    self.result.set(Some(err_type));
                     return Ok(());
                 }
                 // anonymous class loaded from a classfile may be recreated from
@@ -691,7 +711,7 @@ impl Enter {
             );
             let tsym = ctx.typ(err_type).tsym.expect("error type symbol");
             set_class_tree_symbol(ctx, tree, tsym);
-            self.result = Some(err_type);
+            self.result.set(Some(err_type));
             return Ok(());
         }
         self.chk.borrow_mut().put_compiled(ctx, class);
@@ -757,19 +777,24 @@ impl Enter {
             *typarams_field = Some(typarams.clone());
             *allparams_field = None;
         }
-        // TODO(TypeEnter/MemberEnter): c.completer = typeEnter;
+        // Java: c.completer = typeEnter (Enter.java:523).
+        if let Some(type_enter) = self.type_enter.borrow().clone() {
+            ctx.sym_mut(class).completer = Some(Rc::new(RefCell::new(TypeEnterCompleter {
+                type_enter,
+            })));
+        }
         // The two conditions are kept nested exactly like the upstream
         // (if (!c.isDirectlyOrIndirectlyLocal() && uncompleted != null)...);
         // Rust let-chains would require a newer edition (registered).
         #[allow(clippy::collapsible_if)]
         if !crate::code::symbol::symbol_is_directly_or_indirectly_local(ctx, class) {
-            if let Some(uncompleted) = self.uncompleted.as_mut() {
+            if let Some(uncompleted) = self.uncompleted.borrow_mut().as_mut() {
                 uncompleted.push(class);
             }
         }
         // Recursively enter all member classes.
         self.class_enter_list(ctx, syms, class_tree_defs(ctx, tree), Some(local_env));
-        self.result = ctx.sym(class).ty;
+        self.result.set(ctx.sym(class).ty);
         Ok(())
     }
 
@@ -796,12 +821,12 @@ impl Enter {
 
     /// Java: public void visitTypeParameter(JCTypeParameter tree)
     fn visit_type_parameter(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         tree: TreeId,
     ) -> Result<(), CompletionFailure> {
-        let env = self.env.clone().expect("env");
+        let env = self.env.borrow().clone().expect("env");
         let scope = env.info.borrow().scope.expect("env.info.scope");
         let name = type_parameter_name(ctx, tree);
         let existing_type = type_parameter_type(ctx, tree);
@@ -822,18 +847,18 @@ impl Enter {
         if unique {
             ctx.scope_enter(scope, tsym);
         }
-        self.result = Some(tvar);
+        self.result.set(Some(tvar));
         Ok(())
     }
 
     /// Java: public void visitModuleDef(JCModuleDecl tree)
     fn visit_module_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         _syms: &mut Symtab,
         tree: TreeId,
     ) -> Result<(), CompletionFailure> {
-        let env = self.env.clone().expect("env");
+        let env = self.env.borrow().clone().expect("env");
         let module_env = self.module_env(ctx, tree, &env);
         let module = module_tree_symbol(ctx, tree).expect("tree.sym");
         self.type_envs.borrow_mut().put(module, module_env.clone());
@@ -848,43 +873,48 @@ impl Enter {
     }
 
     /// Java: public void visitTree(JCTree tree) { result = null; }
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext) -> Result<(), CompletionFailure> {
-        self.result = None;
+    fn visit_tree(&self, _ctx: &mut CompilerContext) -> Result<(), CompletionFailure> {
+        self.result.set(None);
         Ok(())
     }
 
-    /// Java: public void main(List<JCCompilationUnit> trees)
+    /// Java: public void main(List<JCCompilationUnit> trees) (Enter.java:586-588).
     pub fn main(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         trees: List<TreeId>,
-    ) -> Vec<SymbolId> {
+    ) -> Result<(), CompletionFailure> {
         self.complete(ctx, syms, trees, None)
     }
 
     /// Java: public void complete(List<JCCompilationUnit> trees, ClassSymbol c)
+    /// (Enter.java:596-634).
     ///
-    /// PORTING_RULES adapter (registered): the upstream method drives
-    /// TypeEnter.complete / TypeEnter.ensureImportsChecked internally; the
-    /// Rust Enter is borrowed mutably by its caller while TypeEnter needs the
-    /// same Enter handle, so the uncompleted class list is returned and the
-    /// TypeEnter calls are performed by the JavaCompiler-level wiring
-    /// (mini_compiler), preserving the upstream order.
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - trees: the parsed compilation units;
+    ///   - c: the class to complete, or None for all classes.
+    ///
+    /// # Returns
+    ///   - the result of the class completion loop.
+    ///
+    /// # Panics
+    ///   - the TypeEnter service must be installed when completion is enabled.
     pub fn complete(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         trees: List<TreeId>,
-        _c: Option<SymbolId>,
-    ) -> Vec<SymbolId> {
+        c: Option<SymbolId>,
+    ) -> Result<(), CompletionFailure> {
         // Java: annotate.blockAnnotations(); the test harnesses that drive Enter
         // without the annotation service skip the block/unblock pair (adapter).
         let annotate = self.annotate.borrow().clone();
         if let Some(annotate) = &annotate {
             annotate.block_annotations();
         }
-        let prev_uncompleted = self.uncompleted.take();
+        let mut prev_uncompleted = self.uncompleted.borrow_mut().take();
         let completion_enabled = self
             .type_enter
             .borrow()
@@ -892,21 +922,91 @@ impl Enter {
             .map(|type_enter| type_enter.borrow().completion_enabled)
             .unwrap_or(false);
         if completion_enabled {
-            self.uncompleted = Some(Vec::new());
+            *self.uncompleted.borrow_mut() = Some(Vec::new());
         }
-        // enter all classes, and construct uncompleted list
-        let _ = self.class_enter_list(ctx, syms, trees, None);
-        let queued = self.uncompleted.take().unwrap_or_default();
-        self.uncompleted = prev_uncompleted;
+        let result: Result<(), CompletionFailure> = (|| {
+            // enter all classes, and construct uncompleted list
+            let _ = self.class_enter_list(ctx, syms, trees.clone(), None);
+            if completion_enabled {
+                // Java: while (uncompleted.nonEmpty()) { ... }
+                loop {
+                    let clazz = {
+                        let mut uncompleted = self.uncompleted.borrow_mut();
+                        match uncompleted.as_mut() {
+                            Some(list) if !list.is_empty() => Some(list.remove(0)),
+                            _ => None,
+                        }
+                    };
+                    let Some(clazz) = clazz else { break };
+                    // Java: if (c == null || c == clazz || prevUncompleted ==
+                    // null) clazz.complete(); else prevUncompleted.append(clazz);
+                    if c.is_none() || c == Some(clazz) || prev_uncompleted.is_none() {
+                        if let Err(failure) = ctx.complete_class_symbol(syms, clazz) {
+                            self.chk.borrow().completion_error(
+                                ctx,
+                                crate::util::position::NOPOS,
+                                &failure,
+                                syms,
+                            );
+                        }
+                    } else if let Some(prev) = prev_uncompleted.as_mut() {
+                        prev.push(clazz);
+                    }
+                }
+                // Java: if (!modules.modulesInitialized()) { ... }
+                // with the actual Modules service when installed.
+                let modules = self.modules.borrow().clone();
+                let modules_initialized = modules
+                    .as_ref()
+                    .map(|modules| modules.modules_initialized())
+                    .unwrap_or(false);
+                if !modules_initialized {
+                    let mut current = trees;
+                    while current.non_empty() {
+                        let tree = *current.head();
+                        current = current.tail();
+                        if tree_info::get_module(ctx, tree).is_some() {
+                            self.unfinished_modules.borrow_mut().push(tree);
+                        } else {
+                            self.ensure_imports_checked(ctx, syms, List::of(tree));
+                        }
+                    }
+                } else {
+                    let unfinished =
+                        List::from_iterable(self.unfinished_modules.borrow_mut().drain(..));
+                    self.ensure_imports_checked(ctx, syms, unfinished);
+                    self.ensure_imports_checked(ctx, syms, trees);
+                }
+            }
+            Ok(())
+        })();
+        *self.uncompleted.borrow_mut() = prev_uncompleted;
         if let Some(annotate) = &annotate {
             annotate
                 .unblock_annotations(ctx)
                 .expect("unblockAnnotations flush");
         }
-        queued
+        result
     }
 
-    pub fn new_round(&mut self) {
+    /// Java: typeEnter.ensureImportsChecked(trees) (Enter.java:621/625/627).
+    fn ensure_imports_checked(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        trees: List<TreeId>,
+    ) {
+        let type_enter = self
+            .type_enter
+            .borrow()
+            .clone()
+            .expect("AssertionError: TypeEnter must be installed");
+        type_enter
+            .borrow_mut()
+            .ensure_imports_checked(ctx, syms, trees);
+    }
+
+    pub fn new_round(&self) {
         self.type_envs.borrow_mut().clear();
     }
 
@@ -914,7 +1014,7 @@ impl Enter {
     /// (Enter.java:640-663): the UnenterScanner removes the entered class
     /// symbols below the tree and their type environments.
     pub fn unenter(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut crate::code::symtab::Symtab,
         top_level: TreeId,
@@ -926,7 +1026,7 @@ impl Enter {
 
     /// Java: class UnenterScanner extends TreeScanner (Enter.java:643-663).
     fn unenter_scan(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &mut crate::code::symtab::Symtab,
         module: SymbolId,
@@ -1026,7 +1126,7 @@ fn set_compilation_unit_scopes(
 /// Java: JCCompilationUnit.getPackage() — the local tree keeps the package
 /// declaration in defs (upstream has the dedicated pid field; registered
 /// adapter: scan defs for the PACKAGEDEF entry).
-fn compilation_unit_package_decl(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
+pub(crate) fn compilation_unit_package_decl(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
     let mut defs = compilation_unit_defs(ctx, tree);
     while defs.non_empty() {
         let def = *defs.head();
@@ -1045,7 +1145,7 @@ fn compilation_unit_doc_comments(ctx: &CompilerContext, tree: TreeId) -> bool {
     }
 }
 
-fn package_decl_pid(ctx: &CompilerContext, pd: TreeId) -> Option<TreeId> {
+pub(crate) fn package_decl_pid(ctx: &CompilerContext, pd: TreeId) -> Option<TreeId> {
     match &ctx.tree(pd).kind {
         TreeKind::PackageDecl { pid, .. } => *pid,
         _ => None,
@@ -1719,5 +1819,23 @@ fn package_fullname_of(ctx: &CompilerContext, sym: SymbolId) -> crate::util::nam
         crate::code::symbol::SymbolKind::PackageSymbol { fullname, .. }
         | crate::code::symbol::SymbolKind::RootPackageSymbol { fullname, .. } => fullname.clone(),
         _ => ctx.sym(sym).name.clone(),
+    }
+}
+
+/// Java: the TypeEnter completer installed as ClassSymbol.completer
+/// (Enter.java:523). The local TypeEnter is a shared RefCell service.
+struct TypeEnterCompleter {
+    type_enter: Rc<RefCell<crate::comp::type_enter::TypeEnter>>,
+}
+
+impl crate::code::symbol::Completer for TypeEnterCompleter {
+    fn complete(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        sym: SymbolId,
+    ) -> Result<(), CompletionFailure> {
+        self.type_enter.borrow_mut().complete(ctx, syms, sym);
+        Ok(())
     }
 }

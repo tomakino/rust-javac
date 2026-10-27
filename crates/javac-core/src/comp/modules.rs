@@ -10,19 +10,15 @@
 //!   shared as Rc<Modules> and its mutable Java fields are RefCell/Cell values,
 //!   so the completed Symbol.completer callbacks can re-enter the module graph
 //!   without a RefCell borrow of the whole service (registered adapter);
-//! - JNIWriter.multiModuleMode is not set (JNIWriter is not ported yet;
-//!   registered NOT PORTED in this file);
+//! - ClassWriter/JNIWriter multiModuleMode are installed by the bootstrap
+//!   (Modules.java:204-207; JNIWriter is ported in jvm/jni_writer.rs);
 //! - getUsesProvidesCompleter/UsesProvidesVisitor are ported (Modules.java:
 //!   967-1211) together with the Check deprecated/preview/module-requires/
 //!   opens checks they use.
 //!
 //! NOT PORTED IN THIS FILE:
-//! - JNIWriter.multiModuleMode assignment (Modules.java:206-207): JNIWriter is
-//!   not ported (registered dependency); ClassWriter.multiModuleMode is set by
-//!   the bootstrap;
-//! - findPackageInFile (JavaCompiler.java:414/1741) is installed by wiring in
-//!   the JavaCompiler batch; until then UsesProvidesVisitor.visitExports
-//!   requires it for source modules (JavaCompiler.parse is not ported yet).
+//! - (none: findPackageInFile is installed by the mini compiler and
+//!   JNIWriter.multiModuleMode is wired by the bootstrap).
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -71,8 +67,14 @@ use crate::util::options::Options;
 
 /// Java: interface Modules.PackageNameFinder (Modules.java:1816-1818).
 pub trait PackageNameFinder {
-    /// Java: Name findPackageNameOf(JavaFileObject jfo)
-    fn find_package_name_of(&self, jfo: &dyn JavaFileObject) -> Option<Name>;
+    /// Java: Name findPackageNameOf(JavaFileObject jfo) (the JavaCompiler
+    /// method that owns the parser context is installed as the finder; the
+    /// explicit context is the port's service-injection adapter).
+    fn find_package_name_of(
+        &self,
+        ctx: &mut CompilerContext,
+        jfo: &JavaFileObjectRef,
+    ) -> Option<Name>;
 }
 
 const ALL_SYSTEM: &str = "ALL-SYSTEM";
@@ -2946,7 +2948,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                 .borrow()
                 .clone()
                 .expect("AssertionError: findPackageInFile");
-            if finder.find_package_name_of(jfo.as_ref()) == Some(package_fullname(self.ctx, packge)) {
+            if finder.find_package_name_of(self.ctx, &jfo) == Some(package_fullname(self.ctx, packge)) {
                 package_not_empty = true;
                 break;
             }

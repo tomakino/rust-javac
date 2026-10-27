@@ -483,7 +483,7 @@ impl TypeEnter {
         if let Some(package_decl) = compilation_unit_package_decl(ctx, toplevel(env))
             && package_decl_is_non_null(ctx, package_decl) {
                 let mut p = compilation_unit_package(ctx, toplevel(env)).expect("packge");
-                let root = ctx.sym(syms.root_package).owner;
+                let root = Some(syms.root_package);
                 loop {
                     let owner = ctx.sym(p).owner;
                     if owner == root || owner.is_none() {
@@ -580,9 +580,9 @@ impl TypeEnter {
                 self.chk.borrow().check_canonical(ctx, selected);
             }
             if import_static_import(ctx, tree) {
-                self.import_static_all(ctx, tree, p, &env);
+                self.import_static_all(ctx, syms, tree, p, &env);
             } else {
-                self.import_all(ctx, tree, p, &env);
+                self.import_all(ctx, syms, tree, p, &env);
             }
         } else if import_static_import(ctx, tree) {
             // Named static import.
@@ -668,10 +668,21 @@ impl TypeEnter {
     fn import_all(
         &mut self,
         ctx: &mut CompilerContext,
+        syms: &mut Symtab,
         _tree: TreeId,
         tsym: SymbolId,
         env: &Rc<Env<AttrContext>>,
     ) {
+        // Java: Symbol.members() completes the symbol (Symbol.java:870-873);
+        // the port performs the completion explicitly.
+        if let Err(failure) = ctx.complete_symbol(syms, tsym) {
+            self.chk.borrow().completion_error(
+                ctx,
+                ctx.tree(_tree).pos,
+                &failure,
+                syms,
+            );
+        }
         let star_scope = compilation_unit_star_import_scope(ctx, toplevel(env)).expect("star scope");
         // Java: tsym.members() (works for packages and classes).
         let origin = ctx.sym(tsym).members().expect("type members");
@@ -695,10 +706,20 @@ impl TypeEnter {
     fn import_static_all(
         &mut self,
         ctx: &mut CompilerContext,
+        syms: &mut Symtab,
         tree: TreeId,
         tsym: SymbolId,
         env: &Rc<Env<AttrContext>>,
     ) {
+        // Java: TypeSymbol.members() completes the symbol (Symbol.java:870-873).
+        if let Err(failure) = ctx.complete_symbol(syms, tsym) {
+            self.chk.borrow().completion_error(
+                ctx,
+                ctx.tree(tree).pos,
+                &failure,
+                syms,
+            );
+        }
         let star_scope = compilation_unit_star_import_scope(ctx, toplevel(env)).expect("star scope");
         let origin = class_members_scope(ctx, tsym).expect("type members");
         let filter = self.static_import_filter.clone();
@@ -795,7 +816,7 @@ impl TypeEnter {
             let qual = make.qual_ident(ctx, java_lang);
             make.import(ctx, qual, false)
         };
-        self.import_all(ctx, imp, java_lang, env);
+        self.import_all(ctx, syms, imp, java_lang, env);
     }
     /// Java: Check.checkImportsUnique(toplevel) (Check.java:3793-3820).
     fn check_imports_unique(

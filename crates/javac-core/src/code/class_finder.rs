@@ -692,11 +692,16 @@ impl ClassFinder {
             }
         }
         let module = match &ctx.sym(p).kind_data {
-            SymData::PackageSymbol { modle, .. } => modle.expect("package module"),
-            _ => panic!("package expected"),
+            SymData::PackageSymbol { modle, .. }
+            | SymData::RootPackageSymbol { modle, .. } => modle.expect("package module"),
+            _ => panic!(
+                "package expected: {} kind {:?}",
+                ctx.sym(p).name.to_java_string().to_string_lossy(),
+                ctx.sym(p).kind
+            ),
         };
-        // Java: msym.complete(); — the module completer comes from Modules, which
-        // is not ported yet (registered TODO).
+        // Java: msym.complete(); (ClassFinder.java:352).
+        ctx.complete_symbol(syms, module)?;
         if module == syms.no_module {
             self.prefer_current.set(false);
             if self.user_paths_first {
@@ -732,6 +737,7 @@ impl ClassFinder {
         let want_source_files = !source_kinds.is_empty();
         let package_name = package_fullname(ctx, p);
         let class_locn = module_class_location(ctx, msym);
+
         let source_locn = module_source_location(ctx, msym);
         let patch_locn = module_patch_location(ctx, msym);
         let patch_out_locn = module_patch_output_location(ctx, msym);
@@ -1469,7 +1475,8 @@ mod tests {
         let java_base = syms.java_base;
         // Test bootstrap: the upstream Modules sets the system module locations;
         // The platform class location is installed by the bootstrap; the
-// Modules.initModules entry point is wired in the JavaCompiler batch, so the
+// The mini compiler calls Modules.initModules (JavaCompiler.initModules
+// equivalent) at the start of every compile, so the
         // here (registered adapter, see the registration).
         if let SymbolKind::ModuleSymbol { class_location, .. } =
             &mut ctx.sym_mut(java_base).kind_data

@@ -17,8 +17,6 @@ use std::rc::Rc;
 
 use javac_fs::Path as FsPath;
 use javac_tools::tools::java_file_manager::{JavaFileManager, JavaFileObjectRef};
-use javac_tools::tools::simple_java_file_object::SimpleJavaFileObject;
-use javac_tools::uri::URI;
 use javac_tools::tools::standard_java_file_manager::StandardJavaFileManager;
 use javac_tools::tools::standard_location::StandardLocation;
 
@@ -40,6 +38,7 @@ use crate::comp::infer::Infer;
 use crate::comp::lower::Lower;
 use crate::comp::member_enter::MemberEnter;
 use crate::comp::modules::Modules;
+use crate::tree::tree_maker::TreeFactory;
 use crate::comp::operators::Operators;
 use crate::comp::resolve::Resolve;
 use crate::comp::todo::Todo;
@@ -57,6 +56,7 @@ use crate::file::javac_file_manager::JavacFileManager;
 use crate::jvm::class_reader::ClassReader;
 use crate::jvm::class_writer::ClassWriter;
 use crate::jvm::codegen::Gen;
+use crate::jvm::jni_writer::JNIWriter;
 use crate::jvm::pool_writer::PoolWriter;
 use crate::jvm::profile::Profile;
 use crate::jvm::target::Target;
@@ -112,7 +112,7 @@ pub struct MiniCompiler {
     /// The tree factory.
     pub make: Rc<RefCell<TreeMaker>>,
     /// The parser factory.
-    pub parser_factory: crate::parser::parser_factory::ParserFactory,
+    pub parser_factory: Rc<crate::parser::parser_factory::ParserFactory>,
     /// The file manager.
     pub file_manager: Rc<JavacFileManager>,
     /// The deferred lint handler.
@@ -157,6 +157,8 @@ pub struct MiniCompiler {
     pub generator: Rc<RefCell<Gen>>,
     /// The class writer.
     pub writer: Rc<RefCell<ClassWriter>>,
+    /// The native-header writer.
+    pub jni_writer: Rc<JNIWriter>,
     /// The constant pool writer.
     pub pool_writer: Rc<RefCell<PoolWriter>>,
     /// The todo list.
@@ -291,6 +293,31 @@ impl MiniCompiler {
             Rc::clone(&todo),
         )));
         *enter.borrow().type_enter.borrow_mut() = Some(Rc::clone(&type_enter));
+        // Java: Enter constructor builds predefClassDef from
+        // Symtab.predefClass (Enter.java:130-134).
+        {
+            let predef = syms.borrow().predef_class;
+            let (def, predef_ty) = {
+                let mut maker = make.borrow_mut();
+                let mods = maker.modifiers(&mut ctx, crate::code::flags::PUBLIC as i64);
+                let name = ctx.sym(predef).name.clone();
+                let def = maker.class_def(
+                    &mut ctx,
+                    mods,
+                    name,
+                    List::nil(),
+                    None,
+                    List::nil(),
+                    List::nil(),
+                );
+                (def, ctx.sym(predef).ty)
+            };
+            ctx.tree_mut(def).ty = predef_ty;
+            if let TreeKind::ClassDecl { sym, .. } = &mut ctx.tree_mut(def).kind {
+                *sym = Some(predef);
+            }
+            enter.borrow_mut().set_predef_class(def);
+        }
         let infer = Infer::new(
             &mut ctx,
             crate::code::source::Feature::GRAPH_INFERENCE.allowed_in_source(source),
@@ -456,7 +483,7 @@ impl MiniCompiler {
             )
         });
         // Java: Modules constructor installs the ClassWriter multi-module mode
-        // (Modules.java:204-205); JNIWriter is not ported (NOT PORTED).
+        // (Modules.java:204-205).
         writer.borrow_mut().multi_module_mode = modules.multi_module_mode;
         // Java: Check constructor obtains Preview.instance(context)
         // (Check.java:99/143); the ported Preview is created above, so the
@@ -481,13 +508,29 @@ impl MiniCompiler {
             Rc::clone(&names),
             source,
         );
-        let parser_factory = crate::parser::parser_factory::ParserFactory::new(
+        let parser_factory = Rc::new(crate::parser::parser_factory::ParserFactory::new(
             &mut parser_context,
             Rc::clone(&names),
             source,
             scanner_factory,
             None,
+        ));
+        // Java: Modules constructor obtains ClassWriter/JNIWriter and installs
+        // multiModuleMode (Modules.java:204-207).
+        let mut jni_writer = JNIWriter::new(
+            &options,
+            Rc::clone(&file_manager) as Rc<dyn JavaFileManager>,
+            Rc::clone(&log),
+            Rc::clone(&types),
         );
+        jni_writer.multi_module_mode = modules.multi_module_mode;
+        let jni_writer = Rc::new(jni_writer);
+        // Java: modules.findPackageInFile = this::findPackageInFile
+        // (JavaCompiler.java:414).
+        *modules.find_package_in_file.borrow_mut() = Some(Rc::new(MiniPackageNameFinder {
+            parser_factory: Rc::clone(&parser_factory),
+            log: Rc::clone(&log),
+        }));
         let mut compiler = MiniCompiler {
             ctx,
             util_context,
@@ -526,6 +569,7 @@ impl MiniCompiler {
             lower,
             generator,
             writer,
+            jni_writer,
             pool_writer,
             todo,
             out_dir: out_dir.to_path_buf(),
@@ -541,8 +585,8 @@ impl MiniCompiler {
     /// module, whose class location is the SYSTEM_MODULES[java.base] location;
     /// the unnamed module reads every java.base package and its class location
     /// is CLASS_PATH (Modules.java:440-500; the Modules service is wired but the
-    /// JavaCompiler.initModules entry point is wired in a later batch, so this
-    /// bootstrap adapter remains registered).
+    /// compile_files calls Modules.initModules (JavaCompiler.initModules
+    /// equivalent), so this constructor bootstrap remains the initial adapter).
     fn bootstrap_modules(&mut self) {
         let java_base = self.syms.borrow().java_base;
         let unnamed = self.syms.borrow().unnamed_module;
@@ -550,6 +594,7 @@ impl MiniCompiler {
         let module_location_result = self
             .file_manager
             .get_location_for_module(&*system_modules, &js("java.base"));
+
         if let Ok(module_location) = module_location_result
             && let crate::code::symbol::SymbolKind::ModuleSymbol {
                 class_location, ..
@@ -634,29 +679,31 @@ impl MiniCompiler {
         for path in source_paths {
             roots.push(self.parse_file(path)?);
         }
-        // JavaCompiler.initModules is wired in the JavaCompiler batch; the single
-        // module bootstrap above remains the registered adapter here.
-        let root_list = List::from_iterable(roots.iter().copied());
-        let queued = {
-            let syms = Rc::clone(&self.syms);
-            let mut syms = syms.borrow_mut();
-            self.enter
-                .borrow_mut()
-                .main(&mut self.ctx, &mut syms, root_list.clone())
-        };
-        for clazz in queued {
-            let syms = Rc::clone(&self.syms);
-            let mut syms = syms.borrow_mut();
-            self.type_enter
-                .borrow_mut()
-                .complete(&mut self.ctx, &mut syms, clazz);
-        }
+        // JavaCompiler.initModules (JavaCompiler.java:1020-1026).
         {
-            let syms = Rc::clone(&self.syms);
-            let mut syms = syms.borrow_mut();
-            self.type_enter
-                .borrow_mut()
-                .ensure_imports_checked(&mut self.ctx, &mut syms, root_list);
+            let syms_rc = Rc::clone(&self.syms);
+            let mut syms = syms_rc.borrow_mut();
+            self.modules
+                .init_modules(&mut self.ctx, &mut syms, &roots);
+        }
+
+        // JavaCompiler.enterTrees -> enter.main (JavaCompiler.java:1033-1044).
+        let root_list = List::from_iterable(roots.iter().copied());
+        {
+            let syms_rc = Rc::clone(&self.syms);
+            let mut syms = syms_rc.borrow_mut();
+            if let Err(failure) = self
+                .enter
+                .borrow()
+                .main(&mut self.ctx, &mut syms, root_list.clone())
+            {
+                self.chk.borrow().completion_error(
+                    &mut self.ctx,
+                    crate::util::position::NOPOS,
+                    &failure,
+                    &mut syms,
+                );
+            }
         }
         // JavaCompiler.attribute(todo)
         let mut envs: Vec<Rc<Env<AttrContext>>> = Vec::new();
@@ -731,22 +778,30 @@ impl MiniCompiler {
                 .map_err(|error| format!("cannot resolve the current directory: {error}"))?
                 .join(path)
         };
-        let content = std::fs::read_to_string(&absolute)
-            .map_err(|error| format!("cannot read {}: {error}", absolute.display()))?;
-        let uri_text = format!("file:///{}", absolute.to_string_lossy().replace('\\', "/"));
-        let sourcefile: JavaFileObjectRef = Rc::new(SimpleJavaFileObject::new(
-            URI::create(&javac_strings::JavaString::from(uri_text.as_str())),
-            javac_tools::tools::java_file_object::Kind::SOURCE,
-        ));
+        // JavaCompiler.parseFiles: fileManager.getJavaFileObjectsFromFiles
+        // (the file-manager PathFileObjects are required by the later
+        // isSameFile/asPath module-source-path queries).
+        let sourcefile: JavaFileObjectRef = self
+            .file_manager
+            .get_java_file_objects_from_files(&[absolute.clone()])
+            .into_iter()
+            .next()
+            .ok_or_else(|| format!("cannot open {}", absolute.display()))?;
+        let content = sourcefile
+            .get_char_content(false)
+            .map_err(|error| format!("cannot read {}: {error:?}", absolute.display()))?
+            .ok_or_else(|| format!("cannot read {}", absolute.display()))?;
         let prev_source = self.log.borrow_mut().use_source(Some(Rc::clone(&sourcefile)));
+        let module_info = sourcefile
+            .is_name_compatible(&javac_strings::JavaString::from("module-info"), javac_tools::tools::java_file_object::Kind::SOURCE);
         let result = {
             let mut parser = self.parser_factory.new_parser_full(
                 &mut self.ctx,
-                &javac_strings::JavaString::from(content.as_str()),
+                &content,
                 false,
                 false,
                 false,
-                false,
+                module_info,
             );
             parser.parse_compilation_unit(&mut self.ctx)
         };
@@ -757,13 +812,8 @@ impl MiniCompiler {
         {
             *slot = Some(Rc::clone(&sourcefile));
         }
-        // JavaCompiler.initModules -> Modules sets tree.modle to the default
-        // module; for a non-modular compilation that is the unnamed module
-        // (Modules.java:440-500; registered adapter).
-        let unnamed = self.syms.borrow().unnamed_module;
-        if let TreeKind::CompilationUnit { modle: slot, .. } = &mut self.ctx.tree_mut(result).kind {
-            *slot = Some(unnamed);
-        }
+        // JavaCompiler.parse does not set tree.modle; JavaCompiler.initModules
+        // (Modules.initModules) selects the module for every tree.
         Ok(result)
     }
 
@@ -816,6 +866,25 @@ impl MiniCompiler {
             TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
             _ => return Err("class definition without a symbol".to_string()),
         };
+        // Java: if (fileManager.hasLocation(NATIVE_HEADER_OUTPUT) &&
+        // jniWriter.needsHeader(cdef.sym)) jniWriter.write(cdef.sym)
+        // (JavaCompiler.java:1616-1619).
+        let native_header_output =
+            StandardLocation::location_for(&js("NATIVE_HEADER_OUTPUT"));
+        if self.file_manager.has_location(&*native_header_output) {
+            let needs_header = {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms = syms_rc.borrow();
+                self.jni_writer.needs_header(&mut self.ctx, &syms, c)
+            };
+            if needs_header {
+                let syms_rc = Rc::clone(&self.syms);
+                let syms = syms_rc.borrow();
+                self.jni_writer
+                    .write(&mut self.ctx, &syms, c)
+                    .map_err(|error| format!("native header writer error: {error}"))?;
+            }
+        }
         self.generator
             .borrow_mut()
             .gen_class(&mut self.ctx, env, classdef);
@@ -881,3 +950,44 @@ fn self_set_initial_completer(
     syms.borrow_mut()
         .set_initial_completer(ctx, finder.get_completer_factory());
 }
+
+/// Java: JavaCompiler.findPackageInFile (JavaCompiler.java:1741-1770), wired
+/// into Modules.findPackageInFile (JavaCompiler.java:414). The Rust finder
+/// receives the compiler context explicitly because the adapter is a shared
+/// service object rather than a compiler method (registered adapter).
+struct MiniPackageNameFinder {
+    parser_factory: Rc<crate::parser::parser_factory::ParserFactory>,
+    log: Rc<RefCell<Log>>,
+}
+
+impl crate::comp::modules::PackageNameFinder for MiniPackageNameFinder {
+    fn find_package_name_of(
+        &self,
+        ctx: &mut CompilerContext,
+        jfo: &javac_tools::tools::java_file_manager::JavaFileObjectRef,
+    ) -> Option<crate::util::name::Name> {
+        // Java: DiagnosticHandler dh = new DiscardDiagnosticHandler(log);
+        self.log
+            .borrow_mut()
+            .install_diagnostic_handler(crate::util::log::DiagnosticHandler::Discard { prev: None });
+        // Java: JavaFileObject prevSource = log.useSource(fo);
+        let prev_source = self.log.borrow_mut().use_source(Some(Rc::clone(jfo)));
+        let result = (|| {
+            let content = jfo.get_char_content(false).ok().flatten()?;
+            let module_info = jfo
+                .is_name_compatible(&javac_strings::JavaString::from("module-info"), javac_tools::tools::java_file_object::Kind::SOURCE);
+            let mut parser =
+                self.parser_factory
+                    .new_parser_full(ctx, &content, false, false, false, module_info);
+            let tree = parser.parse_compilation_unit(ctx);
+            let pd = crate::comp::enter::compilation_unit_package_decl(ctx, tree)?;
+            let pid = crate::comp::enter::package_decl_pid(ctx, pd)?;
+            crate::tree::tree_info::full_name(ctx, pid)
+        })();
+        // Java: log.popDiagnosticHandler(dh); log.useSource(prevSource);
+        self.log.borrow_mut().pop_diagnostic_handler();
+        self.log.borrow_mut().use_source(prev_source);
+        result
+    }
+}
+

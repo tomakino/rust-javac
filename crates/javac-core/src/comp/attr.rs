@@ -10682,6 +10682,7 @@ pub fn wire_attr_services(
         let mut maker = make.borrow_mut();
         maker.types = Some(Rc::clone(&types));
         maker.syms = Some(Rc::clone(&syms));
+        maker.root_package = Some(syms.borrow().root_package);
     }
     // 1. Resolve (Resolve.java:120-200)
     let rs = Rc::new(RefCell::new(crate::comp::resolve::Resolve::new(
@@ -15387,6 +15388,7 @@ mod tests {
             let mut maker = make.borrow_mut();
             maker.types = Some(Rc::clone(&types));
             maker.syms = Some(Rc::clone(&syms));
+            maker.root_package = Some(syms.borrow().root_package);
         }
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let todo = crate::comp::todo::Todo::instance(&mut context);

@@ -129,12 +129,13 @@ pub enum Option {
     MODULE_VERSION,
     AT,
     SOURCEFILE,
+    H,
     MULTIRELEASE,
 }
 
 impl Option {
     /// Java: Option.values() (the trimmed constants are absent, see the header).
-    pub fn values() -> [Option; 41] {
+    pub fn values() -> [Option; 42] {
         [
             Option::G,
             Option::G_NONE,
@@ -176,6 +177,7 @@ impl Option {
             Option::MODULE_VERSION,
             Option::AT,
             Option::SOURCEFILE,
+            Option::H,
             Option::MULTIRELEASE,
         ]
     }
@@ -186,6 +188,7 @@ impl Option {
             Option::G => &["-g"],
             Option::G_NONE => &["-g:none"],
             Option::G_CUSTOM => &["-g:"],
+            Option::H => &["-h"],
             Option::XLINT => &["-Xlint"],
             Option::XLINT_CUSTOM => &["-Xlint:"],
             Option::NOWARN => &["-nowarn"],
@@ -269,6 +272,7 @@ impl Option {
             Option::G => Some("opt.g"),
             Option::G_NONE => Some("opt.g.none"),
             Option::G_CUSTOM => Some("opt.g.lines.vars.source"),
+            Option::H => Some("opt.headerDest"),
             Option::XLINT => Some("opt.Xlint"),
             Option::XLINT_CUSTOM => Some("opt.Xlint.custom"),
             Option::NOWARN => Some("opt.nowarn"),
@@ -339,7 +343,8 @@ impl Option {
             | Option::MODULE
             | Option::ADD_MODULES
             | Option::LIMIT_MODULES
-            | Option::MODULE_VERSION => OptionKind::STANDARD,
+            | Option::MODULE_VERSION
+            | Option::H => OptionKind::STANDARD,
             Option::XLINT
             | Option::XLINT_CUSTOM
             | Option::PATCH_MODULE
@@ -392,7 +397,8 @@ impl Option {
             | Option::PATCH_MODULE
             | Option::D
             | Option::ENCODING
-            | Option::MULTIRELEASE => OptionGroup::FILEMANAGER,
+            | Option::MULTIRELEASE
+            | Option::H => OptionGroup::FILEMANAGER,
             Option::VERSION
             | Option::FULLVERSION
             | Option::HELP
@@ -956,11 +962,11 @@ mod tests {
     #[test]
     fn kept_options_are_complete_and_in_declaration_order() {
         let values = Option::values();
-        assert_eq!(values.len(), 41);
+        assert_eq!(values.len(), 42);
         assert_eq!(values[0], Option::G);
         assert_eq!(values[values.len() - 1], Option::MULTIRELEASE);
-        // 83 upstream constants - 41 kept = 42 trimmed (see the file header).
-        assert_eq!(41 + 42, 83);
+        // 83 upstream constants - 42 kept = 41 trimmed (see the file header).
+        assert_eq!(42 + 41, 83);
     }
 
     #[test]
@@ -1023,11 +1029,11 @@ mod tests {
         let tool = Option::get_javac_tool_options();
         let file_manager = Option::get_javac_file_manager_options();
         assert_eq!(tool.len(), 25);
-        assert_eq!(file_manager.len(), 10);
+        assert_eq!(file_manager.len(), 11);
         assert!(tool.iter().all(|option| !file_manager.contains(option)));
         // BASIC + FILEMANAGER + INFO = all kept options.
-        assert_eq!(tool.len() + file_manager.len(), 35);
-        assert_eq!(Option::get_java_compiler_options().len(), 41);
+        assert_eq!(tool.len() + file_manager.len(), 36);
+        assert_eq!(Option::get_java_compiler_options().len(), 42);
         assert!(Option::get_java_compiler_options().contains(&Option::VERSION));
         assert!(Option::get_java_compiler_options().contains(&Option::SOURCEFILE));
         assert_eq!(Option::get_javac_file_manager_options()[0], Option::CLASS_PATH);
@@ -1155,7 +1161,6 @@ mod tests {
             "-processorpath",
             "--processor-module-path",
             "-Akey=value",
-            "-h",
             "-s",
             "-J-Xmx1g",
             "-Xdoclint",

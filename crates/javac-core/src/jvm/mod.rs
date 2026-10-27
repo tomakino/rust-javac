@@ -7,6 +7,7 @@ pub mod class_file;
 pub mod class_writer;
 pub mod cr_table;
 pub mod items;
+pub mod jni_writer;
 pub mod crt_flags;
 pub mod class_reader;
 pub mod module_name_reader;

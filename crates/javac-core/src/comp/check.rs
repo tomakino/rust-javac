@@ -6439,8 +6439,8 @@ impl Check {
             (Some(module), Some(packge)) => (module, packge),
             _ => return,
         };
-        let unnamed = self.syms.borrow().unnamed_module;
-        let no_module = self.syms.borrow().no_module;
+        let unnamed = syms.unnamed_module;
+        let no_module = syms.no_module;
         if module == unnamed || module == no_module {
             return;
         }

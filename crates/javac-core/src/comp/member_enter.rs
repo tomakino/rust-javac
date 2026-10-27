@@ -114,7 +114,7 @@ impl MemberEnter {
         env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
         // Enter and attribute type parameters.
-        let tvars = self.enter.borrow_mut().class_enter_list(
+        let tvars = self.enter.borrow().class_enter_list(
             ctx,
             syms,
             typarams.clone(),
