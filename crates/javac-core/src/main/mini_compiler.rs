@@ -185,6 +185,26 @@ impl MiniCompiler {
     /// # Panics
     ///   - a service invariant is violated.
     pub fn new(out_dir: &Path) -> MiniCompiler {
+        MiniCompiler::new_with_options(out_dir, |_| {})
+    }
+
+    /// Java: the Arguments/Options configuration step (JavaCompiler options are
+    /// processed before Lint.instance(Context) reads the -Xlint categories).
+    ///
+    /// # Arguments
+    ///   - out_dir: the CLASS_OUTPUT directory;
+    ///   - configure: installs options on the shared Options service before Lint
+    ///     and the other services are created.
+    ///
+    /// # Returns
+    ///   - the wired compiler.
+    ///
+    /// # Panics
+    ///   - a service invariant is violated.
+    pub fn new_with_options(
+        out_dir: &Path,
+        configure: impl FnOnce(&Options),
+    ) -> MiniCompiler {
         let mut util_context = UtilContext::new();
         let messages = JavacMessages::instance(&mut util_context);
         let diags = Rc::new(Factory::new(messages, "compiler"));
@@ -192,6 +212,7 @@ impl MiniCompiler {
         let names = Rc::new(Names::new(false));
         util_context.put(Rc::clone(&names));
         let options = Options::instance(&mut util_context);
+        configure(&options);
         let lint = Lint::instance(&mut util_context);
         let preview = Preview::instance(&mut util_context);
         let source = Source::JDK17;
@@ -255,6 +276,9 @@ impl MiniCompiler {
             Rc::clone(&syms),
         )));
         crate::comp::check::attach_self(&chk);
+        chk.borrow()
+            .set_file_manager(Rc::clone(&file_manager) as Rc<dyn JavaFileManager>);
+        chk.borrow().set_profile(Rc::clone(&profile));
         let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
         let enter = Rc::new(RefCell::new(Enter::new(
             Rc::clone(&log),
@@ -363,6 +387,7 @@ impl MiniCompiler {
             .clone()
             .expect("resolve service installed");
         util_context.put::<RefCell<Resolve>>(Rc::clone(&resolve));
+        chk.borrow().set_resolve(Rc::clone(&resolve));
         let operators = Rc::clone(&attr.borrow().operators);
         let flow = attr
             .borrow()

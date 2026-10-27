@@ -3986,7 +3986,6 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         req: TypeId,
         warn: &mut crate::util::warner::Warner,
     ) -> bool {
-        let _ = warn;
         let mut found = found;
         let mut req = req;
         if let Some(pending) = &self.pending_inference {
@@ -4004,9 +4003,9 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         let found = inference_context.as_undet_var(ctx, syms, types, found);
         let req = inference_context.as_undet_var(ctx, syms, types, req);
         if self.strict {
-            types.is_subtype_unchecked(ctx, syms, found, req)
+            types.is_subtype_unchecked_with_warn(ctx, syms, found, req, warn)
         } else {
-            types.is_convertible(ctx, syms, found, req)
+            types.is_convertible_with_warn(ctx, syms, found, req, warn)
         }
     }
 
@@ -5239,9 +5238,18 @@ impl AbstractMethodCheck for ResolveMethodCheck {
                 let _ = ctx.complete_symbol(syms, tsym);
             }
         }
-        mresult
-            .check(ctx, syms, types, attr, chk, &self.diags, pos, actual, warn)
-            .map(|_| ())
+        let result = mresult.check(ctx, syms, types, attr, chk, &self.diags, pos, actual, warn);
+        if warn.has_lint(crate::code::lint::LintCategory::VARARGS) {
+            // Java: ConversionWarner.warn VARARGS branch (Check.java:3961-3967);
+            // the ported Warner has no subclass, so the recorded lint is
+            // consumed after the compatibility check (registered adapter).
+            let warn_pos = warn
+                .pos()
+                .map(|position| position.get_preferred_position())
+                .unwrap_or(crate::util::position::NOPOS);
+            chk.warn_unsafe_varargs_param(ctx, syms, warn_pos);
+        }
+        result.map(|_| ())
     }
 }
 

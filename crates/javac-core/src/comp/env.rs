@@ -56,10 +56,23 @@ impl<A> Env<A> {
         })
     }
 
-    /// Java: public Env<A> dup(JCTree tree, A info)
+    /// Java: public Env<A> dup(JCTree tree, A info) — the upstream dupto
+    /// installs next = this; the port copies this environment node (shared info)
+    /// as the next link (registered adapter: the &self form cannot clone the
+    /// enclosing Rc).
     pub fn dup(&self, tree: Option<TreeId>, info: A) -> Rc<Env<A>> {
+        let next = Rc::new(Env {
+            next: self.next.clone(),
+            outer: self.outer.clone(),
+            tree: self.tree,
+            toplevel: self.toplevel,
+            encl_class: self.encl_class,
+            encl_method: self.encl_method,
+            info: Rc::clone(&self.info),
+            base_clause: self.base_clause,
+        });
         Rc::new(Env {
-            next: None,
+            next: Some(next),
             outer: self.outer.clone(),
             tree,
             toplevel: self.toplevel,
@@ -79,8 +92,18 @@ impl<A> Env<A> {
         info: A,
         outer: Option<Rc<Env<A>>>,
     ) -> Rc<Env<A>> {
+        let next = Rc::new(Env {
+            next: self.next.clone(),
+            outer: self.outer.clone(),
+            tree: self.tree,
+            toplevel: self.toplevel,
+            encl_class: self.encl_class,
+            encl_method: self.encl_method,
+            info: Rc::clone(&self.info),
+            base_clause: self.base_clause,
+        });
         Rc::new(Env {
-            next: None,
+            next: Some(next),
             outer,
             tree,
             toplevel: self.toplevel,

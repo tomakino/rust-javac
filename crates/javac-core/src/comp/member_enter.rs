@@ -511,8 +511,12 @@ impl MemberEnter {
         }
         self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint);
         if (mods_flags & flags::VARARGS) != 0 {
-            // TODO(Types): replace the plain array type with
-            // atype.makeVarargs() (ArrayType.makeVarargs is not ported).
+            // Java: ArrayType atype = (ArrayType) tree.vartype.type;
+            //       tree.vartype.type = atype.makeVarargs();
+            let vartype = var_decl_vartype(ctx, tree).expect("varargs variable type");
+            let ty = ctx.tree(vartype).ty.expect("varargs array type");
+            let varargs_type = self.types.make_varargs(ctx, ty);
+            set_tree_type(ctx, vartype, varargs_type);
         }
         let encl_scope = self.enter.borrow().enter_scope(ctx, &env);
         let vartype = if is_implicitly_typed(ctx, tree) {

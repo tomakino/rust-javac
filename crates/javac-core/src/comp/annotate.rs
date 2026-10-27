@@ -121,19 +121,30 @@ impl AnnotationTypeMetadata {
         while ctx.sym(meta_data_for).completer.is_some() {
             ctx.complete_symbol(syms, meta_data_for)?;
         }
-        if let Some(completer) = self.annotation_type_completer.take() {
-            completer.borrow_mut().complete(ctx, &mut *syms, meta_data_for)?;
-            // adapter adapter: the upstream completer mutates the shared metadata
-            // object through ClassSymbol.getAnnotationTypeMetadata(); the port
-            // clones the metadata (Rust borrow rules, see Check), so mirror the
-            // completer-written fields into this copy.
-            if let Some(real) = ctx.sym(meta_data_for).get_annotation_type_metadata() {
-                if real.target.is_some() {
-                    self.target = real.target;
-                }
-                if real.repeatable.is_some() {
-                    self.repeatable = real.repeatable;
-                }
+        if self.annotation_type_completer.is_some() {
+            // adapter adapter: the upstream AnnotationTypeMetadata is one shared
+            // object; the port clones it (Rust borrow rules, see Check), so the
+            // completer is taken from the symbol's shared metadata and cleared
+            // there exactly once.
+            let completer = ctx
+                .sym_mut(meta_data_for)
+                .get_annotation_type_metadata_mut()
+                .and_then(|metadata| metadata.annotation_type_completer.take())
+                .or_else(|| self.annotation_type_completer.take());
+            self.annotation_type_completer = None;
+            if let Some(completer) = completer {
+                completer.borrow_mut().complete(ctx, &mut *syms, meta_data_for)?;
+            }
+        }
+        // adapter adapter: the upstream completer mutates the shared metadata
+        // object through ClassSymbol.getAnnotationTypeMetadata(); mirror the
+        // completer-written fields into this copy.
+        if let Some(real) = ctx.sym(meta_data_for).get_annotation_type_metadata() {
+            if real.target.is_some() {
+                self.target = real.target;
+            }
+            if real.repeatable.is_some() {
+                self.repeatable = real.repeatable;
             }
         }
         Ok(())

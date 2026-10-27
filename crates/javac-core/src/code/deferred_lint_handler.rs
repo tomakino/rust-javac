@@ -7,7 +7,13 @@
 // (there is no object identity for the anonymous singleton in Rust; the state is
 // modeled explicitly);
 // - LintLogger -> Rust trait object; report() takes the logger by value (Java
-// passes an interface instance; the ported callers pass a closure).
+// passes an interface instance; the ported callers pass a closure);
+// - the Java queue key is a DiagnosticPosition object identity (JCTree.pos()
+// returns the tree itself; Annotate caches its position objects). The ported
+// call sites construct a fresh SimpleDiagnosticPosition for the same source
+// position at setPos/flush time, so the queue matches on the diagnostic
+// position value (the treed position or the preferred position) instead of
+// object identity (registered adapter).
 use std::rc::Rc;
 
 use crate::ids::TreeId;
@@ -55,6 +61,19 @@ impl DiagnosticPosition for ImmediatePosition {
     }
 }
 
+/// Java: the queue keys are DiagnosticPosition objects; the ported call sites
+/// recreate equivalent positions, so identity is extended to the position value
+/// (registered adapter for the object-identity porting rule).
+fn same_position(a: &Rc<dyn DiagnosticPosition>, b: &Rc<dyn DiagnosticPosition>) -> bool {
+    if Rc::ptr_eq(a, b) {
+        return true;
+    }
+    if let (Some(a_tree), Some(b_tree)) = (a.get_tree(), b.get_tree()) {
+        return a_tree == b_tree;
+    }
+    a.get_preferred_position() == b.get_preferred_position()
+}
+
 /// Java: public class DeferredLintHandler
 pub struct DeferredLintHandler {
     /// Java: private DiagnosticPosition currentPos
@@ -82,7 +101,7 @@ impl DeferredLintHandler {
                 if let Some((_, loggers)) = self
                     .loggers_queue
                     .iter_mut()
-                    .find(|(pos, _)| Rc::ptr_eq(pos, &current))
+                    .find(|(pos, _)| same_position(pos, &current))
                 {
                     loggers.push(logger);
                 } else {
@@ -97,7 +116,7 @@ impl DeferredLintHandler {
         if let Some(index) = self
             .loggers_queue
             .iter()
-            .position(|(candidate, _)| Rc::ptr_eq(candidate, pos))
+            .position(|(candidate, _)| same_position(candidate, pos))
         {
             let (_, mut loggers) = self.loggers_queue.remove(index);
             for logger in loggers.iter_mut() {

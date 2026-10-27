@@ -4577,6 +4577,34 @@ impl Types {
         ctx.alloc_type(array)
     }
 
+    /// Java: public ArrayType makeVarargs() (Type.java:1399-1406).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - t: the array type to mark.
+    ///
+    /// # Returns
+    ///   - a copy of the array type with the varargs flag set.
+    ///
+    /// # Panics
+    ///   - the type must be an ArrayType.
+    ///
+    /// Upstream: Type.java:1399-1406.
+    pub fn make_varargs(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
+        match &ctx.typ(t).kind {
+            crate::code::type_::TypeKindData::ArrayType { .. } => {
+                let mut copy = ctx.typ(t).clone();
+                if let crate::code::type_::TypeKindData::ArrayType { varargs, .. } =
+                    &mut copy.kind
+                {
+                    *varargs = true;
+                }
+                ctx.alloc_type(copy)
+            }
+            _ => panic!("ClassCastException: ArrayType expected"),
+        }
+    }
+
     /// Java: public Type createErrorType(Type originalType)
     pub fn create_error_type_original(
         &self,

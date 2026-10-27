@@ -43,6 +43,7 @@ use crate::code::type_tag::TypeTag;
 use crate::code::types::Types;
 use crate::comp::deferred_attr::DeferredAttrContext;
 use crate::comp::enter::Enter;
+use crate::comp::attr_context::AttrContext;
 use crate::comp::env::Env;
 use crate::comp::infer::InferenceContext;
 use crate::ids::TypeId;
@@ -117,6 +118,17 @@ pub struct Check {
     /// Java: private final Preview preview (Check.java:99; installed by the
     /// wiring because the ported Preview is created after Check).
     pub preview: Rc<RefCell<Option<Rc<Preview>>>>,
+    /// Java: private final Resolve rs (Check.java:87) — installed by the wiring
+    /// because the Resolve service is created by Attr after Check (registered
+    /// adapter, same pattern as enter/type_annotations/preview).
+    pub resolve: Rc<RefCell<Option<Rc<RefCell<crate::comp::resolve::Resolve>>>>>,
+    /// Java: private final JavaFileManager fileManager (Check.java:95) —
+    /// installed by the wiring (service table cell).
+    pub file_manager:
+        Rc<RefCell<Option<Rc<dyn javac_tools::tools::java_file_manager::JavaFileManager>>>>,
+    /// Java: private final Profile profile (Check.java:98) — installed by the
+    /// wiring.
+    pub profile: Rc<RefCell<Option<Rc<crate::jvm::profile::Profile>>>>,
 }
 
 
@@ -255,6 +267,9 @@ impl Check {
             deprecation_handler,
             removal_handler,
             preview: Rc::new(RefCell::new(None)),
+            resolve: Rc::new(RefCell::new(None)),
+            file_manager: Rc::new(RefCell::new(None)),
+            profile: Rc::new(RefCell::new(None)),
             source,
         }
     }
@@ -789,8 +804,8 @@ impl Check {
                     mask = crate::code::flags::MethodFlags as i64;
                 }
                 if (flags_value & crate::code::flags::STRICTFP as i64) != 0 {
-                    // TODO(Check): warnOnExplicitStrictfp uses the
-                    // DeferredLintHandler, which is not ported (registered).
+                    // Java: warnOnExplicitStrictfp(pos) (Check.java:1217-1219)
+                    self.warn_on_explicit_strictfp(pos);
                 }
                 if ((flags_value | implicit) & crate::code::flags::ABSTRACT as i64) == 0
                     || (flags_value & crate::code::flags::DEFAULT) != 0
@@ -886,7 +901,8 @@ impl Check {
                     implicit |= crate::code::flags::FINAL as i64;
                 }
                 if (flags_value & crate::code::flags::STRICTFP as i64) != 0 {
-                    // TODO(Check): warnOnExplicitStrictfp (DeferredLintHandler)
+                    // Java: warnOnExplicitStrictfp(pos) (Check.java:1261-1263)
+                    self.warn_on_explicit_strictfp(pos);
                 }
                 implicit |= owner
                     .map(|owner| ctx.sym(owner).flags_field & crate::code::flags::STRICTFP as i64)
@@ -1345,6 +1361,10 @@ impl Check {
         }
         let mut warn = check_context.check_warner(ctx, syms, &self.types, pos, found, req);
         if check_context.compatible(ctx, syms, &self.types, found, req, &mut warn) {
+            if warn.has_lint(LintCategory::VARARGS) {
+                // Java: ConversionWarner.warn VARARGS branch (Check.java:3961-3967).
+                self.warn_unsafe_varargs_param(ctx, syms, pos);
+            }
             return found;
         }
         if ctx.typ(found).is_numeric() && ctx.typ(req).is_numeric() {
@@ -8107,6 +8127,57 @@ impl Check {
 
     /// Java: void warnUnsafeVararg(DiagnosticPosition pos, Warning warnKey)
     /// (Check.java:???).
+    /// Java: Check.ConversionWarner.warn(LintCategory) VARARGS branch
+    /// (Check.java:3961-3967).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler services;
+    ///   - pos: the diagnostic position of the checked expression.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    pub(crate) fn warn_unsafe_varargs_param(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        pos: i32,
+    ) {
+        let Some(method) = self.method else {
+            return;
+        };
+        let Some(trust_me_tsym) = ctx.typ(syms.trust_me_type).tsym else {
+            return;
+        };
+        if ctx.sym(method).attribute(ctx, trust_me_tsym).is_none() {
+            return;
+        }
+        if !self.is_trust_me_allowed_on_method(ctx, method) {
+            return;
+        }
+        let params = match &ctx.sym(method).kind_data {
+            SymbolKind::MethodSymbol { params, .. } => params.clone(),
+            _ => return,
+        };
+        let Some(last_param) = params.last() else {
+            return;
+        };
+        let Some(last_type) = ctx.sym(last_param).ty else {
+            return;
+        };
+        if self.types.is_reifiable(ctx, syms, last_type) {
+            return;
+        }
+        self.warn_unsafe_vararg(
+            pos,
+            warnings::varargs_unsafe_use_varargs_param(SymbolArg::placeholder(symbol_name(
+                ctx, last_param,
+            ))),
+        );
+    }
+
     fn warn_unsafe_vararg(&self, pos: i32, warning: crate::resources::diagnostic_contract::WarningInfo) {
         if self.lint.is_enabled(crate::code::lint::LintCategory::VARARGS) {
             self.log
@@ -9630,6 +9701,55 @@ impl Check {
         *self.preview.borrow_mut() = Some(preview);
     }
 
+    /// Installs the Resolve service (Java: private final Resolve rs;
+    /// Check.java:87; created after Check by the ported wiring, registered
+    /// adapter).
+    ///
+    /// # Arguments
+    ///   - resolve: the shared resolve service.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn set_resolve(&self, resolve: Rc<RefCell<crate::comp::resolve::Resolve>>) {
+        *self.resolve.borrow_mut() = Some(resolve);
+    }
+
+    /// Installs the file manager (Java: private final JavaFileManager
+    /// fileManager; Check.java:95).
+    ///
+    /// # Arguments
+    ///   - file_manager: the shared JavaFileManager service.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn set_file_manager(
+        &self,
+        file_manager: Rc<dyn javac_tools::tools::java_file_manager::JavaFileManager>,
+    ) {
+        *self.file_manager.borrow_mut() = Some(file_manager);
+    }
+
+    /// Installs the profile service (Java: private final Profile profile;
+    /// Check.java:98).
+    ///
+    /// # Arguments
+    ///   - profile: the shared target profile.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn set_profile(&self, profile: Rc<crate::jvm::profile::Profile>) {
+        *self.profile.borrow_mut() = Some(profile);
+    }
+
     /// Java: void warnDeprecated(DiagnosticPosition pos, Symbol sym)
     /// (Check.java:227-247), called from checkDeprecated's deferred report.
     fn warn_deprecated(
@@ -9743,6 +9863,187 @@ impl Check {
             );
             preview.report_preview_warning(pos.as_ref(), warning);
         }
+    }
+
+    /// Java: void checkSunAPI(final DiagnosticPosition pos, final Symbol s)
+    /// (Check.java:3566-3572).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - pos: the diagnostic position;
+    ///   - s: the referenced symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn check_sun_api(&self, ctx: &CompilerContext, pos: i32, s: SymbolId) {
+        if (ctx.sym(s).flags_field & crate::code::flags::PROPRIETARY as i64) != 0 {
+            let warning = warning_from_info(warnings::sun_proprietary(SymbolArg::placeholder(
+                crate::comp::resolve::symbol_display_name(ctx, s),
+            )));
+            let log = Rc::clone(&self.log);
+            let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+                Rc::new(SimpleDiagnosticPosition::new(pos));
+            self.deferred_lint_handler
+                .borrow_mut()
+                .report(Box::new(move || {
+                    AbstractLog::mandatory_warning_pos(
+                        &mut *log.borrow_mut(),
+                        Some(position.clone()),
+                        warning.clone(),
+                    );
+                }));
+        }
+    }
+
+    /// Java: void checkProfile(final DiagnosticPosition pos, final Symbol s)
+    /// (Check.java:3574-3578).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - pos: the diagnostic position;
+    ///   - s: the referenced symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the profile service must be installed by the wiring.
+    pub fn check_profile(&self, ctx: &CompilerContext, pos: i32, s: SymbolId) {
+        let profile = **self
+            .profile
+            .borrow()
+            .as_ref()
+            .expect("AssertionError: profile service not installed");
+        if profile != crate::jvm::profile::Profile::DEFAULT
+            && (ctx.sym(s).flags_field & crate::code::flags::NOT_IN_PROFILE) != 0
+        {
+            self.report_error(
+                pos,
+                errors::not_in_profile(
+                    SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, s)),
+                    DiagnosticArg::from_display(profile),
+                ),
+            );
+        }
+    }
+
+    /// Java: void checkForBadAuxiliaryClassAccess(DiagnosticPosition pos,
+    /// Env<AttrContext> env, ClassSymbol c) (Check.java:3877-3886).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler services;
+    ///   - pos: the diagnostic position;
+    ///   - env: the attribution environment;
+    ///   - c: the referenced class symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the resolve and file manager services must be installed by the wiring.
+    pub fn check_for_bad_auxiliary_class_access(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        pos: i32,
+        env: &Rc<Env<AttrContext>>,
+        c: SymbolId,
+    ) {
+        if !self.lint.is_enabled(LintCategory::AUXILIARYCLASS)
+            || (ctx.sym(c).flags_field & crate::code::flags::AUXILIARY as i64) == 0
+        {
+            return;
+        }
+        let resolve = Rc::clone(
+            self.resolve
+                .borrow()
+                .as_ref()
+                .expect("AssertionError: resolve service not installed"),
+        );
+        if !resolve
+            .borrow_mut()
+            .is_accessible_class(ctx, syms, env, c, false)
+        {
+            return;
+        }
+        let c_sourcefile = match &ctx.sym(c).kind_data {
+            SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile.clone(),
+            _ => None,
+        };
+        let Some(c_sourcefile) = c_sourcefile else {
+            return;
+        };
+        let env_sourcefile = env.toplevel.and_then(|toplevel| match &ctx.tree(toplevel).kind {
+            TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
+            _ => None,
+        });
+        let Some(env_sourcefile) = env_sourcefile else {
+            return;
+        };
+        let file_manager = Rc::clone(
+            self.file_manager
+                .borrow()
+                .as_ref()
+                .expect("AssertionError: file manager service not installed"),
+        );
+        let a: javac_tools::tools::java_file_manager::FileObjectRef = c_sourcefile.clone();
+        let b: javac_tools::tools::java_file_manager::FileObjectRef = env_sourcefile.clone();
+        if !javac_tools::tools::java_file_manager::JavaFileManager::is_same_file(
+            &*file_manager,
+            &a,
+            &b,
+        ) {
+            let warning = warning_from_info(
+                warnings::auxiliary_class_accessed_from_outside_of_its_source_file(
+                    DiagnosticArg::from_display(crate::comp::resolve::symbol_display_name(ctx, c)),
+                    DiagnosticArg::from_display(c_sourcefile.get_name().to_string_lossy()),
+                ),
+            );
+            self.log.borrow_mut().warning(
+                None,
+                Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
+                warning,
+            );
+        }
+    }
+
+    /// Java: private void warnOnExplicitStrictfp(DiagnosticPosition pos)
+    /// (Check.java:1326-1337).
+    ///
+    /// # Arguments
+    ///   - pos: the diagnostic position of the explicit strictfp modifier.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    fn warn_on_explicit_strictfp(&self, pos: i32) {
+        let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+            Rc::new(SimpleDiagnosticPosition::new(pos));
+        let previous_pos = self
+            .deferred_lint_handler
+            .borrow_mut()
+            .set_pos(Rc::clone(&position));
+        let log = Rc::clone(&self.log);
+        let lint = Rc::clone(&self.lint);
+        self.deferred_lint_handler
+            .borrow_mut()
+            .report(Box::new(move || {
+                if lint.is_enabled(LintCategory::STRICTFP) {
+                    log.borrow_mut().warning(
+                        Some(LintCategory::STRICTFP),
+                        Some(position.clone()),
+                        warning_from_info(warnings::strictfp()),
+                    );
+                }
+            }));
+        self.deferred_lint_handler
+            .borrow_mut()
+            .set_pos_state(previous_pos);
     }
 
     /// Java: void checkDeprecated(final DiagnosticPosition pos,
@@ -10044,5 +10345,204 @@ impl Check {
             }
             current = next;
         }
+    }
+}
+
+#[cfg(test)]
+mod diagnostics_tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use super::*;
+
+    /// Compile the given sources through the wired MiniCompiler with a deferred
+    /// diagnostic handler installed and return the captured diagnostics.
+    ///
+    /// # Arguments
+    ///   - sources: (file name, source text) pairs;
+    ///   - configure: option installer used before Lint is created.
+    ///
+    /// # Returns
+    ///   - the compiler and the captured diagnostics.
+    ///
+    /// # Panics
+    ///   - a filesystem or compiler invariant is violated.
+    fn compile_with_diagnostics(
+        sources: &[(&str, &str)],
+        configure: impl FnOnce(&crate::util::options::Options),
+    ) -> (
+        crate::main::mini_compiler::MiniCompiler,
+        Vec<crate::util::jc_diagnostic::JCDiagnostic>,
+    ) {
+        use javac_tools::tools::standard_java_file_manager::StandardJavaFileManager;
+        let root = std::env::temp_dir().join(format!(
+            "rust-javac-check-diag-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let out = root.join("out");
+        std::fs::create_dir_all(&out).expect("out");
+        let src = root.join("src");
+        std::fs::create_dir_all(&src).expect("src");
+        let mut files = Vec::new();
+        for (name, text) in sources {
+            let file = src.join(name);
+            std::fs::write(&file, text).expect("write source");
+            files.push(file);
+        }
+        let mut compiler =
+            crate::main::mini_compiler::MiniCompiler::new_with_options(&out, configure);
+        let sp = javac_tools::tools::standard_location::StandardLocation::location_for(
+            &javac_strings::JavaString::from("SOURCE_PATH"),
+        );
+        compiler
+            .file_manager
+            .set_location(&*sp, Some(&[src]))
+            .expect("source path");
+        compiler
+            .log
+            .borrow_mut()
+            .install_diagnostic_handler(crate::util::log::DiagnosticHandler::Deferred {
+                prev: None,
+                deferred: std::collections::VecDeque::new(),
+                filter: None,
+            });
+        let _ = compiler.compile_files(&files);
+        let diagnostics = compiler.log.borrow_mut().take_deferred_diagnostics();
+        compiler.log.borrow_mut().pop_diagnostic_handler();
+        (compiler, diagnostics)
+    }
+
+    #[test]
+    fn strictfp_warning_is_reported() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("C.java", "strictfp class C { strictfp void m() {} }
+")],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .collect();
+        assert!(
+            codes
+                .iter()
+                .filter(|code| code.as_str() == "compiler.warn.strictfp")
+                .count()
+                >= 2,
+            "strictfp warnings missing: {codes:?}"
+        );
+    }
+
+    #[test]
+    fn sun_proprietary_and_profile_diagnostics_are_reported() {
+        use crate::code::source::Source;
+        use crate::jvm::target::Target;
+        use crate::util::context::Context;
+        use crate::util::javac_messages::JavacMessages;
+
+        let mut ctx = CompilerContext::new();
+        let mut jcontext = Context::new();
+        let names = Rc::new(crate::util::names::Names::new(false));
+        let log = crate::util::log::Log::instance(&mut jcontext);
+        let syms = Rc::new(RefCell::new(crate::code::symtab::Symtab::new(
+            &mut ctx,
+            Rc::clone(&names),
+            Target::DEFAULT,
+            Source::JDK17,
+        )));
+        let types = Rc::new(crate::code::types::Types::with_names(Rc::clone(&names)));
+        let messages = JavacMessages::instance(&mut jcontext);
+        let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
+        let lint = crate::code::lint::Lint::instance(&mut jcontext);
+        let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
+        let check = Rc::new(RefCell::new(Check::new(
+            Rc::clone(&names),
+            Rc::clone(&log),
+            diags,
+            Source::JDK17,
+            '$',
+            Rc::clone(&types),
+            lint,
+            deferred,
+            Rc::clone(&syms),
+        )));
+        attach_self(&check);
+        check
+            .borrow()
+            .set_profile(Rc::new(crate::jvm::profile::Profile::COMPACT1));
+        let object_type = syms.borrow().object_type;
+        let symbol = ctx.typ(object_type).tsym.expect("object symbol");
+        ctx.sym_mut(symbol).flags_field |= crate::code::flags::PROPRIETARY as i64
+            | crate::code::flags::NOT_IN_PROFILE;
+        log.borrow_mut().install_diagnostic_handler(
+            crate::util::log::DiagnosticHandler::Deferred {
+                prev: None,
+                deferred: std::collections::VecDeque::new(),
+                filter: None,
+            },
+        );
+        check.borrow().check_sun_api(&ctx, -1, symbol);
+        check.borrow().check_profile(&ctx, -1, symbol);
+        let diagnostics = log.borrow_mut().take_deferred_diagnostics();
+        log.borrow_mut().pop_diagnostic_handler();
+        let codes: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .collect();
+        assert!(
+            codes
+                .iter()
+                .any(|code| code == "compiler.warn.sun.proprietary"),
+            "sun.proprietary warning missing: {codes:?}"
+        );
+        assert!(
+            codes.iter().any(|code| code == "compiler.err.not.in.profile"),
+            "not.in.profile error missing: {codes:?}"
+        );
+    }
+
+    #[test]
+    fn unsafe_use_of_varargs_param_is_reported() {
+        let source = "class UnsafeUseOfVarargsParam {\n    static void testArr(Object[] o) {}\n    @SafeVarargs static <X> void m(X... x) {\n        testArr(x);\n    }\n}\n";
+        let (_compiler, diagnostics) =
+            compile_with_diagnostics(&[("UnsafeUseOfVarargsParam.java", source)], |options| {
+                options.put("-Xlint:varargs", "true")
+            });
+        let codes: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .collect();
+        assert!(
+            codes
+                .iter()
+                .any(|code| code == "compiler.warn.varargs.unsafe.use.varargs.param"),
+            "varargs.unsafe.use.varargs.param missing: {codes:?}"
+        );
+    }
+
+    #[test]
+    fn auxiliary_class_warning_is_reported() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[
+                ("A.java", "class Aux {}
+"),
+                ("B.java", "class B { Aux aux; }
+"),
+            ],
+            |options| options.put("-Xlint:auxiliaryclass", "true"),
+        );
+        let codes: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .collect();
+        assert!(
+            codes.iter().any(|code| code
+                == "compiler.warn.auxiliary.class.accessed.from.outside.of.its.source.file"),
+            "auxiliary class warning missing: {codes:?}"
+        );
     }
 }

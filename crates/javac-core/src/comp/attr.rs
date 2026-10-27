@@ -1464,8 +1464,12 @@ impl Attr {
             Kind::TYP => {
                 let mut own = ctx.sym(sym).ty.expect("type symbol type");
                 if ctx.typ(own).has_tag(TypeTag::CLASS) {
-                    // TODO(Lint/Resolve): chk.checkForBadAuxiliaryClassAccess(
-                    // tree.pos(), env, (ClassSymbol)sym);
+                    // Java: chk.checkForBadAuxiliaryClassAccess(tree.pos(), env,
+                    // (ClassSymbol)sym); (Attr.java:4540-4541)
+                    let pos = ctx.tree(tree).pos;
+                    self.chk.borrow().check_for_bad_auxiliary_class_access(
+                        ctx, syms, pos, env, sym,
+                    );
                     let own_outer = ctx.typ(own).get_enclosing_type();
                     let sym_type = ctx.sym(sym).ty.expect("symbol type");
                     let sym_type_args = type_arguments(ctx, sym_type);
@@ -1656,9 +1660,19 @@ impl Attr {
             }
             other => panic!("AssertionError: unexpected kind: {:?} in tree", other),
         }
-        // TODO(Check): chk.checkDeprecated/checkSunAPI/checkProfile/
-        // checkPreview(pos,...) are not ported yet (registered).
-        let _ = (env, ctx.sym(sym).name.clone());
+        // Java: emit the deprecation/sun-api/profile/preview warnings for the
+        // referenced symbol (Attr.java:4630-4639).
+        if ctx.sym(sym).name != self.names.init || ctx.tree(tree).has_tag(Tag::REFERENCE) {
+            let scope = env.info.borrow().scope;
+            let scope_owner = scope
+                .and_then(|scope| ctx.scope(scope).owner)
+                .expect("AssertionError: enclosing scope owner");
+            let pos = ctx.tree(tree).pos;
+            self.chk.borrow().check_deprecated(ctx, pos, scope_owner, sym);
+            self.chk.borrow().check_sun_api(ctx, pos, sym);
+            self.chk.borrow().check_profile(ctx, pos, sym);
+            self.chk.borrow().check_preview(ctx, pos, scope_owner, sym);
+        }
         self.check(
             ctx,
             syms,
@@ -14557,7 +14571,7 @@ impl Attr {
     ) -> Result<TypeId, CompletionFailure> {
         use crate::code::flags;
         let env = self.env.clone().expect("Attr.env (visitVarDef)");
-        let (mods, name, vartype, init, sym_opt, declared_using_var, start_pos) =
+        let (mods, name, vartype, init, mut sym_opt, declared_using_var, start_pos) =
             match &ctx.tree(tree).kind {
                 TreeKind::VariableDecl {
                     mods,
@@ -14637,6 +14651,12 @@ impl Attr {
                     member_enter
                         .borrow_mut()
                         .member_enter(ctx, syms, tree, &env);
+                    // Java: memberEnter stores the new VarSymbol in tree.sym;
+                    // the port keeps the tree slot as the shared location.
+                    sym_opt = match &ctx.tree(tree).kind {
+                        TreeKind::VariableDecl { sym, .. } => *sym,
+                        _ => None,
+                    };
                 }
                 {
                     let annotate = self
@@ -15521,6 +15541,14 @@ mod tests {
             maker.root_package = Some(syms.borrow().root_package);
         }
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
+        // Java: the Check constructor obtains rs/fileManager/profile/preview
+        // from the Context; the harness installs the same services explicitly
+        // (the ported service-injection adapter).
+        chk.borrow()
+            .set_profile(Rc::new(crate::jvm::profile::Profile::DEFAULT));
+        chk.borrow().set_file_manager(Rc::clone(&manager));
+        chk.borrow_mut()
+            .set_preview(crate::code::preview::Preview::instance(&mut context));
         let todo = crate::comp::todo::Todo::instance(&mut context);
         let enter = Rc::new(RefCell::new(Enter::new(
             Rc::clone(&log),

@@ -816,6 +816,9 @@ impl Scope {
     /// this scope's hash table and entry storage; this scope's shared count is
     /// incremented (ScopeImpl.dup).
     pub fn dup(&mut self, self_id: ScopeId, new_owner: Option<SymbolId>) -> Scope {
+        // Java: Scope.dup() keeps the scope owner; Scope.dupUnshared(newOwner)
+        // replaces it only when a new owner is given.
+        let owner = new_owner.or(self.owner);
         let (table, entries, nelems) = {
             let (table, entries) = self.table_and_entries();
             let ScopeData::ScopeImpl { nelems, .. } = &self.data else {
@@ -828,7 +831,7 @@ impl Scope {
         };
         *shared += 1;
         Scope {
-            owner: new_owner,
+            owner,
             data: ScopeData::ScopeImpl {
                 shared: 0,
                 next: Some(self_id),
@@ -850,6 +853,8 @@ impl Scope {
         new_owner: Option<SymbolId>,
         scopes: &Arena<Scope>,
     ) -> Scope {
+        // Java: Scope.dupUnshared(newOwner) keeps the owner when none is given.
+        let owner = new_owner.or(self.owner);
         let (table, entries, nelems, shared) = {
             let (table, entries) = self.table_and_entries();
             let ScopeData::ScopeImpl { nelems, shared, .. } = &self.data else {
@@ -899,7 +904,7 @@ impl Scope {
                 (new_table, n)
             };
             Scope {
-                owner: new_owner,
+                owner,
                 data: ScopeData::ScopeImpl {
                     shared: 0,
                     next: Some(self_id),

@@ -671,6 +671,10 @@ fn return_type_of(ctx: &CompilerContext, method_type: TypeId) -> TypeId {
         crate::code::type_::TypeKindData::MethodType { restype, .. } => {
             restype.expect("method return type")
         }
+        // Java: Type.ForAll.getReturnType() delegates to qtype (Type.java:1806).
+        crate::code::type_::TypeKindData::ForAll { qtype, .. } => {
+            return_type_of(ctx, qtype.expect("for-all qtype"))
+        }
         _ => panic!("ClassCastException: MethodType expected"),
     }
 }
