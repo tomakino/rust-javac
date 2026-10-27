@@ -405,8 +405,7 @@ impl Gen {
                     record_components: List::nil(),
                     permitted: List::nil(),
                     is_permitted_explicit: false,
-                    annotation_type_metadata:
-                        crate::comp::annotate::AnnotationTypeMetadata::not_an_annotation_type(),
+                    annotation_type_metadata: Default::default(),
                 },
             ));
             self.qualified_symbol_cache.insert(site, qualifier);

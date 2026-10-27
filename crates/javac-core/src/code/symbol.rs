@@ -334,8 +334,9 @@ impl Symbol {
         } = &mut self.kind_data
         {
             self.metadata = None;
-            *annotation_type_metadata =
-                crate::comp::annotate::AnnotationTypeMetadata::not_an_annotation_type();
+            *annotation_type_metadata = std::rc::Rc::new(std::cell::RefCell::new(
+                crate::comp::annotate::AnnotationTypeMetadata::not_an_annotation_type(),
+            ));
         }
     }
 
@@ -827,8 +828,10 @@ pub enum SymbolKind {
         /// Whether the permits clause was explicit.
         is_permitted_explicit: bool,
         /// Java: private AnnotationTypeMetadata annotationTypeMetadata
-        /// (Symbol.java:1290; the not-an-annotation default).
-        annotation_type_metadata: crate::comp::annotate::AnnotationTypeMetadata,
+        /// (Symbol.java:1290; the not-an-annotation default). The object is
+        /// shared through the ClassSymbol (upstream single-object semantics).
+        annotation_type_metadata:
+            std::rc::Rc<std::cell::RefCell<crate::comp::annotate::AnnotationTypeMetadata>>,
     },
     /// Java: Symbol.BindingSymbol (Symbol.java:1861-1902) — a VarSymbol
     /// subclass introduced by a pattern match binding.
@@ -1920,7 +1923,7 @@ impl Symbol {
     /// (Symbol.java:867/1614; the base Symbol asserts, only ClassSymbol has it).
     pub fn get_annotation_type_metadata(
         &self,
-    ) -> Option<&crate::comp::annotate::AnnotationTypeMetadata> {
+    ) -> Option<&std::rc::Rc<std::cell::RefCell<crate::comp::annotate::AnnotationTypeMetadata>>> {
         match &self.kind_data {
             SymbolKind::ClassSymbol {
                 annotation_type_metadata,
@@ -1934,7 +1937,7 @@ impl Symbol {
     /// the upstream ClassSymbol constructor installs the metadata).
     pub fn set_annotation_type_metadata(
         &mut self,
-        metadata: crate::comp::annotate::AnnotationTypeMetadata,
+        metadata: std::rc::Rc<std::cell::RefCell<crate::comp::annotate::AnnotationTypeMetadata>>,
     ) {
         if let SymbolKind::ClassSymbol {
             annotation_type_metadata,
@@ -1942,20 +1945,6 @@ impl Symbol {
         } = &mut self.kind_data
         {
             *annotation_type_metadata = metadata;
-        }
-    }
-
-    /// Mutable accessor (the upstream AnnotationTypeMetadata setters mutate the
-    /// metadata object through the ClassSymbol field).
-    pub fn get_annotation_type_metadata_mut(
-        &mut self,
-    ) -> Option<&mut crate::comp::annotate::AnnotationTypeMetadata> {
-        match &mut self.kind_data {
-            SymbolKind::ClassSymbol {
-                annotation_type_metadata,
-                ..
-            } => Some(annotation_type_metadata),
-            _ => None,
         }
     }
 
@@ -3647,15 +3636,16 @@ mod tests {
             ..
         } = &mut ctx.sym_mut(class).kind_data
         {
-            *annotation_type_metadata =
-                crate::comp::annotate::AnnotationTypeMetadata::new(class, None);
+            *annotation_type_metadata = std::rc::Rc::new(std::cell::RefCell::new(
+                crate::comp::annotate::AnnotationTypeMetadata::new(class, None),
+            ));
         }
         assert!(ctx.sym(class).has_annotations());
         match &ctx.sym(class).kind_data {
             SymbolKind::ClassSymbol {
                 annotation_type_metadata,
                 ..
-            } => assert!(annotation_type_metadata.is_metadata_for_annotation_type()),
+            } => assert!(annotation_type_metadata.borrow().is_metadata_for_annotation_type()),
             _ => panic!("class symbol"),
         }
         ctx.sym_mut(class).clear_annotation_metadata();
@@ -3665,7 +3655,7 @@ mod tests {
             SymbolKind::ClassSymbol {
                 annotation_type_metadata,
                 ..
-            } => assert!(!annotation_type_metadata.is_metadata_for_annotation_type()),
+            } => assert!(!annotation_type_metadata.borrow().is_metadata_for_annotation_type()),
             _ => panic!("class symbol"),
         }
         let method = ctx.alloc_symbol(Symbol::new(

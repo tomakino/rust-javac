@@ -12477,11 +12477,12 @@ impl Attr {
             }
             // If this annotation type has a @Repeatable, validate
             let repeatable = {
-                let mut metadata = match ctx.sym(c).get_annotation_type_metadata().cloned() {
-                    Some(metadata) => metadata,
-                    None => return,
+                let Some(metadata) = ctx.sym(c).get_annotation_type_metadata().cloned() else {
+                    return;
                 };
-                metadata.get_repeatable(ctx, syms)
+                crate::comp::annotate::AnnotationTypeMetadata::get_repeatable_shared(
+                    &metadata, ctx, syms,
+                )
             };
             let repeatable = match repeatable {
                 Ok(repeatable) => repeatable,

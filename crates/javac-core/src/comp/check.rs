@@ -1,3 +1,4 @@
+
 // Origin: com/sun/tools/javac/comp/Check.java @ 982d53c (jdk-17.0.19-ga)
 //
 // Registration: this file ports the Check subset required by
@@ -2140,6 +2141,30 @@ impl Check {
                 );
             }
             let _ = not_applicable_or_is_type_use_only;
+            // Java: if we are seeing the @SafeVarargs annotation applied to a
+            // compiler generated accessor, this is an error (Check.java:3068-3074).
+            let is_comp_generated_record_element = is_record_member
+                && (ctx.sym(s).flags_field & crate::code::flags::GENERATED_MEMBER as i64) != 0;
+            if is_comp_generated_record_element && !is_record_field {
+                let trust_me = ctx.typ(syms.trust_me_type).tsym;
+                if Some(annotation_tsym) == trust_me
+                    && declaration_tree
+                        .map(|declaration_tree| ctx.tree(declaration_tree).has_tag(Tag::METHODDEF))
+                        .unwrap_or(false)
+                {
+                    let fragment = fragments::varargs_trustme_on_non_varargs_accessor(
+                        SymbolArg::placeholder(symbol_name(ctx, s)),
+                    );
+                    let info = errors::varargs_invalid_trustme_anno(
+                        SymbolArg::placeholder(symbol_name(
+                            ctx,
+                            trust_me.expect("trust me type symbol"),
+                        )),
+                        DiagnosticArg::from_display(fragment.info().key()),
+                    );
+                    self.report_error(ctx.tree(a).pos, info);
+                }
+            }
             // Java: the compiler-generated record element trimming branch
             // (isCompGeneratedRecordElement) needs the Record; registered.
         }
@@ -2362,20 +2387,11 @@ impl Check {
         syms: &mut crate::code::symtab::Symtab,
         s: SymbolId,
     ) -> Result<Option<AttributeId>, CompletionFailure> {
-        // adapter adapter: the upstream mutates the ClassSymbol-held metadata in place;
-        // the port temporarily clones it (the metadata is Clone) and writes it back
-        // so inference/completer state stays on the symbol.
-        let Some(mut metadata) = ctx
-            .sym(s)
-            .get_annotation_type_metadata()
-            .cloned()
-        else {
+        let Some(metadata) = ctx.sym(s).get_annotation_type_metadata().cloned() else {
             return Ok(None);
         };
-        let at_target = metadata.get_target(ctx, syms)?;
-        if let Some(slot) = ctx.sym_mut(s).get_annotation_type_metadata_mut() {
-            *slot = metadata;
-        }
+        let at_target =
+            crate::comp::annotate::AnnotationTypeMetadata::get_target_shared(&metadata, ctx, syms)?;
         let Some(at_target) = at_target else {
             return Ok(None);
         };
@@ -2441,14 +2457,12 @@ impl Check {
         let mut is_valid = true;
         let annotation_ty = ctx.tree(a).ty.expect("annotation type");
         let anno_tsym = ctx.typ(annotation_ty).tsym.expect("annotation tsym");
-        let Some(mut metadata) = ctx
-            .sym(anno_tsym)
-            .get_annotation_type_metadata()
-            .cloned()
-        else {
+        let Some(metadata) = ctx.sym(anno_tsym).get_annotation_type_metadata().cloned() else {
             return Ok(true);
         };
-        let mut elements = metadata.get_annotation_elements(ctx, syms)?;
+        let mut elements = crate::comp::annotate::AnnotationTypeMetadata::get_annotation_elements_shared(
+            &metadata, ctx, syms,
+        )?;
         let args = match &ctx.tree(a).kind {
             TreeKind::Annotation { args, .. } => args.clone(),
             _ => panic!("expected an annotation"),
@@ -2489,10 +2503,10 @@ impl Check {
                 );
             }
         }
-        let members_with_default = metadata.get_annotation_elements_with_default(ctx, syms)?;
-        if let Some(slot) = ctx.sym_mut(anno_tsym).get_annotation_type_metadata_mut() {
-            *slot = metadata;
-        }
+        let members_with_default =
+            crate::comp::annotate::AnnotationTypeMetadata::get_annotation_elements_with_default_shared(
+                &metadata, ctx, syms,
+            )?;
         let mut missing_defaults: List<Name> = List::nil();
         for element in elements {
             if ctx

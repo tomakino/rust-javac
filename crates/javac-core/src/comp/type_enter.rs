@@ -1845,7 +1845,9 @@ impl TypeEnter {
                 sym,
                 Some(completer),
             );
-            ctx.sym_mut(sym).set_annotation_type_metadata(metadata);
+            ctx.sym_mut(sym).set_annotation_type_metadata(std::rc::Rc::new(
+                std::cell::RefCell::new(metadata),
+            ));
         }
     }
 

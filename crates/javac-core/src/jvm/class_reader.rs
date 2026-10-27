@@ -1234,11 +1234,13 @@ impl ClassReader {
                     Rc::clone(&self.names),
                     self.reader_handle.clone(),
                 )));
-            ctx.sym_mut(c)
-                .set_annotation_type_metadata(AnnotationTypeMetadata::new(c, Some(completer)));
+            ctx.sym_mut(c).set_annotation_type_metadata(Rc::new(RefCell::new(
+                AnnotationTypeMetadata::new(c, Some(completer)),
+            )));
         } else {
-            ctx.sym_mut(c)
-                .set_annotation_type_metadata(AnnotationTypeMetadata::not_an_annotation_type());
+            ctx.sym_mut(c).set_annotation_type_metadata(Rc::new(RefCell::new(
+                AnnotationTypeMetadata::not_an_annotation_type(),
+            )));
         }
 
         // Java: if (c == currentModule.module_info) {
@@ -4780,7 +4782,8 @@ impl AnnotationTypeCompleter for CompleterDeproxy {
                 reader_guard.as_deref_mut(),
             )?);
         }
-        if let Some(metadata) = ctx.sym_mut(sym).get_annotation_type_metadata_mut() {
+        if let Some(metadata) = ctx.sym(sym).get_annotation_type_metadata().cloned() {
+            let mut metadata = metadata.borrow_mut();
             metadata.set_target(the_target);
             metadata.set_repeatable(the_repeatable);
         }
@@ -6193,7 +6196,7 @@ mod tests {
             .get_annotation_type_metadata()
             .expect("annotation type metadata");
         assert!(
-            metadata.is_metadata_for_annotation_type(),
+            metadata.borrow().is_metadata_for_annotation_type(),
             "AnnotationTypeMetadata installed for MyAnno"
         );
         assert!(
