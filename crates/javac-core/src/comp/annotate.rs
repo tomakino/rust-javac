@@ -740,7 +740,7 @@ impl AnnotateServices {
                     .into(),
                 );
             }
-            self.annotate_now(ctx, s, annotations, local_env, false, false)
+            self.annotate_now(ctx, &mut self.syms.borrow_mut(), s, annotations, local_env, false, false)
         })();
         if let Some(prev_lint) = prev_lint {
             self.chk.borrow_mut().set_lint(prev_lint);
@@ -799,9 +799,11 @@ impl AnnotateServices {
     /// Java: private void annotateNow(Symbol toAnnotate, List<JCAnnotation>
     /// withAnnotations, Env<AttrContext> env, boolean typeAnnotations,
     /// boolean isTypeParam) (Annotate.java:325-450)
+    #[allow(clippy::too_many_arguments)]
     fn annotate_now(
         &self,
         ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
         to_annotate: SymbolId,
         with_annotations: &List<TreeId>,
         env: &Rc<Env<AttrContext>>,
@@ -897,7 +899,7 @@ impl AnnotateServices {
                     is_type_compound: type_annotations,
                 };
                 if let Some(res) =
-                    self.make_container_annotation(ctx, lb, &context, to_annotate, is_type_param)?
+                    self.make_container_annotation(ctx, syms, lb, &context, to_annotate, is_type_param)?
                 {
                     buf = buf.prepend(res);
                 }
@@ -1513,6 +1515,7 @@ impl AnnotateServices {
     fn process_repeated_annotations(
         &self,
         ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
         annotations: &[AttributeId],
         context: &AnnotatedContext,
         on: SymbolId,
@@ -1587,7 +1590,7 @@ impl AnnotateServices {
             let anno_tree = {
                 let mut make = self.make.borrow_mut();
                 make.at(pos);
-                make.translate_attribute(ctx, at)
+                make.translate_attribute(ctx, syms, at)
             };
             let defer_ok = {
                 let chk = self.chk.borrow();
@@ -1619,7 +1622,7 @@ impl AnnotateServices {
         let anno_tree = {
             let mut make = self.make.borrow_mut();
             make.at(pos);
-            make.translate_attribute(ctx, c)
+            make.translate_attribute(ctx, syms, c)
         };
         let is_record_member = (ctx.sym(on).flags_field & flags::RECORD) != 0
             || ctx
@@ -1793,8 +1796,8 @@ impl AnnotateServices {
     /// AnnotationContext<T> ctx, Symbol sym, boolean isTypeParam)
     /// (Annotate.java:1062-1080)
     #[allow(clippy::collapsible_if)]
-    fn make_container_annotation(&self, ctx: &mut CompilerContext, to_be_replaced: &[AttributeId], context: &AnnotatedContext, sym: SymbolId, is_type_param: bool) -> Result<Option<AttributeId>, CompletionFailure> {
-        let valid_repeated = self.process_repeated_annotations(ctx, to_be_replaced, context, sym, is_type_param)?;
+    fn make_container_annotation(&self, ctx: &mut CompilerContext, syms: &mut crate::code::symtab::Symtab, to_be_replaced: &[AttributeId], context: &AnnotatedContext, sym: SymbolId, is_type_param: bool) -> Result<Option<AttributeId>, CompletionFailure> {
+        let valid_repeated = self.process_repeated_annotations(ctx, syms, to_be_replaced, context, sym, is_type_param)?;
         let Some(valid_repeated) = valid_repeated else { return Ok(None) };
         let repeated_type = ctx.attr(valid_repeated).ty.expect("repeated annotation type");
         let repeated_tsym = ctx.typ(repeated_type).tsym.expect("repeated annotation symbol");
@@ -1979,7 +1982,7 @@ impl AnnotateServices {
             ))),
             None => None,
         };
-        let _ = self.annotate_now(ctx, s, annotations, env, true, is_type_param);
+        let _ = self.annotate_now(ctx, &mut self.syms.borrow_mut(), s, annotations, env, true, is_type_param);
         if let Some(prev_lint_pos) = prev_lint_pos {
             self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint_pos);
         }
@@ -2526,7 +2529,7 @@ struct UnusedFileManager;
         let compound_tree = {
             let mut make = h.make.borrow_mut();
             make.at(0);
-            make.translate_attribute(&mut h.ctx, compound)
+            make.translate_attribute(&mut h.ctx, &mut *h.syms.borrow_mut(), compound)
         };
         assert!(h.ctx.tree(compound_tree).has_tag(Tag::ANNOTATION));
         let array = h
@@ -2535,7 +2538,7 @@ struct UnusedFileManager;
         let array_tree = {
             let mut make = h.make.borrow_mut();
             make.at(0);
-            make.translate_attribute(&mut h.ctx, array)
+            make.translate_attribute(&mut h.ctx, &mut *h.syms.borrow_mut(), array)
         };
         assert!(h.ctx.tree(array_tree).has_tag(Tag::NEWARRAY));
         assert_eq!(h.log.borrow().nerrors, 0);

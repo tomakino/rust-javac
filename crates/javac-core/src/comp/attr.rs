@@ -8021,7 +8021,7 @@ impl Attr {
     fn set_synthetic_variable_type(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         tree: TreeId,
         ty: TypeId,
     ) {
@@ -8032,7 +8032,7 @@ impl Attr {
         } else {
             let mut make = self.make.borrow_mut();
             make.at(crate::util::position::NOPOS);
-            make.type_from_type(ctx, ty)
+            make.type_from_type(ctx, syms, ty)
         };
         if let TreeKind::VariableDecl { vartype: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(vartype);
@@ -12535,7 +12535,7 @@ impl Attr {
             };
             let encl_type_tree = {
                 let mut make = self.make.borrow_mut();
-                make.at(clazz_pos).type_from_type(ctx, encltype)
+                make.at(clazz_pos).type_from_type(ctx, syms, encltype)
             };
             let selected = {
                 let mut make = self.make.borrow_mut();
@@ -14601,8 +14601,7 @@ impl Attr {
         }
         if declared_using_var {
             let inferred = ctx.sym(v).ty.expect("inferred var type");
-            let syms_borrow: &Symtab = &*syms;
-            self.set_synthetic_variable_type(ctx, syms_borrow, tree, inferred);
+            self.set_synthetic_variable_type(ctx, syms, tree, inferred);
         }
         {
             let chk_rc = Rc::clone(&self.chk);

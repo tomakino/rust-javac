@@ -312,7 +312,7 @@ impl TransTypes {
         let pos = ctx.tree(tree).pos;
         let clazz_tree = {
             let mut make = self.make.borrow_mut();
-            make.at(pos).type_from_type(ctx, target)
+            make.at(pos).type_from_type(ctx, &mut *self.syms.borrow_mut(), target)
         };
         let cast_tree = {
             let mut make = self.make.borrow_mut();
@@ -513,7 +513,7 @@ impl TransTypes {
         let restype_tree = {
             self.make
                 .borrow_mut()
-                .type_from_type(ctx, bridge_return_type)
+                .type_from_type(ctx, &mut *self.syms.borrow_mut(), bridge_return_type)
         };
         let mut param_trees: List<TreeId> = List::nil();
         let mut params_current = bridge_params.clone();
@@ -526,7 +526,7 @@ impl TransTypes {
             let p_type_tree = {
                 self.make
                     .borrow_mut()
-                    .type_from_type(ctx, param_ty)
+                    .type_from_type(ctx, &mut *self.syms.borrow_mut(), param_ty)
             };
             let p_tree = self.make.borrow_mut().var_def(
                 ctx,
@@ -1838,7 +1838,7 @@ impl TreeVisitor for TransTypes {
             // Java: result = make.at(tree.pos).Type(et);
             let pos = ctx.tree(tree).pos;
             let type_tree = {
-                self.make.borrow_mut().at(pos).type_from_type(ctx, et)
+                self.make.borrow_mut().at(pos).type_from_type(ctx, &mut *self.syms.borrow_mut(), et)
             };
             self.result = Some(type_tree);
         } else if ctx.typ(ctx.tree(tree).ty.expect("ident type")).const_value().is_some() {
@@ -1917,7 +1917,7 @@ impl TreeVisitor for TransTypes {
         let expr = if is_unbound {
             let pos = ctx.tree(tree).pos;
             let type_tree = {
-                self.make.borrow_mut().at(pos).type_from_type(ctx, receiver_target)
+                self.make.borrow_mut().at(pos).type_from_type(ctx, &mut *self.syms.borrow_mut(), receiver_target)
             };
             Some(type_tree)
         } else {

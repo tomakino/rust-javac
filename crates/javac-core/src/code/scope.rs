@@ -289,9 +289,6 @@ pub enum ScopeData {
         /// Java: private final Types types (Scope.java:910); the ported
         /// FilterImportScope query needs it explicitly (registered adapter).
         types: Rc<crate::code::types::Types>,
-        /// The shared symbol table used by the import filter queries (the
-        /// Java query reads the Context services; registered adapter).
-        syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
         /// Java: private final BiConsumer<JCImport, CompletionFailure> cfHandler
         #[allow(clippy::type_complexity)]
     cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
@@ -426,13 +423,11 @@ impl Scope {
         static_import: bool,
         cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
         types: Rc<crate::code::types::Types>,
-        syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
     ) -> Scope {
         Scope {
             owner,
             data: ScopeData::FilterImportScope {
                 types,
-                syms,
                 origin,
                 filter_name,
                 filter,
@@ -1323,46 +1318,15 @@ impl Scope {
                 }
                 None => Vec::new(),
             },
-            ScopeData::FilterImportScope {
-                origin,
-                filter_name,
-                filter: import_filter,
-                static_import,
-                types,
-                syms: import_syms,
-                ..
-            } => {
-                // Java: FilterImportScope.getSymbols (Scope.java:932-952): with a
-                // filter name the query goes through getSymbolsByName(filterName);
-                // otherwise the imported members are queried (by name = None).
-                let origin = *origin;
-                let static_import = *static_import;
-                let import_filter = import_filter.clone();
-                let types = Rc::clone(types);
-                let import_syms = Rc::clone(import_syms);
-                let mut syms_guard = import_syms.borrow_mut();
-                match filter_name.clone() {
-                    Some(name) => self.get_symbols_by_name_full(
-                        self_id,
-                        &name,
-                        lookup_kind,
-                        filter,
-                        &types,
-                        &mut syms_guard,
-                        ctx,
-                    ),
-                    None => query_filter_import_scope_members(
-                        origin,
-                        static_import,
-                        &import_filter,
-                        None,
-                        filter,
-                        lookup_kind,
-                        &types,
-                        &mut syms_guard,
-                        ctx,
-                    ),
-                }
+            ScopeData::FilterImportScope { .. } => {
+                // Java: FilterImportScope.getSymbols (Scope.java:932-952) reads
+                // the Context Types/Symtab services; the port takes them as
+                // explicit query parameters. Audited callers that can reach a
+                // FilterImportScope use get_symbols_full/scope_get_symbols_ctx
+                // (Resolve and TreeMaker). This basic path must not be used.
+                crate::util::assert::error_msg(
+                    "FilterImportScope query requires the Types/Symtab-aware API (get_symbols_full)",
+                )
             }
         }
     }
@@ -1458,36 +1422,13 @@ impl Scope {
                 }
                 None => Vec::new(),
             },
-            ScopeData::FilterImportScope {
-                origin,
-                filter_name,
-                filter: import_filter,
-                static_import,
-                types,
-                syms: import_syms,
-                ..
-            } => {
-                if let Some(filter_name) = filter_name
-                    && filter_name != name
-                {
-                    return Vec::new();
-                }
-                let origin = *origin;
-                let static_import = *static_import;
-                let import_filter = import_filter.clone();
-                let types = Rc::clone(types);
-                let import_syms = Rc::clone(import_syms);
-                let mut syms_guard = import_syms.borrow_mut();
-                query_filter_import_scope_members(
-                    origin,
-                    static_import,
-                    &import_filter,
-                    Some(name),
-                    filter,
-                    lookup_kind,
-                    &types,
-                    &mut syms_guard,
-                    ctx,
+            ScopeData::FilterImportScope { .. } => {
+                // Java: FilterImportScope.getSymbolsByName (Scope.java:954-976)
+                // reads the Context Types/Symtab services; the port passes them
+                // explicitly (get_symbols_by_name_full/…_ctx). The basic path
+                // must not be used for a FilterImportScope.
+                crate::util::assert::error_msg(
+                    "FilterImportScope query requires the Types/Symtab-aware API (get_symbols_by_name_full)",
                 )
             }
         }
@@ -2278,12 +2219,6 @@ mod tests {
             crate::code::source::Source::JDK17,
         );
         let types = Rc::new(crate::code::types::Types::with_names(Rc::clone(&names)));
-        let syms = Rc::new(std::cell::RefCell::new(crate::code::symtab::Symtab::new(
-            &mut ctx,
-            Rc::clone(&names),
-            crate::jvm::target::Target::DEFAULT,
-            crate::code::source::Source::JDK17,
-        )));
         let owner = ctx.alloc_symbol(Symbol::new(
             Kind::VAR,
             0,
@@ -2302,23 +2237,26 @@ mod tests {
             false,
             None,
             Rc::clone(&types),
-            Rc::clone(&syms),
         ));
         // Java: FilterImportScope.getSymbols (Scope.java:932-952): the query
         // walks the origin members through the import filter. The origin owner
         // is a variable symbol without members, so no symbol is imported
         // (SymbolImporter.importFrom returns immediately, Scope.java:1000-1018).
-        let all = ctx.scope_get_symbols(
+        let all = ctx.scope_get_symbols_ctx(
             scope,
             LookupKind::NON_RECURSIVE,
             &|_| true,
+            &types,
+            &mut symtab,
         );
         assert!(all.is_empty());
-        let by_name = ctx.scope_get_symbols_by_name(
+        let by_name = ctx.scope_get_symbols_by_name_ctx(
             scope,
             &name(&table, "x"),
             LookupKind::NON_RECURSIVE,
             &|_| true,
+            &types,
+            &mut symtab,
         );
         assert!(by_name.is_empty());
         // Java: FilterImportScope.getSymbolsByName (Scope.java:954-976): a
@@ -2332,13 +2270,14 @@ mod tests {
             false,
             None,
             Rc::clone(&types),
-            Rc::clone(&syms),
         ));
-        let named = ctx.scope_get_symbols_by_name(
+        let named = ctx.scope_get_symbols_by_name_ctx(
             named_scope,
             &name(&table, "x"),
             LookupKind::NON_RECURSIVE,
             &|_| true,
+            &types,
+            &mut symtab,
         );
         assert!(named.is_empty());
     }

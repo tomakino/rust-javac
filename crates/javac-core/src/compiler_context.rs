@@ -470,7 +470,6 @@ impl CompilerContext {
         cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
         static_import: bool,
         types: Rc<crate::code::types::Types>,
-        syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
     ) -> ScopeId {
         let owner = self.scope(origin).owner;
         let new_scope = self.alloc_scope(
@@ -483,7 +482,6 @@ impl CompilerContext {
                 static_import,
                 cf_handler,
                 types,
-                syms,
             ),
         );
         self.named_import_append(named_scope, new_scope, name);
@@ -514,7 +512,6 @@ impl CompilerContext {
         cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
         static_import: bool,
         types: Rc<crate::code::types::Types>,
-        syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
     ) {
         // avoid entering the same scope twice
         let duplicates = match &self.scope(star_scope).data {
@@ -555,7 +552,6 @@ impl CompilerContext {
                 static_import,
                 cf_handler,
                 types,
-                syms,
             ),
         );
         self.scope_prepend_sub_scope(star_scope, new_scope);
