@@ -499,9 +499,38 @@ impl TypeEnter {
                                 syms,
                             );
                         }
-                        // TODO(Modules): syms.lookupPackage(toplevel(&env).modle,
-                        // p.owner.getQualifiedName()) + syms.getClass(...) +
-                        // Errors.PkgClashesWithClassOfSameName(p);
+                        // Java: PackageSymbol pack =
+                        // syms.lookupPackage(env.toplevel.modle,
+                        //                    p.owner.getQualifiedName());
+                        // if (syms.getClass(pack.modle, p.getQualifiedName()) != null)
+                        //     log.error(tree.pos, Errors.PkgClashesWithClassOfSameName(p));
+                        // (TypeEnter.java:396-400).
+                        let modle = compilation_unit_module(ctx, toplevel(env)).expect("tree.modle");
+                        let owner_fullname = package_fullname_of_type_enter(ctx, owner);
+                        let pack = syms.lookup_package(ctx, modle, &owner_fullname);
+                        let p_fullname = package_fullname_of_type_enter(ctx, p);
+                        let pack_modle = match &ctx.sym(pack).kind_data {
+                            crate::code::symbol::SymbolKind::PackageSymbol { modle, .. }
+                            | crate::code::symbol::SymbolKind::RootPackageSymbol { modle, .. } => {
+                                *modle
+                            }
+                            _ => None,
+                        };
+                        if let Some(pack_modle) = pack_modle
+                            && syms.get_class(pack_modle, &p_fullname).is_some()
+                        {
+                            let name = p_fullname.to_java_string().to_string_lossy();
+                            self.log.borrow_mut().error_at(
+                                ctx.tree(package_decl).pos,
+                                crate::util::jc_diagnostic::Error::from(
+                                    crate::resources::compiler_properties::errors::
+                                        pkg_clashes_with_class_of_same_name(
+                                            crate::resources::diagnostic_contract::SymbolArg::
+                                                placeholder(name),
+                                        ),
+                                ),
+                            );
+                        }
                     }
                     p = owner.unwrap();
                 }
@@ -4014,5 +4043,17 @@ fn record_component_original_annos(
             original_annos, ..
         } => original_annos.clone(),
         _ => List::nil(),
+    }
+}
+
+/// The qualified name of a package symbol (Java: PackageSymbol.fullname).
+fn package_fullname_of_type_enter(
+    ctx: &CompilerContext,
+    sym: SymbolId,
+) -> crate::util::name::Name {
+    match &ctx.sym(sym).kind_data {
+        crate::code::symbol::SymbolKind::PackageSymbol { fullname, .. }
+        | crate::code::symbol::SymbolKind::RootPackageSymbol { fullname, .. } => fullname.clone(),
+        _ => ctx.sym(sym).name.clone(),
     }
 }

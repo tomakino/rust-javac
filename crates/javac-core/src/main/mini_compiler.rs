@@ -39,11 +39,14 @@ use crate::comp::flow::Flow;
 use crate::comp::infer::Infer;
 use crate::comp::lower::Lower;
 use crate::comp::member_enter::MemberEnter;
+use crate::comp::modules::Modules;
 use crate::comp::operators::Operators;
 use crate::comp::resolve::Resolve;
 use crate::comp::todo::Todo;
 use crate::comp::trans_types::TransTypes;
 use crate::code::type_annotations::TypeAnnotations;
+use crate::code::module_finder::ModuleFinder;
+use crate::code::symbol::CompleterFactory;
 use crate::comp::type_enter::TypeEnter;
 use crate::comp::attr_context::AttrContext;
 use crate::comp::env::Env;
@@ -134,6 +137,8 @@ pub struct MiniCompiler {
     pub annotate: Rc<Annotate>,
     /// The attribution pass.
     pub attr: Rc<RefCell<Attr>>,
+    /// The module system.
+    pub modules: Rc<Modules>,
     /// The resolver.
     pub resolve: Rc<RefCell<Resolve>>,
     /// The flow pass.
@@ -426,6 +431,50 @@ impl MiniCompiler {
             Rc::clone(&pool_writer),
             method_codes,
         )));
+        let module_finder = Rc::new(RefCell::new(ModuleFinder::new(
+            Rc::clone(&names),
+            Rc::clone(&finder),
+            Rc::clone(&file_manager) as Rc<dyn JavaFileManager>,
+            Rc::clone(&log),
+            Rc::clone(&diags),
+        )));
+        let modules = Rc::new_cyclic(|self_ref| {
+            Modules::new(
+                Rc::clone(&log),
+                Rc::clone(&names),
+                Rc::clone(&attr),
+                Rc::clone(&chk),
+                Rc::clone(&deferred_lint_handler),
+                Rc::clone(&type_envs),
+                Rc::clone(&types),
+                Rc::clone(&file_manager) as Rc<dyn JavaFileManager>,
+                Rc::clone(&module_finder),
+                source,
+                target,
+                &options,
+                self_ref.clone(),
+            )
+        });
+        // Java: Modules constructor installs the ClassWriter multi-module mode
+        // (Modules.java:204-205); JNIWriter is not ported (NOT PORTED).
+        writer.borrow_mut().multi_module_mode = modules.multi_module_mode;
+        // Java: Check constructor obtains Preview.instance(context)
+        // (Check.java:99/143); the ported Preview is created above, so the
+        // dependency is installed here (registered adapter).
+        chk.borrow_mut().set_preview(Rc::clone(&preview));
+        // Java: Enter constructor obtains Modules.instance(context)
+        // (Enter.java:129) and Attr uses it for visitModuleDef; both are
+        // installed after construction to break the initialization cycle.
+        enter.borrow_mut().set_modules(Rc::clone(&modules));
+        attr.borrow_mut().set_modules(Rc::clone(&modules));
+        // Java: Symtab constructor binds moduleCompleter from
+        // Modules.instance(context).getCompleter() (Symtab.java:519); the
+        // explicit bootstrap installs the same completer here.
+        let module_completer = modules.get_completer();
+        let module_completer_factory: CompleterFactory =
+            Rc::new(move || Rc::clone(&module_completer));
+        syms.borrow_mut()
+            .set_module_completer(&mut ctx, module_completer_factory);
         let mut parser_context = UtilContext::new();
         let scanner_factory = crate::parser::scanner_factory::ScannerFactory::new(
             &mut parser_context,
@@ -467,6 +516,7 @@ impl MiniCompiler {
             type_envs,
             annotate,
             attr,
+            modules,
             resolve,
             flow,
             infer,
@@ -490,8 +540,9 @@ impl MiniCompiler {
     /// non-modular compilation: the predefined classes live in the java.base
     /// module, whose class location is the SYSTEM_MODULES[java.base] location;
     /// the unnamed module reads every java.base package and its class location
-    /// is CLASS_PATH (Modules.java:440-500; Modules is not ported yet, so this
-    /// is the registered adapter of that bootstrap).
+    /// is CLASS_PATH (Modules.java:440-500; the Modules service is wired but the
+    /// JavaCompiler.initModules entry point is wired in a later batch, so this
+    /// bootstrap adapter remains registered).
     fn bootstrap_modules(&mut self) {
         let java_base = self.syms.borrow().java_base;
         let unnamed = self.syms.borrow().unnamed_module;
@@ -583,7 +634,8 @@ impl MiniCompiler {
         for path in source_paths {
             roots.push(self.parse_file(path)?);
         }
-        // JavaCompiler.enterTrees -> InitModules is not ported (single module).
+        // JavaCompiler.initModules is wired in the JavaCompiler batch; the single
+        // module bootstrap above remains the registered adapter here.
         let root_list = List::from_iterable(roots.iter().copied());
         let queued = {
             let syms = Rc::clone(&self.syms);

@@ -346,6 +346,7 @@ fn new_module_symbol(
             enclosed_packages: List::nil(),
             flags: Vec::new(),
             resolution_flags: Vec::new(),
+            uses_provides_completer: None,
         },
     ))
 }
@@ -990,7 +991,8 @@ pub struct Symtab {
     pub proprietary_type: Option<TypeId>,
     /// Java: private final Completer initialCompleter (bound by the bootstrap)
     pub initial_completer: Option<CompleterFactory>,
-    /// Java: private final Completer moduleCompleter (from Modules; not ported -> None)
+    /// Java: private final Completer moduleCompleter (bound by
+/// set_module_completer from Modules.getCompleter; bootstrap in batch 1b)
     pub module_completer: Option<CompleterFactory>,
     pub system_type: TypeId,
     pub auto_closeable_type: TypeId,

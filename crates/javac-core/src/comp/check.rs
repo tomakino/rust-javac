@@ -9638,6 +9638,15 @@ impl Check {
 impl Check {
     /// Installs the Preview service (Java: final Preview preview; the ported
     /// Preview is created after Check by the bootstrap; registered adapter).
+    ///
+    /// # Arguments
+    ///   - preview: the preview feature service.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
     pub fn set_preview(&mut self, preview: Rc<Preview>) {
         *self.preview.borrow_mut() = Some(preview);
     }
@@ -10002,4 +10011,59 @@ fn outermost_class(ctx: &CompilerContext, sym: SymbolId) -> Option<SymbolId> {
         }
     }
     prev
+}
+
+impl Check {
+    /// Java: public void checkModuleName(JCModuleDecl tree) (Check.java:2204-2236).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context (tree arena);
+    ///   - tree: the module declaration.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - the declaration must carry a module symbol (set by Enter).
+    pub fn check_module_name(&self, ctx: &CompilerContext, tree: TreeId) {
+        let qual_id = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::ModuleDecl { qual_id, sym, .. } => {
+                assert!(sym.is_some(), "AssertionError: module symbol");
+                *qual_id
+            }
+            _ => panic!("ClassCastException: JCModuleDecl expected"),
+        };
+        if !self.lint.is_enabled(LintCategory::MODULE) {
+            return;
+        }
+        let mut current = qual_id;
+        while let Some(node) = current {
+            let (component, pos, next) = match &ctx.tree(node).kind {
+                crate::tree::jc_tree::TreeKind::FieldAccess {
+                    selected, name, ..
+                } => (name.clone(), ctx.tree(node).pos, *selected),
+                crate::tree::jc_tree::TreeKind::Ident { name, .. } => {
+                    (name.clone(), ctx.tree(node).pos, None)
+                }
+                _ => panic!("AssertionError: Unexpected qualified identifier"),
+            };
+            let component_string = component.to_java_string().to_string_lossy();
+            let last = component_string.chars().last();
+            let ends_with_digit = last.map(|c| c.is_numeric()).unwrap_or(false);
+            if ends_with_digit {
+                let warning = crate::util::jc_diagnostic::Warning::from(
+                    crate::resources::compiler_properties::warnings::
+                        poor_choice_for_module_name(component),
+                );
+                self.log.borrow_mut().warning_lint_pos(
+                    LintCategory::MODULE,
+                    Some(Rc::new(
+                        crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                    )),
+                    warning,
+                );
+            }
+            current = next;
+        }
+    }
 }

@@ -1060,6 +1060,9 @@ pub enum SymbolKind {
         flags: Vec<ModuleFlags>,
         /// The module resolution flags.
         resolution_flags: Vec<ModuleResolutionFlags>,
+        /// Java: public Completer usesProvidesCompleter =
+        /// Completer.NULL_COMPLETER (Symbol.ModuleSymbol:986; null -> None).
+        uses_provides_completer: Option<CompleterRef>,
     },
     /// Java: Symbol.RootPackageSymbol
     RootPackageSymbol {
@@ -3573,6 +3576,7 @@ mod tests {
             enclosed_packages: List::nil(),
             flags: Vec::new(),
             resolution_flags: Vec::new(),
+            uses_provides_completer: None,
         }));
         assert_eq!(ctx.sym(module).get_kind(&ctx), ElementKind::MODULE);
         let type_parameter = ctx.alloc_symbol(Symbol::new(Kind::TYP, 0, name(&[0x54]), None, None, SymbolKind::TypeVariableSymbol));

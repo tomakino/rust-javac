@@ -18,8 +18,11 @@
 //!
 //! NOT PORTED IN THIS FILE:
 //! - JNIWriter.multiModuleMode assignment (Modules.java:206-207): JNIWriter is
-//!   not ported (registered dependency);
-//! - (none: getUsesProvidesCompleter/UsesProvidesVisitor are ported).
+//!   not ported (registered dependency); ClassWriter.multiModuleMode is set by
+//!   the bootstrap;
+//! - findPackageInFile (JavaCompiler.java:414/1741) is installed by wiring in
+//!   the JavaCompiler batch; until then UsesProvidesVisitor.visitExports
+//!   requires it for source modules (JavaCompiler.parse is not ported yet).
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -1051,26 +1054,24 @@ impl Modules {
             let all: Vec<SymbolId> = syms.get_all_modules();
             for sym in all {
                 let attempt: Result<bool, CompletionFailure> = (|| {
-                    if observable.is_none() {
+                    // Java: systemModulePred.test(sym) is the first term of
+                    // the upstream condition (Modules.java:1237-1250) and
+                    // short-circuits before any completion predicate runs.
+                    if !system_module_pred(ctx, sym) {
+                        return Ok(false);
+                    }
+                    let observable_ok = if let Some(observable) = &observable {
+                        observable.contains(&sym)
+                    } else {
                         let found = self
                             .module_finder
                             .borrow_mut()
                             .find_module(ctx, syms, sym);
-                        if ctx.sym(found).kind == Kind::ERR {
-                            return Ok(false);
-                        }
-                    }
-                    let observable_ok = observable
-                        .as_ref()
-                        .map(|o| o.contains(&sym))
-                        .unwrap_or(true);
+                        ctx.sym(found).kind != Kind::ERR
+                    };
                     let jdk_ok = jdk_module_pred(ctx, syms, sym)?;
                     let incubator_ok = no_incubator_pred(ctx, syms, sym)?;
-                    Ok(system_module_pred(ctx, sym)
-                        && observable_ok
-                        && jdk_ok
-                        && incubator_ok
-                        && !enabled_root.contains(&sym))
+                    Ok(observable_ok && jdk_ok && incubator_ok && !enabled_root.contains(&sym))
                 })();
                 match attempt {
                     Ok(true) => enabled_root.push(sym),
@@ -2737,33 +2738,80 @@ impl Completer for UsesProvidesCompleter {
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
         let modules = Rc::clone(&self.modules);
-        ctx.complete_symbol(syms, sym)?;
-        let env = modules
+        let attr = Rc::clone(&modules.attr);
+        let mut attr = attr.borrow_mut();
+        modules.run_uses_provides(ctx, syms, sym, &mut attr)
+    }
+}
+
+impl Modules {
+    /// Java: the body of the usesProvidesCompleter (Modules.java:967-986).
+    fn run_uses_provides(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        msym: SymbolId,
+        attr: &mut Attr,
+    ) -> Result<(), CompletionFailure> {
+        let env = self
             .type_envs
             .borrow()
-            .get(sym)
+            .get(msym)
             .expect("AssertionError: typeEnvs entry for module");
         let toplevel = env.toplevel.expect("AssertionError: module env toplevel");
         let decl = tree_info::get_module(ctx, toplevel).expect("AssertionError: moduleDecl");
         let source = compilation_unit_sourcefile(ctx, toplevel);
         let prev_source = match source {
-            Some(source) => {
-                AbstractLog::use_source(&mut *modules.log.borrow_mut(), Some(source))
-            }
+            Some(source) => AbstractLog::use_source(&mut *self.log.borrow_mut(), Some(source)),
             None => None,
         };
-        let prev_lint = modules
+        let prev_lint = self
             .deferred_lint_handler
             .borrow_mut()
             .set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos)));
-        let mut visitor = UsesProvidesVisitor::new(&modules, ctx, syms, sym, env.clone());
+        let mut visitor = UsesProvidesVisitor::new(self, attr, ctx, syms, msym, env.clone());
         visitor.visit_module_def(decl);
-        modules
-            .deferred_lint_handler
+        self.deferred_lint_handler
             .borrow_mut()
             .set_pos_state(prev_lint);
-        AbstractLog::use_source(&mut *modules.log.borrow_mut(), prev_source);
+        AbstractLog::use_source(&mut *self.log.borrow_mut(), prev_source);
         Ok(())
+    }
+
+    /// Java: tree.sym.completeUsesProvides() invoked from Attr.visitModuleDef
+    /// (Attr.java:5383; Symbol.java:1050-1056). The Rust port receives the
+    /// currently borrowed Attr explicitly because the Completer would
+    /// otherwise re-borrow the same RefCell (registered reentrancy adapter).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - msym: the module symbol;
+    ///   - attr: the active attribution pass.
+    ///
+    /// # Returns
+    ///   - the completion result.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn complete_uses_provides_from_attr(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        msym: SymbolId,
+        attr: &mut Attr,
+    ) -> Result<(), CompletionFailure> {
+        let stored = match &mut ctx.sym_mut(msym).kind_data {
+            SymbolKind::ModuleSymbol {
+                uses_provides_completer,
+                ..
+            } => uses_provides_completer.take(),
+            _ => None,
+        };
+        if stored.is_none() {
+            return Ok(());
+        }
+        ctx.complete_symbol(syms, msym)?;
+        self.run_uses_provides(ctx, syms, msym, attr)
     }
 }
 
@@ -2771,6 +2819,7 @@ impl Completer for UsesProvidesCompleter {
 /// (Modules.java:988-1211).
 struct UsesProvidesVisitor<'a> {
     modules: &'a Modules,
+    attr: &'a mut Attr,
     ctx: &'a mut CompilerContext,
     syms: &'a mut Symtab,
     msym: SymbolId,
@@ -2783,6 +2832,7 @@ struct UsesProvidesVisitor<'a> {
 impl<'a> UsesProvidesVisitor<'a> {
     fn new(
         modules: &'a Modules,
+        attr: &'a mut Attr,
         ctx: &'a mut CompilerContext,
         syms: &'a mut Symtab,
         msym: SymbolId,
@@ -2790,6 +2840,7 @@ impl<'a> UsesProvidesVisitor<'a> {
     ) -> UsesProvidesVisitor<'a> {
         UsesProvidesVisitor {
             modules,
+            attr,
             ctx,
             syms,
             msym,
@@ -2986,9 +3037,7 @@ impl<'a> UsesProvidesVisitor<'a> {
         let Some(service_name) = service_name else { return };
         let st = {
             let syms = &mut *self.syms;
-            self.modules
-                .attr
-                .borrow_mut()
+            self.attr
                 .attrib_type_with(self.ctx, syms, service_name, &self.env, Some(syms.object_type))
         };
         let service = self.ctx.typ(st).tsym.expect("AssertionError: service tsym");
@@ -3013,7 +3062,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                 };
                 let result = {
                     let syms = &mut *self.syms;
-                    self.modules.attr.borrow_mut().attrib_type_with(
+                    self.attr.attrib_type_with(
                         self.ctx,
                         syms,
                         impl_name,
@@ -3214,9 +3263,7 @@ impl<'a> UsesProvidesVisitor<'a> {
         let Some(qualid) = qualid else { return };
         let st = {
             let syms = &mut *self.syms;
-            self.modules
-                .attr
-                .borrow_mut()
+            self.attr
                 .attrib_type_with(self.ctx, syms, qualid, &self.env, Some(syms.object_type))
         };
         let sym = tree_info::symbol(self.ctx, qualid).expect("AssertionError: uses symbol");

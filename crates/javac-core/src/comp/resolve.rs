@@ -343,7 +343,7 @@ impl Resolve {
             (same_owner || same_outermost) && inherited
         } else if access == 0 {
             // Java: env.toplevel.packge == sym.owner.owner || ...; the ported
-            // package owner may be unset (Modules not ported), in which case the
+            // package owner may be unset (the Modules bootstrap adapter), in which case the
             // first comparison is false (a null owner does not match a package).
             let owner_owner_matches = ctx
                 .sym(owner)

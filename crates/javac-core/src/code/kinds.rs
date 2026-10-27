@@ -467,6 +467,7 @@ mod tests {
             enclosed_packages: List::nil(),
             flags: Vec::new(),
             resolution_flags: Vec::new(),
+            uses_provides_completer: None,
         }
     }
 

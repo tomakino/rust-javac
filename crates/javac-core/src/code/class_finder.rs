@@ -27,7 +27,8 @@
 // - NOT PORTED: newCompletionFailure cached CompletionFailure reuse (the port
 // allocates a fresh error value; the upstream reuse is a pure allocation
 // optimization, registered adapter);
-// - NOT PORTED: module completer (Modules not ported; msym.complete() TODO).
+// - the module completer is installed by Symtab.set_module_completer
+//   (Modules.getCompleter; batch 1b wiring).
 //
 // Registered adapters:
 // - getCompleter/thisCompleter -> Weak<RefCell<ClassFinder>> self reference
@@ -1467,7 +1468,8 @@ mod tests {
         let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let java_base = syms.java_base;
         // Test bootstrap: the upstream Modules sets the system module locations;
-        // Modules is not ported yet, so the platform class location is installed
+        // The platform class location is installed by the bootstrap; the
+// Modules.initModules entry point is wired in the JavaCompiler batch, so the
         // here (registered adapter, see the registration).
         if let SymbolKind::ModuleSymbol { class_location, .. } =
             &mut ctx.sym_mut(java_base).kind_data

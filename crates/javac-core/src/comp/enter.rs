@@ -80,11 +80,16 @@ pub struct Enter {
     pub type_enter: Rc<RefCell<Option<Rc<RefCell<crate::comp::type_enter::TypeEnter>>>>>,
     /// Java: Todo todo
     pub todo: Rc<RefCell<crate::comp::todo::Todo>>,
+    /// Java: private final Modules modules = Modules.instance(context)
+    /// (Enter.java:129) — installed by the bootstrap after construction to
+    /// break the Enter/Modules/Attr initialization cycle (registered adapter).
+    pub modules: Rc<RefCell<Option<Rc<crate::comp::modules::Modules>>>>,
 }
 
 impl Enter {
     /// Java: protected Enter(Context context) — injected dependencies; Annotate/
-    /// TypeEnter/Modules/Todo are not ported (TODO in the methods, registered).
+    /// TypeEnter/Todo are installed after construction; Modules is installed by
+    /// the bootstrap (adapter cells).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         log: Rc<RefCell<Log>>,
@@ -116,7 +121,23 @@ impl Enter {
             annotate: Rc::new(RefCell::new(None)),
             type_enter: Rc::new(RefCell::new(None)),
             todo,
+            modules: Rc::new(RefCell::new(None)),
         }
+    }
+
+    /// Installs the Modules service (Enter.java:129; delayed to break the
+    /// Enter/Modules construction cycle).
+    ///
+    /// # Arguments
+    ///   - modules: the module system.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn set_modules(&mut self, modules: Rc<crate::comp::modules::Modules>) {
+        *self.modules.borrow_mut() = Some(modules);
     }
 
     /// Java: public Env<AttrContext> getEnv(TypeSymbol sym)
@@ -359,8 +380,18 @@ impl Enter {
             set_compilation_unit_package(ctx, tree, syms.root_package);
             let top_env = self.top_level_env(ctx, tree);
             self.class_enter_list(ctx, syms, compilation_unit_defs(ctx, tree), Some(top_env));
-            // TODO(Modules): tree.modle.usesProvidesCompleter =
-            // modules.getUsesProvidesCompleter();
+            // Java: tree.modle.usesProvidesCompleter =
+            // modules.getUsesProvidesCompleter() (Enter.java:324).
+            if let Some(modules) = self.modules.borrow().clone() {
+                let completer = modules.get_uses_provides_completer();
+                if let crate::code::symbol::SymbolKind::ModuleSymbol {
+                    uses_provides_completer,
+                    ..
+                } = &mut ctx.sym_mut(module).kind_data
+                {
+                    *uses_provides_completer = Some(completer);
+                }
+            }
         } else {
             let pd = compilation_unit_package_decl(ctx, tree);
             if let Some(pd) = pd {
@@ -391,8 +422,46 @@ impl Enter {
                 let unnamed = module_unnamed_package(ctx, module).expect("unnamed package");
                 set_compilation_unit_package(ctx, tree, unnamed);
             }
-            // TODO(Modules): dependencyWithPackage / PackageInOtherModule
-            // check (syms.listPackageModules and module.visiblePackages).
+            // Java: Optional<ModuleSymbol> dependencyWithPackage =
+            // syms.listPackageModules(tree.packge.fullname).stream()
+            //   .filter(m -> m != tree.modle)
+            //   .filter(cand -> visiblePackages.get(fullname) ==
+            //                  syms.getPackage(cand, fullname))
+            //   .findAny(); then Errors.PackageInOtherModule
+            // (Enter.java:344-354).
+            let modle = module;
+            let packge_symbol = compilation_unit_package(ctx, tree).expect("tree.packge");
+            let packge_fullname = package_fullname_of(ctx, packge_symbol);
+            let visible_packages = match &ctx.sym(modle).kind_data {
+                crate::code::symbol::SymbolKind::ModuleSymbol {
+                    visible_packages, ..
+                } => visible_packages.clone(),
+                _ => std::collections::HashMap::new(),
+            };
+            let dependency_with_package = syms
+                .list_package_modules(&packge_fullname)
+                .iter()
+                .find(|candidate| {
+                    *candidate != modle
+                        && visible_packages.get(&packge_fullname).copied()
+                            == syms.get_package(*candidate, &packge_fullname)
+                });
+            if let Some(dependency) = dependency_with_package {
+                let pos = pd
+                    .map(|pd| ctx.tree(pd).pos)
+                    .unwrap_or(crate::util::position::NOPOS);
+                let name = ctx
+                    .sym(dependency)
+                    .name
+                    .to_java_string()
+                    .to_string_lossy();
+                self.log.borrow_mut().error_at(
+                    pos,
+                    JCDiagnosticError::from(errors::package_in_other_module(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(name),
+                    )),
+                );
+            }
             let packge = compilation_unit_package(ctx, tree).expect("tree.packge");
             // Java: tree.packge.complete(); // Find all classes in package.
             ctx.complete_symbol(syms, packge)?;
@@ -767,9 +836,14 @@ impl Enter {
         let env = self.env.clone().expect("env");
         let module_env = self.module_env(ctx, tree, &env);
         let module = module_tree_symbol(ctx, tree).expect("tree.sym");
-        self.type_envs.borrow_mut().put(module, module_env);
-        // TODO(Modules): if (modules.isInModuleGraph(tree.sym))
-        // todo.append(moduleEnv);
+        self.type_envs.borrow_mut().put(module, module_env.clone());
+        // Java: if (modules.isInModuleGraph(tree.sym)) todo.append(moduleEnv)
+        // (Enter.java:571-573).
+        if let Some(modules) = self.modules.borrow().clone()
+            && modules.is_in_module_graph(module)
+        {
+            self.todo.borrow_mut().append(ctx, module_env);
+        }
         Ok(())
     }
 
@@ -1636,5 +1710,14 @@ mod tests {
             "p",
             "package of the compilation unit"
         );
+    }
+}
+
+/// The qualified name of a package symbol (Java: PackageSymbol.fullname).
+fn package_fullname_of(ctx: &CompilerContext, sym: SymbolId) -> crate::util::name::Name {
+    match &ctx.sym(sym).kind_data {
+        crate::code::symbol::SymbolKind::PackageSymbol { fullname, .. }
+        | crate::code::symbol::SymbolKind::RootPackageSymbol { fullname, .. } => fullname.clone(),
+        _ => ctx.sym(sym).name.clone(),
     }
 }

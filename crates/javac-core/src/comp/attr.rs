@@ -357,6 +357,11 @@ pub struct Attr {
     pub source_name: String,
     /// Java: Env<AttrContext> env (the current environment)
     pub env: Option<Rc<Env<AttrContext>>>,
+    /// Java: Modules modules = Modules.instance(context) (Modules.java:140 is
+    /// a dependency of the module-def attribution path; the local Attr uses it
+    /// through Attr.visitModuleDef; installed by the bootstrap to break the
+    /// Attr/Modules cycle; registered adapter).
+    pub modules: Rc<RefCell<Option<Rc<crate::comp::modules::Modules>>>>,
     /// Java: ResultInfo resultInfo (the current result info)
     pub result_info: Option<ResultInfo>,
     /// Java: CheckContext basicHandler (chk.basicHandler; injected explicitly
@@ -547,6 +552,7 @@ impl Attr {
             attr_recover: Rc::new(RefCell::new(None)),
             syms,
             infer,
+            modules: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -764,6 +770,7 @@ impl Attr {
             Tag::METHODDEF => self.visit_method_def_result(ctx, syms, tree),
             Tag::VARDEF => self.visit_var_def_result(ctx, syms, tree),
             Tag::CLASSDEF => self.visit_class_def(ctx, syms, tree),
+            Tag::MODULEDEF => self.visit_module_def(ctx, syms, tree),
             Tag::CONDEXPR => self.visit_conditional(ctx, syms, tree),
             Tag::ASSERT => self.visit_assert(ctx, syms, tree),
             Tag::LABELLED => self.visit_labeled(ctx, syms, tree),
@@ -11703,7 +11710,8 @@ impl Attr {
     ///   - none.
     ///
     /// # Panics
-    ///   - the module/package declaration branches need Modules (not ported yet).
+    ///   - the module/package declaration branches need the injected Modules
+///     service (installed by the bootstrap).
     ///
     /// Upstream: Attr.java:5143-5155.
     pub fn attrib(
@@ -13346,6 +13354,7 @@ impl Attr {
     /// attribution state; see the batch report for the per-field table.
     fn snapshot_for_anonymous_class(&self) -> Attr {
         Attr {
+            modules: Rc::clone(&self.modules),
             names: Rc::clone(&self.names),
             log: Rc::clone(&self.log),
             chk: Rc::clone(&self.chk),
@@ -16655,5 +16664,90 @@ impl Attr {
             }
         }
         scan(ctx, pid, Some(pkg));
+    }
+}
+
+impl Attr {
+    /// Installs the Modules service (delayed to break the Attr/Modules
+    /// construction cycle; registered adapter of Modules.instance(context)).
+    ///
+    /// # Arguments
+    ///   - modules: the module system.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn set_modules(&mut self, modules: Rc<crate::comp::modules::Modules>) {
+        *self.modules.borrow_mut() = Some(modules);
+    }
+
+    /// Java: public void visitModuleDef(JCModuleDecl tree) (Attr.java:5382-5395).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: explicit services;
+    ///   - tree: the module declaration.
+    ///
+    /// # Returns
+    ///   - the attributed type (the ported visitor contract uses Type.noType
+    ///     for the void upstream method; registered adapter).
+    ///
+    /// # Panics
+    ///   - the module descriptor must carry its symbol, the active environment
+    ///     and the Modules/Check services must be installed.
+    fn visit_module_def(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let msym = match &ctx.tree(tree).kind {
+            TreeKind::ModuleDecl { sym: Some(sym), .. } => *sym,
+            _ => panic!("ClassCastException: JCModuleDecl expected"),
+        };
+        // Java: tree.sym.completeUsesProvides();
+        let modules = self
+            .modules
+            .borrow()
+            .clone()
+            .expect("AssertionError: Modules service must be installed");
+        modules.complete_uses_provides_from_attr(ctx, syms, msym, self)?;
+        // Java: Lint lint = env.outer.info.lint = env.outer.info.lint.augment(msym);
+        let env = self.env.clone().expect("AssertionError: attr env");
+        let outer = env
+            .outer
+            .clone()
+            .expect("AssertionError: module env outer");
+        let lint = {
+            let prev = outer
+                .info
+                .borrow()
+                .lint
+                .clone()
+                .expect("AssertionError: module outer lint");
+            prev.augment(ctx, syms, ctx.sym(msym))
+        };
+        let lint_rc = Rc::new(lint);
+        outer.info.borrow_mut().lint = Some(Rc::clone(&lint_rc));
+        // Java: Lint prevLint = chk.setLint(lint);
+        let prev_lint = self.chk.borrow_mut().set_lint(Rc::clone(&lint_rc));
+        // Java: chk.checkModuleName(tree); chk.checkDeprecatedAnnotation(tree, msym);
+        self.chk.borrow().check_module_name(ctx, tree);
+        self.chk.borrow().check_deprecated_annotation(
+            ctx,
+            syms,
+            ctx.tree(tree).pos,
+            msym,
+        );
+        // Java: try { deferredLintHandler.flush(tree.pos()); }
+        //       finally { chk.setLint(prevLint); }
+        let pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+            Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                ctx.tree(tree).pos,
+            ));
+        self.deferred_lint_handler.borrow_mut().flush(&pos);
+        self.chk.borrow_mut().set_lint(prev_lint);
+        Ok(self.no_type(ctx))
     }
 }

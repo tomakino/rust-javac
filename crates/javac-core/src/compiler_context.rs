@@ -689,6 +689,35 @@ impl CompilerContext {
         Ok(())
     }
 
+    /// Java: Symbol.ModuleSymbol.completeUsesProvides() (Symbol.java:1050-1056).
+    ///
+    /// # Arguments
+    ///   - syms: the symbol table;
+    ///   - symbol: the module symbol.
+    ///
+    /// # Returns
+    ///   - the completion result.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn complete_uses_provides(
+        &mut self,
+        syms: &mut crate::code::symtab::Symtab,
+        symbol: SymbolId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        let completer = match &mut self.sym_mut(symbol).kind_data {
+            crate::code::symbol::SymbolKind::ModuleSymbol {
+                uses_provides_completer,
+                ..
+            } => uses_provides_completer.take(),
+            _ => None,
+        };
+        if let Some(completer) = completer {
+            completer.borrow_mut().complete(self, syms, symbol)?;
+        }
+        Ok(())
+    }
+
     /// Java: ClassSymbol.complete() — error recovery installs the error type and
     /// the public/static flags, then notifies the DeferredCompletionFailureHandler.
     pub fn complete_class_symbol(
