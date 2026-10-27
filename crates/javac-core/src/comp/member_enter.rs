@@ -157,7 +157,7 @@ impl MemberEnter {
                 exc = self
                     .chk
                     .borrow()
-                    .check_class_type(ctx, ctx.tree(thrown_tree).pos, exc);
+                    .check_class_type(ctx, syms, ctx.tree(thrown_tree).pos, exc);
             } else if ctx
                 .typ(exc)
                 .tsym

@@ -365,7 +365,8 @@ impl TypeAnnotations {
         let ta = Rc::clone(self);
         let env = Rc::clone(env);
         self.annotate.after_types(Box::new(
-            move |ctx: &mut crate::compiler_context::CompilerContext| {
+            move |ctx: &mut crate::compiler_context::CompilerContext,
+                  syms: &mut crate::code::symtab::Symtab| {
                 let toplevel = env.toplevel.expect("env toplevel");
                 let sourcefile = match &ctx.tree(toplevel).kind {
                     crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => {
@@ -377,8 +378,7 @@ impl TypeAnnotations {
                     &mut *ta.log.borrow_mut(),
                     sourcefile,
                 );
-                let mut syms = ta.syms.borrow_mut();
-                let mut positions = TypeAnnotationPositions::new(&ta, &mut syms, true);
+                let mut positions = TypeAnnotationPositions::new(&ta, syms, true);
                 crate::tree::tree_scanner::TreeScannerVisitor::scan(
                     &mut positions,
                     ctx,
@@ -418,7 +418,8 @@ impl TypeAnnotations {
         let ta = Rc::clone(self);
         let env = Rc::clone(env);
         self.annotate.validate(Box::new(
-            move |ctx: &mut crate::compiler_context::CompilerContext| {
+            move |ctx: &mut crate::compiler_context::CompilerContext,
+                  syms: &mut crate::code::symtab::Symtab| {
                 let toplevel = env.toplevel.expect("env toplevel");
                 let sourcefile = match &ctx.tree(toplevel).kind {
                     crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => {
@@ -432,7 +433,7 @@ impl TypeAnnotations {
                 );
                 {
                     let attr = ta.attr.borrow();
-                    attr.validate_type_annotations(ctx, tree, true);
+                    attr.validate_type_annotations(ctx, syms, tree, true);
                 }
                 crate::util::abstract_log::AbstractLog::use_source(
                     &mut *ta.log.borrow_mut(),

@@ -4857,7 +4857,7 @@ impl Lower {
                         _ => panic!("expected a field access"),
                     };
                     let translated = self.translate(ctx, Some(selected)).expect("translated qualifier");
-                    let checked = self.attr.borrow_mut().make_null_check(ctx, translated);
+                    let checked = self.attr.borrow_mut().make_null_check(ctx, &mut self.syms.borrow_mut(), translated);
                     let new_meth = self.make.borrow_mut().ident_symbol(ctx, constructor);
                     if let Some(meth_name) = meth_tree_name.clone()
                         && let TreeKind::Ident { name, .. } = &mut ctx.tree_mut(new_meth).kind
@@ -5150,7 +5150,7 @@ impl Lower {
         if ctx.sym(c).has_outer_instance(ctx) {
             let this_arg = if let Some(encl) = encl {
                 let translated = self.translate(ctx, Some(encl)).expect("translated enclosing expression");
-                let checked = self.attr.borrow_mut().make_null_check(ctx, translated);
+                let checked = self.attr.borrow_mut().make_null_check(ctx, &mut self.syms.borrow_mut(), translated);
                 let encl_ty = ctx.tree(encl).ty;
                 if let Some(encl_ty) = encl_ty {
                     ctx.tree_mut(checked).ty = Some(encl_ty);
@@ -6671,7 +6671,7 @@ impl Lower {
         let alternatives = case_list.length();
         let pos = ctx.tree(tree).pos;
         if alternatives == 0 {
-            let checked = self.attr.borrow_mut().make_null_check(ctx, selector);
+            let checked = self.attr.borrow_mut().make_null_check(ctx, &mut self.syms.borrow_mut(), selector);
             return self.make.borrow_mut().exec(ctx, checked);
         }
         let string_type = self.syms.borrow().string_type;

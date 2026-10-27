@@ -2439,10 +2439,7 @@ impl ClassReader {
                 let services = Rc::clone(&annotate.services);
                 let class_file = self.current_class_file.clone();
                 let reader_handle = self.reader_handle.clone();
-                annotate.normal(Box::new(move |ctx: &mut CompilerContext| {
-                    let syms_rc = Rc::clone(&services.syms);
-                    let mut syms_guard = syms_rc.borrow_mut();
-                    let syms = &mut *syms_guard;
+                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &mut crate::code::symtab::Symtab| {
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                         let mut reader_guard =
@@ -2533,10 +2530,7 @@ impl ClassReader {
                 let services = Rc::clone(&annotate.services);
                 let class_file = self.current_class_file.clone();
                 let reader_handle = self.reader_handle.clone();
-                annotate.normal(Box::new(move |ctx: &mut CompilerContext| {
-                    let syms_rc = Rc::clone(&services.syms);
-                    let mut syms_guard = syms_rc.borrow_mut();
-                    let syms = &mut *syms_guard;
+                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &mut crate::code::symtab::Symtab| {
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                         let mut reader_guard =

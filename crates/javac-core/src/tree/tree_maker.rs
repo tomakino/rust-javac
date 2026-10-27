@@ -2342,25 +2342,6 @@ impl TreeMaker {
     // Helper methods (TreeMaker.java:1105-1144).
     // ------------------------------------------------------------------
 
-    /// The shared symbol table cell (registered adapter: the TreeMaker keeps
-    /// the Context services that Java reads from its fields).
-    fn syms_rc(&self) -> Rc<RefCell<crate::code::symtab::Symtab>> {
-        self.syms
-            .as_ref()
-            .expect("AssertionError: TreeMaker.syms")
-            .clone()
-    }
-
-    /// Runs `f` with a short mutable borrow of the shared symbol table. Every
-    /// TreeMaker operation borrows only for the duration of the query, so no
-    /// caller may hold its own borrow across the call (the Java field has no
-    /// such restriction; registered adapter).
-    fn with_syms<R>(&self, f: impl FnOnce(&mut crate::code::symtab::Symtab) -> R) -> R {
-        let syms = self.syms_rc();
-        let mut syms = syms.borrow_mut();
-        f(&mut syms)
-    }
-
     /// Java: boolean isUnqualifiable(Symbol sym)
     fn is_unqualifiable(
         &mut self,
@@ -2583,7 +2564,7 @@ impl TreeMaker {
             _ => panic!("ClassCastException: not a class attribute"),
         };
         let tree = self.class_literal(ctx, syms, class_type);
-        let class_type = self.with_syms(|syms| syms.class_type);
+        let class_type = syms.class_type;
         ctx.tree_mut(tree).ty = Some(class_type);
         tree
     }
@@ -2726,11 +2707,10 @@ impl TreeMaker {
     pub fn literal_constant(
         &mut self,
         ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
         value: crate::util::constants::ConstantValue,
     ) -> TreeId {
         use crate::util::constants::ConstantValue;
-        let syms_rc = self.syms_rc();
-        let syms = syms_rc.borrow();
         let (typetag, literal_value, base_type) = match &value {
             ConstantValue::Integer(value) => {
                 (TypeTag::INT, LiteralValue::Integer(*value), syms.int_type)
@@ -3215,13 +3195,14 @@ mod tests {
         use crate::util::constants::ConstantValue;
         let (mut ctx, syms_rc, _types, mut maker) = new_maker_with_syms();
         // Java: Literal(Object) — the constant type is attached to the tree.
-        let literal = maker.literal_constant(&mut ctx, ConstantValue::Integer(7));
+        let literal = maker.literal_constant(&mut ctx, &mut *syms_rc.borrow_mut(), ConstantValue::Integer(7));
         assert_eq!(ctx.tree(literal).tag, Tag::LITERAL);
         let constant_type = ctx.tree(literal).ty.expect("constant type");
         assert_eq!(ctx.type_const_value(constant_type), Some(&ConstantValue::Integer(7)));
         assert_eq!(ctx.type_base_type(constant_type), syms_rc.borrow().int_type);
         let string_literal = maker.literal_constant(
             &mut ctx,
+            &mut *syms_rc.borrow_mut(),
             ConstantValue::String(javac_strings::JavaString::from("s")),
         );
         assert_eq!(

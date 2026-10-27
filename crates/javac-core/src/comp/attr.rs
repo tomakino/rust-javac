@@ -176,7 +176,7 @@ impl ResultInfo {
     pub fn check(
         &self,
         ctx: &mut CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         chk: &Check,
         pos: i32,
         found: TypeId,
@@ -189,7 +189,7 @@ impl ResultInfo {
         if self.check_non_void {
             // Java: RecoveryInfo overrides check() to wrap the result with
             // chk.checkNonVoid (Attr.java:598-620); adapter flag-based expression.
-            chk.check_non_void(ctx, pos, result)
+            chk.check_non_void(ctx, syms, pos, result)
         } else {
             result
         }
@@ -422,13 +422,13 @@ pub struct Attr {
     /// the wiring).
     pub type_annotations: Rc<RefCell<Option<Rc<crate::code::type_annotations::TypeAnnotations>>>>,
     /// Adapter: the Symtab values cached at the entry points (see SymtabFacts).
-    pub symtab_facts: RefCell<Option<SymtabFacts>>,
+    pub symtab_facts: std::cell::Cell<SymtabFacts>,
 }
 
 impl Attr {
     /// Cache the Symtab values read during attribution.
     fn cache_symtab_facts(&self, syms: &Symtab) {
-        *self.symtab_facts.borrow_mut() = Some(SymtabFacts {
+        self.symtab_facts.set(SymtabFacts {
             recovery_type: syms.recovery_type,
             unnamed_module: syms.unnamed_module,
             no_module: syms.no_module,
@@ -438,20 +438,10 @@ impl Attr {
         });
     }
 
-    /// Return the cached Symtab value, or read it from the shared cell.
+    /// Return the cached Symtab values (captured at construction and refreshed at
+    /// the entry points; no Symtab borrow is taken while attributing).
     fn symtab_facts(&self) -> SymtabFacts {
-        if let Some(facts) = *self.symtab_facts.borrow() {
-            return facts;
-        }
-        let syms = self.syms.borrow();
-        SymtabFacts {
-            recovery_type: syms.recovery_type,
-            unnamed_module: syms.unnamed_module,
-            no_module: syms.no_module,
-            enum_sym: enum_sym_value(&syms),
-            throwable_type: syms.throwable_type,
-            void_type: syms.void_type,
-        }
+        self.symtab_facts.get()
     }
 
     /// Java: protected Attr(Context context) — injected dependencies.
@@ -488,6 +478,14 @@ impl Attr {
         let allow_pattern_switch = (preview.is_enabled() || !preview.is_preview(Feature::PATTERN_SWITCH))
             && Feature::PATTERN_SWITCH.allowed_in_source(source);
         let recovery_type = syms.borrow().recovery_type;
+        let symtab_facts = SymtabFacts {
+            recovery_type: syms.borrow().recovery_type,
+            unnamed_module: syms.borrow().unnamed_module,
+            no_module: syms.borrow().no_module,
+            enum_sym: enum_sym_value(&syms.borrow()),
+            throwable_type: syms.borrow().throwable_type,
+            void_type: syms.borrow().void_type,
+        };
         let mb_log = Rc::clone(&log);
         let mb_diags = Rc::clone(&diags);
         Attr {
@@ -548,7 +546,7 @@ impl Attr {
             flow: Rc::new(RefCell::new(None)),
             annotate: Rc::new(RefCell::new(None)),
             type_annotations: Rc::new(RefCell::new(None)),
-            symtab_facts: RefCell::new(None),
+            symtab_facts: std::cell::Cell::new(symtab_facts),
             attr_recover: Rc::new(RefCell::new(None)),
             syms,
             infer,
@@ -862,7 +860,7 @@ impl Attr {
         let clazztype = self
             .chk
             .borrow()
-            .check_class_type(ctx, clazz_pos, clazz_type);
+            .check_class_type(ctx, syms, clazz_pos, clazz_type);
 
         // Attribute type parameters
         let arguments = type_apply_arguments(ctx, tree);
@@ -1796,7 +1794,7 @@ impl Attr {
             && let Some(analyzer_rc) = self.analyzer.borrow().clone()
         {
             let mut analyzer = analyzer_rc.borrow_mut();
-            analyzer.analyze_if_needed(ctx, tree, analyze_env.as_ref());
+            analyzer.analyze_if_needed(ctx, syms, tree, analyze_env.as_ref());
         }
         // Java: attrRecover.doRecovery();
         self.do_recovery(ctx, syms);
@@ -5313,7 +5311,7 @@ impl Attr {
             let argtype = self.attrib_tree_use(ctx, syms, arg, env, info);
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
-            let argtype = chk.check_non_void(ctx, ctx.tree(arg).pos, argtype);
+            let argtype = chk.check_non_void(ctx, syms, ctx.tree(arg).pos, argtype);
             drop(chk);
             if ctx.typ(argtype).has_tag(TypeTag::DEFERRED) {
                 kind = KindSelector::of(&[KindSelector::POLY, kind]);
@@ -5604,7 +5602,7 @@ impl Attr {
                         );
                         let chk_rc = Rc::clone(&self.chk);
                         let chk = chk_rc.borrow();
-                        chk.check_ref_type(ctx, ctx.tree(qualifier).pos, qual_type);
+                        chk.check_ref_type(ctx, syms, ctx.tree(qualifier).pos, qual_type);
                     } else if meth_name == self.names._super {
                         // qualifier omitted; check for existence of an appropriate
                         // implicit qualifier.
@@ -6393,7 +6391,7 @@ impl Attr {
             let detail_type = self.attrib_expr(ctx, syms, detail, &env);
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
-            chk.check_non_void(ctx, ctx.tree(detail).pos, detail_type);
+            chk.check_non_void(ctx, syms, ctx.tree(detail).pos, detail_type);
         }
         Ok(self.no_type(ctx))
     }
@@ -6755,7 +6753,7 @@ impl Attr {
             let pos = positions.get(index).copied().unwrap_or(0);
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
-            checked.push(chk.check_non_void(ctx, pos, *t));
+            checked.push(chk.check_non_void(ctx, syms, pos, *t));
         }
         let mut lub_types: List<TypeId> = List::nil();
         for t in checked {
@@ -6880,7 +6878,7 @@ impl Attr {
             let attr_type = self.attrib_expr(ctx, syms, arg, &env);
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
-            chk.check_non_void(ctx, ctx.tree(arg).pos, attr_type)
+            chk.check_non_void(ctx, syms, ctx.tree(arg).pos, attr_type)
         };
         let operator = {
             let ops = self.operators.borrow().clone().expect("AssertionError: operators service must be installed");
@@ -6948,7 +6946,7 @@ impl Attr {
         let left_attr = self.attrib_expr(ctx, syms, lhs, &env);
         let left = {
             let chk = chk_rc.borrow();
-            chk.check_non_void(ctx, ctx.tree(lhs).pos, left_attr)
+            chk.check_non_void(ctx, syms, ctx.tree(lhs).pos, left_attr)
         };
         let lhs_bindings = self.match_bindings.clone();
         let propagated: List<SymbolId> = match tag {
@@ -6960,7 +6958,7 @@ impl Attr {
         let right_attr = self.attrib_expr(ctx, syms, rhs, &rhs_env);
         let right = {
             let chk = chk_rc.borrow();
-            chk.check_non_void(ctx, ctx.tree(rhs).pos, right_attr)
+            chk.check_non_void(ctx, syms, ctx.tree(rhs).pos, right_attr)
         };
         let rhs_bindings = self.match_bindings.clone();
         self.match_bindings = self.match_bindings_computer.binary(ctx, tag, ctx.tree(tree).pos, &lhs_bindings, &rhs_bindings);
@@ -7497,7 +7495,7 @@ impl Attr {
                     fake_owner,
                     crate::util::position::NOPOS,
                 );
-                let _ = annotate_rc.flush(ctx);
+                let _ = annotate_rc.flush(ctx, syms);
             }
             self.attrib_stats(ctx, syms, stats, &local_env);
             // Store init and clinit type annotations with the ClassSymbol.
@@ -7712,7 +7710,7 @@ impl Attr {
         let lock_type = self.attrib_expr(ctx, syms, lock, &env);
         let chk_rc = Rc::clone(&self.chk);
         let chk = chk_rc.borrow();
-        chk.check_ref_type(ctx, ctx.tree(lock).pos, lock_type);
+        chk.check_ref_type(ctx, syms, ctx.tree(lock).pos, lock_type);
         drop(chk);
         // Java: if (env.info.lint.isEnabled(LintCategory.SYNCHRONIZATION) &&
         //     isValueBased(tree.lock.type)) log.warning(...);
@@ -7871,7 +7869,7 @@ impl Attr {
                 };
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = chk_rc.borrow();
-                let class_type = chk.check_class_type(ctx, vartype_pos, ctype);
+                let class_type = chk.check_class_type(ctx, syms, vartype_pos, ctype);
                 chk.check_type(
                     ctx,
                     syms,
@@ -8077,7 +8075,7 @@ impl Attr {
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
-            chk.check_non_void(ctx, ctx.tree(tree).pos, expr_type);
+            chk.check_non_void(ctx, syms, ctx.tree(tree).pos, expr_type);
         }
         let elemtype: TypeId = if ctx.typ(expr_type).has_tag(TypeTag::ARRAY) {
             self.types.elemtype(ctx, syms, expr_type)
@@ -8339,7 +8337,7 @@ impl Attr {
                 binding,
                 ctx.tree(var).pos,
             );
-            let _ = annotate_rc.flush(ctx);
+            let _ = annotate_rc.flush(ctx, syms);
         }
         // Java: chk.validate(tree.var.vartype, env, true);
         {
@@ -8746,7 +8744,7 @@ impl Attr {
                     let primary_type = if !ctx.typ(primary_type).has_tag(TypeTag::TYPEVAR) {
                         let chk_rc = Rc::clone(&self.chk);
                         let chk = chk_rc.borrow();
-                        chk.check_class_or_array_type(ctx, ctx.tree(pat).pos, primary_type)
+                        chk.check_class_or_array_type(ctx, syms, ctx.tree(pat).pos, primary_type)
                     } else {
                         primary_type
                     };
@@ -11024,12 +11022,14 @@ impl Attr {
     pub fn validate_type_annotations(
         &self,
         ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
         tree: TreeId,
         sig_only: bool,
     ) {
         struct TypeAnnotationsValidator<'a> {
             attr: &'a Attr,
             sig_only: bool,
+            syms: &'a mut crate::code::symtab::Symtab,
         }
         tree_scanner_visitor_delegate!(TypeAnnotationsValidator<'a>, 'a);
         #[allow(clippy::collapsible_if, clippy::too_many_lines)]
@@ -11039,7 +11039,7 @@ impl Attr {
                 {
                     let chk_rc = Rc::clone(&self.attr.chk);
                     let chk = chk_rc.borrow();
-                    chk.validate_type_annotation(ctx, tree, false);
+                    chk.validate_type_annotation(ctx, &mut *self.syms, tree, false);
                 }
                 // Java: super.visitAnnotation(tree);
                 let (annotation_type, args) = match &ctx.tree(tree).kind {
@@ -11084,7 +11084,7 @@ impl Attr {
                 {
                     let chk_rc = Rc::clone(&self.attr.chk);
                     let chk = chk_rc.borrow();
-                    chk.validate_type_annotations(ctx, &annotations, true);
+                    chk.validate_type_annotations(ctx, &mut *self.syms, &annotations, true);
                 }
                 self.scan_list(ctx, &bounds);
             }
@@ -11557,7 +11557,7 @@ impl Attr {
                 }
             }
         }
-        let mut validator = TypeAnnotationsValidator { attr: self, sig_only };
+        let mut validator = TypeAnnotationsValidator { attr: self, sig_only, syms };
         validator.scan(ctx, Some(tree));
     }
 }
@@ -11604,7 +11604,7 @@ impl Attr {
             .borrow()
             .clone()
             .expect("AssertionError: annotate service must be installed");
-        if let Err(failure) = annotate_rc.flush(ctx) {
+        if let Err(failure) = annotate_rc.flush(ctx, syms) {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
             chk.completion_error(ctx, pos, &failure, syms);
@@ -11659,7 +11659,7 @@ impl Attr {
             .borrow()
             .clone()
             .expect("AssertionError: annotate service must be installed");
-        if let Err(failure) = annotate_rc.flush(ctx) {
+        if let Err(failure) = annotate_rc.flush(ctx, syms) {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
             chk.completion_error(ctx, pos, &failure, syms);
@@ -11692,7 +11692,7 @@ impl Attr {
             .borrow()
             .clone()
             .expect("AssertionError: annotate service must be installed");
-        if let Err(failure) = annotate_rc.flush(ctx) {
+        if let Err(failure) = annotate_rc.flush(ctx, syms) {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
             chk.completion_error(ctx, pos, &failure, syms);
@@ -11848,8 +11848,8 @@ impl Attr {
                 let mut permitted_types: Vec<SymbolId> = Vec::new();
                 let c_pkg = crate::code::symbol::packge(ctx, c);
                 let c_module = c_pkg.and_then(|pkg| crate::code::symbol::Symbol::symbol_module(ctx, pkg));
-                let unnamed_module = self.syms.borrow().unnamed_module;
-                let no_module = self.syms.borrow().no_module;
+                let unnamed_module = syms.unnamed_module;
+                let no_module = syms.no_module;
                 let sealed_in_unnamed = c_module == Some(unnamed_module) || c_module == Some(no_module);
                 let mut permitted_current = permitted.clone();
                 while permitted_current.non_empty() {
@@ -12442,7 +12442,7 @@ impl Attr {
                 type_annotations_rc.organize_type_annotations_bodies(ctx, syms, tree);
             }
             // Check type annotations applicability rules
-            self.validate_type_annotations(ctx, tree, false);
+            self.validate_type_annotations(ctx, syms, tree, false);
         }
         let _ = mods;
     }
@@ -12526,7 +12526,7 @@ impl Attr {
             let encltype = {
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = chk_rc.borrow();
-                chk.check_ref_type(ctx, encl_pos, encl_expr_ty)
+                chk.check_ref_type(ctx, syms, encl_pos, encl_expr_ty)
             };
             let clazz_pos = ctx.tree(clazz).pos;
             let clazz_name = match &ctx.tree(clazzid).kind {
@@ -12589,7 +12589,7 @@ impl Attr {
         clazztype = {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
-            chk.check_diamond(ctx, tree, clazztype)
+            chk.check_diamond(ctx, syms, tree, clazztype)
         };
         {
             let chk_rc = Rc::clone(&self.chk);
@@ -12841,7 +12841,7 @@ impl Attr {
                 clazztype = {
                     let chk_rc = Rc::clone(&self.chk);
                     let chk = chk_rc.borrow();
-                    chk.check_class_type_no_bounds(ctx, ctx.tree(clazz).pos, clazz_ty, true)
+                    chk.check_class_type_no_bounds(ctx, syms, ctx.tree(clazz).pos, clazz_ty, true)
                 };
             } else if !skip_non_diamond_path {
                 let rs_env_config = local_env.dup(Some(tree), local_env.info.borrow().dup_ctx());
@@ -13186,7 +13186,7 @@ impl Attr {
             *slot = Some(constructor);
         }
         let constructor_type = {
-            let void_ty = self.syms.borrow().void_type;
+            let void_ty = self.symtab_facts().void_type;
             let method_template = self.new_method_template(
                 ctx,
                 syms,
@@ -13409,7 +13409,7 @@ impl Attr {
             flow: Rc::clone(&self.flow),
             annotate: Rc::clone(&self.annotate),
             type_annotations: Rc::clone(&self.type_annotations),
-            symtab_facts: RefCell::new(*self.symtab_facts.borrow()),
+            symtab_facts: std::cell::Cell::new(self.symtab_facts.get()),
         }
     }
 }
@@ -13647,7 +13647,12 @@ impl Attr {
     ///   - the operators service must be installed.
     ///
     /// Upstream: Attr.java:3036-3050.
-    pub fn make_null_check(&mut self, ctx: &mut CompilerContext, arg: TreeId) -> TreeId {
+    pub fn make_null_check(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        arg: TreeId,
+    ) -> TreeId {
         // optimization: new Outer() can never be null; skip null check
         if ctx.tree(arg).has_tag(Tag::NEWCLASS) {
             return arg;
@@ -13669,8 +13674,7 @@ impl Attr {
             let operators_rc = self.operators.borrow().clone();
             match operators_rc {
                 Some(operators_rc) => {
-                    let mut syms = self.syms.borrow_mut();
-                    operators_rc.resolve_unary(ctx, &mut syms, &self.types, pos, optag, arg_ty)
+                    operators_rc.resolve_unary(ctx, syms, &self.types, pos, optag, arg_ty)
                 }
                 None => panic!("AssertionError: operators service must be installed"),
             }
@@ -14019,7 +14023,7 @@ impl Attr {
                     m,
                     crate::util::position::NOPOS,
                 );
-                annotate.flush(ctx).expect("annotation flush");
+                annotate.flush(ctx, syms).expect("annotation flush");
             }
             self.attrib_stat(ctx, syms, body, &local_env);
         }
@@ -14498,7 +14502,7 @@ impl Attr {
                         .clone()
                         .expect("Attr.annotate must be injected");
                     annotate
-                        .unblock_annotations(ctx)
+                        .unblock_annotations(ctx, syms)
                         .expect("unblockAnnotations flush");
                 }
             }
@@ -14522,7 +14526,7 @@ impl Attr {
                     sym,
                     ctx.tree(tree).pos,
                 );
-                annotate.flush(ctx).expect("annotation flush");
+                annotate.flush(ctx, syms).expect("annotation flush");
             }
         }
         let v = sym_opt.expect("var symbol");
@@ -16576,7 +16580,7 @@ impl Attr {
         } else {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
-            chk.check_class_type(ctx, pos, t)
+            chk.check_class_type(ctx, syms, pos, t)
         };
         let Some(t_tsym) = ctx.typ(t).tsym else {
             return t;

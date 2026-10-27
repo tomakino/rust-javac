@@ -499,19 +499,26 @@ impl Analyzer {
     pub fn analyze_if_needed(
         &mut self,
         ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
         tree: TreeId,
         env: Option<&Rc<Env<AttrContext>>>,
     ) {
         if let Some(env) = env {
-            self.analyze(ctx, tree, env);
+            self.analyze(ctx, syms, tree, env);
         }
     }
 
     /// Java: protected void analyze(JCStatement statement, Env<AttrContext> env)
     /// (Analyzer.java:481-492).
-    fn analyze(&mut self, ctx: &mut CompilerContext, statement: TreeId, env: &Rc<Env<AttrContext>>) {
+    fn analyze(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        statement: TreeId,
+        env: &Rc<Env<AttrContext>>,
+    ) {
         let rewritings = {
-            let mut scanner = StatementScanner::new(self, ctx, statement, env);
+            let mut scanner = StatementScanner::new(self, ctx, &mut *syms, statement, env);
             scanner.scan_statement(ctx);
             std::mem::take(&mut scanner.rewritings)
         };
@@ -535,7 +542,8 @@ impl Analyzer {
     ///   - the queue entries are analyzed with the registered services.
     ///
     /// Upstream: Analyzer.java:585-587.
-    pub fn flush(&mut self, ctx: &mut CompilerContext, flush_env: &Rc<Env<AttrContext>>) {
+    pub fn flush(&mut self, ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab, flush_env: &Rc<Env<AttrContext>>) {
         let outermost = self.outermost_of_env(ctx, flush_env);
         let queued = match &mut self.deferred_analysis_helper {
             DeferredAnalysisHelper::Flush => None,
@@ -548,7 +556,7 @@ impl Analyzer {
         );
         while !queued.is_empty() {
             let rewriting = queued.remove(0);
-            self.do_analysis(ctx, rewriting);
+            self.do_analysis(ctx, &mut *syms, rewriting);
         }
         self.deferred_analysis_helper = prev_helper;
     }
@@ -580,7 +588,8 @@ impl Analyzer {
     }
 
     /// Java: void doAnalysis(RewritingContext rewriting) (Analyzer.java:553-583).
-    fn do_analysis(&mut self, ctx: &mut CompilerContext, rewriting: RewritingContext) {
+    fn do_analysis(&mut self, ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab, rewriting: RewritingContext) {
         let prev_source = {
             let toplevel = rewriting.env.toplevel.expect("env toplevel");
             let sourcefile = match &ctx.tree(toplevel).kind {
@@ -628,7 +637,6 @@ impl Analyzer {
         let stat_info = attr.stat_info.clone();
         let deferred_rc = self.deferred_service();
         let mut deferred = deferred_rc.borrow_mut();
-        let mut syms = self.syms.borrow_mut();
         let diag_creator: Box<dyn Fn() -> DiagnosticHandler> = Box::new(move || {
             DiagnosticHandler::Analyzer {
                 erroneous: Rc::clone(&erroneous),
@@ -639,7 +647,7 @@ impl Analyzer {
         // it is registered until the ArgumentAttr wiring installs the context.
         let result = deferred.attrib_speculative_with_rewriter(
             ctx,
-            &mut syms,
+            syms,
             &mut attr,
             tree_to_analyze,
             &rewriting.env,
@@ -649,14 +657,13 @@ impl Analyzer {
             AttributionMode::ANALYZER,
         );
         let has_errors = rewriting.erroneous.get();
-        drop(syms);
         drop(deferred);
         drop(attr);
         if result.is_ok() {
             let kind = rewriting.kind;
             let old_tree = rewriting.old_tree;
             let replacement = rewriting.replacement;
-            self.process(ctx, kind, old_tree, replacement, has_errors);
+            self.process(ctx, &mut *syms, kind, old_tree, replacement, has_errors);
         }
         crate::util::abstract_log::AbstractLog::use_source(
             &mut *self.log.borrow_mut(),
@@ -713,7 +720,8 @@ impl Analyzer {
     }
 
     /// Java: StatementAnalyzer.isEnabled/analyzer.match dispatch.
-    fn matches(&mut self, ctx: &mut CompilerContext, kind: AnalyzerKind, tree: TreeId) -> bool {
+    fn matches(&mut self, ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab, kind: AnalyzerKind, tree: TreeId) -> bool {
         if !self.analyzer_modes.contains(kind.mode()) {
             return false;
         }
@@ -748,8 +756,7 @@ impl Analyzer {
                 let attr = attr_rc.borrow();
                 let chk = attr.chk.borrow();
                 let diags = Rc::clone(&attr.diags);
-                let mut syms = self.syms.borrow_mut();
-                let is_fi = self.types.is_functional_interface(ctx, &mut syms, &diags, &chk, tsym);
+                let is_fi = self.types.is_functional_interface(ctx, &mut *syms, &diags, &chk, tsym);
                 drop(syms);
                 drop(chk);
                 drop(attr);
@@ -882,6 +889,7 @@ impl Analyzer {
     fn process(
         &mut self,
         ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
         kind: AnalyzerKind,
         old_tree: TreeId,
         new_tree: TreeId,
@@ -931,7 +939,7 @@ impl Analyzer {
                         return;
                     }
                     let head = *explicit.head();
-                    if !self.types.is_same_type(ctx, &self.syms.borrow(), t, head) {
+                    if !self.types.is_same_type(ctx, &mut *syms, t, head) {
                         return;
                     }
                     explicit = explicit.tail();
@@ -962,7 +970,7 @@ impl Analyzer {
                 );
             }
             AnalyzerKind::RedundantLocalVarTypeAnalyzer => {
-                self.process_var(ctx, old_tree, new_tree);
+                self.process_var(ctx, &mut *syms, old_tree, new_tree);
             }
             AnalyzerKind::RedundantLocalVarTypeAnalyzerForEach => {
                 let old_var = match &ctx.tree(old_tree).kind {
@@ -973,17 +981,17 @@ impl Analyzer {
                     TreeKind::EnhancedForLoop { var, .. } => var.expect("foreach var"),
                     _ => return,
                 };
-                self.process_var(ctx, old_var, new_var);
+                self.process_var(ctx, &mut *syms, old_var, new_var);
             }
         }
     }
 
     /// Java: void processVar(JCVariableDecl oldTree, JCVariableDecl newTree,
     /// boolean hasErrors) (Analyzer.java:310-318).
-    fn process_var(&mut self, ctx: &mut CompilerContext, old_tree: TreeId, new_tree: TreeId) {
+    fn process_var(&mut self, ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab, old_tree: TreeId, new_tree: TreeId) {
         let (old_ty, new_ty) = (ctx.tree(old_tree).ty, ctx.tree(new_tree).ty);
         if let (Some(old_ty), Some(new_ty)) = (old_ty, new_ty) {
-            let syms = self.syms.borrow();
             if self.types.is_same_type(ctx, &syms, old_ty, new_ty) {
                 drop(syms);
                 self.log_warning(
@@ -1018,6 +1026,8 @@ impl Analyzer {
 pub struct StatementScanner<'a> {
     /// the Analyzer (inner class access)
     pub analyzer: &'a mut Analyzer,
+    /// the shared symbol table used by the scanner queries
+    pub syms: &'a mut crate::code::symtab::Symtab,
     /// Java: JCTree originalTree
     pub original_tree: TreeId,
     /// Java: Env<AttrContext> env (attr.copyEnv(env))
@@ -1031,17 +1041,18 @@ impl<'a> StatementScanner<'a> {
     pub fn new(
         analyzer: &'a mut Analyzer,
         ctx: &mut CompilerContext,
+        syms: &'a mut crate::code::symtab::Symtab,
         original_tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> StatementScanner<'a> {
         let copied_env = {
             let attr_rc = analyzer.attr_service();
             let mut attr = attr_rc.borrow_mut();
-            let mut syms = analyzer.syms.borrow_mut();
-            attr.copy_env(ctx, &mut syms, &analyzer.types, env)
+            attr.copy_env(ctx, syms, &analyzer.types, env)
         };
         StatementScanner {
             analyzer,
+            syms,
             original_tree,
             env: copied_env,
             rewritings: Vec::new(),
@@ -1073,7 +1084,7 @@ impl TreeScannerVisitor for StatementScanner<'_> {
             if ctx.tree(tree).tag != kind.tag() {
                 continue;
             }
-            if !self.analyzer.matches(ctx, kind, tree) {
+            if !self.analyzer.matches(ctx, &mut *self.syms, kind, tree) {
                 continue;
             }
             let replacements = self.analyzer.rewrite(ctx, kind, tree);
@@ -1083,9 +1094,7 @@ impl TreeScannerVisitor for StatementScanner<'_> {
                 let env = {
                     let attr_rc = self.analyzer.attr_service();
                     let mut attr = attr_rc.borrow_mut();
-                    let mut syms = self.analyzer.syms.borrow_mut();
-                    let env = attr.copy_env(ctx, &mut syms, &self.analyzer.types, &self.env);
-                    drop(syms);
+                    let env = attr.copy_env(ctx, &mut *self.syms, &self.analyzer.types, &self.env);
                     let env_scope = env.info.borrow().scope.expect("env scope");
                     if ctx.tree(tree).tag == Tag::VARDEF {
                         if let TreeKind::VariableDecl { sym: Some(sym), .. } = &ctx.tree(tree).kind {

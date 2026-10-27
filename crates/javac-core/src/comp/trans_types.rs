@@ -1542,7 +1542,7 @@ impl TreeVisitor for TransTypes {
                 encl = self.translate_with_pt(ctx, Some(encl_tree), pt);
             } else {
                 let env = self.env.clone().expect("env");
-                let null_check = self.attr.borrow_mut().make_null_check(ctx, encl_tree);
+                let null_check = self.attr.borrow_mut().make_null_check(ctx, &mut self.syms.borrow_mut(), encl_tree);
                 let mut new_args: List<TreeId> = List::nil();
                 new_args = new_args.append(null_check);
                 let mut current = args;

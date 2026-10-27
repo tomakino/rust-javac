@@ -281,7 +281,7 @@ impl TypeEnter {
             }
         }
         annotate
-            .unblock_annotations(ctx)
+            .unblock_annotations(ctx, syms)
             .expect("unblockAnnotations flush");
     }
 
@@ -1438,7 +1438,7 @@ impl TypeEnter {
                 ctx.tree(tree).pos,
             );
         }
-        annotate.flush(ctx).expect("annotation flush");
+        annotate.flush(ctx, syms).expect("annotation flush");
         self.attrib_super_types(ctx, syms, env, &base_env);
         let mut interfaces_seen: std::collections::HashSet<TypeId> =
             std::collections::HashSet::new();

@@ -983,7 +983,7 @@ impl Enter {
         *self.uncompleted.borrow_mut() = prev_uncompleted;
         if let Some(annotate) = &annotate {
             annotate
-                .unblock_annotations(ctx)
+                .unblock_annotations(ctx, syms)
                 .expect("unblockAnnotations flush");
         }
         result
