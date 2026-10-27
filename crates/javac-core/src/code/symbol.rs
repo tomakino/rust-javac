@@ -225,7 +225,6 @@ use crate::util::name::Name;
 /// PORTING_RULES: the shared fields of the upstream Symbol class plus the
 /// node-specific fields (SymbolKind). The completer is represented (the metadata
 /// fields are not, see the module doc).
-#[derive(Clone)]
 pub struct Symbol {
     /// The kind of this symbol.
     pub kind: Kind,
@@ -244,6 +243,11 @@ pub struct Symbol {
     /// Java: protected SymbolMetadata metadata (lazily created by
     /// initedMetadata(); Java null -> None).
     pub metadata: Option<crate::code::symbol_metadata::SymbolMetadata>,
+    /// The symbol arena id (Java: the Symbol object identity; the port needs the
+    /// id to create the SymbolMetadata back-reference). The field is filled by the
+    /// unique allocation entry point CompilerContext::alloc_symbol; Clone does not
+    /// copy it (a clone is only usable after it enters an arena).
+    pub id: std::cell::Cell<Option<crate::ids::SymbolId>>,
     /// Java: the anonymous MethodSymbol baseSymbol() override used by the
     /// polymorphic-signature instance symbols (Resolve.java:2800-2810); Porting rules:
     /// the override is stored as a field and honored by base_symbol.
@@ -272,10 +276,14 @@ impl Symbol {
             erasure_field: None,
             completer: None,
             metadata: None,
+            id: std::cell::Cell::new(None),
             base_symbol_override: None,
             kind_data,
         }
     }
+
+
+
 
     /// Java: public List<Attribute.Compound> getRawAttributes()
     pub fn get_raw_attributes(&self) -> List<crate::ids::AttributeId> {
@@ -437,15 +445,14 @@ impl Symbol {
     /// Java: protected SymbolMetadata initedMetadata() (Java: lazily creates the
     /// SymbolMetadata bound to this symbol).
     fn inited_metadata(&mut self) -> &mut crate::code::symbol_metadata::SymbolMetadata {
-        // The local Symbol does not know its own arena id; the metadata is keyed
-        // by the symbol when it is created at the well-known call sites (the
-        // PORTING_RULES adapter: the sym field is only used by
-        // SymbolMetadata.setAttributes's BRIDGE check). A metadata created here
-        // without an id reuses the first sentinel value SymbolId::new(0)
-        // is not acceptable, therefore the creation goes through
-        // CompilerContext::symbol_inited_metadata instead (see SymbolMetadata
-        // creation). Registered adapter.
-        unimplemented!("TODO(symbol arena batch): Symbol.initedMetadata (SymbolId of the symbol is required)")
+        if self.metadata.is_none() {
+            let sym = self
+                .id
+                .get()
+                .expect("AssertionError: symbol is not allocated");
+            self.metadata = Some(crate::code::symbol_metadata::SymbolMetadata::new(sym));
+        }
+        self.metadata.as_mut().expect("metadata")
     }
 
     /// Java: ModuleSymbol.reset() / ClassSymbol.reset()
@@ -678,6 +685,29 @@ impl Symbol {
         match &self.kind_data {
             SymbolKind::ClassSymbol { flatname, .. } => flatname.clone(),
             _ => self.get_qualified_name(),
+        }
+    }
+}
+
+impl Clone for Symbol {
+    /// Clones the symbol fields; the arena id is not copied because a clone
+    /// is only usable after it enters the symbol arena through the unique
+    /// allocation entry point (CompilerContext::alloc_symbol records the id and
+    /// rebinds a copied metadata). Registered adapter: Java Symbols have no clone
+    /// path; the ported phases clone-and-allocate synthetic symbols.
+    fn clone(&self) -> Symbol {
+        Symbol {
+            kind: self.kind,
+            flags_field: self.flags_field,
+            name: self.name.clone(),
+            ty: self.ty,
+            owner: self.owner,
+            erasure_field: self.erasure_field,
+            completer: self.completer.clone(),
+            metadata: self.metadata.clone(),
+            base_symbol_override: self.base_symbol_override,
+            kind_data: self.kind_data.clone(),
+            id: std::cell::Cell::new(None),
         }
     }
 }

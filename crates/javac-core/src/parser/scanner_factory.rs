@@ -36,6 +36,7 @@ use crate::util::log::Log;
 use crate::util::names::Names;
 
 /// A factory for creating scanners (Java: public class ScannerFactory).
+#[derive(Clone)]
 pub struct ScannerFactory {
     pub(crate) log: Rc<RefCell<Log>>,
     pub(crate) names: Rc<Names>,

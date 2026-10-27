@@ -60,6 +60,8 @@ use crate::util::list::List;
 use crate::util::list_buffer::ListBuffer;
 use crate::util::name::Name;
 use crate::util::names::Names;
+use crate::compiler_context::CompilerContext;
+use crate::parser::parser_factory::ParserFactory;
 use crate::util::position::NOPOS;
 
 /// Java: DocCommentParser.ParseException
@@ -126,6 +128,8 @@ impl TagParserSpec {
 /// Java: public class DocCommentParser
 pub struct DocCommentParser {
     /// Java: private final ParserFactory fac (names + docTreeMaker injected)
+    /// Java: private final ParserFactory fac;
+    fac: Rc<ParserFactory>,
     names: Rc<Names>,
     /// Java: private final DiagnosticSource diagSource (nullable)
     diag_source: Option<Rc<DiagnosticSource>>,
@@ -158,6 +162,7 @@ impl DocCommentParser {
     /// DiagnosticSource diagSource, Comment comment, boolean isFileContent);
     /// the ParserFactory dependencies are injected until parser S7.
     pub fn new(
+        fac: Rc<ParserFactory>,
         names: Rc<Names>,
         m: Rc<RefCell<DocTreeMaker>>,
         diag_source: Option<Rc<DiagnosticSource>>,
@@ -165,6 +170,7 @@ impl DocCommentParser {
         is_file_content: bool,
     ) -> DocCommentParser {
         let mut parser = DocCommentParser {
+            fac,
             names,
             diag_source,
             comment,
@@ -180,25 +186,29 @@ impl DocCommentParser {
             tag_parsers: HashMap::new(),
         };
         parser.tag_parsers = parser.create_tag_parsers();
+        parser.m.borrow_mut().set_reference_parser(Rc::new(
+            crate::parser::reference_parser::ReferenceParser::new(Rc::clone(&parser.fac)),
+        ));
         parser
     }
 
     /// Java: public DocCommentParser(ParserFactory fac, DiagnosticSource
     /// diagSource, Comment comment)
     pub fn new_for_comment(
+        fac: Rc<ParserFactory>,
         names: Rc<Names>,
         m: Rc<RefCell<DocTreeMaker>>,
         diag_source: Option<Rc<DiagnosticSource>>,
         comment: Rc<dyn Comment>,
     ) -> DocCommentParser {
-        DocCommentParser::new(names, m, diag_source, comment, false)
+        DocCommentParser::new(fac, names, m, diag_source, comment, false)
     }
 
     /// Java: public DCDocComment parse()
     ///
     /// PORTING_RULES: returns the single DCTree node whose kind is
     /// DCKind::DocComment (the port has one node type; see tree/dc_tree.rs).
-    pub fn parse(&mut self) -> Rc<DCTree> {
+    pub fn parse(&mut self, ctx: &mut CompilerContext) -> Rc<DCTree> {
         let text = self.comment.get_text().unwrap_or_else(|| {
             // Java: comment.getText() is assumed non-null; a null text is an NPE.
             panic!("doc comment without text (Java: NullPointerException)")
@@ -211,14 +221,14 @@ impl DocCommentParser {
         self.next_char();
 
         let preamble = if self.is_file_content {
-            self.block_content(Phase::Preamble)
+            self.block_content(ctx, Phase::Preamble)
         } else {
             List::nil()
         };
-        let body = self.block_content(Phase::Body);
-        let tags = self.block_tags();
+        let body = self.block_content(ctx, Phase::Body);
+        let tags = self.block_tags(ctx);
         let postamble = if self.is_file_content {
-            self.block_content(Phase::Postamble)
+            self.block_content(ctx, Phase::Postamble)
         } else {
             List::nil()
         };
@@ -262,14 +272,14 @@ impl DocCommentParser {
     }
 
     /// Java: protected List<DCTree> blockContent()
-    fn block_content_default(&mut self) -> List<Rc<DCTree>> {
-        self.block_content(Phase::Body)
+    fn block_content_default(&mut self, ctx: &mut CompilerContext) -> List<Rc<DCTree>> {
+        self.block_content(ctx, Phase::Body)
     }
 
     /// Read block content, consisting of text, html and inline tags.
     /// Terminated by the end of input, or the beginning of the next block tag:
     /// that is, @ as the first non-whitespace character on a line.
-    fn block_content(&mut self, phase: Phase) -> List<Rc<DCTree>> {
+    fn block_content(&mut self, ctx: &mut CompilerContext, phase: Phase) -> List<Rc<DCTree>> {
         let mut trees = ListBuffer::new();
         self.text_start = -1;
 
@@ -291,7 +301,7 @@ impl DocCommentParser {
                         match phase {
                             Phase::Preamble => {
                                 if self.is_end_preamble() {
-                                    trees.add(self.html());
+                                    trees.add(self.html(ctx));
                                     if self.text_start == -1 {
                                         self.text_start = self.bp;
                                         self.last_non_white = -1;
@@ -311,7 +321,7 @@ impl DocCommentParser {
                         }
                     }
                     self.add_pending_text(&mut trees, self.bp - 1);
-                    trees.add(self.html());
+                    trees.add(self.html(ctx));
 
                     if phase == Phase::Preamble || phase == Phase::Postamble {
                         // Ignore newlines after html tags, in the meta content
@@ -323,7 +333,7 @@ impl DocCommentParser {
                     }
                 }
                 Some('{') => {
-                    self.inline_tag(&mut trees);
+                    self.inline_tag(ctx, &mut trees);
                 }
                 Some('@') => {
                     if self.newline {
@@ -356,38 +366,38 @@ impl DocCommentParser {
     }
 
     /// Read a series of block tags, including their content.
-    fn block_tags(&mut self) -> List<Rc<DCTree>> {
+    fn block_tags(&mut self, ctx: &mut CompilerContext) -> List<Rc<DCTree>> {
         let mut tags = ListBuffer::new();
         while self.bp < self.buflen && self.ch == b'@' as u16 {
-            tags.add(self.block_tag());
+            tags.add(self.block_tag(ctx));
         }
         tags.to_list()
     }
 
     /// Read a single block tag, including its content.
-    fn block_tag(&mut self) -> Rc<DCTree> {
+    fn block_tag(&mut self, ctx: &mut CompilerContext) -> Rc<DCTree> {
         let p = self.bp;
-        match self.block_tag_inner(p) {
+        match self.block_tag_inner(ctx, p) {
             Ok(tree) => tree,
             Err(error) => {
-                self.block_content_default();
+                self.block_content_default(ctx);
                 self.erroneous(&error.key, p)
             }
         }
     }
 
-    fn block_tag_inner(&mut self, p: i32) -> Result<Rc<DCTree>, ParseException> {
+    fn block_tag_inner(&mut self, ctx: &mut CompilerContext, p: i32) -> Result<Rc<DCTree>, ParseException> {
         self.next_char();
         if Self::is_identifier_start(self.ch) {
             let name = self.read_tag_name();
             let spec = self.tag_parsers.get(&name).copied();
             if let Some(spec) = spec {
                 if spec.allows_block() {
-                    return self.parse_tag(spec, p, TagKind::Block);
+                    return self.parse_tag(ctx, spec, p, TagKind::Block);
                 }
                 return Ok(self.erroneous("dc.bad.inline.tag", p));
             }
-            let content = self.block_content_default();
+            let content = self.block_content_default(ctx);
             let items = content.to_vec();
             return Ok(self
                 .m
@@ -396,17 +406,17 @@ impl DocCommentParser {
                 .new_unknown_block_tag_tree(name, &items));
         }
 
-        self.block_content_default();
+        self.block_content_default(ctx);
         Ok(self.erroneous("dc.no.tag.name", p))
     }
 
     /// Java: protected void inlineTag(ListBuffer<DCTree> list)
-    fn inline_tag(&mut self, list: &mut ListBuffer<Rc<DCTree>>) {
+    fn inline_tag(&mut self, ctx: &mut CompilerContext, list: &mut ListBuffer<Rc<DCTree>>) {
         self.newline = false;
         self.next_char();
         if self.ch == b'@' as u16 {
             self.add_pending_text(list, self.bp - 2);
-            list.add(self.inline_tag_tree());
+            list.add(self.inline_tag_tree(ctx));
             self.text_start = self.bp;
             self.last_non_white = -1;
         } else {
@@ -419,15 +429,15 @@ impl DocCommentParser {
     }
 
     /// Read a single inline tag, including its content (Java: inlineTag()).
-    fn inline_tag_tree(&mut self) -> Rc<DCTree> {
+    fn inline_tag_tree(&mut self, ctx: &mut CompilerContext) -> Rc<DCTree> {
         let p = self.bp - 1;
-        match self.inline_tag_inner(p) {
+        match self.inline_tag_inner(ctx, p) {
             Ok(tree) => tree,
             Err(error) => self.erroneous(&error.key, p),
         }
     }
 
-    fn inline_tag_inner(&mut self, p: i32) -> Result<Rc<DCTree>, ParseException> {
+    fn inline_tag_inner(&mut self, ctx: &mut CompilerContext, p: i32) -> Result<Rc<DCTree>, ParseException> {
         self.next_char();
         if !Self::is_identifier_start(self.ch) {
             return Ok(self.erroneous("dc.no.tag.name", p));
@@ -452,7 +462,7 @@ impl DocCommentParser {
                     self.skip_whitespace();
                 }
                 if spec.allows_inline() {
-                    let tree = self.parse_tag(spec, p, TagKind::Inline)?;
+                    let tree = self.parse_tag(ctx, spec, p, TagKind::Inline)?;
                     tree.set_end_pos(self.bp);
                     Ok(tree)
                 } else {
@@ -519,7 +529,7 @@ impl DocCommentParser {
 
     /// Read general text content of an inline tag, including HTML entities and
     /// elements. Matching pairs of { } are skipped.
-    fn inline_content(&mut self) -> List<Rc<DCTree>> {
+    fn inline_content(&mut self, ctx: &mut CompilerContext) -> List<Rc<DCTree>> {
         let mut trees = ListBuffer::new();
 
         self.skip_whitespace();
@@ -542,7 +552,7 @@ impl DocCommentParser {
                 Some('<') => {
                     self.newline = false;
                     self.add_pending_text(&mut trees, self.bp - 1);
-                    trees.add(self.html());
+                    trees.add(self.html(ctx));
                     self.text_start = self.bp;
                     self.last_non_white = -1;
                 }
@@ -554,7 +564,7 @@ impl DocCommentParser {
                     self.next_char();
                     if self.ch == b'@' as u16 {
                         self.add_pending_text(&mut trees, self.bp - 2);
-                        trees.add(self.inline_tag_tree());
+                        trees.add(self.inline_tag_tree(ctx));
                         self.text_start = self.bp;
                         self.last_non_white = -1;
                     } else {
@@ -752,12 +762,12 @@ impl DocCommentParser {
     }
 
     /// Read the start or end of an HTML tag, or an HTML comment.
-    fn html(&mut self) -> Rc<DCTree> {
+    fn html(&mut self, ctx: &mut CompilerContext) -> Rc<DCTree> {
         let p = self.bp;
         self.next_char();
         if Self::is_identifier_start(self.ch) {
             let name = self.read_identifier();
-            let attrs = self.html_attrs();
+            let attrs = self.html_attrs(ctx);
             let mut self_closing = false;
             if self.ch == b'/' as u16 {
                 self.next_char();
@@ -831,7 +841,7 @@ impl DocCommentParser {
     }
 
     /// Read a series of HTML attributes, terminated by the closing bracket.
-    fn html_attrs(&mut self) -> List<Rc<DCTree>> {
+    fn html_attrs(&mut self, ctx: &mut CompilerContext) -> List<Rc<DCTree>> {
         let mut attrs = ListBuffer::new();
         self.skip_whitespace();
 
@@ -862,7 +872,7 @@ impl DocCommentParser {
                             // by the caller and superseded by a malformed.html node.
                             break 'outer;
                         }
-                        self.attr_value_char(&mut v);
+                        self.attr_value_char(ctx, &mut v);
                     }
                     self.add_pending_text(&mut v, self.bp - 1);
                     self.next_char();
@@ -872,7 +882,7 @@ impl DocCommentParser {
                     while self.bp < self.buflen
                         && !Self::is_unquoted_attr_value_terminator(self.ch)
                     {
-                        self.attr_value_char(&mut v);
+                        self.attr_value_char(ctx, &mut v);
                     }
                     self.add_pending_text(&mut v, self.bp - 1);
                 }
@@ -891,10 +901,10 @@ impl DocCommentParser {
         attrs.to_list()
     }
 
-    fn attr_value_char(&mut self, list: &mut ListBuffer<Rc<DCTree>>) {
+    fn attr_value_char(&mut self, ctx: &mut CompilerContext, list: &mut ListBuffer<Rc<DCTree>>) {
         match char::from_u32(u32::from(self.ch)) {
             Some('&') => self.entity_into(list),
-            Some('{') => self.inline_tag(list),
+            Some('{') => self.inline_tag(ctx, list),
             _ => self.next_char(),
         }
     }
@@ -939,7 +949,7 @@ impl DocCommentParser {
     }
 
     /// Read a Java class name, possibly followed by a member.
-    fn reference(&mut self, _allow_member: bool) -> Option<Rc<DCTree>> {
+    fn reference(&mut self, ctx: &mut CompilerContext, _allow_member: bool) -> Option<Rc<DCTree>> {
         let pos = self.bp;
         let mut depth = 0;
 
@@ -993,7 +1003,7 @@ impl DocCommentParser {
         }
 
         let sig = self.new_string(pos, self.bp);
-        match ReferenceParser::new().parse(&sig) {
+        match ReferenceParser::new(Rc::clone(&self.fac)).parse(ctx, &sig) {
             Ok(reference) => {
                 let tree = self.m.borrow_mut().at(pos).new_reference_tree_with_parts(
                     sig,
@@ -1219,6 +1229,7 @@ impl DocCommentParser {
     /// TagParser subclasses.
     fn parse_tag(
         &mut self,
+        ctx: &mut CompilerContext,
         spec: TagParserSpec,
         pos: i32,
         kind: TagKind,
@@ -1229,7 +1240,7 @@ impl DocCommentParser {
         }
         match spec.tree_kind {
             Kind::AUTHOR => {
-                let name = self.block_content_default();
+                let name = self.block_content_default(ctx);
                 let items = name.to_vec();
                 Ok(self.m.borrow_mut().at(pos).new_author_tree(&items))
             }
@@ -1239,7 +1250,7 @@ impl DocCommentParser {
                 Ok(self.m.borrow_mut().at(pos).new_code_tree(&text))
             }
             Kind::DEPRECATED => {
-                let reason = self.block_content_default();
+                let reason = self.block_content_default(ctx);
                 let items = reason.to_vec();
                 Ok(self.m.borrow_mut().at(pos).new_deprecated_tree(&items))
             }
@@ -1254,8 +1265,8 @@ impl DocCommentParser {
             }
             Kind::EXCEPTION => {
                 self.skip_whitespace();
-                let reference = self.reference_required(false);
-                let description = self.block_content_default();
+                let reference = self.reference_required(ctx, false);
+                let description = self.block_content_default(ctx);
                 let items = description.to_vec();
                 Ok(self
                     .m
@@ -1264,7 +1275,7 @@ impl DocCommentParser {
                     .new_exception_tree(&reference, &items))
             }
             Kind::HIDDEN => {
-                let reason = self.block_content_default();
+                let reason = self.block_content_default(ctx);
                 let items = reason.to_vec();
                 Ok(self.m.borrow_mut().at(pos).new_hidden_tree(&items))
             }
@@ -1283,7 +1294,7 @@ impl DocCommentParser {
                 };
                 self.skip_whitespace();
                 let description = if self.ch != b'}' as u16 {
-                    self.inline_content()
+                    self.inline_content(ctx, )
                 } else {
                     self.next_char();
                     List::nil()
@@ -1301,8 +1312,8 @@ impl DocCommentParser {
                 Err(ParseException::new("dc.unexpected.content"))
             }
             Kind::LINK => {
-                let reference = self.reference_required(true);
-                let label = self.inline_content();
+                let reference = self.reference_required(ctx, true);
+                let label = self.inline_content(ctx, );
                 let items = label.to_vec();
                 Ok(self
                     .m
@@ -1311,8 +1322,8 @@ impl DocCommentParser {
                     .new_link_tree(&reference, &items))
             }
             Kind::LINK_PLAIN => {
-                let reference = self.reference_required(true);
-                let label = self.inline_content();
+                let reference = self.reference_required(ctx, true);
+                let label = self.inline_content(ctx, );
                 let items = label.to_vec();
                 Ok(self
                     .m
@@ -1340,7 +1351,7 @@ impl DocCommentParser {
                     self.next_char();
                 }
                 self.skip_whitespace();
-                let desc = self.block_content_default();
+                let desc = self.block_content_default(ctx);
                 let items = desc.to_vec();
                 Ok(self
                     .m
@@ -1350,8 +1361,8 @@ impl DocCommentParser {
             }
             Kind::PROVIDES => {
                 self.skip_whitespace();
-                let reference = self.reference_required(true);
-                let description = self.block_content_default();
+                let reference = self.reference_required(ctx, true);
+                let description = self.block_content_default(ctx);
                 let items = description.to_vec();
                 Ok(self
                     .m
@@ -1361,8 +1372,8 @@ impl DocCommentParser {
             }
             Kind::RETURN => {
                 let description = match kind {
-                    TagKind::Block => self.block_content_default(),
-                    TagKind::Inline => self.inline_content(),
+                    TagKind::Block => self.block_content_default(ctx, ),
+                    TagKind::Inline => self.inline_content(ctx, ),
                     TagKind::Either => {
                         panic!("illegal TagParser kind Either for @return")
                     }
@@ -1394,7 +1405,7 @@ impl DocCommentParser {
                         }
                     }
                     Some('<') => {
-                        let html = self.block_content_default();
+                        let html = self.block_content_default(ctx);
                         if !html.is_empty() {
                             return Ok(self
                                 .m
@@ -1413,8 +1424,8 @@ impl DocCommentParser {
                             return Err(ParseException::new("dc.no.content"));
                         }
                         if self.is_java_identifier_start(self.ch) || self.ch == b'#' as u16 {
-                            let reference = self.reference_required(true);
-                            let description = self.block_content_default();
+                            let reference = self.reference_required(ctx, true);
+                            let description = self.block_content_default(ctx);
                             let mut items = description.to_vec();
                             items.insert(0, reference);
                             return Ok(self
@@ -1428,7 +1439,7 @@ impl DocCommentParser {
                 Err(ParseException::new("dc.unexpected.content"))
             }
             Kind::SERIAL_DATA => {
-                let description = self.block_content_default();
+                let description = self.block_content_default(ctx);
                 let items = description.to_vec();
                 Ok(self.m.borrow_mut().at(pos).new_serial_data_tree(&items))
             }
@@ -1436,10 +1447,10 @@ impl DocCommentParser {
                 self.skip_whitespace();
                 let name = self.identifier()?;
                 self.skip_whitespace();
-                let type_ = self.reference_required(false);
+                let type_ = self.reference_required(ctx, false);
                 let description = if self.is_whitespace(self.ch) {
                     self.skip_whitespace();
-                    Some(self.block_content_default())
+                    Some(self.block_content_default(ctx, ))
                 } else {
                     None
                 };
@@ -1454,17 +1465,17 @@ impl DocCommentParser {
                     .new_serial_field_tree(&name, &type_, &items))
             }
             Kind::SERIAL => {
-                let description = self.block_content_default();
+                let description = self.block_content_default(ctx);
                 let items = description.to_vec();
                 Ok(self.m.borrow_mut().at(pos).new_serial_tree(&items))
             }
             Kind::SINCE => {
-                let description = self.block_content_default();
+                let description = self.block_content_default(ctx);
                 let items = description.to_vec();
                 Ok(self.m.borrow_mut().at(pos).new_since_tree(&items))
             }
             Kind::SUMMARY => {
-                let summary = self.inline_content();
+                let summary = self.inline_content(ctx, );
                 let items = summary.to_vec();
                 Ok(self.m.borrow_mut().at(pos).new_summary_tree(&items))
             }
@@ -1488,8 +1499,8 @@ impl DocCommentParser {
             }
             Kind::THROWS => {
                 self.skip_whitespace();
-                let reference = self.reference_required(false);
-                let description = self.block_content_default();
+                let reference = self.reference_required(ctx, false);
+                let description = self.block_content_default(ctx);
                 let items = description.to_vec();
                 Ok(self
                     .m
@@ -1499,8 +1510,8 @@ impl DocCommentParser {
             }
             Kind::USES => {
                 self.skip_whitespace();
-                let reference = self.reference_required(true);
-                let description = self.block_content_default();
+                let reference = self.reference_required(ctx, true);
+                let description = self.block_content_default(ctx);
                 let items = description.to_vec();
                 Ok(self
                     .m
@@ -1509,7 +1520,7 @@ impl DocCommentParser {
                     .new_uses_tree(&reference, &items))
             }
             Kind::VALUE => {
-                let reference = self.reference_required(true);
+                let reference = self.reference_required(ctx, true);
                 self.skip_whitespace();
                 if self.ch == b'}' as u16 {
                     self.next_char();
@@ -1519,7 +1530,7 @@ impl DocCommentParser {
                 Err(ParseException::new("dc.unexpected.content"))
             }
             Kind::VERSION => {
-                let description = self.block_content_default();
+                let description = self.block_content_default(ctx);
                 let items = description.to_vec();
                 Ok(self.m.borrow_mut().at(pos).new_version_tree(&items))
             }
@@ -1527,11 +1538,11 @@ impl DocCommentParser {
         }
     }
 
-    fn reference_required(&mut self, allow_member: bool) -> Rc<DCTree> {
+    fn reference_required(&mut self, ctx: &mut CompilerContext, allow_member: bool) -> Rc<DCTree> {
         // Java: a null reference is only produced for empty tag content (for
         // example an empty throws tag); the ported DocTreeMaker takes a
         // non-null reference node (registered TODO(tree): null reference fields).
-        self.reference(allow_member)
+        self.reference(ctx, allow_member)
             .expect("null reference node is not representable in the port (TODO)")
     }
 
@@ -1735,21 +1746,39 @@ mod tests {
     struct Env {
         names: Rc<Names>,
         maker: Rc<RefCell<DocTreeMaker>>,
+        fac: Rc<crate::parser::parser_factory::ParserFactory>,
     }
 
     fn env() -> Env {
         let names = Rc::new(Names::new(false));
         let messages = Rc::new(JavacMessages::new(DEFAULT_BUNDLE_NAME));
         let maker = DocTreeMaker::new(Rc::new(Factory::new(messages, "compiler")));
+        let mut context = crate::util::context::Context::new();
+        let source = crate::code::source::Source::JDK17;
+        let scanner_factory = crate::parser::scanner_factory::ScannerFactory::new(
+            &mut context,
+            Rc::clone(&names),
+            source,
+        );
+        let fac = Rc::new(crate::parser::parser_factory::ParserFactory::new(
+            &mut context,
+            Rc::clone(&names),
+            source,
+            scanner_factory,
+            None,
+        ));
         Env {
             names,
             maker: Rc::new(RefCell::new(maker)),
+            fac,
         }
     }
 
     fn parse(text: &str) -> Rc<DCTree> {
         let env = env();
+        let mut ctx = CompilerContext::new();
         DocCommentParser::new_for_comment(
+            env.fac,
             env.names,
             env.maker,
             None,
@@ -1757,7 +1786,7 @@ mod tests {
                 text: JavaString::from(text),
             }),
         )
-        .parse()
+        .parse(&mut ctx)
     }
 
     fn render(text: &str) -> String {
@@ -1846,6 +1875,7 @@ mod tests {
         // file's preamble ends at body followed by main.
         let env = env();
         let mut parser = DocCommentParser::new(
+            env.fac,
             env.names,
             env.maker,
             None,
@@ -1854,7 +1884,8 @@ mod tests {
             }),
             true,
         );
-        let tree = parser.parse();
+        let mut ctx = CompilerContext::new();
+        let tree = parser.parse(&mut ctx);
         let dc = doc_comment(&tree);
         assert!(!dc.preamble.is_empty());
         assert!(!dc.postamble.is_empty());
@@ -1870,16 +1901,15 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "TODO(parser S7)")]
-    fn references_need_javac_parser() {
-        // ReferenceParser fragment parsing depends on JavacParser (parser S7).
-        let _ = parse("{@link java.lang.String}");
+    fn parses_reference_in_link_tag() {
+        assert_eq!(render("{@link java.lang.String}"), "{@link java.lang.String}");
     }
 
     #[test]
     fn tag_parsers_cover_the_upstream_table() {
         let env = env();
         let parser = DocCommentParser::new_for_comment(
+            env.fac,
             env.names,
             env.maker,
             None,

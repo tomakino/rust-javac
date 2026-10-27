@@ -62,6 +62,9 @@ pub struct DocTreeMaker {
     /// args) method (TODO, see the file header); the accessor keeps the
     /// upstream field visible to P4/P6 code.
     diags: Rc<Factory>,
+    /// Java: private final ReferenceParser referenceParser;
+    /// PORTING_RULES: injected explicitly (registered adapter; see new()).
+    reference_parser: Option<Rc<crate::parser::reference_parser::ReferenceParser>>,
     // TODO(P6): trees: JavacTrees (used by getSentenceBreak)
     // TODO(parser S8): reference_parser: ReferenceParser (used by newReferenceTree)
 }
@@ -75,13 +78,23 @@ impl DocTreeMaker {
     /// passed in (registered adapter; the JavacTrees/ReferenceParser fields are
     /// TODO(P6)/(parser S8), see the file header).
     pub fn new(diags: Rc<Factory>) -> DocTreeMaker {
-        DocTreeMaker { pos: NOPOS, diags }
+        DocTreeMaker {            pos: NOPOS,            diags,            reference_parser: None,        }
     }
 
     /// The diagnostic factory supplied at construction (Java: private final
     /// JCDiagnostic.Factory diags).
     pub fn diags(&self) -> &Rc<Factory> {
         &self.diags
+    }
+
+    /// Installs the reference parser (Java: the field is created by the
+    /// DocTreeMaker(ParserFactory) constructor; the ported constructor takes the
+    /// diagnostic factory only, so the parser is injected explicitly).
+    pub fn set_reference_parser(
+        &mut self,
+        parser: Rc<crate::parser::reference_parser::ReferenceParser>,
+    ) {
+        self.reference_parser = Some(parser);
     }
 
     /// Reassign current position.
@@ -410,8 +423,29 @@ impl DocTreeMaker {
     /// TODO(parser S8): needs parser.ReferenceParser (not ported yet); upstream
     /// parses the signature and throws IllegalArgumentException on a parse error.
     /// No replacement parser is written here.
-    pub fn new_reference_tree(&mut self, _signature: JavaString) -> Rc<DCTree> {
-        unimplemented!("TODO(parser S8): newReferenceTree(String) needs ReferenceParser")
+    pub fn new_reference_tree(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        signature: JavaString,
+    ) -> Rc<DCTree> {
+        let reference_parser = self
+            .reference_parser
+            .as_ref()
+            .expect("AssertionError: DocTreeMaker.referenceParser")
+            .clone();
+        match reference_parser.parse(ctx, &signature) {
+            Ok(reference) => self.new_reference_tree_with_parts(
+                signature,
+                reference.module_name,
+                reference.qual_expr,
+                reference.member,
+                reference.param_types,
+            ),
+            Err(error) => panic!(
+                "IllegalArgumentException: invalid signature: {}",
+                error.get_message()
+            ),
+        }
     }
 
     /// Java: public DCReference newReferenceTree(String signature,
@@ -1083,10 +1117,37 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "TODO(parser S8)")]
+    #[should_panic(expected = "DocTreeMaker.referenceParser")]
     fn reference_parsing_needs_reference_parser() {
         let mut maker = maker();
-        maker.new_reference_tree(JavaString::from("java.lang.String"));
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        maker.new_reference_tree(&mut ctx, JavaString::from("java.lang.String"));
+    }
+
+    #[test]
+    fn reference_tree_parses_the_signature() {
+        let mut maker = maker();
+        let mut context = crate::util::context::Context::new();
+        let names = Rc::new(crate::util::names::Names::new(false));
+        let source = crate::code::source::Source::JDK17;
+        let scanner_factory = crate::parser::scanner_factory::ScannerFactory::new(
+            &mut context,
+            Rc::clone(&names),
+            source,
+        );
+        let factory = Rc::new(crate::parser::parser_factory::ParserFactory::new(
+            &mut context,
+            names,
+            source,
+            scanner_factory,
+            None,
+        ));
+        maker.set_reference_parser(Rc::new(crate::parser::reference_parser::ReferenceParser::new(
+            factory,
+        )));
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let tree = maker.new_reference_tree(&mut ctx, JavaString::from("java.lang.String"));
+        assert_eq!(tree.get_kind(), Kind::REFERENCE);
     }
 
     #[test]

@@ -61,6 +61,22 @@ impl SymbolMetadata {
         }
     }
 
+    /// Returns the arena id of the owning symbol (test accessor for the
+    /// rebinding adapter; not part of the upstream API).
+    #[cfg(test)]
+    pub fn owner(&self) -> SymbolId {
+        self.sym
+    }
+
+    /// Rebinds the metadata to the arena id of its owning symbol. The ported
+    /// SymbolMetadata carries the SymbolId (the Java back-reference); when a
+    /// Symbol clone enters the symbol arena through the unique allocation entry
+    /// point, CompilerContext::alloc_symbol updates the id and rebinds the
+    /// copied metadata (registered adapter: Java has no clone path here).
+    pub fn rebind(&mut self, sym: SymbolId) {
+        self.sym = sym;
+    }
+
     /// Java: public List<Attribute.Compound> getDeclarationAttributes()
     pub fn get_declaration_attributes(&self) -> List<AttributeId> {
         self.filter_decl_sentinels()

@@ -49,7 +49,9 @@ impl Entry {
 
 /// A table giving the doc comment, if any, for any tree node, parsed lazily.
 pub struct LazyDocCommentTable {
-    /// Java: private final ParserFactory fac (names + docTreeMaker injected, TODO(parser S7))
+    /// Java: private final ParserFactory fac
+    fac: Rc<crate::parser::parser_factory::ParserFactory>,
+    /// Java: private final Names names (injected)
     names: Rc<Names>,
     doc_tree_maker: Rc<RefCell<DocTreeMaker>>,
     /// Java: private final DiagnosticSource diagSource = fac.log.currentSource()
@@ -65,11 +67,13 @@ impl LazyDocCommentTable {
     /// log.currentSource(); the port receives the same dependencies until
     /// ParserFactory is available (parser S7; TODO).
     pub fn new(
+        fac: Rc<crate::parser::parser_factory::ParserFactory>,
         names: Rc<Names>,
         doc_tree_maker: Rc<RefCell<DocTreeMaker>>,
         diag_source: Option<Rc<DiagnosticSource>>,
     ) -> LazyDocCommentTable {
         LazyDocCommentTable {
+            fac,
             names,
             doc_tree_maker,
             diag_source,
@@ -77,15 +81,20 @@ impl LazyDocCommentTable {
         }
     }
 
-    fn compute_tree(&self, entry: &Entry) -> Rc<DCTree> {
+    fn compute_tree(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        entry: &Entry,
+    ) -> Rc<DCTree> {
         DocCommentParser::new(
+            Rc::clone(&self.fac),
             Rc::clone(&self.names),
             Rc::clone(&self.doc_tree_maker),
             self.diag_source.clone(),
             Rc::clone(&entry.comment),
             false,
         )
-        .parse()
+        .parse(ctx)
     }
 }
 
@@ -103,12 +112,16 @@ impl DocCommentTable for LazyDocCommentTable {
             .and_then(|comment| comment.get_text())
     }
 
-    fn get_comment_tree(&self, tree: TreeId) -> Option<Rc<DCTree>> {
+    fn get_comment_tree(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) -> Option<Rc<DCTree>> {
         let entry = self.table.get(&tree)?;
         if let Some(tree) = entry.tree.borrow().as_ref() {
             return Some(Rc::clone(tree));
         }
-        let parsed = self.compute_tree(entry);
+        let parsed = self.compute_tree(ctx, entry);
         *entry.tree.borrow_mut() = Some(Rc::clone(&parsed));
         Some(parsed)
     }
@@ -150,11 +163,35 @@ mod tests {
         }
     }
 
-    fn setup() -> (LazyDocCommentTable, TreeId) {
+    fn factory() -> Rc<crate::parser::parser_factory::ParserFactory> {
+        let mut context = crate::util::context::Context::new();
         let names = Rc::new(Names::new(false));
+        let source = crate::code::source::Source::JDK17;
+        let scanner_factory = crate::parser::scanner_factory::ScannerFactory::new(
+            &mut context,
+            Rc::clone(&names),
+            source,
+        );
+        Rc::new(crate::parser::parser_factory::ParserFactory::new(
+            &mut context,
+            names,
+            source,
+            scanner_factory,
+            None,
+        ))
+    }
+
+    fn setup() -> (LazyDocCommentTable, TreeId) {
+        let fac = factory();
+        let names = Rc::clone(&fac.names);
         let messages = Rc::new(JavacMessages::new(DEFAULT_BUNDLE_NAME));
         let maker = DocTreeMaker::new(Rc::new(Factory::new(messages, "compiler")));
-        let table = LazyDocCommentTable::new(names, Rc::new(RefCell::new(maker)), None);
+        let table = LazyDocCommentTable::new(
+            fac,
+            names,
+            Rc::new(RefCell::new(maker)),
+            None,
+        );
         (table, TreeId::new(1))
     }
 
@@ -170,7 +207,7 @@ mod tests {
         assert!(!table.has_comment(tree));
         assert!(table.get_comment(tree).is_none());
         assert!(table.get_comment_text(tree).is_none());
-        assert!(table.get_comment_tree(tree).is_none());
+        assert!(table.get_comment_tree(&mut crate::compiler_context::CompilerContext::new(), tree).is_none());
     }
 
     #[test]

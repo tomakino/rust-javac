@@ -497,6 +497,7 @@ impl JavacParser {
             ));
             let table: Rc<std::cell::RefCell<dyn DocCommentTable>> = Rc::new(
                 std::cell::RefCell::new(LazyDocCommentTable::new(
+                    Rc::new(fac.clone()),
                     names,
                     Rc::clone(&doc_tree_maker),
                     diag_source,

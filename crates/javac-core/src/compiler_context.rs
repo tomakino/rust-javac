@@ -49,8 +49,17 @@ impl CompilerContext {
     }
 
     /// Allocates a symbol in the symbol arena and returns its ID.
+    /// Allocates a symbol in the symbol arena and returns its ID. The unique
+    /// allocation entry point also records the arena id on the symbol (the
+    /// SymbolMetadata back-reference) and rebinds a copied metadata, if any.
     pub fn alloc_symbol(&mut self, sym: Symbol) -> SymbolId {
-        SymbolId::new(self.symbols.push(sym))
+        let id = SymbolId::new(self.symbols.push(sym));
+        let stored = self.symbols.get_mut(id.index());
+        stored.id = std::cell::Cell::new(Some(id));
+        if let Some(metadata) = &mut stored.metadata {
+            metadata.rebind(id);
+        }
+        id
     }
 
     /// Allocates a type in the type arena and returns its ID.
@@ -822,6 +831,49 @@ mod tests {
     use crate::code::symbol::{Symbol, SymbolKind};
     use crate::util::name::NameTableHandle;
     use std::rc::Rc;
+
+    fn var_symbol(table: &Rc<NameTableHandle>, text: &str) -> Symbol {
+        Symbol::new(
+            Kind::VAR,
+            0,
+            name(table, text),
+            None,
+            None,
+            crate::code::symbol::SymbolKind::VarSymbol {
+                pos: 0,
+                adr: -1,
+                data_kind: None,
+                data: None,
+            },
+        )
+    }
+
+    #[test]
+    fn symbol_id_and_metadata_are_bound_at_allocation() {
+        let mut ctx = CompilerContext::new();
+        let table = name_table();
+        let id = ctx.alloc_symbol(var_symbol(&table, "x"));
+        assert_eq!(ctx.sym(id).id.get(), Some(id));
+        // The Symbol method creates the metadata bound to the arena id.
+        let empty = crate::util::list::List::nil();
+        ctx.sym_mut(id).set_declaration_attributes(empty.clone());
+        assert_eq!(
+            ctx.sym(id).metadata.as_ref().expect("metadata").owner(),
+            id
+        );
+        // A clone carries no arena id until it is allocated; the allocation
+        // entry point records the new id and rebinds the copied metadata.
+        let cloned = ctx.sym(id).clone();
+        assert_eq!(cloned.id.get(), None);
+        let cloned_id = ctx.alloc_symbol(cloned);
+        assert_eq!(ctx.sym(cloned_id).id.get(), Some(cloned_id));
+        assert_eq!(
+            ctx.sym(cloned_id).metadata.as_ref().expect("metadata").owner(),
+            cloned_id
+        );
+        assert_eq!(ctx.sym(id).metadata.as_ref().expect("metadata").owner(), id);
+    }
+
 
     fn name_table() -> Rc<NameTableHandle> {
         NameTableHandle::unshared()
