@@ -588,6 +588,10 @@ impl MemberEnter {
                 //                        env, attr, tree);
                 let enclosing_env = Rc::clone(&env);
                 let get_init_env = self.get_init_env(ctx, tree, &env);
+                // The enclosing initializer environment records the variable
+                // being initialized (the enclosing variable is needed by the
+                // initializer self-reference checks).
+                get_init_env.info.borrow_mut().encl_var = Some(v);
                 let init_env = self.init_env(ctx, tree, &get_init_env);
                 let ty = ctx.sym(v).ty.expect("variable type");
                 ctx.sym_mut(v)
@@ -783,18 +787,41 @@ impl MemberEnter {
         init_tree_visitor(ctx, tree)
     }
 
-    /// Java: Env<AttrContext> initEnv(JCVariableDecl tree, Env<AttrContext> env)
-    /// Java: Env<AttrContext> initEnv(JCVariableDecl tree, Env<AttrContext> env)
-    /// (MemberEnter.java:421-434).
+    /// Creates a fresh environment for a variable's initializer: the new
+    /// environment's tree is the variable declaration itself and its next link
+    /// is the enclosing environment (the upstream constructor sets the tree and
+    /// the enclosing environment, then duplicates the attribute context).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context (arena access);
+    ///   - tree: the variable declaration;
+    ///   - env: the environment outside the variable declaration.
+    ///
+    /// # Returns
+    ///   - the initializer environment.
+    ///
+    /// # Panics
+    ///   - the enclosing class environment has no scope owner.
     pub fn init_env(
         &mut self,
         ctx: &mut CompilerContext,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> Rc<Env<AttrContext>> {
-        // Java: Env<AttrContext> localEnv = env.dupto(new AttrContextEnv(tree, env.info.dup()));
         let mut info = env.info.borrow().dup_ctx();
-        let local_env = env.dup_with_outer(env.tree, info.clone(), Some(Rc::clone(env)));
+        let local_env = Env::dupto(
+            env,
+            Env {
+                next: None,
+                outer: env.outer.clone(),
+                tree: Some(tree),
+                toplevel: env.toplevel,
+                encl_class: env.encl_class,
+                encl_method: env.encl_method,
+                info: Rc::new(RefCell::new(info.clone())),
+                base_clause: env.base_clause,
+            },
+        );
         let sym = match &ctx.tree(tree).kind {
             TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
             _ => return local_env,

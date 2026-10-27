@@ -2582,8 +2582,11 @@ impl Gen {
             self.get_code().borrow_mut().branch(ctx, GOTO)
         };
         self.end_finalizer_gap(ctx, env);
-        // The finalizer afterBody hook is invoked through the trait.
-        if let Some(finalizer) = env.info.borrow().finalize.clone() {
+        // Invoke the finalizer afterBody hook through the trait. The finalizer
+        // is bound before the call: the hook mutates the same environment's
+        // finalize slot (the upstream field write has no borrow scope).
+        let after_body_finalizer = { env.info.borrow().finalize.clone() };
+        if let Some(finalizer) = after_body_finalizer {
             finalizer.borrow_mut().after_body();
         }
         let has_finalizer = {

@@ -5155,7 +5155,6 @@ impl Attr {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Attr.java:308-330.
     fn check_assignable(
         &mut self,
         ctx: &crate::compiler_context::CompilerContext,
@@ -5179,11 +5178,19 @@ impl Attr {
                     Some(base) => crate::tree::tree_info::is_this_qualifier(ctx, base),
                 } && self.is_assignable_as_blank_final(ctx, env, v)))
         {
-            let info = crate::resources::compiler_properties::errors::cant_assign_val_to_final_var(
-                crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                    ctx.sym(v).name.to_java_string().to_string_lossy().to_string(),
-                ),
+            // Resource variables are implicitly final (the parser marks the
+            // declaration FINAL); their assignment reports the resource-specific
+            // error instead of the generic final-variable error.
+            let name = crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                ctx.sym(v).name.to_java_string().to_string_lossy().to_string(),
             );
+            let info = if crate::code::symbol::symbol_is_resource_variable(ctx, v) {
+                crate::resources::compiler_properties::errors::try_resource_may_not_be_assigned(
+                    name,
+                )
+            } else {
+                crate::resources::compiler_properties::errors::cant_assign_val_to_final_var(name)
+            };
             crate::util::abstract_log::AbstractLog::error_at(
                 &mut *self.log.borrow_mut(),
                 pos,

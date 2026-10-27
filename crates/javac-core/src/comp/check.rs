@@ -10577,6 +10577,79 @@ mod diagnostics_tests {
     }
 
     #[test]
+    fn try_with_resources_compiles() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[
+                (
+                    "Res.java",
+                    "class Res implements java.io.Closeable { public void close() {} }\n",
+                ),
+                (
+                    "T.java",
+                    "class T { void f() { try (Res r = new Res()) { } } }\n",
+                ),
+            ],
+            |_options| {},
+        );
+        let errors: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .filter(|code| code.starts_with("compiler.err."))
+            .collect();
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    }
+
+    #[test]
+    fn try_with_multiple_resources_compiles() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[
+                (
+                    "Res.java",
+                    "class Res implements java.io.Closeable { public void close() {} }\n",
+                ),
+                (
+                    "T.java",
+                    "class T { void f() { try (Res first = new Res(); Res second = new Res()) { } } }\n",
+                ),
+            ],
+            |_options| {},
+        );
+        let errors: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .filter(|code| code.starts_with("compiler.err."))
+            .collect();
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    }
+
+    #[test]
+    fn try_resource_assignment_reports_error() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[
+                (
+                    "Res.java",
+                    "class Res implements java.io.Closeable { public void close() {} }\n",
+                ),
+                (
+                    "T.java",
+                    "class T { void f() { try (Res r = new Res()) { r = new Res(); } } }\n",
+                ),
+            ],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .collect();
+        assert!(
+            codes
+                .iter()
+                .any(|code| code == "compiler.err.try.resource.may.not.be.assigned"),
+            "try.resource.may.not.be.assigned missing: {codes:?}"
+        );
+    }
+
+    #[test]
     fn supertype_completion_registers_class_in_real_symtab() {
         // The supertype walk completes java.lang.Exception lazily (its
         // supertype_field is filled by the class reader on completion); the

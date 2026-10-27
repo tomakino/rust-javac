@@ -28,4 +28,16 @@
 - JDK17 oracle 重跑:合法 multi-catch exit=0;非法报 compiler.err.multicatch.types.must.be.disjoint(参数顺序一致)。
 ### 过程事故申报
 中途被外部停止后恢复工作树时,一次基于 clippy 建议的批量自动应用因字符串/字节偏移错误与 --all-targets 的 lib/test 目标差异,损坏了 type_/attr/check/symtab/symbol/type_annotations 若干文件与 module_finder 的 test 依赖 import;已通过 git HEAD 原文 + 确定性重放(含 D1 代码块重建)恢复,未使用 git checkout/reset,未回退他人改动;误建两个空文件(code/modules.rs、code/resolve.rs)已删除。最终全绿。
-- 下一步:D2(try-with-resources)。
+
+## D2 try-with-resources(完成,工作树全绿,待 Lead 审核提交)
+### 实现(1:1)
+- comp/member_enter.rs:initEnv 对齐上游(新环境的 tree=变量声明树、next=外层环境、outer=外层 outer;原实现用 dup_with_outer(env.tree,…,Some(env)) 造成 tree/outer/next 偏差,改用 Env::dupto 语义);visitVarDef 的 lazy-const 分支补 initEnv.info.enclVar=v(上游记录被初始化变量);对应注释按 §35 重写(无 Java 签名/行号)。
+- comp/attr.rs:checkAssignable 的 FINAL 分支按 v.isResourceVariable() 分流(TWR 资源→Errors.TryResourceMayNotBeAssigned;普通 final→CantAssignValToFinalVar)。
+- jvm/codegen.rs:genTry 的 afterBody 调用前先结束环境 finalize 临时借用(本地 RefCell 适配;上游字段直写无借用域),修复 TWR body-only finalizer 的 already-borrowed panic。
+- comp/check.rs:3 个 e2e(try_with_resources_compiles、try_with_multiple_resources_compiles、try_resource_assignment_reports_error)。
+### 验证(本轮实际执行)
+- cargo check → 0 errors;cargo test --workspace --all-targets → 1117 passed/0 failed;e2e 3 passed;clippy errors=0(warnings 207 与 D1 基线一致,无新增);unimplemented/unreachable 0。
+- JDK17 oracle 重跑:合法 TWR exit=0;try (Res2 r = ...) { r = ...; } → compiler.err.try.resource.may.not.be.assigned: r(与本地一致)。
+- git:4 文件(attr/check/member_enter/codegen),122 insertions/12 deletions。
+### 剩余/D3
+- D3:Flow guard 诊断(compiler.misc.guard、compiler.misc.inner.cls 接线)。
