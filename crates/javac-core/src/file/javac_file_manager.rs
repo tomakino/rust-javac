@@ -66,7 +66,7 @@
 //!   surface are ported and tested here.
 //! * known gaps: getClassLoader (URLClassLoader/reflection, TODO(P6)); handleOption(String,
 //!   Iterator) (OptionHelper not ported, TODO(OptionHelper)); ServiceLoader; close's
-//!   deferredClose path (daemon thread, TODO(P6)); multiReleaseValue archive file systems
+//!   deferredClose path (std::thread + Mutex/Condvar, ported); multiReleaseValue archive file systems
 //!   (second).  Java warnings are not emitted (TODO(Log)).
 //! * user.dir (getFileForOutput fallback) -> std::env::current_dir (no JVM system property).
 
@@ -1286,8 +1286,8 @@ impl JavaFileManager for JavacFileManager {
     ///
     /// Upstream: JavacFileManager.java:422-432, BaseFileManager.java:145-175.
     fn close(&self) -> Result<(), Error> {
-        if self.base.borrow().deferred_close_timeout() > 0 {
-            let deferred = self.base.borrow().deferred_state();
+        let deferred = self.base.borrow().deferred_state();
+        if deferred.timeout_ms() > 0 {
             let containers = Arc::clone(&self.containers);
             let paths_and_containers = Arc::clone(&self.paths_and_containers);
             let non_indexing_containers = Arc::clone(&self.non_indexing_containers);

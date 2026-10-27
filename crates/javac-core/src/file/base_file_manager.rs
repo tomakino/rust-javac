@@ -30,12 +30,14 @@
 //!   TODO (the Log error entry point and a streaming decoder are not available).
 //!   getDefaultEncodingName needs Charset.defaultCharset(), which the adapter does not
 //!   provide yet (TODO, reported).
-//! * java.lang.Thread/wait (deferredClose), java.net.URL/URLClassLoader and reflection
-//!   (getClassLoader) and java.lang.ref.SoftReference (content cache) are not ported:
-//!   deferredClose/getClassLoader are unimplemented + TODO; the content cache keeps the
-//!   decoded JavaString directly (SoftReference is a memory-management detail with no
-//!   observable behaviour without GC pressure; registered).
-//! * contentCache is keyed by the file object's Java name (PathFileObject does not expose a
+//! * java.lang.Thread/wait (deferredClose) are ported through std::thread +
+//!   std::sync::{Mutex, Condvar} (DeferredCloseState; the BaseFileManager monitor
+//!   is the shared state and the deferred-close thread waits on the condition
+//!   variable). java.net.URL/URLClassLoader and reflection (getClassLoader) and
+//!   java.lang.ref.SoftReference (content cache) are not ported: getClassLoader is
+//!   unimplemented + TODO; the content cache keeps the decoded JavaString directly
+//!   (SoftReference is a memory-management detail with no observable behaviour
+//!   without GC pressure; registered).
 //!   cloneable identity and Java uses identity equality; the path-based key is the
 //!   registered approximation — content is validated by getLastModified, so only cache hit
 //!   rates can differ, never decoded content).
@@ -105,7 +107,6 @@ pub struct BaseFileManager {
     last_used_time: Cell<i64>,
 
     /// Java: protected long deferredCloseTimeout = 0;
-    deferred_close_timeout: Cell<i64>,
     /// The shared deferred-close state (Java: the synchronized object
     /// monitor + lastUsedTime/deferredCloseTimeout of BaseFileManager; the port
     /// shares it with the deferred-close thread — registered adapter).
@@ -143,7 +144,6 @@ impl BaseFileManager {
             locations: BaseFileManager::create_locations(java_home),
             auto_close: false,
             last_used_time: Cell::new(now_millis()),
-            deferred_close_timeout: Cell::new(0),
             deferred: Arc::new(DeferredCloseState::new()),
             encoding_name: RefCell::new(None),
             multi_release_value: RefCell::new(None),
@@ -189,7 +189,6 @@ impl BaseFileManager {
                 Ok(seconds) => (seconds * 1000.0) as i64,
                 Err(_) => 60 * 1000,
             };
-            self.deferred_close_timeout.set(millis);
             self.deferred.set_timeout(millis);
         }
     }
@@ -208,7 +207,7 @@ impl BaseFileManager {
 
     /// Java: protected long deferredCloseTimeout; (read by JavacFileManager.close()).
     pub(crate) fn deferred_close_timeout(&self) -> i64 {
-        self.deferred_close_timeout.get()
+        self.deferred.timeout_ms()
     }
 
     /// Java: protected final Map<JavaFileObject, ContentCacheEntry> contentCache; (clear()).
@@ -247,7 +246,7 @@ impl BaseFileManager {
     ///
     /// Upstream: BaseFileManager.java:168-172.
     pub fn update_last_used_time(&self) {
-        if self.deferred_close_timeout.get() > 0 {
+        if self.deferred.timeout_ms() > 0 {
             self.last_used_time.set(now_millis());
             self.deferred.update_last_used();
         }
