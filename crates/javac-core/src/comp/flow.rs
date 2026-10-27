@@ -504,6 +504,10 @@ pub struct Flow {
     pub attr_env: Rc<RefCell<Option<Rc<Env<AttrContext>>>>>,
     pub make: Rc<RefCell<Option<Rc<RefCell<TreeMaker>>>>>,
     pub allow_effectively_final_in_inner_classes: bool,
+    /// Java: the Attr service (Flow.java's outer Attr) used by the resource
+    /// close() lookup in FlowAnalyzer (registered adapter: the Rust Flow keeps
+    /// the Attr cell instead of the Java inner-class outer pointer).
+    pub attr: Option<Rc<RefCell<crate::comp::attr::Attr>>>,
 }
 
 impl Flow {
@@ -519,6 +523,7 @@ impl Flow {
         diags: Rc<Factory>,
         lint: Rc<Lint>,
         source: crate::code::source::Source,
+        attr: Option<Rc<RefCell<crate::comp::attr::Attr>>>, 
     ) -> Flow {
         let _ = ctx;
         Flow {
@@ -534,6 +539,7 @@ impl Flow {
             make: Rc::new(RefCell::new(None)),
             allow_effectively_final_in_inner_classes:
                 Feature::EFFECTIVELY_FINAL_IN_INNER_CLASSES.allowed_in_source(source),
+            attr,
         }
     }
 
@@ -3134,9 +3140,107 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             }
         }
         if !resources.is_empty() {
-            unimplemented!(
-                "TODO(Attr/Resolve wiring batch): FlowAnalyzer.visitTry resource close() thrown types (Flow.java:1250-1270)"
-            )
+            // Java: Flow.java:1288-1308: the close() methods of the resources
+            // throw their declared exceptions at the end of the try block.
+            for resource in resources.iter() {
+                let Some(resource_type) = ctx.tree(resource).ty else {
+                    continue;
+                };
+                let closeable_supertypes = if self
+                    .flow
+                    .types
+                    .is_compound_public(ctx, resource_type)
+                {
+                    let mut supers = {
+                        let syms = self.flow.syms.borrow();
+                        self.flow.types.interfaces(ctx, &syms, resource_type)
+                    };
+                    supers = supers.prepend({
+                        let syms = self.flow.syms.borrow();
+                        self.flow.types.supertype(ctx, &syms, resource_type)
+                    });
+                    supers
+                } else {
+                    List::of(resource_type)
+                };
+                let mut current = closeable_supertypes;
+                while current.non_empty() {
+                    let sup = *current.head();
+                    current = current.tail();
+                    let auto_closeable_tsym = {
+                        let syms = self.flow.syms.borrow();
+                        ctx.typ(syms.auto_closeable_type)
+                            .tsym
+                            .expect("AutoCloseable symbol")
+                    };
+                    let as_super = {
+                        let syms = self.flow.syms.borrow();
+                        self.flow
+                            .types
+                            .as_super(ctx, &syms, sup, auto_closeable_tsym)
+                    };
+                    if as_super.is_none() {
+                        continue;
+                    }
+                    let site = self.flow.types.skip_type_vars_public(ctx, sup);
+                    let close_method = {
+                        let attr_rc = self
+                            .flow
+                            .attr
+                            .as_ref()
+                            .expect("AssertionError: the Attr service is not installed on Flow");
+                        let mut attr = attr_rc.borrow_mut();
+                        let chk_rc = Rc::clone(&self.flow.chk);
+                        let chk = chk_rc.borrow();
+                        let infer = Rc::clone(&attr.infer);
+                        let env = {
+                            let env = self.flow.attr_env.borrow().clone();
+                            env.expect("AssertionError: attrEnv")
+                        };
+                        let mut rs = self.flow.rs.borrow_mut();
+                        let mut syms = self.flow.syms.borrow_mut();
+                        let location = ctx.typ(site).tsym.expect("close site symbol");
+                        rs.resolve_qualified_method(
+                            ctx,
+                            &mut syms,
+                            &self.flow.types,
+                            &mut attr,
+                            &chk,
+                            &infer,
+                            Some(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(resource).pos))),
+                            &env,
+                            location,
+                            site,
+                            self.flow.names.close.clone(),
+                            List::nil(),
+                            Some(List::nil()),
+                        )
+                    };
+                    let member_type = {
+                        let syms = self.flow.syms.borrow();
+                        self.flow
+                            .types
+                            .member_type(ctx, &syms, resource_type, close_method)
+                    };
+                    if matches!(
+                        ctx.sym(close_method).kind,
+                        crate::code::kinds::Kind::MTH
+                    ) {
+                        // Java: mt.getThrownTypes()
+                        let mut thrown =
+                            crate::code::types::Types::get_thrown_types_public(
+                                &self.flow.types,
+                                ctx,
+                                member_type,
+                            );
+                        while thrown.non_empty() {
+                            let exc = *thrown.head();
+                            thrown = thrown.tail();
+                            self.mark_thrown(ctx, resource, exc);
+                        }
+                    }
+                }
+            }
         }
         self.scan(ctx, body);
         let syms = self.flow.syms.borrow();
@@ -5418,6 +5522,7 @@ mod tests {
             Rc::clone(&diags),
             Rc::clone(&lint),
             source,
+            None,
         );
         let make = Rc::new(RefCell::new(TreeMaker::new(Some(Rc::clone(&names)))));
         // An empty ClassDecl with a class symbol exercises every analyzer's

@@ -10527,6 +10527,7 @@ pub fn wire_attr_services(
         Rc::clone(&diags),
         lint.clone(),
         source,
+        Some(Rc::clone(&attr)),
     ));
     // 5. Analyzer (Analyzer.java:120-140) — the Attr self-cell mirrors
     // Context.get(Attr.class).

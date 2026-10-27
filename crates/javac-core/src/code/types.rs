@@ -9297,6 +9297,28 @@ impl Types {
     ) -> TypeId {
         self.skip_type_vars(ctx, t)
     }
+
+    /// Java: Type.getThrownTypes() (Type.java:1491 MethodType / Type.java:1808
+    /// ForAll), the Flow resource close() thrown-type read (Flow.java:1302).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - t: the method (or for-all) type.
+    ///
+    /// # Returns
+    ///   - the declared thrown types (empty for other types).
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Flow.java:1302 (getThrownTypes on the member type).
+    pub fn get_thrown_types_public(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        t: TypeId,
+    ) -> List<TypeId> {
+        get_thrown_types(ctx, t)
+    }
 }
 
 /// (Types.java:5046-5061).
