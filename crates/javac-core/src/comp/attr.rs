@@ -4665,22 +4665,31 @@ impl Attr {
         // Compute the identifier's instantiated type (Resolve.checkMethod).
         let mut note_warner = crate::util::warner::Warner::new(None);
         let chk_guard = chk_rc.borrow();
-        let resolution = rs.check_method(
-            ctx,
-            syms,
-            &types,
-            self,
-            &chk_guard,
-            infer,
-            env,
-            site,
-            sym,
-            result_info,
-            argtypes.clone(),
-            typeargtypes.clone(),
-            &mut note_warner,
-        );
+        // The inference exception is thrown by the resolution machinery (the
+        // upstream checked exception) and converted to the resolution error
+        // value here, where the upstream checkMethod catches it.
+        let resolution = crate::comp::resolve::catch_inference_exception(|| {
+            rs.check_method(
+                ctx,
+                syms,
+                &types,
+                self,
+                &chk_guard,
+                infer,
+                env,
+                site,
+                sym,
+                result_info,
+                argtypes.clone(),
+                typeargtypes.clone(),
+                &mut note_warner,
+            )
+        });
         drop(chk_guard);
+        let resolution = match resolution {
+            Ok(resolution) => resolution,
+            Err(exception) => Err(crate::comp::resolve::MethodCheckFailure::Inference(exception)),
+        };
         let owntype = match resolution {
             Ok(owntype) => owntype,
             Err(crate::comp::resolve::MethodCheckFailure::Inference(ex)) => {

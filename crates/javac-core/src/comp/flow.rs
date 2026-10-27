@@ -556,7 +556,20 @@ impl Flow {
             .info()
             .args
             .iter()
-            .map(|arg| Rc::new(javac_strings::JavaString::from(arg.to_text().as_str())) as DiagnosticArg)
+            .map(|arg| -> DiagnosticArg {
+                // The diagnostic contract preserves the original argument object
+                // (ADR 0002 revision C): a nested diagnostic/fragment is passed
+                // through, plain text becomes a Java string argument.
+                match arg {
+                    crate::resources::diagnostic_contract::DiagnosticArg::Text(text) => {
+                        Rc::new(javac_strings::JavaString::from(text.as_str()))
+                    }
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(diag) => {
+                        let nested: DiagnosticArg = diag.clone();
+                        nested
+                    }
+                }
+            })
             .collect();
         let source = self.log.borrow().current_source();
         let diagnostic = self.diags.create(
@@ -723,7 +736,7 @@ fn case_is_rule(ctx: &CompilerContext, case: TreeId) -> bool {
 fn is_pattern_tree(ctx: &CompilerContext, tree: TreeId) -> bool {
     matches!(
         ctx.tree(tree).tag,
-        Tag::BINDINGPATTERN | Tag::PARENTHESIZEDPATTERN | Tag::GUARDPATTERN | Tag::DEFAULTCASELABEL
+        Tag::BINDINGPATTERN | Tag::PARENTHESIZEDPATTERN | Tag::GUARDPATTERN
     )
 }
 
@@ -5077,18 +5090,26 @@ impl<'a> CaptureAnalyzer<'a> {
         {
             match ctx.tree(current_tree).tag {
                 Tag::CLASSDEF => {
-                    if !self.flow.allow_effectively_final_in_inner_classes
-                        && (ctx.sym(sym).flags_field & flags::FINAL as i64) == 0 {
+                    let sym_flags = ctx.sym(sym).flags_field;
+                    if !self.flow.allow_effectively_final_in_inner_classes {
+                        if (sym_flags & flags::FINAL as i64) == 0 {
                             self.report_inner_cls_needs_final_error(ctx, pos, sym);
                         }
+                    } else if (sym_flags
+                        & (flags::EFFECTIVELY_FINAL | flags::FINAL as i64))
+                        == 0
+                    {
+                        self.report_effectively_final_error(ctx, pos, sym);
+                    }
                 }
-                Tag::GUARDPATTERN | Tag::LAMBDA
+                Tag::GUARDPATTERN | Tag::LAMBDA => {
                     if (ctx.sym(sym).flags_field
                         & (flags::EFFECTIVELY_FINAL | flags::FINAL as i64))
                         == 0
-                    => {
+                    {
                         self.report_effectively_final_error(ctx, pos, sym);
                     }
+                }
                 _ => {}
             }
         }
@@ -5131,24 +5152,29 @@ impl<'a> CaptureAnalyzer<'a> {
             }
     }
 
-    /// Java: void reportEffectivelyFinalError(DiagnosticPosition pos, Symbol sym)
-    /// (Flow.java:2959-2967)
+    /// Reports the effectively-final error with the capture-context fragment:
+    /// a lambda body, a guard pattern or an inner class (the diagnostic argument
+    /// is the real fragment, not pre-formatted text).
     fn report_effectively_final_error(&mut self, ctx: &CompilerContext, pos: i32, sym: SymbolId) {
-        let fragment = match self
+        let sub_key = match self
             .current_tree
             .map(|current_tree| ctx.tree(current_tree).tag)
         {
-            Some(Tag::LAMBDA) => "lambda",
-            Some(Tag::GUARDPATTERN) => "guard",
-            Some(Tag::CLASSDEF) => "inner class",
-            _ => "lambda",
+            Some(Tag::LAMBDA) => crate::resources::compiler_properties::fragments::lambda(),
+            Some(Tag::GUARDPATTERN) => crate::resources::compiler_properties::fragments::guard(),
+            Some(Tag::CLASSDEF) => crate::resources::compiler_properties::fragments::inner_cls(),
+            other => panic!("AssertionError: Unexpected tree kind: {other:?}"),
         };
+        let fragment = self
+            .flow
+            .diags
+            .fragment(crate::util::jc_diagnostic::Fragment::from(sub_key));
+        let nested_arg = crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+            Rc::new(fragment),
+        );
         self.flow.error(
             pos,
-            errors::cant_ref_non_effectively_final_var(
-                symbol_place(ctx, sym),
-                crate::resources::diagnostic_contract::DiagnosticArg::from_display(fragment),
-            ),
+            errors::cant_ref_non_effectively_final_var(symbol_place(ctx, sym), nested_arg),
         );
     }
 

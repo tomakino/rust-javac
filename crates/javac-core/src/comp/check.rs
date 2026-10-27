@@ -10576,6 +10576,106 @@ mod diagnostics_tests {
         assert!(errors.is_empty(), "unexpected errors: {errors:?}");
     }
 
+    /// The nested diagnostic/fragment arguments of a diagnostic (ADR 0002:
+    /// the original argument objects are preserved in the argument vector).
+    fn nested_fragment_codes(
+        diagnostic: &crate::util::jc_diagnostic::JCDiagnostic,
+    ) -> Vec<String> {
+        diagnostic
+            .get_args()
+            .iter()
+            .filter_map(|arg| {
+                arg.clone()
+                    .downcast::<crate::util::jc_diagnostic::JCDiagnostic>()
+                    .ok()
+            })
+            .map(|nested| nested.get_code_string())
+            .collect()
+    }
+
+    #[test]
+    fn guard_effectively_final_uses_guard_fragment() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { void f(Object o) { int x = 0; x = 1; switch (o) { case String s && x > 0 -> {} default -> {} } } }\n",
+            )],
+            |options| {
+                options.put("preview", "true");
+                // The deferred-handler compilation has no error count, so the
+                // no-error stop policy applies; it stops after Flow (before
+                // TransPatterns/Gen) for this erroneous tree.
+                options.put("should-stop.ifNoError", "FLOW");
+            },
+        );
+        let effectively_final = diagnostics
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.get_code_string() == "compiler.err.cant.ref.non.effectively.final.var"
+            })
+            .expect("cant.ref.non.effectively.final.var missing");
+        let fragments = nested_fragment_codes(effectively_final);
+        assert!(
+            fragments.iter().any(|code| code == "compiler.misc.guard"),
+            "guard fragment missing: {fragments:?}"
+        );
+    }
+
+    #[test]
+    fn should_stop_if_no_error_at_attr_skips_attribution_and_generation() {
+        let (compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T {}\n")],
+            |options| {
+                options.put("should-stop.ifNoError", "ATTR");
+            },
+        );
+        assert!(compiler.last_compiled_classes.is_empty());
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn should_stop_if_no_error_at_flow_skips_desugar_and_generation() {
+        let (compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T {}\n")],
+            |options| {
+                options.put("should-stop.ifNoError", "FLOW");
+            },
+        );
+        assert!(compiler.last_compiled_classes.is_empty());
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn should_stop_default_policy_generates_the_class() {
+        let (compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T {}\n")],
+            |_options| {},
+        );
+        assert_eq!(compiler.last_compiled_classes.len(), 1);
+        assert!(diagnostics.is_empty());
+    }
+    #[test]
+    fn lambda_effectively_final_uses_lambda_fragment() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { void f() { int x = 0; x = 1; Runnable r = () -> System.out.println(x); } }\n",
+            )],
+            |_options| {},
+        );
+        let effectively_final = diagnostics
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.get_code_string() == "compiler.err.cant.ref.non.effectively.final.var"
+            })
+            .expect("cant.ref.non.effectively.final.var missing");
+        let fragments = nested_fragment_codes(effectively_final);
+        assert!(
+            fragments.iter().any(|code| code == "compiler.misc.lambda"),
+            "lambda fragment missing: {fragments:?}"
+        );
+    }
+
     #[test]
     fn try_with_resources_compiles() {
         let (_compiler, diagnostics) = compile_with_diagnostics(

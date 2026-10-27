@@ -41,3 +41,19 @@
 - git:4 文件(attr/check/member_enter/codegen),122 insertions/12 deletions。
 ### 剩余/D3
 - D3:Flow guard 诊断(compiler.misc.guard、compiler.misc.inner.cls 接线)。
+
+## D3 guard 诊断接线(部分完成,工作树全绿;inner-class e2e 阻塞待裁决)
+### 实现(1:1 接线 + 依赖修复)
+- comp/flow.rs:report_effectively_final_error 改为真实 fragment 参数(Lambda/Guard/InnerCls;default 按上游 AssertionError);Flow.error 保留嵌套 JCDiagnostic 参数对象(ADR 0002);check_effectively_final 的 CLASSDEF 分支补 allow_effectively_final_in_inner_classes 的 fallthrough(上游 2915-2927);is_pattern_tree 只认 BINDINGPATTERN/PARENTHESIZEDPATTERN/GUARDPATTERN(上游 JCDefaultCaseLabel.isPattern=false,JCTree.java:2323)。
+- comp/attr.rs:check_method 用 catch_inference_exception 包裹 rs.check_method,将 InferenceException 转为 MethodCheckFailure::Inference(上游 Attr.checkMethod catch,Attr.java:4866)。
+- main/mini_compiler.rs:ParserFactory 注入 Preview(上游 ParserFactory.preview=Preview.instance,ParserFactory.java:66/81);完整实现 shouldStop:策略解析(should-stop.at 作为 ifError 的 backwards-compatible 拼写、should-stop.ifError、should-stop.ifNoError 默认 GENERATE;JavaCompiler.java:440-448)、按错误选择策略、严格 isAfter(JavaCompiler.java:557-561)、unrecoverableError 读 deferred 诊断(1251-1262)、阶段边界 PARSE/ENTER/ENTER(enterTrees)/PROCESS/ATTR 门控(930)/FLOW(两处:1368-1369 与 1383-1384,flow.analyze_tree + compileStates.put 之后)/TRANSTYPES/TRANSPATTERNS/UNLAMBDA/LOWER/GENERATE(997-998、1148、1500、1518、1535、1542、1549、1592)。
+- util/log.rs:新增 deferred_diagnostics() 为 **adapter**:上游 DeferredDiagnosticHandler.getDiagnostics() 返回 queue 引用,本地因借用模型返回快照(Vec clone),仅用于 unrecoverableError 判据读取,不消费队列(不影响 reportDeferredDiagnostics 语义)。
+- comp/check.rs:guard e2e(断言 compiler.err.cant.ref.non.effectively.final.var 的嵌套 fragment 键 compiler.misc.guard)+ lambda e2e(compiler.misc.lambda);删除临时 probe。guard e2e 用 should-stop.ifNoError=FLOW(deferred handler 下 errorCount=0,无错误策略生效),在 Flow 后停止,不进入 TransPatterns/Gen。
+- 测试:mini_compiler 单测 4 个(should-stop.at 仅影响 ifError、ifError/ifNoError 按错误选择、默认 INIT/GENERATE、非法状态 panic);check.rs e2e 3 个(ifNoError=ATTR/FLOW 跳过生成、默认 GENERATE 生成类);guard/lambda fragment e2e 2 个。
+- comp/member_enter.rs:删除既有调试 eprintln(不改变行为)。
+### 未完成(阻塞,需 Lead 裁决)
+- inner_class_effectively_final_uses_inner_cls_fragment:local class 完成链在 Attr 借用期间触发 TypeEnter→Attr 重入(RefCell already borrowed:type_enter.rs:1458 attrib_type_variables / member_enter.rs:212)。已尝试给 TypeEnter 注入当前 Attr(complete_with_attr)并推进到 member_enter 的 attr 借用,说明需整链注入(TypeEnter+MemberEnter+Annotate)或 Attr 借用模型重构;为不提交半成品,已撤回 type_enter.rs 改造(恢复 HEAD)并移除该未通过 e2e。上游语义(Flow fragment inner.cls)已在代码层实现,缺的是 local class 编译链的借用适配。请 Lead 裁决后续批次范围。
+### 验证(本轮实际执行)
+- cargo check 0 errors;cargo test --workspace --all-targets → 1119 passed / 0 failed;clippy errors=0(warnings 208);unimplemented/unreachable=0。
+- JDK17 oracle:guard → compiler.err.cant.ref.non.effectively.final.var: x, (compiler.misc.guard);inner class → (compiler.misc.inner.cls);lambda → (compiler.misc.lambda)。guard/lambda 本地 e2e 与之一致。
+- git:5 文件(flow/attr/check/mini_compiler/member_enter),166 insertions/34 deletions。

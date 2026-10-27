@@ -589,7 +589,7 @@ impl MiniCompiler {
             Rc::clone(&names),
             source,
             scanner_factory,
-            None,
+            Some(Rc::clone(&preview)),
         ));
         // Java: Modules constructor obtains ClassWriter/JNIWriter and installs
         // multiModuleMode (Modules.java:204-207).
@@ -790,6 +790,59 @@ fn js(value: &str) -> javac_strings::JavaString {
     javac_strings::JavaString::from(value)
 }
 
+/// Java: CompileState.valueOf(name): parses the enum name carried by the
+/// should-stop policy options.
+fn parse_compile_state(name: &str) -> crate::comp::compile_states::CompileState {
+    use crate::comp::compile_states::CompileState;
+    match name.trim() {
+        "INIT" => CompileState::INIT,
+        "PARSE" => CompileState::PARSE,
+        "ENTER" => CompileState::ENTER,
+        "PROCESS" => CompileState::PROCESS,
+        "ATTR" => CompileState::ATTR,
+        "FLOW" => CompileState::FLOW,
+        "TRANSTYPES" => CompileState::TRANSTYPES,
+        "TRANSPATTERNS" => CompileState::TRANSPATTERNS,
+        "UNLAMBDA" => CompileState::UNLAMBDA,
+        "LOWER" => CompileState::LOWER,
+        "GENERATE" => CompileState::GENERATE,
+        other => panic!("AssertionError: unknown CompileState: {other}"),
+    }
+}
+
+/// Java: the shouldStopPolicyIfError/shouldStopPolicyIfNoError setup
+/// (JavaCompiler.java:440-448): should-stop.at is the backwards-compatible
+/// spelling of should-stop.ifError, and the no-error policy defaults to
+/// GENERATE.
+fn should_stop_policies_from(
+    get: impl Fn(&str) -> Option<String>,
+) -> (
+    crate::comp::compile_states::CompileState,
+    crate::comp::compile_states::CompileState,
+) {
+    let if_error = match get("should-stop.at").or_else(|| get("should-stop.ifError")) {
+        Some(value) => parse_compile_state(&value),
+        None => crate::comp::compile_states::CompileState::INIT,
+    };
+    let if_no_error = match get("should-stop.ifNoError") {
+        Some(value) => parse_compile_state(&value),
+        None => crate::comp::compile_states::CompileState::GENERATE,
+    };
+    (if_error, if_no_error)
+}
+
+/// Java: protected boolean shouldStop(CompileState cs) (JavaCompiler.java:557-
+/// 561): errors select the if-error policy, otherwise the no-error policy;
+/// a phase stops only when it is strictly after the selected policy.
+fn should_stop_decision(
+    if_error: crate::comp::compile_states::CompileState,
+    if_no_error: crate::comp::compile_states::CompileState,
+    has_error: bool,
+    cs: crate::comp::compile_states::CompileState,
+) -> bool {
+    let policy = if has_error { if_error } else { if_no_error };
+    cs.is_after(policy)
+}
 impl MiniCompiler {
     /// Compile a list of source files through the ported phases.
     ///
@@ -806,10 +859,19 @@ impl MiniCompiler {
         &mut self,
         source_paths: &[PathBuf],
     ) -> Result<Vec<CompiledClass>, String> {
-        // JavaCompiler.parseFiles
+        // JavaCompiler.parseFiles: if (!force && shouldStop(PARSE)) return List.nil().
+        if self.should_stop(crate::comp::compile_states::CompileState::PARSE) {
+            self.last_compiled_classes = Vec::new();
+            return Ok(Vec::new());
+        }
         let mut roots: Vec<TreeId> = Vec::new();
         for path in source_paths {
             roots.push(self.parse_file(path)?);
+        }
+        // JavaCompiler.compile2: stopIfError(CompileState.ENTER, initModules(...)).
+        if self.should_stop(crate::comp::compile_states::CompileState::ENTER) {
+            self.last_compiled_classes = Vec::new();
+            return Ok(Vec::new());
         }
         // JavaCompiler.initModules (JavaCompiler.java:1020-1026).
         {
@@ -819,6 +881,12 @@ impl MiniCompiler {
                 .init_modules(&mut self.ctx, &mut syms, &roots);
         }
 
+        // JavaCompiler.compile2: the second stopIfError(ENTER, ...) guards
+        // enterTrees.
+        if self.should_stop(crate::comp::compile_states::CompileState::ENTER) {
+            self.last_compiled_classes = Vec::new();
+            return Ok(Vec::new());
+        }
         // JavaCompiler.enterTrees -> enter.main (JavaCompiler.java:1033-1044).
         let root_list = List::from_iterable(roots.iter().copied());
         {
@@ -847,6 +915,20 @@ impl MiniCompiler {
                 .expect("enterDone annotation flush");
         }
         self.enter_done = true;
+        // JavaCompiler.processAnnotations: if (shouldStop(PROCESS)) return.
+        if self.should_stop(crate::comp::compile_states::CompileState::PROCESS) {
+            self.last_compiled_classes = Vec::new();
+            return Ok(Vec::new());
+        }
+        // JavaCompiler.compile2: the attr/flow/desugar/generate chain runs only
+        // when the no-error policy does not stop after ATTR.
+        {
+            let (_, policy_if_no_error) = self.should_stop_policies();
+            if crate::comp::compile_states::CompileState::ATTR.is_after(policy_if_no_error) {
+                self.last_compiled_classes = Vec::new();
+                return Ok(Vec::new());
+            }
+        }
         // JavaCompiler.attribute(todo)
         let mut envs: Vec<Rc<Env<AttrContext>>> = Vec::new();
         loop {
@@ -858,6 +940,10 @@ impl MiniCompiler {
         }
         for env in &envs {
             self.attribute(env)?;
+        }
+        if self.should_stop(crate::comp::compile_states::CompileState::FLOW) {
+            self.last_compiled_classes = Vec::new();
+            return Ok(Vec::new());
         }
         if self.error_count() > 0 {
             return Err(self.error_message());
@@ -873,6 +959,13 @@ impl MiniCompiler {
                 .compile_states
                 .borrow_mut()
                 .put(env, crate::comp::compile_states::CompileState::FLOW);
+            // JavaCompiler.flow: the second shouldStop(FLOW) check runs after
+            // the flow analysis and the compile-state update (JavaCompiler.java:
+            // 1383-1384).
+            if self.should_stop(crate::comp::compile_states::CompileState::FLOW) {
+                self.last_compiled_classes = Vec::new();
+                return Ok(Vec::new());
+            }
         }
         if self.error_count() > 0 {
             return Err(self.error_message());
@@ -880,6 +973,11 @@ impl MiniCompiler {
         // JavaCompiler.desugar(envs): TransTypes then Lower.
         let mut classes: Vec<CompiledClass> = Vec::new();
         for env in envs {
+            // JavaCompiler.desugar: desugar starts with shouldStop(TRANSTYPES).
+            if self.should_stop(crate::comp::compile_states::CompileState::TRANSTYPES) {
+                self.last_compiled_classes = Vec::new();
+                return Ok(Vec::new());
+            }
             let local_make = Rc::new(RefCell::new(
                 self.make.borrow().for_toplevel(env.toplevel),
             ));
@@ -890,6 +988,10 @@ impl MiniCompiler {
             let top_is_info = self.ctx.tree(top_tree).has_tag(crate::tree::jc_tree::Tag::PACKAGEDEF)
                 || self.ctx.tree(top_tree).has_tag(crate::tree::jc_tree::Tag::MODULEDEF);
             let translated = if top_is_info {
+                if self.should_stop(crate::comp::compile_states::CompileState::LOWER) {
+                    self.last_compiled_classes = Vec::new();
+                    return Ok(Vec::new());
+                }
                 top_tree
             } else {
                 let cdef = env.encl_class.expect("env.enclClass");
@@ -903,6 +1005,10 @@ impl MiniCompiler {
                     .compile_states
                     .borrow_mut()
                     .put(&env, crate::comp::compile_states::CompileState::TRANSTYPES);
+                if self.should_stop(crate::comp::compile_states::CompileState::TRANSPATTERNS) {
+                    self.last_compiled_classes = Vec::new();
+                    return Ok(Vec::new());
+                }
                 // JavaCompiler.desugar: TransPatterns then Lower
                 // (JavaCompiler.java:1516-1560).
                 let translated = self.trans_patterns.borrow_mut().translate_top_level_class(
@@ -923,6 +1029,10 @@ impl MiniCompiler {
                     if crate::code::source::Feature::LAMBDA.allowed_in_source(self.source)
                         && contains_lambda(&mut self.ctx, translated)
                     {
+                        if self.should_stop(crate::comp::compile_states::CompileState::UNLAMBDA) {
+                            self.last_compiled_classes = Vec::new();
+                            return Ok(Vec::new());
+                        }
                         let translated = self.lambda_to_method.borrow_mut().translate_top_level_class(
                             &mut self.ctx,
                             &env,
@@ -939,6 +1049,11 @@ impl MiniCompiler {
                     };
                 translated
             };
+            // JavaCompiler.desugar: if (shouldStop(LOWER)) return.
+            if self.should_stop(crate::comp::compile_states::CompileState::LOWER) {
+                self.last_compiled_classes = Vec::new();
+                return Ok(Vec::new());
+            }
             let defs = self.lower.borrow_mut().translate_top_level_class(
                 &mut self.ctx,
                 Rc::clone(&env),
@@ -947,6 +1062,11 @@ impl MiniCompiler {
             );
             if self.error_count() > 0 {
                 return Err(self.error_message());
+            }
+            // JavaCompiler.generate: if (shouldStop(GENERATE)) return.
+            if self.should_stop(crate::comp::compile_states::CompileState::GENERATE) {
+                self.last_compiled_classes = Vec::new();
+                return Ok(Vec::new());
             }
             // JavaCompiler.generate(queue)
             let mut current = defs;
@@ -1117,6 +1237,33 @@ impl MiniCompiler {
         Ok(())
     }
 
+    /// Java: the shouldStopPolicyIfError/shouldStopPolicyIfNoError setup
+    /// (JavaCompiler.java:440-448).
+    fn should_stop_policies(&self) -> (crate::comp::compile_states::CompileState, crate::comp::compile_states::CompileState) {
+        should_stop_policies_from(|key| self.options.get(key))
+    }
+
+    /// Java: protected boolean shouldStop(CompileState cs)
+    /// (JavaCompiler.java:557-561).
+    fn should_stop(&self, cs: crate::comp::compile_states::CompileState) -> bool {
+        let (if_error, if_no_error) = self.should_stop_policies();
+        should_stop_decision(
+            if_error,
+            if_no_error,
+            self.error_count() > 0 || self.unrecoverable_error(),
+            cs,
+        )
+    }
+
+    /// Java: private boolean unrecoverableError() (JavaCompiler.java:1251-
+    /// 1262): a deferred diagnostic that is an error and not RECOVERABLE.
+    fn unrecoverable_error(&self) -> bool {
+        self.log.borrow().deferred_diagnostics().iter().any(|diagnostic| {
+            diagnostic.get_type() == crate::util::jc_diagnostic::DiagnosticType::ERROR
+                && !diagnostic.is_flag_set(crate::util::jc_diagnostic::DiagnosticFlag::RECOVERABLE)
+        })
+    }
+
     /// Return the number of errors reported so far.
     pub fn error_count(&self) -> i32 {
         self.log.borrow().nerrors
@@ -1210,4 +1357,58 @@ fn contains_lambda(ctx: &mut CompilerContext, tree: TreeId) -> bool {
         }
     }
     false
+}
+#[cfg(test)]
+mod should_stop_tests {
+    use super::*;
+    use crate::comp::compile_states::CompileState;
+
+    fn options_get(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: std::collections::HashMap<String, String> = pairs
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect();
+        move |key| map.get(key).cloned()
+    }
+
+    #[test]
+    fn should_stop_at_sets_the_if_error_policy_only() {
+        let get = options_get(&[("should-stop.at", "FLOW")]);
+        let (if_error, if_no_error) = should_stop_policies_from(get);
+        assert!(matches!(if_error, CompileState::FLOW));
+        assert!(matches!(if_no_error, CompileState::GENERATE));
+        // The strict isAfter comparison: FLOW is not after FLOW, TRANSTYPES is.
+        assert!(!should_stop_decision(if_error, if_no_error, true, CompileState::FLOW));
+        assert!(should_stop_decision(if_error, if_no_error, true, CompileState::TRANSTYPES));
+        // should-stop.at does not affect the no-error policy.
+        assert!(!should_stop_decision(if_error, if_no_error, false, CompileState::TRANSTYPES));
+    }
+
+    #[test]
+    fn should_stop_if_error_and_if_no_error_select_on_errors() {
+        let get = options_get(&[
+            ("should-stop.ifError", "ATTR"),
+            ("should-stop.ifNoError", "FLOW"),
+        ]);
+        let (if_error, if_no_error) = should_stop_policies_from(get);
+        assert!(should_stop_decision(if_error, if_no_error, true, CompileState::FLOW));
+        assert!(!should_stop_decision(if_error, if_no_error, true, CompileState::ATTR));
+        assert!(should_stop_decision(if_error, if_no_error, false, CompileState::TRANSTYPES));
+        assert!(!should_stop_decision(if_error, if_no_error, false, CompileState::FLOW));
+    }
+
+    #[test]
+    fn should_stop_defaults_to_init_for_errors_and_generate_without() {
+        let (if_error, if_no_error) = should_stop_policies_from(options_get(&[]));
+        assert!(matches!(if_error, CompileState::INIT));
+        assert!(matches!(if_no_error, CompileState::GENERATE));
+        assert!(should_stop_decision(if_error, if_no_error, true, CompileState::PARSE));
+        assert!(!should_stop_decision(if_error, if_no_error, false, CompileState::GENERATE));
+    }
+
+    #[test]
+    #[should_panic]
+    fn unknown_should_stop_state_is_rejected() {
+        parse_compile_state("BOGUS");
+    }
 }

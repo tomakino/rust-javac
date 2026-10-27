@@ -225,7 +225,6 @@ impl MemberEnter {
         let mut attr = match attr_rc.try_borrow_mut() {
             Ok(attr) => attr,
             Err(_) => {
-                eprintln!("ATTR_BORROW_CONFLICT\n{}", std::backtrace::Backtrace::force_capture());
                 panic!("attr borrowed");
             }
         };

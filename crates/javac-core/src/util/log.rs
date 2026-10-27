@@ -541,6 +541,15 @@ impl Log {
         self.report_deferred_diagnostics_with(&|_| true);
     }
 
+    /// Java: DeferredDiagnosticHandler.getDiagnostics(): a snapshot of the
+    /// diagnostics currently deferred by the installed handler (empty when
+    /// the handler is not a deferred handler).
+    pub fn deferred_diagnostics(&self) -> Vec<JCDiagnostic> {
+        match &self.diagnostic_handler {
+            DiagnosticHandler::Deferred { deferred, .. } => deferred.iter().cloned().collect(),
+            _ => Vec::new(),
+        }
+    }
     /// Report selected deferred diagnostics.
     ///
     /// Java: DeferredDiagnosticHandler.reportDeferredDiagnostics(Predicate)
