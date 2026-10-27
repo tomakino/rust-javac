@@ -4204,14 +4204,22 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
                 _ => panic!("expected a variable declaration"),
             };
             if needs_sym {
+                // Java: new BindingSymbol(0, name, type, syms.noSymbol)
+                // (Attr.java:5915; the constructor adds HASINIT | MATCH_BINDING,
+                // Symbol.java:1874-1876).
                 let sym = self.new_symbol(
                     ctx,
                     crate::code::kinds::Kind::VAR,
-                    0,
+                    crate::code::flags::HASINIT as i64 | crate::code::flags::MATCH_BINDING,
                     name,
                     ty,
                     crate::code::symbol::SymbolKind::BindingSymbol {
                         aliases: List::nil(),
+                        lazy_const_value: None,
+                        pos: 0,
+                        adr: 0,
+                        data_kind: None,
+                        data: None,
                     },
                 );
                 if let TreeKind::VariableDecl { sym: slot, .. } = &mut ctx.tree_mut(var).kind {
@@ -8575,16 +8583,18 @@ impl Attr {
         };
         let scope = env.info.borrow().scope.expect("env scope");
         let owner = ctx.scope(scope).owner.expect("scope owner");
-        let binding = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
-            crate::code::kinds::Kind::VAR,
+        // Java: new BindingSymbol(tree.var.mods.flags, tree.var.name,
+        // tree.var.vartype.type, env.info.scope.owner) (Attr.java:4135; the
+        // constructor adds HASINIT | MATCH_BINDING, Symbol.java:1874-1876).
+        let binding = ctx.alloc_symbol(crate::code::symbol::new_binding_symbol(
             flags_value,
             name,
             Some(ty),
             Some(owner),
-            crate::code::symbol::SymbolKind::BindingSymbol {
-                aliases: List::nil(),
-            },
         ));
+        // Java: v.pos = tree.pos (Attr.java:4136).
+        let binding_pos = ctx.tree(tree).pos;
+        ctx.sym_mut(binding).set_var_pos(binding_pos);
         if let TreeKind::VariableDecl { sym, .. } = &mut ctx.tree_mut(var).kind {
             *sym = Some(binding);
         }

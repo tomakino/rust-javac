@@ -416,6 +416,59 @@ impl Symbol {
         (self.flags_field & flags::ENUM as i64) != 0
     }
 
+    /// Java: VarSymbol.adr — the local variable address (also inherited by
+    /// BindingSymbol, which extends VarSymbol upstream; Symbol.java:1861-1876).
+    ///
+    /// # Returns
+    ///   - Some(adr) for VarSymbol/BindingSymbol, None for other symbols.
+    pub fn local_adr(&self) -> Option<i32> {
+        match &self.kind_data {
+            SymbolKind::VarSymbol { adr, .. } | SymbolKind::BindingSymbol { adr, .. } => Some(*adr),
+            _ => None,
+        }
+    }
+
+    /// Java: VarSymbol.adr = adr (see Symbol::local_adr).
+    ///
+    /// # Returns
+    ///   - true when the symbol carries a local variable address slot.
+    pub fn set_local_adr(&mut self, adr: i32) -> bool {
+        match &mut self.kind_data {
+            SymbolKind::VarSymbol { adr: slot, .. }
+            | SymbolKind::BindingSymbol { adr: slot, .. } => {
+                *slot = adr;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Java: VarSymbol.pos (also inherited by BindingSymbol).
+    ///
+    /// # Returns
+    ///   - Some(pos) for VarSymbol/BindingSymbol, None for other symbols.
+    pub fn var_pos(&self) -> Option<i32> {
+        match &self.kind_data {
+            SymbolKind::VarSymbol { pos, .. } | SymbolKind::BindingSymbol { pos, .. } => Some(*pos),
+            _ => None,
+        }
+    }
+
+    /// Java: VarSymbol.pos = pos (see Symbol::var_pos).
+    ///
+    /// # Returns
+    ///   - true when the symbol carries a declaration position slot.
+    pub fn set_var_pos(&mut self, pos: i32) -> bool {
+        match &mut self.kind_data {
+            SymbolKind::VarSymbol { pos: slot, .. }
+            | SymbolKind::BindingSymbol { pos: slot, .. } => {
+                *slot = pos;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Java: public boolean isSealed()
     pub fn is_sealed(&self) -> bool {
         (self.flags_field & flags::SEALED) != 0
@@ -834,10 +887,22 @@ pub enum SymbolKind {
             std::rc::Rc<std::cell::RefCell<crate::comp::annotate::AnnotationTypeMetadata>>,
     },
     /// Java: Symbol.BindingSymbol (Symbol.java:1861-1902) — a VarSymbol
-    /// subclass introduced by a pattern match binding.
+    /// subclass introduced by a pattern match binding. The VarSymbol payload is
+    /// carried inline (upstream inheritance; registered adapter).
     BindingSymbol {
         /// Java: List<BindingSymbol> aliases() — empty means List.of(this).
         aliases: List<SymbolId>,
+        /// Java: VarSymbol.data Callable form (inherited; see LazyConstValue).
+        lazy_const_value: Option<LazyConstValue>,
+        /// Java: VarSymbol.pos (inherited).
+        pos: i32,
+        /// Java: VarSymbol.adr (inherited; set during code generation).
+        adr: i32,
+        /// Java: VarSymbol data ElementKind marker (inherited).
+        data_kind: Option<ElementKind>,
+        /// Java: VarSymbol.data (Object) ConstantValue attribute value
+        /// (inherited).
+        data: Option<crate::code::attribute::ConstValue>,
     },
     /// Java: Symbol.VarSymbol
     VarSymbol {
@@ -1873,6 +1938,11 @@ pub fn new_binding_symbol(
         owner,
         SymbolKind::BindingSymbol {
             aliases: List::nil(),
+            lazy_const_value: None,
+            pos: 0,
+            adr: 0,
+            data_kind: None,
+            data: None,
         },
     )
 }
@@ -1884,7 +1954,7 @@ pub fn binding_symbol_aliases(
     sym: SymbolId,
 ) -> List<SymbolId> {
     match &ctx.sym(sym).kind_data {
-        SymbolKind::BindingSymbol { aliases } if !aliases.is_empty() => aliases.clone(),
+        SymbolKind::BindingSymbol { aliases, .. } if !aliases.is_empty() => aliases.clone(),
         _ => List::of(sym),
     }
 }

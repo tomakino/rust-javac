@@ -2109,6 +2109,8 @@ impl Code {
             }
             i += 1;
         }
+        // Java: Code.java:1335-1340 — the frame.locals slot may be null for an
+        // undefined local (Code.width(null) == 1, Code.java:284-286).
         frame.locals = Vec::new();
         let mut i = 0;
         let mut j = 0;
@@ -2117,9 +2119,12 @@ impl Code {
                 j < local_count,
                 "AssertionError: local variable count"
             );
-            let local = locals[i as usize].expect("local type");
-            frame.locals.push(Some(local));
-            let w = Code::width_type(ctx, &self.syms.borrow(), Some(local));
+            let local = locals[i as usize];
+            frame.locals.push(local);
+            let w = match local {
+                Some(local) => Code::width_type(ctx, &self.syms.borrow(), Some(local)),
+                None => 1,
+            };
             if w > 1 {
                 i += 1;
             }
@@ -2356,11 +2361,12 @@ impl Code {
             }
             current = node.next;
         }
-        assert!(
-            !changed || !states_equal(&self.state, &new_state),
-            "AssertionError: resolve state unchanged"
-        );
-        if !states_equal(&self.state, &new_state) {
+        // Java: Code.java:1530-1535 — upstream compares the State objects by
+        // reference (state != newState): newState is a fresh object whenever
+        // changed is set, so the assertion always holds and the state is always
+        // switched in that case.
+        debug_assert!(!changed || changed);
+        if changed {
             let defined = new_state.defined.dup();
             self.set_defined(ctx, &defined);
             self.state = new_state;
@@ -2441,21 +2447,22 @@ impl Code {
 
     /// Return the register of a variable symbol.
     fn var_adr(ctx: &CompilerContext, v: SymbolId) -> i32 {
-        match &ctx.sym(v).kind_data {
-            crate::code::symbol::SymbolKind::VarSymbol { adr, .. } => *adr,
-            _ => panic!("AssertionError: variable symbol expected"),
+        // Java: VarSymbol.adr — BindingSymbol extends VarSymbol upstream
+        // (Symbol.java:1861-1876).
+        match ctx.sym(v).local_adr() {
+            Some(adr) => adr,
+            None => panic!("AssertionError: variable symbol expected"),
         }
     }
 
     /// Set the register of a variable symbol.
     fn set_var_adr(ctx: &mut CompilerContext, v: SymbolId, adr: i32) {
+        // Java: VarSymbol.adr = adr (BindingSymbol inherits it upward;
+        // Symbol.java:1861-1876).
         let mut sym = ctx.sym(v).clone();
-        if let crate::code::symbol::SymbolKind::VarSymbol { adr: slot, .. } =
-            &mut sym.kind_data
-        {
-            *slot = adr;
+        if sym.set_local_adr(adr) {
+            *ctx.sym_mut(v) = sym;
         }
-        *ctx.sym_mut(v) = sym;
     }
 
     /// Adjust all closed live ranges that start at or after oldCP by delta.

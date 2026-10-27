@@ -10463,6 +10463,58 @@ mod diagnostics_tests {
     }
 
     #[test]
+    fn instanceof_pattern_no_subtype_is_error() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T { boolean test(Object o) { return o instanceof Object obj; } }\n")],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .collect();
+        assert!(
+            codes.iter().any(|code| code == "compiler.err.instanceof.pattern.no.subtype"),
+            "instanceof.pattern.no.subtype missing: {codes:?}"
+        );
+    }
+
+    #[test]
+    fn instanceof_reifiable_not_safe_is_error() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "import java.util.List;\nclass T { boolean test(Object o) { return o instanceof List<String> l; } }\n",
+            )],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .collect();
+        assert!(
+            codes.iter().any(|code| code == "compiler.err.instanceof.reifiable.not.safe"),
+            "instanceof.reifiable.not.safe missing: {codes:?}"
+        );
+    }
+
+    #[test]
+    fn instanceof_pattern_legal_compiles() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { boolean test(Object o) { return o instanceof String s && s.length() > 0; } }\n",
+            )],
+            |_options| {},
+        );
+        let errors: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .filter(|code| code.starts_with("compiler.err."))
+            .collect();
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    }
+
+    #[test]
     fn strictfp_warning_is_reported() {
         let (_compiler, diagnostics) = compile_with_diagnostics(
             &[("C.java", "strictfp class C { strictfp void m() {} }

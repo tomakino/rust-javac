@@ -44,3 +44,41 @@ A0b LambdaToMethod(下一批,同样先补默认导航复用)。
 - 本轮临时补的 TreeMaker::literal_object 常量类型(TreeMaker.java:899-934)导致 4 个既有 tree_maker 测试断言失败(测试编码旧的不完整行为);按"不得改测试迁就实现"规则,已回退 literal_object 改动,待 Lead 审核测试期望后随 A0.3 提交。
 - jvm/code.rs emitop2_type 的 INSTANCEOF 栈效果补丁(Code.java:1068-1071)保留(正确且不影响测试)。
 - 当前工作树:trans_patterns.rs 未注册(未跟踪);code.rs 修改保留;其余回退;全量测试预期 1105 绿。
+
+## A0.3 完成:BindingSymbol 继承 1:1 + 注册/接线 + 官方 e2e 通过
+
+### 本批实现(全部上游 1:1)
+1. Symbol.BindingSymbol 继承 VarSymbol(Symbol.java:1861-1902):
+   - `SymbolKind::BindingSymbol` 增加 VarSymbol payload(lazy_const_value/pos/adr/data_kind/data);
+   - 统一访问器 `Symbol::local_adr/set_local_adr/var_pos/set_var_pos`(VarSymbol 与 BindingSymbol 共用);
+   - `new_binding_symbol` 构造补 payload(构造器语义 flags|HASINIT|MATCH_BINDING,Symbol.java:1874-1876);
+   - Attr.visitBindingPattern 创建点(attr.rs:8584)改走 `new_binding_symbol(flags, name, type, scope.owner)` 并设置 `v.pos = tree.pos`(Attr.java:4135-4136);TypeAnnotationsValidator 创建点(attr.rs:4213)flags 补 HASINIT|MATCH_BINDING(Attr.java:5915);
+   - Items.make_local_item(220)、Code::var_adr/set_var_adr 使用统一访问器(BindingSymbol 作为 VarSymbol 可读 adr)。
+2. 注册/接线:comp/mod.rs 注册 trans_patterns;mini_compiler.desugar 在 trans_types 后插入 TransPatterns.translate_top_level_class,并写 CompileStates::TRANSTYPES(transTypes 后)/TRANSPATTERNS(TransPatterns 后),再 lower(JavaCompiler.java:1516-1560)。
+3. Gen/Code 根因修复(§17,均对照上游):
+   - Code.emitStackMapFrame:未定义局部槽 locals[i] 允许 null,width(null)=1(Code.java:1335-1340, width Code.java:284-286);
+   - Code.resolve(chain,target):断言与状态更新按上游引用语义(Code.java:1530-1535;newState 在 changed 时必为新对象);
+   - StackMapTableFrame Append locals 允许 None(ClassWriter.java:1401-1408, local_diff[j]=locals[i] 可为 null);
+   - Code.emitop2_type INSTANCEOF 栈效果(Code.java:1068-1071,上一批已提交)。
+4. trans_patterns.rs 质量:删除未使用的 default_visit_* 5 个(binding/parenthesized/guard/block/var_def,特殊方法已直接实现上游逻辑)、unused import/variable、collapsible_if 2 处、binding_declared 去掉仅递归参数、make_hoisted_var_decl 直接返回、to_loadable_constant 增加 wrong_self_convention allow(上游命名保持);clippy 对 trans_patterns.rs 零警告。
+
+### 官方 e2e(本轮实跑,真实断言)
+- `instanceof_pattern_no_subtype_is_error`:compiler.err.instanceof.pattern.no.subtype ✓
+- `instanceof_reifiable_not_safe_is_error`:compiler.err.instanceof.reifiable.not.safe ✓
+- `instanceof_pattern_legal_compiles`:无 compiler.err ✓
+- 命令:cargo test -p javac-core --lib comp::check::diagnostics_tests::instanceof → 3 passed;0 failed。
+
+### 全量验证(本轮实跑)
+- cargo test --workspace --all-targets:1108 passed / 0 failed / 3 ignored;
+- cargo clippy --workspace --all-targets:errors=0(警告 211 为既有基线;trans_patterns.rs 无警告);
+- unimplemented!/unreachable! = 0。
+
+### literal_object 审批材料(未改测试,等 Lead 批准)
+- 实现依据:TreeMaker.Literal(Object)(TreeMaker.java:899-934)按 value 设置常量类型(Boolean→booleanType.constType(1) 等);本地 TreeMaker::literal_object 当前未设置 type(已登记 NOT PORTED 注释)。
+- 临时补齐后 4 个既有测试失败(测试构造的 TreeMaker 未注入 syms):
+  1) tree::tree_maker::tests::annotations_and_modifiers
+  2) tree::tree_maker::tests::method_body_expression_positions_literals_and_lambda
+  3) tree::tree_maker::tests::pretty_prints_maker_built_expressions_and_statements
+  4) tree::tree_maker::tests::top_level_and_class_members_keep_pos_and_shape
+  失败输出(临时补丁版):4 个测试均 panic at tree_maker.rs:2336(`self.syms.as_ref().expect("TreeMaker.syms")`),原因:测试用 `TreeMaker::new(names)` 构造,未安装 syms(上游 TreeMaker 总持有 syms)。
+- 建议(不改断言强度):测试 setup 给 TreeMaker 注入 syms(字段 `pub syms` 可直接赋 `Some`),然后按上游核对 literal literal 的 type 期望;生产路径当前由 TransPatterns::make_boolean_literal 在调用点设置布尔常量类型(等价上游 TreeMaker.Literal(Object),已登记适配)。

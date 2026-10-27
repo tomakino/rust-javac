@@ -124,8 +124,9 @@ pub enum StackMapTableFrame {
         frame_type: i32,
         /// The offset delta of the frame.
         offset_delta: i32,
-        /// The appended local variable types.
-        locals: Vec<TypeId>,
+        /// The appended local variable types (None marks an undefined slot, as
+        /// upstream Type[] entries may be null; ClassWriter.java:1401-1408).
+        locals: Vec<Option<TypeId>>,
     },
     /// frame_type 255 (full frame).
     Full {
@@ -211,7 +212,7 @@ impl StackMapTableFrame {
                     if writer.debug_stackmap() {
                         writer.debug_print(&format!(" locals[{}]=", i));
                     }
-                    writer.write_stack_map_type(ctx, Some(*local));
+                    writer.write_stack_map_type(ctx, *local);
                 }
             }
             StackMapTableFrame::Full {
@@ -288,7 +289,7 @@ impl StackMapTableFrame {
                 let mut local_diff = Vec::new();
                 let mut i = prev_locals.len();
                 while i < locals.len() {
-                    local_diff.push(locals[i].expect("appended local type"));
+                    local_diff.push(locals[i]);
                     i += 1;
                 }
                 return StackMapTableFrame::Append {

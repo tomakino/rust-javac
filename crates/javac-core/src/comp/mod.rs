@@ -21,6 +21,7 @@ pub mod member_enter;
 pub mod operators;
 pub mod resolve;
 pub mod todo;
+pub mod trans_patterns;
 pub mod trans_types;
 pub mod type_enter;
 pub mod type_envs;

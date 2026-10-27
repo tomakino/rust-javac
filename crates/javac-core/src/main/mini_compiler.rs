@@ -42,6 +42,7 @@ use crate::tree::tree_maker::TreeFactory;
 use crate::comp::operators::Operators;
 use crate::comp::resolve::Resolve;
 use crate::comp::todo::Todo;
+use crate::comp::trans_patterns::TransPatterns;
 use crate::comp::trans_types::TransTypes;
 use crate::code::type_annotations::TypeAnnotations;
 use crate::code::module_finder::ModuleFinder;
@@ -151,6 +152,8 @@ pub struct MiniCompiler {
     pub operators: Rc<RefCell<Option<Rc<Operators>>>>,
     /// The trans types pass.
     pub trans_types: Rc<RefCell<TransTypes>>,
+    /// The trans patterns pass.
+    pub trans_patterns: Rc<RefCell<TransPatterns>>,
     /// The lower pass.
     pub lower: Rc<RefCell<Lower>>,
     /// The code generator.
@@ -433,6 +436,21 @@ impl MiniCompiler {
             crate::code::source::Feature::GRAPH_INFERENCE.allowed_in_source(source),
             true,
         )));
+        let trans_patterns = Rc::new(RefCell::new(TransPatterns::new(
+            Rc::clone(&syms),
+            Rc::clone(&attr),
+            Rc::clone(&resolve),
+            Rc::clone(&types),
+            operators
+                .borrow()
+                .clone()
+                .expect("operators service installed"),
+            Rc::clone(&names),
+            target,
+            Rc::clone(&preview),
+            Rc::clone(&make),
+            options.is_set("debug.patterns"),
+        )));
         let lower = Rc::new(RefCell::new(Lower::new(
             Rc::clone(&names),
             Rc::clone(&log),
@@ -593,6 +611,7 @@ impl MiniCompiler {
             cfolder,
             operators,
             trans_types,
+            trans_patterns,
             lower,
             generator,
             writer,
@@ -841,10 +860,30 @@ impl MiniCompiler {
                 top_tree
             } else {
                 let cdef = env.encl_class.expect("env.enclClass");
-                self.trans_types
+                let translated = self
+                    .trans_types
                     .borrow_mut()
                     .translate_top_level_class(&mut self.ctx, cdef, Rc::clone(&local_make))
-                    .expect("transTypes result")
+                    .expect("transTypes result");
+                self.trans_types
+                    .borrow()
+                    .compile_states
+                    .borrow_mut()
+                    .put(&env, crate::comp::compile_states::CompileState::TRANSTYPES);
+                // JavaCompiler.desugar: TransPatterns then Lower
+                // (JavaCompiler.java:1516-1560).
+                let translated = self.trans_patterns.borrow_mut().translate_top_level_class(
+                    &mut self.ctx,
+                    &env,
+                    translated,
+                    Rc::clone(&local_make),
+                );
+                self.trans_types
+                    .borrow()
+                    .compile_states
+                    .borrow_mut()
+                    .put(&env, crate::comp::compile_states::CompileState::TRANSPATTERNS);
+                translated
             };
             let defs = self.lower.borrow_mut().translate_top_level_class(
                 &mut self.ctx,

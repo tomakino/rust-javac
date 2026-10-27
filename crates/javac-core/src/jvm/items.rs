@@ -215,10 +215,12 @@ impl Items {
         let types = Rc::clone(&self.types);
         let syms = Rc::clone(&self.syms);
         let erased = types.erasure(ctx, &syms.borrow(), ty);
-        let reg = match &ctx.sym(v).kind_data {
-            crate::code::symbol::SymbolKind::VarSymbol { adr, .. } => *adr,
-            _ => panic!("AssertionError: variable symbol expected"),
-        };
+        // Java: VarSymbol.adr — BindingSymbol extends VarSymbol upstream
+        // (Symbol.java:1861-1876).
+        let reg = ctx
+            .sym(v)
+            .local_adr()
+            .expect("AssertionError: variable symbol expected");
         Item::new(Code::typecode(ctx, erased), ItemKind::Local { reg, type_: erased })
     }
 
