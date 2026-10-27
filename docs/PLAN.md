@@ -35,6 +35,7 @@ javac 17 的错误恢复、警告去重、流分析边界、接受/拒绝边界�
 
 ### 3.1 不做
 - 注解处理器(APT):不移植 `com.sun.tools.javac.processing`,不实现 `javax.annotation.processing` 的处理器加载与运行。javac 无处理器路径的行为需模拟对齐(默认不扫描处理器),差异登记。
+- 注解反射代理(`AnnotationProxyMaker`/`java.lang.reflect.Array`/`java.lang.annotation.Annotation` 动态代理):以 §9 显式适配实现。`javac_tools::jdk::Class` 句柄携带注解类型 binary name(方法可见行为:getName 匹配);`AnnotationProxy` 以 (typeName, 有序 element values) 表示 dynamic-proxy return form(primitive/String/Class 名/枚举/嵌套注解/数组/ExceptionProxy);`java.lang.reflect.Array` 以 `Vec` 表示。不引入 JVM 反射,行为按 AnnoConstruct/Symbol.java 分支等价。
 - 远程 Git 发布(暂缓,里程碑后决定)。
 - crates.io 发布(暂缓)。
 

@@ -1964,7 +1964,18 @@ impl Check {
                         .unwrap_or(false);
                 }
                 if !is_erroneous && is_annotation_type {
-                    <Self as TreeScannerVisitor>::visit_annotation(self, ctx, tree);
+                    // Java: super.visitAnnotation(a, p) (TreeScanner visits the
+                    // annotation type tree and the argument list).
+                    let (annotation_type, args) = match &ctx.tree(tree).kind {
+                        TreeKind::Annotation {
+                            annotation_type,
+                            args,
+                            ..
+                        } => (*annotation_type, args.clone()),
+                        _ => panic!("expected an annotation"),
+                    };
+                    self.scan(ctx, annotation_type);
+                    self.scan_list(ctx, &args);
                     let _ = self.chk.validate_annotation_values(ctx, &mut *self.syms, tree);
                 }
             }

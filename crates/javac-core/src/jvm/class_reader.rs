@@ -1,64 +1,54 @@
 // Origin: com/sun/tools/javac/jvm/ClassReader.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration (method-level audit of ClassReader.java):
-// Dependency/phase: P2/S2-B (annotation/TypeAnnotation/Module/Directive readers,
-// ported in this) and P3 semantic batches (Annotate/Code/Types).
+// Dependency/phase: P2/S2-B (attribute readers, module/directive readers) and
+// P3 semantic batches (Annotate/Code/Types); the classfile parsing surface is
+// ported in this file.
 //
-// Ported in this file (S2-B, see the registration for the mapping table):
-// - all 26 initAttributeReaders readers are wired in read_attribute: Code
-// (readCode structure; Code object attach TODO), ConstantValue, Deprecated,
-// Exceptions, InnerClasses (+skipInnerClasses), LocalVariableTable,
-// SourceFile (+SourceFileObject), Annotation, Bridge, Synthetic, Signature,
-// MethodParameters, EnclosingMethod (readEnclosingMethodAttr/simpleBinaryName/
-// findMethod/isSameBinaryType), PermittedSubclasses, Record (+record accessor
-// lookupMethod), Runtime[In]visible[Parameter]Annotations, AnnotationDefault,
-// Runtime[In]visibleTypeAnnotations (readTypeAnnotation/readPosition/
-// readTypePath), Module (readModule/readModuleFlags/readRequiresFlags/
-// readExportsFlags/readOpensFlags/classNameMapper/interim uses+provides),
-// ModuleResolution (readModuleResolutionFlags);
+// Ported in this file:
+// - the 26 attribute readers are wired in read_attribute: Code (structure;
+//   Code object attach TODO), ConstantValue, Deprecated, Exceptions,
+//   InnerClasses (+skipInnerClasses), LocalVariableTable, SourceFile
+//   (+SourceFileObject), Annotation, Bridge, Synthetic, Signature,
+//   MethodParameters (parameterNameIndices/parameterAccessFlags/sawMethodParameters),
+//   EnclosingMethod, PermittedSubclasses, Record, Runtime[In]visible[Parameter]
+//   Annotations, AnnotationDefault, Runtime[In]visibleTypeAnnotations, Module,
+//   ModuleResolution;
 // - readAnnotationValue/readAnnotations/readCompoundAnnotation/readTypeToProxy,
-// attachAnnotations/readParameterAnnotations/attachAnnotationDefault,
-// attachTypeAnnotations + TypeAnnotationPosition/TypePathEntry.
-//
-// Annotation/TypeAnnotation values are read completely and kept as raw proxies
-// (pending_* fields in the ClassReader); attaching them to Symbols goes through
-// Annotate (P3), which is not ported yet: attach path TODO (registered).
-//
-// Still not ported upstream methods (no substitutes in this file):
-// - NOT PORTED: instance (ClassReader.java:257)
-// - NOT PORTED: getEnclosingType (ClassReader.java:575)
-// - NOT PORTED: setEnclosingType (ClassReader.java:600)
-// - NOT PORTED: setFlagIfAttributeTrue (ClassReader.java:1479) — Annotate
-// - NOT PORTED: ProxyType (ClassReader.java:1840-1895) — module annotation 
-// - NOT PORTED: AttributeReader.accept/toString of proxy classes (1834-1878) — Annotate
-// - NOT PORTED: visitConstant/visitClass/visitEnum/visitCompound/visitArray/
-// visitEnumAttributeProxy/visitClassAttributeProxy/visitArrayAttributeProxy/
-// visitCompoundAnnotationProxy (1989-2075) — Annotate
-// - NOT PORTED: AnnotationCompleter/AnnotationDefaultCompleter/TypeAnnotationCompleter/
-// CompleterDeproxy run/toString (2099-2189) — Annotate
-// - NOT PORTED: addTypeAnnotationsToSymbol/visitClassSymbol/visitMethodSymbol/
-// visitVarSymbol/visitSymbol/rewriteTypeParameters/addTypeAnnotations/
-// typeParameterBound/methodFormalParameter/thrownType/classExtends/visitClassType/
-// rewriteTypeParams/visitWildcardType/visitArrayType/visitType (2212-2473) — Annotate
-// - NOT PORTED: adjustMethodParams (2588) — readMethod this$n stripping 
-// - NOT PORTED: parameter (2707) — initParameterNames
-// - NOT PORTED: AnnotationTypeMetadata/CompleterDeproxy (annotation)
-// - NOT PORTED: UsesProvidesCompleter class (3173) — result-equivalent tail path
-// implemented directly in readClassFile (registered structural adapter)
-// - NOT PORTED: ProxyType.getTag/cloneWithMetadata/resolve/toString (3209-3223)
-// - NOT PORTED: PackageInfoCompleter.complete (3261)
-// - NOT PORTED: SourceFileObject.equals/hashCode (3146/3154: value equality;
-// the local object is an Rc identity holder, registered)
+//   attachAnnotations (queued AnnotationCompleter.run equivalent: deproxy,
+//   deprecated flags, set/appendDeclarationAttributes), readParameterAnnotations
+//   + setParameters/parameter (parameter symbols, names and ParameterAnnotations
+//   attach), attachAnnotationDefault (queued AnnotationDefaultCompleter.run
+//   equivalent), attachTypeAnnotations (queued TypeAnnotationCompleter.run
+//   equivalent: deproxyTypeCompoundList, setTypeAttributes and
+//   addTypeAnnotationsToSymbol/TypeAnnotationSymbolVisitor/
+//   TypeAnnotationStructuralTypeMapping), CompleterDeproxy, AnnotationDeproxy
+//   deproxy/findAccessMethod, ProxyType resolution;
+// - adjustMethodParams is inlined in read_method (outer this$n stripping, same
+//   branches); Type.getEnclosingType/setEnclosingType are Type/ClassType members
+//   (Type.java), not ClassReader units: the signature reader constructs types
+//   directly via sigToTypeBytes (registered mapping);
+// - SourceFileObject: value equality/hash by name (PartialEq/Eq/Hash).
 //
 // Registered adapters (not 1:1, see the registration):
 // - VarSymbol.data: Java Object -> Option<ConstValue> (ConstantValue reader);
-// - MethodParameters/AnnotationDefault/Annotate attachment: values read and
-// kept in ClassReader pending_* fields (Symbol fields/Annotate not ported);
+// - Context singletons: ClassReader::new takes the services explicitly
+//   (ADR 0001); upstream ClassReader.instance/Context registration is replaced
+//   by the compiler wiring;
+// - annotation proxies: the upstream Attribute proxy subclasses are modelled by
+//   the AnnotationValue enum and deproxied through the same visitor branches;
+// - AnnotationCompleter/AnnotationDefaultCompleter/TypeAnnotationCompleter/
+//   CompleterDeproxy are expressed as Annotate queue closures (the upstream
+//   inner-class semantics are preserved: deproxy after the class is complete);
+// - add_type_annotations_to_symbol error path: a CompletionFailure is
+//   propagated to the queue instead of the upstream warning + recover
+//   (registered; the default addTypeAnnotationsToSymbol option is false);
 // - ModuleSymbol uses/provides: UsesProvidesCompleter completion performed in
-// readClassFile tail (same resulting directives, structural adapter);
-// - SourceFileObject: URI(null,name,null) -> URI::create(name); unsupported
-// operations mirror the UnsupportedOperationException semantics.
-//
-// Attribute readers: 26/26 wired (no reader is skipped as unknown any more).
+//   the readClassFile tail (same resulting directives, structural adapter);
+// - SourceFileObject: URI(null,name,null) -> URI::create(name); JavaFileObject
+//   equality is value-based (PartialEq/Hash) while the FileManager uses Rc
+//   identity internally (registered);
+// - no PackageInfoCompleter unit exists upstream (the 3261 item is
+//   UsesProvidesCompleter, handled above).
 // End of Gap registration.
 
 //! This class provides operations to read a classfile into an internal
@@ -202,6 +192,8 @@ pub struct ClassReader {
     have_parameter_name_indices: bool,
     /// Java: boolean sawMethodParameters
     saw_method_parameters: bool,
+    /// Java: ParameterAnnotations[] parameterAnnotations
+    parameter_annotations: Option<Vec<Option<List<AnnotationValue>>>>,
     /// Java: private List<InterimUsesDirective> interimUses = List.nil();
     interim_uses: List<Name>,
     /// Java: private List<InterimProvidesDirective> interimProvides = List.nil();
@@ -325,6 +317,7 @@ impl ClassReader {
             parameter_access_flags: None,
             have_parameter_name_indices: false,
             saw_method_parameters: false,
+            parameter_annotations: None,
             interim_uses: List::nil(),
             interim_provides: List::nil(),
             pending_annotations: Vec::new(),
@@ -1737,7 +1730,7 @@ impl ClassReader {
         self.read_member_attrs(ctx, syms, method)?;
         self.current_owner = prev_owner;
         self.validate_method_type(ctx, &ctx.sym(method).name.clone(), ctx.sym(method).ty.expect("method type"))?;
-        self.set_parameters(ctx, method, ty);
+        self.set_parameters(ctx, syms, method, ty)?;
         if (flags & crate::code::flags::VARARGS) != 0 {
             let params = ctx
                 .typ(ctx.sym(method).ty.expect("method type"))
@@ -2338,7 +2331,6 @@ impl ClassReader {
         if annotations.is_empty() {
             return Ok(());
         }
-        let original = annotations.clone();
         let boolean_type = syms.boolean_type;
         let mut proxies: List<AnnotationValue> = List::nil();
         let mut current = annotations;
@@ -2429,10 +2421,19 @@ impl ClassReader {
             current = current.tail();
         }
         // Java: annotate.normal(new AnnotationCompleter(sym, proxies.toList()));
-        // The queued closure runs AnnotationCompleter.run (deproxy + deprecated
-        // flags + setDeclarationAttributes/appendAttributes). adapter adapter: when
-        // the Annotate service is not injected yet the raw proxies are kept in
-        // pending_annotations for the Annotate-assembly.
+        self.queue_compound_annotation_completer(ctx, sym, proxies)?;
+        Ok(())
+    }
+
+    /// Java: AnnotationCompleter.run — deproxy the classfile annotation proxies
+    /// and attach them to sym (ClassReader.java:2135-2160). The completion is
+    /// queued on Annotate; without the service the raw proxies are kept pending.
+    fn queue_compound_annotation_completer(
+        &mut self,
+        _ctx: &mut CompilerContext,
+        sym: SymbolId,
+        proxies: List<AnnotationValue>,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let annotate = self.annotate.borrow().clone();
         match annotate {
             Some(annotate) => {
@@ -2451,7 +2452,7 @@ impl ClassReader {
                             &types,
                             &services.names,
                             &proxies,
-                            reader_guard.as_mut().map(|guard| &mut **guard),
+                            reader_guard.as_deref_mut(),
                         )?;
                         let deprecated_ty = syms.deprecated_type;
                         for attr in new_list.iter() {
@@ -2484,7 +2485,76 @@ impl ClassReader {
                 }));
             }
             None => {
-                self.pending_annotations.push((sym, original));
+                self.pending_annotations.push((sym, proxies));
+            }
+        }
+        Ok(())
+    }
+
+    /// Java: TypeAnnotationCompleter.run (ClassReader.java:2188-2202): deproxy
+    /// the Runtime[In]visibleTypeAnnotations proxies, prepend them to the
+    /// symbol's raw type attributes and (when enabled) attach them to the
+    /// symbol types.
+    fn queue_type_annotation_completer(
+        &mut self,
+        _ctx: &mut CompilerContext,
+        sym: SymbolId,
+        proxies: List<TypeAnnotationProxy>,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        let annotate = self.annotate.borrow().clone();
+        match annotate {
+            Some(annotate) => {
+                let services = Rc::clone(&annotate.services);
+                let class_file = self.current_class_file.clone();
+                let reader_handle = self.reader_handle.clone();
+                let attach_type_annotations = self.add_type_annotations_to_symbol;
+                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &mut crate::code::symtab::Symtab| {
+                    let prev_source = services.log.borrow_mut().use_source(class_file.clone());
+                    let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
+                        let mut reader_guard =
+                            reader_handle.as_ref().map(|rc| rc.borrow_mut());
+                        let types = Rc::clone(&services.types);
+                        let names = Rc::clone(&services.names);
+                        let mut current = proxies.clone();
+                        let mut new_list = List::nil();
+                        while current.non_empty() {
+                            let proxy = current.head().clone();
+                            let compound = deproxy_compound(
+                                ctx,
+                                syms,
+                                &types,
+                                &names,
+                                &proxy.compound,
+                                reader_guard.as_deref_mut(),
+                            )?;
+                            let ty = ctx.attr(compound).ty;
+                            let values = match ctx.attr(compound).kind.clone() {
+                                crate::code::attribute::AttributeKind::Compound { values, .. } => values,
+                                _ => panic!("deproxyCompound must return a compound attribute"),
+                            };
+                            let attribute = ctx.alloc_attribute(
+                                crate::code::attribute::Attribute::new_type_compound(
+                                    ty,
+                                    values,
+                                    Some(proxy.position.clone()),
+                                ),
+                            );
+                            new_list = new_list.append(attribute);
+                            current = current.tail();
+                        }
+                        let existing = ctx.sym(sym).get_raw_type_attributes();
+                        ctx.sym_mut(sym).set_type_attributes(new_list.clone().append_list(&existing));
+                        if attach_type_annotations {
+                            add_type_annotations_to_symbol(ctx, syms, sym, new_list)?;
+                        }
+                        Ok(())
+                    })();
+                    services.log.borrow_mut().use_source(prev_source);
+                    result
+                }));
+            }
+            None => {
+                self.pending_type_annotations.push((sym, proxies));
             }
         }
         Ok(())
@@ -2502,7 +2572,29 @@ impl ClassReader {
         for _ in 0..num_parameters {
             annotations_by_parameter.push(self.read_annotations(ctx, syms)?);
         }
-        self.pending_parameter_annotations.push((sym, annotations_by_parameter));
+        match &mut self.parameter_annotations {
+            None => {
+                self.parameter_annotations = Some(vec![None; num_parameters]);
+            }
+            Some(parameter_annotations) if parameter_annotations.len() != num_parameters => {
+                let key = Fragment::from(
+                    crate::resources::compiler_properties::fragments::bad_runtime_invisible_param_annotations(),
+                );
+                return Err(self.bad_class_file(key).failure);
+            }
+            Some(_) => {}
+        }
+        self.pending_parameter_annotations
+            .push((sym, annotations_by_parameter.clone()));
+        if let Some(parameter_annotations) = &mut self.parameter_annotations {
+            for (index, annotations) in annotations_by_parameter.into_iter().enumerate() {
+                let slot = &mut parameter_annotations[index];
+                *slot = Some(match slot.take() {
+                    Some(existing) => existing.append_list(&annotations),
+                    None => annotations,
+                });
+            }
+        }
         Ok(())
     }
 
@@ -2550,7 +2642,7 @@ impl ClassReader {
                             &services.names,
                             restype,
                             &value,
-                            reader_guard.as_mut().map(|guard| &mut **guard),
+                            reader_guard.as_deref_mut(),
                         )?;
                         if let crate::code::symbol::SymbolKind::MethodSymbol {
                             default_value: slot,
@@ -2591,9 +2683,8 @@ impl ClassReader {
         for _ in 0..num_attributes {
             proxies = proxies.append(self.read_type_annotation(ctx, syms)?);
         }
-        // TODO(Annotate): attachTypeAnnotations(sym, proxies)
-        // (TypeAnnotationCompleter is not ported yet); the read proxies are kept.
-        self.pending_type_annotations.push((sym, proxies));
+        // Java: annotate.normal(new TypeAnnotationCompleter(sym, proxies.toList()));
+        self.queue_type_annotation_completer(ctx, sym, proxies)?;
         Ok(())
     }
 
@@ -3537,32 +3628,135 @@ impl ClassReader {
         Ok(())
     }
 
-    /// Java: void setParameters(MethodSymbol sym, Type jvmType) — the
-    /// parameterAnnotations branch needs the annotation proxies (S3).
-    fn set_parameters(&mut self, ctx: &mut CompilerContext, sym: SymbolId, _jvm_type: TypeId) {
-        let static_flag = ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64;
-        let first_param = if static_flag == 0 { 1 } else { 0 };
+    /// Java: void setParameters(MethodSymbol sym, Type jvmType)
+    /// (ClassReader.java:2641-2701): build the parameter symbols, attaching the
+    /// parameter annotations read by readParameterAnnotations.
+    #[allow(clippy::mutable_key_type)]
+    fn set_parameters(
+        &mut self,
+        ctx: &mut CompilerContext,
+        _syms: &mut crate::code::symtab::Symtab,
+        sym: SymbolId,
+        jvm_type: TypeId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        let saw_method_parameters = self.saw_method_parameters;
+        let mut first_param: i32 = 0;
+        if !saw_method_parameters {
+            let static_flag = ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64;
+            first_param = if static_flag == 0 { 1 } else { 0 };
+            let current_owner = self.current_owner.expect("currentOwner");
+            if ctx.sym(sym).name.to_java_string() == self.names.init.to_java_string()
+                && ctx.sym(current_owner).has_outer_instance(ctx)
+                && !ctx.sym(current_owner).name.is_empty()
+            {
+                first_param += 1;
+            }
+            let sym_ty = ctx.sym(sym).ty.expect("method symbol type");
+            if sym_ty != jvm_type {
+                let jvm_width = types_width(ctx, ctx.typ(jvm_type).get_parameter_types(ctx));
+                let sym_width = types_width(ctx, ctx.typ(sym_ty).get_parameter_types(ctx));
+                first_param += jvm_width - sym_width;
+            }
+        }
+        let mut exclude: HashSet<Name> = HashSet::new();
         let mut params = List::nil();
+        let mut name_index = first_param;
+        let mut annotation_index = 0usize;
         let mut types = ctx
             .typ(ctx.sym(sym).ty.expect("method type"))
             .get_parameter_types(ctx);
-        let mut index = first_param;
-        // TODO(P2/S3): parameterAnnotations/parameterNameIndices/parameterAccessFlags
-        // fields are not ported yet; parameterNames are synthesized exactly like
-        // the upstream no-parameter-name path (argN, skipping the outer this slot).
         while types.non_empty() {
-            let t = *types.head();
-            let param = ctx.alloc_symbol(crate::code::symbol::Symbol::new_param_symbol(
-                crate::code::flags::PARAMETER,
-                self.names.from_string(&crate::util::java_string::JavaString::from(format!("arg{index}").as_str())),
-                t,
-                sym,
-            ));
+            let param_type = *types.head();
+            let param = self.parameter(ctx, name_index, param_type, sym, &mut exclude)?;
             params = params.append(param);
-            index += 1;
+            if let Some(parameter_annotations) = &self.parameter_annotations
+                && annotation_index < parameter_annotations.len()
+                && let Some(proxies) = &parameter_annotations[annotation_index]
+                && proxies.non_empty()
+                && self.annotate.borrow().is_some()
+            {
+                self.queue_compound_annotation_completer(ctx, param, proxies.clone())?;
+            }
+            name_index += if saw_method_parameters {
+                1
+            } else {
+                jvm_type_width(ctx, param_type)
+            };
+            annotation_index += 1;
             types = types.tail();
         }
+        if let Some(parameter_annotations) = &self.parameter_annotations
+            && parameter_annotations.len() != annotation_index
+        {
+            let key = Fragment::from(
+                crate::resources::compiler_properties::fragments::bad_runtime_invisible_param_annotations(),
+            );
+            return Err(self.bad_class_file(key).failure);
+        }
+        let already_has_params = match &ctx.sym(sym).kind_data {
+            crate::code::symbol::SymbolKind::MethodSymbol { params, .. } => params.non_empty(),
+            _ => false,
+        };
+        assert!(!already_has_params, "AssertionError: params already set");
         ctx.sym_mut(sym).set_params(params);
+        self.parameter_annotations = None;
+        self.parameter_name_indices = None;
+        self.parameter_access_flags = None;
+        Ok(())
+    }
+
+    /// Java: private VarSymbol parameter(int index, Type t, MethodSymbol owner,
+    /// Set<Name> exclude) (ClassReader.java:2707-2729)
+    #[allow(clippy::mutable_key_type)]
+    fn parameter(
+        &mut self,
+        ctx: &mut CompilerContext,
+        index: i32,
+        t: TypeId,
+        owner: SymbolId,
+        exclude: &mut HashSet<Name>,
+    ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
+        let mut flags = crate::code::flags::PARAMETER;
+        if let Some(access_flags) = &self.parameter_access_flags
+            && index >= 0
+            && (index as usize) < access_flags.len()
+            && access_flags[index as usize] != 0
+        {
+            flags |= access_flags[index as usize] as i64;
+        }
+        let name_index = self
+            .parameter_name_indices
+            .as_ref()
+            .and_then(|indices| {
+                if index >= 0 && (index as usize) < indices.len() {
+                    Some(indices[index as usize])
+                } else {
+                    None
+                }
+            })
+            .filter(|index| *index != 0);
+        let arg_name = if let Some(name_index) = name_index {
+            flags |= crate::code::flags::NAME_FILLED;
+            match self.get_name(name_index) {
+                Ok(name) => name,
+                Err(_) => self.names.empty.clone(),
+            }
+        } else {
+            let mut prefix = "arg".to_string();
+            loop {
+                let candidate = self.names.from_string(&javac_strings::JavaString::from(
+                    format!("{prefix}{}", exclude.len()).as_str(),
+                ));
+                if !exclude.contains(&candidate) {
+                    break candidate;
+                }
+                prefix.push('$');
+            }
+        };
+        exclude.insert(arg_name.clone());
+        Ok(ctx.alloc_symbol(crate::code::symbol::Symbol::new_param_symbol(
+            flags, arg_name, t, owner,
+        )))
     }
 
     /// Java: public ClassFinder.BadEnclosingMethodAttr badEnclosingMethod(Symbol sym)
@@ -3609,6 +3803,717 @@ impl ClassReader {
     }
 
 
+}
+
+/// Java: ClassReader.addTypeAnnotationsToSymbol (ClassReader.java:2212-2223)
+/// and the TypeAnnotationSymbolVisitor/TypeAnnotationStructuralTypeMapping
+/// classes (2225-2501): rewrite the types of the symbol signature to carry the
+/// attached type annotations.
+fn add_type_annotations_to_symbol(
+    ctx: &mut CompilerContext,
+    syms: &mut crate::code::symtab::Symtab,
+    sym: SymbolId,
+    attributes: List<crate::ids::AttributeId>,
+) -> Result<(), crate::code::symbol::CompletionFailure> {
+    use crate::code::kinds::Kind;
+    match ctx.sym(sym).kind {
+        Kind::TYP => visit_class_symbol_type_annotations(ctx, syms, sym, &attributes),
+        Kind::MTH => visit_method_symbol_type_annotations(ctx, syms, sym, &attributes),
+        Kind::VAR => visit_var_symbol_type_annotations(ctx, syms, sym, &attributes),
+        _ => Ok(()),
+    }
+}
+
+/// Java: TypeAnnotationSymbolVisitor.SUPERCLASS_INDEX
+const SUPERCLASS_INDEX: i32 = 65535;
+
+/// Java: Predicate<TypeAnnotationPosition> filters of TypeAnnotationSymbolVisitor.
+#[derive(Clone, Copy)]
+enum TypeAnnotationFilter {
+    Target(crate::code::target_type::TargetType),
+    TypeParameterBound {
+        target: crate::code::target_type::TargetType,
+        parameter_index: i32,
+        bound_index: i32,
+    },
+    MethodFormalParameter(i32),
+    Thrown(i32),
+    ClassExtends(i32),
+}
+
+impl TypeAnnotationFilter {
+    fn matches(
+        self,
+        position: &crate::code::type_annotation_position::TypeAnnotationPosition,
+    ) -> bool {
+        use crate::code::target_type::TargetType;
+        match self {
+            TypeAnnotationFilter::Target(target) => position.type_ == target,
+            TypeAnnotationFilter::TypeParameterBound {
+                target,
+                parameter_index,
+                bound_index,
+            } => {
+                position.type_ == target
+                    && position.parameter_index == parameter_index
+                    && position.bound_index == bound_index
+            }
+            TypeAnnotationFilter::MethodFormalParameter(index) => {
+                position.type_ == TargetType::METHOD_FORMAL_PARAMETER
+                    && position.parameter_index == index
+            }
+            TypeAnnotationFilter::Thrown(index) => {
+                position.type_ == TargetType::THROWS && position.type_index == index
+            }
+            TypeAnnotationFilter::ClassExtends(index) => {
+                position.type_ == TargetType::CLASS_EXTENDS && position.type_index == index
+            }
+        }
+    }
+}
+
+fn type_annotation_position(
+    ctx: &CompilerContext,
+    attribute: crate::ids::AttributeId,
+) -> Option<crate::code::type_annotation_position::TypeAnnotationPosition> {
+    match &ctx.attr(attribute).kind {
+        crate::code::attribute::AttributeKind::TypeCompound { position, .. } => position.clone(),
+        _ => None,
+    }
+}
+
+fn visit_class_symbol_type_annotations(
+    ctx: &mut CompilerContext,
+    syms: &mut crate::code::symtab::Symtab,
+    sym: SymbolId,
+    attributes: &List<crate::ids::AttributeId>,
+) -> Result<(), crate::code::symbol::CompletionFailure> {
+    use crate::code::type_::TypeKindData;
+    let sym_ty = ctx.sym(sym).ty.expect("class symbol type");
+    let (mut interfaces, supertype, typarams) = match &ctx.typ(sym_ty).kind {
+        TypeKindData::ClassType {
+            interfaces_field,
+            supertype_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::ErasedClassType {
+            interfaces_field,
+            supertype_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::UnionClassType {
+            interfaces_field,
+            supertype_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::IntersectionClassType {
+            interfaces_field,
+            supertype_field,
+            typarams_field,
+            ..
+        } => (
+            interfaces_field.clone().unwrap_or_else(List::nil),
+            *supertype_field,
+            typarams_field.clone(),
+        ),
+        _ => return Ok(()),
+    };
+    let mut new_interfaces = List::nil();
+    for (index, interface) in interfaces.iter().enumerate() {
+        new_interfaces = new_interfaces.append(add_type_annotations_to_type(
+            ctx,
+            syms,
+            interface,
+            attributes,
+            TypeAnnotationFilter::ClassExtends(index as i32),
+        )?);
+    }
+    interfaces = new_interfaces;
+    let new_supertype = match supertype {
+        Some(supertype) => Some(add_type_annotations_to_type(
+            ctx,
+            syms,
+            supertype,
+            attributes,
+            TypeAnnotationFilter::ClassExtends(SUPERCLASS_INDEX),
+        )?),
+        None => None,
+    };
+    let new_typarams = match typarams {
+        Some(typarams) => Some(rewrite_type_parameters(
+            ctx,
+            syms,
+            typarams,
+            attributes,
+            crate::code::target_type::TargetType::CLASS_TYPE_PARAMETER_BOUND,
+        )?),
+        None => None,
+    };
+    match &mut ctx.typ_mut(sym_ty).kind {
+        TypeKindData::ClassType {
+            interfaces_field,
+            supertype_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::ErasedClassType {
+            interfaces_field,
+            supertype_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::UnionClassType {
+            interfaces_field,
+            supertype_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::IntersectionClassType {
+            interfaces_field,
+            supertype_field,
+            typarams_field,
+            ..
+        } => {
+            *interfaces_field = Some(interfaces);
+            *supertype_field = new_supertype;
+            *typarams_field = new_typarams;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn visit_method_symbol_type_annotations(
+    ctx: &mut CompilerContext,
+    syms: &mut crate::code::symtab::Symtab,
+    sym: SymbolId,
+    attributes: &List<crate::ids::AttributeId>,
+) -> Result<(), crate::code::symbol::CompletionFailure> {
+    use crate::code::target_type::TargetType;
+    use crate::code::type_::TypeKindData;
+    let sym_ty = ctx.sym(sym).ty.expect("method symbol type");
+    let (tvars, method_ty) = match &ctx.typ(sym_ty).kind {
+        TypeKindData::ForAll { tvars, qtype } => (Some(tvars.clone()), qtype.expect("ForAll qtype")),
+        _ => (None, sym_ty),
+    };
+    let params = match &ctx.sym(sym).kind_data {
+        crate::code::symbol::SymbolKind::MethodSymbol { params, .. } => params.clone(),
+        _ => List::nil(),
+    };
+    let mut argtypes = List::nil();
+    let mut index = 0i32;
+    let mut current = params;
+    while current.non_empty() {
+        let param = *current.head();
+        let param_ty = ctx.sym(param).ty.expect("parameter type");
+        let new_ty = add_type_annotations_to_type(
+            ctx,
+            syms,
+            param_ty,
+            attributes,
+            TypeAnnotationFilter::MethodFormalParameter(index),
+        )?;
+        ctx.sym_mut(param).ty = Some(new_ty);
+        argtypes = argtypes.append(new_ty);
+        index += 1;
+        current = current.tail();
+    }
+    let (old_thrown, restype, recvtype) = match &ctx.typ(method_ty).kind {
+        TypeKindData::MethodType {
+            thrown,
+            restype,
+            recvtype,
+            ..
+        } => (thrown.clone(), *restype, *recvtype),
+        _ => (List::nil(), None, None),
+    };
+    let mut thrown = List::nil();
+    for (thrown_index, thrown_type) in old_thrown.iter().enumerate() {
+        thrown = thrown.append(add_type_annotations_to_type(
+            ctx,
+            syms,
+            thrown_type,
+            attributes,
+            TypeAnnotationFilter::Thrown(thrown_index as i32),
+        )?);
+    }
+    let new_restype = match restype {
+        Some(restype) if !ctx.typ(restype).has_tag(crate::code::type_tag::TypeTag::VOID) => Some(
+            add_type_annotations_to_type(
+                ctx,
+                syms,
+                restype,
+                attributes,
+                TypeAnnotationFilter::Target(TargetType::METHOD_RETURN),
+            )?,
+        ),
+        restype => restype,
+    };
+    let new_recvtype = match recvtype {
+        Some(recvtype) => Some(add_type_annotations_to_type(
+            ctx,
+            syms,
+            recvtype,
+            attributes,
+            TypeAnnotationFilter::Target(TargetType::METHOD_RECEIVER),
+        )?),
+        None => None,
+    };
+    let mut new_method = ctx.typ(method_ty).clone();
+    new_method.kind = TypeKindData::MethodType {
+        argtypes,
+        restype: new_restype,
+        thrown,
+        recvtype: new_recvtype,
+    };
+    let new_method_ty = ctx.alloc_type(new_method);
+    let final_ty = if let Some(tvars) = tvars {
+        let new_tvars = rewrite_type_parameters(
+            ctx,
+            syms,
+            tvars,
+            attributes,
+            TargetType::METHOD_TYPE_PARAMETER_BOUND,
+        )?;
+        let mut new_for_all = ctx.typ(sym_ty).clone();
+        new_for_all.kind = TypeKindData::ForAll {
+            tvars: new_tvars,
+            qtype: Some(new_method_ty),
+        };
+        ctx.alloc_type(new_for_all)
+    } else {
+        new_method_ty
+    };
+    ctx.sym_mut(sym).ty = Some(final_ty);
+    Ok(())
+}
+
+fn visit_var_symbol_type_annotations(
+    ctx: &mut CompilerContext,
+    syms: &mut crate::code::symtab::Symtab,
+    sym: SymbolId,
+    attributes: &List<crate::ids::AttributeId>,
+) -> Result<(), crate::code::symbol::CompletionFailure> {
+    let sym_ty = ctx.sym(sym).ty.expect("variable symbol type");
+    let new_ty = add_type_annotations_to_type(
+        ctx,
+        syms,
+        sym_ty,
+        attributes,
+        TypeAnnotationFilter::Target(crate::code::target_type::TargetType::FIELD),
+    )?;
+    ctx.sym_mut(sym).ty = Some(new_ty);
+    Ok(())
+}
+
+fn rewrite_type_parameters(
+    ctx: &mut CompilerContext,
+    syms: &mut crate::code::symtab::Symtab,
+    tvars: List<TypeId>,
+    attributes: &List<crate::ids::AttributeId>,
+    bound_type: crate::code::target_type::TargetType,
+) -> Result<List<TypeId>, crate::code::symbol::CompletionFailure> {
+    use crate::code::type_::TypeKindData;
+    let mut result = List::nil();
+    for (type_variable_index, tvar) in tvars.iter().enumerate() {
+        let mut bound = ctx.typ(tvar).get_upper_bound().expect("type variable bound");
+        let type_variable_index_current = type_variable_index as i32;
+        // Java: bound.isCompound() (Type.java): true for an intersection and for
+        // a union whose lub is an intersection.
+        let is_compound = match &ctx.typ(bound).kind {
+            crate::code::type_::TypeKindData::IntersectionClassType { .. } => true,
+            crate::code::type_::TypeKindData::UnionClassType { .. } => {
+                let tsym = ctx.typ(bound).tsym.expect("union class symbol");
+                let lub = ctx.sym(tsym).ty.expect("union lub type");
+                matches!(
+                    &ctx.typ(lub).kind,
+                    crate::code::type_::TypeKindData::IntersectionClassType { .. }
+                )
+            }
+            _ => false,
+        };
+        if is_compound {
+            let (supertype, interfaces) = match &ctx.typ(bound).kind {
+                TypeKindData::ClassType {
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                }
+                | TypeKindData::UnionClassType {
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                }
+                | TypeKindData::IntersectionClassType {
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                } => (
+                    *supertype_field,
+                    interfaces_field.clone().unwrap_or_else(List::nil),
+                ),
+                _ => (None, List::nil()),
+            };
+            let mut bound_index = 0i32;
+            let new_supertype = match supertype {
+                Some(supertype) => Some(add_type_annotations_to_type(
+                    ctx,
+                    syms,
+                    supertype,
+                    attributes,
+                    TypeAnnotationFilter::TypeParameterBound {
+                        target: bound_type,
+                        parameter_index: type_variable_index_current,
+                        bound_index,
+                    },
+                )?),
+                None => None,
+            };
+            bound_index += 1;
+            let mut new_interfaces = List::nil();
+            for interface in interfaces.iter() {
+                new_interfaces = new_interfaces.append(add_type_annotations_to_type(
+                    ctx,
+                    syms,
+                    interface,
+                    attributes,
+                    TypeAnnotationFilter::TypeParameterBound {
+                        target: bound_type,
+                        parameter_index: type_variable_index_current,
+                        bound_index,
+                    },
+                )?);
+                bound_index += 1;
+            }
+            match &mut ctx.typ_mut(bound).kind {
+                TypeKindData::ClassType {
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                }
+                | TypeKindData::UnionClassType {
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                }
+                | TypeKindData::IntersectionClassType {
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                } => {
+                    *supertype_field = new_supertype;
+                    *interfaces_field = Some(new_interfaces);
+                }
+                _ => {}
+            }
+        } else {
+            let is_interface = ctx
+                .typ(bound)
+                .tsym
+                .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0)
+                .unwrap_or(false);
+            bound = add_type_annotations_to_type(
+                ctx,
+                syms,
+                bound,
+                attributes,
+                TypeAnnotationFilter::TypeParameterBound {
+                    target: bound_type,
+                    parameter_index: type_variable_index_current,
+                    bound_index: if is_interface { 1 } else { 0 },
+                },
+            )?;
+        }
+        ctx.typ_mut(tvar).set_upper_bound(Some(bound));
+        result = result.append(tvar);
+    }
+    Ok(result)
+}
+
+fn add_type_annotations_to_type(
+    ctx: &mut CompilerContext,
+    _syms: &mut crate::code::symtab::Symtab,
+    ty: TypeId,
+    attributes: &List<crate::ids::AttributeId>,
+    filter: TypeAnnotationFilter,
+) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
+    let mut filtered: List<crate::ids::AttributeId> = List::nil();
+    for attribute in attributes.iter() {
+        if let Some(position) = type_annotation_position(ctx, attribute)
+            && filter.matches(&position)
+        {
+            filtered = filtered.append(attribute);
+        }
+    }
+    if filtered.is_empty() {
+        return Ok(ty);
+    }
+    let mut attributes_by_path: Vec<(List<crate::code::type_annotation_position::TypePathEntry>, List<crate::ids::AttributeId>)> =
+        Vec::new();
+    let mut current = filtered;
+    while current.non_empty() {
+        let attribute = *current.head();
+        let position = type_annotation_position(ctx, attribute).expect("TypeCompound position");
+        if let Some((_, list)) = attributes_by_path
+            .iter_mut()
+            .find(|(path, _)| *path == position.location)
+        {
+            *list = list.clone().append(attribute);
+        } else {
+            attributes_by_path.push((position.location, List::nil().append(attribute)));
+        }
+        current = current.tail();
+    }
+    let result = visit_type_with_type_annotations(
+        ctx,
+        ty,
+        &mut attributes_by_path,
+        List::nil(),
+    )?;
+    Ok(result)
+}
+
+enum TypeAnnotationShape {
+    Class {
+        outer: Option<TypeId>,
+        type_arguments: List<TypeId>,
+    },
+    Wildcard {
+        child: Option<TypeId>,
+        kind: crate::code::bound_kind::BoundKind,
+        bound: Option<TypeId>,
+    },
+    Array {
+        elemtype: Option<TypeId>,
+    },
+    Other,
+}
+
+fn visit_type_with_type_annotations(
+    ctx: &mut CompilerContext,
+    ty: TypeId,
+    attributes_by_path: &mut Vec<(
+        List<crate::code::type_annotation_position::TypePathEntry>,
+        List<crate::ids::AttributeId>,
+    )>,
+    path: List<crate::code::type_annotation_position::TypePathEntry>,
+) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
+    use crate::code::type_::TypeKindData;
+    let shape = {
+        let current = ctx.typ(ty);
+        match &current.kind {
+            TypeKindData::ClassType { .. }
+            | TypeKindData::ErasedClassType { .. }
+            | TypeKindData::UnionClassType { .. }
+            | TypeKindData::IntersectionClassType { .. } => TypeAnnotationShape::Class {
+                outer: current.get_enclosing_type(),
+                type_arguments: current.get_type_arguments(),
+            },
+            TypeKindData::WildcardType {
+                type_,
+                kind,
+                bound,
+                ..
+            } => TypeAnnotationShape::Wildcard {
+                child: *type_,
+                kind: *kind,
+                bound: *bound,
+            },
+            TypeKindData::ArrayType { elemtype, .. } => TypeAnnotationShape::Array {
+                elemtype: *elemtype,
+            },
+            _ => TypeAnnotationShape::Other,
+        }
+    };
+    match shape {
+        TypeAnnotationShape::Class {
+            outer,
+            type_arguments,
+        } => {
+            let outer1 = match outer {
+                Some(outer) => Some(visit_type_with_type_annotations(
+                    ctx,
+                    outer,
+                    attributes_by_path,
+                    path.clone(),
+                )?),
+                None => None,
+            };
+            let mut inner_path = path;
+            let mut enclosing = outer;
+            while let Some(current) = enclosing {
+                if ctx
+                    .typ(current)
+                    .has_tag(crate::code::type_tag::TypeTag::CLASS)
+                {
+                    inner_path = inner_path.append(
+                        crate::code::type_annotation_position::TypePathEntry::INNER_TYPE,
+                    );
+                }
+                enclosing = ctx.typ(current).get_enclosing_type();
+            }
+            let mut new_type_arguments = List::nil();
+            for (index, argument) in type_arguments.iter().enumerate() {
+                let arg_path = inner_path.append(
+                    crate::code::type_annotation_position::TypePathEntry {
+                        tag: crate::code::type_annotation_position::TypePathEntryKind::TYPE_ARGUMENT,
+                        arg: index as i32,
+                    },
+                );
+                new_type_arguments = new_type_arguments.append(visit_type_with_type_annotations(
+                    ctx,
+                    argument,
+                    attributes_by_path,
+                    arg_path,
+                )?);
+                }
+            if outer1 != outer || new_type_arguments != type_arguments {
+                let mut new_type = ctx.typ(ty).clone();
+                new_type.kind = TypeKindData::ClassType {
+                    outer_field: outer1,
+                    typarams_field: Some(new_type_arguments),
+                    allparams_field: None,
+                    supertype_field: None,
+                    interfaces_field: None,
+                    all_interfaces_field: None,
+                };
+                let new_id = ctx.alloc_type(new_type);
+                return reannotate_type(ctx, new_id, attributes_by_path, inner_path);
+            }
+            reannotate_type(ctx, ty, attributes_by_path, inner_path)
+        }
+        TypeAnnotationShape::Wildcard {
+            child,
+            kind,
+            bound,
+        } => {
+            let new_child = match child {
+                Some(child) => Some(visit_type_with_type_annotations(
+                    ctx,
+                    child,
+                    attributes_by_path,
+                    path.clone().append(
+                        crate::code::type_annotation_position::TypePathEntry::WILDCARD,
+                    ),
+                )?),
+                None => None,
+            };
+            if new_child != child {
+                let mut new_type = ctx.typ(ty).clone();
+                new_type.kind = TypeKindData::WildcardType {
+                    type_: new_child,
+                    kind,
+                    bound,
+                    is_printing_bound: std::cell::Cell::new(false),
+                };
+                let new_id = ctx.alloc_type(new_type);
+                return reannotate_type(
+                    ctx,
+                    new_id,
+                    attributes_by_path,
+                    path.clone().append(
+                        crate::code::type_annotation_position::TypePathEntry::WILDCARD,
+                    ),
+                );
+            }
+            reannotate_type(
+                ctx,
+                ty,
+                attributes_by_path,
+                path.clone().append(
+                    crate::code::type_annotation_position::TypePathEntry::WILDCARD,
+                ),
+            )
+        }
+        TypeAnnotationShape::Array { elemtype } => {
+            let elemtype = elemtype.expect("array element type");
+            let new_elemtype = visit_type_with_type_annotations(
+                ctx,
+                elemtype,
+                attributes_by_path,
+                path.clone().append(
+                    crate::code::type_annotation_position::TypePathEntry::ARRAY,
+                ),
+            )?;
+            if new_elemtype != elemtype {
+                let mut new_type = ctx.typ(ty).clone();
+                new_type.kind = TypeKindData::ArrayType {
+                    elemtype: Some(new_elemtype),
+                    varargs: false,
+                };
+                let new_id = ctx.alloc_type(new_type);
+                return reannotate_type(
+                    ctx,
+                    new_id,
+                    attributes_by_path,
+                    path.clone().append(
+                        crate::code::type_annotation_position::TypePathEntry::ARRAY,
+                    ),
+                );
+            }
+            reannotate_type(
+                ctx,
+                ty,
+                attributes_by_path,
+                path.clone().append(
+                    crate::code::type_annotation_position::TypePathEntry::ARRAY,
+                ),
+            )
+        }
+        TypeAnnotationShape::Other => reannotate_type(ctx, ty, attributes_by_path, path),
+    }
+}
+
+fn reannotate_type(
+    ctx: &mut CompilerContext,
+    ty: TypeId,
+    attributes_by_path: &mut Vec<(
+        List<crate::code::type_annotation_position::TypePathEntry>,
+        List<crate::ids::AttributeId>,
+    )>,
+    path: List<crate::code::type_annotation_position::TypePathEntry>,
+) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
+    let Some(index) = attributes_by_path
+        .iter()
+        .position(|(annotation_path, _)| *annotation_path == path)
+    else {
+        return Ok(ty);
+    };
+    let (_, attributes) = attributes_by_path.remove(index);
+    if attributes.is_empty() {
+        return Ok(ty);
+    }
+    use crate::code::type_metadata::{Annotations, Entry, EntryKind, TypeMetadata};
+    let metadata = ctx
+        .typ(ty)
+        .get_metadata()
+        .cloned()
+        .unwrap_or_else(TypeMetadata::empty);
+    let existing = metadata
+        .get(EntryKind::ANNOTATIONS)
+        .map(|entry| match entry {
+            Entry::Annotations(annotations) => annotations.get_annotations(),
+        });
+    let new_type = if let Some(existing) = existing {
+        let combined = Entry::Annotations(Annotations::new(existing.append_list(&attributes)));
+        let without = metadata.without(EntryKind::ANNOTATIONS);
+        let new_metadata = without.combine(combined);
+        ctx.typ(ty).clone_with_metadata(new_metadata)
+    } else {
+        ctx.typ(ty).annotated_type(&attributes)
+    };
+    Ok(ctx.alloc_type(new_type))
+}
+
+fn types_width(ctx: &CompilerContext, types: List<TypeId>) -> i32 {
+    let mut width = 0;
+    for ty in types.iter() {
+        width += jvm_type_width(ctx, ty);
+    }
+    width
 }
 
 /// Java: c.packge().modle (ClassReader.readClass: currentModule = c.packge().modle).
@@ -3678,8 +4583,6 @@ pub(crate) enum AttributeReaderKind {
 /// ClassAttributeProxy/ArrayAttributeProxy/CompoundAnnotationProxy are
 /// Attribute subclasses upstream; the port keeps their raw read form until
 /// the Annotate attaches them).
-// The proxy fields are read from the classfile and only attached to Symbols by the
-// Annotate (not ported yet); they are kept as read values (registered).
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) enum AnnotationValue {
@@ -3714,6 +4617,7 @@ pub(crate) struct AttributeReaderDef {
 /// Java: private static class SourceFileObject implements JavaFileObject
 /// (ClassReader.java:3098-3160). It is a value for the SourceFile attribute;
 /// most operations throw UnsupportedOperationException upstream.
+#[derive(PartialEq, Eq, Hash, Debug)]
 struct SourceFileObject {
     name: Name,
 }
@@ -3863,7 +4767,7 @@ impl AnnotationTypeCompleter for CompleterDeproxy {
                 &types,
                 &self.names,
                 &target,
-                reader_guard.as_mut().map(|guard| &mut **guard),
+                reader_guard.as_deref_mut(),
             )?);
         }
         if let Some(repeatable) = self.repeatable.clone() {
@@ -3873,7 +4777,7 @@ impl AnnotationTypeCompleter for CompleterDeproxy {
                 &types,
                 &self.names,
                 &repeatable,
-                reader_guard.as_mut().map(|guard| &mut **guard),
+                reader_guard.as_deref_mut(),
             )?);
         }
         if let Some(metadata) = ctx.sym_mut(sym).get_annotation_type_metadata_mut() {
@@ -3903,7 +4807,7 @@ fn deproxy_compound_list(
             types,
             names,
             proxy,
-            reader.as_mut().map(|r| &mut **r),
+            reader.as_deref_mut(),
         )?);
         current = current.tail();
     }
@@ -3946,7 +4850,7 @@ fn deproxy_compound(
             names,
             restype,
             &value,
-            reader.as_mut().map(|r| &mut **r),
+            reader.as_deref_mut(),
         )?;
         pairs = pairs.append(Pair::new(meth, attr));
         current = current.tail();
@@ -4004,7 +4908,7 @@ fn deproxy_value(
                     names,
                     elemtype,
                     elem,
-                    reader.as_mut().map(|r| &mut **r),
+                    reader.as_deref_mut(),
                 )?);
                 current = current.tail();
             }
@@ -5816,5 +6720,75 @@ mod tests {
         assert_eq!(reader.next_byte(), 0x12);
         assert_eq!(reader.next_byte(), 0x34);
         assert_eq!(reader.bp, 8);
+    }
+
+    #[test]
+    #[allow(clippy::mutable_key_type)]
+    fn parameter_names_are_synthesized_and_access_flags_are_applied() {
+        let mut reader = reader();
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut syms = crate::code::symtab::Symtab::new(
+            &mut ctx,
+            Rc::clone(&reader.names),
+            crate::jvm::target::Target::JDK1_17,
+            Source::JDK17,
+        );
+        let names = Rc::clone(&reader.names);
+        let owner = syms.enter_class_flat(
+            &mut ctx,
+            syms.java_base,
+            names.from_string(&javac_strings::JavaString::from("P")),
+        );
+        let mut exclude: HashSet<Name> = HashSet::new();
+        let first = reader
+            .parameter(&mut ctx, 0, syms.int_type, owner, &mut exclude)
+            .expect("first parameter");
+        assert_eq!(
+            ctx.sym(first).name.to_java_string().to_string(),
+            "arg0",
+            "Java: names.fromString(prefix + exclude.size())"
+        );
+        assert_eq!(
+            ctx.sym(first).flags_field & crate::code::flags::PARAMETER,
+            crate::code::flags::PARAMETER,
+            "Parameter flag"
+        );
+        let second = reader
+            .parameter(&mut ctx, 1, syms.int_type, owner, &mut exclude)
+            .expect("second parameter");
+        assert_eq!(
+            ctx.sym(second).name.to_java_string().to_string(),
+            "arg1"
+        );
+        reader.parameter_access_flags = Some(vec![0, crate::code::flags::FINAL]);
+        let third = reader
+            .parameter(&mut ctx, 1, syms.int_type, owner, &mut exclude)
+            .expect("parameter with access flags");
+        assert_ne!(
+            ctx.sym(third).flags_field & crate::code::flags::FINAL as i64,
+            0,
+            "MethodParameters access flag applied"
+        );
+    }
+
+    #[test]
+    fn source_file_object_equals_and_hash_by_name() {
+        let names = Names::new(false);
+        let name = names.from_string(&javac_strings::JavaString::from("Src.java"));
+        let first = SourceFileObject { name: name.clone() };
+        let second = SourceFileObject { name };
+        let other = SourceFileObject {
+            name: names.from_string(&javac_strings::JavaString::from("Other.java")),
+        };
+        assert_eq!(first, second, "same source file name");
+        assert_ne!(first, other, "different source file name");
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let hash = |value: &SourceFileObject| {
+            let mut hasher = DefaultHasher::new();
+            value.hash(&mut hasher);
+            hasher.finish()
+        };
+        assert_eq!(hash(&first), hash(&second), "same source file name hash");
     }
 }

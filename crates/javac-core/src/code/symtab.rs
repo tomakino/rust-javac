@@ -1323,6 +1323,17 @@ impl Symtab {
         let incompatible_class_change_error_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.IncompatibleClassChangeError");
         let clone_not_supported_exception_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.CloneNotSupportedException");
         let annotation_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.annotation.Annotation");
+    // Java: the predefined java.lang.annotation.Annotation interface is loaded
+    // lazily by the ClassFinder; before that completion its stub has no flags.
+    // The port seeds the subtype-relevant flags (PUBLIC|INTERFACE|ANNOTATION)
+    // so the implicit annotation interface supertype participates in the
+    // assignability checks of annotation values; the remaining flags and the
+    // members are installed by the normal ClassFinder completion (registered
+    // adapter).
+    if let Some(annotation_tsym) = ctx.typ(annotation_type).tsym {
+        ctx.sym_mut(annotation_tsym).flags_field |=
+            (flags::PUBLIC | flags::INTERFACE | flags::ANNOTATION) as i64;
+    }
         let class_loader_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.ClassLoader");
         let enum_sym =
             enter_class_full(ctx, &names, &mut maps, java_base, names.std.java_lang_Enum.clone(), None);
@@ -1671,6 +1682,29 @@ impl Symtab {
             .find(|(name, _)| name.to_java_string() == candidate.to_java_string())
             .map(|(_, modules)| modules.iter().map(|(_, class)| *class).collect())
             .unwrap_or_default()
+    }
+
+    /// Java: the class with the given binary (flat) name.
+    ///
+    /// PORTING ADAPTER: upstream annotation APIs receive a java.lang.Class
+    /// handle whose reflection methods identify the annotation type; the ported
+    /// Class handle carries the binary name and resolves it here (registered
+    /// adapter for the annotation-proxy API).
+    ///
+    /// # Arguments
+    ///   - flat_name: the binary name carried by the Class handle.
+    ///
+    /// # Returns
+    ///   - the first class symbol with that flat name, if any.
+    ///
+    /// # Panics
+    ///   - none.
+    pub(crate) fn class_by_flat_name(&self, flat_name: &JavaString) -> Option<SymbolId> {
+        self.maps
+            .classes
+            .iter()
+            .find(|(name, _)| name.to_java_string() == *flat_name)
+            .and_then(|(_, modules)| modules.first().map(|(_, class)| *class))
     }
 
     /// Java: public Iterable<PackageSymbol> getPackagesForName(Name candidate)
