@@ -3,13 +3,12 @@
 //! This class provides operations to locate module definitions from the source
 //! and class files on the paths provided to javac.
 //!
-//! PORTING_RULES: the subset used by Resolve.lookupInvisibleSymbol is ported
-//! (ModuleFinder.java:71-184, 290-352, 354-416): findModule(Name),
-//! findModule(ModuleSymbol), scanModulePath, findModuleInfo,
-//! moduleLocationIterator, getModuleInfoFromLocation, preferredFileObject and
-//! getDescription.  findAllModules/findSingleModule/readModule and their fields
-//! (moduleNameReader, moduleNameFromSourceReader, diags, dcfh) are deferred to
-//! the Modules follow-up (registered; not reachable from Resolve).
+//! PORTING_RULES: ModuleFinder.java:71-416 is ported: findModule(Name),
+//! findModule(ModuleSymbol), findAllModules, findSingleModule, readModule,
+//! readModuleName, scanModulePath, findModuleInfo, moduleLocationIterator,
+//! getModuleInfoFromLocation, preferredFileObject and getDescription.
+//! moduleNameFromSourceReader is the SOURCE branch of readModuleName
+//! (ModuleNameReader.readModuleName).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -23,12 +22,13 @@ use crate::code::flags;
 use crate::code::kinds::Kind;
 use crate::code::symbol::{Completer, CompleterRef, CompletionFailure, SymbolKind};
 use crate::code::symtab::Symtab;
+use crate::jvm::module_name_reader::ModuleNameReader;
 use crate::compiler_context::CompilerContext;
 use crate::resources::compiler_properties::{errors, fragments};
 use crate::resources::diagnostic_contract::IntoDiagnosticArg;
 use crate::util::abstract_log::AbstractLog;
 use crate::util::java_string::JavaString;
-use crate::util::jc_diagnostic::Factory;
+use crate::util::jc_diagnostic::{Fragment, Factory};
 use crate::util::log::Log;
 use crate::util::name::Name;
 use crate::util::names::Names;
@@ -134,6 +134,8 @@ pub struct ModuleFinder {
     diags: Rc<Factory>,
     /// Java: ModuleLocationIterator moduleLocationIterator.
     module_location_iterator: ModuleLocationIterator,
+    /// Java: private ModuleNameReader moduleNameReader (lazy).
+    module_name_reader: RefCell<Option<ModuleNameReader>>,
 }
 
 impl ModuleFinder {
@@ -166,6 +168,7 @@ impl ModuleFinder {
             log,
             diags,
             module_location_iterator: ModuleLocationIterator::new(),
+            module_name_reader: RefCell::new(None),
         }
     }
 
@@ -229,6 +232,193 @@ impl ModuleFinder {
             }
         }
         msym
+    }
+
+    /// Java: public List<ModuleSymbol> findAllModules() (ModuleFinder.java:186-195).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler services.
+    ///
+    /// # Returns
+    ///   - the modules found on the module paths.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn find_all_modules(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+    ) -> Vec<crate::ids::SymbolId> {
+        let list = self.scan_module_path(ctx, syms, None);
+        for msym in &list {
+            let module_info = module_info_symbol(ctx, *msym);
+            let (sourcefile, classfile) = module_info_files(ctx, module_info);
+            let kind = ctx.sym(*msym).kind;
+            if kind != Kind::ERR && sourcefile.is_none() && classfile.is_none() {
+                self.find_module_info(ctx, *msym);
+            }
+        }
+        list
+    }
+
+    /// Java: public ModuleSymbol findSingleModule() (ModuleFinder.java:197-222).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler services.
+    ///
+    /// # Returns
+    ///   - the single module symbol (the unnamed module when no module-info).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn find_single_module(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+    ) -> Result<crate::ids::SymbolId, CompletionFailure> {
+        let src_fo = self.get_module_info_from_location(
+            &Some(Rc::new(StandardLocation::SOURCE_PATH)),
+            FileKind::SOURCE,
+        );
+        let class_fo = self.get_module_info_from_location(
+            &Some(Rc::new(StandardLocation::CLASS_OUTPUT)),
+            FileKind::CLASS,
+        );
+        let fo = match (src_fo, class_fo) {
+            (None, None) => None,
+            (Some(src), None) => Some(src),
+            (None, Some(class)) => Some(class),
+            (Some(src), Some(class)) => {
+                Some(self.class_finder.preferred_file_object(&src, &class))
+            }
+        };
+        let msym = match fo {
+            None => syms.unnamed_module,
+            Some(fo) => self.read_module(ctx, syms, fo)?,
+        };
+        if module_patch_location(ctx, msym).is_none() {
+            set_module_class_location(ctx, msym, Some(Rc::new(StandardLocation::CLASS_OUTPUT)));
+        } else {
+            set_module_patch_output_location(
+                ctx,
+                msym,
+                Some(Rc::new(StandardLocation::CLASS_OUTPUT)),
+            );
+        }
+        Ok(msym)
+    }
+
+    /// Java: private ModuleSymbol readModule(JavaFileObject fo)
+    /// (ModuleFinder.java:224-273).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler services;
+    ///   - fo: the module-info file object.
+    ///
+    /// # Returns
+    ///   - the module symbol.
+    ///
+    /// # Panics
+    ///   - none for the upstream Assert.error default case (kept as the ported
+    ///     Assert.error panic).
+    fn read_module(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        fo: JavaFileObjectRef,
+    ) -> Result<crate::ids::SymbolId, CompletionFailure> {
+        let name = match fo.get_kind() {
+            FileKind::SOURCE => match self.read_module_name(&fo) {
+                Some(name) if !name.to_string_lossy().is_empty() => {
+                    self.names.from_string(&name)
+                }
+                _ => {
+                    let module_info = syms.define_class(
+                        ctx,
+                        self.names.module_info.clone(),
+                        Some(syms.err_module),
+                    );
+                    let diag = self
+                        .diags
+                        .fragment(Fragment::from(fragments::file_does_not_contain_module()));
+                    let dcfh = Some(Rc::clone(&self.class_finder.dcfh));
+                    let failure = {
+                        let mut failure = CompletionFailure::new(
+                            Some(module_info),
+                            Box::new(move || diag.clone()),
+                            dcfh,
+                        );
+                        failure.bad_class_file = true;
+                        failure
+                    };
+                    return Err(failure);
+                }
+            },
+            FileKind::CLASS => match self.read_module_name(&fo) {
+                Some(name) => self.names.from_string(&name),
+                None => self.names.error.clone(),
+            },
+            _ => crate::util::assert::error(),
+        };
+        let msym = syms.enter_module(ctx, name.clone());
+        let module_info = module_info_symbol(ctx, msym);
+        let classfile = match &ctx.sym(module_info).kind_data {
+            SymbolKind::ClassSymbol { classfile, .. } => classfile.clone(),
+            _ => panic!("AssertionError: module-info is not a class symbol"),
+        };
+        if classfile.is_none() {
+            set_module_info_classfile(ctx, module_info, Some(Rc::clone(&fo)));
+            if self.file_manager.has_location(&StandardLocation::PATCH_MODULE_PATH)
+                && name != self.names.error
+            {
+                // Adapter: the ported JavaFileManager trait has no nullable
+                // Location return; a missing patch location is reported as Err
+                // (registered section 9).
+                let patch_location = self
+                    .file_manager
+                    .get_location_for_module(
+                        &StandardLocation::PATCH_MODULE_PATH,
+                        &name.to_java_string(),
+                    )
+                    .ok();
+                set_patch_location(ctx, msym, patch_location.clone());
+                if let Some(patch_location) = patch_location {
+                    let patch_fo_class = self
+                        .get_module_info_from_location(&Some(patch_location.clone()), FileKind::CLASS);
+                    let patch_fo_source = self
+                        .get_module_info_from_location(&Some(patch_location), FileKind::SOURCE);
+                    let patch_fo = match (patch_fo_class, patch_fo_source) {
+                        (None, None) => None,
+                        (Some(class), None) => Some(class),
+                        (None, Some(source)) => Some(source),
+                        (Some(class), Some(source)) => Some(
+                            self.class_finder
+                                .preferred_file_object(&class, &source),
+                        ),
+                    };
+                    if let Some(patch_fo) = patch_fo {
+                        set_module_info_classfile(ctx, module_info, Some(patch_fo));
+                    }
+                }
+            }
+            ctx.sym_mut(module_info).completer = None;
+            self.class_finder.fill_in(ctx, syms, module_info)?;
+        }
+        Ok(msym)
+    }
+
+    /// Java: private String readModuleName(JavaFileObject jfo)
+    /// (ModuleFinder.java:275-279).
+    fn read_module_name(&mut self, fo: &JavaFileObjectRef) -> Option<JavaString> {
+        if self.module_name_reader.borrow().is_none() {
+            *self.module_name_reader.borrow_mut() = Some(ModuleNameReader::new());
+        }
+        let mut reader = self.module_name_reader.borrow_mut();
+        reader
+            .as_mut()
+            .expect("module name reader")
+            .read_module_name_from_java_file_object(fo.as_ref())
+            .ok()
     }
 
     /// Java: private List<ModuleSymbol> scanModulePath(ModuleSymbol toFind)
@@ -550,6 +740,31 @@ fn set_patch_location(
 ) {
     if let SymbolKind::ModuleSymbol { patch_location, .. } = &mut ctx.sym_mut(msym).kind_data {
         *patch_location = location;
+    }
+}
+
+/// Java: msym.classLocation = location (ModuleFinder.java:212-216).
+fn set_module_class_location(
+    ctx: &mut CompilerContext,
+    msym: crate::ids::SymbolId,
+    location: Option<LocationRef>,
+) {
+    if let SymbolKind::ModuleSymbol { class_location, .. } = &mut ctx.sym_mut(msym).kind_data {
+        *class_location = location;
+    }
+}
+
+/// Java: msym.patchOutputLocation = location (ModuleFinder.java:212-216).
+fn set_module_patch_output_location(
+    ctx: &mut CompilerContext,
+    msym: crate::ids::SymbolId,
+    location: Option<LocationRef>,
+) {
+    if let SymbolKind::ModuleSymbol {
+        patch_output_location, ..
+    } = &mut ctx.sym_mut(msym).kind_data
+    {
+        *patch_output_location = location;
     }
 }
 

@@ -16607,3 +16607,53 @@ impl Attr {
     }
 
 }
+
+impl Attr {
+    /// Java: public void setPackageSymbols(JCExpression pid, Symbol pkg)
+    /// (Attr.java:5971-5986): each Ident/FieldAccess of the package name is
+    /// bound to the matching package symbol, walking the select chain to the
+    /// owner package.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - pid: the package name tree;
+    ///   - pkg: the package symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn set_package_symbols(&mut self, ctx: &mut CompilerContext, pid: TreeId, pkg: SymbolId) {
+        enum Kind {
+            Ident,
+            Select(Option<TreeId>),
+            Other,
+        }
+        fn scan(ctx: &mut CompilerContext, tree: TreeId, pkg: Option<SymbolId>) {
+            let kind = match &ctx.tree(tree).kind {
+                TreeKind::Ident { .. } => Kind::Ident,
+                TreeKind::FieldAccess { selected, .. } => Kind::Select(*selected),
+                _ => Kind::Other,
+            };
+            match kind {
+                Kind::Ident => {
+                    if let TreeKind::Ident { sym, .. } = &mut ctx.tree_mut(tree).kind {
+                        *sym = pkg;
+                    }
+                }
+                Kind::Select(selected) => {
+                    if let TreeKind::FieldAccess { sym, .. } = &mut ctx.tree_mut(tree).kind {
+                        *sym = pkg;
+                    }
+                    if let Some(selected) = selected {
+                        let owner = pkg.and_then(|pkg| ctx.sym(pkg).owner);
+                        scan(ctx, selected, owner);
+                    }
+                }
+                Kind::Other => {}
+            }
+        }
+        scan(ctx, pid, Some(pkg));
+    }
+}

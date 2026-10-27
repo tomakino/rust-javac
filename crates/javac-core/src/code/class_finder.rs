@@ -359,6 +359,27 @@ impl ClassFinder {
         Ok(())
     }
 
+    /// Java: void fillIn(ClassSymbol c) (ClassFinder.java:341-392) — the
+    /// ModuleFinder.readModule path needs the same completion entry.
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler services;
+    ///   - c: the class symbol.
+    ///
+    /// # Returns
+    ///   - Ok(()) when the class body was filled in.
+    ///
+    /// # Panics
+    ///   - none.
+    pub(crate) fn fill_in(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        c: SymbolId,
+    ) -> Result<(), CompletionFailure> {
+        self.fill_in_class(ctx, syms, c)
+    }
+
     /// Java: void fillIn(ClassSymbol c) (ClassFinder.java:341-392)
     fn fill_in_class(
         &self,

@@ -9565,3 +9565,42 @@ mod tests {
         );
     }
 }
+
+impl Check {
+    /// Java: void checkModuleExists(final DiagnosticPosition pos,
+    /// ModuleSymbol msym) (Check.java:4259-4266).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - pos: the diagnostic position;
+    ///   - msym: the module symbol.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn check_module_exists(&self, ctx: &mut CompilerContext, pos: i32, msym: SymbolId) {
+        if ctx.sym(msym).kind != crate::code::kinds::Kind::MDL {
+            let lint = Rc::clone(&self.lint);
+            let log = Rc::clone(&self.log);
+            let name = ctx.sym(msym).name.to_java_string().to_string_lossy();
+            let warning = crate::util::jc_diagnostic::Warning::from(
+                crate::resources::compiler_properties::warnings::module_not_found(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(name),
+                ),
+            );
+            let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+                Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
+            self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+                if lint.is_enabled(crate::code::lint::LintCategory::MODULE) {
+                    log.borrow_mut().warning_lint_pos(
+                        crate::code::lint::LintCategory::MODULE,
+                        Some(Rc::clone(&position)),
+                        warning.clone(),
+                    );
+                }
+            }));
+        }
+    }
+}
