@@ -50,6 +50,22 @@ pub struct Attribute {
 }
 
 impl Attribute {
+    /// Adapter: the lambda a TypeCompound annotation position belongs to
+    /// (the ported Attribute.TypeCompound onLambda access).
+    ///
+    /// # Returns
+    ///   - the lambda tree id, if this is a type annotation on a lambda.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn type_compound_on_lambda(&self) -> Option<crate::ids::TreeId> {
+        match &self.kind {
+            AttributeKind::TypeCompound { position, .. } => {
+                position.as_ref().and_then(|position| position.on_lambda)
+            }
+            _ => None,
+        }
+    }
     pub fn new(ty: Option<TypeId>, kind: AttributeKind) -> Attribute {
         Attribute { ty, kind }
     }

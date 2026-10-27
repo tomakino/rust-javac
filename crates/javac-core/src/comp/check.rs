@@ -10516,6 +10516,68 @@ mod diagnostics_tests {
     }
 
     #[test]
+    fn lambda_expression_compiles_with_indy() {
+        let (compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T { Runnable r = () -> {}; }\n")],
+            |_options| {},
+        );
+        let errors: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .filter(|code| code.starts_with("compiler.err."))
+            .collect();
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+        let class = compiler
+            .last_compiled_classes
+            .iter()
+            .find(|class| class.name.contains("T"))
+            .unwrap_or_else(|| panic!("generated class T; names={:?}", compiler.last_compiled_classes.iter().map(|class| class.name.clone()).collect::<Vec<_>>()));
+        let bytes = &class.bytes;
+        let text = String::from_utf8_lossy(bytes);
+        assert!(text.contains("LambdaMetafactory"), "indy bootstrap missing");
+    }
+
+    #[test]
+    fn method_reference_compiles_with_indy() {
+        let (compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { Runnable r = T::m; static void m() {} }\n",
+            )],
+            |_options| {},
+        );
+        let errors: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .filter(|code| code.starts_with("compiler.err."))
+            .collect();
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+        let class = compiler
+            .last_compiled_classes
+            .iter()
+            .find(|class| class.name.contains("T"))
+            .expect("generated class T");
+        assert!(!class.bytes.is_empty());
+    }
+
+    #[test]
+    fn lambda_capture_compiles() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { void f(int x) { Runnable r = () -> System.out.println(x); r.run(); } }\n",
+            )],
+            |_options| {},
+        );
+        let errors: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .filter(|code| code.starts_with("compiler.err."))
+            .collect();
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    }
+
+    #[test]
     fn strictfp_warning_is_reported() {
         let (_compiler, diagnostics) = compile_with_diagnostics(
             &[("C.java", "strictfp class C { strictfp void m() {} }

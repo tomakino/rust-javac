@@ -134,6 +134,10 @@ pub struct Resolve {
     /// module finder service (wired after construction; registered adapter
     /// cell like attr_cell).
     pub module_finder: Rc<RefCell<Option<Rc<RefCell<crate::code::module_finder::ModuleFinder>>>>>, 
+    /// Java: MethodResolutionContext currentResolutionContext.methodCheck (the
+    /// applicability check of the active lookup; the port stores it next to
+    /// current_resolution_step for signatureMoreSpecific; registered adapter).
+    pub current_method_check: Option<Rc<RefCell<dyn MethodCheck>>>,
 }
 
 impl Resolve {
@@ -202,6 +206,7 @@ impl Resolve {
             default_method_check,
             polymorphic_signature_scope: None,
             current_resolution_step: None,
+            current_method_check: None,
             attr_cell: Rc::new(RefCell::new(None)),
             module_finder: Rc::new(RefCell::new(None)),
         }
@@ -3764,7 +3769,47 @@ pub trait MethodCheck {
     ) -> Result<(), MethodCheckFailure>;
 
     /// Java: MethodCheck mostSpecificCheck(List<Type> actuals)
-    fn most_specific_check(&self, actuals: crate::util::list::List<TypeId>) -> Rc<dyn MethodCheck>;
+    fn most_specific_check(&self, actuals: crate::util::list::List<TypeId>) -> Box<dyn MethodCheck>;
+}
+
+/// Adapter: an owned most-specific method check (Java: the MethodCheck returned by
+/// mostSpecificCheck is a fresh object; the port stores it behind the shared
+/// Rc<RefCell<dyn MethodCheck>> context slot).
+pub struct OwnedMethodCheck(pub Box<dyn MethodCheck>);
+
+impl MethodCheck for OwnedMethodCheck {
+    fn arguments_acceptable(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        types: &crate::code::types::Types,
+        attr: &mut crate::comp::attr::Attr,
+        chk: &crate::comp::check::Check,
+        diags: &crate::util::jc_diagnostic::Factory,
+        env: &Rc<Env<AttrContext>>,
+        deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
+        argtypes: crate::util::list::List<TypeId>,
+        formals: crate::util::list::List<TypeId>,
+        warn: &mut crate::util::warner::Warner,
+    ) -> Result<(), MethodCheckFailure> {
+        self.0.arguments_acceptable(
+            ctx,
+            syms,
+            types,
+            attr,
+            chk,
+            diags,
+            env,
+            deferred_attr_context,
+            argtypes,
+            formals,
+            warn,
+        )
+    }
+
+    fn most_specific_check(&self, actuals: crate::util::list::List<TypeId>) -> Box<dyn MethodCheck> {
+        self.0.most_specific_check(actuals)
+    }
 }
 
 
@@ -3790,8 +3835,8 @@ impl MethodCheck for NilMethodCheck {
         Ok(())
     }
 
-    fn most_specific_check(&self, _actuals: crate::util::list::List<TypeId>) -> Rc<dyn MethodCheck> {
-        Rc::new(NilMethodCheck)
+    fn most_specific_check(&self, _actuals: crate::util::list::List<TypeId>) -> Box<dyn MethodCheck> {
+        Box::new(NilMethodCheck)
     }
 }
 
@@ -4224,8 +4269,8 @@ impl MethodCheck for MethodReferenceCheck {
         )
     }
 
-    fn most_specific_check(&self, actuals: crate::util::list::List<TypeId>) -> Rc<dyn MethodCheck> {
-        Rc::new(MostSpecificCheck { actuals })
+    fn most_specific_check(&self, actuals: crate::util::list::List<TypeId>) -> Box<dyn MethodCheck> {
+        Box::new(MostSpecificCheck { actuals })
     }
 }
 
@@ -4985,6 +5030,16 @@ Err(MethodCheckFailure::Inference(exception)) => {
         note_warner: &mut crate::util::warner::Warner,
     ) -> bool {
         let mut resolution_context = MethodResolutionContext::new();
+        // Java: currentResolutionContext.step = prevResolutionContext.step;
+        // currentResolutionContext.methodCheck =
+        //     prevResolutionContext.methodCheck.mostSpecificCheck(actuals);
+        resolution_context.step = self.current_resolution_step;
+        resolution_context.method_check = self.current_method_check.as_ref().map(|check| {
+            let boxed = check.borrow().most_specific_check(actuals.clone());
+            let owned: Rc<RefCell<dyn MethodCheck>> =
+                Rc::new(RefCell::new(OwnedMethodCheck(boxed)));
+            owned
+        });
         let m1_type = types.member_type(ctx, syms, site, m1);
         let m2_type = types.member_type(ctx, syms, site, m2);
         let m1_params = types.get_parameter_types_public(ctx, m1_type);
@@ -5170,8 +5225,8 @@ impl MethodCheck for ArityMethodCheck {
         )
     }
 
-    fn most_specific_check(&self, _actuals: crate::util::list::List<TypeId>) -> Rc<dyn MethodCheck> {
-        Rc::new(NilMethodCheck)
+    fn most_specific_check(&self, _actuals: crate::util::list::List<TypeId>) -> Box<dyn MethodCheck> {
+        Box::new(NilMethodCheck)
     }
 }
 
@@ -5309,8 +5364,8 @@ impl MethodCheck for ResolveMethodCheck {
         Ok(())
     }
 
-    fn most_specific_check(&self, actuals: crate::util::list::List<TypeId>) -> Rc<dyn MethodCheck> {
-        Rc::new(MostSpecificCheck { actuals })
+    fn most_specific_check(&self, actuals: crate::util::list::List<TypeId>) -> Box<dyn MethodCheck> {
+        Box::new(MostSpecificCheck { actuals })
     }
 }
 
@@ -5490,7 +5545,7 @@ impl MethodCheck for MostSpecificCheck {
         Ok(())
     }
 
-    fn most_specific_check(&self, _actuals: crate::util::list::List<TypeId>) -> Rc<dyn MethodCheck> {
+    fn most_specific_check(&self, _actuals: crate::util::list::List<TypeId>) -> Box<dyn MethodCheck> {
         // Java: Assert.error("Cannot get here!")
         panic!("AssertionError: Cannot get here!");
     }
@@ -6678,6 +6733,8 @@ impl Resolve {
         // prevResolutionContext; } (Resolve.java:3696-3714).
         let previous_step = self.current_resolution_step;
         self.current_resolution_step = resolve_context.step;
+        let previous_method_check = self.current_method_check.clone();
+        self.current_method_check = resolve_context.method_check.clone();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut best_so_far = self.method_not_found;
             let steps = method_resolution_steps();
@@ -6726,6 +6783,7 @@ impl Resolve {
             )
         }));
         self.current_resolution_step = previous_step;
+        self.current_method_check = previous_method_check;
         match result {
             Ok(sym) => sym,
             Err(payload) => std::panic::resume_unwind(payload),
@@ -7537,6 +7595,9 @@ pub enum ReferenceHelperKind {
     UnboundMethod,
     ArrayConstructor,
     Constructor,
+    /// Java: the dummy helper returned by unboundLookup when the qualifier is a
+    /// static selector and the unbound form does not apply.
+    Dummy,
 }
 
 /// Java: abstract class Resolve.ReferenceLookupHelper (Resolve.java:3485-3520)
@@ -7691,7 +7752,17 @@ impl ReferenceLookupHelper {
                             self.original_site,
                         ))
                     } else {
-                        None
+                        let mut dummy = ReferenceLookupHelper::new_method(
+                            self.reference_tree,
+                            self.name.clone(),
+                            self.site,
+                            self.argtypes.clone(),
+                            self.typeargtypes.clone(),
+                            self.max_phase,
+                        );
+                        dummy.kind = ReferenceHelperKind::Dummy;
+                        dummy.method_not_found = self.method_not_found;
+                        Some(dummy)
                     }
                 } else {
                     None
@@ -7741,6 +7812,7 @@ impl ReferenceLookupHelper {
                     }
                 }
             }
+            ReferenceHelperKind::Dummy => panic!("AssertionError: no reference kind for a dummy helper"),
             ReferenceHelperKind::ArrayConstructor => ReferenceKind::ARRAY_CTOR,
             ReferenceHelperKind::Constructor => {
                 let encl = ctx.typ(self.original_site).get_enclosing_type();
@@ -7788,6 +7860,7 @@ impl LookupHelper for ReferenceLookupHelper {
         resolve_context: &mut MethodResolutionContext,
     ) -> SymbolId {
         match self.kind {
+            ReferenceHelperKind::Dummy => self.method_not_found,
             ReferenceHelperKind::Method | ReferenceHelperKind::UnboundMethod => rs.find_method(
                 ctx,
                 syms,

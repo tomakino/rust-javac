@@ -10551,7 +10551,7 @@ impl Attr {
         let is_constructor = ctx.sym(ref_sym).is_constructor(&self.names);
         let that_sym = if is_constructor { crate::code::symbol::base_symbol(ctx, ref_sym) } else { ref_sym };
         if let TreeKind::MemberReference { sym: slot, .. } = &mut ctx.tree_mut(that).kind {
-            *slot = Some(that_sym);
+                *slot = Some(that_sym);
         }
         if let Some(helper) = &helper {
             let reference_kind = helper.reference_kind(ctx, that_sym);
@@ -14805,6 +14805,16 @@ impl Attr {
                         .clone()
                         .expect("Attr.annotate must be injected");
                     annotate.block_annotations();
+                }
+                // Port note: the Rust service adapter makes the upstream
+                // memberEnter -> attr.attribType reentrancy impossible (the attr
+                // RefCell is already borrowed here); the vartype is attributed by
+                // the enclosing Attr pass first and memberEnter keeps that type.
+                if let Some(vartype) = vartype {
+                    if ctx.tree(vartype).ty.is_none() {
+                        let attributed = self.attrib_type(ctx, syms, vartype, &env);
+                        ctx.tree_mut(vartype).ty = Some(attributed);
+                    }
                 }
                 {
                     let member_enter = Rc::clone(&self.member_enter);

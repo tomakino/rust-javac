@@ -9,7 +9,6 @@
 //! for Java inheritance). The upstream abstract BindingContext class and its two
 //! concrete subclasses map to the BindingContext struct with a kind discriminator.
 //!
-//! Upstream: TransPatterns.java:100-871.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -33,53 +32,39 @@ use crate::util::list::List;
 use crate::util::names::Names;
 use javac_source::tree::case_tree::CaseKind;
 
-/// Java: public class TransPatterns extends TreeTranslator (TransPatterns.java:103-871).
+    /// This pass translates pattern-matching constructs, such as instanceof <pattern>.
+    ///
+    /// The Rust port keeps the upstream visitor shape: a TreeVisitor whose default
+    /// navigation descends into every child and whose pattern-specific visitors
+    /// replace the pattern trees with desugared statements.
 pub struct TransPatterns {
-    /// Java: private final Symtab syms
     pub syms: Rc<RefCell<Symtab>>,
-    /// Java: private final Attr attr
     pub attr: Rc<RefCell<Attr>>,
-    /// Java: private final Resolve rs
     pub rs: Rc<RefCell<Resolve>>,
-    /// Java: private final Types types
     pub types: Rc<Types>,
-    /// Java: private final Operators operators
     pub operators: Rc<Operators>,
-    /// Java: private final Names names
     pub names: Rc<Names>,
-    /// Java: private final Target target
     pub target: crate::jvm::target::Target,
-    /// Java: private final Preview preview
     pub preview: Rc<crate::code::preview::Preview>,
-    /// Java: private TreeMaker make
     pub make: Rc<RefCell<TreeMaker>>,
-    /// Java: private Env<AttrContext> env
     pub env: Option<Rc<Env<AttrContext>>>,
-    /// Java: BindingContext bindingContext (default anonymous instance).
     pub binding_context: BindingContext,
-    /// Java: JCLabeledStatement pendingMatchLabel
     pub pending_match_label: Option<TreeId>,
-    /// Java: boolean debugTransPatterns
     pub debug_trans_patterns: bool,
-    /// Java: private ClassSymbol currentClass
     pub current_class: Option<SymbolId>,
-    /// Java: private MethodSymbol currentMethodSym
     pub current_method_sym: Option<SymbolId>,
-    /// Java: private VarSymbol currentValue
     pub current_value: Option<SymbolId>,
-    /// Java: protected JCTree result (TreeTranslator result slot).
     pub result: Option<TreeId>,
-    /// Adapter: the shared default-navigation TreeTranslator (registered adapter).
     pub base: TreeTranslator,
 }
 
-/// Java: abstract class BindingContext (TransPatterns.java:751-759), expressed as
-/// a struct with the Default/Basic/Fence kind discriminator (registered adapter).
+    /// The binding context of one desugared pattern (upstream BindingContext).
+    ///
+    /// # Arguments
+    /// - `kind` — the Default/Basic/Fence kind discriminator
 pub struct BindingContext {
     kind: BindingContextKind,
-    /// Java: Map<BindingSymbol, VarSymbol> hoistedVarMap
     hoisted_var_map: Vec<(SymbolId, SymbolId)>,
-    /// Java: BindingContext parent
     parent: Option<Box<BindingContext>>,
     /// Adapter for the visitBlock anonymous fence subclass: the statements list
     /// that a preserved binding declaration is prepended to.
@@ -105,7 +90,6 @@ impl Default for BindingContext {
 }
 
 impl BindingContext {
-    /// Java: new BasicBindingContext() (TransPatterns.java:765-768).
     fn new_basic(parent: BindingContext) -> BindingContext {
         BindingContext {
             kind: BindingContextKind::Basic,
@@ -115,8 +99,6 @@ impl BindingContext {
         }
     }
 
-    /// Java: new BindingDeclarationFenceBindingContext() (TransPatterns.java:852-859);
-    /// the `statements` slot models the anonymous subclass tryPrepend capture.
     fn new_fence(parent: BindingContext, statements: Rc<RefCell<Vec<TreeId>>>) -> BindingContext {
         BindingContext {
             kind: BindingContextKind::Fence,
@@ -126,7 +108,6 @@ impl BindingContext {
         }
     }
 
-    /// Java: BindingContext.pop() (TransPatterns.java:757/838-840).
     fn pop(self) -> BindingContext {
         match self.parent {
             Some(parent) => *parent,
@@ -134,7 +115,6 @@ impl BindingContext {
         }
     }
 
-    /// Java: VarSymbol bindingDeclared(BindingSymbol) (default null).
     fn binding_declared(
         &mut self,
         ctx: &mut CompilerContext,
@@ -177,7 +157,6 @@ impl BindingContext {
         }
     }
 
-    /// Java: VarSymbol getBindingFor(BindingSymbol) (TransPatterns.java:781-791).
     fn get_binding_for(&self, ctx: &CompilerContext, var_symbol: SymbolId) -> Option<SymbolId> {
         let parent_result = self
             .parent
@@ -194,7 +173,6 @@ impl BindingContext {
         None
     }
 
-    /// Java: List<JCStatement> bindingVars(int diagPos) (TransPatterns.java:794-805).
     fn binding_vars(
         &mut self,
         ctx: &mut CompilerContext,
@@ -226,8 +204,6 @@ impl BindingContext {
         stats
     }
 
-    /// Java: boolean tryPrepend(BindingSymbol, JCVariableDecl) (default false;
-    /// the visitBlock fence subclass returns true and prepends the declaration).
     fn try_prepend(&mut self, _ctx: &mut CompilerContext, _binding: SymbolId, var: TreeId) -> bool {
         if self.kind == BindingContextKind::Fence {
             if let Some(statements) = self.statements.as_ref() {
@@ -241,21 +217,15 @@ impl BindingContext {
 }
 
 impl TransPatterns {
-    /// Java: protected TransPatterns(Context context) (TransPatterns.java:171-183)
-    /// — the explicit-service adapter (ADR 0001).
+    #[allow(clippy::too_many_arguments)]
+    /// Creates the pass with its context services and the post-pass services
+    /// (TransTypes, Enter, names, operators) it shares with Lower.
     ///
     /// # Arguments
-    ///   - the ported service handles;
-    ///   - debug_trans_patterns: Options.isSet("debug.patterns").
-    ///
-    /// # Returns
-    ///   - the translator.
-    ///
-    /// # Panics
-    ///   - none.
-    ///
-    /// Upstream: TransPatterns.java:171-183.
-    #[allow(clippy::too_many_arguments)]
+    /// - `attr` — the attribution service, used for default methods and scoping
+    /// - `diags` — the diagnostic factory
+    /// - `log` — the compiler log
+    /// - `...` — the remaining registered dependency services
     pub fn new(
         syms: Rc<RefCell<Symtab>>,
         attr: Rc<RefCell<Attr>>,
@@ -290,7 +260,15 @@ impl TransPatterns {
         }
     }
 
-    /// Java: public <T extends JCTree> T translate(T tree) (TreeTranslator.java:145-152).
+    /// Translates one tree; when a translation-specific environment is active the
+    /// visitor replaces the node and the replacement is returned.
+    ///
+    /// # Arguments
+    /// - `ctx` — the compiler context
+    /// - `tree` — the tree being translated (None is accepted and returned as None)
+    ///
+    /// # Returns
+    /// The translated tree, or None when the input was None
     pub fn translate(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) -> Option<TreeId> {
         let tree = tree?;
         self.result = None;
@@ -298,8 +276,14 @@ impl TransPatterns {
         self.result.take().or(Some(tree))
     }
 
-    /// Java: public <T extends JCTree> List<T> translate(List<T> trees)
-    /// (TreeTranslator.java:158-170).
+    /// Applies `translate` to every tree in the list, preserving order.
+    ///
+    /// # Arguments
+    /// - `ctx` — the compiler context
+    /// - `trees` — the trees to translate
+    ///
+    /// # Returns
+    /// The translated trees in the original order
     pub fn translate_list(
         &mut self,
         ctx: &mut CompilerContext,
@@ -313,32 +297,65 @@ impl TransPatterns {
         result
     }
 
-    /// Java: public List<JCVariableDecl> translateVarDefs(List<JCVariableDecl> trees)
+    /// Translates a list of variable declarations.
+    ///
+    /// # Arguments
+    /// - `ctx` — the compiler context
+    /// - `trees` — the variable declarations
+    ///
+    /// # Returns
+    /// The translated variable declarations
     pub fn translate_var_defs(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
 
-    /// Java: public List<JCTypeParameter> translateTypeParams(List<JCTypeParameter> trees)
+    /// Translates a list of type parameters.
+    ///
+    /// # Arguments
+    /// - `ctx` — the compiler context
+    /// - `trees` — the type parameters
+    ///
+    /// # Returns
+    /// The translated type parameters
     pub fn translate_type_params(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
 
-    /// Java: public List<JCCase> translateCases(List<JCCase> trees)
+    /// Translates a list of switch cases.
+    ///
+    /// # Arguments
+    /// - `ctx` — the compiler context
+    /// - `trees` — the case clauses
+    ///
+    /// # Returns
+    /// The translated case clauses
     pub fn translate_cases(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
 
-    /// Java: public List<JCCatch> translateCatchers(List<JCCatch> trees)
+    /// Translates a list of catch clauses.
+    ///
+    /// # Arguments
+    /// - `ctx` — the compiler context
+    /// - `trees` — the catch clauses
+    ///
+    /// # Returns
+    /// The translated catch clauses
     pub fn translate_catchers(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
 
-    /// Java: public List<JCAnnotation> translateAnnotations(List<JCAnnotation> trees)
+    /// Translates a list of annotations.
+    ///
+    /// # Arguments
+    /// - `ctx` — the compiler context
+    /// - `trees` — the annotations
+    ///
+    /// # Returns
+    /// The translated annotations
     pub fn translate_annotations(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
         self.translate_list(ctx, trees)
     }
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, pattern) = match &ctx.tree(tree).kind {
             TreeKind::InstanceOf { expr, pattern } => (*expr, *pattern),
@@ -364,8 +381,6 @@ impl TransPatterns {
 
 
 
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
             TreeKind::Switch {
@@ -388,8 +403,6 @@ impl TransPatterns {
     }
 
 
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
             TreeKind::SwitchExpression {
@@ -412,8 +425,6 @@ impl TransPatterns {
     }
 
 
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
             TreeKind::Binary { lhs, rhs, .. } => (*lhs, *rhs),
@@ -429,8 +440,6 @@ impl TransPatterns {
     }
 
 
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
             TreeKind::Conditional {
@@ -459,8 +468,6 @@ impl TransPatterns {
     }
 
 
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
             TreeKind::If {
@@ -487,8 +494,6 @@ impl TransPatterns {
     }
 
 
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_for_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (init, cond, step, body) = match &ctx.tree(tree).kind {
             TreeKind::ForLoop {
@@ -519,8 +524,6 @@ impl TransPatterns {
     }
 
 
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, body) = match &ctx.tree(tree).kind {
             TreeKind::WhileLoop { cond, body } => (*cond, *body),
@@ -536,8 +539,6 @@ impl TransPatterns {
     }
 
 
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (body, cond) = match &ctx.tree(tree).kind {
             TreeKind::DoWhileLoop { body, cond } => (*body, *cond),
@@ -553,8 +554,6 @@ impl TransPatterns {
     }
 
 
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, restype, typarams, recvparam, params, thrown, body) = match &ctx.tree(tree).kind
         {
@@ -608,8 +607,6 @@ impl TransPatterns {
     }
 
 
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
@@ -617,8 +614,6 @@ impl TransPatterns {
 
 
 
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (params, body) = match &ctx.tree(tree).kind {
             TreeKind::Lambda { params, body, .. } => (params.clone(), *body),
@@ -637,8 +632,6 @@ impl TransPatterns {
     }
 
 
-    /// Java: the TreeTranslator default navigation for this node kind, used
-    /// where the upstream visitor calls super (registered adapter for super).
     fn default_visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
             TreeKind::ClassDecl {
@@ -688,7 +681,6 @@ impl TransPatterns {
         std::mem::take(&mut self.binding_context)
     }
 
-    /// Java: BasicBindingContext.decorateStatement(JCStatement) (TransPatterns.java:807-824).
     fn decorate_statement(&mut self, ctx: &mut CompilerContext, stat: TreeId) -> TreeId {
         let pos = ctx.tree(stat).pos;
         let make = Rc::clone(&self.make);
@@ -702,7 +694,6 @@ impl TransPatterns {
         }
     }
 
-    /// Java: BasicBindingContext.decorateExpression(JCExpression) (TransPatterns.java:826-835).
     fn decorate_expression(&mut self, ctx: &mut CompilerContext, expr: TreeId) -> TreeId {
         let hoisted: Vec<SymbolId> = self
             .binding_context
@@ -744,7 +735,6 @@ impl TransPatterns {
             }
             return;
         }
-        // Java: Assert.check(preview.isEnabled()); Assert.check(preview.usesPreview(env.toplevel.sourcefile));
         {
             let env = self.env.clone().expect("env");
             let toplevel = env.toplevel.expect("env toplevel");
@@ -760,7 +750,6 @@ impl TransPatterns {
                 );
             }
         }
-        // Java: if (selector.type.hasTag(BOT)) seltype = syms.objectType; else seltype = selector.type;
         let seltype = {
             let selector_ty = ctx.tree(selector).ty.expect("switch selector type");
             if ctx.typ(selector_ty).has_tag(crate::code::type_tag::TypeTag::BOT) {
@@ -769,7 +758,6 @@ impl TransPatterns {
                 selector_ty
             }
         };
-        // Java: merge cases with empty stats into the following case (lines 322-330).
         let mut merged: Vec<TreeId> = Vec::new();
         let mut current = cases.clone();
         while current.non_empty() {
@@ -1168,8 +1156,6 @@ impl TransPatterns {
         tree
     }
 
-    /// Java: private LoadableConstant toLoadableConstant(JCCaseLabel l, Type
-    /// selector) (TransPatterns.java:492-516).
     #[allow(clippy::wrong_self_convention)]
     fn to_loadable_constant(
         &mut self,
@@ -1228,22 +1214,15 @@ impl TransPatterns {
         }
         None
     }
-    /// Java: public JCTree translateTopLevelClass(Env<AttrContext> env, JCTree cdef,
-    /// TreeMaker make) (TransPatterns.java:697-709).
-    ///
     /// # Arguments
     ///   - ctx: the compiler context;
     ///   - env: the class environment;
     ///   - cdef: the class declaration;
     ///   - make: the tree maker.
-    ///
     /// # Returns
     ///   - the translated class declaration.
-    ///
     /// # Panics
     ///   - translation of a list element produced null.
-    ///
-    /// Upstream: TransPatterns.java:697-709.
     pub fn translate_top_level_class(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1259,7 +1238,6 @@ impl TransPatterns {
         result.expect("translated class")
     }
 
-    /// Java: private Type principalType(JCPattern p) (TransPatterns.java:488-490).
     fn principal_type(&self, ctx: &mut CompilerContext, pattern: TreeId) -> TypeId {
         let primary = tree_info::primary_pattern_type(ctx, pattern);
         let ty = primary.ty.expect("primary pattern type");
@@ -1268,8 +1246,6 @@ impl TransPatterns {
         self.types.boxed_type_or_type(ctx, &mut syms_borrow, erased)
     }
 
-    /// Java: JCInstanceOf makeTypeTest(JCExpression lhs, JCExpression type)
-    /// (TransPatterns.java:716-720).
     fn make_type_test(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1285,8 +1261,6 @@ impl TransPatterns {
         tree
     }
 
-    /// Java: JCBinary makeBinary(JCTree.Tag optag, JCExpression lhs,
-    /// JCExpression rhs) (TransPatterns.java:727-732).
     fn make_binary(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1321,8 +1295,6 @@ impl TransPatterns {
         tree
     }
 
-    /// Java: JCTree.JCUnary makeUnary(JCTree.Tag optag, JCExpression arg)
-    /// (TransPatterns.java:738-743).
     fn make_unary(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1354,8 +1326,6 @@ impl TransPatterns {
         tree
     }
 
-    /// Java: JCExpression convert(JCExpression expr, Type target)
-    /// (TransPatterns.java:745-749).
     fn convert(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1379,8 +1349,6 @@ impl TransPatterns {
     }
 }
 
-/// Java: Symbol.BindingSymbol.aliases() — empty aliases means List.of(this)
-/// (Symbol.java:1883-1886).
 fn binding_aliases(ctx: &CompilerContext, sym: SymbolId) -> List<SymbolId> {
     match &ctx.sym(sym).kind_data {
         SymbolKind::BindingSymbol { aliases, .. } if !aliases.is_empty() => aliases.clone(),
@@ -1388,8 +1356,6 @@ fn binding_aliases(ctx: &CompilerContext, sym: SymbolId) -> List<SymbolId> {
     }
 }
 
-/// Java: Symbol.BindingSymbol.isAliasFor(BindingSymbol b) (Symbol.java:1880-1882):
-/// aliases().containsAll(b.aliases()).
 fn binding_is_alias_for(ctx: &CompilerContext, binding: SymbolId, other: SymbolId) -> bool {
     let mine = binding_aliases(ctx, binding);
     let theirs = binding_aliases(ctx, other);
@@ -1401,8 +1367,6 @@ fn binding_is_alias_for(ctx: &CompilerContext, binding: SymbolId, other: SymbolI
     true
 }
 
-/// Java: private JCVariableDecl makeHoistedVarDecl(int pos, VarSymbol varSymbol)
-/// (TransPatterns.java:847-849).
 fn make_hoisted_var_decl(
     ctx: &mut CompilerContext,
     syms: &mut Symtab,
@@ -1460,7 +1424,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
     }
 
-    /// Java: public void visitClassDef(JCClassDecl tree) (TransPatterns.java:664-676).
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let class_sym = match &ctx.tree(tree).kind {
             TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
@@ -1484,7 +1447,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.default_visit_method_def(ctx, tree);
         self.current_method_sym = prev_method_sym;
     }
-    /// Java: public void visitVarDef(JCVariableDecl tree) (TransPatterns.java:678-695).
     fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, vartype, init, flags_value) = match &ctx.tree(tree).kind {
             TreeKind::VariableDecl { mods, vartype, init, .. } => {
@@ -1536,7 +1498,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
     }
 
-    /// Java: public void visitBlock(JCBlock tree) (TransPatterns.java:608-651).
     fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let stats = match &ctx.tree(tree).kind {
             TreeKind::Block { stats, .. } => stats.clone(),
@@ -1642,7 +1603,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
     }
 
-    /// Java: public void visitSwitch(JCSwitch tree) (TransPatterns.java:265-268).
     fn visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases, has_total_pattern, pattern_switch) = match &ctx.tree(tree).kind {
             TreeKind::Switch { selector: Some(selector), cases, has_total_pattern, pattern_switch, .. } => (
@@ -1653,7 +1613,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.handle_switch(ctx, tree, selector, cases, has_total_pattern, pattern_switch);
     }
 
-    /// Java: public void visitSwitchExpression(JCSwitchExpression tree) (TransPatterns.java:270-273).
     fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases, has_total_pattern, pattern_switch) = match &ctx.tree(tree).kind {
             TreeKind::SwitchExpression { selector: Some(selector), cases, has_total_pattern, pattern_switch, .. } => (
@@ -1745,7 +1704,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
     }
 
-    /// Java: public void visitConditional(JCConditional tree) (TransPatterns.java:518-582).
     fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.binding_context = BindingContext::new_basic(self.take_binding_context());
         self.default_visit_conditional(ctx, tree);
@@ -1755,7 +1713,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         let popped = self.take_binding_context().pop();
         self.binding_context = popped;
     }
-    /// Java: public void visitIf(JCIf tree) (TransPatterns.java:518-582).
     fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.binding_context = BindingContext::new_basic(self.take_binding_context());
         self.default_visit_if(ctx, tree);
@@ -1927,7 +1884,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
     }
 
-    /// Java: public void visitLambda(JCLambda tree) (TransPatterns.java:653-662).
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let prev_context = self.take_binding_context();
         self.binding_context =
@@ -1988,7 +1944,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
     }
 
-    /// Java: public void visitBinary(JCBinary tree) (TransPatterns.java:518-582).
     fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.binding_context = BindingContext::new_basic(self.take_binding_context());
         self.default_visit_binary(ctx, tree);
@@ -2012,7 +1967,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
     }
 
-    /// Java: public void visitTypeTest(JCInstanceOf tree) (TransPatterns.java:185-231).
     fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, pattern) = match &ctx.tree(tree).kind {
             TreeKind::InstanceOf { expr: Some(expr), pattern: Some(pattern) } => (*expr, *pattern),
@@ -2116,7 +2070,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         let popped = self.take_binding_context().pop();
         self.binding_context = popped;
     }
-    /// Java: public void visitBindingPattern(JCBindingPattern tree) (TransPatterns.java:233-251).
     fn visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let var = match &ctx.tree(tree).kind {
             TreeKind::BindingPattern { var: Some(var) } => *var,
@@ -2184,8 +2137,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
     }
 
-    /// Java: public void visitParenthesizedPattern(JCParenthesizedPattern tree)
-    /// (TransPatterns.java:253-256).
     fn visit_parenthesized_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let pattern = match &ctx.tree(tree).kind {
             TreeKind::ParenthesizedPattern { pattern: Some(pattern) } => *pattern,
@@ -2193,7 +2144,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         };
         self.result = self.translate(ctx, Some(pattern));
     }
-    /// Java: public void visitGuardPattern(JCGuardPattern tree) (TransPatterns.java:258-263).
     fn visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (patt, expr) = match &ctx.tree(tree).kind {
             TreeKind::GuardPattern { patt: Some(patt), expr: Some(expr) } => (*patt, *expr),
@@ -2246,7 +2196,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         self.result = Some(tree);
     }
 
-    /// Java: public void visitIdent(JCIdent tree) (TransPatterns.java:595-606).
     fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let sym = match &ctx.tree(tree).kind {
             TreeKind::Ident { sym: Some(sym), .. } => *sym,
@@ -2581,8 +2530,6 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
     }
 }
 
-/// Java: VarSymbol creation for the synthetic switch variables (the ported
-/// Symbol.new + VarSymbol payload; ADR 0001).
 fn new_var_symbol(
     ctx: &mut CompilerContext,
     flags_field: i64,
@@ -2606,7 +2553,6 @@ fn new_var_symbol(
     ))
 }
 
-/// Java: JCCase helpers (the ported Case tree kind fields).
 fn case_stats(ctx: &CompilerContext, case: TreeId) -> List<TreeId> {
     match &ctx.tree(case).kind {
         TreeKind::Case { stats, .. } => stats.clone(),
@@ -2647,7 +2593,6 @@ fn case_completes_normally(ctx: &CompilerContext, case: TreeId) -> bool {
     }
 }
 
-/// Java: JCCaseLabel.isPattern() (JCTree.java:709-710): JCPattern labels.
 fn is_pattern_label(ctx: &CompilerContext, label: TreeId) -> bool {
     matches!(
         ctx.tree(label).tag,
@@ -2655,19 +2600,14 @@ fn is_pattern_label(ctx: &CompilerContext, label: TreeId) -> bool {
     )
 }
 
-/// Java: JCCaseLabel.isExpression() (JCTree.java:729-731; DefaultCaseLabel is
-/// the only non-expression, non-pattern label).
 fn is_expression_label(ctx: &CompilerContext, label: TreeId) -> bool {
     !is_pattern_label(ctx, label) && !ctx.tree(label).has_tag(Tag::DEFAULTCASELABEL)
 }
 
-/// Java: JCCaseLabel.isNullPattern() (JCTree.java:706-708):
-/// isExpression() && TreeInfo.isNull((JCExpression) this).
 fn is_null_pattern(ctx: &CompilerContext, label: TreeId) -> bool {
     is_expression_label(ctx, label) && tree_info::is_null(ctx, label)
 }
 
-/// Java: the Object -> ConstantValue mapping of makeLit call sites.
 fn literal_value_constant(value: &crate::tree::jc_tree::LiteralValue) -> crate::util::constants::ConstantValue {
     use crate::tree::jc_tree::LiteralValue;
     use crate::util::constants::ConstantValue;

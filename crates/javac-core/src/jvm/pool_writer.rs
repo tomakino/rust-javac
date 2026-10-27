@@ -619,6 +619,7 @@ fn loadable_pool_key(arg: &LoadableConstantRef) -> PoolKey {
         LoadableConstantRef::Basic(basic) => basic.pool_key(),
         LoadableConstantRef::Class(ty) => PoolKey::Class(*ty),
         LoadableConstantRef::MethodHandle(sym) => PoolKey::MethodHandle(*sym),
+        LoadableConstantRef::MethodType(ty) => PoolKey::Type(*ty),
         LoadableConstantRef::Dynamic(sym) => PoolKey::Dynamic(*sym),
     }
 }

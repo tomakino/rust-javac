@@ -9,6 +9,10 @@
 //! class does not override keep a no-op implementation, which is behaviourally
 //! equivalent because the default TreeScanner navigation never sets result.
 
+// Port note: the upstream comparison keeps nested conditionals; the style lint
+// is suppressed to preserve that control-flow shape.
+#![allow(clippy::collapsible_if)]
+
 use std::collections::HashMap;
 
 use crate::compiler_context::CompilerContext;
@@ -17,21 +21,20 @@ use crate::tree::jc_tree::{TreeKind, TreeVisitor};
 use crate::tree::tree_info;
 use crate::util::list::List;
 
-/// Java: public class TreeDiffer extends TreeScanner (TreeDiffer.java).
-///
 /// A visitor that compares two lambda bodies for structural equality.
 pub struct TreeDiffer {
-    /// Java: private Map<Symbol, Symbol> equiv = new HashMap<>().
     equivalent: HashMap<SymbolId, SymbolId>,
-    /// Java: private JCTree parameter.
     parameter: Option<TreeId>,
-    /// Java: private boolean result.
     result: bool,
 }
 
+#[allow(clippy::collapsible_if)]
 impl TreeDiffer {
-    /// Java: public TreeDiffer(Collection<? extends Symbol> symbols,
-    /// Collection<? extends Symbol> otherSymbols) (TreeDiffer.java).
+    /// Creates a differ over two captured symbol lists.
+    ///
+    /// # Arguments
+    /// - `symbols` — the symbols captured by the first lambda
+    /// - `other_symbols` — the symbols captured by the second lambda
     pub fn new(symbols: &[SymbolId], other_symbols: &[SymbolId]) -> TreeDiffer {
         TreeDiffer {
             equivalent: TreeDiffer::equiv(symbols, other_symbols),
@@ -40,8 +43,6 @@ impl TreeDiffer {
         }
     }
 
-    /// Java: private static Map<Symbol, Symbol> equiv(Collection symbols,
-    /// Collection otherSymbols) (TreeDiffer.java).
     fn equiv(symbols: &[SymbolId], other_symbols: &[SymbolId]) -> HashMap<SymbolId, SymbolId> {
         let mut result = HashMap::new();
         let mut other = other_symbols.iter();
@@ -54,8 +55,15 @@ impl TreeDiffer {
         result
     }
 
-    /// Java: public boolean scan(JCTree tree, JCTree parameter)
-    /// (TreeDiffer.java).
+    /// Compares two trees for structural equality.
+    ///
+    /// # Arguments
+    /// - `ctx` — the compiler context
+    /// - `tree` — the first tree
+    /// - `other` — the second tree
+    ///
+    /// # Returns
+    /// `true` when the trees are structurally equivalent
     pub fn scan(
         &mut self,
         ctx: &mut CompilerContext,
@@ -92,7 +100,6 @@ impl TreeDiffer {
         result
     }
 
-    /// Java: private boolean scan(Iterable xs, Iterable ys).
     fn scan_list_pair(
         &mut self,
         ctx: &mut CompilerContext,
@@ -117,7 +124,6 @@ impl TreeDiffer {
         }
     }
 
-    /// Java: private boolean scan(Iterable xs, Iterable ys) for an optional list
     fn scan_opt_list_pair(
         &mut self,
         ctx: &mut CompilerContext,
@@ -131,8 +137,6 @@ impl TreeDiffer {
         }
     }
 
-    /// Java: private boolean scanDimAnnotations(List<List<JCAnnotation>> xs,
-    /// List<List<JCAnnotation>> ys) (TreeDiffer.java).
     fn scan_dim_annotations(
         &mut self,
         ctx: &mut CompilerContext,
@@ -159,7 +163,6 @@ impl TreeDiffer {
 }
 
 impl TreeVisitor for TreeDiffer {
-    /// Java: public void visitIdent(JCIdent tree).
     fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Ident { sym, .. } = &tree_kind else {
@@ -181,7 +184,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = symbol == other_symbol;
     }
 
-    /// Java: public void visitSelect(JCFieldAccess tree).
     fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::FieldAccess { selected, sym, .. } = &tree_kind else {
@@ -202,8 +204,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, selected, *other_selected) && symbol == *other_sym;
     }
 
-    /// Java: public void visitAnnotatedType(JCAnnotatedType tree)
-    /// (TreeDiffer.java).
     fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::AnnotatedType {
@@ -228,7 +228,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan(ctx, underlying, *other_underlying);
     }
 
-    /// Java: public void visitAnnotation(JCAnnotation tree).
     fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Annotation {
@@ -255,7 +254,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan_list_pair(ctx, &args, other_args);
     }
 
-    /// Java: public void visitApply(JCMethodInvocation tree).
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::MethodInvocation {
@@ -290,7 +288,6 @@ impl TreeVisitor for TreeDiffer {
             && poly == *other_poly;
     }
 
-    /// Java: public void visitAssert(JCAssert tree).
     fn visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Assert { cond, detail } = &tree_kind else {
@@ -308,7 +305,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *cond, *other_cond) && self.scan(ctx, *detail, *other_detail);
     }
 
-    /// Java: public void visitAssign(JCAssign tree).
     fn visit_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Assign { lhs, rhs } = &tree_kind else {
@@ -326,7 +322,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *lhs, *other_lhs) && self.scan(ctx, *rhs, *other_rhs);
     }
 
-    /// Java: public void visitAssignop(JCAssignOp tree).
     fn visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::AssignOp {
@@ -352,7 +347,6 @@ impl TreeVisitor for TreeDiffer {
             && *operator == *other_operator;
     }
 
-    /// Java: public void visitBinary(JCBinary tree).
     fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Binary {
@@ -378,7 +372,6 @@ impl TreeVisitor for TreeDiffer {
             && *operator == *other_operator;
     }
 
-    /// Java: public void visitBlock(JCBlock tree).
     fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Block { flags, stats, .. } = &tree_kind else {
@@ -397,7 +390,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = *flags == *other_flags && self.scan_list_pair(ctx, stats, other_stats);
     }
 
-    /// Java: public void visitBreak(JCBreak tree).
     fn visit_break(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Break { label, .. } = &tree_kind else {
@@ -411,7 +403,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = label == other;
     }
 
-    /// Java: public void visitYield(JCYield tree).
     fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Yield { value, .. } = &tree_kind else {
@@ -425,7 +416,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *value, *other);
     }
 
-    /// Java: public void visitCase(JCCase tree).
     fn visit_case(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Case { labels, stats, .. } = &tree_kind else {
@@ -447,13 +437,10 @@ impl TreeVisitor for TreeDiffer {
             && self.scan_list_pair(ctx, &stats, other_stats);
     }
 
-    /// Java: public void visitDefaultCaseLabel(JCDefaultCaseLabel tree)
-    /// (TreeDiffer.java).
     fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
         self.result = true;
     }
 
-    /// Java: public void visitCatch(JCCatch tree).
     fn visit_catch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Catch { param, body } = &tree_kind else {
@@ -471,7 +458,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *param, *other_param) && self.scan(ctx, *body, *other_body);
     }
 
-    /// Java: public void visitClassDef(JCClassDecl tree).
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::ClassDecl {
@@ -508,7 +494,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan_list_pair(ctx, defs, other_defs);
     }
 
-    /// Java: public void visitConditional(JCConditional tree).
     fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Conditional {
@@ -536,7 +521,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan(ctx, *falsepart, *other_false);
     }
 
-    /// Java: public void visitContinue(JCContinue tree).
     fn visit_continue(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Continue { label, .. } = &tree_kind else {
@@ -550,7 +534,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = label == other;
     }
 
-    /// Java: public void visitDoLoop(JCDoWhileLoop tree).
     fn visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::DoWhileLoop { body, cond } = &tree_kind else {
@@ -568,7 +551,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *body, *other_body) && self.scan(ctx, *cond, *other_cond);
     }
 
-    /// Java: public void visitErroneous(JCErroneous tree).
     fn visit_erroneous(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Erroneous { errs } = &tree_kind else {
@@ -582,7 +564,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan_list_pair(ctx, errs, other);
     }
 
-    /// Java: public void visitExec(JCExpressionStatement tree).
     fn visit_exec(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::ExpressionStatement { expr } = &tree_kind else {
@@ -596,7 +577,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *expr, *other);
     }
 
-    /// Java: public void visitForLoop(JCForLoop tree).
     fn visit_for_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::ForLoop {
@@ -625,8 +605,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan(ctx, *body, *other_body);
     }
 
-    /// Java: public void visitForeachLoop(JCEnhancedForLoop tree)
-    /// (TreeDiffer.java).
     fn visit_foreach_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::EnhancedForLoop { var, expr, body } = &tree_kind else {
@@ -647,7 +625,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan(ctx, *body, *other_body);
     }
 
-    /// Java: public void visitIf(JCIf tree).
     fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::If {
@@ -673,7 +650,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan(ctx, *elsepart, *other_else);
     }
 
-    /// Java: public void visitImport(JCImport tree).
     fn visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Import {
@@ -697,7 +673,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = *static_import == *other_static && self.scan(ctx, *qualid, *other_qualid);
     }
 
-    /// Java: public void visitIndexed(JCArrayAccess tree).
     fn visit_indexed(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::ArrayAccess { indexed, index } = &tree_kind else {
@@ -715,7 +690,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *indexed, *other_indexed) && self.scan(ctx, *index, *other_index);
     }
 
-    /// Java: public void visitLabelled(JCLabeledStatement tree).
     fn visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::LabeledStatement { label, body } = &tree_kind else {
@@ -733,7 +707,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = *label == other_label.clone() && self.scan(ctx, *body, *other_body);
     }
 
-    /// Java: public void visitLambda(JCLambda tree).
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Lambda {
@@ -761,7 +734,6 @@ impl TreeVisitor for TreeDiffer {
             && *param_kind == *other_kind;
     }
 
-    /// Java: public void visitLetExpr(LetExpr tree).
     fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::LetExpr { defs, expr, .. } = &tree_kind else {
@@ -780,7 +752,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan_list_pair(ctx, defs, other_defs) && self.scan(ctx, *expr, *other_expr);
     }
 
-    /// Java: public void visitLiteral(JCLiteral tree).
     fn visit_literal(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Literal { typetag, value } = &tree_kind else {
@@ -798,7 +769,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = typetag == other_tag && value == other_value;
     }
 
-    /// Java: public void visitMethodDef(JCMethodDecl tree).
     fn visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::MethodDecl {
@@ -844,7 +814,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan(ctx, *default_value, *other_default);
     }
 
-    /// Java: public void visitModifiers(JCModifiers tree).
     fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Modifiers { flags, annotations } = &tree_kind else {
@@ -863,7 +832,6 @@ impl TreeVisitor for TreeDiffer {
             *flags == *other_flags && self.scan_list_pair(ctx, annotations, other_annotations);
     }
 
-    /// Java: public void visitModuleDef(JCModuleDecl tree).
     fn visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::ModuleDecl {
@@ -891,7 +859,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan_opt_list_pair(ctx, directives.as_ref(), other_directives.as_ref());
     }
 
-    /// Java: public void visitNewArray(JCNewArray tree).
     fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::NewArray {
@@ -923,7 +890,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan_opt_list_pair(ctx, elems.as_ref(), other_elems.as_ref());
     }
 
-    /// Java: public void visitNewClass(JCNewClass tree).
     fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::NewClass {
@@ -960,7 +926,6 @@ impl TreeVisitor for TreeDiffer {
             && *constructor == *other_constructor;
     }
 
-    /// Java: public void visitPackageDef(JCPackageDecl tree).
     fn visit_package_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::PackageDecl {
@@ -986,7 +951,6 @@ impl TreeVisitor for TreeDiffer {
             && *packge == *other_packge;
     }
 
-    /// Java: public void visitReference(JCMemberReference tree).
     fn visit_reference(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::MemberReference {
@@ -1020,7 +984,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan_opt_list_pair(ctx, typeargs.as_ref(), other_typeargs.as_ref());
     }
 
-    /// Java: public void visitReturn(JCReturn tree).
     fn visit_return(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Return { expr } = &tree_kind else {
@@ -1034,7 +997,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *expr, *other);
     }
 
-    /// Java: public void visitSwitch(JCSwitch tree).
     fn visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Switch {
@@ -1057,8 +1019,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan_list_pair(ctx, cases, other_cases);
     }
 
-    /// Java: public void visitSwitchExpression(JCSwitchExpression tree)
-    /// (TreeDiffer.java).
     fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::SwitchExpression {
@@ -1081,8 +1041,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan_list_pair(ctx, cases, other_cases);
     }
 
-    /// Java: public void visitSynchronized(JCSynchronized tree)
-    /// (TreeDiffer.java).
     fn visit_synchronized(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Synchronized { lock, body } = &tree_kind else {
@@ -1100,7 +1058,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *lock, *other_lock) && self.scan(ctx, *body, *other_body);
     }
 
-    /// Java: public void visitThrow(JCThrow tree).
     fn visit_throw(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Throw { expr } = &tree_kind else {
@@ -1114,7 +1071,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *expr, *other);
     }
 
-    /// Java: public void visitTopLevel(JCCompilationUnit tree).
     fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::CompilationUnit {
@@ -1142,7 +1098,6 @@ impl TreeVisitor for TreeDiffer {
             && *packge == *other_packge;
     }
 
-    /// Java: public void visitTry(JCTry tree).
     fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Try {
@@ -1173,7 +1128,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan(ctx, *finalizer, *other_finalizer);
     }
 
-    /// Java: public void visitTypeApply(JCTypeApply tree).
     fn visit_type_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::TypeApply { clazz, arguments } = &tree_kind else {
@@ -1192,7 +1146,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan_list_pair(ctx, arguments, other_arguments);
     }
 
-    /// Java: public void visitTypeArray(JCArrayTypeTree tree).
     fn visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::ArrayTypeTree { elemtype } = &tree_kind else {
@@ -1206,7 +1159,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *elemtype, *other);
     }
 
-    /// Java: public void visitTypeBoundKind(TypeBoundKind tree).
     fn visit_type_bound_kind(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::TypeBoundKind { kind } = &tree_kind else {
@@ -1220,7 +1172,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = kind == other;
     }
 
-    /// Java: public void visitTypeCast(JCTypeCast tree).
     fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::TypeCast { clazz, expr } = &tree_kind else {
@@ -1238,7 +1189,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *clazz, *other_clazz) && self.scan(ctx, *expr, *other_expr);
     }
 
-    /// Java: public void visitTypeIdent(JCPrimitiveTypeTree tree).
     fn visit_type_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::PrimitiveTypeTree { typetag } = &tree_kind else {
@@ -1252,8 +1202,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = typetag == other;
     }
 
-    /// Java: public void visitTypeIntersection(JCTypeIntersection tree)
-    /// (TreeDiffer.java).
     fn visit_type_intersection(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::TypeIntersection { bounds } = &tree_kind else {
@@ -1267,8 +1215,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan_list_pair(ctx, bounds, other);
     }
 
-    /// Java: public void visitTypeParameter(JCTypeParameter tree)
-    /// (TreeDiffer.java).
     fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::TypeParameter {
@@ -1294,7 +1240,6 @@ impl TreeVisitor for TreeDiffer {
             && self.scan_list_pair(ctx, annotations, other_annotations);
     }
 
-    /// Java: public void visitTypeTest(JCInstanceOf tree).
     fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::InstanceOf { expr, pattern } = &tree_kind else {
@@ -1312,7 +1257,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *expr, *other_expr) && self.scan(ctx, *pattern, *other_pattern);
     }
 
-    /// Java: public void visitTypeUnion(JCTypeUnion tree).
     fn visit_type_union(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::TypeUnion { alternatives } = &tree_kind else {
@@ -1329,7 +1273,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan_list_pair(ctx, alternatives, other);
     }
 
-    /// Java: public void visitUnary(JCUnary tree).
     fn visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Unary { arg, operator } = &tree_kind else {
@@ -1347,7 +1290,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *arg, *other_arg) && *operator == *other_operator;
     }
 
-    /// Java: public void visitUses(JCUses tree).
     fn visit_uses(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Uses { qualid } = &tree_kind else {
@@ -1361,7 +1303,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *qualid, *other);
     }
 
-    /// Java: public void visitVarDef(JCVariableDecl tree).
     fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::VariableDecl {
@@ -1403,7 +1344,6 @@ impl TreeVisitor for TreeDiffer {
         }
     }
 
-    /// Java: public void visitWhileLoop(JCWhileLoop tree).
     fn visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::WhileLoop { cond, body } = &tree_kind else {
@@ -1421,7 +1361,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *cond, *other_cond) && self.scan(ctx, *body, *other_body);
     }
 
-    /// Java: public void visitWildcard(JCWildcard tree).
     fn visit_wildcard(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let tree_kind = ctx.tree(tree).kind.clone();
         let TreeKind::Wildcard { kind, inner } = &tree_kind else {
@@ -1439,10 +1378,6 @@ impl TreeVisitor for TreeDiffer {
         self.result = self.scan(ctx, *kind, *other_kind) && self.scan(ctx, *inner, *other_inner);
     }
 
-    /// Java: upstream TreeDiffer does not override node kinds outside the list
-    /// above; the default TreeScanner navigation never sets result, so the empty
-    /// implementation is behaviourally equivalent (the enclosing scan returns
-    /// false).
     fn visit_skip(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
     fn visit_parens(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}

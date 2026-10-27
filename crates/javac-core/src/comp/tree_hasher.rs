@@ -13,33 +13,29 @@ use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId, TreeId};
 use crate::tree::jc_tree::{TreeKind, TreeVisitor};
 use crate::tree::tree_info;
-use crate::tree::tree_scanner::TreeScanner;
 use crate::util::list::List;
 
-/// Java: public class TreeHasher extends TreeScanner (TreeHasher.java).
-///
 /// A tree visitor that computes a hash code.
 pub struct TreeHasher {
-    /// Java: private final Map<Symbol, Integer> symbolHashes.
     symbol_hashes: HashMap<SymbolId, i32>,
-    /// Java: private int result = 17.
     result: i32,
 }
 
+#[allow(clippy::collapsible_if)]
 impl TreeHasher {
-    /// Java: public TreeHasher(Map<Symbol, Integer> symbolHashes).
+    /// Creates a hasher over the given symbols and their hashes.
+    ///
+    /// # Arguments
+    /// - `symbols` — the symbols captured by the lambda body
+    /// - `symbol_hashes` — the precomputed hash of each captured symbol
     pub fn new(symbol_hashes: HashMap<SymbolId, i32>) -> TreeHasher {
         TreeHasher { symbol_hashes, result: 17 }
     }
 
-    /// Java: public static int hash(JCTree tree, Collection<? extends Symbol> symbols)
-    /// (TreeHasher.java).
-    ///
     /// # Arguments
     ///   - ctx: the compiler context;
     ///   - tree: the tree to hash;
     ///   - symbols: the symbols to index for stable identifiers.
-    ///
     /// # Returns
     ///   - the hash code (0 for a null tree).
     pub fn hash(ctx: &mut CompilerContext, tree: Option<TreeId>, symbols: &[SymbolId]) -> i32 {
@@ -56,12 +52,18 @@ impl TreeHasher {
         hasher.result
     }
 
-    /// Java: private void hash(Object object).
     fn hash_object(&mut self, object: i64) {
         self.result = 31i32.wrapping_mul(self.result).wrapping_add(object as i32);
     }
 
-    /// Java: public void scan(JCTree tree).
+    /// Hashes one tree (None hashes as zero).
+    ///
+    /// # Arguments
+    /// - `ctx` — the compiler context
+    /// - `tree` — the tree to hash
+    ///
+    /// # Returns
+    /// The tree hash code
     pub fn scan(&mut self, ctx: &mut CompilerContext, tree: Option<TreeId>) {
         let Some(tree) = tree else {
             return;
@@ -77,21 +79,27 @@ impl TreeHasher {
         crate::tree::jc_tree::accept(ctx, tree, self);
     }
 
-    /// Java: public void scan(List<? extends JCTree> trees).
+    /// Hashes a list of trees in order.
+    ///
+    /// # Arguments
+    /// - `ctx` — the compiler context
+    /// - `trees` — the trees to hash
     pub fn scan_list(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) {
         for tree in trees.iter() {
             self.scan(ctx, Some(tree));
         }
     }
 
-    /// Java: public void scan(List<? extends JCTree> trees) (TreeScanner.java);
-    /// nullable-list helper).
+    /// Hashes an optional list of trees (None contributes nothing).
+    ///
+    /// # Arguments
+    /// - `ctx` — the compiler context
+    /// - `trees` — the optional tree list
     pub fn scan_list_opt(&mut self, ctx: &mut CompilerContext, trees: Option<List<TreeId>>) {
         if let Some(trees) = trees {
             self.scan_list(ctx, &trees);
         }
     }
-    /// Java: hash of a constant value (Objects.hashCode of the wrapper).
     fn hash_value(&mut self, value: &crate::util::constants::ConstantValue) {
         use crate::util::constants::ConstantValue;
         let hash = match value {
@@ -118,7 +126,6 @@ impl TreeHasher {
 }
 
 impl TreeVisitor for TreeHasher {
-    /// Java: public void visitTopLevel(JCCompilationUnit tree).
     fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let defs = match &ctx.tree(tree).kind {
             TreeKind::CompilationUnit { defs, .. } => defs.clone(),
@@ -128,7 +135,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitPackageDef(JCPackageDecl tree).
     fn visit_package_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, pid) = match &ctx.tree(tree).kind {
             TreeKind::PackageDecl {
@@ -141,7 +147,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitModuleDef(JCModuleDecl tree).
     fn visit_module_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, qual_id, directives) = match &ctx.tree(tree).kind {
             TreeKind::ModuleDecl {
@@ -158,7 +163,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitExports(JCExports tree).
     fn visit_exports(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (qualid, module_names) = match &ctx.tree(tree).kind {
             TreeKind::Exports {
@@ -173,7 +177,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitOpens(JCOpens tree).
     fn visit_opens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (qualid, module_names) = match &ctx.tree(tree).kind {
             TreeKind::Opens {
@@ -188,7 +191,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitProvides(JCProvides tree).
     fn visit_provides(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (service_name, impl_names) = match &ctx.tree(tree).kind {
             TreeKind::Provides {
@@ -203,7 +205,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitRequires(JCRequires tree).
     fn visit_requires(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let module_name = match &ctx.tree(tree).kind {
             TreeKind::Requires { module_name, .. } => *module_name,
@@ -213,7 +214,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitUses(JCUses tree).
     fn visit_uses(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Uses { qualid } => *qualid,
@@ -223,7 +223,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitImport(JCImport tree).
     fn visit_import(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Import { qualid, .. } => *qualid,
@@ -233,7 +232,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitClassDef(JCClassDecl tree).
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, typarams, extending, implementing, permitting, defs) = match &ctx.tree(tree).kind
         {
@@ -264,7 +262,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitMethodDef(JCMethodDecl tree).
     fn visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (mods, restype, typarams, recvparam, params, thrown, default_value, body) =
             match &ctx.tree(tree).kind {
@@ -301,7 +298,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitVarDef(JCVariableDecl tree).
     fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         if let TreeKind::VariableDecl { sym: Some(sym), .. } = &ctx.tree(tree).kind {
             let size = self.symbol_hashes.len() as i32;
@@ -324,11 +320,9 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitSkip(JCSkip tree).
     fn visit_skip(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
 
-    /// Java: public void visitBlock(JCBlock tree).
     fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let stats = match &ctx.tree(tree).kind {
             TreeKind::Block { stats, .. } => stats.clone(),
@@ -338,7 +332,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitDoLoop(JCDoWhileLoop tree).
     fn visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (body, cond) = match &ctx.tree(tree).kind {
             TreeKind::DoWhileLoop { body, cond } => (*body, *cond),
@@ -349,7 +342,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitWhileLoop(JCWhileLoop tree).
     fn visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, body) = match &ctx.tree(tree).kind {
             TreeKind::WhileLoop { cond, body } => (*cond, *body),
@@ -360,7 +352,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitForLoop(JCForLoop tree).
     fn visit_for_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (init, cond, step, body) = match &ctx.tree(tree).kind {
             TreeKind::ForLoop {
@@ -378,7 +369,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitForeachLoop(JCEnhancedForLoop tree).
     fn visit_foreach_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (var, expr, body) = match &ctx.tree(tree).kind {
             TreeKind::EnhancedForLoop { var, expr, body } => (*var, *expr, *body),
@@ -390,7 +380,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitLabelled(JCLabeledStatement tree).
     fn visit_labelled(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let body = match &ctx.tree(tree).kind {
             TreeKind::LabeledStatement { body, .. } => *body,
@@ -400,7 +389,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitSwitch(JCSwitch tree).
     fn visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
             TreeKind::Switch {
@@ -413,7 +401,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitCase(JCCase tree).
     fn visit_case(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (labels, stats) = match &ctx.tree(tree).kind {
             TreeKind::Case { labels, stats, .. } => (labels.clone(), stats.clone()),
@@ -424,7 +411,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitSwitchExpression(JCSwitchExpression tree).
     fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
             TreeKind::SwitchExpression {
@@ -437,7 +423,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitSynchronized(JCSynchronized tree).
     fn visit_synchronized(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lock, body) = match &ctx.tree(tree).kind {
             TreeKind::Synchronized { lock, body } => (*lock, *body),
@@ -448,7 +433,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitTry(JCTry tree).
     fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
             TreeKind::Try {
@@ -467,7 +451,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitCatch(JCCatch tree).
     fn visit_catch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (param, body) = match &ctx.tree(tree).kind {
             TreeKind::Catch { param, body } => (*param, *body),
@@ -478,7 +461,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitConditional(JCConditional tree).
     fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
             TreeKind::Conditional {
@@ -495,7 +477,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitIf(JCIf tree).
     fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
             TreeKind::If {
@@ -511,7 +492,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitExec(JCExpressionStatement tree).
     fn visit_exec(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::ExpressionStatement { expr } => *expr,
@@ -521,11 +501,9 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitBreak(JCBreak tree).
     fn visit_break(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
 
-    /// Java: public void visitYield(JCYield tree).
     fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let value = match &ctx.tree(tree).kind {
             TreeKind::Yield { value, .. } => *value,
@@ -535,11 +513,9 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitContinue(JCContinue tree).
     fn visit_continue(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
 
-    /// Java: public void visitReturn(JCReturn tree).
     fn visit_return(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Return { expr } => *expr,
@@ -549,7 +525,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitThrow(JCThrow tree).
     fn visit_throw(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Throw { expr } => *expr,
@@ -559,7 +534,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitAssert(JCAssert tree).
     fn visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, detail) = match &ctx.tree(tree).kind {
             TreeKind::Assert { cond, detail } => (*cond, *detail),
@@ -570,7 +544,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitApply(JCMethodInvocation tree).
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (typeargs, meth, args) = match &ctx.tree(tree).kind {
             TreeKind::MethodInvocation {
@@ -587,7 +560,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitNewClass(JCNewClass tree).
     fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (encl, typeargs, clazz, args, def) = match &ctx.tree(tree).kind {
             TreeKind::NewClass {
@@ -608,7 +580,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitNewArray(JCNewArray tree).
     fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, elemtype, dims, dim_annotations, elems) = match &ctx.tree(tree).kind {
             TreeKind::NewArray {
@@ -636,7 +607,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitLambda(JCLambda tree).
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (body, params) = match &ctx.tree(tree).kind {
             TreeKind::Lambda { body, params, .. } => (*body, params.clone()),
@@ -647,7 +617,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitParens(JCParens tree).
     fn visit_parens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Parens { expr } => *expr,
@@ -657,7 +626,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitAssign(JCAssign tree).
     fn visit_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
             TreeKind::Assign { lhs, rhs } => (*lhs, *rhs),
@@ -668,7 +636,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitAssignop(JCAssignOp tree).
     fn visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
             TreeKind::AssignOp { lhs, rhs, .. } => (*lhs, *rhs),
@@ -679,7 +646,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitUnary(JCUnary tree).
     fn visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let arg = match &ctx.tree(tree).kind {
             TreeKind::Unary { arg, .. } => *arg,
@@ -689,7 +655,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitBinary(JCBinary tree).
     fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
             TreeKind::Binary { lhs, rhs, .. } => (*lhs, *rhs),
@@ -700,7 +665,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitTypeCast(JCTypeCast tree).
     fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, expr) = match &ctx.tree(tree).kind {
             TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
@@ -711,7 +675,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitTypeTest(JCInstanceOf tree).
     fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, pattern) = match &ctx.tree(tree).kind {
             TreeKind::InstanceOf { expr, pattern } => (*expr, *pattern),
@@ -722,7 +685,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitBindingPattern(JCBindingPattern tree).
     fn visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let var = match &ctx.tree(tree).kind {
             TreeKind::BindingPattern { var } => *var,
@@ -732,11 +694,9 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitDefaultCaseLabel(JCDefaultCaseLabel tree).
     fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
 
-    /// Java: public void visitParenthesizedPattern(JCParenthesizedPattern that).
     fn visit_parenthesized_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let pattern = match &ctx.tree(tree).kind {
             TreeKind::ParenthesizedPattern { pattern } => *pattern,
@@ -746,7 +706,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitGuardPattern(JCGuardPattern that).
     fn visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (patt, expr) = match &ctx.tree(tree).kind {
             TreeKind::GuardPattern { patt, expr } => (*patt, *expr),
@@ -757,7 +716,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitIndexed(JCArrayAccess tree).
     fn visit_indexed(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (indexed, index) = match &ctx.tree(tree).kind {
             TreeKind::ArrayAccess { indexed, index } => (*indexed, *index),
@@ -768,7 +726,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitSelect(JCFieldAccess tree).
     fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         if let TreeKind::FieldAccess { sym, .. } = &ctx.tree(tree).kind {
             let hash = sym.map(|sym| (sym.index() as i64) % 1_000_003).unwrap_or(0);
@@ -782,7 +739,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitReference(JCMemberReference tree).
     fn visit_reference(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, typeargs) = match &ctx.tree(tree).kind {
             TreeKind::MemberReference { expr, typeargs, .. } => (*expr, typeargs.clone()),
@@ -793,7 +749,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitIdent(JCIdent tree).
     fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         if let TreeKind::Ident { sym, .. } = &ctx.tree(tree).kind {
             if let Some(sym) = sym {
@@ -808,7 +763,6 @@ impl TreeVisitor for TreeHasher {
         }
     }
 
-    /// Java: public void visitLiteral(JCLiteral tree).
     fn visit_literal(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         if let TreeKind::Literal { value, .. } = &ctx.tree(tree).kind {
             let hash = match value {
@@ -835,11 +789,9 @@ impl TreeVisitor for TreeHasher {
         }
     }
 
-    /// Java: public void visitTypeIdent(JCPrimitiveTypeTree tree).
     fn visit_type_ident(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
 
-    /// Java: public void visitTypeArray(JCArrayTypeTree tree).
     fn visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let elemtype = match &ctx.tree(tree).kind {
             TreeKind::ArrayTypeTree { elemtype } => *elemtype,
@@ -849,7 +801,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitTypeApply(JCTypeApply tree).
     fn visit_type_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, arguments) = match &ctx.tree(tree).kind {
             TreeKind::TypeApply { clazz, arguments } => (*clazz, arguments.clone()),
@@ -860,7 +811,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitTypeUnion(JCTypeUnion tree).
     fn visit_type_union(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let alternatives = match &ctx.tree(tree).kind {
             TreeKind::TypeUnion { alternatives } => alternatives.clone(),
@@ -870,7 +820,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitTypeIntersection(JCTypeIntersection tree).
     fn visit_type_intersection(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let bounds = match &ctx.tree(tree).kind {
             TreeKind::TypeIntersection { bounds } => bounds.clone(),
@@ -880,7 +829,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitTypeParameter(JCTypeParameter tree).
     fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, bounds) = match &ctx.tree(tree).kind {
             TreeKind::TypeParameter {
@@ -895,7 +843,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitWildcard(JCWildcard tree).
     fn visit_wildcard(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (kind, inner) = match &ctx.tree(tree).kind {
             TreeKind::Wildcard { kind, inner } => (*kind, *inner),
@@ -908,11 +855,9 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitTypeBoundKind(TypeBoundKind that).
     fn visit_type_bound_kind(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
 
-    /// Java: public void visitModifiers(JCModifiers tree).
     fn visit_modifiers(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let annotations = match &ctx.tree(tree).kind {
             TreeKind::Modifiers { annotations, .. } => annotations.clone(),
@@ -922,7 +867,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitAnnotation(JCAnnotation tree).
     fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotation_type, args) = match &ctx.tree(tree).kind {
             TreeKind::Annotation {
@@ -937,7 +881,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitAnnotatedType(JCAnnotatedType tree).
     fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, underlying_type) = match &ctx.tree(tree).kind {
             TreeKind::AnnotatedType {
@@ -951,11 +894,9 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitErroneous(JCErroneous tree).
     fn visit_erroneous(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 
 
-    /// Java: public void visitLetExpr(LetExpr tree).
     fn visit_let_expr(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (defs, expr) = match &ctx.tree(tree).kind {
             TreeKind::LetExpr { defs, expr, .. } => (defs.clone(), *expr),
@@ -966,7 +907,6 @@ impl TreeVisitor for TreeHasher {
     }
 
 
-    /// Java: public void visitTree(JCTree tree).
     fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
         panic!("AssertionError: visitTree");
     }

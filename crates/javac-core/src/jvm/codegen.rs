@@ -986,6 +986,9 @@ impl Gen {
             }
         }
         let mut symbol = ctx.sym(sym).clone();
+        // The arena port: a clone does not copy the symbol id, which
+        // setTypeAttributes needs for the symbol metadata; restore it first.
+        symbol.id.set(Some(sym));
         symbol.set_type_attributes(List::from_iterable(field_tas));
         *ctx.sym_mut(sym) = symbol;
         nonfield_tas

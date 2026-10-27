@@ -60,6 +60,7 @@ pub fn loadable_pool_tag(c: &LoadableConstantRef) -> i32 {
         LoadableConstantRef::MethodHandle(_) => {
             crate::jvm::class_file::CONSTANT_METHODHANDLE
         }
+        LoadableConstantRef::MethodType(_) => crate::jvm::class_file::CONSTANT_METHODTYPE,
         LoadableConstantRef::Dynamic(_) => crate::jvm::class_file::CONSTANT_DYNAMIC,
     }
 }
@@ -75,6 +76,9 @@ pub fn loadable_to_pool_constant(
         LoadableConstantRef::Class(ty) => crate::jvm::pool_writer::PoolConstantRef::Class(*ty),
         LoadableConstantRef::MethodHandle(sym) => {
             crate::jvm::pool_writer::PoolConstantRef::MethodHandle(*sym)
+        }
+        LoadableConstantRef::MethodType(ty) => {
+            crate::jvm::pool_writer::PoolConstantRef::MethodType(*ty)
         }
         LoadableConstantRef::Dynamic(sym) => {
             crate::jvm::pool_writer::PoolConstantRef::Dynamic(*sym)
@@ -239,6 +243,9 @@ pub enum LoadableConstantRef {
     Class(TypeId),
     /// A method handle symbol.
     MethodHandle(SymbolId),
+    /// A method type constant (Java: Type implements LoadableConstant with the
+    /// CONSTANT_MethodType tag).
+    MethodType(TypeId),
     /// A dynamic symbol (invokedynamic/constant dynamic).
     Dynamic(SymbolId),
 }
@@ -249,6 +256,7 @@ impl PoolConstant for LoadableConstantRef {
             LoadableConstantRef::Basic(basic) => basic.pool_key(),
             LoadableConstantRef::Class(ty) => PoolKey::Class(*ty),
             LoadableConstantRef::MethodHandle(sym) => PoolKey::MethodHandle(*sym),
+            LoadableConstantRef::MethodType(ty) => PoolKey::Type(*ty),
             LoadableConstantRef::Dynamic(sym) => PoolKey::Dynamic(*sym),
         }
     }
@@ -263,6 +271,10 @@ impl PoolConstant for LoadableConstantRef {
             LoadableConstantRef::MethodHandle(sym) => {
                 let _ = sym;
                 crate::jvm::class_file::CONSTANT_METHODHANDLE
+            }
+            LoadableConstantRef::MethodType(ty) => {
+                let _ = ty;
+                crate::jvm::class_file::CONSTANT_METHODTYPE
             }
             LoadableConstantRef::Dynamic(sym) => {
                 let _ = sym;

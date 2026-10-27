@@ -222,7 +222,14 @@ impl MemberEnter {
         env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
         let attr_rc = self.attr_service();
-        attr_rc.borrow_mut().attrib_type_public(ctx, syms, tree, env)
+        let mut attr = match attr_rc.try_borrow_mut() {
+            Ok(attr) => attr,
+            Err(_) => {
+                eprintln!("ATTR_BORROW_CONFLICT\n{}", std::backtrace::Backtrace::force_capture());
+                panic!("attr borrowed");
+            }
+        };
+        attr.attrib_type_public(ctx, syms, tree, env)
     }
 
     /// Java: attr.attribExpr(tree, env) (MemberEnter.java:610; Attr.java:729-731).
@@ -512,8 +519,18 @@ impl MemberEnter {
                 self.attrib_ident_as_enum_type(ctx, syms, vartype, &local_env);
             } else if !is_implicitly_typed(ctx, tree) {
                 let vartype = var_decl_vartype(ctx, tree).expect("variable type");
-                let ty = self.attrib_type(ctx, syms, vartype, &local_env);
-                set_tree_type(ctx, vartype, ty);
+                // Port note: when the enclosing Attr pass already attributed the
+                // vartype (reentrancy adapter), keep that type instead of
+                // re-attributing through the attr service.
+                let ty = match ctx.tree(vartype).ty {
+                    Some(ty) => ty,
+                    None => {
+                        let ty = self.attrib_type(ctx, syms, vartype, &local_env);
+                        set_tree_type(ctx, vartype, ty);
+                        ty
+                    }
+                };
+                let _ = ty;
                 if tree_info::is_receiver_param(ctx, tree) {
                     self.check_receiver(ctx, syms, tree, &local_env);
                 }
