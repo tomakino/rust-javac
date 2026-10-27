@@ -1018,16 +1018,195 @@ impl Attr {
         Ok(self.check(ctx, syms, tree, wildcard, KindSelector::TYP, &result_info))
     }
 
-    /// Java: public void visitTypeParameter(JCTypeParameter tree) (5017-5029)
+    /// Java: public void visitTypeParameter(JCTypeParameter tree) (Attr.java:5017-5029)
+    /// -- the type-parameter bound fixup after attribTypeVariables (the type
+    /// variable and its preliminary bounds were created there).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler context and symbol table;
+    ///   - tree: the type parameter tree.
+    ///
+    /// # Returns
+    ///   - the type-variable type of the parameter.
+    ///
+    /// # Panics
+    ///   - the preliminary type is missing (attribTypeVariables must run first).
+    ///
+    /// Upstream: Attr.java:5017-5029.
     fn visit_type_parameter(
         &mut self,
-        _ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
-        _tree: TreeId,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
-        // TODO(Annotate/Types): annotateTypeParameterSecondStage +
-        // checkIntersection + TypeVar.setUpperBound; registered.
-        unimplemented!("TODO(Annotate/Types batch): Attr.visitTypeParameter")
+        let type_var = ctx.tree(tree).ty.expect("type parameter tree.type");
+        let (annotations, bounds) = match &ctx.tree(tree).kind {
+            TreeKind::TypeParameter { annotations, bounds, .. } => {
+                (annotations.clone(), bounds.clone())
+            }
+            _ => panic!("ClassCastException: JCTypeParameter expected"),
+        };
+        if !annotations.is_empty() {
+            let annotate = self
+                .annotate
+                .borrow()
+                .clone()
+                .expect("AssertionError: annotate service must be installed");
+            annotate
+                .services
+                .annotate_type_parameter_second_stage(tree, &annotations);
+        }
+        let upper_bound = ctx
+            .typ(type_var)
+            .get_upper_bound()
+            .expect("type variable upper bound");
+        if !ctx
+            .typ(upper_bound)
+            .has_tag(crate::code::type_tag::TypeTag::ERROR)
+        {
+            let checked = self.check_intersection(ctx, syms, tree, bounds);
+            set_upper_bound(ctx, type_var, checked);
+        }
+        Ok(type_var)
+    }
+
+    /// Java: Type checkIntersection(JCTree tree, List<JCExpression> bounds)
+    /// (Attr.java:5030-5097): checks the bounds of a type parameter, reports
+    /// the illegal combinations, and builds the intersection class for multiple
+    /// bounds.
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler context and symbol table;
+    ///   - tree: the type parameter (or intersection) tree;
+    ///   - bounds: the bound expressions.
+    ///
+    /// # Returns
+    ///   - the checked upper bound type.
+    ///
+    /// # Panics
+    ///   - a bound expression has no attributed type.
+    ///
+    /// Upstream: Attr.java:5030-5097.
+    fn check_intersection(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        bounds: List<TreeId>,
+    ) -> TypeId {
+        let mut bound_set: std::collections::HashSet<TypeId> = std::collections::HashSet::new();
+        let mut effective_bounds = bounds.clone();
+        if bounds.non_empty() {
+            let head = *bounds.head();
+            let head_type = ctx.tree(head).ty.expect("bound tree.type");
+            let checked_head = self.check_base(ctx, syms, head_type, head, false, false, false);
+            ctx.tree_mut(head).ty = Some(checked_head);
+            bound_set.insert(self.types.erasure(ctx, syms, checked_head));
+            if ctx.typ(checked_head).has_tag(crate::code::type_tag::TypeTag::ERROR) {
+                return checked_head;
+            } else if ctx
+                .typ(checked_head)
+                .has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
+            {
+                let tail = bounds.tail();
+                if tail.non_empty() {
+                    let pos = ctx.tree(*tail.head()).pos;
+                    self.log.borrow_mut().error_at(
+                        pos,
+                        crate::util::jc_diagnostic::Error::from(
+                            crate::resources::compiler_properties::errors::type_var_may_not_be_followed_by_other_bounds(),
+                        ),
+                    );
+                    return checked_head;
+                }
+            } else {
+                let mut current = bounds.tail();
+                while current.non_empty() {
+                    let bound = *current.head();
+                    let bound_type = ctx.tree(bound).ty.expect("bound tree.type");
+                    let checked = self.check_base(ctx, syms, bound_type, bound, false, true, false);
+                    ctx.tree_mut(bound).ty = Some(checked);
+                    if ctx.typ(checked).has_tag(crate::code::type_tag::TypeTag::ERROR) {
+                        effective_bounds = List::of(bound);
+                    } else if ctx.typ(checked).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+                        let erased = self.types.erasure(ctx, syms, checked);
+                        self.chk
+                            .borrow()
+                            .check_not_repeated(ctx.tree(bound).pos, erased, &mut bound_set);
+                    }
+                    current = current.tail();
+                }
+            }
+        }
+        if effective_bounds.is_empty() {
+            return syms.object_type;
+        } else if effective_bounds.length() == 1 {
+            let head = *effective_bounds.head();
+            return ctx.tree(head).ty.expect("bound tree.type");
+        }
+        let mut bound_types: List<TypeId> = List::nil();
+        let mut current = effective_bounds.clone();
+        while current.non_empty() {
+            let bound = *current.head();
+            bound_types = bound_types.append(ctx.tree(bound).ty.expect("bound tree.type"));
+            current = current.tail();
+        }
+        let owntype = self
+            .types
+            .make_intersection_type(ctx, syms, &self.names, bound_types, false);
+        let owner_class = ctx.typ(owntype).tsym.expect("intersection class symbol");
+        assert!(
+            (ctx.sym(owner_class).flags_field & crate::code::flags::COMPOUND as i64) != 0,
+            "AssertionError: bound class must be flagged COMPOUND"
+        );
+        let head = *effective_bounds.head();
+        let head_type = ctx.tree(head).ty.expect("bound tree.type");
+        let head_is_interface = ctx
+            .typ(head_type)
+            .tsym
+            .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0)
+            .unwrap_or(false);
+        let (extending, implementing) = if !head_is_interface {
+            (Some(head), effective_bounds.tail())
+        } else {
+            (None, effective_bounds.clone())
+        };
+        let env = self.env.clone().expect("env");
+        let class_def = {
+            let pos = ctx.tree(tree).pos;
+            let mut make = self.make.borrow_mut();
+            make.at(pos);
+            let mods = make.modifiers(
+                ctx,
+                (crate::code::flags::PUBLIC as i64) | (crate::code::flags::ABSTRACT as i64),
+            );
+            make.class_def(
+                ctx,
+                mods,
+                self.names.empty.clone(),
+                List::nil(),
+                extending,
+                implementing,
+                List::nil(),
+            )
+        };
+        if let TreeKind::ClassDecl { sym, .. } = &mut ctx.tree_mut(class_def).kind {
+            *sym = Some(owner_class);
+        }
+        let sourcefile = env.toplevel.and_then(|toplevel| match &ctx.tree(toplevel).kind {
+            TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
+            _ => None,
+        });
+        if let crate::code::symbol::SymbolKind::ClassSymbol { sourcefile: slot, .. } =
+            &mut ctx.sym_mut(owner_class).kind_data
+        {
+            *slot = sourcefile;
+        }
+        ctx.sym_mut(owner_class).flags_field |= crate::code::flags::UNATTRIBUTED as i64;
+        let class_env = self.enter.borrow().class_env(ctx, class_def, &env);
+        self.type_envs.borrow_mut().put(owner_class, class_env);
+        self.attrib_class(ctx, syms, owner_class);
+        owntype
     }
 
     /// Java: public void visitIdent(JCIdent tree) (Attr.java:4182-4260)
@@ -15982,6 +16161,196 @@ class Sample {
         assert_eq!(target, Some(labelled));
     }
 
+
+    /// Java: Attr.visitTypeParameter (Attr.java:5017-5029): the preliminary
+    /// bound from attribTypeVariables is replaced by checkIntersection.
+    #[test]
+    fn visit_type_parameter_fixups_a_single_bound() {
+        use crate::code::type_::Type;
+        use crate::code::type_tag::TypeTag;
+
+        let mut harness = build_attr_harness();
+        let attr = Rc::new(RefCell::new(harness.attr));
+        wire_attr_services(
+            &mut harness.ctx,
+            Rc::clone(&attr),
+            Rc::clone(&harness.options),
+            Source::JDK17,
+            None,
+        );
+        let ctx = &mut harness.ctx;
+        let object_type = harness.syms.borrow().object_type;
+        let no_type = crate::code::symtab::no_type_id(ctx);
+        let bound_sym = crate::code::symtab::new_class_symbol(
+            ctx,
+            0,
+            harness.names.from_utf(b"Bound"),
+            None,
+            no_type,
+        );
+        let bound_type = ctx.sym(bound_sym).ty.expect("bound class type");
+        let type_var = ctx.alloc_type(Type::new(
+            TypeTag::TYPEVAR,
+            None,
+            crate::code::type_::TypeKindData::TypeVar {
+                bound: Some(object_type),
+                lower: None,
+            },
+        ));
+        let bound_tree = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
+            pos: 1,
+            ty: Some(bound_type),
+            tag: Tag::TYPEIDENT,
+            kind: TreeKind::Ident {
+                name: harness.names.from_utf(b"Bound"),
+                sym: Some(bound_sym),
+            },
+        });
+        let type_param = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
+            pos: 2,
+            ty: Some(type_var),
+            tag: Tag::TYPEPARAMETER,
+            kind: TreeKind::TypeParameter {
+                name: harness.names.from_utf(b"T"),
+                bounds: List::of(bound_tree),
+                annotations: List::nil(),
+            },
+        });
+        {
+            let mut a = attr.borrow_mut();
+            a.env = Some(Rc::clone(&harness.env));
+        }
+        let mut syms = harness.syms.borrow_mut();
+        let result = attr
+            .borrow_mut()
+            .visit_type_parameter(ctx, &mut syms, type_param)
+            .expect("visit_type_parameter");
+        assert_eq!(result, type_var);
+        assert_eq!(ctx.typ(type_var).get_upper_bound(), Some(bound_type));
+    }
+
+    /// Java: Attr.checkIntersection (Attr.java:5030-5097): multiple bounds build
+    /// the intersection class and attribute it (the bound class tree is
+    /// synthesized and attributed through attribClass).
+    #[test]
+    fn visit_type_parameter_builds_an_intersection_for_multiple_bounds() {
+        use crate::code::type_::Type;
+        use crate::code::type_tag::TypeTag;
+
+        let mut harness = build_attr_harness();
+        let attr = Rc::new(RefCell::new(harness.attr));
+        wire_attr_services(
+            &mut harness.ctx,
+            Rc::clone(&attr),
+            Rc::clone(&harness.options),
+            Source::JDK17,
+            None,
+        );
+        let ctx = &mut harness.ctx;
+        let object_type = harness.syms.borrow().object_type;
+        let no_type = crate::code::symtab::no_type_id(ctx);
+        let interface_flag = crate::code::flags::INTERFACE as i64;
+        let first_sym = crate::code::symtab::new_class_symbol(
+            ctx,
+            interface_flag,
+            harness.names.from_utf(b"I1"),
+            None,
+            no_type,
+        );
+        let second_sym = crate::code::symtab::new_class_symbol(
+            ctx,
+            interface_flag,
+            harness.names.from_utf(b"I2"),
+            None,
+            no_type,
+        );
+        let first_type = ctx.sym(first_sym).ty.expect("I1 type");
+        let second_type = ctx.sym(second_sym).ty.expect("I2 type");
+        let first_bound = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
+            pos: 1,
+            ty: Some(first_type),
+            tag: Tag::TYPEIDENT,
+            kind: TreeKind::Ident {
+                name: harness.names.from_utf(b"I1"),
+                sym: Some(first_sym),
+            },
+        });
+        let second_bound = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
+            pos: 2,
+            ty: Some(second_type),
+            tag: Tag::TYPEIDENT,
+            kind: TreeKind::Ident {
+                name: harness.names.from_utf(b"I2"),
+                sym: Some(second_sym),
+            },
+        });
+        let type_var = ctx.alloc_type(Type::new(
+            TypeTag::TYPEVAR,
+            None,
+            crate::code::type_::TypeKindData::TypeVar {
+                bound: Some(object_type),
+                lower: None,
+            },
+        ));
+        let type_param = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
+            pos: 3,
+            ty: Some(type_var),
+            tag: Tag::TYPEPARAMETER,
+            kind: TreeKind::TypeParameter {
+                name: harness.names.from_utf(b"T"),
+                bounds: List::of(first_bound).append(second_bound),
+                annotations: List::nil(),
+            },
+        });
+        // The environment must have a compilation unit (the synthesized class
+        // inherits its source file) and a class environment.
+        let unit = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
+            pos: 0,
+            ty: None,
+            tag: Tag::TOPLEVEL,
+            kind: TreeKind::CompilationUnit {
+                defs: List::nil(),
+                sourcefile: None,
+                modle: None,
+                locn: None,
+                packge: None,
+                toplevel_scope: None,
+                named_import_scope: None,
+                star_import_scope: None,
+                line_map: None,
+                doc_comments: None,
+                end_positions: None,
+            },
+        });
+        let env = Rc::new(crate::comp::env::Env {
+            next: None,
+            outer: None,
+            tree: None,
+            toplevel: Some(unit),
+            encl_class: None,
+            encl_method: None,
+            info: Rc::new(RefCell::new(crate::comp::attr_context::AttrContext::new())),
+            base_clause: false,
+        });
+        {
+            let mut a = attr.borrow_mut();
+            a.env = Some(Rc::clone(&env));
+        }
+        let mut syms = harness.syms.borrow_mut();
+        attr.borrow_mut()
+            .visit_type_parameter(ctx, &mut syms, type_param)
+            .expect("visit_type_parameter");
+        let upper = ctx.typ(type_var).get_upper_bound().expect("upper bound");
+        assert!(ctx.typ(upper).has_tag(TypeTag::CLASS));
+        assert!(
+            ctx.typ(upper).is_intersection(),
+            "the bound is an intersection"
+        );
+        let components = ctx.typ(upper).get_components();
+        assert_eq!(components.length(), 2);
+        assert_eq!(*components.head(), first_type);
+        assert_eq!(*components.tail().head(), second_type);
+    }
 }
 
 
@@ -16133,4 +16502,5 @@ impl Attr {
         }
         t
     }
+
 }
