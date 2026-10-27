@@ -1313,7 +1313,7 @@ fn record_components(ctx: &CompilerContext, c: SymbolId) -> List<SymbolId> {
 }
 
 /// Collect the nested class symbols of a symbol.
-fn list_nested(ctx: &CompilerContext, sym: SymbolId, seen: &mut Vec<SymbolId>) {
+fn list_nested(ctx: &mut CompilerContext, sym: SymbolId, seen: &mut Vec<SymbolId>) {
     if ctx.sym(sym).kind != crate::code::kinds::Kind::TYP {
         return;
     }
@@ -1323,7 +1323,8 @@ fn list_nested(ctx: &CompilerContext, sym: SymbolId, seen: &mut Vec<SymbolId>) {
         seen.push(sym);
     }
     if let Some(members) = ctx.sym(sym).members() {
-        let symbols = ctx.scope(members).get_symbols(
+        let scope_snapshot = ctx.scope(members).clone();
+        let symbols = scope_snapshot.get_symbols(
             members,
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
@@ -1802,7 +1803,8 @@ impl ClassWriter {
 
     /// Write the fields of a class.
     pub fn write_fields(&mut self, ctx: &mut CompilerContext, s: crate::ids::ScopeId) {
-        let symbols = ctx.scope(s).get_symbols(
+    let scope_snapshot = ctx.scope(s).clone();
+        let symbols = scope_snapshot.get_symbols(
             s,
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
@@ -1821,7 +1823,8 @@ impl ClassWriter {
 
     /// Write the methods of a class.
     pub fn write_methods(&mut self, ctx: &mut CompilerContext, s: crate::ids::ScopeId) {
-        let symbols = ctx.scope(s).get_symbols(
+        let scope_snapshot = ctx.scope(s).clone();
+        let symbols = scope_snapshot.get_symbols(
             s,
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
@@ -1987,7 +1990,8 @@ impl ClassWriter {
             self.databuf.append_char(index);
         }
         let members = ctx.sym(c).members().expect("class members");
-        let symbols = ctx.scope(members).get_symbols(
+        let scope_snapshot = ctx.scope(members).clone();
+        let symbols = scope_snapshot.get_symbols(
             members,
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,

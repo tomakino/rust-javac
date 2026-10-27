@@ -2411,6 +2411,7 @@ struct UnusedFileManager;
             Rc::clone(&log),
             Rc::clone(&check),
             Rc::clone(&types),
+            Rc::clone(&syms),
             Rc::clone(&make),
             Rc::clone(&deferred),
             None,

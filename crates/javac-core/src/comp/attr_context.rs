@@ -115,7 +115,7 @@ impl AttrContext {
     }
 
     /// Java: public Iterable<Symbol> getLocalElements()
-    pub fn get_local_elements(&self, ctx: &CompilerContext) -> Vec<SymbolId> {
+    pub fn get_local_elements(&self, ctx: &mut CompilerContext) -> Vec<SymbolId> {
         match self.scope {
             None => Vec::new(),
             Some(scope) => {

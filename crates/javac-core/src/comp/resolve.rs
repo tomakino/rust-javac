@@ -5958,16 +5958,13 @@ impl Resolve {
         let members = ctx.sym(tsym).members().expect("diamond class members");
         let symbols = {
             let scope_ref = ctx.scope(members).clone();
-            let symbols_arena = ctx.symbols_arena();
-            let ctx_view: &crate::compiler_context::CompilerContext = ctx;
             
             scope_ref.get_symbols_by_name(
                 members,
                 &self.names.init.clone(),
                 crate::code::scope::LookupKind::NON_RECURSIVE,
                 &|_| true,
-                symbols_arena,
-                ctx_view,
+                ctx,
             )
         };
         let site_type_args = types.get_type_arguments_public(
@@ -6764,16 +6761,13 @@ impl Resolve {
     ) -> SymbolId {
         let symbols = {
             let scope_ref = ctx.scope(scope).clone();
-            let symbols_arena = ctx.symbols_arena();
-            let ctx_view: &crate::compiler_context::CompilerContext = ctx;
             
             scope_ref.get_symbols_by_name(
                 scope,
                 name,
                 crate::code::scope::LookupKind::NON_RECURSIVE,
                 &|_| true,
-                symbols_arena,
-                ctx_view,
+                ctx,
             )
         };
         for current_sym in symbols {

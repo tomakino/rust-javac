@@ -429,11 +429,17 @@ impl ClassFinder {
         ctx.sym_mut(c).owner = prev_owner;
         let members = class_members_field(ctx, c);
         if let Some(members) = members {
-            let symbols = ctx.scope_get_symbols(
+            let scope_snapshot = ctx.scope(members).clone();
+            let candidates = scope_snapshot.get_symbols(
                 members,
                 crate::code::scope::LookupKind::NON_RECURSIVE,
-                &|sym| ctx.sym(sym).kind == SymKind::TYP,
+                &|_| true,
+                ctx,
             );
+            let symbols: Vec<SymbolId> = candidates
+                .into_iter()
+                .filter(|sym| ctx.sym(*sym).kind == SymKind::TYP)
+                .collect();
             for sym in symbols {
                 let package = package_of(ctx, sym);
                 ctx.sym_mut(sym).owner = Some(package);
@@ -1452,7 +1458,7 @@ mod tests {
         })
     }
 
-    fn member_counts(ctx: &CompilerContext, syms: &Symtab, c: SymbolId) -> (usize, usize, usize) {
+    fn member_counts(ctx: &mut CompilerContext, syms: &Symtab, c: SymbolId) -> (usize, usize, usize) {
         let mut fields = 0;
         let mut methods = 0;
         let mut classes = 0;
@@ -1494,7 +1500,7 @@ mod tests {
             return;
         };
         let object = load(&mut fixture, "java.lang.Object").expect("load java.lang.Object");
-        let (fields, methods, _) = member_counts(&fixture.ctx, &fixture.syms, object);
+        let (fields, methods, _) = member_counts(&mut fixture.ctx, &fixture.syms, object);
         assert_eq!(fields + methods, 12, "Object members (javap -private: 12)");
         let object_super = match &fixture.ctx.typ(fixture.ctx.sym(object).ty.expect("type")).kind {
             crate::code::type_::TypeKindData::ClassType { supertype_field, .. } => *supertype_field,
@@ -1508,7 +1514,7 @@ mod tests {
         );
 
         let string = load(&mut fixture, "java.lang.String").expect("load java.lang.String");
-        let (fields, methods, classes) = member_counts(&fixture.ctx, &fixture.syms, string);
+        let (fields, methods, classes) = member_counts(&mut fixture.ctx, &fixture.syms, string);
         assert_eq!(fields + methods, 171, "String fields+methods (javap -private: 171)");
         assert_eq!(classes, 1, "String inner class member entered by InnerClasses");
         let string_super = match &fixture.ctx.typ(fixture.ctx.sym(string).ty.expect("type")).kind {
@@ -1528,7 +1534,7 @@ mod tests {
         );
 
         let list = load(&mut fixture, "java.util.List").expect("load java.util.List");
-        let (fields, methods, _) = member_counts(&fixture.ctx, &fixture.syms, list);
+        let (fields, methods, _) = member_counts(&mut fixture.ctx, &fixture.syms, list);
         assert_eq!(fields + methods, 41, "List fields+methods (javap -private: 41)");
         let interfaces = match &fixture.ctx.typ(fixture.ctx.sym(list).ty.expect("type")).kind {
             crate::code::type_::TypeKindData::ClassType { interfaces_field, .. } => {

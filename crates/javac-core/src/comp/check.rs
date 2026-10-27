@@ -7225,11 +7225,17 @@ impl Check {
             let Some(import_scope) = import_scope else {
                 continue;
             };
-            let symbols = ctx.scope_get_symbols(
+            let scope_snapshot = ctx.scope(import_scope).clone();
+            let candidates = scope_snapshot.get_symbols(
                 import_scope,
                 crate::code::scope::LookupKind::NON_RECURSIVE,
-                &|sym| ctx.sym(sym).kind == crate::code::kinds::Kind::TYP,
+                &|_| true,
+                ctx,
             );
+            let symbols: Vec<SymbolId> = candidates
+                .into_iter()
+                .filter(|sym| ctx.sym(*sym).kind == crate::code::kinds::Kind::TYP)
+                .collect();
             let is_static = match &ctx.tree(def).kind {
                 TreeKind::Import { static_import, .. } => *static_import,
                 _ => false,

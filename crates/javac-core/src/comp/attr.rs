@@ -15210,6 +15210,7 @@ mod tests {
             Rc::clone(&log),
             Rc::clone(&chk),
             Rc::clone(&types),
+            Rc::clone(&syms),
             Rc::clone(&make),
             Rc::clone(&deferred),
             None,

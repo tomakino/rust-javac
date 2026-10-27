@@ -266,7 +266,7 @@ impl CompilerContext {
     /// StarImport/SingleEntry/FilterImport); the scope snapshot is cloned so the
     /// map lookup and the mutable context do not borrow simultaneously.
     pub fn scope_get_symbols(
-        &self,
+        &mut self,
         scope: ScopeId,
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
@@ -277,14 +277,14 @@ impl CompilerContext {
 
     /// Java: Scope.getSymbolsByName(Name, Predicate<Symbol>, LookupKind)
     pub fn scope_get_symbols_by_name(
-        &self,
+        &mut self,
         scope: ScopeId,
         name: &Name,
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
     ) -> Vec<SymbolId> {
         let snapshot = self.scope(scope).clone();
-        snapshot.get_symbols_by_name(scope, name, lookup_kind, filter, &self.symbols, self)
+        snapshot.get_symbols_by_name(scope, name, lookup_kind, filter, self)
     }
 
     /// Java: Scope.getSymbolsByName(Name, Predicate<Symbol>, LookupKind) with
@@ -469,6 +469,8 @@ impl CompilerContext {
         imp: Option<TreeId>,
         cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
         static_import: bool,
+        types: Rc<crate::code::types::Types>,
+        syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
     ) -> ScopeId {
         let owner = self.scope(origin).owner;
         let new_scope = self.alloc_scope(
@@ -480,6 +482,8 @@ impl CompilerContext {
                 imp,
                 static_import,
                 cf_handler,
+                types,
+                syms,
             ),
         );
         self.named_import_append(named_scope, new_scope, name);
@@ -509,6 +513,8 @@ impl CompilerContext {
         imp: Option<TreeId>,
         cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
         static_import: bool,
+        types: Rc<crate::code::types::Types>,
+        syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
     ) {
         // avoid entering the same scope twice
         let duplicates = match &self.scope(star_scope).data {
@@ -548,6 +554,8 @@ impl CompilerContext {
                 imp,
                 static_import,
                 cf_handler,
+                types,
+                syms,
             ),
         );
         self.scope_prepend_sub_scope(star_scope, new_scope);

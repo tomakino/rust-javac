@@ -7561,12 +7561,18 @@ impl Types {
             };
             let mut best_so_far: Option<SymbolId> = None;
             if let Some(members) = members {
-                let found = ctx.scope_get_symbols_by_name(
+                let scope_snapshot = ctx.scope(members).clone();
+                let candidates = scope_snapshot.get_symbols_by_name(
                     members,
                     &ms_name,
                     crate::code::scope::LookupKind::NON_RECURSIVE,
-                    &|sym| implementation_filter_matches(ctx, filter_kind, sym),
+                    &|_| true,
+                    ctx,
                 );
+                let found: Vec<SymbolId> = candidates
+                    .into_iter()
+                    .filter(|sym| implementation_filter_matches(ctx, filter_kind, *sym))
+                    .collect();
                 for sym in found {
                     if crate::code::symbol::overrides(ctx, syms, self, sym, ms, origin, check_result) {
                         best_so_far = Some(sym);

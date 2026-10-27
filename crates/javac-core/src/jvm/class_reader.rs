@@ -973,12 +973,18 @@ impl ClassReader {
         argtypes: List<TypeId>,
     ) -> Option<SymbolId> {
         let members = ctx.sym(tsym).members()?;
-        let candidates = ctx.scope_get_symbols_by_name(
+        let scope_snapshot = ctx.scope(members).clone();
+        let candidates = scope_snapshot.get_symbols_by_name(
             members,
             name,
             crate::code::scope::LookupKind::NON_RECURSIVE,
-            &|sym| ctx.sym(sym).kind == crate::code::kinds::Kind::MTH,
+            &|_| true,
+            ctx,
         );
+        let candidates = candidates
+            .into_iter()
+            .filter(|sym| ctx.sym(*sym).kind == crate::code::kinds::Kind::MTH)
+            .collect::<Vec<SymbolId>>();
         let types = crate::code::types::Types::new();
         for candidate in candidates {
             let ty = ctx.sym(candidate).ty.expect("method type");

@@ -1486,7 +1486,7 @@ mod tests {
         }
     }
 
-    fn print_type(ctx: &CompilerContext, class: SymbolId, depth: usize, out: &mut String) {
+    fn print_type(ctx: &mut CompilerContext, class: SymbolId, depth: usize, out: &mut String) {
         let indent = "  ".repeat(depth);
         // Oracle comparison: the javac oracle prints TypeElement.getQualifiedName()
         // (dots), i.e. the ClassSymbol fullname (not the binary flatname).
@@ -1535,14 +1535,16 @@ mod tests {
         out.push_str(&format!(
             "{indent}TYPE flatname={flatname} name={name} kind={kind} nesting={nesting} owner={owner_text} modifiers=[{modifiers}]\n"
         ));
-        if let Some(members) = class_members_scope(ctx, class) {
+        let members = class_members_scope(ctx, class);
+        if let Some(members) = members {
             // The scope iteration order is an implementation detail (hash table);
             // the oracle comparison normalizes it by symbol name.
             let mut symbols = ctx.scope_get_symbols(
                 members,
                 crate::code::scope::LookupKind::NON_RECURSIVE,
-                &|symbol| ctx.sym(symbol).kind == crate::code::kinds::Kind::TYP,
+                &|_| true,
             );
+            symbols.retain(|symbol| ctx.sym(*symbol).kind == crate::code::kinds::Kind::TYP);
             symbols.sort_by_key(|symbol| ctx.sym(*symbol).name.to_java_string().to_string());
             for symbol in symbols {
                 print_type(ctx, symbol, depth + 1, out);
@@ -1593,11 +1595,17 @@ mod tests {
             let actual_errors = harness.log.borrow().nerrors;
             let actual_types = {
                 let mut out = String::new();
-                for def in compilation_unit_defs(&harness.ctx, harness.unit).iter() {
+                let defs = compilation_unit_defs(&harness.ctx, harness.unit);
+                let mut classes = Vec::new();
+                for def in defs.iter() {
                     if harness.ctx.tree(def).has_tag(Tag::CLASSDEF)
-                        && let Some(class) = class_tree_symbol(&harness.ctx, def) {
-                            print_type(&harness.ctx, class, 0, &mut out);
-                        }
+                        && let Some(class) = class_tree_symbol(&harness.ctx, def)
+                    {
+                        classes.push(class);
+                    }
+                }
+                for class in classes {
+                    print_type(&mut harness.ctx, class, 0, &mut out);
                 }
                 out
             };
@@ -1610,7 +1618,7 @@ mod tests {
     fn enter_enters_nested_classes_into_scopes() {
         let mut harness = harness("Sample.java");
         run_enter(&mut harness, "Sample.java");
-        let ctx = &harness.ctx;
+        let ctx = &mut harness.ctx;
         let packge = compilation_unit_package(ctx, harness.unit).expect("tree.packge");
         let toplevel_scope = compilation_unit_toplevel_scope(ctx, harness.unit).expect("toplevelScope");
         let names: Vec<String> = ctx

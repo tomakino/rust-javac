@@ -79,6 +79,9 @@ pub struct TypeEnter {
     pub log: Rc<RefCell<Log>>,
     pub chk: Rc<RefCell<Check>>,
     pub types: Rc<Types>,
+    /// The shared symbol table (needed by the import-scope queries;
+    /// registered adapter: the Java import scopes read the Context services).
+    pub syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
     pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
     pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
     pub lint: Option<Rc<crate::code::lint::Lint>>,
@@ -132,6 +135,7 @@ impl TypeEnter {
         log: Rc<RefCell<Log>>,
         chk: Rc<RefCell<Check>>,
         types: Rc<Types>,
+        syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
         make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
         deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
         lint: Option<Rc<crate::code::lint::Lint>>,
@@ -147,6 +151,7 @@ impl TypeEnter {
             log,
             chk,
             types,
+            syms,
             make,
             deferred_lint_handler,
             lint,
@@ -651,6 +656,8 @@ impl TypeEnter {
             Some(_tree),
             None,
             false,
+            Rc::clone(&self.types),
+            Rc::clone(&self.syms),
         );
     }
 
@@ -673,6 +680,8 @@ impl TypeEnter {
             Some(tree),
             None,
             true,
+            Rc::clone(&self.types),
+            Rc::clone(&self.syms),
         );
     }
 
@@ -710,6 +719,8 @@ impl TypeEnter {
             Some(tree),
             None,
             true,
+            Rc::clone(&self.types),
+            Rc::clone(&self.syms),
         );
         set_import_scope(ctx, tree, new_scope);
     }
@@ -3540,6 +3551,7 @@ mod tests {
             Rc::clone(&log),
             Rc::clone(&chk),
             Rc::clone(&types),
+            Rc::clone(&syms),
             make,
             Rc::clone(&deferred),
             None,
@@ -3769,10 +3781,28 @@ mod tests {
         let star = ctx.alloc_scope(crate::code::scope::Scope::new_star_import_scope(Some(owner)));
         let origin = ctx.scope_create(Some(owner));
         assert!(!ctx.scope_is_filled(star));
-        ctx.scope_import_all(star, origin, None, None, None, false);
+        ctx.scope_import_all(
+            star,
+            origin,
+            None,
+            None,
+            None,
+            false,
+            Rc::clone(&harness.type_enter.types),
+            Rc::clone(&harness.syms),
+        );
         assert!(ctx.scope_is_filled(star));
         assert_eq!(ctx.scope_get_mark(star), 1);
-        ctx.scope_import_all(star, origin, None, None, None, false);
+        ctx.scope_import_all(
+            star,
+            origin,
+            None,
+            None,
+            None,
+            false,
+            Rc::clone(&harness.type_enter.types),
+            Rc::clone(&harness.syms),
+        );
         assert_eq!(ctx.scope_get_mark(star), 1);
         let count = match &ctx.scope(star).data {
             crate::code::scope::ScopeData::StarImportScope { sub_scopes, .. } => {

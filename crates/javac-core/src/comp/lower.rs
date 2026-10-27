@@ -709,7 +709,8 @@ impl Lower {
             _ => panic!("class declaration expected"),
         };
         let members = ctx.sym(clazz).members().expect("class members");
-        let symbols = ctx.scope(members).get_symbols(
+    let scope_snapshot = ctx.scope(members).clone();
+        let symbols = scope_snapshot.get_symbols(
             members,
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
@@ -3616,15 +3617,20 @@ impl Lower {
                 && let Some(tsym) = ctx.typ(current_t).tsym
                 && let Some(members) = ctx.sym(tsym).members()
             {
-                let symbols = ctx.scope(members).get_symbols(
+                let scope_snapshot = ctx.scope(members).clone();
+                let candidates = scope_snapshot.get_symbols(
                     members,
                     crate::code::scope::LookupKind::NON_RECURSIVE,
-                    &|sym| {
-                        ctx.sym(sym).kind == Kind::VAR
-                            && (ctx.sym(sym).flags_field & crate::code::flags::RECORD) != 0
-                    },
+                    &|_| true,
                     ctx,
                 );
+                let symbols: Vec<SymbolId> = candidates
+                    .into_iter()
+                    .filter(|sym| {
+                        ctx.sym(*sym).kind == Kind::VAR
+                            && (ctx.sym(*sym).flags_field & crate::code::flags::RECORD) != 0
+                    })
+                    .collect();
                 for sym in symbols {
                     vars = vars.prepend(sym);
                 }
@@ -4026,14 +4032,13 @@ impl Lower {
             Some(members) => members,
             None => return,
         };
-        let arena = ctx.symbols_arena();
-        let fields = ctx.scope(members).get_symbols(
+        let scope_snapshot = ctx.scope(members).clone();
+        let fields = scope_snapshot.get_symbols(
             members,
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
             ctx,
         );
-        let _ = arena;
         let mut record_fields: Vec<SymbolId> = Vec::new();
         for field in fields {
             if ctx.sym(field).kind == Kind::VAR
@@ -8057,13 +8062,12 @@ impl ConflictsChecker {
                 None => break,
             };
             let name = ctx.sym(sym).name.clone();
-            let arena = ctx.symbols_arena();
-            let candidates = ctx.scope(members).get_symbols_by_name(
+            let scope_snapshot = ctx.scope(members).clone();
+            let candidates = scope_snapshot.get_symbols_by_name(
                 members,
                 &name,
                 crate::code::scope::LookupKind::NON_RECURSIVE,
                 &|_| true,
-                arena,
                 ctx,
             );
             for sym2 in candidates {

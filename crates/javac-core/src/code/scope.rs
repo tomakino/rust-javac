@@ -286,6 +286,12 @@ pub enum ScopeData {
         imp: Option<TreeId>,
         /// Java: private final boolean staticImport
         static_import: bool,
+        /// Java: private final Types types (Scope.java:910); the ported
+        /// FilterImportScope query needs it explicitly (registered adapter).
+        types: Rc<crate::code::types::Types>,
+        /// The shared symbol table used by the import filter queries (the
+        /// Java query reads the Context services; registered adapter).
+        syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
         /// Java: private final BiConsumer<JCImport, CompletionFailure> cfHandler
         #[allow(clippy::type_complexity)]
     cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
@@ -419,10 +425,14 @@ impl Scope {
         imp: Option<TreeId>,
         static_import: bool,
         cf_handler: Option<Rc<dyn Fn(TreeId, &crate::code::symbol::CompletionFailure)>>,
+        types: Rc<crate::code::types::Types>,
+        syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
     ) -> Scope {
         Scope {
             owner,
             data: ScopeData::FilterImportScope {
+                types,
+                syms,
                 origin,
                 filter_name,
                 filter,
@@ -978,8 +988,7 @@ impl Scope {
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Vec<SymbolId> {
         if !matches!(&self.data, ScopeData::FilterImportScope { .. }) {
-            let ctx_view: &crate::compiler_context::CompilerContext = ctx;
-            return self.get_symbols(self_id, lookup_kind, filter, ctx_view);
+            return self.get_symbols(self_id, lookup_kind, filter, ctx);
         }
         match &self.data {
             ScopeData::ScopeImpl { .. } => {
@@ -1245,7 +1254,7 @@ impl Scope {
         self_id: ScopeId,
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
-        ctx: &crate::compiler_context::CompilerContext,
+        ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Vec<SymbolId> {
         match &self.data {
             ScopeData::ScopeImpl { .. } => {
@@ -1314,13 +1323,46 @@ impl Scope {
                 }
                 None => Vec::new(),
             },
-            ScopeData::FilterImportScope { .. } => {
-                // TODO(Resolve): the FilterImportScope query needs the
-                // SymbolImporter (Types.supertype/interfaces); use
-                // get_symbols_full (the Resolve entry point) for that scope.
-                unimplemented!(
-                    "TODO(Resolve batch): FilterImportScope.getSymbols needs Types; use get_symbols_full"
-                )
+            ScopeData::FilterImportScope {
+                origin,
+                filter_name,
+                filter: import_filter,
+                static_import,
+                types,
+                syms: import_syms,
+                ..
+            } => {
+                // Java: FilterImportScope.getSymbols (Scope.java:932-952): with a
+                // filter name the query goes through getSymbolsByName(filterName);
+                // otherwise the imported members are queried (by name = None).
+                let origin = *origin;
+                let static_import = *static_import;
+                let import_filter = import_filter.clone();
+                let types = Rc::clone(types);
+                let import_syms = Rc::clone(import_syms);
+                let mut syms_guard = import_syms.borrow_mut();
+                match filter_name.clone() {
+                    Some(name) => self.get_symbols_by_name_full(
+                        self_id,
+                        &name,
+                        lookup_kind,
+                        filter,
+                        &types,
+                        &mut syms_guard,
+                        ctx,
+                    ),
+                    None => query_filter_import_scope_members(
+                        origin,
+                        static_import,
+                        &import_filter,
+                        None,
+                        filter,
+                        lookup_kind,
+                        &types,
+                        &mut syms_guard,
+                        ctx,
+                    ),
+                }
             }
         }
     }
@@ -1333,15 +1375,18 @@ impl Scope {
         name: &Name,
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
-        symbols: &Arena<Symbol>,
-        ctx: &crate::compiler_context::CompilerContext,
+        ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Vec<SymbolId> {
         match &self.data {
             ScopeData::ScopeImpl { .. } => {
                 let (_, entries) = self.table_and_entries();
                 let entries = entries.borrow();
                 let mut result = Vec::new();
-                let mut current = self.lookup(name, symbols);
+                let start = {
+                    let symbols = ctx.symbols_arena();
+                    self.lookup(name, symbols)
+                };
+                let mut current = start;
                 while let Some(entry_id) = current {
                     let entry = &entries[entry_id.index() as usize];
                     let in_scope =
@@ -1393,7 +1438,7 @@ impl Scope {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
                     result.extend(
-                        snapshot.get_symbols_by_name(sub_scope, name, lookup_kind, filter, symbols, ctx),
+                        snapshot.get_symbols_by_name(sub_scope, name, lookup_kind, filter, ctx),
                     );
                     current = current.tail();
                 }
@@ -1401,7 +1446,10 @@ impl Scope {
             }
             ScopeData::SingleEntryScope { sym, content, .. } => match sym {
                 Some(sym) => {
-                    let matches = symbol_name(symbols, *sym) == *name;
+                    let matches = {
+                        let symbols = ctx.symbols_arena();
+                        symbol_name(symbols, *sym) == *name
+                    };
                     if matches && filter(*sym) {
                         content.clone().to_vec()
                     } else {
@@ -1410,10 +1458,36 @@ impl Scope {
                 }
                 None => Vec::new(),
             },
-            ScopeData::FilterImportScope { .. } => {
-                // TODO(Resolve): see get_symbols; use get_symbols_by_name_full.
-                unimplemented!(
-                    "TODO(Resolve batch): FilterImportScope.getSymbolsByName needs Types; use get_symbols_by_name_full"
+            ScopeData::FilterImportScope {
+                origin,
+                filter_name,
+                filter: import_filter,
+                static_import,
+                types,
+                syms: import_syms,
+                ..
+            } => {
+                if let Some(filter_name) = filter_name
+                    && filter_name != name
+                {
+                    return Vec::new();
+                }
+                let origin = *origin;
+                let static_import = *static_import;
+                let import_filter = import_filter.clone();
+                let types = Rc::clone(types);
+                let import_syms = Rc::clone(import_syms);
+                let mut syms_guard = import_syms.borrow_mut();
+                query_filter_import_scope_members(
+                    origin,
+                    static_import,
+                    &import_filter,
+                    Some(name),
+                    filter,
+                    lookup_kind,
+                    &types,
+                    &mut syms_guard,
+                    ctx,
                 )
             }
         }
@@ -1761,10 +1835,10 @@ mod tests {
         scope.enter(self_id, SymbolId::new(1), &symbols);
         scope.enter(self_id, SymbolId::new(2), &symbols);
         assert!(!scope.is_empty());
-        assert_eq!(scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &crate::compiler_context::CompilerContext::new()).len(), 3);
+        assert_eq!(scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut crate::compiler_context::CompilerContext::new()).len(), 3);
         // The upstream elems chain keeps later entries on top.
         assert_eq!(
-            scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &crate::compiler_context::CompilerContext::new()),
+            scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut crate::compiler_context::CompilerContext::new()),
             vec![SymbolId::new(2), SymbolId::new(1), SymbolId::new(0)]
         );
         assert_eq!(
@@ -1777,36 +1851,56 @@ mod tests {
     #[test]
     fn shadowed_entries_and_remove() {
         let table = name_table();
-        let symbols = symbol_arena(
-            &table,
-            &[
-                (SymbolId::new(0), "a", Kind::VAR),
-                (SymbolId::new(1), "a", Kind::MTH),
-            ],
-        );
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let sym0 = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            0,
+            name(&table, "a"),
+            None,
+            None,
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None },
+        ));
+        let sym1 = ctx.alloc_symbol(Symbol::new(
+            Kind::MTH,
+            0,
+            name(&table, "a"),
+            None,
+            None,
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None },
+        ));
         let mut scope = Scope::new_scope_impl(None);
         let self_id = scope_id(0);
-        scope.enter(self_id, SymbolId::new(0), &symbols);
-        scope.enter(self_id, SymbolId::new(1), &symbols);
+        {
+            let symbols = ctx.symbols_arena();
+            scope.enter(self_id, sym0, symbols);
+            scope.enter(self_id, sym1, symbols);
+        }
         assert_eq!(
             scope.get_symbols_by_name(
                 self_id,
                 &name(&table, "a"),
                 LookupKind::NON_RECURSIVE,
                 &|_| true,
-                &symbols,
-                &crate::compiler_context::CompilerContext::new()
+                &mut ctx,
             ),
-            vec![SymbolId::new(1), SymbolId::new(0)]
+            vec![sym1, sym0]
         );
-        assert!(scope.includes(self_id, SymbolId::new(0), &symbols));
         // remove the top entry: the shadowed one becomes visible.
-        scope.remove(self_id, SymbolId::new(1), &symbols);
-        assert!(!scope.includes(self_id, SymbolId::new(1), &symbols));
-        assert!(scope.includes(self_id, SymbolId::new(0), &symbols));
+        {
+            let symbols = ctx.symbols_arena();
+            assert!(scope.includes(self_id, sym0, symbols));
+            scope.remove(self_id, sym1, symbols);
+            assert!(!scope.includes(self_id, sym1, symbols));
+            assert!(scope.includes(self_id, sym0, symbols));
+        }
         assert_eq!(
-            scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &crate::compiler_context::CompilerContext::new()),
-            vec![SymbolId::new(0)]
+            scope.get_symbols(
+                self_id,
+                LookupKind::NON_RECURSIVE,
+                &|_| true,
+                &mut ctx,
+            ),
+            vec![sym0]
         );
     }
 
@@ -1826,10 +1920,10 @@ mod tests {
         scope.enter(self_id, SymbolId::new(0), &symbols);
         // same name and same kind: not entered.
         scope.enter_if_absent(self_id, SymbolId::new(1), &symbols);
-        assert_eq!(scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &crate::compiler_context::CompilerContext::new()).len(), 1);
+        assert_eq!(scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut crate::compiler_context::CompilerContext::new()).len(), 1);
         // same name, different kind: entered.
         scope.enter_if_absent(self_id, SymbolId::new(2), &symbols);
-        assert_eq!(scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &crate::compiler_context::CompilerContext::new()).len(), 2);
+        assert_eq!(scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut crate::compiler_context::CompilerContext::new()).len(), 2);
     }
 
     #[test]
@@ -1855,7 +1949,7 @@ mod tests {
         for sym in &entries {
             scope.enter(self_id, *sym, &symbols);
         }
-        let all = scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &crate::compiler_context::CompilerContext::new());
+        let all = scope.get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut crate::compiler_context::CompilerContext::new());
         assert_eq!(all.len(), 40);
         // The elems chain order is the reverse of the insertion order.
         assert_eq!(all.first(), Some(&SymbolId::new(39)));
@@ -1882,7 +1976,7 @@ mod tests {
         }
         assert_eq!(
             scope
-                .get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &crate::compiler_context::CompilerContext::new())
+                .get_symbols(self_id, LookupKind::NON_RECURSIVE, &|_| true, &mut crate::compiler_context::CompilerContext::new())
                 .len(),
             0
         );
@@ -2171,4 +2265,82 @@ mod tests {
         let _ = &mut symbols;
     }
 
+
+    #[test]
+    fn filter_import_scope_queries_delegate_to_the_import_filter() {
+        let table = name_table();
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let names = Rc::new(crate::util::names::Names::new(false));
+        let mut symtab = crate::code::symtab::Symtab::new(
+            &mut ctx,
+            Rc::clone(&names),
+            crate::jvm::target::Target::DEFAULT,
+            crate::code::source::Source::JDK17,
+        );
+        let types = Rc::new(crate::code::types::Types::with_names(Rc::clone(&names)));
+        let syms = Rc::new(std::cell::RefCell::new(crate::code::symtab::Symtab::new(
+            &mut ctx,
+            Rc::clone(&names),
+            crate::jvm::target::Target::DEFAULT,
+            crate::code::source::Source::JDK17,
+        )));
+        let owner = ctx.alloc_symbol(Symbol::new(
+            Kind::VAR,
+            0,
+            name(&table, "o"),
+            None,
+            None,
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None },
+        ));
+        let origin = ctx.scope_create(Some(owner));
+        let scope = ctx.alloc_scope(Scope::new_filter_import_scope(
+            Some(owner),
+            origin,
+            None,
+            None,
+            None,
+            false,
+            None,
+            Rc::clone(&types),
+            Rc::clone(&syms),
+        ));
+        // Java: FilterImportScope.getSymbols (Scope.java:932-952): the query
+        // walks the origin members through the import filter. The origin owner
+        // is a variable symbol without members, so no symbol is imported
+        // (SymbolImporter.importFrom returns immediately, Scope.java:1000-1018).
+        let all = ctx.scope_get_symbols(
+            scope,
+            LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        assert!(all.is_empty());
+        let by_name = ctx.scope_get_symbols_by_name(
+            scope,
+            &name(&table, "x"),
+            LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        assert!(by_name.is_empty());
+        // Java: FilterImportScope.getSymbolsByName (Scope.java:954-976): a
+        // named filter scope with a different filter name short-circuits.
+        let named_scope = ctx.alloc_scope(Scope::new_filter_import_scope(
+            Some(owner),
+            origin,
+            Some(name(&table, "other")),
+            None,
+            None,
+            false,
+            None,
+            Rc::clone(&types),
+            Rc::clone(&syms),
+        ));
+        let named = ctx.scope_get_symbols_by_name(
+            named_scope,
+            &name(&table, "x"),
+            LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
+        assert!(named.is_empty());
+    }
 }
+

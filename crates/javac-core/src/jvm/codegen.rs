@@ -3232,10 +3232,15 @@ impl Gen {
             Some(clazz) => clazz,
             None => return,
         };
-        if let Some(members) = ctx.sym(clazz).members() {
-            let symbols = ctx
-                .scope(members)
-                .get_symbols(members, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true, ctx);
+        let members = ctx.sym(clazz).members();
+        if let Some(members) = members {
+            let scope_snapshot = ctx.scope(members).clone();
+            let symbols = scope_snapshot.get_symbols(
+                members,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+                ctx,
+            );
             for symbol in symbols {
                 if !ctx.sym(symbol).get_kind(ctx).is_field() {
                     continue;
