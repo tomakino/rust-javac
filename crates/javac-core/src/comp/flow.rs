@@ -5794,7 +5794,7 @@ mod tests {
                     names.from_utf(name),
                     None,
                     Some(enum_sym),
-                    SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None },
+                    SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None, lazy_const_value: None },
                 ));
                 let symbols = ctx.symbols_arena();
                 member_scope.enter(members, constant, symbols);

@@ -1594,7 +1594,8 @@ impl Attr {
                 };
                 // Java: if (v.getConstValue() != null &&
                 //     isStaticReference(tree)) owntype = owntype.constType(v.getConstValue());
-                if let Some(const_value) = ctx.sym(sym).get_const_value() {
+                let const_value = ctx.symbol_get_const_value(syms, sym, self);
+                if let Some(const_value) = const_value {
                     if self.is_static_reference(ctx, tree) {
                         own = ctx.type_const_type(own, const_value);
                     }
@@ -2382,6 +2383,160 @@ impl Attr {
     ) -> TypeId {
         let info = self.unknown_expr_info.clone();
         self.attrib_tree_use(ctx, syms, tree, env, info)
+    }
+
+    /// Java: private void doQueueScanTreeAndTypeAnnotateForVarInit(
+    /// JCVariableDecl tree, Env<AttrContext> env) (Attr.java:1335-1344).
+    ///
+    /// Field initializer expressions need to be queued for type-annotation
+    /// scanning before they are attributed; the queued flag prevents duplicates.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table used by the annotation flush;
+    ///   - tree: the variable declaration;
+    ///   - env: the attribute environment.
+    ///
+    /// # Returns
+    ///   - ().
+    ///
+    /// # Panics
+    ///   - when the injected Annotate service is missing.
+    fn do_queue_scan_tree_and_type_annotate_for_var_init(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+    ) {
+        let (init, mods, sym) = match &ctx.tree(tree).kind {
+            TreeKind::VariableDecl {
+                init: Some(init),
+                mods,
+                sym: Some(sym),
+                ..
+            } => (*init, *mods, *sym),
+            _ => return,
+        };
+        if (attr_mods_flags(ctx, mods) & crate::code::flags::FIELD_INIT_TYPE_ANNOTATIONS_QUEUED) != 0 {
+            return;
+        }
+        let owner_kind = env
+            .info
+            .borrow()
+            .scope
+            .and_then(|scope| ctx.scope(scope).owner)
+            .map(|owner| ctx.sym(owner).kind);
+        if matches!(owner_kind, Some(Kind::MTH) | Some(Kind::VAR)) {
+            return;
+        }
+        if let Some(mods) = mods
+            && let TreeKind::Modifiers { flags, .. } = &mut ctx.tree_mut(mods).kind
+        {
+            *flags |= crate::code::flags::FIELD_INIT_TYPE_ANNOTATIONS_QUEUED;
+        }
+        let annotate = self
+            .annotate
+            .borrow()
+            .clone()
+            .expect("Attr.annotate must be injected");
+        annotate
+            .services
+            .queue_scan_tree_and_type_annotate(init, env, sym, ctx.tree(tree).pos);
+        annotate.flush(ctx, syms).expect("annotation flush");
+    }
+
+    /// Java: public Object attribLazyConstantValue(Env<AttrContext> env,
+    /// Env<AttrContext> enclosingEnv, JCVariableDecl variable, Type type)
+    /// (Attr.java:853-874).
+    ///
+    /// Attributes the lazy initializer of a constant variable and returns the
+    /// coerced constant value (None when the initializer is not a constant).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - env: the initializer environment (MemberEnter.initEnv result);
+    ///   - enclosing_env: the environment enclosing the initializer;
+    ///   - variable: the variable declaration tree;
+    ///   - ty: the declared variable type.
+    ///
+    /// # Returns
+    ///   - the constant value of the initializer after coercion, or None.
+    ///
+    /// # Panics
+    ///   - when an injected service is missing.
+    pub fn attrib_lazy_constant_value(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        env: &Rc<Env<AttrContext>>,
+        enclosing_env: &Rc<Env<AttrContext>>,
+        variable: TreeId,
+        ty: TypeId,
+    ) -> Option<crate::util::constants::ConstantValue> {
+        let prev_lint_pos = self.deferred_lint_handler.borrow_mut().set_pos(Rc::new(
+            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(variable).pos),
+        ));
+        let prev_source = env.toplevel.and_then(|toplevel| {
+            match &ctx.tree(toplevel).kind {
+                TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
+                _ => None,
+            }
+        });
+        let prev_source = self.log.borrow_mut().use_source(prev_source);
+        self.do_queue_scan_tree_and_type_annotate_for_var_init(
+            ctx,
+            syms,
+            variable,
+            enclosing_env,
+        );
+        let init = match &ctx.tree(variable).kind {
+            TreeKind::VariableDecl {
+                init: Some(init), ..
+            } => *init,
+            _ => {
+                self.log.borrow_mut().use_source(prev_source);
+                self.deferred_lint_handler
+                    .borrow_mut()
+                    .set_pos_state(prev_lint_pos);
+                return None;
+            }
+        };
+        let itype = self.attrib_expr_with_type(ctx, syms, init, env, Some(ty));
+        let implicitly_typed = matches!(
+            &ctx.tree(variable).kind,
+            TreeKind::VariableDecl {
+                vartype: None,
+                ..
+            }
+        );
+        if implicitly_typed {
+            let name = match &ctx.tree(variable).kind {
+                TreeKind::VariableDecl { name, .. } => name.clone(),
+                _ => self.names.empty.clone(),
+            };
+            let inferred = self.chk.borrow().check_local_var_type(
+                ctx,
+                &*syms,
+                ctx.tree(variable).pos,
+                itype,
+                name,
+            );
+            self.set_synthetic_variable_type(ctx, syms, variable, inferred);
+        }
+        let result = match ctx.typ(itype).const_value().cloned() {
+            None => None,
+            Some(_) => {
+                let coerced = self.cfolder.coerce(ctx, &*syms, itype, ty);
+                ctx.typ(coerced).const_value().cloned()
+            }
+        };
+        self.log.borrow_mut().use_source(prev_source);
+        self.deferred_lint_handler
+            .borrow_mut()
+            .set_pos_state(prev_lint_pos);
+        result
     }
 
     /// Java: public Type attribExpr(JCTree tree, Env<AttrContext> env, Type pt)
@@ -3979,6 +4134,7 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
                 name,
                 ty,
                 crate::code::symbol::SymbolKind::VarSymbol {
+                    lazy_const_value: None,
                     pos: 0,
                     adr: 0,
                     data_kind: None,
@@ -5199,7 +5355,7 @@ impl Attr {
             }
         }
         // Java: v.getConstValue(); // ensure initializer is evaluated
-        let _ = ctx.sym(v).get_const_value();
+        let _ = ctx.symbol_get_const_value(syms, v, self);
         self.check_enum_initializer(ctx, syms, env, tree, v);
     }
 }
@@ -8973,7 +9129,7 @@ impl Attr {
     fn enum_constant(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &Symtab,
+        syms: &mut Symtab,
         tree: TreeId,
         enum_type: TypeId,
     ) -> Option<SymbolId> {
@@ -9003,11 +9159,10 @@ impl Attr {
                     return None;
                 }
                 // Java: ((VarSymbol)s).getConstValue(); // ensure initializer is evaluated
-                let _ = ctx.sym(symbol).get_const_value();
+                let _ = ctx.symbol_get_const_value(syms, symbol, self);
                 return Some(symbol);
             }
         }
-        let _ = syms;
         None
     }
 
@@ -10988,7 +11143,7 @@ impl Attr {
                 Some(std::rc::Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
                 warning,
             );
-        } else if ctx.sym(svuid).get_const_value().is_none() {
+        } else if ctx.symbol_get_const_value(syms, svuid, self).is_none() {
             let warning = crate::util::jc_diagnostic::Warning::from(
                 crate::resources::compiler_properties::warnings::constant_s_v_u_i_d(
                     crate::resources::diagnostic_contract::SymbolArg::placeholder(c_display),
@@ -12392,7 +12547,7 @@ impl Attr {
                 let is_static_constant = match sym {
                     Some(sym) => {
                         ctx.sym(sym).kind == crate::code::kinds::Kind::VAR
-                            && ctx.sym(sym).get_const_value().is_some()
+                            && ctx.symbol_get_const_value(syms, sym, self).is_some()
                     }
                     None => false,
                 };
@@ -14494,28 +14649,8 @@ impl Attr {
                         .expect("unblockAnnotations flush");
                 }
             }
-        } else if let Some(init) = init
-            && (attr_mods_flags(ctx, mods) & flags::FIELD_INIT_TYPE_ANNOTATIONS_QUEUED) == 0
-        {
-            if let Some(mods) = mods
-                && let TreeKind::Modifiers { flags, .. } = &mut ctx.tree_mut(mods).kind
-            {
-                *flags |= crate::code::flags::FIELD_INIT_TYPE_ANNOTATIONS_QUEUED;
-            }
-            if let Some(sym) = sym_opt {
-                let annotate = self
-                    .annotate
-                    .borrow()
-                    .clone()
-                    .expect("Attr.annotate must be injected");
-                annotate.services.queue_scan_tree_and_type_annotate(
-                    init,
-                    &env,
-                    sym,
-                    ctx.tree(tree).pos,
-                );
-                annotate.flush(ctx, syms).expect("annotation flush");
-            }
+        } else if init.is_some() {
+            self.do_queue_scan_tree_and_type_annotate_for_var_init(ctx, syms, tree, &env);
         }
         let v = sym_opt.expect("var symbol");
         let v_ty = ctx.sym(v).ty.expect("var type");
@@ -14548,7 +14683,7 @@ impl Attr {
             let chk = chk_rc.borrow();
             chk.validate_with(ctx, syms, &env, vartype, check_raw);
         }
-        let _ = ctx.sym(v).get_const_value();
+        let _ = ctx.symbol_get_const_value(syms, v, self);
         let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
             Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
                 ctx.tree(tree).pos,
@@ -14617,7 +14752,10 @@ impl Attr {
                 crate::util::jc_diagnostic::Error::from(info),
             );
         }
-        Ok(ctx.sym(v).ty.expect("var type"))
+        // Java: result = tree.type = v.type; (Attr.java:1323).
+        let var_type = ctx.sym(v).ty.expect("var type");
+        ctx.tree_mut(tree).ty = Some(var_type);
+        Ok(var_type)
     }
 
 
@@ -15756,6 +15894,7 @@ mod tests {
                     None,
                     Some(class_sym),
                     crate::code::symbol::SymbolKind::VarSymbol {
+                        lazy_const_value: None,
                         pos,
                         adr: 0,
                         data_kind: None,
@@ -15996,6 +16135,7 @@ mod tests {
             harness.ctx.sym(class_sym).ty,
             Some(class_sym),
             crate::code::symbol::SymbolKind::VarSymbol {
+                lazy_const_value: None,
                 pos: 0,
                 adr: 0,
                 data_kind: None,

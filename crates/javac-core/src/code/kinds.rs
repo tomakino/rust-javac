@@ -430,6 +430,7 @@ mod tests {
 
     fn var_data(data_kind: Option<ElementKind>) -> SymbolKind {
         SymbolKind::VarSymbol {
+            lazy_const_value: None,
             pos: 0,
             adr: -1,
             data_kind,

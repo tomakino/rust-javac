@@ -4118,6 +4118,7 @@ fn find_enum_constant(
         Some(bot_type),
         Some(enum_tsym),
         crate::code::symbol::SymbolKind::VarSymbol {
+            lazy_const_value: None,
             pos: 0,
             adr: -1,
             data_kind: None,

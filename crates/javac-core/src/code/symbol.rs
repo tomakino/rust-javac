@@ -1,168 +1,26 @@
 // Origin: com/sun/tools/javac/code/Symbol.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
+// The entries marked "implemented"/"blocked" were reconciled by the Symbol API
+// batch; the remaining NOT PORTED entries are the still-open gap list.
 // Not yet ported upstream methods (no substitutes in this file):
-// - NOT PORTED: getRawAttributes (Symbol.java:146)
-// - NOT PORTED: getRawTypeAttributes (Symbol.java:156)
-// - NOT PORTED: annotationsPendingCompletion (Symbol.java:170)
-// - NOT PORTED: appendAttributes (Symbol.java:174)
-// - NOT PORTED: appendClassInitTypeAttributes (Symbol.java:180)
-// - NOT PORTED: appendInitTypeAttributes (Symbol.java:186)
-// - NOT PORTED: appendUniqueTypeAttributes (Symbol.java:192)
-// - NOT PORTED: getClassInitTypeAttributes (Symbol.java:198)
-// - NOT PORTED: getInitTypeAttributes (Symbol.java:204)
-// - NOT PORTED: setInitTypeAttributes (Symbol.java:210)
-// - NOT PORTED: setClassInitTypeAttributes (Symbol.java:214)
-// - NOT PORTED: getDeclarationAttributes (Symbol.java:218)
-// - NOT PORTED: hasAnnotations (Symbol.java:224)
-// - NOT PORTED: hasTypeAnnotations (Symbol.java:228)
-// - isCompleted is implemented as CompilerContext::is_symbol_completed (registered adapter).
-// - NOT PORTED: prependAttributes (Symbol.java:236)
-// - NOT PORTED: resetAnnotations (Symbol.java:242)
-// - NOT PORTED: setAttributes (Symbol.java:246)
-// - NOT PORTED: setDeclarationAttributes (Symbol.java:252)
-// - NOT PORTED: setTypeAttributes (Symbol.java:258)
-// - NOT PORTED: initedMetadata (Symbol.java:266)
-// - NOT PORTED: getMetadata (Symbol.java:273)
-// - NOT PORTED: isDirectlyOrIndirectlyLocal (Symbol.java:443)
-// - NOT PORTED: isConstructor (Symbol.java:458)
-// - NOT PORTED: isInner (Symbol.java:490)
-// - NOT PORTED: hasOuterInstance (Symbol.java:502)
-// - NOT PORTED: hiddenIn (Symbol.java:567)
-// - NOT PORTED: hiddenInInternal (Symbol.java:582)
-// - NOT PORTED: isAccessibleIn (Symbol.java:616)
-// - NOT PORTED: isInheritedIn (Symbol.java:651)
-// - NOT PORTED: asMemberOf (Symbol.java:659)
-// - NOT PORTED: overrides (Symbol.java:672)
-// - apiComplete is implemented as CompilerContext::api_complete_symbol (registered adapter).
-// - NOT PORTED: exists (Symbol.java:696)
-// - NOT PORTED: asType (Symbol.java:701)
-// - NOT PORTED: getEnclosingElement (Symbol.java:706)
-// - NOT PORTED: getModifiers (Symbol.java:716)
-// - NOT PORTED: getSimpleName (Symbol.java:722)
-// - NOT PORTED: getAnnotationMirrors (Symbol.java:731)
-// - NOT PORTED: getTypeParameters (Symbol.java:743)
-// - NOT PORTED: isDirectlyOrIndirectlyLocal (Symbol.java:764)
-// - NOT PORTED: isConstructor (Symbol.java:765)
-// - NOT PORTED: isInner (Symbol.java:769)
-// - NOT PORTED: hasOuterInstance (Symbol.java:770)
-// - NOT PORTED: isInheritedIn (Symbol.java:777)
-// - NOT PORTED: asMemberOf (Symbol.java:778)
-// - NOT PORTED: getUnderlyingSymbol (Symbol.java:790)
-// - NOT PORTED: formFullName (Symbol.java:803)
-// - NOT PORTED: formFlatName (Symbol.java:818)
-// - NOT PORTED: precedes (Symbol.java:835)
-// - NOT PORTED: getEnclosedElements (Symbol.java:852)
-// - NOT PORTED: getAnnotationTypeMetadata (Symbol.java:867)
-// - NOT PORTED: isAnnotationType (Symbol.java:872)
-// - NOT PORTED: getGenericElement (Symbol.java:896)
-// - NOT PORTED: getBounds (Symbol.java:901)
-// - NOT PORTED: getAnnotationMirrors (Symbol.java:917)
-// - NOT PORTED: getAttribute (Symbol.java:933)
-// - NOT PORTED: isCurrentSymbolsAnnotation (Symbol.java:948)
-// - NOT PORTED: create (Symbol.java:993)
-// - NOT PORTED: getSimpleName (Symbol.java:1015)
-// - NOT PORTED: isOpen (Symbol.java:1020)
-// - NOT PORTED: isUnnamed (Symbol.java:1025)
-// - NOT PORTED: isNoModule (Symbol.java:1034)
-// - NOT PORTED: completeUsesProvides (Symbol.java:1050)
-// - NOT PORTED: getEnclosedElements (Symbol.java:1079)
-// - NOT PORTED: reset (Symbol.java:1088)
-// - NOT PORTED: isUnnamed (Symbol.java:1171)
-// - NOT PORTED: getRawAttributes (Symbol.java:1191)
-// - NOT PORTED: mergeAttributes (Symbol.java:1200)
-// - NOT PORTED: exists (Symbol.java:1211)
-// - NOT PORTED: getEnclosingElement (Symbol.java:1221)
-// - NOT PORTED: reset (Symbol.java:1235)
-// - NOT PORTED: getRawAttributes (Symbol.java:1341)
-// - NOT PORTED: getRawTypeAttributes (Symbol.java:1347)
-// - NOT PORTED: getEnclosedElements (Symbol.java:1374)
-// - NOT PORTED: getInterfaces (Symbol.java:1421)
-// - NOT PORTED: getSuperclass (Symbol.java:1435)
-// - NOT PORTED: getSuperClassToSearchForAnnotations (Symbol.java:1453)
-// - NOT PORTED: getInheritedAnnotations (Symbol.java:1465)
-// - NOT PORTED: getModifiers (Symbol.java:1491)
-// - NOT PORTED: getRecordComponent (Symbol.java:1497)
-// - NOT PORTED: findRecordComponentToRemove (Symbol.java:1506)
-// - NOT PORTED: createRecordComponent (Symbol.java:1522)
-// - NOT PORTED: setRecordComponents (Symbol.java:1539)
-// - NOT PORTED: getNestingKind (Symbol.java:1544)
-// - NOT PORTED: getAttribute (Symbol.java:1557)
-// - NOT PORTED: markAbstractIfNeeded (Symbol.java:1580)
-// - NOT PORTED: reset (Symbol.java:1591)
-// - NOT PORTED: clearAnnotationMetadata (Symbol.java:1608)
-// - NOT PORTED: getAnnotationTypeMetadata (Symbol.java:1614)
-// - NOT PORTED: isAnnotationType (Symbol.java:1619)
-// - NOT PORTED: setAnnotationTypeMetadata (Symbol.java:1623)
-// - NOT PORTED: isRecord (Symbol.java:1629)
-// - NOT PORTED: getPermittedSubclasses (Symbol.java:1634)
-// - NOT PORTED: asMethodHandle (Symbol.java:1670)
-// - NOT PORTED: poolKey (Symbol.java:1684)
-// - NOT PORTED: asMemberOf (Symbol.java:1699)
-// - NOT PORTED: getConstantValue (Symbol.java:1731)
-// - NOT PORTED: setLazyConstValue (Symbol.java:1735)
-// - NOT PORTED: isExceptionParameter (Symbol.java:1751)
-// - NOT PORTED: isResourceVariable (Symbol.java:1755)
-// - NOT PORTED: getConstValue (Symbol.java:1759)
-// - NOT PORTED: setData (Symbol.java:1777)
-// - NOT PORTED: getOriginalAnnos (Symbol.java:1826)
-// - NOT PORTED: getAccessor (Symbol.java:1838)
-// - NOT PORTED: getSimpleName (Symbol.java:1854)
-// - NOT PORTED: isAliasFor (Symbol.java:1880)
-// - NOT PORTED: aliases (Symbol.java:1884)
-// - NOT PORTED: preserveBinding (Symbol.java:1888)
-// - NOT PORTED: isPreserved (Symbol.java:1892)
-// - NOT PORTED: poolKey (Symbol.java:1936)
-// - NOT PORTED: getModifiers (Symbol.java:1945)
-// - NOT PORTED: isHandle (Symbol.java:1974)
-// - NOT PORTED: asHandle (Symbol.java:1979)
-// - NOT PORTED: implemented (Symbol.java:1987)
-// - NOT PORTED: implementedIn (Symbol.java:2000)
-// - NOT PORTED: binaryOverrides (Symbol.java:2017)
-// - NOT PORTED: binaryImplementation (Symbol.java:2042)
-// - NOT PORTED: overrides (Symbol.java:2068)
-// - NOT PORTED: overrides (Symbol.java:2085)
-// - NOT PORTED: isOverridableIn (Symbol.java:2120)
-// - NOT PORTED: isInheritedIn (Symbol.java:2142)
-// - NOT PORTED: isLambdaMethod (Symbol.java:2153)
-// - NOT PORTED: originalEnclosingMethod (Symbol.java:2160)
-// - NOT PORTED: implementation (Symbol.java:2168)
-// - NOT PORTED: implementation (Symbol.java:2175)
-// - NOT PORTED: asMemberOf (Symbol.java:2205)
-// - NOT PORTED: isStaticOrInstanceInit (Symbol.java:2221)
-// - NOT PORTED: getDefaultValue (Symbol.java:2227)
-// - NOT PORTED: getParameters (Symbol.java:2232)
-// - NOT PORTED: isVarArgs (Symbol.java:2237)
-// - NOT PORTED: isDefault (Symbol.java:2242)
-// - NOT PORTED: getReceiverType (Symbol.java:2256)
-// - NOT PORTED: getReturnType (Symbol.java:2262)
-// - NOT PORTED: getThrownTypes (Symbol.java:2267)
-// - NOT PORTED: staticArgs (Symbol.java:2291)
-// - NOT PORTED: bootstrapMethod (Symbol.java:2296)
-// - NOT PORTED: dynamicType (Symbol.java:2306)
-// - NOT PORTED: dynamicType (Symbol.java:2329)
-// - NOT PORTED: staticArgs (Symbol.java:2334)
-// - NOT PORTED: bootstrapMethod (Symbol.java:2339)
-// - NOT PORTED: referenceKind (Symbol.java:2369)
-// - NOT PORTED: poolKey (Symbol.java:2404)
-// - NOT PORTED: asHandle (Symbol.java:2409)
-// - NOT PORTED: isHandle (Symbol.java:2420)
-// - NOT PORTED: getAccessCode (Symbol.java:2442)
-// - NOT PORTED: getFromCode (Symbol.java:2481)
-// - NOT PORTED: isTerminal (Symbol.java:2525)
-// - NOT PORTED: isTerminal (Symbol.java:2539)
-// - NOT PORTED: getDiagnostic (Symbol.java:2562)
-// - NOT PORTED: getMessage (Symbol.java:2570)
-// - NOT PORTED: getDetailValue (Symbol.java:2574)
-// - NOT PORTED: initCause (Symbol.java:2579)
-// - NOT PORTED: resetDiagnostic (Symbol.java:2584)
-// - NOT PORTED: visitClassSymbol (Symbol.java:2606)
-// - NOT PORTED: visitMethodSymbol (Symbol.java:2607)
-// - NOT PORTED: visitPackageSymbol (Symbol.java:2608)
-// - NOT PORTED: visitOperatorSymbol (Symbol.java:2609)
-// - NOT PORTED: visitVarSymbol (Symbol.java:2610)
-// - NOT PORTED: visitTypeSymbol (Symbol.java:2611)
-// - NOT PORTED: visitSymbol (Symbol.java:2612)
+// Ported in this file: the annotated-construct metadata accessors
+// (SymbolMetadata wiring), the symbol queries (isDeprecated .. isInner/
+// hasOuterInstance), the qualified/flat names, delegation accessors
+// (getUnderlyingSymbol), clearAnnotationMetadata, the lazy constant data
+// channel (setLazyConstValue) and the payload accessors below.
+// Not yet ported upstream methods in this file (the authoritative method-level
+// gap list is docs/AUDIT_TODO_TABLE.md):
+// - AnnoConstruct/java.lang.reflect annotation API: getAttribute (Symbol.java:933,
+//   1557), getInheritedAnnotations (1465), getAnnotationMirrors (731, 917),
+//   getAnnotationsByType/getAnnotation (annotation-proxy batch);
+// - VarSymbol.getConstantValue (1731; Constants.decode is not ported);
+// - remaining symbol/payload accessors tracked by the audit table.
+// The historical per-method list formerly kept here was reconciled by the
+// Symbol API batch (isInner/hasOuterInstance/getUnderlyingSymbol/precedes/
+// apiComplete/clearAnnotationMetadata/mergeAttributes/setLazyConstValue and the
+// annotated-construct accessors are ported; see the batch report mapping).
+//
 // End of Gap registration.
 // (the Kinds.Kind/KindSelector/KindName part comes from
 // com/sun/tools/javac/code/Kinds.java; see the module note below)
@@ -455,6 +313,32 @@ impl Symbol {
         self.metadata.as_mut().expect("metadata")
     }
 
+    /// Java: ClassSymbol.clearAnnotationMetadata() (Symbol.java:1608-1611).
+    ///
+    /// The method is declared by ClassSymbol upstream; the arena port dispatches
+    /// on SymbolKind::ClassSymbol. It drops the metadata (null) and resets the
+    /// annotation-type metadata to NOT_AN_ANNOTATION_TYPE.
+    ///
+    /// # Arguments
+    ///   - (none).
+    ///
+    /// # Returns
+    ///   - ().
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn clear_annotation_metadata(&mut self) {
+        if let SymbolKind::ClassSymbol {
+            annotation_type_metadata,
+            ..
+        } = &mut self.kind_data
+        {
+            self.metadata = None;
+            *annotation_type_metadata =
+                crate::comp::annotate::AnnotationTypeMetadata::not_an_annotation_type();
+        }
+    }
+
     /// Java: ModuleSymbol.reset() / ClassSymbol.reset()
     pub fn reset(&mut self) {
         match &mut self.kind_data {
@@ -477,9 +361,10 @@ impl Symbol {
                 visible_packages.clear();
             }
             SymbolKind::ClassSymbol { .. } => {
-                // Java: ClassSymbol.reset() resets metadata (metadata = null).
-                // TODO(Annotate): SymbolMetadata is not ported yet; there is
-                // no metadata state to reset (registered gap).
+                // Java: ClassSymbol.reset() resets metadata through
+                // clearAnnotationMetadata(); the remaining reset fields
+                // (members/flags/erasure/ClassType state) stay unported and are
+                // registered in the module doc (Symbol.reset is not ported).
             }
             _ => {}
         }
@@ -872,6 +757,23 @@ pub enum ResolveErrorData {
     BadConstructorReference { sym: SymbolId },
 }
 
+/// Java: the Callable form of Symbol.VarSymbol.data (Symbol.java:1735-1741).
+///
+/// PORTING ADAPTER: the upstream callable captures the two Envs and the Attr
+/// service; the arena port stores the captured environments/variable and
+/// receives the Attr at evaluation time (CompilerContext::symbol_get_const_value).
+#[derive(Clone)]
+pub struct LazyConstValue {
+    /// Java: Env<AttrContext> env (the initializer environment).
+    pub env: Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+    /// Java: Env<AttrContext> enclosingEnv.
+    pub enclosing_env: Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+    /// Java: JCVariableDecl variable.
+    pub variable: TreeId,
+    /// Java: VarSymbol.type captured by the callable.
+    pub ty: TypeId,
+}
+
 /// Java: public enum SymbolKind (Resolve.ResolveError hierarchy lives here).
 #[derive(Clone)]
 pub enum SymbolKind {
@@ -936,17 +838,18 @@ pub enum SymbolKind {
     },
     /// Java: Symbol.VarSymbol
     VarSymbol {
+        /// Java: VarSymbol.data Callable form (Symbol.java:1735-1741; null ->
+        /// None). See LazyConstValue.
+        lazy_const_value: Option<LazyConstValue>,
         /// The variable's position (declaration order).
         pos: i32,
         /// The variable's address (set during code generation).
         adr: i32,
         /// The ElementKind marker of the upstream Object data field
-        /// (EXCEPTION_PARAMETER/RESOURCE_VARIABLE markers; the Callable constant
-        /// value stored in data is not ported yet, see the module doc).
+        /// (EXCEPTION_PARAMETER/RESOURCE_VARIABLE markers).
         data_kind: Option<ElementKind>,
         /// Java: VarSymbol.data (Object) — the ConstantValue attribute value
-        /// (Attribute.Constant's value). The Callable form of data is not
-        /// ported yet (registered in the module doc).
+        /// (Attribute.Constant's value) after lazy evaluation.
         data: Option<crate::code::attribute::ConstValue>,
     },
     /// Java: Symbol.RecordComponent
@@ -1003,6 +906,9 @@ pub enum SymbolKind {
     /// The symbol carries the VarSymbol state plus the bootstrap method handle
     /// and the static argument constants of the constant dynamic entry.
     DynamicVarSymbol {
+        /// Java: VarSymbol.data Callable form (inherited from VarSymbol; null ->
+        /// None). See LazyConstValue.
+        lazy_const_value: Option<LazyConstValue>,
         /// The variable position (declaration order).
         pos: i32,
         /// The variable address (set during code generation).
@@ -1240,6 +1146,7 @@ impl Symbol {
             Some(ty),
             Some(owner),
             SymbolKind::VarSymbol {
+                lazy_const_value: None,
                 pos: crate::util::position::NOPOS,
                 adr: -1,
                 data_kind: None,
@@ -1288,8 +1195,51 @@ impl Symbol {
 // Java: Symbol accessor methods needed by the ClassReader.
 // ----------------------------------------------------------------------
 impl Symbol {
-    /// Java: public boolean hasOuterInstance()
+    /// Java: public boolean isInner() (Symbol.java:490-492).
+    ///
+    /// A class is inner when it has an enclosing instance class; the upstream
+    /// DelegatedSymbol override (Symbol.java:769) delegates to the underlying
+    /// symbol, which the port models with SymbolKind::DelegatedSymbol.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context used to read the type arena.
+    ///
+    /// # Returns
+    ///   - true when this symbol is a class with an enclosing class type.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn is_inner(&self, ctx: &crate::compiler_context::CompilerContext) -> bool {
+        if let SymbolKind::DelegatedSymbol { other: Some(other) } = &self.kind_data {
+            return ctx.sym(*other).is_inner(ctx);
+        }
+        self.kind == Kind::TYP
+            && self
+                .ty
+                .and_then(|ty| ctx.typ(ty).get_enclosing_type())
+                .is_some_and(|outer| {
+                    ctx.typ(outer)
+                        .has_tag(crate::code::type_tag::TypeTag::CLASS)
+                })
+    }
+
+    /// Java: public boolean hasOuterInstance() (Symbol.java:502-505).
+    ///
+    /// The DelegatedSymbol override (Symbol.java:770) delegates to the
+    /// underlying symbol; the port dispatches on SymbolKind::DelegatedSymbol.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context used to read the type arena.
+    ///
+    /// # Returns
+    ///   - true when this non-interface type has an enclosing instance class.
+    ///
+    /// # Panics
+    ///   - none.
     pub fn has_outer_instance(&self, ctx: &crate::compiler_context::CompilerContext) -> bool {
+        if let SymbolKind::DelegatedSymbol { other: Some(other) } = &self.kind_data {
+            return ctx.sym(*other).has_outer_instance(ctx);
+        }
         let enclosing_is_class = self
             .ty
             .and_then(|ty| ctx.typ(ty).get_enclosing_type())
@@ -1307,6 +1257,27 @@ impl Symbol {
     /// Java: public boolean isRecord() { return (flags_field & RECORD) != 0; }
     pub fn is_record(&self) -> bool {
         (self.flags_field & crate::code::flags::RECORD) != 0
+    }
+
+    /// Java: public T getUnderlyingSymbol() (Symbol.java:790-792).
+    ///
+    /// The method is declared by Symbol.DelegatedSymbol upstream; the arena port
+    /// stores the delegation in SymbolKind::DelegatedSymbol, so other symbol
+    /// kinds return None (registered adapter for the generic subclass method).
+    ///
+    /// # Arguments
+    ///   - (none).
+    ///
+    /// # Returns
+    ///   - the delegated symbol for a DelegatedSymbol, None otherwise.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn get_underlying_symbol(&self) -> Option<SymbolId> {
+        match &self.kind_data {
+            SymbolKind::DelegatedSymbol { other } => *other,
+            _ => None,
+        }
     }
 }
 
@@ -1380,12 +1351,80 @@ impl Symbol {
         }
     }
 
-    /// Java: public void setData(Object data)
+    /// Java: public void setLazyConstValue(Env<AttrContext> env,
+    /// Env<AttrContext> enclosingEnv, Attr attr, JCVariableDecl variable)
+    /// (Symbol.java:1735-1741).
+    ///
+    /// PORTING ADAPTER: the Attr argument is supplied at evaluation time by
+    /// CompilerContext::symbol_get_const_value instead of being captured.
+    ///
+    /// # Arguments
+    ///   - env: the initializer environment (MemberEnter.initEnv result);
+    ///   - enclosing_env: the environment enclosing the initializer;
+    ///   - variable: the variable declaration tree;
+    ///   - ty: the variable type captured by the upstream callable.
+    ///
+    /// # Returns
+    ///   - ().
+    ///
+    /// # Panics
+    ///   - when the symbol is not a variable symbol.
+    pub fn set_lazy_const_value(
+        &mut self,
+        env: Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        enclosing_env: Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
+        variable: TreeId,
+        ty: TypeId,
+    ) {
+        let lazy = LazyConstValue {
+            env,
+            enclosing_env,
+            variable,
+            ty,
+        };
+        match &mut self.kind_data {
+            SymbolKind::VarSymbol {
+                lazy_const_value, ..
+            }
+            | SymbolKind::DynamicVarSymbol {
+                lazy_const_value, ..
+            } => {
+                *lazy_const_value = Some(lazy);
+            }
+            _ => panic!("ClassCastException: not a variable symbol"),
+        }
+    }
+
+    /// Take the unevaluated lazy constant value (the port's Callable channel).
+    ///
+    /// # Arguments
+    ///   - (none).
+    ///
+    /// # Returns
+    ///   - the captured lazy initializer, or None when the data is not lazy.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn take_lazy_const_value(&mut self) -> Option<LazyConstValue> {
+        match &mut self.kind_data {
+            SymbolKind::VarSymbol {
+                lazy_const_value, ..
+            }
+            | SymbolKind::DynamicVarSymbol {
+                lazy_const_value, ..
+            } => lazy_const_value.take(),
+            _ => None,
+        }
+    }
+
+    /// Java: public void setData(Object data) (Symbol.java:1777-1780)
     pub fn set_data(&mut self, value: Option<crate::code::attribute::ConstValue>) {
-        if let SymbolKind::VarSymbol { data: slot, .. } = &mut self.kind_data {
-            *slot = value;
-        } else {
-            panic!("ClassCastException: not a variable symbol");
+        match &mut self.kind_data {
+            SymbolKind::VarSymbol { data: slot, .. }
+            | SymbolKind::DynamicVarSymbol { data: slot, .. } => {
+                *slot = value;
+            }
+            _ => panic!("ClassCastException: not a variable symbol"),
         }
     }
 
@@ -2459,7 +2498,13 @@ pub fn implementation(
 
 
 impl Symbol {
-    /// Java: public Object getConstValue() (Symbol.java:1734-1765).
+    /// Java: public Object getConstValue() (Symbol.java:1759-1775) — the stored
+    /// data view.
+    ///
+    /// PORTING ADAPTER: the upstream method evaluates the Callable form of data
+    /// on demand; the arena port performs that evaluation in
+    /// CompilerContext::symbol_get_const_value (which takes the Attr service),
+    /// so this accessor reads only the already-evaluated data.
     ///
     /// # Arguments
     ///   - (none).
@@ -2471,7 +2516,7 @@ impl Symbol {
     /// # Panics
     ///   - none.
     ///
-    /// Upstream: Symbol.java:1734-1765.
+    /// Upstream: Symbol.java:1759-1775.
     pub fn get_const_value(&self) -> Option<crate::code::attribute::ConstValue> {
         let kind_data = match &self.kind_data {
             SymbolKind::VarSymbol { data_kind, data, .. } => (data_kind, data),
@@ -2483,8 +2528,8 @@ impl Symbol {
         {
             return None;
         }
-        // The Java Callable<?> lazy-initializer channel is not represented: the
-        // constant is computed when the symbol is entered (Porting adapter).
+        // The lazy-initializer state is evaluated by
+        // CompilerContext::symbol_get_const_value before this accessor runs.
         data.clone()
     }
 }
@@ -3039,6 +3084,7 @@ pub fn new_dynamic_var_symbol(
         Some(ty),
         Some(owner),
         SymbolKind::DynamicVarSymbol {
+            lazy_const_value: None,
             pos: crate::util::position::NOPOS,
             adr: -1,
             data_kind: None,
@@ -3473,6 +3519,236 @@ mod tests {
         assert_eq!(calls.get(), 2);
     }
 
+    #[test]
+    fn is_inner_uses_the_enclosing_class_type() {
+        use crate::code::type_::{Type, TypeKindData};
+        use crate::code::type_tag::TypeTag;
+        let mut ctx = CompilerContext::new();
+        let outer = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            0,
+            name(&[0x4F]),
+            None,
+            None,
+            class_kind_data(),
+        ));
+        let outer_type = ctx.alloc_type(Type::new(
+            TypeTag::CLASS,
+            Some(outer),
+            TypeKindData::ClassType {
+                outer_field: None,
+                typarams_field: Some(List::nil()),
+                allparams_field: None,
+                supertype_field: None,
+                interfaces_field: None,
+                all_interfaces_field: None,
+            },
+        ));
+        ctx.sym_mut(outer).ty = Some(outer_type);
+        assert!(!ctx.sym(outer).is_inner(&ctx));
+        let inner = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            0,
+            name(&[0x49]),
+            None,
+            None,
+            class_kind_data(),
+        ));
+        let inner_type = ctx.alloc_type(Type::new(
+            TypeTag::CLASS,
+            Some(inner),
+            TypeKindData::ClassType {
+                outer_field: Some(outer_type),
+                typarams_field: Some(List::nil()),
+                allparams_field: None,
+                supertype_field: None,
+                interfaces_field: None,
+                all_interfaces_field: None,
+            },
+        ));
+        ctx.sym_mut(inner).ty = Some(inner_type);
+        assert!(ctx.sym(inner).is_inner(&ctx));
+        assert!(ctx.sym(inner).has_outer_instance(&ctx));
+        let interface = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            flags::INTERFACE as i64,
+            name(&[0x4E]),
+            None,
+            None,
+            class_kind_data(),
+        ));
+        let interface_type = ctx.alloc_type(Type::new(
+            TypeTag::CLASS,
+            Some(interface),
+            TypeKindData::ClassType {
+                outer_field: Some(outer_type),
+                typarams_field: Some(List::nil()),
+                allparams_field: None,
+                supertype_field: None,
+                interfaces_field: None,
+                all_interfaces_field: None,
+            },
+        ));
+        ctx.sym_mut(interface).ty = Some(interface_type);
+        assert!(ctx.sym(interface).is_inner(&ctx));
+        assert!(!ctx.sym(interface).has_outer_instance(&ctx));
+        let delegated = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            0,
+            name(&[0x44]),
+            None,
+            None,
+            SymbolKind::DelegatedSymbol { other: Some(inner) },
+        ));
+        assert!(ctx.sym(delegated).is_inner(&ctx));
+        assert!(ctx.sym(delegated).has_outer_instance(&ctx));
+    }
+
+    #[test]
+    fn get_underlying_symbol_returns_the_delegate() {
+        let mut ctx = CompilerContext::new();
+        let base = ctx.alloc_symbol(Symbol::new(
+            Kind::MTH,
+            0,
+            name(&[0x42]),
+            None,
+            None,
+            method_kind_data(),
+        ));
+        let delegated = ctx.alloc_symbol(Symbol::new(
+            Kind::MTH,
+            0,
+            name(&[0x44]),
+            None,
+            None,
+            SymbolKind::DelegatedSymbol { other: Some(base) },
+        ));
+        assert_eq!(ctx.sym(delegated).get_underlying_symbol(), Some(base));
+        assert_eq!(ctx.sym(base).get_underlying_symbol(), None);
+    }
+
+    #[test]
+    fn clear_annotation_metadata_resets_the_class_annotation_state() {
+        use crate::code::attribute::{Attribute, AttributeKind};
+        let mut ctx = CompilerContext::new();
+        let class = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            flags::ANNOTATION as i64,
+            name(&[0x41]),
+            None,
+            None,
+            class_kind_data(),
+        ));
+        let attribute = ctx.alloc_attribute(Attribute::new(None, AttributeKind::Error));
+        ctx.sym_mut(class)
+            .append_attributes(List::nil().prepend(attribute));
+        if let SymbolKind::ClassSymbol {
+            annotation_type_metadata,
+            ..
+        } = &mut ctx.sym_mut(class).kind_data
+        {
+            *annotation_type_metadata =
+                crate::comp::annotate::AnnotationTypeMetadata::new(class, None);
+        }
+        assert!(ctx.sym(class).has_annotations());
+        match &ctx.sym(class).kind_data {
+            SymbolKind::ClassSymbol {
+                annotation_type_metadata,
+                ..
+            } => assert!(annotation_type_metadata.is_metadata_for_annotation_type()),
+            _ => panic!("class symbol"),
+        }
+        ctx.sym_mut(class).clear_annotation_metadata();
+        assert!(ctx.sym(class).metadata.is_none());
+        assert!(!ctx.sym(class).has_annotations());
+        match &ctx.sym(class).kind_data {
+            SymbolKind::ClassSymbol {
+                annotation_type_metadata,
+                ..
+            } => assert!(!annotation_type_metadata.is_metadata_for_annotation_type()),
+            _ => panic!("class symbol"),
+        }
+        let method = ctx.alloc_symbol(Symbol::new(
+            Kind::MTH,
+            0,
+            name(&[0x4D]),
+            None,
+            None,
+            method_kind_data(),
+        ));
+        ctx.sym_mut(method)
+            .append_attributes(List::nil().prepend(attribute));
+        ctx.sym_mut(method).clear_annotation_metadata();
+        assert!(
+            ctx.sym(method).metadata.is_some(),
+            "clearAnnotationMetadata only exists on ClassSymbol"
+        );
+    }
+
+    #[test]
+    fn package_get_raw_attributes_merges_package_info_metadata_once() {
+        use crate::code::attribute::{Attribute, AttributeKind};
+        use crate::code::source::Source;
+        use crate::code::symtab::Symtab;
+        use crate::jvm::target::Target;
+        let mut ctx = CompilerContext::new();
+        let names = Rc::new(crate::util::names::Names::new(false));
+        let mut syms = Symtab::new(
+            &mut ctx,
+            Rc::clone(&names),
+            Target::JDK1_17,
+            Source::JDK17,
+        );
+        let package = ctx.alloc_symbol(Symbol::new(
+            Kind::PCK,
+            0,
+            name(&[0x50]),
+            None,
+            None,
+            SymbolKind::PackageSymbol {
+                members_field: None,
+                fullname: name(&[0x50]),
+                package_info: None,
+                modle: None,
+                sourcefile: None,
+            },
+        ));
+        let package_info = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            0,
+            name(&[0x49]),
+            None,
+            None,
+            class_kind_data(),
+        ));
+        if let SymbolKind::PackageSymbol {
+            package_info: slot, ..
+        } = &mut ctx.sym_mut(package).kind_data
+        {
+            *slot = Some(package_info);
+        }
+        let first = ctx.alloc_attribute(Attribute::new(None, AttributeKind::Error));
+        ctx.sym_mut(package_info)
+            .append_attributes(List::nil().prepend(first));
+        let raw = ctx
+            .package_get_raw_attributes(&mut syms, package)
+            .expect("package raw attributes");
+        assert_eq!(raw.iter().count(), 1);
+        assert_eq!(*raw.head(), first);
+        let second = ctx.alloc_attribute(Attribute::new(None, AttributeKind::Error));
+        ctx.sym_mut(package_info)
+            .append_attributes(List::nil().prepend(second));
+        let raw = ctx
+            .package_get_raw_attributes(&mut syms, package)
+            .expect("package raw attributes");
+        assert_eq!(
+            raw.iter().count(),
+            1,
+            "mergeAttributes only runs while the package metadata is null"
+        );
+        assert_eq!(*raw.head(), first);
+    }
+
     fn class_kind_data() -> SymbolKind {
         SymbolKind::ClassSymbol {
             members_field: None,
@@ -3499,6 +3775,7 @@ mod tests {
 
     fn var_kind_data(data_kind: Option<ElementKind>) -> SymbolKind {
         SymbolKind::VarSymbol {
+            lazy_const_value: None,
             pos: 0,
             adr: -1,
             data_kind,
@@ -3719,6 +3996,7 @@ mod tests {
             None,
             Some(SymbolId::new(2)),
             SymbolKind::VarSymbol {
+                lazy_const_value: None,
                 pos: 3,
                 adr: -1,
                 data_kind: None,

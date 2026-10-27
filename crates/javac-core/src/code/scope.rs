@@ -1748,7 +1748,7 @@ mod tests {
                 name(table, text),
                 None,
                 None,
-                SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
+                SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
             ));
             assert_eq!(index, sym.index());
         }
@@ -1799,7 +1799,7 @@ mod tests {
             name(&table, "a"),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None },
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None, lazy_const_value: None },
         ));
         let sym1 = ctx.alloc_symbol(Symbol::new(
             Kind::MTH,
@@ -1807,7 +1807,7 @@ mod tests {
             name(&table, "a"),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None },
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None, lazy_const_value: None },
         ));
         let mut scope = Scope::new_scope_impl(None);
         let self_id = scope_id(0);
@@ -1881,7 +1881,7 @@ mod tests {
                 table.from_chars(&units, 0, units.len() as i32),
                 None,
                 None,
-                SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
+                SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
             ));
             entries.push(SymbolId::new(sym));
         }
@@ -1957,7 +1957,7 @@ mod tests {
             a_name.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
         ));
         ctx.scope_enter(outer, a);
         // dup() creates the inner scope: it shares the table and points at the
@@ -1969,7 +1969,7 @@ mod tests {
             b_name.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
         ));
         ctx.scope_enter(inner, b);
         // NON_RECURSIVE returns only the inner scope's own entries.
@@ -2003,7 +2003,7 @@ mod tests {
             walk.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
         ));
         ctx.scope_enter(outer, walk_sym);
         let inner = ctx.scope_dup(outer, None);
@@ -2041,7 +2041,7 @@ mod tests {
             alpha.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
         ));
         let b = ctx.alloc_symbol(Symbol::new(
             Kind::VAR,
@@ -2049,7 +2049,7 @@ mod tests {
             beta.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
         ));
         let first = ctx.scope_create(None);
         ctx.scope_enter(first, a);
@@ -2083,7 +2083,7 @@ mod tests {
             target.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
         ));
         let single = ctx.alloc_scope(crate::code::scope::Scope::new_single_entry_scope(
             None,
@@ -2111,7 +2111,7 @@ mod tests {
             walk.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
         ));
         let second = ctx.alloc_symbol(Symbol::new(
             Kind::VAR,
@@ -2119,7 +2119,7 @@ mod tests {
             run.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
         ));
         let outer = ctx.scope_create(None);
         ctx.scope_enter(outer, first);
@@ -2146,7 +2146,7 @@ mod tests {
             walk.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
         ));
         let second = ctx.alloc_symbol(Symbol::new(
             Kind::VAR,
@@ -2154,7 +2154,7 @@ mod tests {
             run.clone(),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None},
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None , data: None, lazy_const_value: None},
         ));
         let outer = ctx.scope_create(None);
         ctx.scope_enter(outer, first);
@@ -2225,7 +2225,7 @@ mod tests {
             name(&table, "o"),
             None,
             None,
-            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None },
+            SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None, lazy_const_value: None },
         ));
         let origin = ctx.scope_create(Some(owner));
         let scope = ctx.alloc_scope(Scope::new_filter_import_scope(

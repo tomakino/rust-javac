@@ -8606,6 +8606,7 @@ impl Resolve {
                         super_type,
                         Some(encl_class),
                         crate::code::symbol::SymbolKind::VarSymbol {
+                            lazy_const_value: None,
                             pos: 0,
                             adr: 0,
                             data_kind: None,

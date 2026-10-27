@@ -785,6 +785,95 @@ impl CompilerContext {
         }
     }
 
+    /// Java: PackageSymbol.getRawAttributes() (Symbol.java:1191-1198) and the
+    /// private PackageSymbol.mergeAttributes() (Symbol.java:1200-1206).
+    ///
+    /// The upstream overrides first complete the package and its package-info
+    /// class; the arena port performs those completion steps here because a
+    /// symbol cannot complete itself without the explicit Symtab. The attributes
+    /// of package-info are then merged once, exactly when the package has no
+    /// metadata yet.
+    ///
+    /// # Arguments
+    ///   - syms: the symbol table used by the completion steps;
+    ///   - package: the package symbol.
+    ///
+    /// # Returns
+    ///   - the package's raw attributes, including the merged package-info
+    ///     declaration attributes (empty when the package has none).
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn package_get_raw_attributes(
+        &mut self,
+        syms: &mut crate::code::symtab::Symtab,
+        package: SymbolId,
+    ) -> Result<List<AttributeId>, crate::code::symbol::CompletionFailure> {
+        self.complete_symbol(syms, package)?;
+        let package_info = match &self.sym(package).kind_data {
+            crate::code::symbol::SymbolKind::PackageSymbol { package_info, .. } => *package_info,
+            _ => None,
+        };
+        if let Some(package_info) = package_info {
+            self.complete_symbol(syms, package_info)?;
+            let merged = if self.sym(package).metadata.is_none() {
+                let other = self.sym(package_info).metadata.as_ref();
+                other.map(|other| {
+                    let mut metadata =
+                        crate::code::symbol_metadata::SymbolMetadata::new(package);
+                    metadata.set_attributes(self, other);
+                    metadata
+                })
+            } else {
+                None
+            };
+            if let Some(metadata) = merged {
+                self.sym_mut(package).metadata = Some(metadata);
+            }
+        }
+        Ok(self.sym(package).get_raw_attributes())
+    }
+
+    /// Java: VarSymbol.getConstValue() (Symbol.java:1759-1775), including the
+    /// lazy-initializer evaluation.
+    ///
+    /// The upstream method evaluates the captured Callable through Attr; the
+    /// arena port stores the captured environments in SymbolKind::VarSymbol and
+    /// receives the Attr service here (registered adapter). The value is cached
+    /// in VarSymbol.data after the first evaluation, exactly like upstream.
+    ///
+    /// # Arguments
+    ///   - syms: the symbol table used by attribution;
+    ///   - symbol: the variable symbol;
+    ///   - attr: the attribution service that evaluates the initializer.
+    ///
+    /// # Returns
+    ///   - the constant value, or None for non-constant variables and for
+    ///     exception/resource parameters.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn symbol_get_const_value(
+        &mut self,
+        syms: &mut crate::code::symtab::Symtab,
+        symbol: SymbolId,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> Option<crate::util::constants::ConstantValue> {
+        let lazy = self.sym_mut(symbol).take_lazy_const_value();
+        if let Some(lazy) = lazy {
+            let value = attr.attrib_lazy_constant_value(
+                self,
+                syms,
+                &lazy.env,
+                &lazy.enclosing_env,
+                lazy.variable,
+                lazy.ty,
+            );
+            self.sym_mut(symbol).set_data(value);
+        }
+        self.sym(symbol).get_const_value()
+    }
+
     /// Java: Symbol.reset() (ModuleSymbol/ClassSymbol overrides; see Symbol::reset).
     pub fn reset_symbol(&mut self, symbol: SymbolId) {
         self.sym_mut(symbol).reset();
@@ -998,6 +1087,7 @@ mod tests {
             None,
             None,
             crate::code::symbol::SymbolKind::VarSymbol {
+                lazy_const_value: None,
                 pos: 0,
                 adr: 0,
                 data_kind: None,
@@ -1011,6 +1101,7 @@ mod tests {
             None,
             None,
             crate::code::symbol::SymbolKind::VarSymbol {
+                lazy_const_value: None,
                 pos: 0,
                 adr: 0,
                 data_kind: None,
@@ -1051,12 +1142,50 @@ mod tests {
             None,
             None,
             crate::code::symbol::SymbolKind::VarSymbol {
+                lazy_const_value: None,
                 pos: 0,
                 adr: -1,
                 data_kind: None,
                 data: None,
             },
         )
+    }
+
+    struct FlagCompleter;
+
+    impl crate::code::symbol::Completer for FlagCompleter {
+        fn complete(
+            &mut self,
+            ctx: &mut CompilerContext,
+            _syms: &mut crate::code::symtab::Symtab,
+            sym: SymbolId,
+        ) -> Result<(), crate::code::symbol::CompletionFailure> {
+            ctx.sym_mut(sym).flags_field |= crate::code::flags::DEPRECATED as i64;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn api_complete_symbol_runs_the_completer_and_clears_it() {
+        let mut ctx = CompilerContext::new();
+        let names = Rc::new(crate::util::names::Names::new(false));
+        let mut syms = crate::code::symtab::Symtab::new(
+            &mut ctx,
+            Rc::clone(&names),
+            crate::jvm::target::Target::DEFAULT,
+            crate::code::source::Source::JDK17,
+        );
+        let id = ctx.alloc_symbol(var_symbol(&name_table(), "x"));
+        let completer: crate::code::symbol::CompleterRef =
+            Rc::new(std::cell::RefCell::new(FlagCompleter));
+        ctx.sym_mut(id).completer = Some(completer);
+        assert!(ctx.api_complete_symbol(&mut syms, id).is_ok());
+        assert!(
+            (ctx.sym(id).flags_field & crate::code::flags::DEPRECATED as i64) != 0,
+            "apiComplete runs Symbol.complete() like Symbol.java:686-692"
+        );
+        assert!(ctx.sym(id).completer.is_none());
+        assert!(ctx.api_complete_symbol(&mut syms, id).is_ok());
     }
 
     #[test]
@@ -1106,6 +1235,7 @@ mod tests {
             None,
             None,
             crate::code::symbol::SymbolKind::VarSymbol {
+                lazy_const_value: None,
                 pos: 1,
                 adr: -1,
                 data_kind: None,
@@ -1144,6 +1274,7 @@ mod tests {
                 None,
                 None,
                 crate::code::symbol::SymbolKind::VarSymbol {
+                    lazy_const_value: None,
                     pos: index as i32,
                     adr: -1,
                     data_kind: None,

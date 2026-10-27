@@ -395,6 +395,7 @@ fn new_var_symbol(
         ty,
         owner,
         SymbolKind::VarSymbol {
+            lazy_const_value: None,
             pos: 0,
             adr: -1,
             data_kind: None,

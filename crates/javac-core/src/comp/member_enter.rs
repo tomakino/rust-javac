@@ -20,9 +20,9 @@
 // registered in AttrContext);
 // - initEnv uses AttrContextEnv (an Attr inner class): initEnv/getInitEnv are
 // explicitly unimplemented (Attr);
-// - ArrayType.makeVarargs and VarSymbol.setLazyConstValue are not ported
-// (types/symbol batches): the VARARGS parameter type refinement and the lazy
-// constant-value computation are TODO in visitVarDef;
+// - ArrayType.makeVarargs is not ported (types batch): the VARARGS parameter
+// type refinement is TODO in visitVarDef. VarSymbol.setLazyConstValue is
+// implemented (Symbol API batch) and wired in visitVarDef.
 // - getMethodEnv mEnv.info.lint.augment(sym) is TODO (Lint), the scope
 // enterIfAbsent steps are ported.
 //
@@ -532,6 +532,7 @@ impl MemberEnter {
             Some(vartype),
             Some(owner),
             SymbolKind::VarSymbol {
+                lazy_const_value: None,
                 pos: 0,
                 adr: -1,
                 data_kind: None,
@@ -552,9 +553,14 @@ impl MemberEnter {
             if (ctx.sym(v).flags_field & flags::FINAL as i64) != 0
                 && self.needs_lazy_const_value(ctx, var_decl_init(ctx, tree).expect("initializer"))
             {
-                // TODO(Symbol/Attr): v.setLazyConstValue(initEnv(tree,
-                // getInitEnv(tree, env)), env, attr, tree); setLazyConstValue is
-                // not ported and initEnv needs AttrContextEnv (Attr).
+                // Java: v.setLazyConstValue(initEnv(tree, getInitEnv(tree, env)),
+                //                        env, attr, tree);
+                let enclosing_env = Rc::clone(&env);
+                let get_init_env = self.get_init_env(ctx, tree, &env);
+                let init_env = self.init_env(ctx, tree, &get_init_env);
+                let ty = ctx.sym(v).ty.expect("variable type");
+                ctx.sym_mut(v)
+                    .set_lazy_const_value(init_env, enclosing_env, tree, ty);
             }
         }
         let unique = self

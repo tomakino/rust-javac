@@ -9913,6 +9913,59 @@ mod tests {
         (ctx, symtab, types)
     }
 
+    #[test]
+    fn symbol_precedes_orders_type_variables_before_other_types() {
+        use crate::code::kinds::Kind;
+        use crate::code::symbol::{Symbol, SymbolKind};
+        let (mut ctx, syms, types) = build_with_types();
+        let table: Rc<NameTableHandle> = NameTableHandle::unshared();
+        let name_of = |text: &str| {
+            let units: Vec<u16> = text.encode_utf16().collect();
+            table.from_chars(&units, 0, units.len() as i32)
+        };
+        let class = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            0,
+            name_of("C"),
+            None,
+            None,
+            SymbolKind::TypeSymbol,
+        ));
+        let class_type_id = ctx.alloc_type(Type::new(
+            TypeTag::CLASS,
+            Some(class),
+            TypeKindData::ClassType {
+                outer_field: None,
+                typarams_field: Some(List::nil()),
+                allparams_field: None,
+                supertype_field: None,
+                interfaces_field: None,
+                all_interfaces_field: None,
+            },
+        ));
+        ctx.sym_mut(class).ty = Some(class_type_id);
+        let type_variable = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            0,
+            name_of("T"),
+            None,
+            None,
+            SymbolKind::TypeSymbol,
+        ));
+        let type_variable_type = ctx.alloc_type(Type::new(
+            TypeTag::TYPEVAR,
+            Some(type_variable),
+            TypeKindData::TypeVar {
+                bound: None,
+                lower: None,
+            },
+        ));
+        ctx.sym_mut(type_variable).ty = Some(type_variable_type);
+        assert!(!types.symbol_precedes(&mut ctx, &syms, class, class));
+        assert!(types.symbol_precedes(&mut ctx, &syms, type_variable, class));
+        assert!(!types.symbol_precedes(&mut ctx, &syms, class, type_variable));
+    }
+
     fn class_type(ctx: &mut CompilerContext, tsym: SymbolId, args: &[TypeId]) -> TypeId {
         let symbol_type = ctx.sym(tsym).ty.expect("symbol type");
         let outer = get_enclosing_type(ctx, symbol_type);
