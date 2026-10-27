@@ -2267,11 +2267,14 @@ impl Resolve {
         name: &crate::util::name::Name,
         recovery: RecoveryLoadClass,
     ) -> SymbolId {
-        let Some(finder) = self.finder.clone() else {
-            unimplemented!(
-                "TODO(ClassFinder batch): Resolve.loadClass needs the ClassFinder service"
-            )
-        };
+        // Java: Resolve.loadClass uses the Context ClassFinder service
+        // (Resolve.java:2049-2064); the ported wiring installs it for every
+        // compilation, so a missing service is an assembly assertion (the
+        // Option keeps the test constructors that do not exercise class loading).
+        let finder = self
+            .finder
+            .clone()
+            .expect("AssertionError: ClassFinder service is not installed");
         let module = env_toplevel_module(ctx, env).expect("toplevel module");
         match finder.load_class(ctx, syms, module, name.clone()) {
             Ok(c) => {

@@ -1561,26 +1561,147 @@ impl<'a> AliveAnalyzer<'a> {
     }
 
     /// Java: private void transitiveCovers(Set<Symbol> covered)
-    /// (Flow.java:762-796) — the pattern-switch exhaustive helpers are
-    /// registered with the Pattern matching.
-    #[allow(dead_code)]
-    fn transitive_covers(&mut self, _ctx: &mut CompilerContext, _covered: &mut HashSet<SymbolId>) {
-        unimplemented!(
-            "TODO(Pattern matching batch): Flow.AliveAnalyzer.transitiveCovers (Flow.java:762-796)"
-        )
+    /// (Flow.java:752-786): close the covered set transitively (enum constants
+    /// cover their enum type, sealed permitted subclasses cover the sealed
+    /// supertype).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - covered: the covered symbol set (updated in place).
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Flow.java:752-786.
+    fn transitive_covers(&mut self, ctx: &mut CompilerContext, covered: &mut HashSet<SymbolId>) {
+        let mut todo: Vec<SymbolId> = covered.iter().copied().collect();
+        while let Some(sym) = todo.pop() {
+            match ctx.sym(sym).kind {
+                Kind::VAR => {
+                    let Some(owner) = ctx.sym(sym).owner else {
+                        continue;
+                    };
+                    // Java: sym.owner.members().getSymbols(s -> s.isEnum() &&
+                    // s.kind == VAR); a null member scope is unreachable for an
+                    // entered class symbol and is treated as the empty scope.
+                    let constants = match ctx.sym(owner).members() {
+                        Some(members) => {
+                            let scope = ctx.scope(members).clone();
+                            scope.get_symbols(
+                                members,
+                                crate::code::scope::LookupKind::NON_RECURSIVE,
+                                &|_| true,
+                                ctx,
+                            )
+                        }
+                        None => Vec::new(),
+                    };
+                    let mut has_all = true;
+                    for constant in constants {
+                        if ctx.sym(constant).is_enum()
+                            && ctx.sym(constant).kind == Kind::VAR
+                            && !covered.contains(&constant)
+                        {
+                            has_all = false;
+                            break;
+                        }
+                    }
+                    if has_all && covered.insert(owner) {
+                        todo.push(owner);
+                    }
+                }
+                Kind::TYP => {
+                    let sym_type = ctx.sym(sym).ty.expect("class symbol type");
+                    let supers = {
+                        let syms = self.flow.syms.borrow();
+                        self.flow.types.direct_supertypes(ctx, &syms, sym_type)
+                    };
+                    let mut current = supers;
+                    while current.non_empty() {
+                        let sup = *current.head();
+                        current = current.tail();
+                        let Some(sup_tsym) = ctx.typ(sup).tsym else {
+                            continue;
+                        };
+                        if ctx.sym(sup_tsym).kind == Kind::TYP
+                            && ctx.sym(sup_tsym).is_abstract()
+                            && ctx.sym(sup_tsym).is_sealed()
+                        {
+                            let permitted = crate::code::symbol::Symbol::permitted_subs(ctx, sup_tsym);
+                            let mut has_all = true;
+                            for sub in permitted.iter() {
+                                if !covered.contains(&sub) {
+                                    has_all = false;
+                                    break;
+                                }
+                            }
+                            if has_all && covered.insert(sup_tsym) {
+                                todo.push(sup_tsym);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Java: private boolean isExhaustive(Type seltype, Set<Symbol> covered)
-    /// (Flow.java:798-824)
+    /// (Flow.java:788-803).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - seltype: the switch selector type;
+    ///   - covered: the covered symbol set (updated by transitiveCovers).
+    ///
+    /// # Returns
+    ///   - true iff the selector type is exhaustively covered.
+    ///
+    /// # Panics
+    ///   - a type-variable selector without an upper bound (unreachable).
+    ///
+    /// Upstream: Flow.java:788-803.
     fn is_exhaustive(
         &mut self,
-        _ctx: &mut CompilerContext,
-        _seltype: TypeId,
-        _covered: &mut HashSet<SymbolId>,
+        ctx: &mut CompilerContext,
+        seltype: TypeId,
+        covered: &mut HashSet<SymbolId>,
     ) -> bool {
-        unimplemented!(
-            "TODO(Pattern matching batch): Flow.AliveAnalyzer.isExhaustive (Flow.java:798-824)"
-        )
+        self.transitive_covers(ctx, covered);
+        match ctx.typ(seltype).get_tag() {
+            TypeTag::CLASS => {
+                if self.flow.types.is_compound_public(ctx, seltype) {
+                    if ctx.typ(seltype).is_intersection() {
+                        let components = ctx.typ(seltype).get_components();
+                        let mut current = components;
+                        while current.non_empty() {
+                            let component = *current.head();
+                            current = current.tail();
+                            if self.is_exhaustive(ctx, component, covered) {
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                } else {
+                    // Java: covered.contains(seltype.tsym).
+                    ctx.typ(seltype)
+                        .tsym
+                        .map(|tsym| covered.contains(&tsym))
+                        .unwrap_or(false)
+                }
+            }
+            TypeTag::TYPEVAR => {
+                let upper = ctx.typ(seltype)
+                    .get_upper_bound()
+                    .expect("type variable upper bound");
+                self.is_exhaustive(ctx, upper, covered)
+            }
+            _ => false,
+        }
     }
 
     /// Java: public void analyzeTree(Env, TreeMaker) (Flow.java:939-957)
@@ -5568,4 +5689,176 @@ mod tests {
         assert_eq!(log.borrow().nerrors, 0);
     }
 
+
+    /// Java: Flow.AliveAnalyzer.isExhaustive/transitiveCovers (Flow.java:752-803):
+    /// enum constants cover the enum type, permitted subclasses cover the sealed
+    /// supertype, and a type variable exhausts through its upper bound.
+    #[test]
+    fn switch_exhaustiveness_covers_enum_and_sealed_types() {
+        use crate::code::flags;
+        use crate::code::kinds::Kind as SymKind;
+        use crate::code::source::Source;
+        use crate::code::symbol::{Symbol, SymbolKind};
+        use crate::code::symtab::Symtab;
+        use crate::code::type_::Type;
+        use crate::code::types::Types;
+        use crate::comp::check::Check;
+        use crate::comp::resolve::Resolve;
+        use crate::jvm::target::Target;
+        use crate::util::context::Context;
+        use crate::util::javac_messages::JavacMessages;
+        use crate::util::options::Options;
+
+        let mut ctx = CompilerContext::new();
+        let mut jcontext = Context::new();
+        let names = Rc::new(Names::new(false));
+        let log = Log::instance(&mut jcontext);
+        let source = Source::JDK17;
+        let syms = Rc::new(RefCell::new(Symtab::new(
+            &mut ctx,
+            Rc::clone(&names),
+            Target::DEFAULT,
+            source,
+        )));
+        let types = Rc::new(Types::with_names(Rc::clone(&names)));
+        let messages = JavacMessages::instance(&mut jcontext);
+        let diags = Rc::new(Factory::new(messages, "compiler"));
+        let lint = Lint::instance(&mut jcontext);
+        let deferred = Rc::new(RefCell::new(
+            crate::code::deferred_lint_handler::DeferredLintHandler::new(),
+        ));
+        let check = Rc::new(RefCell::new(Check::new(
+            Rc::clone(&names),
+            Rc::clone(&log),
+            Rc::clone(&diags),
+            source,
+            '$',
+            Rc::clone(&types),
+            Rc::clone(&lint),
+            Rc::clone(&deferred),
+            Rc::clone(&syms),
+        )));
+        let options = Options::instance(&mut jcontext);
+        let resolve = Rc::new(RefCell::new(Resolve::new(
+            &mut ctx,
+            Rc::clone(&names),
+            Rc::clone(&log),
+            Rc::clone(&types),
+            Rc::clone(&diags),
+            source,
+            options,
+            None,
+        )));
+        let flow = Flow::new(
+            &mut ctx,
+            Rc::clone(&names),
+            Rc::clone(&log),
+            Rc::clone(&syms),
+            Rc::clone(&types),
+            check,
+            resolve,
+            Rc::clone(&diags),
+            Rc::clone(&lint),
+            source,
+            None,
+        );
+        let mut analyzer = AliveAnalyzer::new(&flow);
+        let no_type = ctx.alloc_type(Type::new(
+            TypeTag::NONE,
+            None,
+            crate::code::type_::TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base },
+        ));
+        let enum_sym = crate::code::symtab::new_class_symbol(
+            &mut ctx,
+            flags::ENUM as i64,
+            names.from_utf(b"E"),
+            None,
+            no_type,
+        );
+        let enum_type = ctx.sym(enum_sym).ty.expect("enum type");
+        let members = ctx.scope_create(Some(enum_sym));
+        let (a, b) = {
+            let mut member_scope = ctx.scope(members).clone();
+            let mut enter_constant = |name: &[u8]| {
+                let constant = ctx.alloc_symbol(Symbol::new(
+                    SymKind::VAR,
+                    flags::ENUM as i64,
+                    names.from_utf(name),
+                    None,
+                    Some(enum_sym),
+                    SymbolKind::VarSymbol { pos: 0, adr: 0, data_kind: None, data: None },
+                ));
+                let symbols = ctx.symbols_arena();
+                member_scope.enter(members, constant, symbols);
+                constant
+            };
+            let a = enter_constant(b"A");
+            let b = enter_constant(b"B");
+            *ctx.scope_mut(members) = member_scope;
+            (a, b)
+        };
+        if let SymbolKind::ClassSymbol { members_field, .. } = &mut ctx.sym_mut(enum_sym).kind_data {
+            *members_field = Some(members);
+        }
+        let mut one = HashSet::new();
+        one.insert(a);
+        assert!(!analyzer.is_exhaustive(&mut ctx, enum_type, &mut one));
+        let mut both = HashSet::new();
+        both.insert(a);
+        both.insert(b);
+        assert!(analyzer.is_exhaustive(&mut ctx, enum_type, &mut both));
+        let p_sym = crate::code::symtab::new_class_symbol(
+            &mut ctx,
+            (flags::ABSTRACT as i64) | (flags::SEALED as i64),
+            names.from_utf(b"P"),
+            None,
+            no_type,
+        );
+        let p_type = ctx.sym(p_sym).ty.expect("P type");
+        let s1_sym = crate::code::symtab::new_class_symbol(
+            &mut ctx,
+            0,
+            names.from_utf(b"S1"),
+            None,
+            no_type,
+        );
+        let s2_sym = crate::code::symtab::new_class_symbol(
+            &mut ctx,
+            0,
+            names.from_utf(b"S2"),
+            None,
+            no_type,
+        );
+        let s1_type = ctx.sym(s1_sym).ty.expect("S1 type");
+        let s2_type = ctx.sym(s2_sym).ty.expect("S2 type");
+        for sub_type in [s1_type, s2_type] {
+            if let crate::code::type_::TypeKindData::ClassType { supertype_field, .. } =
+                &mut ctx.typ_mut(sub_type).kind
+            {
+                *supertype_field = Some(p_type);
+            }
+        }
+        if let SymbolKind::ClassSymbol { permitted, .. } = &mut ctx.sym_mut(p_sym).kind_data {
+            *permitted = List::of(s1_sym).append(s2_sym);
+        }
+        let mut sealed_covered = HashSet::new();
+        sealed_covered.insert(s1_sym);
+        sealed_covered.insert(s2_sym);
+        assert!(analyzer.is_exhaustive(&mut ctx, p_type, &mut sealed_covered));
+        let mut partial = HashSet::new();
+        partial.insert(s1_sym);
+        assert!(!analyzer.is_exhaustive(&mut ctx, p_type, &mut partial));
+        let tvar = ctx.alloc_type(Type::new(
+            TypeTag::TYPEVAR,
+            None,
+            crate::code::type_::TypeKindData::TypeVar {
+                bound: Some(p_type),
+                lower: None,
+            },
+        ));
+        let mut tvar_covered = HashSet::new();
+        tvar_covered.insert(s1_sym);
+        tvar_covered.insert(s2_sym);
+        assert!(analyzer.is_exhaustive(&mut ctx, tvar, &mut tvar_covered));
+    }
 }
