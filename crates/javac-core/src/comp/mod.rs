@@ -22,7 +22,6 @@ pub mod operators;
 pub mod resolve;
 pub mod todo;
 pub mod trans_patterns;
-pub mod lambda_to_method;
 pub mod tree_differ;
 pub mod tree_hasher;
 pub mod trans_types;
