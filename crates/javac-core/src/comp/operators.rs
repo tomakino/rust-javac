@@ -612,7 +612,7 @@ impl Operators {
     fn report_error_if_needed(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        _syms: &mut Symtab,
         pos: i32,
         tag: Tag,
         args: &[Option<TypeId>],
@@ -662,7 +662,6 @@ impl Operators {
             );
             self.log.borrow_mut().report(diagnostic);
         }
-        let _ = syms;
         self.no_op_symbol
     }
 
@@ -672,10 +671,9 @@ impl Operators {
         &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
-        types: &Types,
+        _types: &Types,
         applicability_test: &dyn Fn(&CompilerContext, &Symtab, SymbolId) -> bool,
     ) -> Option<SymbolId> {
-        let _ = types;
         // Java: binaryOperators.values().stream().flatMap(List::stream)
         //.map(helper -> helper.doLookup(test)).distinct()
         //.filter(sym -> sym != noOpSymbol).findFirst().get()

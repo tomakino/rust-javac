@@ -719,7 +719,6 @@ impl Enter {
 
     /// Java: protected void duplicateClass(DiagnosticPosition pos, ClassSymbol c)
     fn duplicate_class(&self, ctx: &mut CompilerContext, tree: TreeId, c: SymbolId) {
-        let _ = tree;
         self.log.borrow_mut().error_at(
             ctx.tree(tree).pos,
             JCDiagnosticError::from(errors::duplicate_class(class_fullname(ctx, c))),
@@ -803,7 +802,7 @@ impl Enter {
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
         trees: List<TreeId>,
-        c: Option<SymbolId>,
+        _c: Option<SymbolId>,
     ) -> Vec<SymbolId> {
         // Java: annotate.blockAnnotations(); the test harnesses that drive Enter
         // without the annotation service skip the block/unblock pair (adapter).
@@ -830,7 +829,6 @@ impl Enter {
                 .unblock_annotations(ctx)
                 .expect("unblockAnnotations flush");
         }
-        let _ = c;
         queued
     }
 

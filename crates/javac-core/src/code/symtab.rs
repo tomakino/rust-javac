@@ -550,7 +550,7 @@ fn do_enter_class(maps: &mut SymtabMaps, module: SymbolId, class: SymbolId, flat
 /// Java: private ClassSymbol defineClass(Name name, Symbol owner)
 fn define_class(
     ctx: &mut CompilerContext,
-    names: &Names,
+    _names: &Names,
     name: Name,
     owner: Option<SymbolId>,
 ) -> SymbolId {
@@ -558,7 +558,6 @@ fn define_class(
     // Java: ClassSymbol c = new ClassSymbol(0, name, owner);
     let class = new_class_symbol(ctx, 0, name, owner, no_type);
     // Java: c.completer = initialCompleter; - NOT PORTED (Completer).
-    let _ = names;
     class
 }
 
@@ -637,7 +636,6 @@ fn enter_class_full(
     let class_name = ctx.sym(class).name.clone();
     let flatname = form_flat_name(ctx, &class_name, owner);
     do_enter_class(maps, msym, class, flatname);
-    let _ = names;
     class
 }
 
@@ -903,7 +901,6 @@ fn enter_package(
     if let SymbolKind::PackageSymbol { modle, .. } = &mut ctx.sym_mut(package).kind_data {
         *modle = Some(module);
     }
-    let _ = names;
     do_enter_package(ctx, maps, module, package);
     package
 }
@@ -2062,7 +2059,6 @@ mod tests {
             assert_eq!(name.to_java_string().to_string_lossy(), expected);
         }
         assert_eq!(symtab.boxed_name.len(), TypeTag::get_type_tag_count() as usize);
-        let _ = ctx;
     }
 
     #[test]
@@ -2121,7 +2117,6 @@ mod tests {
         let new_type = ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base }));
         let class = symtab.init_type_named(&mut ctx, new_type, name_of(symtab.names(), "testtype"), 0);
         assert_eq!(symtab.type_of_tag[tag_ordinal(TypeTag::NONE)], Some(new_type));
-        let _ = class;
     }
 
     #[test]

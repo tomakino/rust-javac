@@ -267,7 +267,7 @@ impl JavaTokenizer {
     }
 
     /// Java: private void scanLitChar(int pos).
-    fn scan_lit_char(&mut self, pos: i32) {
+    fn scan_lit_char(&mut self, _pos: i32) {
         if self.accept_then_put('\\') {
             self.has_escape_sequences = true;
             match char::from_u32(u32::from(self.get())).unwrap_or('\u{FFFD}') {
@@ -308,7 +308,6 @@ impl JavaTokenizer {
         }
         // The unused pos parameter documents the upstream signature (the
         // position of the first character in the literal).
-        let _ = pos;
     }
 
     /// Java: private void scanString(int pos).

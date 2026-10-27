@@ -112,11 +112,10 @@ impl ConstFold {
     fn const_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &Symtab,
+        _syms: &Symtab,
         ty: TypeId,
         value: ConstantValue,
     ) -> TypeId {
-        let _ = syms;
         ctx.type_const_type(ty, value)
     }
 

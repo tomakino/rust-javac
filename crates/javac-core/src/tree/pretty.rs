@@ -1047,7 +1047,6 @@ impl Pretty {
                 self.print(";");
             }
         }
-        let _ = annotations;
     }
 
     fn visit_block(&mut self, ctx: &CompilerContext, tree: TreeId) {
@@ -2260,7 +2259,6 @@ mod tests {
         );
         assert_eq!(print_tree(&mut ctx, a), "a");
         assert_eq!(print_tree(&mut ctx, select), "a.b");
-        let _ = b;
     }
 
     #[test]
@@ -2304,7 +2302,6 @@ mod tests {
         );
         // A lower-precedence operand is parenthesized (upstream Pretty.open).
         assert_eq!(print_tree(&mut ctx, nested), "(a + b) * c");
-        let _ = c;
     }
 
     #[test]
@@ -2392,7 +2389,6 @@ mod tests {
             0,
         );
         assert_eq!(print_tree(&mut ctx, apply), "m(1)");
-        let _ = table;
     }
 
     #[test]
@@ -2599,6 +2595,5 @@ mod tests {
         assert_eq!(print_tree(&mut ctx, byte_literal), "\"5\"");
         let short_literal = make(&mut ctx, TypeTag::SHORT, LiteralValue::Short(7));
         assert_eq!(print_tree(&mut ctx, short_literal), "\"7\"");
-        let _ = table;
     }
 }

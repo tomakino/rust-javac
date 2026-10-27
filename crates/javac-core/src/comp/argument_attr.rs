@@ -1114,9 +1114,8 @@ impl ArgumentAttr {
         attr: &mut Attr,
         data: &Rc<RefCell<ArgumentTypeData>>,
         result_info: &ResultInfo,
-        deferred_attr_context: &crate::comp::deferred_attr::DeferredAttrContext,
+        _deferred_attr_context: &crate::comp::deferred_attr::DeferredAttrContext,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
-        let _ = deferred_attr_context;
         let kind = data.borrow().kind;
         let speculative_tree = data.borrow().speculative_tree;
         let types_rc = Rc::clone(&attr.types);

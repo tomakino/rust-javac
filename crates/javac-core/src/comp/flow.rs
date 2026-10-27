@@ -513,7 +513,7 @@ pub struct Flow {
 impl Flow {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        ctx: &mut CompilerContext,
+        _ctx: &mut CompilerContext,
         names: Rc<Names>,
         log: Rc<RefCell<Log>>,
         syms: Rc<RefCell<Symtab>>,
@@ -525,7 +525,6 @@ impl Flow {
         source: crate::code::source::Source,
         attr: Option<Rc<RefCell<crate::comp::attr::Attr>>>, 
     ) -> Flow {
-        let _ = ctx;
         Flow {
             names,
             log,

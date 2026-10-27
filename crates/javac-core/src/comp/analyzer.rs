@@ -998,7 +998,7 @@ impl Analyzer {
     /// adapter helper: log.warning(pos, Warnings.X).
     fn log_warning(
         &self,
-        ctx: &mut CompilerContext,
+        _ctx: &mut CompilerContext,
         pos: i32,
         warning: crate::resources::diagnostic_contract::WarningInfo,
     ) {
@@ -1011,7 +1011,6 @@ impl Analyzer {
             )),
             warning,
         );
-        let _ = ctx;
     }
 }
 

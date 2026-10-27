@@ -5971,7 +5971,6 @@ impl JavacParser {
             self.attach(pd, first_token.comment(CommentStyle::JAVADOC));
             consumed_toplevel_doc = true;
             defs.push(pd);
-            let _ = seen_package;
         }
         let mut check_for_imports = true;
         let mut first_type_decl = true;
@@ -6042,10 +6041,7 @@ impl JavacParser {
                     check_for_imports = false;
                 }
                 first_type_decl = false;
-                let _ = first;
             }
-            let _ = seen_import;
-            let _ = seen_package;
         }
         let defs_list = List::from_iterable(defs);
         let toplevel = self.F.at(first_token.pos).top_level(ctx, defs_list.clone());

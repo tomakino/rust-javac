@@ -364,13 +364,12 @@ impl StringConcat {
         ctx: &mut CompilerContext,
         generator: &mut crate::jvm::codegen::Gen,
         tree: TreeId,
-        with_constants: bool,
+        _with_constants: bool,
     ) -> Item {
         let pos = ctx.tree(tree).pos;
         let (lhs, rhs) = binary_parts(ctx, tree);
         let args = self.collect_all_two(ctx, lhs, rhs);
         let tree_ty = ctx.tree(tree).ty.expect("binary type");
-        let _ = with_constants;
         self.emit_indy(ctx, generator, pos, args, true, tree_ty);
         let syms = Rc::clone(&self.syms);
         let items = generator.get_items();

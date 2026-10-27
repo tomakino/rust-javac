@@ -875,14 +875,13 @@ pub fn deferred_type_check(
 fn check_with_policy(
     ctx: &mut CompilerContext,
     syms: &mut Symtab,
-    types: &Types,
+    _types: &Types,
     attr: &mut Attr,
     t: TypeId,
     result_info: &ResultInfo,
     deferred_attr_context: &Rc<DeferredAttrContext>,
     policy: &Rc<dyn DeferredStuckPolicy>,
 ) -> Result<TypeId, DeferredAttrFailure> {
-    let _ = types;
     assert!(
         !deferred_attr_context.empty,
         "AssertionError: empty deferred context"

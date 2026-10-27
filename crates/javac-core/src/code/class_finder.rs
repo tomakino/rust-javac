@@ -1458,7 +1458,7 @@ mod tests {
         })
     }
 
-    fn member_counts(ctx: &mut CompilerContext, syms: &Symtab, c: SymbolId) -> (usize, usize, usize) {
+    fn member_counts(ctx: &mut CompilerContext, _syms: &Symtab, c: SymbolId) -> (usize, usize, usize) {
         let mut fields = 0;
         let mut methods = 0;
         let mut classes = 0;
@@ -1481,7 +1481,6 @@ mod tests {
                 }
             }
         }
-        let _ = syms;
         (fields, methods, classes)
     }
 
