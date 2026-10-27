@@ -210,11 +210,6 @@ impl AbstractDiagnosticFormatter for RawDiagnosticFormatter {
         arg: &DiagnosticArg,
         _locale: Option<&Locale>,
     ) -> String {
-        if arg.downcast_ref::<crate::ids::TreeId>().is_some() {
-            // NOT PORTED: the JCExpression argument position helper needs the
-            // tree arena context (see the module doc).
-            panic!("unimplemented: raw formatter JCExpression argument positions need the arena context");
-        }
         if let Some(tag) = arg.downcast_ref::<Tag>() {
             let name = format!("{tag:?}").to_lowercase();
             return format!("compiler.misc.tree.tag.{name}");

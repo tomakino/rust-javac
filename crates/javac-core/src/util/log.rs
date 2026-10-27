@@ -1039,7 +1039,12 @@ fn java_value_to_string(arg: &DiagnosticArg) -> String {
     if let Some(file_object) = arg.downcast_ref::<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>() {
         return file_object.get_name().to_string_lossy();
     }
-    panic!("AssertionError: log message argument type needs String.valueOf(Object)");
+    if let Some(diagnostic) = arg.downcast_ref::<JCDiagnostic>() {
+        return diagnostic.get_message(None).to_string();
+    }
+    // Diagnostic argument type domain is closed (see the module documentation);
+    // an unknown value cannot be produced by the ported code.
+    crate::util::assert::error_msg("unreachable log message argument type");
 }
 
 impl AbstractLog for Log {

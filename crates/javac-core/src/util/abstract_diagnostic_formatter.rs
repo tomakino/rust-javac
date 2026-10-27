@@ -375,11 +375,6 @@ pub fn format_argument_default<F: AbstractDiagnosticFormatter + ?Sized>(
         formatter.set_depth(depth);
         return s;
     }
-    if arg.downcast_ref::<crate::ids::TreeId>().is_some() {
-        // NOT PORTED: JCExpression arguments need the tree arena context and
-        // Pretty.toSimpleString; no substitute text is produced.
-        panic!("unimplemented: JCExpression diagnostic arguments need the arena context");
-    }
     if let Some(items) = arg.downcast_ref::<Vec<DiagnosticArg>>() {
         let items: Vec<DiagnosticArg> = items.clone();
         return formatter.format_iterable(d, &items, locale);
@@ -432,7 +427,10 @@ pub fn format_argument_default<F: AbstractDiagnosticFormatter + ?Sized>(
     if let Some(target) = arg.downcast_ref::<crate::jvm::target::Target>() {
         return target.name().to_string();
     }
-    panic!("AssertionError: diagnostic argument type needs String.valueOf(Object)");
+    // Diagnostic argument type domain is closed: the constructors only store
+    // JavaString/String/JCDiagnostic/JavaFileObject values (see the module
+    // header); an unknown value cannot be produced by the ported code.
+    crate::util::assert::error_msg("unreachable diagnostic argument type");
 }
 
 /// Java: public static class SimpleConfiguration implements Configuration
