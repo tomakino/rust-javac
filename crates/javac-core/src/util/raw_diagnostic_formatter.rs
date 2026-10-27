@@ -96,14 +96,13 @@ impl RawDiagnosticFormatter {
     fn format_diagnostic(&self, d: &JCDiagnostic) -> String {
         let mut buf = String::new();
         if d.get_position() != NOPOS as i64 {
-            // Java: formatSource(d, false, null) - the short name needs
-            // file/PathFileObject (NOT PORTED, see the module doc).
-            panic!("unimplemented: raw formatter source name needs file/PathFileObject");
+            // Java: buf.append(formatSource(d, false, null)).
+            buf.push_str(&AbstractDiagnosticFormatter::format_source_impl(self, d, false, None));
         } else if let Some(source) = d.get_source()
             && source.get_kind() == Kind::CLASS
         {
-            // Java: formatSource(d, false, null) for class files - same TODO.
-            panic!("unimplemented: raw formatter class file source name needs file/PathFileObject");
+            // Java: buf.append(formatSource(d, false, null)).
+            buf.push_str(&AbstractDiagnosticFormatter::format_source_impl(self, d, false, None));
         } else {
             buf.push('-');
         }

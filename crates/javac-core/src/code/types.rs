@@ -870,7 +870,9 @@ impl Types {
             (Some(t), Some(s)) => self.is_same_type(ctx, syms, t, s),
             // NOT PORTED: a null enclosing type is an upstream assertion
             // violation (visit(null,...)); do not invent a value.
-            _ => panic!("unimplemented: null enclosing type in isSameType"),
+            // Java: SimpleVisitor.visit(null, ...) throws NullPointerException (the
+        // upstream isSameType visitor never guards the enclosing type).
+        _ => panic!("NullPointerException: null enclosing type in isSameType"),
         }
     }
 
@@ -910,13 +912,19 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        self.has_same_args(ctx, syms, t, s)
-            && self.is_same_type(
-                ctx,
-                syms,
-                get_return_type(ctx, t),
-                get_return_type(ctx, s),
-            )
+        if !self.has_same_args(ctx, syms, t, s) {
+            return false;
+        }
+        // Java: visit(t.getReturnType(), s.getReturnType()) (Types.java:1443);
+        // Type.getReturnType() returns null for a non-method type and the
+        // upstream visitor then throws NullPointerException.
+        match (
+            ctx.typ(t).get_return_type(ctx),
+            ctx.typ(s).get_return_type(ctx),
+        ) {
+            (Some(t_ret), Some(s_ret)) => self.is_same_type(ctx, syms, t_ret, s_ret),
+            _ => panic!("NullPointerException: isSameType method return type"),
+        }
     }
 
     /// Java: isSameTypeVisitor.visitForAll
@@ -1217,9 +1225,11 @@ impl Types {
         match &ctx.typ(t).kind {
             TypeKindData::IntersectionClassType { .. } => true,
             TypeKindData::UnionClassType { .. } => {
-                // NOT PORTED: UnionClassType.isCompound() calls getLub() (Types
-                // TODO); no approximation is done.
-                panic!("unimplemented: UnionClassType.isCompound (needs getLub)");
+                // Java: UnionClassType.isCompound() (Type.java:1220-1222):
+                // return getLub().isCompound(); getLub() is tsym.type.
+                let tsym = ctx.typ(t).tsym.expect("union class symbol");
+                let lub = ctx.sym(tsym).ty.expect("union lub type");
+                self.is_compound(ctx, lub)
             }
             _ => false,
         }
@@ -1436,10 +1446,7 @@ impl Types {
                 | TypeKindData::UnionClassType { .. }
                 | TypeKindData::IntersectionClassType { .. }
         );
-        if is_class_family {
-            if self.is_compound(ctx, t) {
-                panic!("unimplemented: subst on compound types (needs makeIntersectionType)");
-            }
+        if is_class_family && !self.is_compound(ctx, t) {
             let (outer, typarams) = match &ctx.typ(t).kind {
                 TypeKindData::ClassType { outer_field, typarams_field, .. }
                 | TypeKindData::ErasedClassType { outer_field, typarams_field, .. }
@@ -3267,8 +3274,8 @@ impl Types {
         if ctx.typ(t).has_tag(TypeTag::ARRAY) && ctx.typ(s).has_tag(TypeTag::ARRAY) {
             // Java: isSameType(elemtype(t), elemtype(s)) /
             // isSubtypeUncheckedInternal(elemtype(t), elemtype(s), false, warn)
-            let t_elem = elemtype_of(ctx, syms, t);
-            let s_elem = elemtype_of(ctx, syms, s);
+            let t_elem = elemtype_of(ctx, syms, t).expect("array element type");
+            let s_elem = elemtype_of(ctx, syms, s).expect("array element type");
             if ctx.typ(t_elem).is_primitive() {
                 return self.is_same_type(ctx, syms, t_elem, s_elem);
             }
@@ -3752,18 +3759,6 @@ pub(crate) fn get_parameter_types(ctx: &CompilerContext, t: TypeId) -> List<Type
     }
 }
 
-/// Java: Type.getReturnType() (MethodType: restype; other types: null).
-///
-/// PORTING_RULES: reproduced here (TODO Type; registered).
-fn get_return_type(ctx: &CompilerContext, t: TypeId) -> TypeId {
-    match &ctx.typ(t).kind {
-        TypeKindData::MethodType { restype, .. } => restype.expect("method return type"),
-        _ => panic!("unimplemented: getReturnType (TODO Type batch)"),
-    }
-
-}
-
-
 // ---------------------------------------------------------------------------
 // Types helpers.
 //
@@ -3967,19 +3962,24 @@ fn class_bound(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
 }
 
 /// Java: Types.elemtype(Type t)
-fn elemtype_of(ctx: &CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
+fn elemtype_of(
+    ctx: &CompilerContext,
+    syms: &Symtab,
+    t: TypeId,
+) -> Option<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::WildcardType { .. } => {
             let upper = Types::new().wild_upper_bound(ctx, syms, t);
             elemtype_of(ctx, syms, upper)
         }
-        TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
+        TypeKindData::ArrayType { elemtype, .. } => *elemtype,
         TypeKindData::ForAll { qtype, .. } => {
-            let qtype = qtype.expect("for-all qtype");
+            let qtype = (*qtype).expect("for-all qtype");
             elemtype_of(ctx, syms, qtype)
         }
-        TypeKindData::ErrorType { .. } => t,
-        _ => panic!("unimplemented: elemtype of a non-array type"),
+        TypeKindData::ErrorType { .. } => Some(t),
+        // Java: Types.elemtype default case returns null (Types.java:2078-2079).
+        _ => None,
     }
 }
 
@@ -6805,7 +6805,7 @@ impl Types {
                 // calculate lub(A[], B[])
                 let mut elements: Vec<TypeId> = Vec::new();
                 for t in ts {
-                    let elem = elemtype_of(ctx, syms, *t);
+                    let elem = elemtype_of(ctx, syms, *t).expect("array element type");
                     if ctx.typ(elem).is_primitive() {
                         let first = ts[0];
                         for other in &ts[1..] {
@@ -8547,8 +8547,8 @@ impl Types {
         warn: &mut crate::util::warner::Warner,
     ) -> bool {
         if ctx.typ(t).has_tag(TypeTag::ARRAY) && ctx.typ(s).has_tag(TypeTag::ARRAY) {
-            let t_elem = elemtype_of(ctx, syms, t);
-            let s_elem = elemtype_of(ctx, syms, s);
+            let t_elem = elemtype_of(ctx, syms, t).expect("array element type");
+            let s_elem = elemtype_of(ctx, syms, s).expect("array element type");
             if ctx.typ(t_elem).is_primitive() {
                 return self.is_same_type(ctx, syms, t_elem, s_elem);
             }
@@ -10110,7 +10110,10 @@ mod tests {
     fn elemtype_of_unwraps_arrays_and_wildcards() {
         let (mut ctx, symtab) = build();
         let int_array = new_array_type(&mut ctx, symtab.int_type, Some(symtab.array_class));
-        assert_eq!(elemtype_of(&ctx, &symtab, int_array), symtab.int_type);
+        assert_eq!(
+            elemtype_of(&ctx, &symtab, int_array).expect("array element type"),
+            symtab.int_type
+        );
         // Java: WildcardType.type is the (upper) bound; kind=EXTENDS.
         let wildcard = new_wildcard_type(
             &mut ctx,
@@ -10119,7 +10122,10 @@ mod tests {
             None,
             None,
         );
-        assert_eq!(elemtype_of(&ctx, &symtab, wildcard), symtab.int_type);
+        assert_eq!(
+            elemtype_of(&ctx, &symtab, wildcard).expect("array element type"),
+            symtab.int_type
+        );
     }
 
     #[test]
@@ -10275,17 +10281,26 @@ mod tests {
                         "java.lang.Integer" => assert_eq!(erased_tsym, Some(boxed_sym)),
                         "int[]" => {
                             assert_eq!(ctx.typ(erased).get_tag(), TypeTag::ARRAY);
-                            assert_eq!(elemtype_of(&ctx, &symtab, erased), symtab.int_type);
+                            assert_eq!(
+                                elemtype_of(&ctx, &symtab, erased).expect("array element type"),
+                                symtab.int_type
+                            );
                         }
                         "java.lang.String[]" => {
                             assert_eq!(ctx.typ(erased).get_tag(), TypeTag::ARRAY);
-                            assert_eq!(elemtype_of(&ctx, &symtab, erased), symtab.string_type);
+                            assert_eq!(
+                                elemtype_of(&ctx, &symtab, erased).expect("array element type"),
+                                symtab.string_type
+                            );
                         }
                         "long[][]" => {
                             assert_eq!(ctx.typ(erased).get_tag(), TypeTag::ARRAY);
-                            let elem = elemtype_of(&ctx, &symtab, erased);
+                            let elem = elemtype_of(&ctx, &symtab, erased).expect("array element type");
                             assert_eq!(ctx.typ(elem).get_tag(), TypeTag::ARRAY);
-                            assert_eq!(elemtype_of(&ctx, &symtab, elem), symtab.long_type);
+                            assert_eq!(
+                                elemtype_of(&ctx, &symtab, elem).expect("array element type"),
+                                symtab.long_type
+                            );
                         }
                         "java.util.List" => assert_eq!(erased_tsym, Some(list_tsym)),
                         other => panic!("unexpected erasure name {other}"),

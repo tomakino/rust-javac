@@ -160,9 +160,16 @@ pub trait AbstractDiagnosticFormatter {
         if fullname {
             return file_object.get_name().to_string_lossy();
         }
-        // NOT PORTED: the short name needs file/PathFileObject (getShortName /
-        // getSimpleName); no substitute name is produced here.
-        panic!("unimplemented: formatSource(fullname = false) needs file/PathFileObject");
+        // Java: PathFileObject.getShortName() / PathFileObject.getSimpleName(fo)
+        // both return the last path component of the file object name. The port
+        // has no trait-object downcast, so the last component of getName() is
+        // used (registered adapter; the values are identical for the ported file
+        // objects).
+        let name = file_object.get_name().to_string_lossy();
+        name.rsplit('/')
+            .next()
+            .map(|part| part.to_string())
+            .unwrap_or(name)
     }
 
     /// Format the arguments of a given diagnostic.
@@ -293,8 +300,11 @@ pub trait AbstractDiagnosticFormatter {
     ///
     /// Java: protected String localize(Locale l, String key, Object... args)
     fn localize(&self, locale: Option<&Locale>, key: &str, args: &[String]) -> String {
+        // Java: the upstream messages field is never null in this branch (the raw
+        // formatter overrides localize); a null messages object would throw a
+        // NullPointerException at the localize call.
         let Some(messages) = self.messages() else {
-            panic!("unimplemented: localize without JavacMessages (raw formatter overrides localize)");
+            panic!("NullPointerException: localize without JavacMessages");
         };
         messages.get_localized_string_for(locale, key, args)
     }
@@ -380,8 +390,10 @@ pub fn format_argument_default<F: AbstractDiagnosticFormatter + ?Sized>(
         return file_object.get_name().to_string_lossy();
     }
     if let Some(formattable) = arg.downcast_ref::<Rc<dyn Formattable>>() {
+        // Java: formattable.toString(l, messages) would throw a
+        // NullPointerException when messages is null (raw formatter fallback).
         let Some(messages) = formatter.messages() else {
-            panic!("unimplemented: Formattable argument without JavacMessages");
+            panic!("NullPointerException: Formattable argument without JavacMessages");
         };
         let locale = locale.cloned().unwrap_or_else(Locale::default_locale);
         return formattable.to_string_with_locale(&locale, messages.as_ref());
@@ -412,7 +424,15 @@ pub fn format_argument_default<F: AbstractDiagnosticFormatter + ?Sized>(
     if let Some(value) = arg.downcast_ref::<crate::util::name::Name>() {
         return value.to_java_string().to_string_lossy();
     }
-    panic!("unimplemented: unsupported diagnostic argument type (needs String.valueOf(Object))");
+    // Java: Format argument instanceof Option -> option.primaryName.
+    if let Some(option) = arg.downcast_ref::<crate::main::option::Option>() {
+        return option.primary_name().to_string();
+    }
+    // Java: Format argument instanceof Target -> target.name.
+    if let Some(target) = arg.downcast_ref::<crate::jvm::target::Target>() {
+        return target.name().to_string();
+    }
+    panic!("AssertionError: diagnostic argument type needs String.valueOf(Object)");
 }
 
 /// Java: public static class SimpleConfiguration implements Configuration

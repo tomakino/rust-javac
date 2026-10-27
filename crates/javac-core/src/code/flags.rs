@@ -706,3 +706,52 @@ mod tests {
         assert_eq!(ModifierFlags, ((StandardFlags & !INTERFACE) as i64) | DEFAULT | SEALED | NON_SEALED);
     }
 }
+
+/// Java: public static boolean isStatic(Symbol symbol) (Flags.java:457-459).
+///
+/// # Arguments
+///   - symbol: the symbol.
+///
+/// # Returns
+///   - whether the STATIC flag is set.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Flags.java:457-459.
+pub fn is_static(symbol: &crate::code::symbol::Symbol) -> bool {
+    (symbol.flags() & STATIC as i64) != 0
+}
+
+/// Java: public static boolean isEnum(Symbol symbol) (Flags.java:461-463).
+///
+/// # Arguments
+///   - symbol: the symbol.
+///
+/// # Returns
+///   - whether the ENUM flag is set.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Flags.java:461-463.
+pub fn is_enum(symbol: &crate::code::symbol::Symbol) -> bool {
+    (symbol.flags() & ENUM as i64) != 0
+}
+
+/// Java: public static boolean isConstant(Symbol.VarSymbol symbol)
+/// (Flags.java:465-467): the constant value is non-null.
+///
+/// # Arguments
+///   - symbol: the variable symbol.
+///
+/// # Returns
+///   - whether the symbol has a constant value.
+///
+/// # Panics
+///   - none.
+///
+/// Upstream: Flags.java:465-467.
+pub fn is_constant(symbol: &crate::code::symbol::Symbol) -> bool {
+    symbol.get_const_value().is_some()
+}

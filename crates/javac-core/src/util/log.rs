@@ -1027,7 +1027,19 @@ fn java_value_to_string(arg: &DiagnosticArg) -> String {
     if let Some(value) = arg.downcast_ref::<crate::util::name::Name>() {
         return value.to_java_string().to_string_lossy();
     }
-    panic!("unimplemented: unsupported log message argument type (String.valueOf(Object))");
+    if let Some(option) = arg.downcast_ref::<crate::main::option::Option>() {
+        return option.primary_name().to_string();
+    }
+    if let Some(target) = arg.downcast_ref::<crate::jvm::target::Target>() {
+        return target.name().to_string();
+    }
+    if let Some(source) = arg.downcast_ref::<crate::code::source::Source>() {
+        return source.name().to_string();
+    }
+    if let Some(file_object) = arg.downcast_ref::<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>() {
+        return file_object.get_name().to_string_lossy();
+    }
+    panic!("AssertionError: log message argument type needs String.valueOf(Object)");
 }
 
 impl AbstractLog for Log {
