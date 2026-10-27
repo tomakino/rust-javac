@@ -1529,16 +1529,55 @@ impl Locations {
         Ok(result.map(|location| location as Rc<dyn Location>))
     }
 
-    /// Java: Location getLocationForModule(Location location, Path file).
+    /// Java: Location getLocationForModule(Location location, Path file)
+    /// (Locations.java:2164-2167; handler overrides: Output 656, ModulePath 1156,
+    /// ModuleSourcePath 1814, SystemModules 1931, PatchModules 2072).
     pub fn get_location_for_module_path(
         &mut self,
         location: &dyn Location,
-        _file: &FsPath,
+        file: &FsPath,
     ) -> Result<StdOption<Rc<dyn Location>>, Error> {
-        // TODO(S3c): the by-path lookup (ModuleTable.get(Path) with parent walking) is used by
-        // the file manager together with the module path scan.
-        let _ = self.handler_index(location);
-        Ok(None)
+        let Some(index) = self.handler_index(location) else {
+            return Ok(None);
+        };
+        let fs_info = self
+            .fs_info
+            .as_ref()
+            .expect("NullPointerException: Locations.update has not been called");
+        let ctx = LocationCtx {
+            fs_info,
+            java_home: &self.java_home,
+            log: self.log.as_ref(),
+        };
+        let parent = self.handlers[index].location.clone();
+        let result: StdOption<Rc<ModuleLocation>> = match &mut self.handlers[index].kind {
+            HandlerKind::Output(state) => state
+                .module_table
+                .as_ref()
+                .and_then(|table| table.get_by_path(&ctx, file)),
+            HandlerKind::PatchModules(state) => state.module_table.get_by_path(&ctx, file),
+            HandlerKind::ModuleSourcePath(state) => state
+                .module_table
+                .as_ref()
+                .and_then(|table| table.get_by_path(&ctx, file)),
+            HandlerKind::ModulePath(state) => {
+                // Java: initModuleLocations(); moduleTable.get(file)
+                module_path_init_locations(fs_info, self.log.as_ref(), state, &parent);
+                state
+                    .module_table
+                    .as_ref()
+                    .and_then(|table| table.get_by_path(&ctx, file))
+            }
+            HandlerKind::SystemModules(state) => {
+                ctx.init_system_modules(state)?;
+                state
+                    .module_table
+                    .as_ref()
+                    .and_then(|table| table.get_by_path(&ctx, file))
+            }
+            _ => None,
+        };
+        Ok(result.map(|location| location as Rc<dyn Location>))
     }
 
     /// Java: Iterable<Set<Location>> listLocationsForModules(Location location).
