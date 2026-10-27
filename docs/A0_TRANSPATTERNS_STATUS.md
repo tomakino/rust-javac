@@ -21,3 +21,26 @@ A0.4 接线 mini_compiler.desugar(trans_types → TransPatterns.translate_top_le
 A0.5 官方样例 e2e + 合法 pattern 成功 + 全量验证。
 
 A0b LambdaToMethod(下一批,同样先补默认导航复用)。
+
+## 进度快照(压缩保护)
+
+- 已创建 crates/javac-core/src/comp/trans_patterns.rs(未跟踪,约 3200 行):
+  - 结构/构造/translate 框架/translateTopLevelClass/principal_type/make_type_test/make_binary/make_unary/convert/BindingContext(Default/Basic/Fence,含 binding_declared/get_binding_for/binding_vars/decorate_statement/decorate_expression/try_prepend/pop)/make_lit/to_loadable_constant;
+  - impl TreeVisitor for TransPatterns:复制 TreeTranslator 全部 68 个默认导航方法,其中 18 个特殊方法已按上游替换:visit_type_test/visit_binding_pattern/visit_parenthesized_pattern/visit_guard_pattern/visit_binary/visit_conditional/visit_if/visit_for_loop/visit_while_loop/visit_do_loop/visit_method_def/visit_ident/visit_block/visit_lambda/visit_class_def/visit_var_def/visit_switch/visit_switch_expression;handle_switch 已按上游 275-486 编写;
+- 当前状态:文件中间损坏(一次方法删除误删 handle_switch 930 行之后片段:unwrap_or('$') 后内容丢失),未注册模块(comp/mod.rs 已回退,工作树保持可编译/全绿);trans_patterns.rs 为未跟踪新文件;
+- 下一步:1) 修复 trans_patterns.rs 中 handle_switch 截断(从 unwrap_or('$'); 后补回 temp_name/temp VarSymbol/temp_def/index/index_def/staticArgTypes/staticArgValues/enum_selector/bsm/indy/qualifier/selector_expr/case 重写循环/最终 LetExpr 块,按上游 358-478);2) cargo check;3) 注册 comp/mod.rs;4) mini_compiler.desugar 接线(trans_types → TransPatterns.translate_top_level_class → CompileStates::TRANSPATTERNS → lower);5) e2e 官方样例;6) A0b LambdaToMethod。
+
+## 本轮实施进度(trans_patterns.rs 完成+接线验证)
+
+- trans_patterns.rs 已完整(约 2780 行):结构/字段/构造/translate/translate_top_level_class/principal_type/make_type_test/make_binary/make_unary/convert/BindingContext(Default/Basic/Fence+decorate_statement/decorate_expression/binding_vars)/make_lit/to_loadable_constant;impl TreeVisitor 复用 68 默认导航方法+18 特殊方法按上游替换(含 handle_switch 完整);自由函数(new_var_symbol/case helpers/is_pattern_label/is_null_pattern/literal_value_constant/binding alias helpers/make_hoisted_var_decl)。cargo check 通过。
+- 辅助 API 补齐:TreeMaker::literal_object 按上游 TreeMaker.java:899-934 设置常量类型(Boolean→booleanType.constType(1));Java(jvm)Code::emitop2_type 补 INSTANCEOF 栈效果(Code.java:1068-1071:pop1 push int)。
+- 接线:mini_compiler.desugar 在 trans_types 后插入 TransPatterns.translate_top_level_class + CompileStates::TRANSTYPES/TRANSPATTERNS,再 lower(已实现并通过编译;因剩余 Gen/Items 适配问题本轮暂回退接线以保持工作树全绿)。
+- 实测 Java e2e 官方样例(instanceof pattern)链路:Attr 诊断、TransTypes、TransPatterns(desugar LetExpr/Assign)均已执行;当前阻断:jvm/items.rs:220 make_local_item 要求 VarSymbol,但上游 Symbol.BindingSymbol extends VarSymbol(本地为独立 SymbolKind::BindingSymbol,无 adr 字段),需 1:1 补齐 BindingSymbol 的 VarSymbol 继承语义(adr/data/flags 访问)并让 Items/Gen 处理;另有 jvm/code.rs:2120 locals 栈帧适配(BindingSymbol 作为局部变量槽)。下一步:补 BindingSymbol 继承适配 → 恢复接线 → e2e 通过 → A0b LambdaToMethod。
+- 当前工作树:trans_patterns.rs 未注册(未跟踪保留),mini_compiler/check.rs/mod.rs 已恢复 HEAD;待全量验证。
+
+## 本轮结论与回退
+
+- trans_patterns.rs 已完整编译通过并完成 mini_compiler.desugar 接线验证;官方 instanceof e2e 链路实测:Attr 诊断→TransTypes→TransPatterns(desugar)→Lower 全部通过;剩余阻断在 Gen/Items:jvm/items.rs:220 make_local_item 要求 VarSymbol,而上游 Symbol.BindingSymbol extends VarSymbol(本地为独立 SymbolKind::BindingSymbol,无 adr),需要 1:1 补齐 BindingSymbol 的 VarSymbol 继承语义;以及 code.rs locals 帧(BindingSymbol 局部槽)适配。
+- 本轮临时补的 TreeMaker::literal_object 常量类型(TreeMaker.java:899-934)导致 4 个既有 tree_maker 测试断言失败(测试编码旧的不完整行为);按"不得改测试迁就实现"规则,已回退 literal_object 改动,待 Lead 审核测试期望后随 A0.3 提交。
+- jvm/code.rs emitop2_type 的 INSTANCEOF 栈效果补丁(Code.java:1068-1071)保留(正确且不影响测试)。
+- 当前工作树:trans_patterns.rs 未注册(未跟踪);code.rs 修改保留;其余回退;全量测试预期 1105 绿。

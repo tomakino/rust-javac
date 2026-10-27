@@ -1666,6 +1666,12 @@ impl Code {
                 let erased = self.types.erasure(ctx, &syms, data);
                 self.push(ctx, erased);
             }
+            INSTANCEOF => {
+                // Java: Code.java:1068-1071 (instanceof: pop 1, push int).
+                self.pop_n(1);
+                let int = self.syms.borrow().int_type;
+                self.push(ctx, int);
+            }
             _ => panic!("AssertionError: {}", Code::mnem(op)),
         }
         self.postop();
