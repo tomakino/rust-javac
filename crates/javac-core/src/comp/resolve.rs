@@ -121,6 +121,15 @@ pub struct Resolve {
     /// Java: WriteableScope polymorphicSignatureScope (Resolve.java:118; lazily
     /// created on first use because the port Resolve has no Symtab field, Porting rules).
     pub polymorphic_signature_scope: Option<ScopeId>,
+    /// Java: MethodResolutionContext currentResolutionContext (Resolve.java:5005):
+    /// the step read by accessInternal for the deferred argument-type mapping
+    /// (the resolution context is otherwise passed explicitly; registered adapter:
+    /// the port stores the immutable step while a method check runs).
+    pub current_resolution_step: Option<MethodResolutionPhase>,
+    /// The Attr service used by the deferred argument-type mapping in
+    /// accessInternal (Java: methodLogResolveHelper/DeferredAttr; the port wires
+    /// the Attr cell after construction — registered adapter).
+    pub attr_cell: Rc<RefCell<Option<Rc<RefCell<crate::comp::attr::Attr>>>>>, 
 }
 
 impl Resolve {
@@ -188,6 +197,8 @@ impl Resolve {
             options,
             default_method_check,
             polymorphic_signature_scope: None,
+            current_resolution_step: None,
+            attr_cell: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -1140,7 +1151,7 @@ impl Resolve {
         argtypes: Option<crate::util::list::List<TypeId>>,
         typeargtypes: Option<crate::util::list::List<TypeId>>,
     ) -> Option<crate::util::jc_diagnostic::JCDiagnostic> {
-        let _ = syms;
+
         let error_name = self.names.error.clone();
         let Some(name) = name else {
             // The upstream callers always pass a non-null name; a null name
@@ -2701,11 +2712,11 @@ impl Resolve {
         site: Option<TypeId>,
         name: &crate::util::name::Name,
         qualified: bool,
-        argtypes: Option<crate::util::list::List<TypeId>>,
+        mut argtypes: Option<crate::util::list::List<TypeId>>,
         typeargtypes: Option<crate::util::list::List<TypeId>>,
         log_resolve_helper: LogResolveHelper,
     ) -> SymbolId {
-        let _ = syms;
+
         if ctx.sym(sym).kind.is_resolution_error() {
             let err_sym = sym;
             let access_location = if qualified {
@@ -2718,33 +2729,31 @@ impl Resolve {
             let _ = sym;
             // Java: argtypes = logResolveHelper.getArgumentTypes(errSym, sym,
             // name, argtypes)
-            if log_resolve_helper == LogResolveHelper::Method {
-                // Java: argtypes.map(new ResolveDeferredRecoveryMap(SPECULATIVE,
-                // accessedSym, currentResolutionContext.step)) (Resolve.java:2615),
-                // i.e. RecoveryDeferredTypeMap over the argument types. Types that
-                // are not deferred map to themselves (the map is the identity on
-                // every other type), which is the only case reachable before the
-                // Attr re-entry hook exists for deferred mapping.
-                if let Some(current_argtypes) = argtypes.clone() {
-                    let mut has_deferred = false;
-                    let mut current = current_argtypes;
-                    while current.non_empty() {
-                        if ctx
-                            .typ(*current.head())
-                            .has_tag(crate::code::type_tag::TypeTag::DEFERRED)
-                        {
-                            has_deferred = true;
-                            break;
-                        }
-                        current = current.tail();
-                    }
-                    if has_deferred {
-                        unimplemented!(
-                            "TODO(DeferredAttr batch): ResolveDeferredRecoveryMap deferred mapping needs the Attr re-entry hook"
-                        )
-                    }
-                }
-            }
+            if log_resolve_helper == LogResolveHelper::Method {
+                // Java: argtypes = logResolveHelper.getArgumentTypes(errSym, sym,
+                // name, argtypes) with methodLogResolveHelper mapping each argument
+                // through new ResolveDeferredRecoveryMap(SPECULATIVE, accessedSym,
+                // currentResolutionContext.step) (Resolve.java:2615-2636).
+                if let Some(current_argtypes) = argtypes.clone() {
+                    let step = self
+                        .current_resolution_step
+                        .expect("AssertionError: currentResolutionContext is null");
+                    let attr = Rc::clone(
+                        self.attr_cell
+                            .borrow()
+                            .as_ref()
+                            .expect("AssertionError: Attr service must be installed"),
+                    );
+                    let mapped = attr.borrow_mut().map_resolve_deferred_argtypes(
+                        ctx,
+                        syms,
+                        current_argtypes,
+                        Some(sym),
+                        step,
+                    );
+                    argtypes = Some(mapped);
+                }
+            }
             if self.resolve_diagnostic_needed(
                 ctx,
                 log_resolve_helper,
@@ -4170,24 +4179,34 @@ impl Resolve {
             .pending_resolution_phase
             .expect("pending resolution phase");
         resolution_context.step = Some(step);
-        self.raw_instantiate(
-            ctx,
-            syms,
-            types,
-            attr,
-            chk,
-            infer,
-            env,
-            site,
-            m,
-            Some(result_info),
-            argtypes,
-            typeargtypes,
-            step.is_boxing_required(),
-            step.is_varargs_required(),
-            &mut resolution_context,
-            warn,
-        )
+        let previous_step = self.current_resolution_step;
+        self.current_resolution_step = Some(step);
+        // Java: finally { currentResolutionContext = prevContext; } (Resolve.java:647-665).
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.raw_instantiate(
+                ctx,
+                syms,
+                types,
+                attr,
+                chk,
+                infer,
+                env,
+                site,
+                m,
+                Some(result_info),
+                argtypes,
+                typeargtypes,
+                step.is_boxing_required(),
+                step.is_varargs_required(),
+                &mut resolution_context,
+                warn,
+            )
+        }));
+        self.current_resolution_step = previous_step;
+        match result {
+            Ok(value) => value,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
     }
 
     /// Java: Type instantiate(Env<AttrContext> env, Type site, Symbol m,
@@ -5855,7 +5874,7 @@ fn skip_type_vars(
     syms: &crate::code::symtab::Symtab,
     t: TypeId,
 ) -> TypeId {
-    let _ = syms;
+
     let mut current = t;
     loop {
         if ctx.typ(current).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {

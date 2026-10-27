@@ -10686,6 +10686,10 @@ pub fn wire_attr_services(
         Rc::clone(&options),
         finder,
     )));
+    // Java: Resolve holds the Context services; the deferred argument-type map
+    // (Resolve.java:2615-2636) needs the Attr re-entry (registered adapter cell).
+    *rs.borrow().attr_cell.borrow_mut() = Some(Rc::clone(&attr));
+
     // 2. Operators (Operators.java:100-140)
     let operators = Rc::new(crate::comp::operators::Operators::new(
         ctx,
@@ -16352,6 +16356,37 @@ class Sample {
         assert_eq!(*components.head(), first_type);
         assert_eq!(*components.tail().head(), second_type);
     }
+
+    /// Java: methodLogResolveHelper.getArgumentTypes (Resolve.java:2634-2636):
+    /// the deferred recovery map is the identity on non-deferred argument types.
+    #[test]
+    fn map_resolve_deferred_argtypes_keeps_non_deferred_types() {
+        use crate::code::source::Source;
+        use crate::comp::resolve::MethodResolutionPhase;
+
+        let mut harness = build_attr_harness();
+        let attr = Rc::new(RefCell::new(harness.attr));
+        wire_attr_services(
+            &mut harness.ctx,
+            Rc::clone(&attr),
+            Rc::clone(&harness.options),
+            Source::JDK17,
+            None,
+        );
+        let (int_type, string_type) = {
+            let syms = harness.syms.borrow();
+            (syms.int_type, syms.string_type)
+        };
+        let argtypes = List::of(int_type).append(string_type);
+        let mapped = attr.borrow_mut().map_resolve_deferred_argtypes(
+            &mut harness.ctx,
+            &mut harness.syms.borrow_mut(),
+            argtypes.clone(),
+            None,
+            MethodResolutionPhase::BASIC,
+        );
+        assert_eq!(mapped, argtypes);
+    }
 }
 
 
@@ -16413,6 +16448,56 @@ impl Attr {
     ///
     /// # Panics
     ///   - a base clause invariant is violated.
+    /// Java: the methodLogResolveHelper.getArgumentTypes deferred mapping
+    /// (Resolve.java:2634-2636): each argument type is mapped through a
+    /// ResolveDeferredRecoveryMap(SPECULATIVE, accessedSymbol, step).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler context and symbol table;
+    ///   - argtypes: the argument types of the failed method resolution;
+    ///   - msym: the accessed symbol;
+    ///   - step: the method resolution phase.
+    ///
+    /// # Returns
+    ///   - the mapped argument types.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Resolve.java:2615/2634-2636, DeferredAttr.DeferredTypeMap.typeOf.
+    pub fn map_resolve_deferred_argtypes(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        argtypes: List<TypeId>,
+        msym: Option<SymbolId>,
+        step: crate::comp::resolve::MethodResolutionPhase,
+    ) -> List<TypeId> {
+        let types = Rc::clone(&self.types);
+        let chk = Rc::clone(&self.chk);
+        let diags = Rc::clone(&self.diags);
+        let chk_ref = chk.borrow();
+        let mut dctx = crate::comp::deferred_attr::DeferredMapCtx {
+            attr: self,
+            syms,
+            types: &types,
+            chk: &chk_ref,
+            diags: &diags,
+        };
+        let mut map = crate::comp::deferred_attr::ResolveDeferredRecoveryMap::new(
+            crate::comp::deferred_attr::AttrMode::SPECULATIVE,
+            msym,
+            step,
+        );
+        let mut result: List<TypeId> = List::nil();
+        let mut current = argtypes;
+        while current.non_empty() {
+            let argument = *current.head();
+            result = result.append(map.visit(ctx, &mut dctx, argument, &None));
+            current = current.tail();
+        }
+        result
+    }
     pub fn check_base(
         &mut self,
         ctx: &mut CompilerContext,
