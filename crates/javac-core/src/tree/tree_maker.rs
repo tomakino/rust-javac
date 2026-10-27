@@ -111,18 +111,14 @@ impl TreeMaker {
         types: StdOption<Rc<Types>>,
         syms: StdOption<Rc<RefCell<crate::code::symtab::Symtab>>>, 
     ) -> TreeMaker {
-        let mut maker = TreeMaker {
+        TreeMaker {
             pos: position::FIRSTPOS,
             toplevel,
             names,
             types,
             syms,
             root_package: None,
-        };
-        if let Some(syms) = &maker.syms {
-            maker.root_package = Some(syms.borrow().root_package);
         }
-        maker
     }
 
     /// Java: public static TreeMaker instance(Context context) — cached in the Context.

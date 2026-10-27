@@ -11345,7 +11345,7 @@ impl Attr {
             /// Java: private void checkForDeclarationAnnotations(List<? extends
             /// JCAnnotation> annotations, Symbol sym) (Attr.java:5795-5806).
             fn check_for_declaration_annotations(
-                &self,
+                &mut self,
                 ctx: &mut CompilerContext,
                 annotations: &List<TreeId>,
                 sym: SymbolId,
@@ -11366,8 +11366,7 @@ impl Attr {
                     let ta_rc = self.attr.type_annotations.borrow().clone();
                     let target = match ta_rc {
                         Some(ta_rc) => {
-                            let mut syms = self.attr.syms.borrow_mut();
-                            ta_rc.annotation_target_type(ctx, &mut syms, attribute, sym)
+                            ta_rc.annotation_target_type(ctx, &mut *self.syms, attribute, sym)
                         }
                         None => return,
                     };
@@ -13790,12 +13789,7 @@ impl Attr {
             chk.check_override_env(ctx, syms, &env, tree, m);
         }
         if is_default_method {
-            let overrides_object = {
-                let syms_rc = Rc::clone(&self.syms);
-                let mut syms_borrow = syms_rc.borrow_mut();
-                self.types
-                    .overrides_object_method(ctx, &mut syms_borrow, origin, m)
-            };
+            let overrides_object = self.types.overrides_object_method(ctx, syms, origin, m);
             if overrides_object {
                 let kind_name = crate::code::kinds::kind_name(ctx.sym(m), ctx);
                 let info =
@@ -13878,7 +13872,7 @@ impl Attr {
             let chk = chk_rc.borrow();
             chk.validate(ctx, syms, &new_env, recvparam);
         }
-        self.record_method_checks(ctx, tree, m, origin, mods, typarams.clone(), params.clone(), thrown.clone());
+        self.record_method_checks(ctx, syms, tree, m, origin, mods, typarams.clone(), params.clone(), thrown.clone());
         if (owner_flags & flags::ANNOTATION as i64) != 0 {
             if !thrown.is_empty() {
                 let first = *thrown.head();
@@ -14045,6 +14039,7 @@ impl Attr {
     fn record_method_checks(
         &mut self,
         ctx: &mut CompilerContext,
+        syms: &mut Symtab,
         tree: TreeId,
         m: SymbolId,
         origin: SymbolId,
@@ -14084,12 +14079,7 @@ impl Attr {
             let component_ty = ctx.sym(rc).ty.expect("record component type");
             let method_ret = ctx.typ(method_ty).get_return_type(ctx);
             let same = match method_ret {
-                Some(ret) => {
-                    let syms_rc = Rc::clone(&self.syms);
-                    let syms_borrow = syms_rc.borrow();
-                    let syms_ref: &Symtab = &syms_borrow;
-                    self.types.is_same_type(ctx, syms_ref, ret, component_ty)
-                }
+                Some(ret) => self.types.is_same_type(ctx, syms, ret, component_ty),
                 None => false,
             };
             if !same {
@@ -14175,13 +14165,8 @@ impl Attr {
             }
         } else if (ctx.sym(m).flags_field & flags::GENERATEDCONSTR) == 0 {
             let canonical_frag = crate::resources::compiler_properties::fragments::canonical();
-            let stronger = {
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
-                let _ = syms_borrow;
-                crate::comp::check::Check::protection(ctx.sym(m).flags_field)
-                    > crate::comp::check::Check::protection(ctx.sym(origin).flags_field)
-            };
+            let stronger = crate::comp::check::Check::protection(ctx.sym(m).flags_field)
+                > crate::comp::check::Check::protection(ctx.sym(origin).flags_field);
             if stronger {
                 let access = ctx.sym(origin).flags_field & flags::AccessFlags as i64;
                 let access_text = if access == 0 {
@@ -14617,7 +14602,7 @@ impl Attr {
             && ctx.sym(owner).kind == crate::code::kinds::Kind::TYP
             && ctx.sym(owner).is_record()
             && !ctx.sym(v).is_static(ctx)
-            && self.is_non_args_method_in_object(ctx, &name)
+            && self.is_non_args_method_in_object(ctx, syms, &name)
         {
             let info = crate::resources::compiler_properties::errors::illegal_record_component_name(
                 crate::resources::diagnostic_contract::SymbolArg::placeholder(attr_symbol_name(
@@ -14634,12 +14619,13 @@ impl Attr {
 
 
     /// Return whether the name is a no-argument method of Object.
-    fn is_non_args_method_in_object(&self, ctx: &mut CompilerContext, name: &Name) -> bool {
-        let object_type = {
-            let syms_rc = Rc::clone(&self.syms);
-            let syms_borrow = syms_rc.borrow();
-            syms_borrow.object_type
-        };
+    fn is_non_args_method_in_object(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        name: &Name,
+    ) -> bool {
+        let object_type = syms.object_type;
         let Some(object_tsym) = ctx.typ(object_type).tsym else {
             return false;
         };

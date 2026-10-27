@@ -7787,11 +7787,7 @@ impl Check {
         }
         let owner = ctx.sym(s).owner.expect("method owner");
         let owner_ty = ctx.sym(owner).ty.expect("owner type");
-        let syms_rc = Rc::clone(&self.syms);
-        let closure = {
-            let syms_borrow = syms_rc.borrow();
-            self.types.closure(ctx, &syms_borrow, owner_ty)
-        };
+        let closure = self.types.closure(ctx, syms, owner_ty);
         let mut sup_types = closure;
         while sup_types.non_empty() {
             let sup = *sup_types.head();
@@ -7907,8 +7903,8 @@ impl Check {
                 self.check_override_at(ctx, syms, tree, t, origin, m);
             }
             let interfaces = {
-                let syms_borrow: &crate::code::symtab::Symtab = &*syms;
-                self.types.interfaces(ctx, syms_borrow, t)
+                let syms: &crate::code::symtab::Symtab = &*syms;
+                self.types.interfaces(ctx, syms, t)
             };
             let mut list = interfaces;
             while list.non_empty() {
@@ -7917,8 +7913,8 @@ impl Check {
                 self.check_override_at(ctx, syms, tree, t2, origin, m);
             }
             let supertype = {
-                let syms_borrow: &crate::code::symtab::Symtab = &*syms;
-                self.types.supertype(ctx, syms_borrow, t)
+                let syms: &crate::code::symtab::Symtab = &*syms;
+                self.types.supertype(ctx, syms, t)
             };
             if supertype == t {
                 break;
@@ -8214,45 +8210,35 @@ impl Check {
                 }
                 let sym_ty = ctx.sym(sym).ty.expect("method type");
                 let m2_member_ty = {
-                    let syms_rc = Rc::clone(&self.syms);
-                    let syms_borrow = syms_rc.borrow();
-                    self.types.member_type(ctx, &syms_borrow, site, m2)
+                    self.types.member_type(ctx, syms, site, m2)
                 };
                 let strict = crate::code::source::Feature::STRICT_METHOD_CLASH_CHECK
                     .allowed_in_source(self.source);
                 let sub_signature = {
-                    let syms_rc = Rc::clone(&self.syms);
-                    let syms_borrow = syms_rc.borrow();
                     self.types.is_sub_signature_strict(
                         ctx,
-                        &syms_borrow,
+                        syms,
                         sym_ty,
                         m2_member_ty,
                         strict,
                     )
                 };
                 let m2_erased = {
-                    let syms_rc = Rc::clone(&self.syms);
-                    let syms_borrow = syms_rc.borrow();
                     let m2_ty = ctx.sym(m2).ty.expect("method type");
-                    self.types.erasure(ctx, &syms_borrow, m2_ty)
+                    self.types.erasure(ctx, syms, m2_ty)
                 };
                 let m1_erased = {
-                    let syms_rc = Rc::clone(&self.syms);
-                    let syms_borrow = syms_rc.borrow();
                     let m1_ty = ctx.sym(m1).ty.expect("method type");
-                    self.types.erasure(ctx, &syms_borrow, m1_ty)
+                    self.types.erasure(ctx, syms, m1_ty)
                 };
                 let same_args = {
-                    let syms_rc = Rc::clone(&self.syms);
-                    let syms_borrow = syms_rc.borrow();
                     self.types
-                        .has_same_args(ctx, &syms_borrow, m2_erased, m1_erased)
+                        .has_same_args(ctx, syms, m2_erased, m1_erased)
                 };
                 if !sub_signature && same_args {
                     ctx.sym_mut(sym).flags_field |= flags::CLASH;
-                    let m1_params = self.member_parameter_types(ctx, site, m1);
-                    let m2_params = self.member_parameter_types(ctx, site, m2);
+                    let m1_params = self.member_parameter_types(ctx, syms, site, m1);
+                    let m2_params = self.member_parameter_types(ctx, syms, site, m2);
                     let m1_name = ctx.sym(m1).name.clone();
                     let m2_name = ctx.sym(m2).name.clone();
                     let info = if m1 == sym {
@@ -8310,13 +8296,12 @@ impl Check {
     fn member_parameter_types(
         &self,
         ctx: &mut CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
         site: TypeId,
         sym: SymbolId,
     ) -> Vec<crate::resources::diagnostic_contract::TypeArg> {
         let member_ty = {
-            let syms_rc = Rc::clone(&self.syms);
-            let syms_borrow = syms_rc.borrow();
-            self.types.member_type(ctx, &syms_borrow, site, sym)
+            self.types.member_type(ctx, syms, site, sym)
         };
         let params = match &ctx.typ(member_ty).kind {
             crate::code::type_::TypeKindData::MethodType { argtypes, .. } => argtypes.clone(),
@@ -8395,11 +8380,9 @@ impl Check {
                 continue;
             }
             let inherited = {
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
                 crate::code::symbol::is_inherited_in(
                     ctx,
-                    &syms_borrow,
+                    syms,
                     &self.types,
                     candidate,
                     site_tsym,
@@ -8410,19 +8393,15 @@ impl Check {
             }
             let sym_ty = ctx.sym(sym).ty.expect("method type");
             let candidate_member_ty = {
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
                 self.types
-                    .member_type(ctx, &syms_borrow, site, candidate)
+                    .member_type(ctx, syms, site, candidate)
             };
             let strict = crate::code::source::Feature::STRICT_METHOD_CLASH_CHECK
                 .allowed_in_source(self.source);
             let sub_signature = {
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
                 self.types.is_sub_signature_strict(
                     ctx,
-                    &syms_borrow,
+                    syms,
                     sym_ty,
                     candidate_member_ty,
                     strict,
@@ -8432,21 +8411,15 @@ impl Check {
                 continue;
             }
             let candidate_erased = {
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
                 let candidate_ty = ctx.sym(candidate).ty.expect("method type");
-                self.types.erasure(ctx, &syms_borrow, candidate_ty)
+                self.types.erasure(ctx, syms, candidate_ty)
             };
             let sym_erased = {
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
-                self.types.erasure(ctx, &syms_borrow, sym_ty)
+                self.types.erasure(ctx, syms, sym_ty)
             };
             let same_args = {
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
                 self.types
-                    .has_same_args(ctx, &syms_borrow, candidate_erased, sym_erased)
+                    .has_same_args(ctx, syms, candidate_erased, sym_erased)
             };
             if same_args {
                 let info = crate::resources::compiler_properties::errors::name_clash_same_erasure_no_hide(
@@ -8508,14 +8481,10 @@ impl Check {
             return;
         }
         let mt1 = {
-            let syms_rc = Rc::clone(&self.syms);
-            let syms_borrow = syms_rc.borrow();
-            self.types.member_type(ctx, &syms_borrow, site, msym1)
+            self.types.member_type(ctx, syms, site, msym1)
         };
         let mut mt2 = {
-            let syms_rc = Rc::clone(&self.syms);
-            let syms_borrow = syms_rc.borrow();
-            self.types.member_type(ctx, &syms_borrow, site, msym2)
+            self.types.member_type(ctx, syms, site, msym2)
         };
         // if both generic methods, adjust type variables
         let (mt1_forall, mt2_forall) = (
@@ -8524,8 +8493,6 @@ impl Check {
         );
         if mt1_forall && mt2_forall {
             let same_bounds = {
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
                 let tvars1 = match &ctx.typ(mt1).kind {
                     crate::code::type_::TypeKindData::ForAll { tvars, .. } => tvars.clone(),
                     _ => crate::util::list::List::nil(),
@@ -8535,7 +8502,7 @@ impl Check {
                     _ => crate::util::list::List::nil(),
                 };
                 self.types
-                    .has_same_bounds(ctx, &syms_borrow, &tvars1, &tvars2)
+                    .has_same_bounds(ctx, syms, &tvars1, &tvars2)
             };
             if same_bounds {
                 let (tvars1, tvars2) = (
@@ -8549,10 +8516,8 @@ impl Check {
                     },
                 );
                 mt2 = {
-                    let syms_rc = Rc::clone(&self.syms);
-                    let syms_borrow = syms_rc.borrow();
                     self.types
-                        .subst_type(ctx, &syms_borrow, mt2, &tvars2, &tvars1)
+                        .subst_type(ctx, syms, mt2, &tvars2, &tvars1)
                 };
             }
         }
@@ -8566,11 +8531,9 @@ impl Check {
         };
         let max_length = params1.length().max(params2.length()) as usize;
         let (args1, args2) = {
-            let syms_rc = Rc::clone(&self.syms);
-            let syms_borrow = syms_rc.borrow();
             let args1 = crate::comp::resolve::adjust_args(
                 ctx,
-                &syms_borrow,
+                syms,
                 &self.types,
                 params1,
                 Some(msym1),
@@ -8579,7 +8542,7 @@ impl Check {
             );
             let args2 = crate::comp::resolve::adjust_args(
                 ctx,
-                &syms_borrow,
+                syms,
                 &self.types,
                 params2,
                 Some(msym2),
@@ -8600,11 +8563,9 @@ impl Check {
             l1 = l1.tail();
             l2 = l2.tail();
             let (sub_t_s, sub_s_t) = {
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
                 (
-                    self.types.is_subtype(ctx, &syms_borrow, t, s),
-                    self.types.is_subtype(ctx, &syms_borrow, s, t),
+                    self.types.is_subtype(ctx, syms, t, s),
+                    self.types.is_subtype(ctx, syms, s, t),
                 )
             };
             if sub_t_s || sub_s_t {
@@ -8615,18 +8576,16 @@ impl Check {
             let (s_functional, t_functional) = match (s_tsym, t_tsym) {
                 (Some(s_tsym), Some(t_tsym)) => {
                     let diags = Rc::clone(&self.diags);
-                    let syms_rc = Rc::clone(&self.syms);
-                    let mut syms_borrow = syms_rc.borrow_mut();
                     let s_functional = self.types.is_functional_interface(
                         ctx,
-                        &mut syms_borrow,
+                        syms,
                         &diags,
                         self,
                         s_tsym,
                     );
                     let t_functional = self.types.is_functional_interface(
                         ctx,
-                        &mut syms_borrow,
+                        syms,
                         &self.diags,
                         self,
                         t_tsym,
@@ -8826,9 +8785,7 @@ impl Check {
     ) {
         use crate::code::flags;
         let mut sup = {
-            let syms_rc = Rc::clone(&self.syms);
-            let syms_borrow = syms_rc.borrow();
-            syms_borrow.annotation_type
+            syms.annotation_type
         };
         loop {
             if !ctx.typ(sup).has_tag(crate::code::type_tag::TypeTag::CLASS) {
@@ -8872,9 +8829,7 @@ impl Check {
                 }
             }
             sup = {
-                let syms_rc = Rc::clone(&self.syms);
-                let syms_borrow = syms_rc.borrow();
-                self.types.supertype(ctx, &syms_borrow, sup)
+                self.types.supertype(ctx, syms, sup)
             };
         }
     }
@@ -8949,6 +8904,7 @@ impl Check {
             error_found: false,
             partial_check: false,
             check: self,
+            syms,
         };
         crate::tree::jc_tree::accept(ctx, tree, &mut cc);
         if !cc.error_found && !cc.partial_check {
@@ -8970,6 +8926,7 @@ struct CycleChecker<'a> {
     error_found: bool,
     partial_check: bool,
     check: &'a Check,
+    syms: &'a mut crate::code::symtab::Symtab,
 }
 
 impl CycleChecker<'_> {
@@ -9023,9 +8980,7 @@ impl CycleChecker<'_> {
         }
         if self.seen_classes.contains(&c) {
             self.error_found = true;
-            let syms_rc = Rc::clone(&self.check.syms);
-            let mut syms_borrow = syms_rc.borrow_mut();
-            self.check.note_cyclic(ctx, &mut syms_borrow, pos, c);
+            self.check.note_cyclic(ctx, &mut *self.syms, pos, c);
             return;
         }
         let c_ty = match ctx.sym(c).ty {

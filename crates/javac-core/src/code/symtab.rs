@@ -278,7 +278,7 @@ fn new_package_symbol(
     owner: Option<SymbolId>,
 ) -> SymbolId {
     let fullname = form_full_name(ctx, &name, owner);
-    ctx.alloc_symbol(Symbol::new(
+    let package = ctx.alloc_symbol(Symbol::new(
         Kind::PCK,
         flags_value,
         name,
@@ -291,7 +291,9 @@ fn new_package_symbol(
             modle: None,
             sourcefile: None,
         },
-    ))
+    ));
+    set_package_type(ctx, package);
+    package
 }
 
 fn new_root_package_symbol(
@@ -299,7 +301,7 @@ fn new_root_package_symbol(
     name: Name,
     allow_private_invoke_virtual: bool,
 ) -> SymbolId {
-    ctx.alloc_symbol(Symbol::new(
+    let package = ctx.alloc_symbol(Symbol::new(
         Kind::PCK,
         0,
         name.clone(),
@@ -313,7 +315,24 @@ fn new_root_package_symbol(
             sourcefile: None,
             allow_private_invoke_virtual,
         },
-    ))
+    ));
+    set_package_type(ctx, package);
+    package
+}
+
+/// Attach the PackageType to a freshly allocated package symbol.
+///
+/// Java: PackageSymbol(Name, Symbol) sets this.type = new PackageType(this)
+/// (Symbol.java:1156-1159); the arena cannot reference the symbol from the
+/// constructor, so the type is allocated right after the symbol (registered
+/// adapter, same observable state).
+fn set_package_type(ctx: &mut CompilerContext, package: SymbolId) {
+    let pkg_type = ctx.alloc_type(crate::code::type_::Type::new(
+        crate::code::type_tag::TypeTag::PACKAGE,
+        Some(package),
+        crate::code::type_::TypeKindData::PackageType,
+    ));
+    ctx.sym_mut(package).ty = Some(pkg_type);
 }
 
 fn new_module_symbol(
@@ -859,12 +878,16 @@ fn enter_module(
     }
     let module = new_module_symbol(ctx, name.clone(), List::nil());
     // Java: ModuleSymbol.create() also installs a module-info ClassSymbol.
-    let module_info = new_class_symbol_with_type(
+    // Java: ClassSymbol info = new ClassSymbol(Flags.MODULE, module_info, msym)
+    // (Symbol.java:995): the 3-arg ClassSymbol constructor installs a
+    // ClassType(noType) (Symbol.java:1315-1322).
+    let no_type = no_type_id(ctx);
+    let module_info = new_class_symbol(
         ctx,
-        flags::MODULE,
+        flags::MODULE as i64,
         names.std.module_info.clone(),
-        None,
         Some(module),
+        no_type,
     );
     if let SymbolKind::ModuleSymbol {
         module_info: slot, ..

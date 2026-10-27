@@ -494,8 +494,25 @@ impl FileObject for PathFileObject {
     }
 
     /// Java: public InputStream openInputStream() throws IOException.
+    ///
+    /// The upstream JRTFileObject reads through the jrt: FileSystem
+    /// (Files.newInputStream(path)); the port has no jrt FileSystem, so a
+    /// system-image path reads the resource through the injected JRTIndex
+    /// (registered adapter, same bytes).
     fn open_input_stream(&self) -> Result<Box<dyn Read>, Error> {
         self.file_manager.update_last_used_time();
+        if self.is_jrt() {
+            let bytes = self
+                .file_manager
+                .jrt_read_resource(&self.path)
+                .ok_or_else(|| {
+                    io_error(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "missing jrt resource",
+                    ))
+                })?;
+            return Ok(Box::new(std::io::Cursor::new(bytes)));
+        }
         let file = std::fs::File::open(self.path.as_path()).map_err(io_error)?;
         Ok(Box::new(file))
     }

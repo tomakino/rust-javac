@@ -799,7 +799,7 @@ impl AnnotateServices {
             return false;
         };
         let is_boolean = match attr_ty {
-            Some(ty) => self.types.is_same_type(ctx, &syms, ty, syms.boolean_type),
+            Some(ty) => self.types.is_same_type(ctx, syms, ty, syms.boolean_type),
             None => false,
         };
         let truthy = match constant_value {
@@ -868,7 +868,7 @@ impl AnnotateServices {
                 && (ctx.sym(to_annotate).kind == Kind::MDL || owner_kind != Some(Kind::MTH))
                 && {
                     self.types
-                        .is_same_type(ctx, &syms, annotation_ty, deprecated_type)
+                        .is_same_type(ctx, syms, annotation_ty, deprecated_type)
                 }
             {
                 ctx.sym_mut(to_annotate).flags_field |= flags::DEPRECATED as i64;
@@ -882,7 +882,7 @@ impl AnnotateServices {
             let preview_type = syms.preview_feature_type;
             if !is_erroneous && {
                 self.types
-                    .is_same_type(ctx, &syms, annotation_ty, preview_type)
+                    .is_same_type(ctx, syms, annotation_ty, preview_type)
             } {
                 ctx.sym_mut(to_annotate).flags_field |= flags::PREVIEW_API;
                 let reflective = self.names.reflective.clone();
@@ -896,7 +896,7 @@ impl AnnotateServices {
                 && ctx.sym(to_annotate).kind == Kind::TYP
                 && {
                     self.types
-                        .is_same_type(ctx, &syms, annotation_ty, value_based_type)
+                        .is_same_type(ctx, syms, annotation_ty, value_based_type)
                 }
             {
                 ctx.sym_mut(to_annotate).flags_field |= flags::VALUE_BASED;
@@ -1020,7 +1020,7 @@ impl AnnotateServices {
         };
         let checked = {
             let chk = self.chk.borrow();
-            chk.check_type_basic(ctx, &syms, ctx.tree(annotation_type_tree).pos, at, expected)
+            chk.check_type_basic(ctx, syms, ctx.tree(annotation_type_tree).pos, at, expected)
         };
         ctx.tree_mut(a).ty = Some(checked);
         let is_error = ctx.typ(checked).has_tag(TypeTag::ERROR);
@@ -1320,7 +1320,7 @@ impl AnnotateServices {
         let is_primitive = ctx.typ(expected_element_type).is_primitive();
         let is_string = {
             self.types
-                .is_same_type(ctx, &syms, expected_element_type, string_type)
+                .is_same_type(ctx, syms, expected_element_type, string_type)
         } && !ctx.typ(expected_element_type).has_tag(TypeTag::ERROR);
         if is_primitive || is_string {
             return self.get_annotation_primitive_value(ctx, &mut *syms, expected_element_type, tree, env);
@@ -1459,7 +1459,7 @@ impl AnnotateServices {
             }
         }
         result = {
-            self.cfolder.coerce(ctx, &syms, result, expected_element_type)
+            self.cfolder.coerce(ctx, syms, result, expected_element_type)
         };
         let value = ctx.typ(result).const_value().expect("constant value").clone();
         Ok(ctx.alloc_attribute(Attribute::new_constant(Some(expected_element_type), value)))
@@ -1497,7 +1497,7 @@ impl AnnotateServices {
             self.log.borrow_mut().error_at(ctx.tree(elemtype).pos, errors::new_not_allowed_in_annotation().into());
         }
         let elem_type = {
-            self.types.elemtype(ctx, &syms, expected_element_type)
+            self.types.elemtype(ctx, syms, expected_element_type)
         };
         let mut buf: Vec<AttributeId> = Vec::new();
         if let Some(elems) = elems {
@@ -1718,7 +1718,7 @@ impl AnnotateServices {
         syms: &mut crate::code::symtab::Symtab, t: Option<TypeId>, s: Option<TypeId>) -> Option<TypeId> {
         let Some(t) = t else { return t };
         let Some(s) = s else { return Some(t) };
-        if self.types.is_same_type(ctx, &syms, t, s) { None } else { Some(t) }
+        if self.types.is_same_type(ctx, syms, t, s) { None } else { Some(t) }
     }
 
     /// Java: private Type extractContainingType(Attribute.Compound ca,
@@ -1792,7 +1792,7 @@ impl AnnotateServices {
         };
         let is_array = ctx.typ(value_ret_type).has_tag(TypeTag::ARRAY);
         let same = {
-            self.types.is_same_type(ctx, &syms, expected_type, value_ret_type)
+            self.types.is_same_type(ctx, syms, expected_type, value_ret_type)
         };
         if !(is_array && same) {
             self.log.borrow_mut().error_at(pos, errors::invalid_repeatable_annotation_value_return(DiagnosticArg::from_display(crate::comp::resolve::symbol_display_name(ctx, container_tsym)), TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, ctx.typ(value_ret_type).tsym.unwrap_or(container_tsym))), TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, ctx.typ(expected_type).tsym.unwrap_or(container_tsym)))).into());

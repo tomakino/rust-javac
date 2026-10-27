@@ -757,7 +757,6 @@ impl Analyzer {
                 let chk = attr.chk.borrow();
                 let diags = Rc::clone(&attr.diags);
                 let is_fi = self.types.is_functional_interface(ctx, &mut *syms, &diags, &chk, tsym);
-                drop(syms);
                 drop(chk);
                 drop(attr);
                 if !is_fi {
@@ -993,7 +992,6 @@ impl Analyzer {
         let (old_ty, new_ty) = (ctx.tree(old_tree).ty, ctx.tree(new_tree).ty);
         if let (Some(old_ty), Some(new_ty)) = (old_ty, new_ty) {
             if self.types.is_same_type(ctx, &syms, old_ty, new_ty) {
-                drop(syms);
                 self.log_warning(
                     ctx,
                     ctx.tree(old_tree).pos,

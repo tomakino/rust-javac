@@ -602,6 +602,7 @@ impl MiniCompiler {
         {
             *class_location = Some(module_location);
         }
+
         let source_path = StandardLocation::location_for(&js("SOURCE_PATH"));
         let class_path = StandardLocation::location_for(&js("CLASS_PATH"));
         if let crate::code::symbol::SymbolKind::ModuleSymbol {

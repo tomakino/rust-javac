@@ -2937,6 +2937,7 @@ impl Resolve {
         qualified: bool,
         mut argtypes: Option<crate::util::list::List<TypeId>>,
         typeargtypes: Option<crate::util::list::List<TypeId>>,
+        attr: Option<&mut crate::comp::attr::Attr>,
         log_resolve_helper: LogResolveHelper,
     ) -> SymbolId {
 
@@ -2961,19 +2962,33 @@ impl Resolve {
                     let step = self
                         .current_resolution_step
                         .expect("AssertionError: currentResolutionContext is null");
-                    let attr = Rc::clone(
-                        self.attr_cell
-                            .borrow()
-                            .as_ref()
-                            .expect("AssertionError: Attr service must be installed"),
-                    );
-                    let mapped = attr.borrow_mut().map_resolve_deferred_argtypes(
-                        ctx,
-                        syms,
-                        current_argtypes,
-                        Some(sym),
-                        step,
-                    );
+                    // The caller may already hold the mutable Attr borrow (the
+                    // attribution pass); otherwise the installed service cell is
+                    // used (Resolve.DeferredAttr is a Context service upstream).
+                    let mapped = if let Some(attr) = attr {
+                        attr.map_resolve_deferred_argtypes(
+                            ctx,
+                            syms,
+                            current_argtypes,
+                            Some(sym),
+                            step,
+                        )
+                    } else {
+                        let attr_rc = Rc::clone(
+                            self.attr_cell
+                                .borrow()
+                                .as_ref()
+                                .expect("AssertionError: Attr service must be installed"),
+                        );
+                        let mapped = attr_rc.borrow_mut().map_resolve_deferred_argtypes(
+                            ctx,
+                            syms,
+                            current_argtypes,
+                            Some(sym),
+                            step,
+                        );
+                        mapped
+                    };
                     argtypes = Some(mapped);
                 }
             }
@@ -3051,6 +3066,7 @@ impl Resolve {
         qualified: bool,
         argtypes: Option<crate::util::list::List<TypeId>>,
         typeargtypes: Option<crate::util::list::List<TypeId>>,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         self.access_internal(
             ctx,
@@ -3063,6 +3079,7 @@ impl Resolve {
             qualified,
             argtypes,
             typeargtypes,
+            attr,
             LogResolveHelper::Method,
         )
     }
@@ -3090,6 +3107,7 @@ impl Resolve {
             site,
             name,
             qualified,
+            None,
             None,
             None,
             LogResolveHelper::Basic,
@@ -5987,6 +6005,7 @@ impl LookupHelper for BasicLookupHelper {
                         true,
                         Some(self.argtypes.clone()),
                         self.typeargtypes.clone(),
+                        Some(attr),
                     )
                 } else {
                     sym
@@ -6005,6 +6024,7 @@ impl LookupHelper for BasicLookupHelper {
                         true,
                         Some(self.argtypes.clone()),
                         self.typeargtypes.clone(),
+                        Some(attr),
                     )
                 } else if (ctx.sym(sym).flags_field & crate::code::flags::SIGNATURE_POLYMORPHIC) != 0 {
                     // Java: env.info.pendingResolutionPhase = BASIC;
@@ -6048,6 +6068,7 @@ impl LookupHelper for BasicLookupHelper {
                             true,
                             Some(self.argtypes.clone()),
                             self.typeargtypes.clone(),
+                            Some(attr),
                         )
                     } else {
                         // final JCDiagnostic details =...
@@ -6063,6 +6084,7 @@ impl LookupHelper for BasicLookupHelper {
                             true,
                             Some(self.argtypes.clone()),
                             self.typeargtypes.clone(),
+                            Some(attr),
                         );
                         env.info.borrow_mut().pending_resolution_phase = resolve_context.step;
                         sym
@@ -6625,18 +6647,45 @@ impl Resolve {
         resolve_context: &mut MethodResolutionContext,
         helper: &mut dyn LookupHelper,
     ) -> SymbolId {
-        let mut best_so_far = self.method_not_found;
-        let steps = method_resolution_steps();
-        let mut current = steps;
-        while current.non_empty() {
-            let phase = *current.head();
-            if helper.should_stop(ctx, best_so_far, phase) {
-                break;
+        // Java: MethodResolutionContext prevResolutionContext =
+        // currentResolutionContext; try { currentResolutionContext =
+        // resolveContext; ... } finally { currentResolutionContext =
+        // prevResolutionContext; } (Resolve.java:3696-3714).
+        let previous_step = self.current_resolution_step;
+        self.current_resolution_step = resolve_context.step;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut best_so_far = self.method_not_found;
+            let steps = method_resolution_steps();
+            let mut current = steps;
+            while current.non_empty() {
+                let phase = *current.head();
+                if helper.should_stop(ctx, best_so_far, phase) {
+                    break;
+                }
+                let prev_phase = resolve_context.step;
+                let prev_best = best_so_far;
+                resolve_context.step = Some(phase);
+                self.current_resolution_step = Some(phase);
+                let sym = helper.lookup(
+                    self,
+                    ctx,
+                    syms,
+                    types,
+                    attr,
+                    chk,
+                    infer,
+                    env,
+                    phase,
+                    resolve_context,
+                );
+                helper.debug(ctx, sym);
+                best_so_far = phase.merge_results(ctx, best_so_far, sym);
+                env.info.borrow_mut().pending_resolution_phase =
+                    if prev_best == best_so_far { prev_phase } else { Some(phase) };
+                current = current.tail();
             }
-            let prev_phase = resolve_context.step;
-            let prev_best = best_so_far;
-            resolve_context.step = Some(phase);
-            let sym = helper.lookup(
+            self.current_resolution_step = resolve_context.step;
+            helper.access(
                 self,
                 ctx,
                 syms,
@@ -6645,29 +6694,17 @@ impl Resolve {
                 chk,
                 infer,
                 env,
-                phase,
+                pos,
+                Some(location),
+                best_so_far,
                 resolve_context,
-            );
-            helper.debug(ctx, sym);
-            best_so_far = phase.merge_results(ctx, best_so_far, sym);
-            env.info.borrow_mut().pending_resolution_phase =
-                if prev_best == best_so_far { prev_phase } else { Some(phase) };
-            current = current.tail();
+            )
+        }));
+        self.current_resolution_step = previous_step;
+        match result {
+            Ok(sym) => sym,
+            Err(payload) => std::panic::resume_unwind(payload),
         }
-        helper.access(
-            self,
-            ctx,
-            syms,
-            types,
-            attr,
-            chk,
-            infer,
-            env,
-            pos,
-            Some(location),
-            best_so_far,
-            resolve_context,
-        )
     }
 
     /// Java: Symbol findMethod(Env<AttrContext> env, Type site, Name name,
