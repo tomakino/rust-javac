@@ -303,6 +303,72 @@ impl CompilerContext {
         snapshot.get_symbols_by_name_full(scope, name, lookup_kind, filter, types, syms, self)
     }
 
+    /// Prototype of the context-level scope query (the S2d borrow split): the
+    /// query takes the mutable context together with the read-only arena
+    /// snapshots (cloned per scope) and the Types/Symtab services, instead of a
+    /// separately borrowed symbols-arena argument. Java: the Scope query reads
+    /// the Context services (Scope.java:908-1016).
+    ///
+    /// # Arguments
+    ///   - scope: the scope to query;
+    ///   - lookup_kind: the lookup kind;
+    ///   - filter: the symbol predicate;
+    ///   - types/syms: the shared type/symbol services (import filter);
+    ///   - ctx: the compiler context.
+    ///
+    /// # Returns
+    ///   - the matching symbols.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Scope.getSymbols (Scope.java:550-620) with the FilterImportScope
+    /// dispatch of Scope.java:932-952.
+    pub fn scope_get_symbols_ctx(
+        &mut self,
+        scope: ScopeId,
+        lookup_kind: LookupKind,
+        filter: &dyn Fn(SymbolId) -> bool,
+        types: &crate::code::types::Types,
+        syms: &mut crate::code::symtab::Symtab,
+    ) -> Vec<SymbolId> {
+        let snapshot = self.scope(scope).clone();
+        snapshot.get_symbols_full(scope, lookup_kind, filter, types, syms, self)
+    }
+
+    /// The by-name counterpart of scope_get_symbols_ctx (prototype of the S2d
+    /// borrow split). Java: Scope.getSymbolsByName(Name, Predicate, LookupKind)
+    /// (Scope.java:620-700) with the FilterImportScope dispatch of
+    /// Scope.java:954-976.
+    ///
+    /// # Arguments
+    ///   - scope: the scope to query;
+    ///   - name: the symbol name;
+    ///   - lookup_kind: the lookup kind;
+    ///   - filter: the symbol predicate;
+    ///   - types/syms: the shared type/symbol services (import filter);
+    ///   - ctx: the compiler context.
+    ///
+    /// # Returns
+    ///   - the matching symbols.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Scope.getSymbolsByName (Scope.java:620-700).
+    pub fn scope_get_symbols_by_name_ctx(
+        &mut self,
+        scope: ScopeId,
+        name: &Name,
+        lookup_kind: LookupKind,
+        filter: &dyn Fn(SymbolId) -> bool,
+        types: &crate::code::types::Types,
+        syms: &mut crate::code::symtab::Symtab,
+    ) -> Vec<SymbolId> {
+        let snapshot = self.scope(scope).clone();
+        snapshot.get_symbols_by_name_full(scope, name, lookup_kind, filter, types, syms, self)
+    }
+
     /// Java: Scope.isEmpty()
     pub fn scope_is_empty(&self, scope: ScopeId) -> bool {
         self.scope(scope).is_empty()
@@ -831,6 +897,71 @@ mod tests {
     use crate::code::symbol::{Symbol, SymbolKind};
     use crate::util::name::NameTableHandle;
     use std::rc::Rc;
+
+    #[test]
+    fn prototype_scope_query_with_context_borrow_split() {
+        let mut ctx = CompilerContext::new();
+        let names = Rc::new(crate::util::names::Names::new(false));
+        let mut syms = crate::code::symtab::Symtab::new(
+            &mut ctx,
+            Rc::clone(&names),
+            crate::jvm::target::Target::DEFAULT,
+            crate::code::source::Source::JDK17,
+        );
+        let types = crate::code::types::Types::with_names(Rc::clone(&names));
+        let scope = ctx.alloc_scope(crate::code::scope::Scope::new_scope_impl(None));
+        let name_a = names.from_utf(b"a");
+        let sym_a = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::VAR,
+            0,
+            name_a.clone(),
+            None,
+            None,
+            crate::code::symbol::SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+            },
+        ));
+        let sym_b = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+            crate::code::kinds::Kind::VAR,
+            0,
+            name_a.clone(),
+            None,
+            None,
+            crate::code::symbol::SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+            },
+        ));
+        let mut scope_snapshot = ctx.scope(scope).clone();
+        {
+            let symbols = ctx.symbols_arena();
+            scope_snapshot.enter(scope, sym_a, symbols);
+            scope_snapshot.enter(scope, sym_b, symbols);
+        }
+        *ctx.scope_mut(scope) = scope_snapshot;
+        let all = ctx.scope_get_symbols_ctx(
+            scope,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+            &types,
+            &mut syms,
+        );
+        assert_eq!(all.len(), 2);
+        let by_name = ctx.scope_get_symbols_by_name_ctx(
+            scope,
+            &name_a,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+            &types,
+            &mut syms,
+        );
+        assert_eq!(by_name, vec![sym_b, sym_a]);
+    }
 
     fn var_symbol(table: &Rc<NameTableHandle>, text: &str) -> Symbol {
         Symbol::new(
