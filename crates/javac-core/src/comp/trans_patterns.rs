@@ -1154,22 +1154,6 @@ impl TransPatterns {
     }
 
 
-    /// Java: make.Literal(true) — TreeMaker.Literal(Object) (TreeMaker.java:899-934)
-    /// sets the literal type to syms.booleanType.constType(1); the type part of
-    /// the local TreeMaker::literal_object port is pending approval (see
-    /// docs/A0_TRANSPATTERNS_STATUS.md), so the equivalent constant type is set
-    /// here (registered adapter).
-    fn make_boolean_literal(&mut self, ctx: &mut CompilerContext) -> TreeId {
-        let boolean_type = self.syms.borrow().boolean_type;
-        let literal = {
-            let mut make = self.make.borrow_mut();
-            make.literal_object(ctx, crate::tree::jc_tree::LiteralValue::Boolean(true))
-        };
-        let constant = crate::util::constants::ConstantValue::Integer(1);
-        let literal_type = ctx.type_const_type(boolean_type, constant);
-        ctx.tree_mut(literal).ty = Some(literal_type);
-        literal
-    }
     fn make_lit(&mut self, ctx: &mut CompilerContext, ty: TypeId, value: Option<crate::tree::jc_tree::LiteralValue>) -> TreeId {
         let tag = ctx.typ(ty).get_tag();
         let tree = {
@@ -1532,6 +1516,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
                     captured_locals: List::nil(),
                     params: List::nil(),
                     default_value: None,
+                    original_enclosing_method: None,
                 },
             ));
             self.current_method_sym = Some(method);
@@ -1579,6 +1564,7 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
                     captured_locals: List::nil(),
                     params: List::nil(),
                     default_value: None,
+                    original_enclosing_method: None,
                 },
             ));
             self.current_method_sym = Some(method);
@@ -2173,7 +2159,10 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
                 let mut make = self.make.borrow_mut();
                 make.exec(ctx, fake_init)
             };
-            let literal_true = self.make_boolean_literal(ctx);
+            let literal_true = {
+                let mut make = self.make.borrow_mut();
+                make.literal_object(ctx, crate::tree::jc_tree::LiteralValue::Boolean(true))
+            };
             let nested = {
                 let mut make = self.make.borrow_mut();
                 make.at(pos);
@@ -2186,7 +2175,8 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
             ctx.tree_mut(nested).ty = Some(syms.boolean_type);
             nested
         } else {
-            self.make_boolean_literal(ctx)
+            let mut make = self.make.borrow_mut();
+            make.literal_object(ctx, crate::tree::jc_tree::LiteralValue::Boolean(true))
         };
         self.result = Some(result);
     }

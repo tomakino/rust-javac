@@ -949,6 +949,11 @@ pub enum SymbolKind {
         /// Java: public Attribute defaultValue (Symbol.java:1780; null -> None)
         /// — the annotation element default value (AttributeId, Porting rules arena).
         default_value: Option<crate::ids::AttributeId>,
+        /// Java: MethodSymbol.originalEnclosingMethod() (Symbol.java:2295-2298).
+        /// The upstream default returns this; lambda translation installs an
+        /// anonymous subclass returning the original enclosing method, so the
+        /// field stores None for "this" (registered adaptation).
+        original_enclosing_method: Option<SymbolId>,
     },
     /// Java: Symbol.MethodHandleSymbol
     MethodHandleSymbol {
@@ -1236,6 +1241,7 @@ impl Symbol {
                 captured_locals: List::nil(),
                 params: List::nil(),
                 default_value: None,
+                original_enclosing_method: None,
             },
         )
     }
@@ -1919,6 +1925,54 @@ pub fn package_module(ctx: &CompilerContext, pkg: SymbolId) -> Option<SymbolId> 
         SymbolKind::PackageSymbol { modle, .. }
         | SymbolKind::RootPackageSymbol { modle, .. } => *modle,
         _ => None,
+    }
+}
+
+
+/// Java: public ClassSymbol enclClass() (Symbol.java:512-519): the closest
+/// enclosing class of this symbol's declaration; returns the receiver itself
+/// when it is a class.
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - sym: the symbol.
+///
+/// # Returns
+///   - the enclosing (or self) class symbol, if any.
+pub fn encl_class(ctx: &CompilerContext, sym: SymbolId) -> Option<SymbolId> {
+    let mut current = Some(sym);
+    while let Some(candidate) = current {
+        let symbol = ctx.sym(candidate);
+        if symbol.kind == crate::code::kinds::Kind::TYP
+            && symbol
+                .ty
+                .map(|ty| ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::CLASS))
+                .unwrap_or(false)
+        {
+            return Some(candidate);
+        }
+        current = symbol.owner;
+    }
+    None
+}
+
+/// Java: public MethodSymbol originalEnclosingMethod() (Symbol.java:2295-2298).
+/// The upstream default returns this; a MethodSymbol may carry an override
+/// (lambda translation installs the original enclosing method).
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - sym: the method symbol.
+///
+/// # Returns
+///   - the original enclosing method symbol (or the symbol itself).
+pub fn original_enclosing_method(ctx: &CompilerContext, sym: SymbolId) -> SymbolId {
+    match &ctx.sym(sym).kind_data {
+        SymbolKind::MethodSymbol {
+            original_enclosing_method: Some(original),
+            ..
+        } => *original,
+        _ => sym,
     }
 }
 
@@ -3830,6 +3884,7 @@ mod tests {
             captured_locals: List::nil(),
             params: List::nil(),
             default_value: None,
+            original_enclosing_method: None,
         }
     }
 

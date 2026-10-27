@@ -422,6 +422,7 @@ fn new_method_symbol(
             captured_locals: List::nil(),
             params: List::nil(),
             default_value: None,
+            original_enclosing_method: None,
         },
     ))
 }

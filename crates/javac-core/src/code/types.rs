@@ -8175,6 +8175,7 @@ impl Types {
                         captured_locals: List::nil(),
                         params: List::nil(),
                         default_value: None,
+                        original_enclosing_method: None,
                     },
                 ));
                 let _ = (s, s_ty);
@@ -8660,6 +8661,7 @@ impl Types {
                 captured_locals: List::nil(),
                 params: List::nil(),
                 default_value: None,
+                original_enclosing_method: None,
             },
         ));
         ctx.scope_enter(members, inst_desc);
@@ -11085,6 +11087,7 @@ mod tests {
                 captured_locals: List::nil(),
                 params: List::nil(),
                 default_value: None,
+                original_enclosing_method: None,
             },
         ));
         ctx.scope_enter(members, method);
@@ -11112,6 +11115,7 @@ mod tests {
                     captured_locals: List::nil(),
                     params: List::nil(),
                     default_value: None,
+                    original_enclosing_method: None,
                 },
             ));
             ctx.scope_enter(members, extra);
@@ -11328,6 +11332,7 @@ mod tests {
                 captured_locals: List::nil(),
                 params: List::nil(),
                 default_value: None,
+                original_enclosing_method: None,
             },
         ));
         ctx.scope_enter(members, dup);

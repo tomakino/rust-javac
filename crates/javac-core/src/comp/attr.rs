@@ -426,6 +426,16 @@ pub struct Attr {
 }
 
 impl Attr {
+    /// Java: public MethodSymbol removeClinit(ClassSymbol csym) (Attr.java:3499-3503).
+    ///
+    /// # Arguments
+    ///   - csym: the class symbol.
+    ///
+    /// # Returns
+    ///   - the removed synthetic clinit method, if any.
+    pub fn remove_clinit(&self, csym: crate::ids::SymbolId) -> Option<crate::ids::SymbolId> {
+        self.clinits.borrow_mut().remove(&csym)
+    }
     /// Cache the Symtab values read during attribution.
     fn cache_symtab_facts(&self, syms: &Symtab) {
         self.symtab_facts.set(SymtabFacts {
@@ -3923,6 +3933,7 @@ impl PostAttrAnalyzer<'_> {
         self.dummy_method_type_for(ctx, None)
     }
 
+
     fn new_symbol(
         &self,
         ctx: &mut CompilerContext,
@@ -4089,6 +4100,7 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
                     captured_locals: List::nil(),
                     params: List::nil(),
                     default_value: None,
+                    original_enclosing_method: None,
                 },
             );
             if let TreeKind::MethodDecl { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
@@ -4253,6 +4265,7 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
                     captured_locals: List::nil(),
                     params: List::nil(),
                     default_value: None,
+                    original_enclosing_method: None,
                 },
             );
             if let TreeKind::NewClass { constructor: slot, .. } = &mut ctx.tree_mut(tree).kind {
@@ -4372,6 +4385,7 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
                     captured_locals: List::nil(),
                     params: List::nil(),
                     default_value: None,
+                    original_enclosing_method: None,
                 },
             );
             if let TreeKind::MemberReference { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
@@ -4870,6 +4884,7 @@ impl Attr {
                                 captured_locals: List::nil(),
                                 params: List::nil(),
                                 default_value: None,
+                                original_enclosing_method: None,
                             },
                         ));
                         clinits.insert(encl_class, clinit);
@@ -7654,6 +7669,7 @@ impl Attr {
                     captured_locals: List::nil(),
                     params: List::nil(),
                     default_value: None,
+                    original_enclosing_method: None,
                 },
             ));
             let local_env = self.dup_env_with_scope(ctx, &env, Some(tree), Some(fake_owner));

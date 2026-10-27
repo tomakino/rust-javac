@@ -328,6 +328,7 @@ impl MemberEnter {
                 captured_locals: List::nil(),
                 params: List::nil(),
                 default_value: None,
+                original_enclosing_method: None,
             },
         ));
         let mods_flags = method_decl_mods_flags(ctx, tree);

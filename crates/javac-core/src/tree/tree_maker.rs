@@ -2,14 +2,14 @@
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: tree (tree nodes/scanners for the corresponding upstream feature).
 // Not yet ported upstream methods (no substitutes in this file):
-// - NOT PORTED: SpeculativeNewClass (TreeMaker.java:407) / classDeclRemoved
-// (TreeMaker.java:417): the anonymous JCNewClass subclass override has no arena
+// - NOT PORTED: SpeculativeNewClass (TreeMaker.java) / classDeclRemoved
+// (TreeMaker.java): the anonymous JCNewClass subclass override has no arena
 // mapping yet (registered; the JCNewClass node has no classDeclRemoved flag).
-// - NOT PORTED: Literal(Object) Byte/Short branches (TreeMaker.java:899-996):
+// - NOT PORTED: Literal(Object) Byte/Short branches (TreeMaker.java):
 // the ported tree::jc_tree::LiteralValue value domain has no Byte/Short
 // variants (registered: literal value domain); the remaining wrapper
 // types (Integer/Long/Float/Double/Character/Boolean/String) are ported.
-// - The AnnotationBuilder (TreeMaker.java:929-996) is expressed as TreeMaker
+// - The AnnotationBuilder (TreeMaker.java) is expressed as TreeMaker
 // visitor methods (visit_constant_attribute/visit_class_attribute/...), the
 // Rust equivalent of the Java inner class (registered adapter); the visitor
 // dispatch is the AttributeKind match.
@@ -2331,11 +2331,57 @@ impl TreeMaker {
             LiteralValue::Boolean(_) => TypeTag::BOOLEAN,
             LiteralValue::String(_) => TypeTag::CLASS,
         };
-        self.literal(ctx, typetag, Some(value))
+        let tree = self.literal(ctx, typetag, Some(value.clone()));
+        // Java: Literal(Object) sets the constant type from the value
+        // (TreeMaker.java): String -> stringType, Integer -> intType,
+        // Long -> longType, Byte -> byteType, Character -> charType, Double ->
+        // doubleType, Float -> floatType, Short -> shortType, Boolean ->
+        // booleanType.constType(0/1), each via constType(value).
+        let (type_id, constant) = {
+            let syms_rc = self.syms.as_ref().expect("TreeMaker.syms").clone();
+            let syms = syms_rc.borrow();
+            match &value {
+                LiteralValue::Integer(v) => {
+                    (syms.int_type, crate::util::constants::ConstantValue::Integer(*v))
+                }
+                LiteralValue::Byte(v) => {
+                    (syms.byte_type, crate::util::constants::ConstantValue::Byte(*v))
+                }
+                LiteralValue::Short(v) => {
+                    (syms.short_type, crate::util::constants::ConstantValue::Short(*v))
+                }
+                LiteralValue::Long(v) => {
+                    (syms.long_type, crate::util::constants::ConstantValue::Long(*v))
+                }
+                LiteralValue::Float(v) => {
+                    (syms.float_type, crate::util::constants::ConstantValue::Float(*v))
+                }
+                LiteralValue::Double(v) => {
+                    (syms.double_type, crate::util::constants::ConstantValue::Double(*v))
+                }
+                LiteralValue::Character(v) => {
+                    (syms.char_type, crate::util::constants::ConstantValue::Character(*v))
+                }
+                LiteralValue::Boolean(v) => (
+                    syms.boolean_type,
+                    crate::util::constants::ConstantValue::Integer(if *v { 1 } else { 0 }),
+                ),
+                LiteralValue::String(v) => (
+                    syms.string_type,
+                    crate::util::constants::ConstantValue::String(v.clone()),
+                ),
+            }
+        };
+        let const_type = {
+            let typ = ctx.typ(type_id).const_type(constant);
+            ctx.alloc_type(typ)
+        };
+        ctx.tree_mut(tree).ty = Some(const_type);
+        tree
     }
 
     // ------------------------------------------------------------------
-    // Helper methods (TreeMaker.java:1105-1144).
+    // Helper methods (TreeMaker.java).
     // ------------------------------------------------------------------
 
     /// Java: boolean isUnqualifiable(Symbol sym)
@@ -2387,7 +2433,7 @@ impl TreeMaker {
                               scope: crate::ids::ScopeId|
              -> StdOption<bool> {
                 // Java: Scope.getSymbolsByName reads the Context Types/Symtab
-                // services (Scope.java:954-976); the port passes them explicitly
+                // services (Scope.java); the port passes them explicitly
                 // so a FilterImportScope never borrows a shared Symtab.
                 let candidates = ctx.scope_get_symbols_by_name_ctx(
                     scope,
@@ -2451,7 +2497,7 @@ impl TreeMaker {
 
     // ------------------------------------------------------------------
     // Java: TreeMaker.AnnotationBuilder + Annotations/Annotation/
-    // TypeAnnotation/Literal(Object) (TreeMaker.java:889-1005).
+    // TypeAnnotation/Literal(Object) (TreeMaker.java).
     // ------------------------------------------------------------------
 
     /// Java: public List<JCAnnotation> Annotations(List<Attribute.Compound>
@@ -2697,7 +2743,7 @@ impl TreeMaker {
         new_array
     }
 
-    /// Java: public static JCLiteral Literal(Object value) (TreeMaker.java:899) —
+    /// Java: public static JCLiteral Literal(Object value) (TreeMaker.java) —
     /// the TypeTag/type inference part; see the file header for the Byte/Short
     /// registration.
     pub fn literal_constant(
@@ -2762,12 +2808,12 @@ fn class_type_arguments(ctx: &CompilerContext, t: crate::ids::TypeId) -> List<cr
 
 
 impl TreeMaker {
-    /// adapter helper: public wrapper of the private block factory (JCTree.java:1040).
+    /// adapter helper: public wrapper of the private block factory (JCTree.java).
     pub fn block_pub(&mut self, ctx: &mut CompilerContext, flags: i64, stats: List<TreeId>) -> TreeId {
         self.block(ctx, flags, stats)
     }
 
-    /// adapter helper: public wrapper of the private lambda factory (JCTree.java:1280).
+    /// adapter helper: public wrapper of the private lambda factory (JCTree.java).
     pub fn lambda_pub(&mut self, ctx: &mut CompilerContext, params: List<TreeId>, body: TreeId) -> TreeId {
         self.lambda(ctx, params, body)
     }
@@ -2775,7 +2821,7 @@ impl TreeMaker {
 
 
 impl TreeMaker {
-    /// Java: public JCExpression Type(Type t) (TreeMaker.java:790-860).
+    /// Java: public JCExpression Type(Type t) (TreeMaker.java).
     ///
     /// # Arguments
     ///   - ctx: the compiler context;
@@ -2956,7 +3002,10 @@ mod tests {
 
     #[test]
     fn top_level_and_class_members_keep_pos_and_shape() {
-        let (mut ctx, mut maker) = new_maker();
+        // Java: TreeMaker holds the Symtab used by the Attribute/constType
+        // helpers (TreeMaker.java); the upstream constructor always
+        // receives the context services, so the test maker is wired with syms.
+        let (mut ctx, _syms, _types, mut maker) = new_maker_with_syms();
         let (unit, cdef) = build_unit(&mut ctx, &mut maker);
         assert_eq!(maker.toplevel, Some(unit));
         assert_eq!(ctx.tree(unit).tag, Tag::TOPLEVEL);
@@ -2994,7 +3043,7 @@ mod tests {
 
     #[test]
     fn method_body_expression_positions_literals_and_lambda() {
-        let (mut ctx, mut maker) = new_maker();
+        let (mut ctx, _syms, _types, mut maker) = new_maker_with_syms();
         let lit = maker
             .at(10)
             .literal_object(&mut ctx, LiteralValue::Integer(42));
@@ -3036,7 +3085,7 @@ mod tests {
 
     #[test]
     fn annotations_and_modifiers() {
-        let (mut ctx, mut maker) = new_maker();
+        let (mut ctx, _syms, _types, mut maker) = new_maker_with_syms();
         let int = maker.at(5).type_ident(&mut ctx, TypeTag::INT);
         let lit = maker
             .at(10)
@@ -3058,7 +3107,7 @@ mod tests {
         // NOTE: Pretty.printUnit is not used here: its import filtering needs isUsed/TreeScanner
         // (unimplemented in the pretty , not part of this task). The expression/statement
         // printers are complete, so the integration test covers those.
-        let (mut ctx, mut maker) = new_maker();
+        let (mut ctx, _syms, _types, mut maker) = new_maker_with_syms();
         let one = maker
             .at(10)
             .literal_object(&mut ctx, LiteralValue::Integer(1));
@@ -3071,7 +3120,7 @@ mod tests {
         let printed = pretty.get_out().to_string_lossy();
         assert!(printed.contains("1 + 2"), "{printed}");
 
-        let (mut ctx, mut maker) = new_maker();
+        let (mut ctx, _syms, _types, mut maker) = new_maker_with_syms();
         let lit = maker
             .at(10)
             .literal_object(&mut ctx, LiteralValue::Integer(42));

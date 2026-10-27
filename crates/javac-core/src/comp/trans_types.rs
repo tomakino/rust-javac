@@ -37,7 +37,7 @@ use crate::util::list::List;
 use crate::util::log::Log;
 use crate::util::names::Names;
 
-/// Java: public class TransTypes extends TreeTranslator (TransTypes.java:60-984).
+/// Java: public class TransTypes extends TreeTranslator (TransTypes.java).
 pub struct TransTypes {
     /// Java: private Names names
     pub names: Rc<Names>,
@@ -78,7 +78,7 @@ pub struct TransTypes {
 }
 
 impl TransTypes {
-    /// Java: protected TransTypes(Context context) (TransTypes.java:93-111)
+    /// Java: protected TransTypes(Context context) (TransTypes.java)
     /// — the explicit-service adapter (ADR 0001).
     ///
     /// # Arguments
@@ -132,11 +132,11 @@ impl TransTypes {
     }
 
     // ------------------------------------------------------------------
-    // Java: TreeTranslator.translate framework (TreeTranslator.java:139-355)
+    // Java: TreeTranslator.translate framework (TreeTranslator.java)
     // ------------------------------------------------------------------
 
     /// Java: public <T extends JCTree> T translate(T tree)
-    /// (TreeTranslator.java:145-152).
+    /// (TreeTranslator.java).
     pub fn translate(
         &mut self,
         ctx: &mut CompilerContext,
@@ -152,7 +152,7 @@ impl TransTypes {
     }
 
     /// Java: public <T extends JCTree> T translate(T tree, Type pt)
-    /// (TransTypes.java:432-448).
+    /// (TransTypes.java).
     pub fn translate_with_pt(
         &mut self,
         ctx: &mut CompilerContext,
@@ -167,7 +167,7 @@ impl TransTypes {
     }
 
     /// Java: public <T extends JCTree> List<T> translate(List<T> trees)
-    /// (TreeTranslator.java:158-170).
+    /// (TreeTranslator.java).
     pub fn translate_list(
         &mut self,
         ctx: &mut CompilerContext,
@@ -187,7 +187,7 @@ impl TransTypes {
     }
 
     /// Java: public <T extends JCTree> List<T> translate(List<T> trees, Type pt)
-    /// (TransTypes.java:455-474).
+    /// (TransTypes.java).
     pub fn translate_list_with_pt(
         &mut self,
         ctx: &mut CompilerContext,
@@ -247,10 +247,10 @@ impl TransTypes {
     }
 
     // ------------------------------------------------------------------
-    // Utility methods (TransTypes.java:600-616)
+    // Utility methods (TransTypes.java)
     // ------------------------------------------------------------------
 
-    /// Java: private Type erasure(Type t) (TransTypes.java:634-636).
+    /// Java: private Type erasure(Type t) (TransTypes.java).
     fn erasure(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
         let syms = self.syms.borrow();
         self.types.erasure(ctx, &syms, t)
@@ -268,7 +268,7 @@ impl TransTypes {
         self.types.get_return_type_public(ctx, erased)
     }
 
-    /// Java: JCExpression cast(JCExpression tree, Type target) (TransTypes.java:113-126).
+    /// Java: JCExpression cast(JCExpression tree, Type target) (TransTypes.java).
     fn cast(
         &mut self,
         ctx: &mut CompilerContext,
@@ -324,7 +324,7 @@ impl TransTypes {
     }
 
     /// Java: public JCExpression coerce(Env<AttrContext> env, JCExpression tree,
-    /// Type target) (TransTypes.java:125-136).
+    /// Type target) (TransTypes.java).
     pub fn coerce(
         &mut self,
         ctx: &mut CompilerContext,
@@ -339,7 +339,7 @@ impl TransTypes {
         result
     }
 
-    /// Java: JCExpression coerce(JCExpression tree, Type target) (TransTypes.java:137-147).
+    /// Java: JCExpression coerce(JCExpression tree, Type target) (TransTypes.java).
     fn coerce_tree(&mut self, ctx: &mut CompilerContext, tree: TreeId, target: TypeId) -> TreeId {
         let base_target = self.types.base_type_of(ctx, target);
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
@@ -358,7 +358,7 @@ impl TransTypes {
     }
 
     /// Java: JCExpression retype(JCExpression tree, Type erasedType, Type target)
-    /// (TransTypes.java:175-190).
+    /// (TransTypes.java).
     fn retype(
         &mut self,
         ctx: &mut CompilerContext,
@@ -383,8 +383,8 @@ impl TransTypes {
     }
 
     /// Java: <T extends JCTree> List<T> translateArgs(List<T> _args, List<Type>
-    /// parameters, Type varargsElement) (TransTypes.java:198-230).
-    fn translate_args(
+    /// parameters, Type varargsElement) (TransTypes.java).
+    pub fn translate_args(
         &mut self,
         ctx: &mut CompilerContext,
         args: List<TreeId>,
@@ -435,11 +435,11 @@ impl TransTypes {
         translated
     }
 
-    #[allow(dead_code)] // upstream public helper (TransTypes.java:212-224)
+    #[allow(dead_code)] // upstream public helper (TransTypes.java)
     /// Java: public <T extends JCTree> List<T> translateArgs(List<T> _args,
     /// List<Type> parameters, Type varargsElement, Env<AttrContext> localEnv)
-    /// (TransTypes.java:212-224).
-    fn translate_args_with_env(
+    /// (TransTypes.java).
+    pub fn translate_args_with_env(
         &mut self,
         ctx: &mut CompilerContext,
         args: List<TreeId>,
@@ -454,12 +454,12 @@ impl TransTypes {
         result
     }
     // ------------------------------------------------------------------
-    // Bridge methods (TransTypes.java:226-410)
+    // Bridge methods (TransTypes.java)
     // ------------------------------------------------------------------
 
     /// Java: void addBridge(DiagnosticPosition pos, MethodSymbol meth,
     /// MethodSymbol impl, ClassSymbol origin, ListBuffer<JCTree> bridges)
-    /// (TransTypes.java:226-288).
+    /// (TransTypes.java).
     #[allow(clippy::too_many_lines)]
     fn add_bridge(
         &mut self,
@@ -609,7 +609,7 @@ impl TransTypes {
     }
 
     /// Java: private List<VarSymbol> createBridgeParams(MethodSymbol impl,
-    /// MethodSymbol bridge, Type bridgeType) (TransTypes.java:290-320).
+    /// MethodSymbol bridge, Type bridgeType) (TransTypes.java).
     fn create_bridge_params(
         &mut self,
         ctx: &mut CompilerContext,
@@ -651,7 +651,7 @@ impl TransTypes {
     }
 
     /// Java: void addBridgeIfNeeded(DiagnosticPosition pos, Symbol sym,
-    /// ClassSymbol origin, ListBuffer<JCTree> bridges) (TransTypes.java:328-380).
+    /// ClassSymbol origin, ListBuffer<JCTree> bridges) (TransTypes.java).
     fn add_bridge_if_needed(
         &mut self,
         ctx: &mut CompilerContext,
@@ -719,7 +719,7 @@ impl TransTypes {
         }
     }
     /// Java: private boolean isBridgeNeeded(MethodSymbol method, MethodSymbol impl,
-    /// Type dest) (TransTypes.java:382-410).
+    /// Type dest) (TransTypes.java).
     fn is_bridge_needed(
         &mut self,
         ctx: &mut CompilerContext,
@@ -748,7 +748,7 @@ impl TransTypes {
     }
 
     /// Java: private boolean isSameMemberWhenErased(Type type, MethodSymbol method,
-    /// Type erasure) (TransTypes.java:412-420).
+    /// Type erasure) (TransTypes.java).
     fn is_same_member_when_erased(
         &mut self,
         ctx: &mut CompilerContext,
@@ -766,7 +766,7 @@ impl TransTypes {
     }
 
     /// Java: void addBridges(DiagnosticPosition pos, TypeSymbol i, ClassSymbol origin,
-    /// ListBuffer<JCTree> bridges) (TransTypes.java:422-433).
+    /// ListBuffer<JCTree> bridges) (TransTypes.java).
     fn add_bridges_from_type(
         &mut self,
         ctx: &mut CompilerContext,
@@ -802,7 +802,7 @@ impl TransTypes {
     }
 
     /// Java: void addBridges(DiagnosticPosition pos, ClassSymbol origin,
-    /// ListBuffer<JCTree> bridges) (TransTypes.java:435-448).
+    /// ListBuffer<JCTree> bridges) (TransTypes.java).
     fn add_bridges(
         &mut self,
         ctx: &mut CompilerContext,
@@ -839,10 +839,10 @@ impl TransTypes {
     }
 
     // ------------------------------------------------------------------
-    // Main method / class translation (TransTypes.java:890-984)
+    // Main method / class translation (TransTypes.java)
     // ------------------------------------------------------------------
 
-    /// Java: void translateClass(ClassSymbol c) (TransTypes.java:917-974).
+    /// Java: void translateClass(ClassSymbol c) (TransTypes.java).
     fn translate_class(
         &mut self,
         ctx: &mut CompilerContext,
@@ -934,7 +934,7 @@ impl TransTypes {
     }
 
     /// Java: public JCTree translateTopLevelClass(JCTree cdef, TreeMaker make)
-    /// (TransTypes.java:976-984).
+    /// (TransTypes.java).
     pub fn translate_top_level_class(
         &mut self,
         ctx: &mut CompilerContext,
@@ -981,7 +981,7 @@ impl TransTypes {
 
 
 impl TreeVisitor for TransTypes {
-    /// Java: public void visitClassDef(JCClassDecl tree) (TransTypes.java:476-479).
+    /// Java: public void visitClassDef(JCClassDecl tree) (TransTypes.java).
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let sym = match &ctx.tree(tree).kind {
             TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
@@ -991,7 +991,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitMethodDef(JCMethodDecl tree) (TransTypes.java:481-497).
+    /// Java: public void visitMethodDef(JCMethodDecl tree) (TransTypes.java).
     fn visit_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let prev_ret = self.return_type;
         let sym = match &ctx.tree(tree).kind {
@@ -1041,7 +1041,7 @@ impl TreeVisitor for TransTypes {
         self.return_type = prev_ret;
     }
 
-    /// Java: public void visitVarDef(JCVariableDecl tree) (TransTypes.java:499-504).
+    /// Java: public void visitVarDef(JCVariableDecl tree) (TransTypes.java).
     fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (vartype, init, sym, tree_ty) = match &ctx.tree(tree).kind {
             TreeKind::VariableDecl { vartype, init, sym, .. } => (*vartype, *init, *sym, ctx.tree(tree).ty),
@@ -1059,7 +1059,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitDoLoop(JCDoWhileLoop tree) (TransTypes.java:506-511).
+    /// Java: public void visitDoLoop(JCDoWhileLoop tree) (TransTypes.java).
     fn visit_do_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (body, cond) = match &ctx.tree(tree).kind {
             TreeKind::DoWhileLoop { body, cond } => (*body, *cond),
@@ -1075,7 +1075,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitWhileLoop(JCWhileLoop tree) (TransTypes.java:513-518).
+    /// Java: public void visitWhileLoop(JCWhileLoop tree) (TransTypes.java).
     fn visit_while_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, body) = match &ctx.tree(tree).kind {
             TreeKind::WhileLoop { cond, body } => (*cond, *body),
@@ -1091,7 +1091,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitForLoop(JCForLoop tree) (TransTypes.java:520-529).
+    /// Java: public void visitForLoop(JCForLoop tree) (TransTypes.java).
     fn visit_for_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (init, cond, step, body) = match &ctx.tree(tree).kind {
             TreeKind::ForLoop { init, cond, step, body } => (init.clone(), *cond, step.clone(), *body),
@@ -1115,7 +1115,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitForeachLoop(JCEnhancedForLoop tree) (TransTypes.java:531-543).
+    /// Java: public void visitForeachLoop(JCEnhancedForLoop tree) (TransTypes.java).
     fn visit_foreach_loop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (var, expr, body) = match &ctx.tree(tree).kind {
             TreeKind::EnhancedForLoop { var, expr, body } => (*var, *expr, *body),
@@ -1145,7 +1145,7 @@ impl TreeVisitor for TransTypes {
         }
         self.result = Some(tree);
     }
-    /// Java: public void visitLambda(JCLambda tree) (TransTypes.java:545-565).
+    /// Java: public void visitLambda(JCLambda tree) (TransTypes.java).
     fn visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let prev_ret = self.return_type;
         let (params, body, target, tree_ty) = match &ctx.tree(tree).kind {
@@ -1202,7 +1202,7 @@ impl TreeVisitor for TransTypes {
         self.return_type = prev_ret;
     }
 
-    /// Java: public void visitSwitch(JCSwitch tree) (TransTypes.java:567-576).
+    /// Java: public void visitSwitch(JCSwitch tree) (TransTypes.java).
     fn visit_switch(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases) = match &ctx.tree(tree).kind {
             TreeKind::Switch { selector, cases, .. } => (*selector, cases.clone()),
@@ -1228,7 +1228,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitCase(JCCase tree) (TransTypes.java:578-582).
+    /// Java: public void visitCase(JCCase tree) (TransTypes.java).
     fn visit_case(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (labels, stats) = match &ctx.tree(tree).kind {
             TreeKind::Case { labels, stats, .. } => (labels.clone(), stats.clone()),
@@ -1243,7 +1243,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitBindingPattern(JCBindingPattern tree) (TransTypes.java:584-587).
+    /// Java: public void visitBindingPattern(JCBindingPattern tree) (TransTypes.java).
     fn visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let var = match &ctx.tree(tree).kind {
             TreeKind::BindingPattern { var } => *var,
@@ -1256,7 +1256,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitSwitchExpression(JCSwitchExpression tree) (TransTypes.java:589-598).
+    /// Java: public void visitSwitchExpression(JCSwitchExpression tree) (TransTypes.java).
     fn visit_switch_expression(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selector, cases, tree_ty) = match &ctx.tree(tree).kind {
             TreeKind::SwitchExpression { selector, cases, .. } => {
@@ -1287,7 +1287,7 @@ impl TreeVisitor for TransTypes {
     }
 
     /// Java: public void visitParenthesizedPattern(JCParenthesizedPattern tree)
-    /// (TransTypes.java:601-605).
+    /// (TransTypes.java).
     fn visit_parenthesized_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let pattern = match &ctx.tree(tree).kind {
             TreeKind::ParenthesizedPattern { pattern } => *pattern,
@@ -1300,7 +1300,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitGuardPattern(JCGuardPattern tree) (TransTypes.java:607-612).
+    /// Java: public void visitGuardPattern(JCGuardPattern tree) (TransTypes.java).
     fn visit_guard_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (patt, expr) = match &ctx.tree(tree).kind {
             TreeKind::GuardPattern { patt, expr } => (*patt, *expr),
@@ -1316,7 +1316,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitSynchronized(JCSynchronized tree) (TransTypes.java:614-619).
+    /// Java: public void visitSynchronized(JCSynchronized tree) (TransTypes.java).
     fn visit_synchronized(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lock, body) = match &ctx.tree(tree).kind {
             TreeKind::Synchronized { lock, body } => (*lock, *body),
@@ -1332,7 +1332,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitTry(JCTry tree) (TransTypes.java:621-627).
+    /// Java: public void visitTry(JCTry tree) (TransTypes.java).
     fn visit_try(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (resources, body, catchers, finalizer) = match &ctx.tree(tree).kind {
             TreeKind::Try { resources, body, catchers, finalizer, .. } => {
@@ -1354,7 +1354,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitConditional(JCConditional tree) (TransTypes.java:629-636).
+    /// Java: public void visitConditional(JCConditional tree) (TransTypes.java).
     fn visit_conditional(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, truepart, falsepart, tree_ty) = match &ctx.tree(tree).kind {
             TreeKind::Conditional { cond, truepart, falsepart, .. } => {
@@ -1376,7 +1376,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(self.retype(ctx, tree, erased, self.pt));
     }
 
-    /// Java: public void visitIf(JCIf tree) (TransTypes.java:638-643).
+    /// Java: public void visitIf(JCIf tree) (TransTypes.java).
     fn visit_if(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, thenpart, elsepart) = match &ctx.tree(tree).kind {
             TreeKind::If { cond, thenpart, elsepart } => (*cond, *thenpart, *elsepart),
@@ -1394,7 +1394,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitExec(JCExpressionStatement tree) (TransTypes.java:645-648).
+    /// Java: public void visitExec(JCExpressionStatement tree) (TransTypes.java).
     fn visit_exec(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::ExpressionStatement { expr } => *expr,
@@ -1407,7 +1407,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitReturn(JCReturn tree) (TransTypes.java:650-655).
+    /// Java: public void visitReturn(JCReturn tree) (TransTypes.java).
     fn visit_return(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Return { expr } => *expr,
@@ -1424,12 +1424,12 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitBreak(JCBreak tree) (TransTypes.java:657-660).
+    /// Java: public void visitBreak(JCBreak tree) (TransTypes.java).
     fn visit_break(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitYield(JCYield tree) (TransTypes.java:662-668).
+    /// Java: public void visitYield(JCYield tree) (TransTypes.java).
     fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let value = match &ctx.tree(tree).kind {
             TreeKind::Yield { value, .. } => *value,
@@ -1446,7 +1446,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitThrow(JCThrow tree) (TransTypes.java:670-673).
+    /// Java: public void visitThrow(JCThrow tree) (TransTypes.java).
     fn visit_throw(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Throw { expr } => *expr,
@@ -1460,7 +1460,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitAssert(JCAssert tree) (TransTypes.java:675-681).
+    /// Java: public void visitAssert(JCAssert tree) (TransTypes.java).
     fn visit_assert(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (cond, detail) = match &ctx.tree(tree).kind {
             TreeKind::Assert { cond, detail } => (*cond, *detail),
@@ -1477,7 +1477,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitApply(JCMethodInvocation tree) (TransTypes.java:683-712).
+    /// Java: public void visitApply(JCMethodInvocation tree) (TransTypes.java).
     fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (meth, args, varargs_element) = match &ctx.tree(tree).kind {
             TreeKind::MethodInvocation { meth, args, varargs_element, .. } => (*meth, args.clone(), *varargs_element),
@@ -1526,7 +1526,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(self.retype(ctx, tree, mt_return, self.pt));
     }
 
-    /// Java: public void visitNewClass(JCNewClass tree) (TransTypes.java:714-756).
+    /// Java: public void visitNewClass(JCNewClass tree) (TransTypes.java).
     fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (encl, clazz, args, def, constructor, constructor_type, varargs_element) = match &ctx.tree(tree).kind {
             TreeKind::NewClass { encl, clazz, args, def, constructor, constructor_type, varargs_element, .. } => (
@@ -1587,7 +1587,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitNewArray(JCNewArray tree) (TransTypes.java:758-770).
+    /// Java: public void visitNewArray(JCNewArray tree) (TransTypes.java).
     fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (elemtype, dims, elems, tree_ty) = match &ctx.tree(tree).kind {
             TreeKind::NewArray { elemtype, dims, elems, .. } => (*elemtype, dims.clone(), elems.clone(), ctx.tree(tree).ty),
@@ -1617,7 +1617,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitParens(JCParens tree) (TransTypes.java:772-776).
+    /// Java: public void visitParens(JCParens tree) (TransTypes.java).
     fn visit_parens(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let expr = match &ctx.tree(tree).kind {
             TreeKind::Parens { expr } => *expr,
@@ -1633,7 +1633,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitAssign(JCAssign tree) (TransTypes.java:778-783).
+    /// Java: public void visitAssign(JCAssign tree) (TransTypes.java).
     fn visit_assign(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
             TreeKind::Assign { lhs, rhs } => (*lhs, *rhs),
@@ -1651,7 +1651,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(self.retype(ctx, tree, erased, self.pt));
     }
 
-    /// Java: public void visitAssignop(JCAssignOp tree) (TransTypes.java:785-790).
+    /// Java: public void visitAssignop(JCAssignOp tree) (TransTypes.java).
     fn visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs, operator) = match &ctx.tree(tree).kind {
             TreeKind::AssignOp { lhs, rhs, operator } => (*lhs, *rhs, *operator),
@@ -1673,7 +1673,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitUnary(JCUnary tree) (TransTypes.java:792-796).
+    /// Java: public void visitUnary(JCUnary tree) (TransTypes.java).
     fn visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (arg, operator) = match &ctx.tree(tree).kind {
             TreeKind::Unary { arg, operator } => (*arg, *operator),
@@ -1695,7 +1695,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitBinary(JCBinary tree) (TransTypes.java:798-802).
+    /// Java: public void visitBinary(JCBinary tree) (TransTypes.java).
     fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (lhs, rhs, operator) = match &ctx.tree(tree).kind {
             TreeKind::Binary { lhs, rhs, operator } => (*lhs, *rhs, *operator),
@@ -1715,7 +1715,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitAnnotatedType(JCAnnotatedType tree) (TransTypes.java:804-812).
+    /// Java: public void visitAnnotatedType(JCAnnotatedType tree) (TransTypes.java).
     fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (annotations, underlying_type) = match &ctx.tree(tree).kind {
             TreeKind::AnnotatedType { annotations, underlying_type } => (annotations.clone(), *underlying_type),
@@ -1732,7 +1732,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitTypeCast(JCTypeCast tree) (TransTypes.java:814-843).
+    /// Java: public void visitTypeCast(JCTypeCast tree) (TransTypes.java).
     fn visit_type_cast(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (clazz, expr) = match &ctx.tree(tree).kind {
             TreeKind::TypeCast { clazz, expr } => (*clazz, *expr),
@@ -1787,7 +1787,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(self.retype(ctx, tree, erased, self.pt));
     }
 
-    /// Java: public void visitTypeTest(JCInstanceOf tree) (TransTypes.java:845-849).
+    /// Java: public void visitTypeTest(JCInstanceOf tree) (TransTypes.java).
     fn visit_type_test(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, pattern) = match &ctx.tree(tree).kind {
             TreeKind::InstanceOf { expr, pattern } => (*expr, *pattern),
@@ -1802,7 +1802,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitIndexed(JCArrayAccess tree) (TransTypes.java:851-858).
+    /// Java: public void visitIndexed(JCArrayAccess tree) (TransTypes.java).
     fn visit_indexed(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (indexed, index) = match &ctx.tree(tree).kind {
             TreeKind::ArrayAccess { indexed, index } => (*indexed, *index),
@@ -1824,12 +1824,12 @@ impl TreeVisitor for TransTypes {
         self.result = Some(self.retype(ctx, tree, elem, self.pt));
     }
 
-    /// Java: public void visitAnnotation(JCAnnotation tree) (TransTypes.java:862-865).
+    /// Java: public void visitAnnotation(JCAnnotation tree) (TransTypes.java).
     fn visit_annotation(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitIdent(JCIdent tree) (TransTypes.java:867-887).
+    /// Java: public void visitIdent(JCIdent tree) (TransTypes.java).
     fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let sym = tree_info::symbol(ctx, tree).expect("ident symbol");
         let et = self.symbol_erasure(ctx, sym);
@@ -1853,7 +1853,7 @@ impl TreeVisitor for TransTypes {
         }
     }
 
-    /// Java: public void visitSelect(JCFieldAccess tree) (TransTypes.java:889-907).
+    /// Java: public void visitSelect(JCFieldAccess tree) (TransTypes.java).
     fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (selected, sym) = match &ctx.tree(tree).kind {
             TreeKind::FieldAccess { selected, sym, .. } => (*selected, *sym),
@@ -1894,7 +1894,7 @@ impl TreeVisitor for TransTypes {
         }
     }
 
-    /// Java: public void visitReference(JCMemberReference tree) (TransTypes.java:909-931).
+    /// Java: public void visitReference(JCMemberReference tree) (TransTypes.java).
     fn visit_reference(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (expr, kind, sym, varargs_element, tree_ty) = match &ctx.tree(tree).kind {
             TreeKind::MemberReference { expr, kind, sym, varargs_element, .. } => {
@@ -1954,7 +1954,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitTypeArray(JCArrayTypeTree tree) (TransTypes.java:933-938).
+    /// Java: public void visitTypeArray(JCArrayTypeTree tree) (TransTypes.java).
     fn visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let elemtype = match &ctx.tree(tree).kind {
             TreeKind::ArrayTypeTree { elemtype } => *elemtype,
@@ -1970,7 +1970,7 @@ impl TreeVisitor for TransTypes {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitTypeApply(JCTypeApply tree) (TransTypes.java:942-947).
+    /// Java: public void visitTypeApply(JCTypeApply tree) (TransTypes.java).
     fn visit_type_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let clazz = match &ctx.tree(tree).kind {
             TreeKind::TypeApply { clazz, .. } => *clazz,
@@ -1981,7 +1981,7 @@ impl TreeVisitor for TransTypes {
     }
 
     /// Java: public void visitTypeIntersection(JCTypeIntersection tree)
-    /// (TransTypes.java:949-953).
+    /// (TransTypes.java).
     fn visit_type_intersection(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let bounds = match &ctx.tree(tree).kind {
             TreeKind::TypeIntersection { bounds } => bounds.clone(),
@@ -2290,39 +2290,39 @@ impl TreeVisitor for TransTypes {
     }
 
 
-    /// Java: public void visitSkip(JCSkip tree) (TreeTranslator.java:162-164).
+    /// Java: public void visitSkip(JCSkip tree) (TreeTranslator.java).
     fn visit_skip(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitContinue(JCContinue tree) (TreeTranslator.java:269-271).
+    /// Java: public void visitContinue(JCContinue tree) (TreeTranslator.java).
     fn visit_continue(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
     /// Java: public void visitDefaultCaseLabel(JCDefaultCaseLabel tree)
-    /// (TreeTranslator.java:367-369).
+    /// (TreeTranslator.java).
     fn visit_default_case_label(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitLiteral(JCLiteral tree) (TreeTranslator.java:404-406).
+    /// Java: public void visitLiteral(JCLiteral tree) (TreeTranslator.java).
     fn visit_literal(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
     /// Java: public void visitTypeIdent(JCPrimitiveTypeTree tree)
-    /// (TreeTranslator.java:408-410).
+    /// (TreeTranslator.java).
     fn visit_type_ident(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitErroneous(JCErroneous tree) (TreeTranslator.java:451-453).
+    /// Java: public void visitErroneous(JCErroneous tree) (TreeTranslator.java).
     fn visit_erroneous(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         self.result = Some(tree);
     }
 
-    /// Java: public void visitTree(JCTree tree) (TreeTranslator.java:478-480).
+    /// Java: public void visitTree(JCTree tree) (TreeTranslator.java).
     fn visit_tree(&mut self, _ctx: &mut CompilerContext, tree: TreeId) {
         panic!("AssertionError: visitTree {:?}", tree);
     }

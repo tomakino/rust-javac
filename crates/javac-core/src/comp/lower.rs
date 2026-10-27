@@ -3883,7 +3883,7 @@ impl Lower {
             site,
             static_arg_types,
         );
-        // Java: ((MethodSymbol)bsm).asHandle() (Lower.java:2596): the dynamic
+        // Java: ((MethodSymbol)bsm).asHandle() (Lower.java): the dynamic
         // method symbol stores a method-handle symbol for its bootstrap.
         let bsm = crate::code::symbol::as_method_handle(ctx, bsm, false);
         let msym_ty = ctx.sym(msym).ty.expect("method type");
@@ -3942,7 +3942,7 @@ impl Lower {
             *sym_slot = Some(dynamic_sym);
         }
         // Java: qualifier.type = msym.type.asMethodType().restype
-        // (Lower.java:2601).
+        // (Lower.java).
         let restype = self.types.get_return_type_public(ctx, msym_ty);
         ctx.tree_mut(qualifier).ty = Some(restype);
         qualifier
@@ -7740,12 +7740,44 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for ClassMap {
 
 /// Collects the free variables accessed from a local class.
 ///
+/// Java: the lambda translation hook that runs the analyzer anonymous
+/// BasicFreeVarCollector subclass over a local class definition
+/// (LambdaToMethod.java:1471-1497; Lower.java:228-272).
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - lower: the lowering pass supplying the caches;
+///   - clazz: the local class symbol;
+///   - owner: the class owning the local class;
+///   - cdef: the class definition to scan;
+///   - visitor: the addFreeVars/visitSymbol callbacks.
+pub fn collect_free_vars(
+    ctx: &mut CompilerContext,
+    lower: &Lower,
+    clazz: SymbolId,
+    owner: SymbolId,
+    cdef: TreeId,
+    visitor: &mut dyn BasicFreeVarCollectorVisitor,
+) {
+    let mut collector = FreeVarCollector::new_with_visitor(lower, clazz, owner, visitor);
+    collector.scan(ctx, Some(cdef));
+}
+/// Java: abstract class BasicFreeVarCollector extends TreeScanner
+/// (Lower.java): the two abstract hooks (addFreeVars/visitSymbol) the
+/// lambda translation supplies when it collects the free variables of a local
+/// class referenced from a lambda body (ported as a trait; registered adapter).
+pub trait BasicFreeVarCollectorVisitor {
+    /// Java: abstract void addFreeVars(ClassSymbol c) (Lower.java).
+    fn add_free_vars(&mut self, ctx: &mut CompilerContext, class: SymbolId);
+    /// Java: abstract void visitSymbol(Symbol _sym) (Lower.java).
+    fn visit_symbol(&mut self, ctx: &mut CompilerContext, sym: SymbolId);
+}
 /// The upstream BasicFreeVarCollector/FreeVarCollector pair is folded into this
 /// single scanner: it walks the class definition, follows proxies and implicit
 /// outer-this parameters, and records the owner variables that are used by the
 /// class body. The cached maps are copied in so the scanner does not alias the
 /// lowering pass while it walks.
-struct FreeVarCollector {
+struct FreeVarCollector<'a> {
     /// The owner of the local class.
     owner: SymbolId,
     /// The local class being scanned.
@@ -7760,13 +7792,16 @@ struct FreeVarCollector {
     outer_this_stack: Vec<SymbolId>,
     /// The name table of the enclosing pass.
     names: Rc<Names>,
+    /// Java: the anonymous BasicFreeVarCollector subclass of the lambda',
+    /// analyzer (None keeps the lowering pass behaviour).
+    visitor: Option<&'a mut dyn BasicFreeVarCollectorVisitor>,
 }
 
-crate::tree::tree_scanner::tree_scanner_visitor_delegate!(FreeVarCollector);
+crate::tree::tree_scanner::tree_scanner_visitor_delegate!(FreeVarCollector<'a>, 'a);
 
-impl FreeVarCollector {
+impl<'a> FreeVarCollector<'a> {
     /// Create a collector for a local class and copy the caches it consults.
-    fn new(lower: &Lower, clazz: SymbolId, owner: SymbolId) -> FreeVarCollector {
+    fn new(lower: &Lower, clazz: SymbolId, owner: SymbolId) -> FreeVarCollector<'a> {
         FreeVarCollector {
             owner,
             clazz,
@@ -7775,7 +7810,21 @@ impl FreeVarCollector {
             proxies: lower.proxies.clone(),
             outer_this_stack: lower.outer_this_stack.clone(),
             names: Rc::clone(&lower.names),
+            visitor: None,
         }
+    }
+
+    /// Create a collector that delegates addFreeVars/visitSymbol to the given
+    /// Java-anonymous BasicFreeVarCollector subclass (Lower.java).
+    fn new_with_visitor(
+        lower: &Lower,
+        clazz: SymbolId,
+        owner: SymbolId,
+        visitor: &'a mut dyn BasicFreeVarCollectorVisitor,
+    ) -> FreeVarCollector<'a> {
+        let mut collector = FreeVarCollector::new(lower, clazz, owner);
+        collector.visitor = Some(visitor);
+        collector
     }
 
     /// Add a free variable unless it is already recorded.
@@ -7789,7 +7838,11 @@ impl FreeVarCollector {
     }
 
     /// Add all free variables known for a class, if any.
-    fn add_free_vars(&mut self, c: SymbolId) {
+    fn add_free_vars(&mut self, ctx: &mut CompilerContext, c: SymbolId) {
+        if let Some(visitor) = self.visitor.as_mut() {
+            visitor.add_free_vars(ctx, c);
+            return;
+        }
         if let Some(fvs) = self.freevar_cache.get(&c) {
             let mut current = fvs.clone();
             while current.non_empty() {
@@ -7800,7 +7853,11 @@ impl FreeVarCollector {
     }
 
     /// Visit a symbol referenced from the class body.
-    fn visit_symbol(&mut self, ctx: &CompilerContext, original: SymbolId) {
+    fn visit_symbol(&mut self, ctx: &mut CompilerContext, original: SymbolId) {
+        if let Some(visitor) = self.visitor.as_mut() {
+            visitor.visit_symbol(ctx, original);
+            return;
+        }
         let mut sym = original;
         if !matches!(ctx.sym(sym).kind, Kind::VAR | Kind::MTH) {
             return;
@@ -7825,7 +7882,7 @@ impl FreeVarCollector {
     }
 }
 
-impl crate::tree::tree_scanner::TreeScannerVisitor for FreeVarCollector {
+impl<'a> crate::tree::tree_scanner::TreeScannerVisitor for FreeVarCollector<'a> {
     fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let sym = match &ctx.tree(tree).kind {
             TreeKind::Ident { sym, .. } => *sym,
@@ -7850,7 +7907,7 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for FreeVarCollector {
         };
         let constructor = constructor.expect("attributed constructor");
         let c = ctx.sym(constructor).owner.expect("constructor owner");
-        self.add_free_vars(c);
+        self.add_free_vars(ctx, c);
         if encl.is_none()
             && ctx.sym(c).has_outer_instance(ctx)
             && let Some(head) = self.outer_this_stack.first().copied()
@@ -7877,7 +7934,7 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for FreeVarCollector {
             && let Some(constructor) = crate::tree::tree_info::symbol(ctx, meth)
             && let Some(c) = ctx.sym(constructor).owner
         {
-            self.add_free_vars(c);
+            self.add_free_vars(ctx, c);
         }
         if let Some(meth) = meth
             && crate::tree::tree_info::name(ctx, meth) == Some(self.super_name(ctx))
@@ -7922,7 +7979,7 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for FreeVarCollector {
     }
 }
 
-impl FreeVarCollector {
+impl<'a> FreeVarCollector<'a> {
     /// Return the name of the synthetic outer-this parameter.
     fn this_name(&self, _ctx: &CompilerContext) -> Name {
         self.names._this.clone()

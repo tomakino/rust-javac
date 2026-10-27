@@ -866,6 +866,7 @@ mod tests {
                 captured_locals: List::nil(),
                 params: List::nil(),
                 default_value: None,
+                original_enclosing_method: None,
             },
         ));
         let diag = diags.fragment(Fragment::from(fragments::missing_ret_val(

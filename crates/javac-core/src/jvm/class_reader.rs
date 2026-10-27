@@ -4986,6 +4986,7 @@ fn find_access_method(
             captured_locals: List::nil(),
             params: List::nil(),
             default_value: None,
+            original_enclosing_method: None,
         },
     )))
 }
