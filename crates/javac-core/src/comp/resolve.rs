@@ -130,6 +130,10 @@ pub struct Resolve {
     /// accessInternal (Java: methodLogResolveHelper/DeferredAttr; the port wires
     /// the Attr cell after construction — registered adapter).
     pub attr_cell: Rc<RefCell<Option<Rc<RefCell<crate::comp::attr::Attr>>>>>, 
+    /// Java: private final ModuleFinder moduleFinder (Resolve.java:105) — the
+    /// module finder service (wired after construction; registered adapter
+    /// cell like attr_cell).
+    pub module_finder: Rc<RefCell<Option<Rc<RefCell<crate::code::module_finder::ModuleFinder>>>>>, 
 }
 
 impl Resolve {
@@ -199,6 +203,7 @@ impl Resolve {
             polymorphic_signature_scope: None,
             current_resolution_step: None,
             attr_cell: Rc::new(RefCell::new(None)),
+            module_finder: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -2299,15 +2304,9 @@ impl Resolve {
                 // TODO(ClassFinder): the BadClassFile distinction is not
                 // representable in the local CompletionFailure; recovery path.
                 match recovery {
-                    RecoveryLoadClass::NoRecovery | RecoveryLoadClass::DoRecoveryLoadClass => {
-                        // TODO(Modules): doRecoveryLoadClass needs
-                        // syms.getClassesForName/lookupInvisibleSymbol/moduleFinder.
-                        if recovery == RecoveryLoadClass::DoRecoveryLoadClass {
-                            unimplemented!(
-                                "TODO(Modules batch): Resolve.doRecoveryLoadClass"
-                            )
-                        }
-                        self.type_not_found
+                    RecoveryLoadClass::NoRecovery => self.type_not_found,
+                    RecoveryLoadClass::DoRecoveryLoadClass => {
+                        self.do_recovery_load_class(ctx, syms, env, name)
                     }
                     RecoveryLoadClass::NamedImportScopeRecovery
                     | RecoveryLoadClass::StarImportScopeRecovery => {
@@ -2318,6 +2317,190 @@ impl Resolve {
         }
     }
 
+
+    /// Java: doRecoveryLoadClass (Resolve.java:2073-2091).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler context and symbol table;
+    ///   - env: the attribution environment;
+    ///   - name: the class name.
+    ///
+    /// # Returns
+    ///   - the recovered class symbol, or typeNotFound.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Resolve.java:2073-2091.
+    fn do_recovery_load_class(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        env: &Rc<Env<AttrContext>>,
+        name: &crate::util::name::Name,
+    ) -> SymbolId {
+        let finder = self
+            .finder
+            .clone()
+            .expect("AssertionError: ClassFinder service is not installed");
+        let mut candidates = crate::util::convert::class_candidates(name);
+        let candidate_names: Vec<crate::util::name::Name> = {
+            let mut result = Vec::new();
+            while candidates.non_empty() {
+                result.push(candidates.head().clone());
+                candidates = candidates.tail();
+            }
+            result
+        };
+        // Java: n -> () -> createCompoundIterator(candidates,
+        //     c -> syms.getClassesForName(c).iterator()).
+        let get = |syms: &Symtab, _name: &crate::util::name::Name| {
+            let mut result = Vec::new();
+            for candidate in &candidate_names {
+                result.extend(syms.get_classes_for_name(candidate));
+            }
+            result
+        };
+        // Java: (ms, n) -> { for (Name candidate : candidates) { try {
+        //     return finder.loadClass(ms, candidate); } catch (CompletionFailure cf)
+        //     { } } return null; }
+        let mut load = |ctx: &mut crate::compiler_context::CompilerContext,
+                        syms: &mut Symtab,
+                        module: SymbolId,
+                        _name: &crate::util::name::Name|
+        -> Option<SymbolId> {
+            for candidate in &candidate_names {
+                if let Ok(found) = finder.load_class(ctx, syms, module, candidate.clone()) {
+                    return Some(found);
+                }
+            }
+            None
+        };
+        // Java: sym -> sym.kind == Kind.TYP.
+        let mut validate = |ctx: &mut crate::compiler_context::CompilerContext,
+                            _syms: &mut Symtab,
+                            sym: SymbolId|
+        -> bool { ctx.sym(sym).kind == Kind::TYP };
+        self.lookup_invisible_symbol(
+            ctx,
+            syms,
+            env,
+            name,
+            &get,
+            &mut load,
+            &mut validate,
+            self.type_not_found,
+        )
+    }
+
+    /// Java: private <S extends Symbol> Symbol lookupInvisibleSymbol(Env, Name,
+    /// Function<Name, Iterable<S>> get, BiFunction<ModuleSymbol, Name, S> load,
+    /// Predicate<S> validate, Symbol defaultResult) (Resolve.java:2152-2193).
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler context and symbol table;
+    ///   - env: the attribution environment;
+    ///   - name: the lookup name;
+    ///   - get: the name -> candidate symbols function;
+    ///   - load: the module/name -> symbol loader;
+    ///   - validate: the candidate predicate;
+    ///   - default_result: the fallback symbol.
+    ///
+    /// # Returns
+    ///   - the invisible-symbol error, or defaultResult.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: Resolve.java:2152-2193.
+    #[allow(clippy::too_many_arguments)]
+    fn lookup_invisible_symbol(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        env: &Rc<Env<AttrContext>>,
+        name: &crate::util::name::Name,
+        get: &dyn Fn(&Symtab, &crate::util::name::Name) -> Vec<SymbolId>,
+        load: &mut dyn FnMut(
+            &mut crate::compiler_context::CompilerContext,
+            &mut Symtab,
+            SymbolId,
+            &crate::util::name::Name,
+        ) -> Option<SymbolId>,
+        validate: &mut dyn FnMut(
+            &mut crate::compiler_context::CompilerContext,
+            &mut Symtab,
+            SymbolId,
+        ) -> bool,
+        default_result: SymbolId,
+    ) -> SymbolId {
+        // even if a class/package cannot be found in the current module and
+        // among packages in modules it depends on that are exported for any or
+        // this module, the class/package may exist internally in some of these
+        // modules, or may exist in a module on which this module does not depend.
+        let candidates = get(syms, name);
+        for sym in candidates {
+            if validate(ctx, syms, sym) {
+                return self.create_invisible_symbol_error(ctx, syms, env, sym);
+            }
+        }
+        let env_module = env_toplevel_module(ctx, env).expect("toplevel module");
+        let mut recoverable_modules = syms.get_all_modules();
+        recoverable_modules.push(syms.unnamed_module);
+        recoverable_modules.retain(|module| *module != env_module);
+        for original in recoverable_modules {
+            // avoid overly eager completing classes from source-based modules, as
+            // those may not be completable with the current compiler settings:
+            if resolve_module_source_location(ctx, original).is_some() {
+                continue;
+            }
+            let mut module = original;
+            if resolve_module_class_location(ctx, module).is_none() {
+                let finder = Rc::clone(
+                    self.module_finder
+                        .borrow()
+                        .as_ref()
+                        .expect("AssertionError: ModuleFinder service is not installed"),
+                );
+                module = finder.borrow_mut().find_module(ctx, syms, module);
+            }
+            if ctx.sym(module).kind != Kind::ERR {
+                if let Some(sym) = load(ctx, syms, module, name) {
+                    if validate(ctx, syms, sym) {
+                        return self.create_invisible_symbol_error(ctx, syms, env, sym);
+                    }
+                }
+            }
+        }
+        default_result
+    }
+
+    /// Java: private Symbol createInvisibleSymbolError(Env, Symbol)
+    /// (Resolve.java:2195-2201).
+    fn create_invisible_symbol_error(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        env: &Rc<Env<AttrContext>>,
+        sym: SymbolId,
+    ) -> SymbolId {
+        let snapshot = resolve_env_snapshot(ctx, env);
+        if symbol_package_visible(ctx, &snapshot, sym) {
+            self.new_access_error(ctx, syms, env, None, sym)
+        } else {
+            crate::code::symbol::symbol_new_resolve_error(
+                ctx,
+                Kind::HIDDEN,
+                self.names.empty.clone(),
+                "invisible class error",
+                crate::code::symbol::ResolveErrorData::Invisible {
+                    env: snapshot,
+                    suppress_error: false,
+                    sym,
+                },
+            )
+        }
+    }
     /// Java: namedImportScopeRecovery/starImportScopeRecovery (Resolve.java
     /// 2087-2122): importScope.findFirst(Convert.shortName(name), predicate).
     fn recovery_import_scope_lookup(
@@ -2389,9 +2572,49 @@ impl Resolve {
                     .map(|scope| ctx.scope_get_symbols(scope, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true).is_empty())
                     .unwrap_or(true);
             if members_empty {
-                // TODO(Modules): lookupInvisibleSymbol (module scanning +
-                // syms.getAllModules/getPackagesForName) is not ported.
-                unimplemented!("TODO(Modules batch): Resolve.lookupInvisibleSymbol")
+                // Java: return lookupInvisibleSymbol(env, name,
+                //     syms::getPackagesForName, syms::enterPackage, sym -> {
+                //         sym.complete(); return !sym.members().isEmpty(); }, pack)
+                //     (Resolve.java:2127-2130).
+                let get = |syms: &Symtab, name: &crate::util::name::Name| {
+                    syms.get_packages_for_name(name)
+                };
+                let mut load = |ctx: &mut crate::compiler_context::CompilerContext,
+                                syms: &mut Symtab,
+                                module: SymbolId,
+                                name: &crate::util::name::Name|
+                -> Option<SymbolId> { Some(syms.enter_package(ctx, module, name.clone())) };
+                let mut validate = |ctx: &mut crate::compiler_context::CompilerContext,
+                                    syms: &mut Symtab,
+                                    sym: SymbolId|
+                -> bool {
+                    // Java: sym.complete(); return !sym.members().isEmpty();
+                    let _ = ctx.complete_symbol(syms, sym);
+                    let members_empty = ctx.sym(sym).members().is_none()
+                        || ctx
+                            .sym(sym)
+                            .members()
+                            .map(|scope| {
+                                ctx.scope_get_symbols(
+                                    scope,
+                                    crate::code::scope::LookupKind::NON_RECURSIVE,
+                                    &|_| true,
+                                )
+                                .is_empty()
+                            })
+                            .unwrap_or(true);
+                    !members_empty
+                };
+                return self.lookup_invisible_symbol(
+                    ctx,
+                    syms,
+                    env,
+                    name,
+                    &get,
+                    &mut load,
+                    &mut validate,
+                    pack,
+                );
             }
         }
         pack
@@ -2729,31 +2952,31 @@ impl Resolve {
             let _ = sym;
             // Java: argtypes = logResolveHelper.getArgumentTypes(errSym, sym,
             // name, argtypes)
-            if log_resolve_helper == LogResolveHelper::Method {
-                // Java: argtypes = logResolveHelper.getArgumentTypes(errSym, sym,
-                // name, argtypes) with methodLogResolveHelper mapping each argument
-                // through new ResolveDeferredRecoveryMap(SPECULATIVE, accessedSym,
-                // currentResolutionContext.step) (Resolve.java:2615-2636).
-                if let Some(current_argtypes) = argtypes.clone() {
-                    let step = self
-                        .current_resolution_step
-                        .expect("AssertionError: currentResolutionContext is null");
-                    let attr = Rc::clone(
-                        self.attr_cell
-                            .borrow()
-                            .as_ref()
-                            .expect("AssertionError: Attr service must be installed"),
-                    );
-                    let mapped = attr.borrow_mut().map_resolve_deferred_argtypes(
-                        ctx,
-                        syms,
-                        current_argtypes,
-                        Some(sym),
-                        step,
-                    );
-                    argtypes = Some(mapped);
-                }
-            }
+            if log_resolve_helper == LogResolveHelper::Method {
+                // Java: argtypes = logResolveHelper.getArgumentTypes(errSym, sym,
+                // name, argtypes) with methodLogResolveHelper mapping each argument
+                // through new ResolveDeferredRecoveryMap(SPECULATIVE, accessedSym,
+                // currentResolutionContext.step) (Resolve.java:2615-2636).
+                if let Some(current_argtypes) = argtypes.clone() {
+                    let step = self
+                        .current_resolution_step
+                        .expect("AssertionError: currentResolutionContext is null");
+                    let attr = Rc::clone(
+                        self.attr_cell
+                            .borrow()
+                            .as_ref()
+                            .expect("AssertionError: Attr service must be installed"),
+                    );
+                    let mapped = attr.borrow_mut().map_resolve_deferred_argtypes(
+                        ctx,
+                        syms,
+                        current_argtypes,
+                        Some(sym),
+                        step,
+                    );
+                    argtypes = Some(mapped);
+                }
+            }
             if self.resolve_diagnostic_needed(
                 ctx,
                 log_resolve_helper,
@@ -3093,6 +3316,32 @@ fn symbol_package_visible(
         || crate::code::symbol::package_fullname(ctx, package)
             .map(|fullname| module_visible_package(ctx, env_module, &fullname))
             .unwrap_or(false)
+}
+
+/// The module source location of a module symbol (Java: ms.sourceLocation).
+fn resolve_module_source_location(
+    ctx: &crate::compiler_context::CompilerContext,
+    msym: SymbolId,
+) -> Option<Rc<dyn javac_tools::tools::java_file_manager::Location>> {
+    match &ctx.sym(msym).kind_data {
+        crate::code::symbol::SymbolKind::ModuleSymbol {
+            source_location, ..
+        } => source_location.clone(),
+        _ => None,
+    }
+}
+
+/// The module class location of a module symbol (Java: ms.classLocation).
+fn resolve_module_class_location(
+    ctx: &crate::compiler_context::CompilerContext,
+    msym: SymbolId,
+) -> Option<Rc<dyn javac_tools::tools::java_file_manager::Location>> {
+    match &ctx.sym(msym).kind_data {
+        crate::code::symbol::SymbolKind::ModuleSymbol { class_location, .. } => {
+            class_location.clone()
+        }
+        _ => None,
+    }
 }
 
 /// Java: enum Resolve.MethodResolutionPhase
@@ -4179,34 +4428,34 @@ impl Resolve {
             .pending_resolution_phase
             .expect("pending resolution phase");
         resolution_context.step = Some(step);
-        let previous_step = self.current_resolution_step;
-        self.current_resolution_step = Some(step);
-        // Java: finally { currentResolutionContext = prevContext; } (Resolve.java:647-665).
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.raw_instantiate(
-                ctx,
-                syms,
-                types,
-                attr,
-                chk,
-                infer,
-                env,
-                site,
-                m,
-                Some(result_info),
-                argtypes,
-                typeargtypes,
-                step.is_boxing_required(),
-                step.is_varargs_required(),
-                &mut resolution_context,
-                warn,
-            )
-        }));
-        self.current_resolution_step = previous_step;
-        match result {
-            Ok(value) => value,
-            Err(payload) => std::panic::resume_unwind(payload),
-        }
+        let previous_step = self.current_resolution_step;
+        self.current_resolution_step = Some(step);
+        // Java: finally { currentResolutionContext = prevContext; } (Resolve.java:647-665).
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.raw_instantiate(
+                ctx,
+                syms,
+                types,
+                attr,
+                chk,
+                infer,
+                env,
+                site,
+                m,
+                Some(result_info),
+                argtypes,
+                typeargtypes,
+                step.is_boxing_required(),
+                step.is_varargs_required(),
+                &mut resolution_context,
+                warn,
+            )
+        }));
+        self.current_resolution_step = previous_step;
+        match result {
+            Ok(value) => value,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
     }
 
     /// Java: Type instantiate(Env<AttrContext> env, Type site, Symbol m,

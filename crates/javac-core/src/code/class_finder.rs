@@ -609,7 +609,7 @@ impl ClassFinder {
 
     /// Java: protected JavaFileObject preferredFileObject(JavaFileObject a,
     /// JavaFileObject b)
-    fn preferred_file_object(
+    pub(crate) fn preferred_file_object(
         &self,
         a: &Rc<dyn JavaFileObject>,
         b: &Rc<dyn JavaFileObject>,

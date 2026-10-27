@@ -10618,6 +10618,7 @@ pub fn wire_attr_services(
     options: Rc<crate::util::options::Options>,
     source: crate::code::source::Source,
     finder: Option<Rc<crate::code::class_finder::ClassFinder>>,
+    file_manager: Option<Rc<dyn javac_tools::tools::java_file_manager::JavaFileManager>>,
 ) {
     let (
         names,
@@ -10684,11 +10685,23 @@ pub fn wire_attr_services(
         Rc::clone(&diags),
         source,
         Rc::clone(&options),
-        finder,
+        finder.clone(),
     )));
     // Java: Resolve holds the Context services; the deferred argument-type map
     // (Resolve.java:2615-2636) needs the Attr re-entry (registered adapter cell).
     *rs.borrow().attr_cell.borrow_mut() = Some(Rc::clone(&attr));
+    // Java: Resolve.moduleFinder = ModuleFinder.instance(context) (Resolve.java:137);
+    // the port wires it after Resolve construction (registered adapter).
+    if let (Some(finder), Some(file_manager)) = (finder.as_ref(), file_manager) {
+        let module_finder = crate::code::module_finder::ModuleFinder::new(
+            Rc::clone(&names),
+            Rc::clone(finder),
+            Rc::clone(&file_manager),
+            Rc::clone(&log),
+            Rc::clone(&diags),
+        );
+        *rs.borrow().module_finder.borrow_mut() = Some(Rc::new(RefCell::new(module_finder)));
+    }
 
     // 2. Operators (Operators.java:100-140)
     let operators = Rc::new(crate::comp::operators::Operators::new(
@@ -15101,7 +15114,7 @@ mod tests {
         attr: &Rc<RefCell<Attr>>,
         options: &Rc<Options>,
     ) {
-        wire_attr_services(ctx, Rc::clone(attr), Rc::clone(options), Source::JDK17, None);
+        wire_attr_services(ctx, Rc::clone(attr), Rc::clone(options), Source::JDK17, None, None);
     }
 
     #[test]
@@ -15277,6 +15290,7 @@ mod tests {
             Rc::clone(&harness.options),
             Source::JDK17,
             None,
+        None,
         );
         let a = attr.borrow();
         assert!(a.rs.borrow().is_some(), "rs service");
@@ -16182,6 +16196,7 @@ class Sample {
             Rc::clone(&harness.options),
             Source::JDK17,
             None,
+        None,
         );
         let ctx = &mut harness.ctx;
         let object_type = harness.syms.borrow().object_type;
@@ -16250,6 +16265,7 @@ class Sample {
             Rc::clone(&harness.options),
             Source::JDK17,
             None,
+        None,
         );
         let ctx = &mut harness.ctx;
         let object_type = harness.syms.borrow().object_type;
@@ -16372,6 +16388,7 @@ class Sample {
             Rc::clone(&harness.options),
             Source::JDK17,
             None,
+        None,
         );
         let (int_type, string_type) = {
             let syms = harness.syms.borrow();

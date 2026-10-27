@@ -319,6 +319,7 @@ impl MiniCompiler {
             Rc::clone(&options),
             source,
             Some(Rc::clone(&finder)),
+            Some(Rc::clone(&file_manager) as Rc<dyn JavaFileManager>),
         );
         let resolve = attr
             .borrow()
