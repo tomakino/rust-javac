@@ -1422,7 +1422,7 @@ impl RecoveryDeferredTypeMap {
                                 thrown,
                                 ..
                             } => (argtypes.clone(), *restype, thrown.clone()),
-                            _ => unreachable!(),
+                            _ => crate::util::assert::error(),
                         };
                         let (m_argtypes, m_restype, m_thrown) = match &ctx.typ(mtype).kind {
                             TypeKindData::MethodType {
@@ -1431,7 +1431,7 @@ impl RecoveryDeferredTypeMap {
                                 thrown,
                                 ..
                             } => (argtypes.clone(), *restype, thrown.clone()),
-                            _ => unreachable!(),
+                            _ => crate::util::assert::error(),
                         };
                         let argtypes1 = self.map_paired(ctx, dctx, &argtypes, &m_argtypes);
                         let restype1 = restype.map(|r| self.visit(ctx, dctx, r, &m_restype));

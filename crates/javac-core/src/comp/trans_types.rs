@@ -1009,7 +1009,7 @@ impl TreeVisitor for TransTypes {
                 body,
                 ..
             } => (*restype, params.clone(), *recvparam, thrown.clone(), *body),
-            _ => unreachable!(),
+            _ => crate::util::assert::error(),
         };
         let restype = self.translate_with_pt(ctx, restype, None);
         let params = self.translate_var_defs(ctx, &params);

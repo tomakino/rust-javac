@@ -3836,7 +3836,7 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
         if needs_sym {
             let (name, ty) = match &ctx.tree(tree).kind {
                 TreeKind::ClassDecl { name, .. } => (name.clone(), ctx.tree(tree).ty),
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             let fullname = crate::code::symtab::form_full_name(ctx, &name, Some(self.syms.no_symbol));
             let flatname = crate::code::symtab::form_flat_name(ctx, &name, Some(self.syms.no_symbol));
@@ -3901,7 +3901,7 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
         if needs_sym {
             let (name, ty) = match &ctx.tree(tree).kind {
                 TreeKind::MethodDecl { name, .. } => (name.clone(), ctx.tree(tree).ty),
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             let sym = self.new_symbol(
                 ctx,
@@ -15552,7 +15552,7 @@ mod tests {
             Tag::TYPEAPPLY => {
                 let (clazz, arguments) = match &ctx.tree(tree).kind {
                     TreeKind::TypeApply { clazz, arguments } => (*clazz, arguments.clone()),
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 if let Some(clazz) = clazz {
                     preset_type_idents(ctx, syms, names, clazz);
@@ -15567,7 +15567,7 @@ mod tests {
             Tag::IDENT => {
                 let name = match &ctx.tree(tree).kind {
                     TreeKind::Ident { name, .. } => name.clone(),
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 let string_name = names.from_utf(b"String");
                 let object_name = names.from_utf(b"Object");

@@ -138,7 +138,7 @@ impl<A> ListBuffer<A> {
                         *last = new_last;
                     }
                     // unreachable: last is assigned just before the loop
-                    None => unreachable!(),
+                    None => crate::util::assert::error(),
                 }
             }
         }

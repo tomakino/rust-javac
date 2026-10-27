@@ -780,11 +780,11 @@ impl Types {
         }
         let (t_kind, t_type) = match &ctx.typ(t).kind {
             TypeKindData::WildcardType { kind, type_, .. } => (*kind, *type_),
-            _ => unreachable!(),
+            _ => crate::util::assert::error(),
         };
         let (s_kind, s_type) = match &ctx.typ(s).kind {
             TypeKindData::WildcardType { kind, type_, .. } => (*kind, *type_),
-            _ => unreachable!(),
+            _ => crate::util::assert::error(),
         };
         (t_kind == s_kind || (ctx.typ(t).is_extends_bound() && ctx.typ(s).is_extends_bound()))
             && self.is_same_type(
@@ -893,11 +893,11 @@ impl Types {
         }
         let elemtype = match &ctx.typ(t).kind {
             TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
-            _ => unreachable!(),
+            _ => crate::util::assert::error(),
         };
         let elemtype_s = match &ctx.typ(s).kind {
             TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
-            _ => unreachable!(),
+            _ => crate::util::assert::error(),
         };
         self.contains_type_equivalent_single(ctx, syms, elemtype, elemtype_s)
     }
@@ -934,13 +934,13 @@ impl Types {
             TypeKindData::ForAll { qtype, tvars } => {
                 (qtype.expect("for-all qtype"), tvars.clone())
             }
-            _ => unreachable!(),
+            _ => crate::util::assert::error(),
         };
         let (s_qtype, s_tvars) = match &ctx.typ(s).kind {
             TypeKindData::ForAll { qtype, tvars } => {
                 (qtype.expect("for-all qtype"), tvars.clone())
             }
-            _ => unreachable!(),
+            _ => crate::util::assert::error(),
         };
         self.has_same_bounds(ctx, syms, &t_tvars, &s_tvars) && {
             let substituted = self.subst_type(ctx, syms, s_qtype, &s_tvars, &t_tvars);
@@ -1166,7 +1166,7 @@ impl Types {
             if ctx.typ(t).is_super_bound() {
                 let bound = match &ctx.typ(t).kind {
                     TypeKindData::WildcardType { bound, .. } => *bound,
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 match bound {
                     None => syms.object_type,
@@ -1178,7 +1178,7 @@ impl Types {
             } else {
                 let type_ = match &ctx.typ(t).kind {
                     TypeKindData::WildcardType { type_, .. } => *type_,
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 self.wild_upper_bound(ctx, syms, type_.expect("wildcard bound type"))
             }
@@ -1197,7 +1197,7 @@ impl Types {
             } else {
                 let type_ = match &ctx.typ(t).kind {
                     TypeKindData::WildcardType { type_, .. } => *type_,
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 self.wild_lower_bound(ctx, syms, type_.expect("wildcard bound type"))
             }
@@ -1272,7 +1272,7 @@ impl Types {
                 | TypeKindData::ErasedClassType { supertype_field, .. }
                 | TypeKindData::UnionClassType { supertype_field, .. }
                 | TypeKindData::IntersectionClassType { supertype_field, .. } => *supertype_field,
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             if let Some(sup) = existing {
                 return sup;
@@ -1320,7 +1320,7 @@ impl Types {
         if tag == TypeTag::ARRAY {
             let elem = match &ctx.typ(t).kind {
                 TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             let elem_is_primitive = ctx.typ(elem).is_primitive();
             let elem_is_object = self.is_same_type(ctx, syms, elem, syms.object_type);
@@ -1350,7 +1350,7 @@ impl Types {
                 | TypeKindData::IntersectionClassType { interfaces_field, .. } => {
                     interfaces_field.clone()
                 }
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             if let Some(list) = existing {
                 return list;
@@ -1447,7 +1447,7 @@ impl Types {
                 | TypeKindData::IntersectionClassType { outer_field, typarams_field, .. } => {
                     (*outer_field, typarams_field.clone().unwrap_or_else(List::nil))
                 }
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             let no_type = no_type_of(ctx, syms);
             let outer1 = match outer {
@@ -1472,7 +1472,7 @@ impl Types {
         if matches!(&ctx.typ(t).kind, TypeKindData::WildcardType { .. }) {
             let (type_, kind, bound) = match &ctx.typ(t).kind {
                 TypeKindData::WildcardType { type_, kind, bound, .. } => (*type_, *kind, *bound),
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             let Some(type_) = type_ else {
                 return t;
@@ -1495,7 +1495,7 @@ impl Types {
         if tag == TypeTag::ARRAY {
             let elem = match &ctx.typ(t).kind {
                 TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             let elem1 = self.subst_visit(ctx, syms, elem, from, to);
             if elem1 == elem {
@@ -1509,7 +1509,7 @@ impl Types {
                 TypeKindData::MethodType { argtypes, restype, thrown, .. } => {
                     (argtypes.clone(), *restype, thrown.clone())
                 }
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             let argtypes1 = self.subst(ctx, syms, &argtypes, from, to);
             let restype = restype.expect("method return type");
@@ -1528,7 +1528,7 @@ impl Types {
             // Java: Subst.visitForAll (Types.java:3375-3400)
             let (tvars, qtype) = match &ctx.typ(t).kind {
                 TypeKindData::ForAll { tvars, qtype } => (tvars.clone(), *qtype),
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             let qtype = qtype.expect("for-all qtype");
             let mut tvars_cur = tvars.clone();
@@ -2212,7 +2212,7 @@ impl Types {
                             TypeKindData::WildcardType { type_, .. } => {
                                 type_.expect("extends bound")
                             }
-                            _ => unreachable!(),
+                            _ => crate::util::assert::error(),
                         };
                         let ui_subst = self.subst_type(ctx, syms, ui, &a_list, &s_list);
                         let upper = self.glb(ctx, syms, extends_bound, ui_subst);
@@ -2224,7 +2224,7 @@ impl Types {
                             TypeKindData::WildcardType { type_, .. } => {
                                 type_.expect("super bound")
                             }
-                            _ => unreachable!(),
+                            _ => crate::util::assert::error(),
                         };
                         (upper, super_bound)
                     }
@@ -2244,7 +2244,7 @@ impl Types {
                     TypeKindData::CapturedType { lower, .. } => {
                         lower.expect("captured lower bound")
                     }
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 let tmp_bound_err = ctx.typ(upper).has_tag(TypeTag::ERROR);
                 let tmp_lower_err = ctx.typ(lower).has_tag(TypeTag::ERROR);
@@ -2367,7 +2367,7 @@ impl Types {
                 if ctx.typ(s).has_tag(TypeTag::WILDCARD) {
                     let kind = match &ctx.typ(s).kind {
                         TypeKindData::WildcardType { kind, .. } => *kind,
-                        _ => unreachable!(),
+                        _ => crate::util::assert::error(),
                     };
                     match kind {
                         crate::code::bound_kind::BoundKind::UNBOUND => {}
@@ -2658,12 +2658,12 @@ impl Types {
             TypeKindData::ArrayType { .. } => {
                 let t_elem = match &ctx.typ(t).kind {
                     TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 if ctx.typ(s).has_tag(TypeTag::ARRAY) {
                     let s_elem = match &ctx.typ(s).kind {
                         TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
-                        _ => unreachable!(),
+                        _ => crate::util::assert::error(),
                     };
                     if ctx.typ(t_elem).is_primitive() {
                         self.is_same_type(ctx, syms, t_elem, s_elem)
@@ -2823,7 +2823,7 @@ impl Types {
         if tag == TypeTag::ARRAY {
             let elem = match &ctx.typ(t).kind {
                 TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             return self.is_reifiable(ctx, syms, elem);
         }
@@ -2935,7 +2935,7 @@ impl Types {
                 crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => {
                     elemtype.expect("array element type")
                 }
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             },
             TypeTag::FORALL => {
                 let qtype = match &ctx.typ(t).kind {
@@ -2972,7 +2972,7 @@ impl Types {
             TypeKindData::ForAll { .. } => {
                 let (t_tvars, t_qtype) = match &ctx.typ(t).kind {
                     TypeKindData::ForAll { tvars, qtype } => (tvars.clone(), *qtype),
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 if !ctx.typ(s).has_tag(TypeTag::FORALL) {
                     return if strict {
@@ -2984,7 +2984,7 @@ impl Types {
                 }
                 let (s_tvars, s_qtype) = match &ctx.typ(s).kind {
                     TypeKindData::ForAll { tvars, qtype } => (tvars.clone(), *qtype),
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 let s_qtype = s_qtype.expect("for-all qtype");
                 self.has_same_bounds(ctx, syms, &t_tvars, &s_tvars)
@@ -3439,11 +3439,11 @@ impl Types {
                 if tag == TypeTag::ARRAY {
                     let t_elem = match &ctx.typ(t).kind {
                         TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
-                        _ => unreachable!(),
+                        _ => crate::util::assert::error(),
                     };
                     let s_elem = match &ctx.typ(s).kind {
                         TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
-                        _ => unreachable!(),
+                        _ => crate::util::assert::error(),
                     };
                     if ctx.typ(t_elem).is_primitive() || ctx.typ(s_elem).is_primitive() {
                         return ctx.typ(t_elem).has_tag(ctx.typ(s_elem).get_tag());
@@ -4646,13 +4646,13 @@ impl Types {
                         TypeKindData::ArrayType { elemtype, .. } => {
                             elemtype.expect("array element")
                         }
-                        _ => unreachable!(),
+                        _ => crate::util::assert::error(),
                     };
                     let target_elem = match &ctx.typ(target).kind {
                         TypeKindData::ArrayType { elemtype, .. } => {
                             elemtype.expect("array element")
                         }
-                        _ => unreachable!(),
+                        _ => crate::util::assert::error(),
                     };
                     self.adapt_recursive(
                         ctx,
@@ -5347,13 +5347,13 @@ impl Types {
                     TypeKindData::CapturedType { wildcard, .. } => {
                         wildcard.expect("captured wildcard")
                     }
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 let w_bound = match &ctx.typ(wildcard).kind {
                     TypeKindData::WildcardType { type_, .. } => {
                         type_.expect("wildcard bound")
                     }
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 let bound = if self.type_contains(ctx, syms, w_bound, t) {
                     self.erasure(ctx, syms, w_bound)
@@ -5363,7 +5363,7 @@ impl Types {
                 let bound = self.rewrite_quantifiers(ctx, syms, bound, high, rewrite_type_vars);
                 let (formal, kind) = match &ctx.typ(wildcard).kind {
                     TypeKindData::WildcardType { bound, kind, .. } => (*bound, *kind),
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 self.rewrite_as_wildcard_type(ctx, syms, bound, formal, kind, high)
             }
@@ -8918,7 +8918,7 @@ impl Types {
                     crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => {
                         elemtype.expect("array element type")
                     }
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 let elemtype1 = self.projection(ctx, syms, elemtype, vars, pkind, seen);
                 if elemtype1 == elemtype {

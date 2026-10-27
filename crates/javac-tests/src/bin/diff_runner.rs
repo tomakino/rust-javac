@@ -166,7 +166,11 @@ fn main_logic() -> Result<u8, DiffError> {
                     mode: options.mode,
                 },
                 OracleKind::Javac => Oracle::from_javac(javac_tests::Javac::find_jdk17())?,
-                OracleKind::Baselines => unreachable!("validated above"),
+                OracleKind::Baselines => {
+                    return Err(DiffError::InvalidConfiguration(
+                        "--source diagnostics cannot use --oracle baselines".to_string(),
+                    ))
+                }
             };
         }
         SourceKind::Corpus => {
@@ -175,7 +179,11 @@ fn main_logic() -> Result<u8, DiffError> {
             oracle = match options.oracle {
                 OracleKind::Baselines => Oracle::from_baselines(&options.baselines)?,
                 OracleKind::Javac => Oracle::from_javac(javac_tests::Javac::find_jdk17())?,
-                OracleKind::Diagnostics => unreachable!("validated above"),
+                OracleKind::Diagnostics => {
+                    return Err(DiffError::InvalidConfiguration(
+                        "--source corpus cannot use --oracle diagnostics".to_string(),
+                    ))
+                }
             };
         }
     }

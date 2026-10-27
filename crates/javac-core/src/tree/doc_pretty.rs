@@ -205,7 +205,7 @@ impl DocPretty {
     /// Java: public Void visitAttribute(AttributeTree node, Void p)
     fn visit_attribute(&mut self, tree: &DCTree) {
         let DCKind::Attribute { name, vkind, value } = &tree.kind else {
-            unreachable!("visitAttribute on a non-Attribute node")
+            crate::util::assert::error_msg("visitAttribute on a non-Attribute node")
         };
         let name = name.to_java_string();
         let vkind = *vkind;
@@ -231,7 +231,7 @@ impl DocPretty {
     /// Java: public Void visitAuthor(AuthorTree node, Void p)
     fn visit_author(&mut self, tree: &DCTree) {
         let DCKind::Author { name } = &tree.kind else {
-            unreachable!("visitAuthor on a non-Author node")
+            crate::util::assert::error_msg("visitAuthor on a non-Author node")
         };
         let name = name.clone();
         self.print_tag_name(tree);
@@ -253,7 +253,7 @@ impl DocPretty {
     /// Java: public Void visitEndElement(EndElementTree node, Void p)
     fn visit_end_element(&mut self, tree: &DCTree) {
         let DCKind::EndElement { name, .. } = &tree.kind else {
-            unreachable!("visitEndElement on a non-EndElement node")
+            crate::util::assert::error_msg("visitEndElement on a non-EndElement node")
         };
         let name = name.to_java_string();
         self.print_str("</");
@@ -264,7 +264,7 @@ impl DocPretty {
     /// Java: public Void visitEntity(EntityTree node, Void p)
     fn visit_entity(&mut self, tree: &DCTree) {
         let DCKind::Entity { name } = &tree.kind else {
-            unreachable!("visitEntity on a non-Entity node")
+            crate::util::assert::error_msg("visitEntity on a non-Entity node")
         };
         let name = name.to_java_string();
         self.print_str("&");
@@ -275,7 +275,7 @@ impl DocPretty {
     /// Java: public Void visitIdentifier(IdentifierTree node, Void p)
     fn visit_identifier(&mut self, tree: &DCTree) {
         let DCKind::Identifier { name } = &tree.kind else {
-            unreachable!("visitIdentifier on a non-Identifier node")
+            crate::util::assert::error_msg("visitIdentifier on a non-Identifier node")
         };
         let name = name.to_java_string();
         self.print_java_string(&name);
@@ -287,7 +287,7 @@ impl DocPretty {
             term, description, ..
         } = &tree.kind
         else {
-            unreachable!("visitIndex on a non-Index node")
+            crate::util::assert::error_msg("visitIndex on a non-Index node")
         };
         let term = term.clone();
         let description = description.clone();
@@ -308,7 +308,7 @@ impl DocPretty {
             reference, label, ..
         } = &tree.kind
         else {
-            unreachable!("visitLink on a non-Link node")
+            crate::util::assert::error_msg("visitLink on a non-Link node")
         };
         let reference = reference.clone();
         let label = label.clone();
@@ -326,13 +326,13 @@ impl DocPretty {
     /// Java: public Void visitLiteral(LiteralTree node, Void p)
     fn visit_literal(&mut self, tree: &DCTree) {
         let DCKind::Literal { body, .. } = &tree.kind else {
-            unreachable!("visitLiteral on a non-Literal node")
+            crate::util::assert::error_msg("visitLiteral on a non-Literal node")
         };
         let body = body.clone();
         self.print_str("{");
         self.print_tag_name(tree);
         let DCKind::Text { text } = &body.kind else {
-            unreachable!("DCLiteral body must be a DCText (Java: cast)")
+            crate::util::assert::error_msg("DCLiteral body must be a DCText (Java: cast)")
         };
         let text = text.clone();
         if !text.is_empty() && !is_java_whitespace(text.char_at(0)) {
@@ -350,7 +350,7 @@ impl DocPretty {
             description,
         } = &tree.kind
         else {
-            unreachable!("visitParam on a non-Param node")
+            crate::util::assert::error_msg("visitParam on a non-Param node")
         };
         let is_type_parameter = *is_type_parameter;
         let name = name.clone();
@@ -377,7 +377,7 @@ impl DocPretty {
             description,
         } = &tree.kind
         else {
-            unreachable!("visitProvides on a non-Provides node")
+            crate::util::assert::error_msg("visitProvides on a non-Provides node")
         };
         let service_type = service_type.clone();
         let description = description.clone();
@@ -393,7 +393,7 @@ impl DocPretty {
     /// Java: public Void visitReference(ReferenceTree node, Void p)
     fn visit_reference(&mut self, tree: &DCTree) {
         let DCKind::Reference { signature, .. } = &tree.kind else {
-            unreachable!("visitReference on a non-Reference node")
+            crate::util::assert::error_msg("visitReference on a non-Reference node")
         };
         let signature = signature.clone();
         self.print_java_string(&signature);
@@ -407,7 +407,7 @@ impl DocPretty {
             ..
         } = &tree.kind
         else {
-            unreachable!("visitReturn on a non-Return node")
+            crate::util::assert::error_msg("visitReturn on a non-Return node")
         };
         let inline = *inline;
         let description = description.clone();
@@ -425,7 +425,7 @@ impl DocPretty {
     /// Java: public Void visitSee(SeeTree node, Void p)
     fn visit_see(&mut self, tree: &DCTree) {
         let DCKind::See { reference } = &tree.kind else {
-            unreachable!("visitSee on a non-See node")
+            crate::util::assert::error_msg("visitSee on a non-See node")
         };
         let reference = reference.to_vec();
         self.print_tag_name(tree);
@@ -444,7 +444,7 @@ impl DocPretty {
     /// Java: public Void visitSerial(SerialTree node, Void p)
     fn visit_serial(&mut self, tree: &DCTree) {
         let DCKind::Serial { description } = &tree.kind else {
-            unreachable!("visitSerial on a non-Serial node")
+            crate::util::assert::error_msg("visitSerial on a non-Serial node")
         };
         let description = description.clone();
         self.print_tag_name(tree);
@@ -457,7 +457,7 @@ impl DocPretty {
     /// Java: public Void visitSerialData(SerialDataTree node, Void p)
     fn visit_serial_data(&mut self, tree: &DCTree) {
         let DCKind::SerialData { description } = &tree.kind else {
-            unreachable!("visitSerialData on a non-SerialData node")
+            crate::util::assert::error_msg("visitSerialData on a non-SerialData node")
         };
         let description = description.clone();
         self.print_tag_name(tree);
@@ -475,7 +475,7 @@ impl DocPretty {
             description,
         } = &tree.kind
         else {
-            unreachable!("visitSerialField on a non-SerialField node")
+            crate::util::assert::error_msg("visitSerialField on a non-SerialField node")
         };
         let name = name.clone();
         let type_ = type_.clone();
@@ -494,7 +494,7 @@ impl DocPretty {
     /// Java: public Void visitSince(SinceTree node, Void p)
     fn visit_since(&mut self, tree: &DCTree) {
         let DCKind::Since { body } = &tree.kind else {
-            unreachable!("visitSince on a non-Since node")
+            crate::util::assert::error_msg("visitSince on a non-Since node")
         };
         let body = body.clone();
         self.print_tag_name(tree);
@@ -511,7 +511,7 @@ impl DocPretty {
             ..
         } = &tree.kind
         else {
-            unreachable!("visitStartElement on a non-StartElement node")
+            crate::util::assert::error_msg("visitStartElement on a non-StartElement node")
         };
         let name = name.to_java_string();
         let attrs = attrs.clone();
@@ -538,7 +538,7 @@ impl DocPretty {
     /// Java: public Void visitSummary(SummaryTree node, Void p)
     fn visit_summary(&mut self, tree: &DCTree) {
         let DCKind::Summary { summary, .. } = &tree.kind else {
-            unreachable!("visitSummary on a non-Summary node")
+            crate::util::assert::error_msg("visitSummary on a non-Summary node")
         };
         let summary = summary.clone();
         self.print_str("{");
@@ -553,7 +553,7 @@ impl DocPretty {
     /// Java: public Void visitSystemProperty(SystemPropertyTree node, Void p)
     fn visit_system_property(&mut self, tree: &DCTree) {
         let DCKind::SystemProperty { property_name, .. } = &tree.kind else {
-            unreachable!("visitSystemProperty on a non-SystemProperty node")
+            crate::util::assert::error_msg("visitSystemProperty on a non-SystemProperty node")
         };
         let property_name = property_name.to_java_string();
         self.print_str("{");
@@ -569,7 +569,7 @@ impl DocPretty {
             name, description, ..
         } = &tree.kind
         else {
-            unreachable!("visitThrows on a non-Throws node")
+            crate::util::assert::error_msg("visitThrows on a non-Throws node")
         };
         let name = name.clone();
         let description = description.clone();
@@ -585,7 +585,7 @@ impl DocPretty {
     /// Java: public Void visitUnknownBlockTag(UnknownBlockTagTree node, Void p)
     fn visit_unknown_block_tag(&mut self, tree: &DCTree) {
         let DCKind::UnknownBlockTag { name, content } = &tree.kind else {
-            unreachable!("visitUnknownBlockTag on a non-UnknownBlockTag node")
+            crate::util::assert::error_msg("visitUnknownBlockTag on a non-UnknownBlockTag node")
         };
         let name = name.to_java_string();
         let content = content.clone();
@@ -598,7 +598,7 @@ impl DocPretty {
     /// Java: public Void visitUnknownInlineTag(UnknownInlineTagTree node, Void p)
     fn visit_unknown_inline_tag(&mut self, tree: &DCTree) {
         let DCKind::UnknownInlineTag { name, content, .. } = &tree.kind else {
-            unreachable!("visitUnknownInlineTag on a non-UnknownInlineTag node")
+            crate::util::assert::error_msg("visitUnknownInlineTag on a non-UnknownInlineTag node")
         };
         let name = name.to_java_string();
         let content = content.clone();
@@ -617,7 +617,7 @@ impl DocPretty {
             description,
         } = &tree.kind
         else {
-            unreachable!("visitUses on a non-Uses node")
+            crate::util::assert::error_msg("visitUses on a non-Uses node")
         };
         let service_type = service_type.clone();
         let description = description.clone();
@@ -633,7 +633,7 @@ impl DocPretty {
     /// Java: public Void visitValue(ValueTree node, Void p)
     fn visit_value(&mut self, tree: &DCTree) {
         let DCKind::Value { reference, .. } = &tree.kind else {
-            unreachable!("visitValue on a non-Value node")
+            crate::util::assert::error_msg("visitValue on a non-Value node")
         };
         let reference = reference.clone();
         self.print_str("{");
@@ -646,7 +646,7 @@ impl DocPretty {
     /// Java: public Void visitVersion(VersionTree node, Void p)
     fn visit_version(&mut self, tree: &DCTree) {
         let DCKind::Version { body } = &tree.kind else {
-            unreachable!("visitVersion on a non-Version node")
+            crate::util::assert::error_msg("visitVersion on a non-Version node")
         };
         let body = body.clone();
         self.print_tag_name(tree);

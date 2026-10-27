@@ -420,7 +420,7 @@ impl Resolve {
         if ctx.typ(site).has_tag(TypeTag::TYPEVAR) {
             new_site = match &ctx.typ(site).kind {
                 TypeKindData::TypeVar { bound, .. } => (*bound).expect("type variable bound"),
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
         }
         let mut current = Some(c);
@@ -4250,7 +4250,7 @@ impl Resolve {
                 crate::code::type_::TypeKindData::ForAll { tvars, qtype } => {
                     (tvars.clone(), qtype.expect("for-all qtype"))
                 }
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             if typeargtypes.length() != pmt_tvars.length() {
                 let diag = self.diags.fragment(
@@ -4297,7 +4297,7 @@ impl Resolve {
                 crate::code::type_::TypeKindData::ForAll { tvars, qtype } => {
                     (tvars.clone(), qtype.expect("for-all qtype"))
                 }
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             let tvars1 = types.new_instances(ctx, syms, &pmt_tvars);
             let mut appended = crate::util::list::List::nil();

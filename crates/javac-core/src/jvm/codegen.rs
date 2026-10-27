@@ -1217,7 +1217,7 @@ impl Gen {
                     truepart.expect("conditional true part"),
                     falsepart.expect("conditional false part"),
                 ),
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             let cond_item = self.gen_cond_crt(ctx, cond, CRT_FLOW_CONTROLLER);
             let items = self.get_items();
@@ -1297,7 +1297,7 @@ impl Gen {
                 self.get_code().borrow_mut().resolve_pending(ctx);
                 let defs = match &ctx.tree(inner_tree).kind {
                     TreeKind::LetExpr { defs, .. } => defs.clone(),
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 let limit = self.get_code().borrow().nextreg;
                 let prev_start = {

@@ -2112,10 +2112,10 @@ impl BigInteger {
         let mut table: Vec<Vec<i32>> = (0..tblmask).map(|_| vec![0i32; mod_len as usize]).collect();
         let n0 = (mod_mag[mod_mag.len() - 1] as i64 & LONG_MASK)
             + ((mod_mag[mod_mag.len() - 2] as i64 & LONG_MASK) << 32);
-        let inv = -MutableBigInteger::inverse_mod64(n0);
-        let a = Self::left_shift_mag(&base, mod_len << 5);
+        let inv = MutableBigInteger::inverse_mod64(n0).wrapping_neg();
+        let mut a = Self::left_shift_mag(&base, mod_len << 5);
         let mut q = MutableBigInteger::new_empty();
-        let mut a2 = MutableBigInteger::new_from_vec(a);
+        let mut a2 = MutableBigInteger::new_from_vec(a.clone());
         let mut b2 = MutableBigInteger::new_from_vec(mod_mag.clone());
         b2.normalize_public();
         let r = a2.divide_public(&b2, &mut q).expect("remainder");
@@ -2127,7 +2127,6 @@ impl BigInteger {
             table[0] = t2;
         }
         let mut b = Self::montgomery_square(&table[0], &mod_mag, mod_len, inv, None);
-        let mut a = Self::left_shift_mag(&base, mod_len << 5);
         let mut t = b[..mod_len as usize].to_vec();
         let mut i = 1;
         while i < tblmask {

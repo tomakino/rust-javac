@@ -569,7 +569,7 @@ impl Locations {
         self.prepare(index);
         match &self.handlers[index].kind {
             HandlerKind::BootClassPath(state) => state.is_default,
-            _ => unreachable!("PLATFORM_CLASS_PATH handler"),
+            _ => crate::util::assert::error_msg("PLATFORM_CLASS_PATH handler"),
         }
     }
 

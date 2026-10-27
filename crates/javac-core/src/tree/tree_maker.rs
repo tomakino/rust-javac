@@ -2959,7 +2959,7 @@ mod tests {
         assert_eq!(members.length(), 2);
         // The two members are the variable and the method, in order.
         let TreeKind::ClassDecl { defs: members, .. } = &ctx.tree(cdef).kind else {
-            unreachable!()
+            crate::util::assert::error()
         };
         assert_eq!(
             ctx.tree(members.iter().next().expect("var")).tag,

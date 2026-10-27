@@ -620,7 +620,7 @@ impl Scope {
             let entry_id = EntryId(entries.len() as u32);
             let elems = match &self.data {
                 ScopeData::ScopeImpl { elems, .. } => *elems,
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             entries.push(Entry {
                 sym: Some(sym),
@@ -1006,7 +1006,7 @@ impl Scope {
                     let (elems, next) = match scope {
                         None => match &self.data {
                             ScopeData::ScopeImpl { elems, next, .. } => (*elems, *next),
-                            _ => unreachable!(),
+                            _ => crate::util::assert::error(),
                         },
                         Some(scope) => match &scope.data {
                             ScopeData::ScopeImpl { elems, next, .. } => (*elems, *next),
@@ -1264,7 +1264,7 @@ impl Scope {
                     let (elems, next) = if current_scope == self_id {
                         match &self.data {
                             ScopeData::ScopeImpl { elems, next, .. } => (*elems, *next),
-                            _ => unreachable!(),
+                            _ => crate::util::assert::error(),
                         }
                     } else {
                         match &ctx.scope(current_scope).data {
@@ -1594,7 +1594,7 @@ impl Scope {
                     ScopeData::CompoundScope { sub_scopes, .. }
                     | ScopeData::ImportScope { sub_scopes, .. }
                     | ScopeData::StarImportScope { sub_scopes, .. } => sub_scopes.clone(),
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 let mut current = sub_scopes;
                 while current.non_empty() {

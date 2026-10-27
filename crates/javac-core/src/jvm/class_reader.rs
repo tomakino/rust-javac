@@ -426,7 +426,7 @@ impl ClassReader {
             Ok(crate::jvm::pool_reader::PoolValue::Module(name)) => {
                 Ok(syms.enter_module(ctx, name))
             }
-            Ok(_) => unreachable!("TagSet::Module accepted a non-module value"),
+            Ok(_) => crate::util::assert::error_msg("TagSet::Module accepted a non-module value"),
             Err(err) => Err(self.pool_error(err)),
         }
     }
@@ -453,7 +453,7 @@ impl ClassReader {
             Ok(crate::jvm::pool_reader::PoolValue::Package(name)) => {
                 Ok(syms.enter_package(ctx, self.current_module.expect("currentModule"), name))
             }
-            Ok(_) => unreachable!("TagSet::Package accepted a non-package value"),
+            Ok(_) => crate::util::assert::error_msg("TagSet::Package accepted a non-package value"),
             Err(err) => Err(self.pool_error(err)),
         }
     }
@@ -479,7 +479,7 @@ impl ClassReader {
                 // Java: syms.enterClass(reader.currentModule, name)
                 Ok(syms.enter_class_flat(ctx, self.current_module.expect("currentModule"), name))
             }
-            Ok(_) => unreachable!("TagSet::Class accepted a non-class value"),
+            Ok(_) => crate::util::assert::error_msg("TagSet::Class accepted a non-class value"),
             Err(err) => Err(self.pool_error(err)),
         }
     }
@@ -520,7 +520,7 @@ impl ClassReader {
                 let ty = self.sig_to_type_bytes(ctx, syms, &bytes, 0, bytes.len() as i32)?;
                 Ok((name, ty))
             }
-            Ok(_) => unreachable!("TagSet::NameAndType accepted a non-nameandtype value"),
+            Ok(_) => crate::util::assert::error_msg("TagSet::NameAndType accepted a non-nameandtype value"),
             Err(err) => Err(self.pool_error(err)),
         }
     }

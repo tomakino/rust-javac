@@ -208,7 +208,7 @@ impl Context {
             // Java: Object o = ht.get(key); if (o instanceof Factory<?> fac) o = fac.make(this);
             let make = match self.ht.as_mut().and_then(|ht| ht.remove(&key)) {
                 Some(ContextValue::Factory { make, .. }) => make,
-                _ => unreachable!("factory slot disappeared"),
+                _ => crate::util::assert::error_msg("factory slot disappeared"),
             };
             let made: Box<dyn Any> = make(self);
             // Java: if (o instanceof Factory<?>) throw new AssertionError("T extends Context.Factory");
@@ -233,7 +233,7 @@ impl Context {
                 ContextValue::Value { value, .. } => value.downcast_ref::<Rc<T>>().cloned(),
                 // Invariant: only factories are materialized above; a factory here
                 // would mean a concurrent mutation that cannot happen with &mut self.
-                ContextValue::Factory { .. } => unreachable!("factory slot not taken"),
+                ContextValue::Factory { .. } => crate::util::assert::error_msg("factory slot not taken"),
             }
         }
     }

@@ -5439,7 +5439,7 @@ impl Lower {
                         ctx.tree(lhs).pos,
                         ctx.tree(lhs).ty,
                     ),
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
             let opcode = match &ctx.sym(operator.expect("operator symbol")).kind_data {
                 SymbolKind::OperatorSymbol { opcode, .. } => *opcode,

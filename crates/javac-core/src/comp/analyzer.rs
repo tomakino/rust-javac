@@ -307,7 +307,7 @@ fn analyzer_copier_fix(ctx: &mut CompilerContext, old: TreeId, new: TreeId) -> T
         if first_is_nullchk {
             let first_arg = match &ctx.tree(*old_args.head()).kind {
                 TreeKind::Unary { arg, .. } => arg.expect("NULLCHK arg"),
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             let rest = old_args.tail();
             if let TreeKind::NewClass { encl, args, .. } = &mut ctx.tree_mut(new).kind {

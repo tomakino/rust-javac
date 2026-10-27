@@ -181,12 +181,12 @@ impl AttrRecover {
                             let lambda = arg;
                             let param_kind = match &ctx.tree(lambda).kind {
                                 TreeKind::Lambda { param_kind, .. } => *param_kind,
-                                _ => unreachable!(),
+                                _ => crate::util::assert::error(),
                             };
                             if param_kind == crate::tree::jc_tree::ParameterKind::IMPLICIT {
                                 let params = match &ctx.tree(lambda).kind {
                                     TreeKind::Lambda { params, .. } => params.clone(),
-                                    _ => unreachable!(),
+                                    _ => crate::util::assert::error(),
                                 };
                                 for var in params.iter() {
                                     if let TreeKind::VariableDecl { vartype, .. } =

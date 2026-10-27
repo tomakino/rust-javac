@@ -1249,7 +1249,7 @@ impl ArgumentAttr {
                         crate::tree::jc_tree::TreeKind::Lambda { body, .. } => {
                             body.expect("lambda body")
                         }
-                        _ => unreachable!(),
+                        _ => crate::util::assert::error(),
                     };
                     let body_ty = ctx.tree(body).ty.unwrap_or_else(|| no_type_of(ctx));
                     self.check_speculative_type(

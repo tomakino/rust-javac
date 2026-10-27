@@ -585,7 +585,7 @@ impl ClassFinder {
                 }
             c = Some(class);
         } else if !self.prefer_current.get() {
-            let Some(existing) = c else { unreachable!() };
+            let Some(existing) = c else { crate::util::assert::error() };
             let existing_classfile = class_classfile(ctx, existing);
             if let Some(existing_classfile) = existing_classfile
                 && (ctx.sym(existing).flags_field & seen) == 0

@@ -2015,7 +2015,7 @@ impl JavacParser {
         if ctx.tree(t).tag == Tag::IDENT {
             let (t_pos, t_name) = match &ctx.tree(t).kind {
                 TreeKind::Ident { name, .. } => (ctx.tree(t).pos, name.clone()),
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             if self.is_invalid_unqualified_method_identifier(t_pos, &t_name) {
                 let key = JCDiagnosticError::from(errors::invalid_yield());
@@ -2547,7 +2547,7 @@ impl JavacParser {
                                     args,
                                     ..
                                 } => (annotation_type.expect("annotation type"), args.clone()),
-                                _ => unreachable!(),
+                                _ => crate::util::assert::error(),
                             };
                             let pos = ctx.tree(decl).pos;
                             let type_anno =
@@ -2657,7 +2657,7 @@ impl JavacParser {
                     TreeKind::Binary { lhs, rhs, .. } => {
                         (lhs.expect("lhs"), rhs.expect("rhs"))
                     }
-                    _ => unreachable!(),
+                    _ => crate::util::assert::error(),
                 };
                 needs_folding |=
                     self.fold_if_needed(ctx, rhs, &mut lit_buf, &mut op_stack, false);
@@ -2937,7 +2937,7 @@ impl JavacParser {
                             // t = mref;
                             let mref_expr = match &ctx.tree(expr).kind {
                                 TreeKind::MemberReference { expr, .. } => *expr,
-                                _ => unreachable!(),
+                                _ => crate::util::assert::error(),
                             };
                             let inner = mref_expr.expect("member reference expr");
                             let annotated = {
@@ -2957,7 +2957,7 @@ impl JavacParser {
                         Tag::SELECT => {
                             let sel_name = match &ctx.tree(expr).kind {
                                 TreeKind::FieldAccess { name, .. } => name.clone(),
-                                _ => unreachable!(),
+                                _ => crate::util::assert::error(),
                             };
                             if sel_name.to_java_string()
                                 != self.names._class.to_java_string()
@@ -4059,7 +4059,7 @@ impl JavacParser {
         if ctx.tree(elem_type).has_tag(Tag::IDENT) {
             let type_name = match &ctx.tree(elem_type).kind {
                 TreeKind::Ident { name, .. } => name.clone(),
-                _ => unreachable!(),
+                _ => crate::util::assert::error(),
             };
             if self
                 .restricted_type_name_starting_at_source(

@@ -113,7 +113,7 @@ where
             },
             // Java: currentIterator is null here; calling next() on it is a NullPointerException.
             CurrentIterator::Done => panic!("java.lang.NullPointerException"),
-            CurrentIterator::Empty => unreachable!(),
+            CurrentIterator::Empty => crate::util::assert::error(),
         }
     }
 }
