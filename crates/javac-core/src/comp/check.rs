@@ -10431,6 +10431,38 @@ mod diagnostics_tests {
     }
 
     #[test]
+    fn safe_varargs_on_record_accessor_is_error() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("R.java", "record R(@SafeVarargs int x) {}\n")],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .collect();
+        assert!(
+            codes
+                .iter()
+                .any(|code| code == "compiler.err.varargs.invalid.trustme.anno"),
+            "varargs.invalid.trustme.anno missing: {codes:?}"
+        );
+    }
+
+    #[test]
+    fn deprecated_field_annotation_compiles() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("R.java", "class R { @Deprecated int x; }\n")],
+            |_options| {},
+        );
+        let errors: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .filter(|code| code.starts_with("compiler.err."))
+            .collect();
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    }
+
+    #[test]
     fn strictfp_warning_is_reported() {
         let (_compiler, diagnostics) = compile_with_diagnostics(
             &[("C.java", "strictfp class C { strictfp void m() {} }

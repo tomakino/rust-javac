@@ -2034,7 +2034,15 @@ impl TreeScannerVisitor for DeclScanner {
         if packge == Some(self.sym) {
             self.result = Some(tree);
         } else {
-            <Self as TreeScannerVisitor>::visit_top_level(self, ctx, tree);
+            // Java: super.visitTopLevel(tree) — the upstream TreeScanner
+            // navigation. Calling <Self as TreeScannerVisitor>::... here would
+            // resolve to this override and recurse forever, so the trait
+            // default navigation body is inlined (registered adapter).
+            let defs = match &ctx.tree(tree).kind {
+                TreeKind::CompilationUnit { defs, .. } => defs.clone(),
+                _ => panic!("expected a compilation unit"),
+            };
+            self.scan_list(ctx, &defs);
         }
     }
 
@@ -2057,7 +2065,15 @@ impl TreeScannerVisitor for DeclScanner {
         if packge == Some(self.sym) {
             self.result = Some(tree);
         } else {
-            <Self as TreeScannerVisitor>::visit_package_def(self, ctx, tree);
+            // Java: super.visitPackageDef(tree); inline of the trait default.
+            let (annotations, pid) = match &ctx.tree(tree).kind {
+                TreeKind::PackageDecl {
+                    annotations, pid, ..
+                } => (annotations.clone(), *pid),
+                _ => panic!("expected a package declaration"),
+            };
+            self.scan_list(ctx, &annotations);
+            self.scan(ctx, pid);
         }
     }
 
@@ -2069,7 +2085,33 @@ impl TreeScannerVisitor for DeclScanner {
         if sym == Some(self.sym) {
             self.result = Some(tree);
         } else {
-            <Self as TreeScannerVisitor>::visit_class_def(self, ctx, tree);
+            // Java: super.visitClassDef(tree); inline of the trait default.
+            let (mods, typarams, extending, implementing, permitting, defs) =
+                match &ctx.tree(tree).kind {
+                    TreeKind::ClassDecl {
+                        mods,
+                        typarams,
+                        extending,
+                        implementing,
+                        permitting,
+                        defs,
+                        ..
+                    } => (
+                        *mods,
+                        typarams.clone(),
+                        *extending,
+                        implementing.clone(),
+                        permitting.clone(),
+                        defs.clone(),
+                    ),
+                    _ => panic!("expected a class declaration"),
+                };
+            self.scan(ctx, mods);
+            self.scan_list(ctx, &typarams);
+            self.scan(ctx, extending);
+            self.scan_list(ctx, &implementing);
+            self.scan_list(ctx, &permitting);
+            self.scan_list(ctx, &defs);
         }
     }
 
@@ -2081,7 +2123,39 @@ impl TreeScannerVisitor for DeclScanner {
         if sym == Some(self.sym) {
             self.result = Some(tree);
         } else {
-            <Self as TreeScannerVisitor>::visit_method_def(self, ctx, tree);
+            // Java: super.visitMethodDef(tree); inline of the trait default.
+            let (mods, restype, typarams, recvparam, params, thrown, default_value, body) =
+                match &ctx.tree(tree).kind {
+                    TreeKind::MethodDecl {
+                        mods,
+                        restype,
+                        typarams,
+                        recvparam,
+                        params,
+                        thrown,
+                        default_value,
+                        body,
+                        ..
+                    } => (
+                        *mods,
+                        *restype,
+                        typarams.clone(),
+                        *recvparam,
+                        params.clone(),
+                        thrown.clone(),
+                        *default_value,
+                        *body,
+                    ),
+                    _ => panic!("expected a method declaration"),
+                };
+            self.scan(ctx, mods);
+            self.scan(ctx, restype);
+            self.scan_list(ctx, &typarams);
+            self.scan(ctx, recvparam);
+            self.scan_list(ctx, &params);
+            self.scan_list(ctx, &thrown);
+            self.scan(ctx, default_value);
+            self.scan(ctx, body);
         }
     }
 
@@ -2093,7 +2167,21 @@ impl TreeScannerVisitor for DeclScanner {
         if sym == Some(self.sym) {
             self.result = Some(tree);
         } else {
-            <Self as TreeScannerVisitor>::visit_var_def(self, ctx, tree);
+            // Java: super.visitVarDef(tree); inline of the trait default.
+            let (mods, vartype, nameexpr, init) = match &ctx.tree(tree).kind {
+                TreeKind::VariableDecl {
+                    mods,
+                    vartype,
+                    nameexpr,
+                    init,
+                    ..
+                } => (*mods, *vartype, *nameexpr, *init),
+                _ => panic!("expected a variable declaration"),
+            };
+            self.scan(ctx, mods);
+            self.scan(ctx, vartype);
+            self.scan(ctx, nameexpr);
+            self.scan(ctx, init);
         }
     }
 
@@ -2102,7 +2190,17 @@ impl TreeScannerVisitor for DeclScanner {
         if tsym == Some(self.sym) {
             self.result = Some(tree);
         } else {
-            <Self as TreeScannerVisitor>::visit_type_parameter(self, ctx, tree);
+            // Java: super.visitTypeParameter(tree); inline of the trait default.
+            let (annotations, bounds) = match &ctx.tree(tree).kind {
+                TreeKind::TypeParameter {
+                    annotations,
+                    bounds,
+                    ..
+                } => (annotations.clone(), bounds.clone()),
+                _ => panic!("expected a type parameter"),
+            };
+            self.scan_list(ctx, &annotations);
+            self.scan_list(ctx, &bounds);
         }
     }
 }

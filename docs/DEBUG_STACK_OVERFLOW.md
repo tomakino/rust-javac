@@ -40,3 +40,15 @@ thread '<unknown>' ... has overflowed its stack   (STATUS_STACK_OVERFLOW)
 
 - 上一条已确认:ATT_END(annotation_target_type 完成、8 个 target 全部终判)之后即爆栈;本轮进一步证明其后只有早退路径。
 - 工作树:插桩与临时测试在提交前必须全部清理(已按此执行)。
+
+## 根因(已定位并修复,本轮批次)
+
+真因:TreeInfo.DeclScanner 的 override 方法 else 分支通过 <Self as TreeScannerVisitor>::visit_X(self, ctx, tree) 调用“super”导航。在 Rust 中该调用解析到 DeclScanner 自己的 override(不是 trait 默认方法),形成无限自递归;栈溢出发生在 validate 队列任务 Annotate.annotate_later 的 validate 闭包内、tree_info::declaration_for → DeclScanner.decl_scan → accept → visit_var_def/visit_class_def… 的 else 分支上。验收证据:在 decl_scan 加临时 instrument 后,输出 DECL_SCAN_ENTER tree=11 depth=1 即爆栈(未进入任何子节点/无子标记),说明进入 accept 即自递归。
+
+修复(tree_info.rs DeclScanner):按上游 super.visitClassDef/visitMethodDef/visitVarDef/visitTopLevel/visitPackageDef/visitTypeParameter 的 TreeScanner 默认导航,在 else 分支内联 trait 默认导航体(scan mods/typarams/…),不再经 <Self as TreeScannerVisitor> 调用自身;每处加注释登记(registered adapter: upstream super 调用)。
+
+验证:
+- 修复后 class R { @Deprecated int x; } 编译通过,decl_scan ENTER/EXIT 正常;
+- 恢复 VarargsTrustmeOnNonVarargsAccessor 真实触发测试 record R(@SafeVarargs int x) {} → 捕获 compiler.err.varargs.invalid.trustme.anno(通过);
+- 新增回归测试 deprecated_field_annotation_compiles(通过);
+- 全 workspace:1105 passed / 0 failed / 3 ignored;clippy errors=0;unimplemented!/unreachable!=0。临时插桩/测试已全部清理。
