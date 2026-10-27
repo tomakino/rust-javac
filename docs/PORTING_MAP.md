@@ -54,3 +54,13 @@ Status: template only; entries are appended by the executing agent and reviewed 
 |---|---|---|
 | `code/printer.rs::visit_type` | `Printer.visit(Type)` (`code/Printer.java`) | qualified class names, enclosing types, type args, array/wildcard/captured/method-type rules |
 | `code/printer.rs::visit_symbol` | `Printer.visitMethodSymbol` (`code/Printer.java`) | constructors/initializers use the owner name; `<type-vars>name(args)`; varargs `...` |
+
+## D5 ClassReader diagnostic channels
+
+| Local symbol | Upstream location | Notes |
+|---|---|---|
+| `jvm/class_reader.rs::find_access_method` warning | `ClassReader.java:1938-1959` | annotation.method.not.found (.reason registered) |
+| `jvm/class_reader.rs::find_enum_constant` warning | `ClassReader.java:2015-2044` | unknown.enum.constant (.reason registered) |
+| `jvm/class_reader.rs::add_type_annotations_to_symbol` catch | `ClassReader.java:2212-2223` | cant.attach.type.annotations |
+| `jvm/class_reader.rs::DeproxyContext` | `ClassReader.AnnotationDeproxy` | explicit log/lintClassfile/currentClassFile (Port adapter) |
+| `util/options.rs::Options::lint_enabled` | `Lint.isEnabled(LintCategory)` | Port adapter (Lint service not ported): parses -Xlint/-Xlint:all/-Xlint:none/comma lists |

@@ -104,6 +104,44 @@ impl Options {
         self.get(option.primary_name())
     }
 
+    /// Java: Lint.isEnabled(LintCategory) — Port adapter: the Lint service is
+    /// not ported yet (registered TODO(Lint)); the -Xlint options are parsed
+    /// here with the upstream Lint construction rules: the global default is
+    /// -Xlint or -Xlint:all (all enabled), -Xlint:none (all disabled), or the
+    /// on-by-default set (CLASSFILE is not in it); the per-category option
+    /// Xlint:<category> adds and Xlint:-<category> removes (add wins). The
+    /// on-by-default set for other categories is registered as a Port adapter
+    /// (only CLASSFILE is queried in D5).
+    pub fn lint_enabled(&self, category: &str) -> bool {
+        let values = self.values.borrow();
+        let mut items: Vec<String> = Vec::new();
+        for (key, _) in values.iter() {
+            if key == "Xlint" {
+                items.push("all".to_string());
+            } else if let Some(spec) = key.strip_prefix("Xlint:") {
+                for item in spec.split(',') {
+                    items.push(item.to_string());
+                }
+            }
+        }
+        let has = |item: &str| items.iter().any(|value| value == item);
+        // Upstream Lint: -Xlint / -Xlint:all wins over -Xlint:none; otherwise
+        // the on-by-default set (CLASSFILE is not enabled by default).
+        // -Xlint / -Xlint:all wins over -Xlint:none; the on-by-default set
+        // does not contain CLASSFILE (registered Port adapter for the set).
+        let mut enabled = has("all");
+        // Per-category overrides: Xlint:<category> adds, Xlint:-<category>
+        // removes; the add wins when both are present in the option list.
+        let add = format!("Xlint:{category}");
+        let remove = format!("-{category}");
+        let _ = (&add, &remove);
+        if items.iter().any(|item| item == category) {
+            enabled = true;
+        } else if items.iter().any(|item| item == &format!("-{category}")) {
+            enabled = false;
+        }
+        enabled
+    }
     /// Get the boolean value for an option, patterned after Boolean.getBoolean,
     /// essentially will return true, iff the value exists and is set to "true".
     pub fn get_boolean(&self, name: &str) -> bool {
@@ -389,5 +427,33 @@ mod tests {
         options.notify_listeners();
         assert_eq!(*log.borrow(), vec![2, 1]);
         assert_eq!(options.size(), 0);
+    }
+}
+
+#[cfg(test)]
+mod d5_lint_tests {
+    use super::Options;
+    use crate::util::context::Context;
+
+    fn lint(keys: &[&str]) -> bool {
+        let mut context = Context::new();
+        let options = Options::instance(&mut context);
+        for key in keys {
+            options.put(*key, "");
+        }
+        options.lint_enabled("classfile")
+    }
+
+    #[test]
+    fn lint_enabled_matches_upstream_lint_rules() {
+        assert!(!lint(&[]), "CLASSFILE is not on by default");
+        assert!(lint(&["Xlint"]), "-Xlint enables all categories");
+        assert!(lint(&["Xlint:all"]), "-Xlint:all enables all categories");
+        assert!(!lint(&["Xlint:none"]), "-Xlint:none disables all");
+        assert!(!lint(&["Xlint:all", "Xlint:-classfile"]), "negative removes");
+        assert!(lint(&["Xlint:none", "Xlint:classfile"]), "positive overrides none");
+        assert!(lint(&["Xlint:all,classfile"]), "comma list (all,classfile)");
+        assert!(lint(&["Xlint:all,none"]), "all wins over none");
+        assert!(lint(&["Xlint:classfile,-classfile"]), "add wins over remove");
     }
 }

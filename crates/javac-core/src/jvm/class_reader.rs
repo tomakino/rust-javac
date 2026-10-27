@@ -279,9 +279,9 @@ impl ClassReader {
             allow_sealed_types: Feature::SEALED_CLASSES.allowed_in_source(source),
             allow_records: Feature::RECORDS.allowed_in_source(source),
             // Java: lintClassfile = Lint.instance(context).isEnabled(LintCategory.CLASSFILE);
-            // Lint is not ported yet (TODO(Lint), registered); false keeps
-            // the upstream default when no -Xlint:classfile is requested.
-            lint_classfile: false,
+            // Port adapter: the Lint service is not ported yet (registered
+            // TODO(Lint)); the -Xlint:classfile option is read directly.
+            lint_classfile: options.lint_enabled("classfile"),
             save_parameter_names,
             add_type_annotations_to_symbol: options.get_boolean("addTypeAnnotationsToSymbol"),
             profile,
@@ -2442,12 +2442,18 @@ impl ClassReader {
                 let services = Rc::clone(&annotate.services);
                 let class_file = self.current_class_file.clone();
                 let reader_handle = self.reader_handle.clone();
+                let lint_classfile = self.lint_classfile;
                 annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab| {
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                         let mut reader_guard =
                             reader_handle.as_ref().map(|rc| rc.borrow_mut());
                         let types = Rc::clone(&services.types);
+                        let deprox = DeproxyContext {
+                            log: Rc::clone(&services.log),
+                            lint_classfile,
+                            current_file: class_file.clone(),
+                        };
                         let new_list = deproxy_compound_list(
                             ctx,
                             syms,
@@ -2455,6 +2461,7 @@ impl ClassReader {
                             &services.names,
                             &proxies,
                             reader_guard.as_deref_mut(),
+                            Some(&deprox),
                         )?;
                         let deprecated_ty = syms.deprecated_type;
                         for attr in new_list.iter() {
@@ -2510,6 +2517,7 @@ impl ClassReader {
                 let class_file = self.current_class_file.clone();
                 let reader_handle = self.reader_handle.clone();
                 let attach_type_annotations = self.add_type_annotations_to_symbol;
+                let lint_classfile = self.lint_classfile;
                 annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab| {
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
@@ -2517,6 +2525,11 @@ impl ClassReader {
                             reader_handle.as_ref().map(|rc| rc.borrow_mut());
                         let types = Rc::clone(&services.types);
                         let names = Rc::clone(&services.names);
+                        let deprox = DeproxyContext {
+                            log: Rc::clone(&services.log),
+                            lint_classfile,
+                            current_file: class_file.clone(),
+                        };
                         let mut current = proxies.clone();
                         let mut new_list = List::nil();
                         while current.non_empty() {
@@ -2528,6 +2541,7 @@ impl ClassReader {
                                 &names,
                                 &proxy.compound,
                                 reader_guard.as_deref_mut(),
+                                Some(&deprox),
                             )?;
                             let ty = ctx.attr(compound).ty;
                             let values = match ctx.attr(compound).kind.clone() {
@@ -2547,7 +2561,54 @@ impl ClassReader {
                         let existing = ctx.sym(sym).get_raw_type_attributes();
                         ctx.sym_mut(sym).set_type_attributes(new_list.clone().append_list(&existing));
                         if attach_type_annotations {
-                            add_type_annotations_to_symbol(ctx, syms, sym, new_list)?;
+                            match add_type_annotations_to_symbol(ctx, syms, sym, new_list) {
+                                Ok(()) => {}
+                                Err(failure) => {
+                                    // Java: catch (CompletionFailure ex) -> log.error(
+                                    // Errors.CantAttachTypeAnnotations(attributes, s.owner, s.name,
+                                    // ex.getDetailValue()))
+                                    let mut annotation_args = Vec::new();
+                                    let mut attrs = ctx.sym(sym).get_raw_type_attributes();
+                                    while attrs.non_empty() {
+                                        let attr = *attrs.head();
+                                        attrs = attrs.tail();
+                                        if let Some(ty) = ctx.attr(attr).ty {
+                                            annotation_args.push(
+                                                crate::resources::diagnostic_contract::AnnotationArg::placeholder(
+                                                    format!("@{}", crate::code::printer::visit_type(ctx, ty)),
+                                                ),
+                                            );
+                                        }
+                                    }
+                                    let owner_text = ctx
+                                        .sym(sym)
+                                        .owner
+                                        .map(|owner| {
+                                            crate::code::printer::visit_symbol(
+                                                ctx,
+                                                &crate::util::names::Names::new(false),
+                                                owner,
+                                            )
+                                        })
+                                        .unwrap_or_default();
+                                    let detail = match failure.get_detail_value() {
+                                        Some(diag) => crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                                            std::rc::Rc::new(diag),
+                                        ),
+                                        None => crate::resources::diagnostic_contract::DiagnosticArg::from_display("null"),
+                                    };
+                                    let info = crate::resources::compiler_properties::errors::cant_attach_type_annotations(
+                                        annotation_args,
+                                        crate::resources::diagnostic_contract::SymbolArg::placeholder(owner_text),
+                                        ctx.sym(sym).name.clone(),
+                                        detail,
+                                    );
+                                    services
+                                        .log
+                                        .borrow_mut()
+                                        .error_key(crate::util::jc_diagnostic::Error::from(info));
+                                }
+                            }
                         }
                         Ok(())
                     })();
@@ -2624,12 +2685,18 @@ impl ClassReader {
                 let services = Rc::clone(&annotate.services);
                 let class_file = self.current_class_file.clone();
                 let reader_handle = self.reader_handle.clone();
+                let lint_classfile = self.lint_classfile;
                 annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab| {
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                         let mut reader_guard =
                             reader_handle.as_ref().map(|rc| rc.borrow_mut());
                         let types = Rc::clone(&services.types);
+                        let deprox = DeproxyContext {
+                            log: Rc::clone(&services.log),
+                            lint_classfile,
+                            current_file: class_file.clone(),
+                        };
                         let meth_ty = ctx.sym(sym).ty.expect("annotation method type");
                         let restype = match &ctx.typ(meth_ty).kind {
                             crate::code::type_::TypeKindData::MethodType { restype, .. } => {
@@ -2645,6 +2712,7 @@ impl ClassReader {
                             restype,
                             &value,
                             reader_guard.as_deref_mut(),
+                            Some(&deprox),
                         )?;
                         if let crate::code::symbol::SymbolKind::MethodSymbol {
                             default_value: slot,
@@ -4770,6 +4838,7 @@ impl AnnotationTypeCompleter for CompleterDeproxy {
                 &self.names,
                 &target,
                 reader_guard.as_deref_mut(),
+                None,
             )?);
         }
         if let Some(repeatable) = self.repeatable.clone() {
@@ -4780,6 +4849,7 @@ impl AnnotationTypeCompleter for CompleterDeproxy {
                 &self.names,
                 &repeatable,
                 reader_guard.as_deref_mut(),
+                None,
             )?);
         }
         if let Some(metadata) = ctx.sym(sym).get_annotation_type_metadata().cloned() {
@@ -4792,6 +4862,7 @@ impl AnnotationTypeCompleter for CompleterDeproxy {
 }
 
 /// Java: AnnotationDeproxy.deproxyCompoundList (ClassReader.java:1917-1924)
+#[allow(clippy::too_many_arguments)]
 fn deproxy_compound_list(
     ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
@@ -4799,6 +4870,7 @@ fn deproxy_compound_list(
     names: &Names,
     pl: &List<AnnotationValue>,
     mut reader: Option<&mut ClassReader>,
+    deprox: Option<&DeproxyContext>,
 ) -> Result<List<crate::ids::AttributeId>, crate::code::symbol::CompletionFailure> {
     let mut buf: List<crate::ids::AttributeId> = List::nil();
     let mut current = pl.clone();
@@ -4811,6 +4883,7 @@ fn deproxy_compound_list(
             names,
             proxy,
             reader.as_deref_mut(),
+            deprox,
         )?);
         current = current.tail();
     }
@@ -4825,6 +4898,7 @@ fn deproxy_compound(
     names: &Names,
     proxy: &AnnotationValue,
     mut reader: Option<&mut ClassReader>,
+    deprox: Option<&DeproxyContext>,
 ) -> Result<crate::ids::AttributeId, crate::code::symbol::CompletionFailure> {
     let (ty, values) = match proxy {
         AnnotationValue::Compound { ty, values } => (*ty, values.clone()),
@@ -4838,7 +4912,7 @@ fn deproxy_compound(
     let mut current = values;
     while current.non_empty() {
         let (name, value) = current.head().clone();
-        let meth = find_access_method(ctx, syms, ty, &name)?;
+        let meth = find_access_method(ctx, syms, ty, &name, deprox)?;
         let meth_ty = ctx.sym(meth).ty.expect("annotation value method type");
         let restype = match &ctx.typ(meth_ty).kind {
             crate::code::type_::TypeKindData::MethodType { restype, .. } => {
@@ -4854,6 +4928,7 @@ fn deproxy_compound(
             restype,
             &value,
             reader.as_deref_mut(),
+            deprox,
         )?;
         pairs = pairs.append(Pair::new(meth, attr));
         current = current.tail();
@@ -4866,6 +4941,7 @@ fn deproxy_compound(
 }
 
 /// Java: AnnotationDeproxy.deproxy + the proxy visitors (ClassReader.java:1976-2075)
+#[allow(clippy::too_many_arguments)]
 fn deproxy_value(
     ctx: &mut CompilerContext,
     syms: &crate::code::symtab::Symtab,
@@ -4874,6 +4950,7 @@ fn deproxy_value(
     expected_ty: TypeId,
     value: &AnnotationValue,
     mut reader: Option<&mut ClassReader>,
+    deprox: Option<&DeproxyContext>,
 ) -> Result<crate::ids::AttributeId, crate::code::symbol::CompletionFailure> {
     let _ = names;
     let attribute = match value {
@@ -4888,7 +4965,7 @@ fn deproxy_value(
                 Some(reader) => reader.resolve_possible_proxy_type(ctx, syms, *enum_type)?,
                 None => *enum_type,
             };
-            let enumerator_sym = find_enum_constant(ctx, syms, enum_ty, enumerator)?;
+            let enumerator_sym = find_enum_constant(ctx, syms, enum_ty, enumerator, deprox)?;
             crate::code::attribute::Attribute::new_enum(Some(enum_ty), enumerator_sym)
         }
         AnnotationValue::Class { class_type } => {
@@ -4912,6 +4989,7 @@ fn deproxy_value(
                     elemtype,
                     elem,
                     reader.as_deref_mut(),
+                    deprox,
                 )?);
                 current = current.tail();
             }
@@ -4925,10 +5003,22 @@ fn deproxy_value(
                 names,
                 value,
                 reader,
+                deprox,
             );
         }
     };
     Ok(ctx.alloc_attribute(attribute))
+}
+
+/// The ClassReader state needed by annotation deproxying warnings.
+///
+/// Port adapter: the upstream AnnotationDeproxy reads log/lintClassfile/
+/// currentClassFile from its enclosing ClassReader; the ported deproxy
+/// functions receive that state explicitly.
+struct DeproxyContext {
+    log: Rc<RefCell<Log>>,
+    lint_classfile: bool,
+    current_file: Option<Rc<dyn JavaFileObject>>,
 }
 
 /// Java: AnnotationDeproxy.findAccessMethod (ClassReader.java:1936-1974)
@@ -4937,6 +5027,7 @@ fn find_access_method(
     syms: &crate::code::symtab::Symtab,
     container: TypeId,
     name: &Name,
+    deprox: Option<&DeproxyContext>,
 ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
     let container_tsym = ctx.typ(container).tsym.expect("annotation type symbol");
     let members = match &ctx.sym(container_tsym).kind_data {
@@ -4967,6 +5058,25 @@ fn find_access_method(
     }
     // Java: the method wasn't found: emit a warning (lintClassfile only) and
     // recover with a synthetic method whose return type is bottomType.
+    if let Some(deprox) = deprox
+        && deprox.lint_classfile
+    {
+        {
+            let prev = AbstractLog::use_source(&mut *deprox.log.borrow_mut(), deprox.current_file.clone());
+            let info = warnings::annotation_method_not_found(
+                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                    crate::code::printer::visit_type(ctx, container),
+                ),
+                name.clone(),
+            );
+            deprox.log.borrow_mut().warning(
+                Some(crate::code::lint::LintCategory::CLASSFILE),
+                None,
+                warning_from_info(info),
+            );
+            AbstractLog::use_source(&mut *deprox.log.borrow_mut(), prev);
+        }
+    }
     let bot_type = syms.bot_type;
     let method_class = syms.method_class;
     let mt = ctx.alloc_type(crate::code::type_::Type::new_method_type(
@@ -4998,6 +5108,7 @@ fn find_enum_constant(
     syms: &crate::code::symtab::Symtab,
     enum_ty: TypeId,
     enumerator: &Name,
+    deprox: Option<&DeproxyContext>,
 ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
     let enum_tsym = ctx.typ(enum_ty).tsym.expect("enum type symbol");
     let members = match &ctx.sym(enum_tsym).kind_data {
@@ -5018,6 +5129,37 @@ fn find_enum_constant(
         }
     }
     // Java: new VarSymbol(0, proxy.enumerator, syms.botType, enumTypeSym)
+    if let Some(deprox) = deprox {
+        // The upstream UnknownEnumConstant carries currentClassFile; javac
+        // reports the enum class file at this point, so the enum's class file
+        // is used when available (Port adapter, see the D5 registration).
+        let enum_file = match &ctx.sym(enum_tsym).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } => classfile.clone(),
+            _ => None,
+        };
+        let file_name = enum_file
+            .map(|file| file.get_name().to_string_lossy().to_string())
+            .or_else(|| {
+                deprox
+                    .current_file
+                    .as_ref()
+                    .map(|file| file.get_name().to_string_lossy().to_string())
+            })
+            .unwrap_or_default();
+        let file_arg = FileObjectArg::from(file_name.as_str());
+        let enum_sym = crate::resources::diagnostic_contract::SymbolArg::placeholder(
+            crate::code::printer::visit_symbol(
+                ctx,
+                &crate::util::names::Names::new(false),
+                enum_tsym,
+            ),
+        );
+        let info = warnings::unknown_enum_constant(file_arg, enum_sym, enumerator.clone());
+        deprox
+            .log
+            .borrow_mut()
+            .warning(None, None, warning_from_info(info));
+    }
     let bot_type = syms.bot_type;
     Ok(ctx.alloc_symbol(crate::code::symbol::Symbol::new(
         crate::code::kinds::Kind::VAR,
@@ -6238,7 +6380,7 @@ mod tests {
             )),
         };
         let list = List::of(proxy);
-        let attributes = deproxy_compound_list(&mut ctx, &syms, &types, &names, &list, None)
+        let attributes = deproxy_compound_list(&mut ctx, &syms, &types, &names, &list, None, None)
             .expect("deproxy");
         assert_eq!(attributes.length(), 1);
         let attr = *attributes.head();
@@ -6752,7 +6894,267 @@ mod tests {
         Rc::new(RefCell::new(None)),
     )
     }
+    /// A JavaFileObject over raw fixture class bytes (D5 bad-classfile fixtures).
+    struct D5ClassFile {
+        name: javac_strings::JavaString,
+        bytes: Vec<u8>,
+    }
 
+    impl FileObject for D5ClassFile {
+        fn to_uri(&self) -> URI {
+            URI::create(&javac_strings::JavaString::from(format!("file:/{}", self.name).as_str()))
+        }
+        fn get_name(&self) -> javac_strings::JavaString {
+            self.name.clone()
+        }
+        fn open_input_stream(&self) -> Result<Box<dyn Read>, ToolsError> {
+            Ok(Box::new(std::io::Cursor::new(self.bytes.clone())))
+        }
+        fn open_output_stream(&self) -> Result<Box<dyn std::io::Write>, ToolsError> {
+            Err(ToolsError::UnsupportedOperationException)
+        }
+        fn open_reader(&self, _ignore_encoding_errors: bool) -> Result<Box<dyn Reader>, ToolsError> {
+            Err(ToolsError::UnsupportedOperationException)
+        }
+        fn get_char_content(
+            &self,
+            _ignore_encoding_errors: bool,
+        ) -> Result<Option<javac_strings::JavaString>, ToolsError> {
+            Ok(None)
+        }
+        fn open_writer(&self) -> Result<Box<dyn Writer>, ToolsError> {
+            Err(ToolsError::UnsupportedOperationException)
+        }
+        fn get_last_modified(&self) -> i64 {
+            0
+        }
+        fn delete(&self) -> bool {
+            false
+        }
+    }
+
+    impl JavaFileObject for D5ClassFile {
+        fn get_kind(&self) -> Kind {
+            Kind::CLASS
+        }
+        fn is_name_compatible(
+            &self,
+            _simple_name: &javac_strings::JavaString,
+            _kind: Kind,
+        ) -> bool {
+            true
+        }
+        fn get_nesting_kind(&self) -> Option<NestingKind> {
+            None
+        }
+        fn get_access_level(&self) -> Option<Modifier> {
+            None
+        }
+    }
+
+    fn hex_bytes(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("hex byte"))
+            .collect()
+    }
+
+    const D5_A_NOMETHOD: &str = "cafebabe0000003d000d070002010001410700040100106a6176612f6c616e672f4f626a65637407000601001f6a6176612f6c616e672f616e6e6f746174696f6e2f416e6e6f746174696f6e01000576616c756501001428294c6a6176612f6c616e672f537472696e673b010011416e6e6f746174696f6e44656661756c7401000001000a536f7572636546696c6501000741312e6a61766126000001000300010005000000000001000b00000002000c";
+    const D5_C1: &str = "cafebabe0000003d00130a000200030700040c000500060100106a6176612f6c616e672f4f626a6563740100063c696e69743e01000328295607000801000143010001730100124c6a6176612f6c616e672f537472696e673b010004436f646501000f4c696e654e756d6265725461626c6501000a536f7572636546696c6501000743312e6a61766101001b52756e74696d65496e76697369626c65416e6e6f746174696f6e730100034c413b01000576616c7565010001780020000700020000000100000009000a000000010000000500060001000b0000001d00010001000000052ab70001b100000001000c000000060001000000010002000d00000002000e000f0000000b0001001000010011730012";
+    const D5_A2: &str = "cafebabe0000003d0010070002010001410700040100106a6176612f6c616e672f4f626a65637407000601001f6a6176612f6c616e672f616e6e6f746174696f6e2f416e6e6f746174696f6e01000576616c756501001428294c6a6176612f6c616e672f537472696e673b010011416e6e6f746174696f6e44656661756c740100000100016501000528294c453b0100034c453b01000a536f7572636546696c6501000741322e6a6176612600000100030001000500000002040100070008000100090000000373000a0401000b000c000100090000000565000d00020001000e00000002000f";
+    const D5_C2_BAD: &str = "cafebabe0000003d00160a000200030700040c000500060100106a6176612f6c616e672f4f626a6563740100063c696e69743e01000328295607000801000143010001730100124c6a6176612f6c616e672f537472696e673b010004436f646501000f4c696e654e756d6265725461626c6501000a536f7572636546696c6501000743322e6a61766101001b52756e74696d65496e76697369626c65416e6e6f746174696f6e730100034c413b01000576616c756501000178010001650100034c453b0100015a0020000700020000000100000009000a000000010000000500060001000b0000001d00010001000000052ab70001b100000001000c000000060001000000010002000d00000002000e000f00000012000100100002001173001200136500140015";
+    const D5_E: &str = "cafebabe0000003d002e0700020100014509000100040c00050006010001410100034c453b09000100080c0009000601000142090001000b0c000c000d0100072456414c5545530100045b4c453b0a000f001007000d0c00110012010005636c6f6e6501001428294c6a6176612f6c616e672f4f626a6563743b0a001400150700160c0017001801000e6a6176612f6c616e672f456e756d01000776616c75654f66010035284c6a6176612f6c616e672f436c6173733b4c6a6176612f6c616e672f537472696e673b294c6a6176612f6c616e672f456e756d3b0a0014001a0c001b001c0100063c696e69743e010016284c6a6176612f6c616e672f537472696e673b4929560800050a0001001a0800090a000100210c002200230100072476616c75657301000628295b4c453b01000676616c756573010004436f646501000f4c696e654e756d6265725461626c65010017284c6a6176612f6c616e672f537472696e673b294c453b0100095369676e61747572650100032829560100083c636c696e69743e0100154c6a6176612f6c616e672f456e756d3c4c453b3e3b01000a536f7572636546696c65010006452e6a6176614030000100140000000340190005000600004019000900060000101a000c000d000000050009002400230001002500000022000100000000000ab2000ab6000ec0000fb0000000010026000000060001000000010009001700270001002500000022000200010000000a12012ab80013c00001b0000000010026000000060001000000010002001b001c000200250000001f00030003000000072a2b1cb70019b1000000010026000000060001000000010028000000020029100a002200230001002500000029000400000000001105bd00015903b20003535904b2000753b0000000010026000000060001000000010008002a002900010025000000390004000000000021bb000159121d03b7001eb30003bb000159121f04b7001eb30007b80020b3000ab1000000010026000000060001000000010002002800000002002b002c00000002002d";
+
+    fn d5_reader(lint_option: Option<&str>) -> (std::rc::Rc<std::cell::RefCell<Log>>, CompilerContext, Symtab, ClassReader, std::rc::Rc<Names>) {
+        let mut context = Context::new();
+        let log = Log::instance(&mut context);
+        let names = Rc::new(Names::new(false));
+        let messages = crate::util::javac_messages::JavacMessages::instance(&mut context);
+        let factory = Rc::new(Factory::new(messages, "compiler"));
+        let dcfh = DeferredCompletionFailureHandler::instance();
+        let preview = Rc::new(Preview::new(false, false));
+        let profile = Rc::new(Profile::values()[0]);
+        let options = Options::instance(&mut context);
+        if let Some(option) = lint_option {
+            options.put(option, "");
+        }
+        let source = Source::JDK17;
+        let reader = ClassReader::new(
+            std::rc::Rc::clone(&log),
+            std::rc::Rc::clone(&names),
+            factory,
+            dcfh,
+            preview,
+            profile,
+            &options,
+            source,
+            Rc::new(std::cell::RefCell::new(None)),
+        );
+        let mut ctx = CompilerContext::new();
+        let syms = Symtab::new(&mut ctx, std::rc::Rc::clone(&names), Target::JDK1_17, source);
+        (log, ctx, syms, reader, names)
+    }
+
+    fn d5_register(
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        reader: &mut ClassReader,
+        name: &str,
+        bytes: Vec<u8>,
+    ) -> SymbolId {
+        let class_name = reader.names.from_string(&javac_strings::JavaString::from(name));
+        let c = syms.enter_class_flat(ctx, syms.unnamed_module, class_name);
+        let file_name = javac_strings::JavaString::from(format!("{name}.class").as_str());
+        let file = std::rc::Rc::new(D5ClassFile { name: file_name, bytes });
+        if let crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } = &mut ctx.sym_mut(c).kind_data {
+            *classfile = Some(file);
+        }
+        reader.read_class_file(ctx, syms, c).expect("read fixture class");
+        c
+    }
+
+    fn d5_enter(
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        reader: &mut ClassReader,
+        name: &str,
+        bytes: Vec<u8>,
+    ) -> SymbolId {
+        let class_name = reader.names.from_string(&javac_strings::JavaString::from(name));
+        let c = syms.enter_class_flat(ctx, syms.unnamed_module, class_name);
+        let file_name = javac_strings::JavaString::from(format!("{name}.class").as_str());
+        let file = std::rc::Rc::new(D5ClassFile { name: file_name, bytes });
+        if let crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } = &mut ctx.sym_mut(c).kind_data {
+            *classfile = Some(file);
+        }
+        c
+    }
+    #[test]
+    fn class_reader_reports_annotation_method_not_found() {
+        let (log, mut ctx, syms, mut reader, names) = d5_reader(Some("Xlint:all"));
+        log.borrow_mut().install_diagnostic_handler(crate::util::log::DiagnosticHandler::Deferred {
+            prev: None,
+            deferred: std::collections::VecDeque::new(),
+            filter: None,
+        });
+        let _a = d5_register(&mut ctx, &syms, &mut reader, "A", hex_bytes(D5_A_NOMETHOD));
+        let c = d5_register(&mut ctx, &syms, &mut reader, "C", hex_bytes(D5_C1));
+        let proxies = reader
+            .pending_annotations
+            .iter()
+            .find(|(sym, _)| *sym == c)
+            .map(|(_, proxies)| proxies.clone())
+            .expect("pending annotation for C");
+        let class_file = match &ctx.sym(c).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } => classfile.clone(),
+            _ => None,
+        };
+        let deprox = DeproxyContext {
+            log: std::rc::Rc::clone(&log),
+            lint_classfile: true,
+            current_file: class_file,
+        };
+        let types = crate::code::types::Types::with_names(std::rc::Rc::clone(&names));
+        deproxy_compound_list(
+            &mut ctx,
+            &syms,
+            &types,
+            &names,
+            &proxies,
+            Some(&mut reader),
+            Some(&deprox),
+        )
+        .expect("deproxy fixture annotation");
+        let diagnostics = log.borrow_mut().take_deferred_diagnostics();
+        let warning = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.get_code_string() == "compiler.warn.annotation.method.not.found")
+            .expect("annotation.method.not.found warning");
+        assert_eq!(
+            warning.get_message(None).to_string_lossy(),
+            "Cannot find annotation method 'value()' in type 'A'"
+        );
+        let source_name = warning
+            .get_source()
+            .expect("warning source")
+            .get_name()
+            .to_string_lossy();
+        assert_eq!(source_name, "C.class");
+        let args: Vec<String> = warning
+            .get_args()
+            .iter()
+            .filter_map(|arg| {
+                arg.clone()
+                    .downcast::<javac_strings::JavaString>()
+                    .ok()
+                    .map(|text| text.to_string_lossy())
+            })
+            .collect();
+        assert_eq!(args, vec!["A".to_string(), "value".to_string()]);
+    }
+
+    #[test]
+    fn class_reader_reports_unknown_enum_constant() {
+        let (log, mut ctx, syms, mut reader, names) = d5_reader(None);
+        log.borrow_mut().install_diagnostic_handler(crate::util::log::DiagnosticHandler::Deferred {
+            prev: None,
+            deferred: std::collections::VecDeque::new(),
+            filter: None,
+        });
+        let _e = d5_enter(&mut ctx, &syms, &mut reader, "E", hex_bytes(D5_E));
+        let _a = d5_register(&mut ctx, &syms, &mut reader, "A", hex_bytes(D5_A2));
+        let c = d5_register(&mut ctx, &syms, &mut reader, "C", hex_bytes(D5_C2_BAD));
+        let proxies = reader
+            .pending_annotations
+            .iter()
+            .find(|(sym, _)| *sym == c)
+            .map(|(_, proxies)| proxies.clone())
+            .expect("pending annotation for C");
+        let class_file = match &ctx.sym(c).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } => classfile.clone(),
+            _ => None,
+        };
+        let deprox = DeproxyContext {
+            log: std::rc::Rc::clone(&log),
+            lint_classfile: false,
+            current_file: class_file,
+        };
+        let types = crate::code::types::Types::with_names(std::rc::Rc::clone(&names));
+        deproxy_compound_list(
+            &mut ctx,
+            &syms,
+            &types,
+            &names,
+            &proxies,
+            Some(&mut reader),
+            Some(&deprox),
+        )
+        .expect("deproxy fixture annotation");
+        let diagnostics = log.borrow_mut().take_deferred_diagnostics();
+        let warning = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.get_code_string() == "compiler.warn.unknown.enum.constant")
+            .expect("unknown.enum.constant warning");
+        assert_eq!(
+            warning.get_message(None).to_string_lossy(),
+            "unknown enum constant E.Z"
+        );
+        assert!(warning.get_source().is_none(), "upstream raw output has no source");
+        let args: Vec<String> = warning
+            .get_args()
+            .iter()
+            .filter_map(|arg| {
+                arg.clone()
+                    .downcast::<javac_strings::JavaString>()
+                    .ok()
+                    .map(|text| text.to_string_lossy())
+            })
+            .collect();
+        assert_eq!(
+            args,
+            vec!["E.class".to_string(), "E".to_string(), "Z".to_string()]
+        );
+    }
     #[test]
     fn adjust_flags_match_classfile_bits() {
         let reader = reader();
