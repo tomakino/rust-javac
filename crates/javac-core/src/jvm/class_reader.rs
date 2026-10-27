@@ -5910,6 +5910,110 @@ mod tests {
         assert!(circle.interfaces.iter().any(|i| i.contains("SealedFixture")));
     }
 
+    fn read_fixture_with_reader(
+        reader: &mut ClassReader,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut crate::code::symtab::Symtab,
+        names: &Rc<Names>,
+        binary_name: &str,
+        file_name: &str,
+    ) -> SymbolId {
+        let class_name = names.from_string(&javac_strings::JavaString::from(binary_name));
+        let c = syms.enter_class_flat(ctx, syms.java_base, class_name);
+        let file = Rc::new(ClassBytesFile {
+            name: javac_strings::JavaString::from(file_name),
+            bytes: fixture_bytes(file_name),
+        });
+        if let crate::code::symbol::SymbolKind::ClassSymbol { classfile, .. } =
+            &mut ctx.sym_mut(c).kind_data
+        {
+            *classfile = Some(file);
+        }
+        reader
+            .read_class_file(ctx, syms, c)
+            .expect("readRecordFixture");
+        c
+    }
+
+    #[test]
+    fn mirror_elements_expose_record_components_and_permitted_subclasses() {
+        let bytes = fixture_bytes("RecordFixture.class");
+        assert!(!bytes.is_empty());
+        let mut context = Context::new();
+        let log = Log::instance(&mut context);
+        let names = Rc::new(Names::new(false));
+        let messages = crate::util::javac_messages::JavacMessages::instance(&mut context);
+        let factory = Rc::new(Factory::new(messages, "compiler"));
+        let dcfh = DeferredCompletionFailureHandler::instance();
+        let preview = Rc::new(Preview::new(false, false));
+        let profile = Profile::instance(&mut context);
+        let options = Options::instance(&mut context);
+        let source = Source::JDK17;
+        let mut reader = ClassReader::new(
+            log,
+            Rc::clone(&names),
+            factory,
+            dcfh,
+            preview,
+            profile,
+            &options,
+            source,
+            Rc::new(RefCell::new(None)),
+        );
+        let mut ctx = crate::compiler_context::CompilerContext::new();
+        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let record = read_fixture_with_reader(
+            &mut reader,
+            &mut ctx,
+            &mut syms,
+            &names,
+            "RecordFixture",
+            "RecordFixture.class",
+        );
+        let record_element = crate::model::annotation_mirrors::element_for_symbol(
+            &mut ctx,
+            &syms,
+            record,
+        );
+        let components = record_element
+            .as_type_element()
+            .expect("record type element")
+            .get_record_components();
+        assert!(components.len() >= 2, "record components: {}", components.len());
+        let component_names: Vec<String> = components
+            .iter()
+            .map(|component| component.get_simple_name().to_java_string().to_string())
+            .collect();
+        assert!(component_names.contains(&"x".to_string()));
+        assert!(component_names.contains(&"name".to_string()));
+        let sealed = read_fixture_with_reader(
+            &mut reader,
+            &mut ctx,
+            &mut syms,
+            &names,
+            "SealedFixture",
+            "SealedFixture.class",
+        );
+        let sealed_element = crate::model::annotation_mirrors::element_for_symbol(
+            &mut ctx,
+            &syms,
+            sealed,
+        );
+        let permitted = sealed_element
+            .as_type_element()
+            .expect("sealed type element")
+            .get_permitted_subclasses();
+        assert!(!permitted.is_empty(), "permitted subclasses");
+        let displays: Vec<String> = permitted
+            .iter()
+            .map(|permitted| format!("{}", permitted))
+            .collect();
+        assert!(
+            displays.iter().any(|display| display.contains("Circle")),
+            "permitted: {displays:?}"
+        );
+    }
+
     #[test]
     fn fixture_module_info_directives() {
         // module-info.class: module fixtures.mod { exports fixtures.p; uses

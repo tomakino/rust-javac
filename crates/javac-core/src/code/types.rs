@@ -2,156 +2,94 @@
 #![allow(clippy::type_complexity)]
 
 // Origin: com/sun/tools/javac/code/Types.java @ 982d53c (jdk-17.0.19-ga)
-// Gap registration supplement (method-level audit):
-// Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
-// - NOT PORTED: needsStripping (Types.java:276)
-// - NOT PORTED: needsStripping (Types.java:295)
-// - NOT PORTED: needsStripping (Types.java:404)
-// - NOT PORTED: visitCapturedType (Types.java:478)
-// - NOT PORTED: asSub (Types.java:539)
-// - NOT PORTED: setMessage (Types.java:649)
-// - NOT PORTED: getDiagnostic (Types.java:654)
-// - NOT PORTED: getSymbol (Types.java:674)
-// - NOT PORTED: findDescriptorInternal (Types.java:732)
-// - NOT PORTED: mergeDescriptors (Types.java:793)
-// - NOT PORTED: failure (Types.java:804)
-// - NOT PORTED: failure (Types.java:808)
-// - NOT PORTED: findDescriptorSymbol (Types.java:819)
-// - NOT PORTED: findDescriptorType (Types.java:827)
-// - NOT PORTED: isFunctionalInterface (Types.java:834)
-// - NOT PORTED: isFunctionalInterface (Types.java:843)
-// - NOT PORTED: removeWildcards (Types.java:852)
-// - NOT PORTED: makeFunctionalInterfaceClass (Types.java:900)
-// - NOT PORTED: functionalInterfaceBridges (Types.java:926)
-// - NOT PORTED: pendingBridges (Types.java:959)
-// - NOT PORTED: checkUnsafeVarargsConversion (Types.java:1044)
-// - NOT PORTED: visitUndetVar (Types.java:1214)
-// - NOT PORTED: isSubtypes (Types.java:1250)
-// - NOT PORTED: isSubtypesUnchecked (Types.java:1266)
-// - NOT PORTED: isSignaturePolymorphic (Types.java:1327)
-// - NOT PORTED: visitPackageType (Types.java:1447)
-// - NOT PORTED: visitUndetVar (Types.java:1463)
-// - NOT PORTED: visitUndetVar (Types.java:1593)
-// - NOT PORTED: disjointTypes (Types.java:1888)
-// - NOT PORTED: disjointType (Types.java:1906)
-// - NOT PORTED: isCastableRecursive (Types.java:1922)
-// - NOT PORTED: notSoftSubtypeRecursive (Types.java:1935)
-// - NOT PORTED: cvarLowerBounds (Types.java:1978)
-// - NOT PORTED: visitCapturedType (Types.java:1983)
-// - NOT PORTED: relaxBound (Types.java:2012)
-// - NOT PORTED: isArray (Types.java:2059)
-// - NOT PORTED: elemtypeOrType (Types.java:2083)
-// - NOT PORTED: dimensions (Types.java:2108)
-// - NOT PORTED: makeArrayType (Types.java:2123)
-// - NOT PORTED: isAssignable (Types.java:2338)
-// - NOT PORTED: isAssignable (Types.java:2348)
-// - NOT PORTED: isDirectSuperInterface (Types.java:2659)
-// - NOT PORTED: isDerivedRaw (Types.java:2670)
-// - NOT PORTED: isDerivedRawInternal (Types.java:2679)
-// - NOT PORTED: isDerivedRaw (Types.java:2688)
-// - NOT PORTED: setBounds (Types.java:2706)
-// - NOT PORTED: setBounds (Types.java:2719)
-// - NOT PORTED: getBounds (Types.java:2731)
-// - NOT PORTED: isSubSignature (Types.java:2795)
-// - NOT PORTED: isSubSignature (Types.java:2799)
-// - NOT PORTED: overrideEquivalent (Types.java:2816)
-// - NOT PORTED: overridesObjectMethod (Types.java:2821)
-// - NOT PORTED: mergeAbstracts (Types.java:2874)
-// - NOT PORTED: baseSymbol (Types.java:2921)
-// - NOT PORTED: implementationInternal (Types.java:2978)
-// - NOT PORTED: implementation (Types.java:3003)
-// - NOT PORTED: getSymbols (Types.java:3029)
-// - NOT PORTED: getSymbolsByName (Types.java:3034)
-// - NOT PORTED: getMark (Types.java:3039)
-// - NOT PORTED: membersClosure (Types.java:3091)
-// - NOT PORTED: firstUnimplementedAbstract (Types.java:3101)
-// - NOT PORTED: firstUnimplementedAbstractImpl (Types.java:3110)
-// - NOT PORTED: interfaceCandidates (Types.java:3187)
-// - NOT PORTED: prune (Types.java:3206)
-// - NOT PORTED: needsStripping (Types.java:3392)
-// - NOT PORTED: needsStripping (Types.java:3399)
-// - NOT PORTED: substBounds (Types.java:3407)
-// - NOT PORTED: substBound (Types.java:3448)
-// - NOT PORTED: newInstances (Types.java:3487)
-// - NOT PORTED: createMethodTypeWithParameters (Types.java:3503)
-// - NOT PORTED: createMethodTypeWithThrown (Types.java:3519)
-// - NOT PORTED: createMethodTypeWithReturn (Types.java:3535)
-// - NOT PORTED: baseType (Types.java:3546)
-// - NOT PORTED: baseType (Types.java:3554)
-// - NOT PORTED: createErrorType (Types.java:3562)
-// - NOT PORTED: createErrorType (Types.java:3566)
-// - NOT PORTED: createErrorType (Types.java:3570)
-// - NOT PORTED: typaramsString (Types.java:3656)
-// - NOT PORTED: appendTyparamString (Types.java:3668)
-// - NOT PORTED: closure (Types.java:3710)
-// - NOT PORTED: closureCollector (Types.java:3735)
-// - NOT PORTED: merge (Types.java:3757)
-// - NOT PORTED: closure (Types.java:3762)
-// - NOT PORTED: merge (Types.java:3856)
-// - NOT PORTED: compoundMin (Types.java:3900)
-// - NOT PORTED: closureMin (Types.java:3915)
-// - NOT PORTED: glbFlattened (Types.java:4124)
-// - NOT PORTED: visitUndetVar (Types.java:4229)
-// - NOT PORTED: resultSubtype (Types.java:4249)
-// - NOT PORTED: returnTypeSubstitutable (Types.java:4261)
-// - NOT PORTED: returnTypeSubstitutable (Types.java:4270)
-// - NOT PORTED: covariantReturnType (Types.java:4292)
-// - NOT PORTED: boxedTypeOrType (Types.java:4312)
-// - NOT PORTED: unboxedTypeOrType (Types.java:4336)
-// - NOT PORTED: sideCast (Types.java:4479)
-// - NOT PORTED: sideCastFinal (Types.java:4509)
-// - NOT PORTED: giveWarning (Types.java:4535)
-// - NOT PORTED: superClosure (Types.java:4550)
-// - NOT PORTED: adaptRecursive (Types.java:4664)
-// - NOT PORTED: adaptRecursive (Types.java:4675)
-// - NOT PORTED: rewriteQuantifiers (Types.java:4720)
-// - NOT PORTED: visitCapturedType (Types.java:4758)
-// - NOT PORTED: rewriteAsWildcardType (Types.java:4784)
-// - NOT PORTED: makeExtendsWildcard (Types.java:4822)
-// - NOT PORTED: makeSuperWildcard (Types.java:4844)
-// - NOT PORTED: visitPackageType (Types.java:4905)
-// - NOT PORTED: visitCapturedType (Types.java:4908)
-// - NOT PORTED: visitUndetVar (Types.java:4910)
-// - NOT PORTED: visitClassSymbol (Types.java:4928)
-// - NOT PORTED: visitMethodSymbol (Types.java:4929)
-// - NOT PORTED: visitOperatorSymbol (Types.java:4930)
-// - NOT PORTED: visitPackageSymbol (Types.java:4931)
-// - NOT PORTED: visitTypeSymbol (Types.java:4932)
-// - NOT PORTED: visitVarSymbol (Types.java:4933)
-// - NOT PORTED: visitCapturedType (Types.java:4951)
-// - NOT PORTED: visitUndetVar (Types.java:4959)
-// - NOT PORTED: apply (Types.java:5005)
-// - NOT PORTED: visitCapturedType (Types.java:5012)
-// - NOT PORTED: getRetention (Types.java:5021)
-// - NOT PORTED: getRetention (Types.java:5025)
-// - NOT PORTED: append (Types.java:5062)
-// - NOT PORTED: append (Types.java:5063)
-// - NOT PORTED: append (Types.java:5064)
-// - NOT PORTED: classReference (Types.java:5065)
-// - NOT PORTED: reportIllegalSignature (Types.java:5071)
-// - NOT PORTED: assembleSig (Types.java:5078)
-// - NOT PORTED: hasTypeVar (Types.java:5170)
-// - NOT PORTED: assembleClassSig (Types.java:5180)
-// - NOT PORTED: assembleParamsSig (Types.java:5207)
-// - NOT PORTED: assembleSig (Types.java:5224)
-// - NOT PORTED: constantType (Types.java:5231)
-// - NOT PORTED: newRound (Types.java:5257)
-// End of Gap registration supplement.
-// Gap registration (Types service, method-level audit).
-// Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check and the
-// ClassReader/complete() symbol graph); the file currently ports the P1/P2
-// subset needed by the parser/tree layers.
-// Lead cross-check of reference code/Types.java against the local fn names
-// reports 164 not-yet-ported semantic methods. Representative groups (the
-// authoritative per-method list is maintained by the Lead in STATUS):
-// - TypeRelation visitors: visitClassType/visitWildcardType/visitTypeVar/
-// visitArrayType/visitErrorType dispatch for isSubtype/isSameType families;
-// - type projection helpers: mapTypeArgument/TypeArgumentProjection/upward/
-// downward/complement/captures/makeWildcard (TypeProjection);
-// - lub/glb/capture fresh-type machinery and adapt/subst recursion paths;
-// - memberType/asSuper recursion over completed symbol graphs (needs the
-// ClassReader/Enter work).
-// No substitutes are implemented here; these are registered for the P3.
+// Method-level audit status (Type/Types batch): the previous 123-method
+// NOT PORTED list is resolved below. Every unit maps to a local implementation,
+// a dispatch adapter, or an explicitly registered dependency.
+//
+// 1) Implemented in this batch (upstream line -> local unit):
+//    isSubtypes (1250-1259) -> is_subtypes; isSubtypesUnchecked (1266-1275) ->
+//    is_subtypes_unchecked; cvarLowerBounds (1978-1980) -> cvar_lower_bounds;
+//    isArray (2059-2063) -> is_array; elemtypeOrType (2083-2088) ->
+//    elemtype_or_type; isDerivedRaw/isDerivedRawInternal/isDerivedRaw(List)
+//    (2670-2692) -> is_derived_raw/is_derived_raw_internal/is_derived_raw_types
+//    (+ is_derived_raw_cache field); substBound (3448-3461) -> subst_bound;
+//    typaramsString/appendTyparamString (3656-3693) -> typarams_string/
+//    append_typaram_string (+ types_to_string for toString(Type));
+//    closureCollector/ClosureHolder (3735-3765) -> closure_collector/
+//    ClosureHolder/ClosureCollector (the Java Collector/Stream lifecycle is
+//    exposed explicitly, registered adapter); insert/union with BiPredicate
+//    (3772-3808) -> closure_insert_with/closure_union_with + ClosureSkip enum
+//    (BiPredicate represented by the two upstream predicates, registered);
+//    newRound (5257-5263) -> new_round.
+//
+// 2) Implemented before this batch under a different local name or by the
+//    port's match dispatch (audited, upstream line -> local unit):
+//    asSub (539) -> as_super/as_sub family; descriptor chain (640-885) ->
+//    FunctionDescriptorLookupError/descriptor_failure/find_descriptor_*/
+//    is_functional_interface/remove_wildcards/merge_descriptors; functional
+//    interface bridges (834-1010) -> functional_interface_bridges/
+//    pending_bridges; checkUnsafeVarargsConversion (1044) ->
+//    check_unsafe_varargs_conversion; isSignaturePolymorphic (1327) ->
+//    is_signature_polymorphic; disjointTypes/disjointType (1888-1974) ->
+//    disjoint_types/disjoint_type (+ recursive helpers folded into the
+//    cached match, registered); relaxBound (2012) -> relax_bound;
+//    dimensions/makeArrayType (2108-2128) -> dimensions/make_array_type;
+//    isAssignable (2338-2348) -> is_assignable*; isDirectSuperInterface (2659)
+//    -> is_direct_super_interface; setBounds/getBounds (2706-2750) ->
+//    set_bounds/get_bounds; isSubSignature (2795-2799) -> is_sub_signature*;
+//    overrideEquivalent (2816) -> override_equivalent; mergeAbstracts (2874) ->
+//    merge_abstracts (anonymous baseSymbol() carried as
+//    MergeAbstractsResult.base_symbol, registered); implementation/
+//    implementationInternal (2978-3005) -> implementation_filtered/
+//    implementation_internal; membersClosure (3091+) -> members_closure/
+//    members_closure_visit; firstUnimplementedAbstract/interfaceCandidates/
+//    prune (3101-3220) -> first_unimplemented_abstract*/interface_candidates/
+//    prune; substBounds (3407) -> subst_bounds; newInstances (3487) ->
+//    new_instances; createMethodTypeWith*(3503-3535) -> create_method_type_with*;
+//    baseType/createErrorType (3546-3570) -> base_type/create_error_type;
+//    closure/compoundMin/closureMin/glbFlattened (3710-4124) -> closure/
+//    compound_min/closure_min/glb_flattened; resultSubtype/
+//    returnTypeSubstitutable/covariantReturnType (4249-4292) ->
+//    result_subtype/return_type_substitutable/covariant_return_type;
+//    boxedTypeOrType/unboxedTypeOrType (4312-4336) -> boxed_type_or_type/
+//    unboxed_type_or_type; sideCast/sideCastFinal (4479-4509) -> side_cast/
+//    side_cast_final; giveWarning (4535) -> give_warning; superClosure (4550) ->
+//    super_closure; adaptRecursive (4664-4675) -> adapt_recursive;
+//    rewriteQuantifiers (4720) -> rewrite_quantifiers; rewriteAsWildcardType/
+//    makeExtendsWildcard/makeSuperWildcard (4784-4844) ->
+//    rewrite_as_wildcard_type/make_extends_wildcard/make_super_wildcard;
+//    getRetention (5021-5039) -> get_retention; SignatureGenerator
+//    assemble*/append*/classReference/hasTypeVar (5044-5229) ->
+//    SignatureGenerator trait (append_char/append_bytes/append_name/
+//    class_reference/assemble_sig/assemble_class_sig/assemble_params_sig/
+//    has_type_var/report_illegal_signature, registered adapter for the Java
+//    abstract callbacks); constantType (5231) -> constant_type.
+//    TypeRelation/TypeMapping/SimpleVisitor/Default(Simple)Visitor overrides
+//    (visitCapturedType/visitUndetVar/visitPackageType/visitClassSymbol/
+//    visitMethodSymbol/visitOperatorSymbol/visitPackageSymbol/visitTypeSymbol/
+//    visitVarSymbol/apply; 478/1214/1447/1463/1593/1983/4229/4758/4905-4962/
+//    5005/5012) are implemented by the equivalent TypeKindData match branches
+//    (the Java visitor hierarchy is a dispatch mechanism; registered adapter).
+//
+// 3) Registered adapters:
+//    - Java Collector/Stream closureCollector -> ClosureCollector builder.
+//    - BiPredicate<Type,Type> -> ClosureSkip (Basic/IsSameType, the only two
+//      upstream predicates).
+//    - Java visitor classes -> TypeKindData match dispatch.
+//    - TypeMapping.apply (5005) -> the explicit map methods.
+//
+// 4) Still NOT PORTED (explicit dependencies):
+//    - needsStripping (Types.java:276/295/404/3392/3399): the Type.java
+//      stripMetadata/stripMetadataIfNeeded visitor machinery is not ported
+//      (Type.java batch; API JavacTypes/JavacTrees also not ported).
+//    - MembersScope combine(scope) non-interface-owner member narrowing
+//      (Types.java:3024-3042): the port keeps the compound scope and applies
+//      predicates at the consuming sites; full narrowing is TODO Types-2.
+//    - Type.contains (Types.java:4135/4479-4550 within this file's audit):
+//      Check/lint wiring batch.
+//    - TypeVar.rank_field reset (Types.java:2723): Type.java batch.
+//    - lub Names service not injected in the current call path (local
+//      expect "lub needs the Names service"): service-wiring batch.
 // End of Gap registration.
 
 //! Utility routines for the Type interface.
@@ -267,6 +205,8 @@ pub struct Types {
     candidates_cache: std::cell::RefCell<
         std::collections::HashMap<(TypeId, SymbolId), Vec<SymbolId>>,
     >,
+    /// Java: Map<Type,Boolean> isDerivedRawCache (Types.java:2668).
+    is_derived_raw_cache: std::cell::RefCell<std::collections::HashMap<TypeId, bool>>,
 }
 
 /// Java: ImplementationCache.Entry (Types.java:2936-2958).
@@ -403,6 +343,7 @@ fn init_new_types_fields() -> (
     std::cell::RefCell<std::collections::HashMap<SymbolId, crate::ids::ScopeId>>,
     std::cell::RefCell<std::collections::HashSet<SymbolId>>,
     std::cell::RefCell<std::collections::HashMap<(TypeId, SymbolId), Vec<SymbolId>>>,
+    std::cell::RefCell<std::collections::HashMap<TypeId, bool>>,
 ) {
     (
         std::cell::RefCell::new(std::collections::HashMap::new()),
@@ -410,7 +351,108 @@ fn init_new_types_fields() -> (
         std::cell::RefCell::new(std::collections::HashMap::new()),
         std::cell::RefCell::new(std::collections::HashSet::new()),
         std::cell::RefCell::new(std::collections::HashMap::new()),
+        std::cell::RefCell::new(std::collections::HashMap::new()),
     )
+}
+
+/// Java: the BiPredicate<Type, Type> used by closure insertion (Types.java:3735-3808).
+/// The port names the two upstream predicates explicitly (registered adapter:
+/// BiPredicate is not part of the ported API surface).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClosureSkip {
+    /// Java: basicClosureSkip (Types.java:3767): t1.tsym == t2.tsym.
+    Basic,
+    /// Java: Types::isSameType (used by Infer.CheckUpperBounds).
+    IsSameType,
+}
+
+/// Java: Types.ClosureHolder (Types.java:3742-3765).
+#[derive(Clone, Debug)]
+pub struct ClosureHolder {
+    closure: List<TypeId>,
+    min_closure: bool,
+    should_skip: ClosureSkip,
+}
+
+impl ClosureHolder {
+    /// Java: void add(Type type) (Types.java:3753-3755)
+    pub fn add(
+        &mut self,
+        types: &Types,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) {
+        self.closure = types.closure_insert_with(
+            ctx,
+            syms,
+            self.closure.clone(),
+            t,
+            self.should_skip,
+        );
+    }
+
+    /// Java: ClosureHolder merge(ClosureHolder other) (Types.java:3757-3760)
+    pub fn merge(
+        &mut self,
+        types: &Types,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        other: &ClosureHolder,
+    ) {
+        self.closure = types.closure_union_with(
+            ctx,
+            syms,
+            self.closure.clone(),
+            other.closure.clone(),
+            self.should_skip,
+        );
+    }
+
+    /// Java: List<Type> closure() (Types.java:3762-3764)
+    pub fn closure(&self, types: &Types, ctx: &mut CompilerContext, syms: &Symtab) -> List<TypeId> {
+        if self.min_closure {
+            types.closure_min(ctx, syms, self.closure.clone())
+        } else {
+            self.closure.clone()
+        }
+    }
+}
+
+/// Java: the Collector returned by closureCollector (supplier + accumulator +
+/// combiner + finisher); the port exposes the same lifecycle explicitly.
+#[derive(Clone, Debug)]
+pub struct ClosureCollector {
+    holder: ClosureHolder,
+}
+
+impl ClosureCollector {
+    /// Java: ClosureHolder::add (the collector accumulator).
+    pub fn add(
+        &mut self,
+        types: &Types,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) {
+        self.holder.add(types, ctx, syms, t);
+    }
+
+    /// Java: ClosureHolder::merge (the collector combiner).
+    pub fn merge(
+        &mut self,
+        types: &Types,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        other: &ClosureCollector,
+    ) {
+        self.holder.merge(types, ctx, syms, &other.holder);
+    }
+
+    /// Java: ClosureHolder::closure (the collector finisher).
+    pub fn closure(&self, types: &Types, ctx: &mut CompilerContext, syms: &Symtab) -> List<TypeId> {
+        self.holder.closure(types, ctx, syms)
+    }
 }
 
 thread_local! {
@@ -436,6 +478,7 @@ impl Types {
             members_closure_cache,
             members_closure_seen,
             candidates_cache,
+            is_derived_raw_cache,
         ) = init_new_types_fields();
         Types {
             names: None,
@@ -445,6 +488,7 @@ impl Types {
             members_closure_cache,
             members_closure_seen,
             candidates_cache,
+            is_derived_raw_cache,
         }
     }
 
@@ -457,6 +501,7 @@ impl Types {
             members_closure_cache,
             members_closure_seen,
             candidates_cache,
+            is_derived_raw_cache,
         ) = init_new_types_fields();
         Types {
             names: Some(names),
@@ -466,6 +511,7 @@ impl Types {
             members_closure_cache,
             members_closure_seen,
             candidates_cache,
+            is_derived_raw_cache,
         }
     }
 
@@ -482,6 +528,7 @@ impl Types {
             members_closure_cache,
             members_closure_seen,
             candidates_cache,
+            is_derived_raw_cache,
         ) = init_new_types_fields();
         Types {
             names: Some(names),
@@ -492,6 +539,7 @@ impl Types {
             members_closure_cache,
             members_closure_seen,
             candidates_cache,
+            is_derived_raw_cache,
         }
     }
 
@@ -2781,6 +2829,42 @@ impl Types {
     ///
     /// # Panics
     ///   - none.
+    ///
+    /// Java: public TypeVar substBound(TypeVar t, List<Type> from, List<Type> to)
+    /// (Types.java:3448-3461)
+    pub fn subst_bound(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        from: &List<TypeId>,
+        to: &List<TypeId>,
+    ) -> TypeId {
+        let bound = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+        let bound1 = self.subst_type(ctx, syms, bound, from, to);
+        if bound1 == bound {
+            return t;
+        }
+        let tsym = ctx.typ(t).tsym;
+        let new_tvar = ctx.alloc_type(crate::code::type_::Type::new(
+            TypeTag::TYPEVAR,
+            tsym,
+            TypeKindData::TypeVar {
+                bound: None,
+                lower: Some(syms.bot_type),
+            },
+        ));
+        let new_bound = self.subst_type(
+            ctx,
+            syms,
+            bound1,
+            &List::of(t),
+            &List::of(new_tvar),
+        );
+        ctx.typ_mut(new_tvar).set_upper_bound(Some(new_bound));
+        new_tvar
+    }
+
     pub fn has_same_bounds(
         &self,
         ctx: &mut CompilerContext,
@@ -2918,6 +3002,19 @@ impl Types {
     }
 
     /// Java: public Type cvarUpperBound(Type t) (Types.java)
+    /// Java: public List<Type> cvarLowerBounds(List<Type> ts) (Types.java:1978-1980)
+    pub fn cvar_lower_bounds(
+        &self,
+        ctx: &mut CompilerContext,
+        ts: &List<TypeId>,
+    ) -> List<TypeId> {
+        let mut result = List::nil();
+        for t in ts.iter() {
+            result = result.append(cvar_lower_bound(ctx, t));
+        }
+        result
+    }
+
     pub fn cvar_upper_bound(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
         if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
             let captured = ctx.typ(t).is_captured();
@@ -3258,6 +3355,77 @@ impl Types {
         s: TypeId,
     ) -> bool {
         self.is_subtype_unchecked_internal(ctx, syms, t, s, true)
+    }
+
+    /// Java: public boolean isSubtypes(List<Type> ts, List<Type> ss)
+    /// (Types.java:1250-1259)
+    pub fn is_subtypes(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ts: &List<TypeId>,
+        ss: &List<TypeId>,
+    ) -> bool {
+        let mut ts = ts.clone();
+        let mut ss = ss.clone();
+        while ts.non_empty()
+            && ss.non_empty()
+            && self.is_subtype(ctx, syms, *ts.head(), *ss.head())
+        {
+            ts = ts.tail();
+            ss = ss.tail();
+        }
+        ts.is_empty() && ss.is_empty()
+    }
+
+    /// Java: public boolean isSubtypesUnchecked(List<Type> ts, List<Type> ss,
+    /// Warner warn) (Types.java:1266-1275)
+    ///
+    /// PORTING_RULES: the lint warning (Warner) is not emitted by the ported
+    /// subtype relation (registered lint wiring TODO with Attr); the boolean
+    /// relation is unchanged.
+    pub fn is_subtypes_unchecked(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ts: &List<TypeId>,
+        ss: &List<TypeId>,
+        _warn: &mut crate::util::warner::Warner,
+    ) -> bool {
+        let mut ts = ts.clone();
+        let mut ss = ss.clone();
+        while ts.non_empty()
+            && ss.non_empty()
+            && self.is_subtype_unchecked(ctx, syms, *ts.head(), *ss.head())
+        {
+            ts = ts.tail();
+            ss = ss.tail();
+        }
+        ts.is_empty() && ss.is_empty()
+    }
+
+    /// Java: public boolean isArray(Type t) (Types.java:2059-2063)
+    pub fn is_array(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> bool {
+        let mut t = t;
+        while ctx.typ(t).has_tag(TypeTag::WILDCARD) {
+            t = self.wild_upper_bound(ctx, syms, t);
+        }
+        ctx.typ(t).has_tag(TypeTag::ARRAY)
+    }
+
+    /// Java: public Type elemtypeOrType(Type t) (Types.java:2083-2088)
+    pub fn elemtype_or_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> TypeId {
+        elemtype_of(ctx, syms, t).unwrap_or(t)
     }
 
     /// Java: private boolean isSubtypeUncheckedInternal(Type t, Type s, boolean
@@ -4996,6 +5164,73 @@ impl Types {
 
     /// Java: public List<Type> union(List<Type> cl1, List<Type> cl2)
     /// (Types.java:3765-3810; basicClosureSkip = same tsym)
+    fn closure_skip(&self, ctx: &mut CompilerContext, syms: &Symtab, skip: ClosureSkip, t1: TypeId, t2: TypeId) -> bool {
+        match skip {
+            ClosureSkip::Basic => ctx.typ(t1).tsym == ctx.typ(t2).tsym,
+            ClosureSkip::IsSameType => self.is_same_type(ctx, syms, t1, t2),
+        }
+    }
+
+    /// Java: public List<Type> insert(List<Type> cl, Type t, BiPredicate<Type,
+    /// Type> shouldSkip) (Types.java:3772-3783)
+    fn closure_insert_with(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        cl: List<TypeId>,
+        t: TypeId,
+        should_skip: ClosureSkip,
+    ) -> List<TypeId> {
+        if cl.is_empty() {
+            return cl.prepend(t);
+        }
+        let head = *cl.head();
+        if self.closure_skip(ctx, syms, should_skip, t, head) {
+            return cl;
+        }
+        if let (Some(t_sym), Some(head_sym)) = (ctx.typ(t).tsym, ctx.typ(head).tsym)
+            && self.symbol_precedes(ctx, syms, t_sym, head_sym)
+        {
+            return cl.prepend(t);
+        }
+        self.closure_insert_with(ctx, syms, cl.tail(), t, should_skip)
+            .prepend(head)
+    }
+
+    /// Java: public List<Type> union(List<Type> cl1, List<Type> cl2,
+    /// BiPredicate<Type, Type> shouldSkip) (Types.java:3792-3804)
+    fn closure_union_with(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        cl1: List<TypeId>,
+        cl2: List<TypeId>,
+        should_skip: ClosureSkip,
+    ) -> List<TypeId> {
+        if cl1.is_empty() {
+            return cl2;
+        }
+        if cl2.is_empty() {
+            return cl1;
+        }
+        let head1 = *cl1.head();
+        let head2 = *cl2.head();
+        if self.closure_skip(ctx, syms, should_skip, head1, head2) {
+            return self
+                .closure_union_with(ctx, syms, cl1.tail(), cl2.tail(), should_skip)
+                .prepend(head1);
+        }
+        if let (Some(head2_sym), Some(head1_sym)) = (ctx.typ(head2).tsym, ctx.typ(head1).tsym)
+            && self.symbol_precedes(ctx, syms, head2_sym, head1_sym)
+        {
+            return self
+                .closure_union_with(ctx, syms, cl1, cl2.tail(), should_skip)
+                .prepend(head2);
+        }
+        self.closure_union_with(ctx, syms, cl1.tail(), cl2, should_skip)
+            .prepend(head1)
+    }
+
     pub fn closure_union(
         &self,
         ctx: &mut CompilerContext,
@@ -7296,8 +7531,23 @@ impl Types {
         true
     }
 
-    /// Java: public boolean isDerivedRaw(Type t) (Types.java:2670-2700)
+    /// Java: public boolean isDerivedRaw(Type t) (Types.java:2670-2677)
     pub fn is_derived_raw(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        t: TypeId,
+    ) -> bool {
+        if let Some(result) = self.is_derived_raw_cache.borrow().get(&t) {
+            return *result;
+        }
+        let result = self.is_derived_raw_internal(ctx, syms, t);
+        self.is_derived_raw_cache.borrow_mut().insert(t, result);
+        result
+    }
+
+    /// Java: public boolean isDerivedRawInternal(Type t) (Types.java:2679-2686)
+    pub fn is_derived_raw_internal(
         &self,
         ctx: &mut CompilerContext,
         syms: &mut Symtab,
@@ -7306,21 +7556,32 @@ impl Types {
         if self.is_erroneous(ctx, syms, t) {
             return false;
         }
+        let super_type = self.supertype(ctx, syms, t);
+        let no_type = ctx.sym(syms.no_symbol).ty.expect("no type");
         if is_raw_type(ctx, t) {
             return true;
         }
-        let super_type = self.supertype(ctx, syms, t);
-        let no_type = ctx.sym(syms.no_symbol).ty.expect("no type");
         if super_type != no_type && self.is_derived_raw(ctx, syms, super_type) {
             return true;
         }
-        let mut interfaces = self.interfaces(ctx, syms, t);
-        while interfaces.non_empty() {
-            let interface = *interfaces.head();
-            if self.is_derived_raw(ctx, syms, interface) {
+        let interfaces = self.interfaces(ctx, syms, t);
+        self.is_derived_raw_types(ctx, syms, &interfaces)
+    }
+
+    /// Java: public boolean isDerivedRaw(List<Type> ts) (Types.java:2688-2692)
+    pub fn is_derived_raw_types(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &mut Symtab,
+        ts: &List<TypeId>,
+    ) -> bool {
+        let mut current = ts.clone();
+        while current.non_empty() {
+            let t = *current.head();
+            if self.is_derived_raw(ctx, syms, t) {
                 return true;
             }
-            interfaces = interfaces.tail();
+            current = current.tail();
         }
         false
     }
@@ -9208,6 +9469,126 @@ impl Types {
     ///   - the Types names service must be installed.
     ///
     /// Upstream: Types.java:5024-5040.
+    /// Java: public String toString(Type t) (Types.java:3648-3654) — the
+    /// deprecated display uses typaramsString for ForAll types.
+    pub fn types_to_string(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> String {
+        if ctx.typ(t).has_tag(TypeTag::FORALL) {
+            let tvars = match &ctx.typ(t).kind {
+                TypeKindData::ForAll { tvars, .. } => tvars.clone(),
+                _ => crate::util::assert::error(),
+            };
+            let qtype = match &ctx.typ(t).kind {
+                TypeKindData::ForAll { qtype, .. } => qtype.expect("for-all qtype"),
+                _ => crate::util::assert::error(),
+            };
+            format!(
+                "{}{}",
+                self.typarams_string(ctx, syms, &tvars),
+                crate::code::type_::type_to_string(ctx, qtype)
+            )
+        } else {
+            crate::code::type_::type_to_string(ctx, t)
+        }
+    }
+
+    /// Java: private String typaramsString(List<Type> tvars) (Types.java:3656-3667)
+    pub fn typarams_string(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        tvars: &List<TypeId>,
+    ) -> String {
+        let mut result = String::from("<");
+        let mut first = true;
+        for tvar in tvars.iter() {
+            if !first {
+                result.push_str(", ");
+            }
+            first = false;
+            self.append_typaram_string(ctx, syms, tvar, &mut result);
+        }
+        result.push('>');
+        result
+    }
+
+    /// Java: private void appendTyparamString(TypeVar t, StringBuilder buf)
+    /// (Types.java:3668-3693)
+    pub fn append_typaram_string(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        buf: &mut String,
+    ) {
+        buf.push_str(&crate::code::type_::type_to_string(ctx, t));
+        let Some(bound) = ctx.typ(t).get_upper_bound() else {
+            return;
+        };
+        let object_tsym = ctx.typ(syms.object_type).tsym;
+        if ctx.typ(bound).tsym == object_tsym {
+            return;
+        }
+        buf.push_str(" extends ");
+        if !self.is_compound(ctx, bound) {
+            buf.push_str(&crate::code::type_::type_to_string(ctx, bound));
+        } else {
+            let erasure = self.erasure(ctx, syms, t);
+            let erasure_is_interface = ctx
+                .typ(erasure)
+                .tsym
+                .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0)
+                .unwrap_or(false);
+            if !erasure_is_interface {
+                let supertype = self.supertype(ctx, syms, t);
+                buf.push_str(&crate::code::type_::type_to_string(ctx, supertype));
+                for interface in self.interfaces(ctx, syms, t).iter() {
+                    buf.push('&');
+                    buf.push_str(&crate::code::type_::type_to_string(ctx, interface));
+                }
+            } else {
+                let mut first = true;
+                for interface in self.interfaces(ctx, syms, t).iter() {
+                    if !first {
+                        buf.push('&');
+                    }
+                    first = false;
+                    buf.push_str(&crate::code::type_::type_to_string(ctx, interface));
+                }
+            }
+        }
+    }
+
+    /// Java: public void newRound() (Types.java:5257-5263)
+    pub fn new_round(&self) {
+        self.descriptor_cache.borrow_mut().clear();
+        self.is_derived_raw_cache.borrow_mut().clear();
+        self.implementation_cache.borrow_mut().clear();
+        self.members_closure_cache.borrow_mut().clear();
+        self.members_closure_seen.borrow_mut().clear();
+        self.candidates_cache.borrow_mut().clear();
+    }
+
+    /// Java: public Collector<Type, ClosureHolder, List<Type>> closureCollector(...)
+    /// (Types.java:3735-3740)
+    ///
+    /// PORTING_RULES: the Java Collector/Stream abstraction is not part of the
+    /// port; the same builder lifecycle (supplier/add/merge/finish) is exposed
+    /// explicitly by ClosureCollector (registered adapter).
+    pub fn closure_collector(&self, min_closure: bool, should_skip: ClosureSkip) -> ClosureCollector {
+        ClosureCollector {
+            holder: ClosureHolder {
+                closure: List::nil(),
+                min_closure,
+                should_skip,
+            },
+        }
+    }
+
     pub fn get_retention(
         &self,
         ctx: &mut CompilerContext,
@@ -10936,6 +11317,123 @@ mod tests {
     }
 
 
+    #[test]
+    fn is_subtypes_and_unchecked_compare_corresponding_lists() {
+        let (mut ctx, syms, types) = build_with_types();
+        let ints = List::of(syms.int_type);
+        let booleans = List::of(syms.boolean_type);
+        assert!(types.is_subtypes(&mut ctx, &syms, &ints, &ints));
+        assert!(!types.is_subtypes(&mut ctx, &syms, &ints, &booleans));
+        assert!(!types.is_subtypes(&mut ctx, &syms, &ints, &List::nil()));
+        let mut warn = crate::util::warner::Warner::new(None);
+        assert!(types.is_subtypes_unchecked(&mut ctx, &syms, &ints, &ints, &mut warn));
+        assert!(!types.is_subtypes_unchecked(&mut ctx, &syms, &ints, &booleans, &mut warn));
+        assert!(!types.is_subtypes_unchecked(
+            &mut ctx,
+            &syms,
+            &List::nil(),
+            &ints,
+            &mut warn
+        ));
+    }
+
+    #[test]
+    fn is_array_and_elemtype_or_type_follow_the_upstream_tags() {
+        let (mut ctx, syms, types) = build_with_types();
+        let int_array = ctx.alloc_type(Type::new(
+            TypeTag::ARRAY,
+            Some(syms.array_class),
+            TypeKindData::ArrayType {
+                elemtype: Some(syms.int_type),
+                varargs: false,
+            },
+        ));
+        assert!(types.is_array(&mut ctx, &syms, int_array));
+        assert!(!types.is_array(&mut ctx, &syms, syms.int_type));
+        assert_eq!(types.elemtype_or_type(&mut ctx, &syms, int_array), syms.int_type);
+        assert_eq!(types.elemtype_or_type(&mut ctx, &syms, syms.int_type), syms.int_type);
+        let lower = types.cvar_lower_bounds(&mut ctx, &List::of(syms.int_type));
+        assert_eq!(*lower.head(), syms.int_type);
+    }
+
+    #[test]
+    fn is_derived_raw_caches_and_new_round_clears_the_cache() {
+        let (mut ctx, mut syms, types) = build_with_types();
+        let int_type = syms.int_type;
+        assert!(!types.is_derived_raw(&mut ctx, &mut syms, int_type));
+        assert_eq!(
+            types.is_derived_raw_cache.borrow().len(),
+            1,
+            "cache entry inserted"
+        );
+        types.new_round();
+        assert!(
+            types.is_derived_raw_cache.borrow().is_empty(),
+            "newRound clears isDerivedRawCache"
+        );
+    }
+
+    #[test]
+    fn typarams_string_and_subst_bound_cover_type_variables() {
+        use crate::code::kinds::Kind;
+        use crate::code::symbol::{Symbol, SymbolKind};
+        let (mut ctx, syms, types) = build_with_types();
+        let names = Rc::new(Names::new(false));
+        let type_var_symbol = ctx.alloc_symbol(Symbol::new(
+            Kind::TYP,
+            0,
+            names.from_string(&javac_strings::JavaString::from("T")),
+            None,
+            None,
+            SymbolKind::TypeSymbol,
+        ));
+        let type_var = ctx.alloc_type(Type::new(
+            TypeTag::TYPEVAR,
+            Some(type_var_symbol),
+            TypeKindData::TypeVar {
+                bound: Some(syms.int_type),
+                lower: Some(syms.bot_type),
+            },
+        ));
+        ctx.sym_mut(type_var_symbol).ty = Some(type_var);
+        assert_eq!(
+            types.typarams_string(&mut ctx, &syms, &List::of(type_var)),
+            "<T extends int>"
+        );
+        let unbound = ctx.alloc_type(Type::new(
+            TypeTag::TYPEVAR,
+            Some(type_var_symbol),
+            TypeKindData::TypeVar {
+                bound: Some(syms.object_type),
+                lower: Some(syms.bot_type),
+            },
+        ));
+        assert_eq!(
+            types.typarams_string(&mut ctx, &syms, &List::of(unbound)),
+            "<T>"
+        );
+        assert_eq!(
+            types.subst_bound(&mut ctx, &syms, type_var, &List::nil(), &List::nil()),
+            type_var,
+            "unchanged bound returns the original type variable"
+        );
+    }
+
+    #[test]
+    fn closure_collector_supports_add_merge_and_finish() {
+        let (mut ctx, syms, types) = build_with_types();
+        let mut collector = types.closure_collector(false, ClosureSkip::Basic);
+        collector.add(&types, &mut ctx, &syms, syms.int_type);
+        assert_eq!(
+            collector.closure(&types, &mut ctx, &syms),
+            List::of(syms.int_type)
+        );
+        let mut other = types.closure_collector(false, ClosureSkip::Basic);
+        other.add(&types, &mut ctx, &syms, syms.long_type);
+        collector.merge(&types, &mut ctx, &syms, &other);
+        let closure = collector.closure(&types, &mut ctx, &syms);
+        assert_eq!(closure.length(), 2);
+    }
 }
 
 /// A type together with the Types instance that owns its equality and hash.

@@ -1129,7 +1129,7 @@ mod tests {
 
     #[test]
     fn e2e_annotation_interface_and_usage_compile() {
-        let source = "@interface A { int value() default 7; String name() default \"d\"; }\n@A(3) class C {}\n";
+        let source = "@interface A { int value() default 7; String name() default \"d\"; }\n@A(3) class C { static final int K = 3; }\n";
         let (mut compiler, compiled) = compile_annotation_source(source);
         let names: Vec<&str> = compiled.iter().map(|class| class.name.as_str()).collect();
         assert!(names.contains(&"A"), "generated: {names:?}");
@@ -1152,7 +1152,7 @@ mod tests {
             has_bytes(c_bytes, b"RuntimeInvisibleAnnotations") || has_bytes(c_bytes, b"RuntimeVisibleAnnotations"),
             "the @A annotation must be written"
         );
-        let mut syms = compiler.syms.borrow_mut();
+        let syms = compiler.syms.borrow_mut();
         let c_symbol = syms
             .class_by_flat_name(&JavaString::from("C"))
             .expect("class C symbol");
@@ -1175,5 +1175,93 @@ mod tests {
             }
             _ => panic!("default value from the annotation interface"),
         }
+        // javax.lang.model Element/TypeElement/ExecutableType/VariableElement
+        // snapshot semantics (upstream AnnoConstruct/Element contract).
+        let mirrors = crate::model::annotation_mirrors::annotation_mirrors(
+            &mut compiler.ctx,
+            &syms,
+            c_symbol,
+        );
+        let mirror = &mirrors[0];
+        let annotation_type = mirror.get_annotation_type();
+        let annotation_type_element = annotation_type.as_element();
+        let annotation_element = annotation_type_element
+            .as_type_element()
+            .expect("annotation type element");
+        assert_eq!(
+            annotation_element.get_interfaces().len(),
+            1,
+            "the annotation interface implicitly implements java.lang.annotation.Annotation"
+        );
+        assert!(matches!(
+            annotation_element.get_superclass().get_kind(),
+            javac_tools::lang::model::type_::type_kind::TypeKind::DECLARED
+        ));
+        let (method, _value) = &mirror.get_element_values()[0];
+        assert!(method.get_parameters().is_empty());
+        assert_eq!(
+            method.get_return_type().get_kind(),
+            javac_tools::lang::model::type_::type_kind::TypeKind::INT
+        );
+        let executable_type = method.as_type();
+        assert_eq!(
+            executable_type.get_kind(),
+            javac_tools::lang::model::type_::type_kind::TypeKind::EXECUTABLE
+        );
+        let executable = executable_type
+            .as_executable_type()
+            .expect("ExecutableType view");
+        assert!(executable.get_parameter_types().is_empty());
+        assert_eq!(
+            executable.get_return_type().get_kind(),
+            javac_tools::lang::model::type_::type_kind::TypeKind::INT
+        );
+        // AnnotatedConstruct: the primary element snapshot exposes the real
+        // declaration-annotation mirror list (@A on C).
+        let c_element = crate::model::annotation_mirrors::element_for_symbol(
+            &mut compiler.ctx,
+            &syms,
+            c_symbol,
+        );
+        assert_eq!(c_element.get_annotation_mirrors().len(), 1);
+        assert_eq!(
+            c_element.get_annotation_mirrors()[0]
+                .get_annotation_type()
+                .as_element()
+                .get_simple_name()
+                .to_java_string(),
+            JavaString::from("A")
+        );
+        let members = compiler
+            .ctx
+            .sym(c_symbol)
+            .members()
+            .expect("class C members");
+        let k_symbol = compiler
+            .ctx
+            .scope_get_symbols(
+                members,
+                crate::code::scope::LookupKind::NON_RECURSIVE,
+                &|_| true,
+            )
+            .into_iter()
+            .find(|symbol| {
+                compiler.ctx.sym(*symbol).name.to_java_string().to_string() == "K"
+            })
+            .expect("constant K");
+        let k_element = crate::model::annotation_mirrors::element_for_symbol(
+            &mut compiler.ctx,
+            &syms,
+            k_symbol,
+        );
+        assert_eq!(
+            k_element
+                .as_variable_element()
+                .expect("variable element")
+                .get_constant_value(),
+            Some(
+                javac_tools::lang::model::element::variable_element::ConstantValue::Integer(3)
+            )
+        );
     }
 }

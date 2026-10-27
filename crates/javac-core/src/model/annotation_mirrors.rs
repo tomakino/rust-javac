@@ -29,9 +29,12 @@ use javac_tools::lang::model::element::nesting_kind::NestingKind;
 use javac_tools::lang::model::element::package_element::PackageElement;
 use javac_tools::lang::model::element::qualified_nameable::QualifiedNameable;
 use javac_tools::lang::model::element::type_element::TypeElement;
+use javac_tools::lang::model::element::record_component_element::RecordComponentElement;
 use javac_tools::lang::model::element::variable_element::{ConstantValue, VariableElement};
 use javac_tools::lang::model::type_::array_type::ArrayType;
 use javac_tools::lang::model::type_::declared_type::DeclaredType;
+use javac_tools::lang::model::type_::executable_type::ExecutableType;
+use javac_tools::lang::model::type_::type_variable::TypeVariable;
 use javac_tools::lang::model::type_::no_type::NoType;
 use javac_tools::lang::model::type_::primitive_type::PrimitiveType;
 use javac_tools::lang::model::type_::reference_type::ReferenceType;
@@ -40,6 +43,7 @@ use javac_tools::lang::model::type_::type_mirror::TypeMirror;
 use javac_tools::lang::model::type_::type_visitor::TypeVisitor;
 
 use crate::code::attribute::AttributeKind;
+use crate::util::list::List;
 use crate::code::flags;
 use crate::code::kinds::Kind;
 use crate::code::symbol::SymbolKind;
@@ -90,6 +94,11 @@ impl ElementData {
             type_proxy: None,
             executable: None,
             variable: None,
+            superclass: None,
+            interfaces: Vec::new(),
+            record_components: Vec::new(),
+            permitted: Vec::new(),
+            annotations: Vec::new(),
         }
     }
 }
@@ -113,6 +122,15 @@ struct ElementData {
     type_proxy: Option<Rc<dyn TypeMirror>>,
     executable: Option<ExecutableData>,
     variable: Option<VariableData>,
+    /// Java mirror reflection: Element.getSuperclass/getInterfaces/... snapshots.
+    superclass: Option<Rc<dyn TypeMirror>>,
+    interfaces: Vec<Rc<dyn TypeMirror>>,
+    record_components: Vec<Rc<dyn RecordComponentElement>>,
+    permitted: Vec<Rc<dyn TypeMirror>>,
+    /// The declaration annotations exposed by AnnotatedConstruct (top-level
+    /// snapshots; nested annotation-type snapshots stay annotation-free to keep
+    /// the snapshot graph finite, registered adapter).
+    annotations: Vec<Rc<dyn AnnotationMirror>>,
 }
 
 #[derive(Clone)]
@@ -135,11 +153,35 @@ fn empty_annotations() -> Vec<Rc<dyn AnnotationMirror>> {
     Vec::new()
 }
 
+thread_local! {
+    /// Guards the recursive annotation-mirror expansion: the Java mirror graph
+    /// is cyclic (annotation types may be annotated with themselves or with each
+    /// other); the Rust snapshots are finite, so an expansion re-entered while
+    /// building an outer snapshot exposes no nested annotations (registered
+    /// adapter; the primary Element/TypeMirror snapshots are complete).
+    #[allow(clippy::missing_const_for_thread_local)]
+    static ANNOTATIONS_IN_PROGRESS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn annotations_in_progress() -> bool {
+    ANNOTATIONS_IN_PROGRESS.with(|flag| flag.get())
+}
+
+fn with_annotation_build_guard<R>(build: impl FnOnce() -> R) -> R {
+    if annotations_in_progress() {
+        return build();
+    }
+    ANNOTATIONS_IN_PROGRESS.with(|flag| flag.set(true));
+    let result = build();
+    ANNOTATIONS_IN_PROGRESS.with(|flag| flag.set(false));
+    result
+}
+
 macro_rules! element_impl {
     ($ty:ty, $visit:ident, $asfn:ident, $astrait:path) => {
         impl AnnotatedConstruct for $ty {
             fn get_annotation_mirrors(&self) -> Vec<Rc<dyn AnnotationMirror>> {
-                empty_annotations()
+                self.data.annotations.clone()
             }
 
             fn get_annotation<A: javac_tools::jdk::Annotation>(
@@ -188,6 +230,7 @@ macro_rules! element_impl {
                             data: Rc::new(shallow),
                         }),
                         display: self.data.qualified_name.to_string(),
+                        annotations: Vec::new(),
                     });
                 }
                 Rc::new(JavacNoType)
@@ -255,21 +298,24 @@ impl TypeElement for JavacTypeElement {
     }
 
     fn get_superclass(&self) -> Rc<dyn TypeMirror> {
-        Rc::new(JavacNoType)
+        self.data
+            .superclass
+            .clone()
+            .unwrap_or_else(|| Rc::new(JavacNoType))
     }
 
     fn get_interfaces(&self) -> Vec<Rc<dyn TypeMirror>> {
-        Vec::new()
+        self.data.interfaces.clone()
     }
 
     fn get_record_components(
         &self,
     ) -> Vec<Rc<dyn javac_tools::lang::model::element::record_component_element::RecordComponentElement>> {
-        Vec::new()
+        self.data.record_components.clone()
     }
 
     fn get_permitted_subclasses(&self) -> Vec<Rc<dyn TypeMirror>> {
-        Vec::new()
+        self.data.permitted.clone()
     }
 }
 
@@ -385,10 +431,108 @@ impl QualifiedNameable for JavacPackageElement {
     }
 }
 
+/// Java: ExecutableType snapshot for ExecutableElement.asType().
+pub struct JavacExecutableType {
+    parameter_types: Vec<Rc<dyn TypeMirror>>,
+    return_type: Rc<dyn TypeMirror>,
+    receiver_type: Rc<dyn TypeMirror>,
+    thrown_types: Vec<Rc<dyn TypeMirror>>,
+    type_variables: Vec<Rc<dyn TypeVariable>>,
+    display: String,
+}
+
+impl std::fmt::Display for JavacExecutableType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display)
+    }
+}
+
+impl AnnotatedConstruct for JavacExecutableType {
+    fn get_annotation_mirrors(&self) -> Vec<Rc<dyn AnnotationMirror>> {
+        empty_annotations()
+    }
+
+    fn get_annotation<A: javac_tools::jdk::Annotation>(
+        &self,
+        _annotation_type: javac_tools::jdk::Class<A>,
+    ) -> Option<A>
+    where
+        Self: Sized,
+    {
+        None
+    }
+
+    fn get_annotations_by_type<A: javac_tools::jdk::Annotation>(
+        &self,
+        _annotation_type: javac_tools::jdk::Class<A>,
+    ) -> Vec<A>
+    where
+        Self: Sized,
+    {
+        Vec::new()
+    }
+}
+
+impl TypeMirror for JavacExecutableType {
+    fn get_kind(&self) -> TypeKind {
+        TypeKind::EXECUTABLE
+    }
+
+    fn accept<R, P>(&self, v: &mut dyn TypeVisitor<R, P>, p: P) -> R {
+        v.visit_executable(self, p)
+    }
+
+    fn as_executable_type(&self) -> Option<&dyn ExecutableType> {
+        Some(self)
+    }
+}
+
+impl ExecutableType for JavacExecutableType {
+    fn get_type_variables(&self) -> Vec<Rc<dyn TypeVariable>> {
+        self.type_variables.clone()
+    }
+
+    fn get_return_type(&self) -> Rc<dyn TypeMirror> {
+        self.return_type.clone()
+    }
+
+    fn get_parameter_types(&self) -> Vec<Rc<dyn TypeMirror>> {
+        self.parameter_types.clone()
+    }
+
+    fn get_receiver_type(&self) -> Rc<dyn TypeMirror> {
+        self.receiver_type.clone()
+    }
+
+    fn get_thrown_types(&self) -> Vec<Rc<dyn TypeMirror>> {
+        self.thrown_types.clone()
+    }
+}
+
+/// Java: RecordComponentElement snapshot for TypeElement.getRecordComponents().
+pub struct JavacRecordComponentElement {
+    data: Rc<ElementData>,
+    accessor: Rc<dyn ExecutableElement>,
+}
+
+element_impl!(
+    JavacRecordComponentElement,
+    visit_record_component,
+    as_record_component_element,
+    RecordComponentElement
+);
+
+impl RecordComponentElement for JavacRecordComponentElement {
+    fn get_accessor(&self) -> Rc<dyn ExecutableElement> {
+        self.accessor.clone()
+    }
+}
+
 /// Java: DeclaredType snapshot.
 pub struct JavacDeclaredType {
     element: Rc<dyn Element>,
     display: String,
+    annotations: Vec<Rc<dyn AnnotationMirror>>,
 }
 
 impl std::fmt::Display for JavacDeclaredType {
@@ -399,7 +543,7 @@ impl std::fmt::Display for JavacDeclaredType {
 
 impl AnnotatedConstruct for JavacDeclaredType {
     fn get_annotation_mirrors(&self) -> Vec<Rc<dyn AnnotationMirror>> {
-        empty_annotations()
+        self.annotations.clone()
     }
 
     fn get_annotation<A: javac_tools::jdk::Annotation>(
@@ -508,6 +652,7 @@ impl NoType for JavacNoType {}
 pub struct JavacArrayType {
     component: Rc<dyn TypeMirror>,
     display: String,
+    annotations: Vec<Rc<dyn AnnotationMirror>>,
 }
 
 impl std::fmt::Display for JavacArrayType {
@@ -518,7 +663,7 @@ impl std::fmt::Display for JavacArrayType {
 
 impl AnnotatedConstruct for JavacArrayType {
     fn get_annotation_mirrors(&self) -> Vec<Rc<dyn AnnotationMirror>> {
-        empty_annotations()
+        self.annotations.clone()
     }
 
     fn get_annotation<A: javac_tools::jdk::Annotation>(
@@ -568,6 +713,7 @@ impl ArrayType for JavacArrayType {
 pub struct JavacPrimitiveType {
     kind: TypeKind,
     display: String,
+    annotations: Vec<Rc<dyn AnnotationMirror>>,
 }
 
 impl std::fmt::Display for JavacPrimitiveType {
@@ -578,7 +724,7 @@ impl std::fmt::Display for JavacPrimitiveType {
 
 impl AnnotatedConstruct for JavacPrimitiveType {
     fn get_annotation_mirrors(&self) -> Vec<Rc<dyn AnnotationMirror>> {
-        empty_annotations()
+        self.annotations.clone()
     }
 
     fn get_annotation<A: javac_tools::jdk::Annotation>(
@@ -677,6 +823,30 @@ impl AnnotationMirror for JavacAnnotationMirror {
     }
 }
 
+/// The type-annotation mirror list of a type (Type.getAnnotationMirrors).
+fn type_annotation_mirrors(
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    ty: TypeId,
+) -> Vec<Rc<dyn AnnotationMirror>> {
+    if annotations_in_progress() {
+        return Vec::new();
+    }
+    with_annotation_build_guard(|| {
+    let attributes = ctx.typ(ty).get_annotation_mirrors();
+    let mut result = Vec::new();
+    for attribute in attributes.iter() {
+        if matches!(
+            ctx.attr(attribute).kind,
+            AttributeKind::Compound { .. } | AttributeKind::TypeCompound { .. }
+        ) {
+            result.push(build_annotation_mirror(ctx, syms, attribute));
+        }
+    }
+    result
+    })
+}
+
 /// Java: Symbol.getAnnotationMirrors() (Symbol.java:731-733): the raw compound
 /// attributes as mirror views.
 ///
@@ -706,6 +876,27 @@ pub fn annotation_mirrors(
         }
     }
     mirrors
+}
+
+/// Build the mirror Element view for one symbol (the AnnotatedConstruct/
+/// Element facade used by the javax.lang.model tests and callers).
+#[allow(dead_code)]
+pub(crate) fn element_for_symbol(
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    symbol: SymbolId,
+) -> Rc<dyn Element> {
+    match ctx.sym(symbol).kind {
+        crate::code::kinds::Kind::TYP => type_element(ctx, syms, symbol, 0) as Rc<dyn Element>,
+        crate::code::kinds::Kind::MTH => {
+            executable_element(ctx, syms, symbol, 0) as Rc<dyn Element>
+        }
+        crate::code::kinds::Kind::VAR => {
+            variable_element(ctx, syms, symbol, 0) as Rc<dyn Element>
+        }
+        crate::code::kinds::Kind::PCK => package_element(ctx, syms, symbol) as Rc<dyn Element>,
+        kind => panic!("AssertionError: unsupported kind for mirror element: {kind:?}"),
+    }
 }
 
 /// Build one AnnotationMirror snapshot from an Attribute.Compound.
@@ -742,6 +933,7 @@ fn build_annotation_mirror_parts(
     let annotation_type_proxy: Rc<dyn DeclaredType> = Rc::new(JavacDeclaredType {
         element: type_element.clone() as Rc<dyn Element>,
         display: qualified_name(ctx, annotation_type),
+        annotations: Vec::new(),
     });
     let mut element_values = Vec::new();
     let mut value_display = Vec::new();
@@ -822,6 +1014,7 @@ fn type_element(
     symbol: SymbolId,
     depth: usize,
 ) -> Rc<JavacTypeElement> {
+    let annotations = element_annotations(ctx, syms, symbol);
     let flags_field = ctx.sym(symbol).flags_field;
     let kind = if (flags_field & flags::ANNOTATION as i64) != 0 {
         ElementKind::ANNOTATION_TYPE
@@ -858,12 +1051,15 @@ fn type_element(
     }
     let enclosing = ctx.sym(symbol).owner.and_then(|owner| {
         if ctx.sym(owner).kind == Kind::PCK {
-            Some(package_element(ctx, owner) as Rc<dyn Element>)
+            Some(package_element(ctx, syms, owner) as Rc<dyn Element>)
         } else {
             None
         }
     });
     let display = qualified_name(ctx, symbol);
+    let (superclass, interfaces, permitted, record_components) = type_element_relations(
+        ctx, syms, symbol, depth,
+    );
     Rc::new(JavacTypeElement {
         data: Rc::new(ElementData {
             kind,
@@ -877,16 +1073,190 @@ fn type_element(
             type_proxy: None,
             executable: None,
             variable: None,
+            superclass,
+            interfaces,
+            record_components,
+            permitted,
+            annotations,
         }),
+    })
+}
+
+/// The declaration-annotation mirror list of one symbol (Element
+/// snapshot annotations; top-level elements only, see ElementData.annotations).
+fn element_annotations(
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    symbol: SymbolId,
+) -> Vec<Rc<dyn AnnotationMirror>> {
+    if annotations_in_progress() {
+        return Vec::new();
+    }
+    with_annotation_build_guard(|| annotation_mirrors(ctx, syms, symbol))
+}
+
+/// Collect the class-relation mirrors of a type element: superclass,
+/// interfaces, permitted subclasses and record components. The nested type
+/// snapshots are kept shallow (depth > 0) to terminate the recursive element
+/// graph, matching the registered snapshot adapter.
+#[allow(clippy::type_complexity)]
+fn type_element_relations(
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    symbol: SymbolId,
+    depth: usize,
+) -> (
+    Option<Rc<dyn TypeMirror>>,
+    Vec<Rc<dyn TypeMirror>>,
+    Vec<Rc<dyn TypeMirror>>,
+    Vec<Rc<dyn RecordComponentElement>>,
+) {
+    if depth != 0 {
+        return (None, Vec::new(), Vec::new(), Vec::new());
+    }
+    let (supertype_field, interfaces_field) = match ctx.sym(symbol).ty {
+        Some(sym_ty) => match &ctx.typ(sym_ty).kind {
+            crate::code::type_::TypeKindData::ClassType {
+                supertype_field,
+                interfaces_field,
+                ..
+            } => (*supertype_field, interfaces_field.clone()),
+            _ => (None, None),
+        },
+        None => (None, None),
+    };
+    let mut superclass = None;
+    if let Some(supertype) = supertype_field {
+        superclass = Some(type_proxy(ctx, syms, supertype, depth + 1));
+    }
+    let mut interfaces = Vec::new();
+    if let Some(interface_list) = interfaces_field {
+        for interface in interface_list.iter() {
+            interfaces.push(type_proxy(ctx, syms, interface, depth + 1));
+        }
+    }
+    let (permitted_symbols, component_symbols) = match &ctx.sym(symbol).kind_data {
+        SymbolKind::ClassSymbol {
+            permitted,
+            record_components,
+            ..
+        } => (permitted.clone(), record_components.clone()),
+        _ => (List::nil(), List::nil()),
+    };
+    let mut permitted = Vec::new();
+    let mut current = permitted_symbols;
+    while current.non_empty() {
+        if let Some(permitted_ty) = ctx.sym(*current.head()).ty {
+            permitted.push(type_proxy(ctx, syms, permitted_ty, depth + 1));
+        }
+        current = current.tail();
+    }
+    let mut record_components = Vec::new();
+    let mut current = component_symbols;
+    while current.non_empty() {
+        record_components.push(record_component_element(
+            ctx,
+            syms,
+            *current.head(),
+            depth + 1,
+        ));
+        current = current.tail();
+    }
+    (superclass, interfaces, permitted, record_components)
+}
+
+/// Build the RecordComponentElement snapshot (its accessor method is the
+/// mandatory RecordComponent accessor symbol).
+fn record_component_element(
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    symbol: SymbolId,
+    depth: usize,
+) -> Rc<dyn RecordComponentElement> {
+    let annotations = element_annotations(ctx, syms, symbol);
+    let accessor_symbol = match &ctx.sym(symbol).kind_data {
+        SymbolKind::RecordComponent {
+            accessor: Some(accessor),
+            ..
+        } => *accessor,
+        _ => panic!("AssertionError: record component accessor is not set"),
+    };
+    let accessor = executable_element(ctx, syms, accessor_symbol, depth + 1);
+    let type_proxy = ctx
+        .sym(symbol)
+        .ty
+        .map(|ty| type_proxy(ctx, syms, ty, depth + 1));
+    let display = format!(
+        "{}.{}",
+        qualified_name_of_owner(ctx, symbol),
+        ctx.sym(symbol).name.to_java_string()
+    );
+    Rc::new(JavacRecordComponentElement {
+        data: Rc::new(ElementData {
+            kind: ElementKind::RECORD_COMPONENT,
+            nesting_kind: NestingKind::TOP_LEVEL,
+            simple_name: ctx.sym(symbol).name.to_java_string(),
+            qualified_name: ctx.sym(symbol).name.to_java_string(),
+            modifiers: modifiers(ctx, symbol),
+            enclosing: None,
+            enclosed: Vec::new(),
+            display,
+            type_proxy,
+            executable: None,
+            variable: None,
+            superclass: None,
+            interfaces: Vec::new(),
+            record_components: Vec::new(),
+            permitted: Vec::new(),
+            annotations,
+        }),
+        accessor: accessor as Rc<dyn ExecutableElement>,
+    })
+}
+
+/// The MethodType receiver type (ForAll hides its qtype).
+fn method_receiver_type(ctx: &CompilerContext, method_ty: TypeId) -> Option<TypeId> {
+    match &ctx.typ(method_ty).kind {
+        crate::code::type_::TypeKindData::MethodType { recvtype, .. } => *recvtype,
+        crate::code::type_::TypeKindData::ForAll {
+            qtype: Some(qtype), ..
+        } => method_receiver_type(ctx, *qtype),
+        _ => None,
+    }
+}
+
+/// Map the VarSymbol constant payload (VarSymbol.data) to the
+/// javax.lang.model.element.VariableElement constant value.
+fn variable_constant_value(kind_data: &SymbolKind) -> Option<ConstantValue> {
+    let data = match kind_data {
+        SymbolKind::VarSymbol { data, .. } | SymbolKind::DynamicVarSymbol { data, .. } => {
+            data.as_ref()
+        }
+        _ => return None,
+    }?;
+    Some(match data {
+        crate::util::constants::ConstantValue::Boolean(value) => ConstantValue::Boolean(*value),
+        crate::util::constants::ConstantValue::Byte(value) => ConstantValue::Byte(*value),
+        crate::util::constants::ConstantValue::Character(value) => {
+            ConstantValue::Character(*value)
+        }
+        crate::util::constants::ConstantValue::Short(value) => ConstantValue::Short(*value),
+        crate::util::constants::ConstantValue::Integer(value) => ConstantValue::Integer(*value),
+        crate::util::constants::ConstantValue::Long(value) => ConstantValue::Long(*value),
+        crate::util::constants::ConstantValue::Float(value) => ConstantValue::Float(*value),
+        crate::util::constants::ConstantValue::Double(value) => ConstantValue::Double(*value),
+        crate::util::constants::ConstantValue::String(value) => ConstantValue::String(value.clone()),
     })
 }
 
 fn package_element(
     ctx: &mut CompilerContext,
+    syms: &Symtab,
     symbol: SymbolId,
 ) -> Rc<JavacPackageElement> {
     let fullname = ctx.sym(symbol).get_qualified_name().to_java_string();
     let simple_name = ctx.sym(symbol).name.to_java_string();
+    let annotations = element_annotations(ctx, syms, symbol);
     Rc::new(JavacPackageElement {
         unnamed: ctx.sym(symbol).name.is_empty(),
         data: Rc::new(ElementData {
@@ -901,6 +1271,11 @@ fn package_element(
             type_proxy: None,
             executable: None,
             variable: None,
+            superclass: None,
+            interfaces: Vec::new(),
+            record_components: Vec::new(),
+            permitted: Vec::new(),
+            annotations,
         }),
     })
 }
@@ -911,15 +1286,16 @@ fn executable_element(
     symbol: SymbolId,
     depth: usize,
 ) -> Rc<JavacExecutableElement> {
+    let annotations = element_annotations(ctx, syms, symbol);
     let display = format!(
         "{}.{}",
         qualified_name_of_owner(ctx, symbol),
         ctx.sym(symbol).name.to_java_string()
     );
+    let sym_ty = ctx.sym(symbol).ty.expect("method symbol type");
     let return_type = ctx
-        .sym(symbol)
-        .ty
-        .and_then(|ty| ctx.typ(ty).get_return_type(ctx))
+        .typ(sym_ty)
+        .get_return_type(ctx)
         .map(|ty| type_proxy(ctx, syms, ty, depth + 1))
         .unwrap_or_else(|| Rc::new(JavacNoType));
     let default_value = match &ctx.sym(symbol).kind_data {
@@ -932,6 +1308,38 @@ fn executable_element(
         }
         _ => None,
     };
+    let param_symbols = match &ctx.sym(symbol).kind_data {
+        SymbolKind::MethodSymbol { params, .. } => params.clone(),
+        _ => List::nil(),
+    };
+    let mut parameters: Vec<Rc<dyn VariableElement>> = Vec::new();
+    let mut parameter_types: Vec<Rc<dyn TypeMirror>> = Vec::new();
+    let mut current = param_symbols;
+    while current.non_empty() {
+        let parameter = *current.head();
+        let element = variable_element(ctx, syms, parameter, depth + 1);
+        if let Some(parameter_ty) = ctx.sym(parameter).ty {
+            parameter_types.push(type_proxy(ctx, syms, parameter_ty, depth + 1));
+        }
+        parameters.push(element as Rc<dyn VariableElement>);
+        current = current.tail();
+    }
+    let mut thrown_types: Vec<Rc<dyn TypeMirror>> = Vec::new();
+    for thrown in ctx.typ(sym_ty).get_thrown_types(ctx).iter() {
+        thrown_types.push(type_proxy(ctx, syms, thrown, depth + 1));
+    }
+    let receiver_type = method_receiver_type(ctx, sym_ty)
+        .map(|ty| type_proxy(ctx, syms, ty, depth + 1))
+        .unwrap_or_else(|| Rc::new(JavacNoType));
+    let flags_field = ctx.sym(symbol).flags_field;
+    let executable_type: Rc<dyn TypeMirror> = Rc::new(JavacExecutableType {
+        parameter_types: parameter_types.clone(),
+        return_type: return_type.clone(),
+        receiver_type: receiver_type.clone(),
+        thrown_types: thrown_types.clone(),
+        type_variables: Vec::new(),
+        display: display.clone(),
+    });
     Rc::new(JavacExecutableElement {
         data: Rc::new(ElementData {
             kind: ElementKind::METHOD,
@@ -942,17 +1350,22 @@ fn executable_element(
             enclosing: None,
             enclosed: Vec::new(),
             display,
-            type_proxy: None,
+            type_proxy: Some(executable_type),
             executable: Some(ExecutableData {
-                parameters: Vec::new(),
+                parameters,
                 return_type,
-                receiver_type: Rc::new(JavacNoType),
-                varargs: false,
+                receiver_type,
+                varargs: (flags_field & crate::code::flags::VARARGS) != 0,
                 is_default: default_value.is_some(),
-                thrown: Vec::new(),
+                thrown: thrown_types,
                 default_value,
             }),
             variable: None,
+            superclass: None,
+            interfaces: Vec::new(),
+            record_components: Vec::new(),
+            permitted: Vec::new(),
+            annotations,
         }),
     })
 }
@@ -975,6 +1388,7 @@ fn variable_element(
     symbol: SymbolId,
     depth: usize,
 ) -> Rc<JavacVariableElement> {
+    let annotations = element_annotations(ctx, syms, symbol);
     let display = format!(
         "{}.{}",
         qualified_name_of_owner(ctx, symbol),
@@ -984,9 +1398,11 @@ fn variable_element(
         .sym(symbol)
         .ty
         .map(|ty| type_proxy(ctx, syms, ty, depth + 1));
+    let kind = ctx.sym(symbol).get_kind(ctx);
+    let constant_value = variable_constant_value(&ctx.sym(symbol).kind_data);
     Rc::new(JavacVariableElement {
         data: Rc::new(ElementData {
-            kind: ElementKind::ENUM_CONSTANT,
+            kind,
             nesting_kind: NestingKind::TOP_LEVEL,
             simple_name: ctx.sym(symbol).name.to_java_string(),
             qualified_name: ctx.sym(symbol).name.to_java_string(),
@@ -996,9 +1412,12 @@ fn variable_element(
             display,
             type_proxy,
             executable: None,
-            variable: Some(VariableData {
-                constant_value: None,
-            }),
+            variable: Some(VariableData { constant_value }),
+            superclass: None,
+            interfaces: Vec::new(),
+            record_components: Vec::new(),
+            permitted: Vec::new(),
+            annotations,
         }),
     })
 }
@@ -1017,6 +1436,7 @@ fn type_proxy(
                 Some(symbol) => Rc::new(JavacDeclaredType {
                     element: type_element(ctx, syms, symbol, depth + 1) as Rc<dyn Element>,
                     display,
+                    annotations: type_annotation_mirrors(ctx, syms, ty),
                 }),
                 None => Rc::new(JavacNoType),
             }
@@ -1028,7 +1448,11 @@ fn type_proxy(
                     .unwrap_or_else(|| Rc::new(JavacNoType)),
                 _ => Rc::new(JavacNoType),
             };
-            Rc::new(JavacArrayType { component, display })
+            Rc::new(JavacArrayType {
+                component,
+                display,
+                annotations: type_annotation_mirrors(ctx, syms, ty),
+            })
         }
         tag => {
             let kind = match tag {
@@ -1054,7 +1478,11 @@ fn type_proxy(
                     | TypeTag::FLOAT
                     | TypeTag::DOUBLE
             ) {
-                Rc::new(JavacPrimitiveType { kind, display })
+                Rc::new(JavacPrimitiveType {
+                    kind,
+                    display,
+                    annotations: type_annotation_mirrors(ctx, syms, ty),
+                })
             } else {
                 Rc::new(JavacNoType)
             }
