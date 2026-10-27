@@ -75,7 +75,7 @@ Required properties:
 - upstream Javadoc/comment semantics are preserved as `///` or English inline comments;
 - every public item has a `///` doc of at least 3 non-empty lines;
 - `# Arguments` for parameters, `# Returns` for non-unit results, `# Panics` when it can panic;
-- zero position references in source (no `File.java:line`, no `Java:` signature copies);
+- zero position references in source (no `File.java:line`, no `Java:` signature copies, no per-member upstream anchors);
 - upstream locations are recorded only in docs/PORTING_MAP.md.
 
 ## B. Position mapping file (docs/PORTING_MAP.md) — line numbers are allowed there only
@@ -90,7 +90,6 @@ Required properties:
 
 ```rust
 /// Upstream: PoolConstant.java:72-74            // forbidden: position reference
-/// Java: public static LoadableConstant int(..) // forbidden: signature copy
 ```
 
 ## D. Audit

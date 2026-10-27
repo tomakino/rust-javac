@@ -843,9 +843,9 @@ Lead 对执行者的任何汇报持零信任态度:汇报中的断言、数字�
 - 现有 e2e 回归(module/annotation/constant_field)默认环境通过即可;仅当上述环境相关文件被改动时补无 JAVA_HOME 复跑;
 - 精简不降低真实性:所有『通过』结论仍必须来自本地真实命令输出;虚报仍视为严重违规。
 
-## 35. 代码文档注释规范(定稿,强制)
+## 35. 代码文档注释规范(定稿,强制;源码不写 Java 签名/行号)
 
-目标:注释服务于长期维护与上游升级 diff,不是形式噪音。所有新写/修改的代码按本节执行;历史文件在后续触及时整改。
+目标:注释服务于长期维护与上游升级 diff,不是形式噪音。**本地命名即映射**:Rust 类型/函数/字段名与上游 Java 命名一一对应(蛇形↔驼峰),源码注释中**不再复制 Java 签名**;需要精确定位时查 docs/PORTING_MAP.md。
 
 ### 35.1 文件头(每个 Rust 文件)
 - 必写 upstream 来源:`// Origin: <path> @ <commit> (<tag>)`;
@@ -853,28 +853,29 @@ Lead 对执行者的任何汇报持零信任态度:汇报中的断言、数字�
 - 本地适配说明用 `//! Port notes:` 起头,只写映射/取舍/未实现要点(≤8 行),不复述签名、不写空话。
 
 ### 35.2 类型(struct/enum/trait)
-- 首行锚点:`/// Java: <original class signature> (<File.java>)`;**禁止行号**;
-- 下一段保留上游 javadoc 原文(英文);上游无 javadoc 时写一句英文职责说明;
-- 同一文件只在类型锚点出现一次文件名,成员不再重复文件名。
+- 直接保留上游 javadoc 原文(英文);上游无 javadoc 时写一句英文职责说明;
+- **禁止**写 `Java: <signature>`、文件名锚点、行号(类型名与上游同名即映射);
+- 仅当本地类型重命名/非同形映射时,写一行 `Port note: upstream <Name>`。
 
 ### 35.3 字段
 - 上游有注释/文档的字段:保留原文(英文),必要时加一行 `Port note: ...`;
-- 上游无注释、本地一一对应的字段:不写注释(字段名即映射);
+- 上游无注释、本地一一对应的字段:**不写注释**;
 - 本地适配字段(无上游对应):写一行 `Port adapter: <原因>`;
-- 禁止逐字段 `Java: private final ...` 模板,禁止 `Upstream comment: none`。
+- **禁止**上游字段签名复制、逐字段文件锚点、`Upstream comment: none`。
 
 ### 35.4 方法/函数
-- 上游有 javadoc:保留原文(英文),随后按需补 `# Arguments`/`# Returns`/`# Panics`(仅补有意义项),最后一行锚点 `Java: <method> (<File.java>)`;
-- 上游无 javadoc:写一句英文职责说明 + 必要的 Arguments/Returns/Panics;不写 `Upstream comment: none`;
-- 禁止把上游注释改写成概述;本地新增说明用 `Port note:` 前缀。
+- 上游有 javadoc:保留原文(英文),随后按需补 `# Arguments`/`# Returns`/`# Panics`(仅补有意义项);
+- 上游无 javadoc:写一句英文职责说明 + 必要的 Arguments/Returns/Panics;
+- 仅当本地方法重命名/非同形映射时,写一行 `Port note: upstream <name>`;
+- **禁止** `Java: <signature>` 复制、文件名锚点、行号、`Upstream comment: none`。
 
-### 35.5 禁止项
-- 禁止上游行号出现在源码注释中;
-- 禁止 `Upstream comment: none`、逐字段重复文件锚点、模板化空话;
-- 代码 doc 用英文;中文只允许出现在 `Port note:` 里作补充;
-- 禁止注释与实现不符;实现变更时同步更新注释。
+### 35.5 位置映射(docs/PORTING_MAP.md)
+- 源码注释不写位置;每批新增/修改的公开单元在 `docs/PORTING_MAP.md` 增加一行:本地符号 ↔ 上游文件/位置(可含行号)↔ 备注;
+- 该文件是升级 diff 与审计的唯一位置映射来源;
+- 历史批次在功能批次触及时补登,不突击全仓。
 
-### 35.6 审查与整改
-- 每批报告附注释规范执行清单(新增/修改文件的类型锚点、上游原文保留数、模板噪音清理数);
-- 新文件一次做对;历史文件在功能批次触及时整改,不突击全仓;
-- Lead 抽查:文件头、类型锚点、方法 doc 结构、无行号/无 none 模板。
+### 35.6 禁止项与审查
+- 禁止行号、`Java:` 签名复制、`Upstream comment: none`、模板化空话、注释与实现不符;
+- 代码 doc 用英文;中文只允许出现在 `Port note:`/`Port adapter:` 里;
+- 每批报告附注释执行清单(上游 javadoc 保留数/模板噪音清理数/新增 PORTING_MAP 条目数);新文件一次做对;
+- Lead 抽查:文件头、类型与方法 doc 结构、无 `Java:` 签名/无行号/无 none、PORTING_MAP 条目。
