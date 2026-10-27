@@ -551,10 +551,10 @@ impl Gen {
         let syms = Rc::clone(&self.syms);
         let mut attr = self.attr.borrow_mut();
         let chk = self.chk.borrow();
-        let mut syms_borrow = syms.borrow_mut();
+        let syms_borrow = syms.borrow_mut();
         self.rs.borrow_mut().resolve_internal_method(
             ctx,
-            &mut syms_borrow,
+            &syms_borrow,
             &types,
             &mut attr,
             &chk,
@@ -2428,6 +2428,12 @@ struct TryFinalizer {
     pub old_env: Rc<Env<GenContext>>,
     /// The try statement tree.
     pub tree: TreeId,
+    /// Whether the try statement has a finally block (upstream
+    /// tree.finalizer != null).
+    pub has_finalizer: bool,
+    /// Whether the finally block is body-only (BODY_ONLY_FINALIZE; upstream
+    /// TryFinalizer.afterBody).
+    pub body_only_finalize: bool,
 }
 
 impl GenFinalizer for TryFinalizer {
@@ -2452,7 +2458,15 @@ impl GenFinalizer for TryFinalizer {
     }
 
     fn has_finalizer(&self) -> bool {
-        true
+        self.has_finalizer
+    }
+
+    fn after_body(&mut self) {
+        if self.body_only_finalize {
+            // For body-only finally, remove the GenFinalizer after the try body
+            // so that the finally is not generated to catch bodies.
+            self.try_env.info.borrow_mut().finalize = None;
+        }
     }
 }
 
@@ -2508,10 +2522,25 @@ impl Gen {
     pub fn gen_try_stmt(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let try_env = self.dup_env(Some(tree), GenContext::new());
         let old_env = self.env.clone().expect("generation environment");
+        let (has_finalizer, body_only_finalize) = match &ctx.tree(tree).kind {
+            TreeKind::Try { finalizer: Some(finalizer), .. } => {
+                let finalizer_flags = match &ctx.tree(*finalizer).kind {
+                    TreeKind::Block { flags, .. } => *flags,
+                    _ => 0,
+                };
+                (
+                    true,
+                    finalizer_flags & crate::code::flags::BODY_ONLY_FINALIZE != 0,
+                )
+            }
+            _ => (false, false),
+        };
         let finalizer: Rc<RefCell<dyn GenFinalizer>> = Rc::new(RefCell::new(TryFinalizer {
             try_env: Rc::clone(&try_env),
             old_env: Rc::clone(&old_env),
             tree,
+            has_finalizer,
+            body_only_finalize,
         }));
         try_env.info.borrow_mut().finalize = Some(finalizer);
         try_env.info.borrow_mut().gaps = Vec::new();
@@ -4357,6 +4386,17 @@ impl TreeVisitor for Gen {
     }
 }
 
+/// Return whether a case label is an expression (as opposed to a pattern).
+fn case_label_is_expression(ctx: &CompilerContext, label: TreeId) -> bool {
+    !matches!(
+        ctx.tree(label).get_tag(),
+        Tag::BINDINGPATTERN
+            | Tag::DEFAULTCASELABEL
+            | Tag::GUARDPATTERN
+            | Tag::PARENTHESIZEDPATTERN
+    )
+}
+
 #[cfg(test)]
 mod byte_short_immediate_tests {
     use super::{literal_value_to_immediate, ImmediateValue};
@@ -4375,15 +4415,4 @@ mod byte_short_immediate_tests {
             other => panic!("expected int immediate, got {other:?}"),
         }
     }
-}
-
-/// Return whether a case label is an expression (as opposed to a pattern).
-fn case_label_is_expression(ctx: &CompilerContext, label: TreeId) -> bool {
-    !matches!(
-        ctx.tree(label).get_tag(),
-        Tag::BINDINGPATTERN
-            | Tag::DEFAULTCASELABEL
-            | Tag::GUARDPATTERN
-            | Tag::PARENTHESIZEDPATTERN
-    )
 }

@@ -311,7 +311,7 @@ impl Enter {
     pub(crate) fn class_enter(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
         env: Option<Rc<Env<AttrContext>>>,
     ) -> Option<TypeId> {
@@ -344,7 +344,7 @@ impl Enter {
     pub(crate) fn class_enter_list(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         trees: List<TreeId>,
         env: Option<Rc<Env<AttrContext>>>,
     ) -> List<TypeId> {
@@ -363,7 +363,7 @@ impl Enter {
     fn visit(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
     ) -> Result<(), CompletionFailure> {
         match ctx.tree(tree).tag {
@@ -379,7 +379,7 @@ impl Enter {
     fn visit_top_level(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
     ) -> Result<(), CompletionFailure> {
         let sourcefile = compilation_unit_sourcefile(ctx, tree)
@@ -593,7 +593,7 @@ impl Enter {
     fn visit_class_def(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
     ) -> Result<(), CompletionFailure> {
         let env = self.env.borrow().clone().expect("env");
@@ -823,7 +823,7 @@ impl Enter {
     fn visit_type_parameter(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
     ) -> Result<(), CompletionFailure> {
         let env = self.env.borrow().clone().expect("env");
@@ -843,7 +843,7 @@ impl Enter {
         let unique = self
             .chk
             .borrow()
-            .check_unique(ctx, &*syms, ctx.tree(tree).pos, tsym, scope);
+            .check_unique(ctx, syms, ctx.tree(tree).pos, tsym, scope);
         if unique {
             ctx.scope_enter(scope, tsym);
         }
@@ -855,7 +855,7 @@ impl Enter {
     fn visit_module_def(
         &self,
         ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
+        _syms: &Symtab,
         tree: TreeId,
     ) -> Result<(), CompletionFailure> {
         let env = self.env.borrow().clone().expect("env");
@@ -882,7 +882,7 @@ impl Enter {
     pub fn main(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         trees: List<TreeId>,
     ) -> Result<(), CompletionFailure> {
         self.complete(ctx, syms, trees, None)
@@ -904,7 +904,7 @@ impl Enter {
     pub fn complete(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         trees: List<TreeId>,
         c: Option<SymbolId>,
     ) -> Result<(), CompletionFailure> {
@@ -924,7 +924,7 @@ impl Enter {
         if completion_enabled {
             *self.uncompleted.borrow_mut() = Some(Vec::new());
         }
-        let result: Result<(), CompletionFailure> = (|| {
+        let result: Result<(), CompletionFailure> = {
             // enter all classes, and construct uncompleted list
             let _ = self.class_enter_list(ctx, syms, trees.clone(), None);
             if completion_enabled {
@@ -979,7 +979,7 @@ impl Enter {
                 }
             }
             Ok(())
-        })();
+        };
         *self.uncompleted.borrow_mut() = prev_uncompleted;
         if let Some(annotate) = &annotate {
             annotate
@@ -993,7 +993,7 @@ impl Enter {
     fn ensure_imports_checked(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         trees: List<TreeId>,
     ) {
         let type_enter = self
@@ -1016,7 +1016,7 @@ impl Enter {
     pub fn unenter(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         top_level: TreeId,
         tree: TreeId,
     ) {
@@ -1028,7 +1028,7 @@ impl Enter {
     fn unenter_scan(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         module: SymbolId,
         tree: TreeId,
     ) {
@@ -1288,6 +1288,33 @@ fn set_tree_symbol_and_type(ctx: &mut CompilerContext, tree: TreeId, symbol: Sym
         _ => {}
     }
     ctx.tree_mut(tree).ty = ty;
+}
+
+/// The qualified name of a package symbol (Java: PackageSymbol.fullname).
+fn package_fullname_of(ctx: &CompilerContext, sym: SymbolId) -> crate::util::name::Name {
+    match &ctx.sym(sym).kind_data {
+        crate::code::symbol::SymbolKind::PackageSymbol { fullname, .. }
+        | crate::code::symbol::SymbolKind::RootPackageSymbol { fullname, .. } => fullname.clone(),
+        _ => ctx.sym(sym).name.clone(),
+    }
+}
+
+/// Java: the TypeEnter completer installed as ClassSymbol.completer
+/// (Enter.java:523). The local TypeEnter is a shared RefCell service.
+struct TypeEnterCompleter {
+    type_enter: Rc<RefCell<crate::comp::type_enter::TypeEnter>>,
+}
+
+impl crate::code::symbol::Completer for TypeEnterCompleter {
+    fn complete(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: SymbolId,
+    ) -> Result<(), CompletionFailure> {
+        self.type_enter.borrow_mut().complete(ctx, syms, sym);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -1601,7 +1628,7 @@ mod tests {
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let todo = crate::comp::todo::Todo::instance(&mut harness.context);
         let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
-        let mut enter = Enter::new(
+        let enter = Enter::new(
             Rc::clone(&harness.log),
             Rc::clone(&harness.names),
             Rc::clone(&harness.diags),
@@ -1613,7 +1640,7 @@ mod tests {
             Rc::clone(&todo),
             Rc::clone(&type_envs)
         );
-        enter.main(&mut ctx, &mut syms.borrow_mut(), List::of(harness.unit));
+        enter.main(&mut ctx, &syms.borrow_mut(), List::of(harness.unit));
         harness.ctx = ctx;
     }
 
@@ -1810,32 +1837,5 @@ mod tests {
             "p",
             "package of the compilation unit"
         );
-    }
-}
-
-/// The qualified name of a package symbol (Java: PackageSymbol.fullname).
-fn package_fullname_of(ctx: &CompilerContext, sym: SymbolId) -> crate::util::name::Name {
-    match &ctx.sym(sym).kind_data {
-        crate::code::symbol::SymbolKind::PackageSymbol { fullname, .. }
-        | crate::code::symbol::SymbolKind::RootPackageSymbol { fullname, .. } => fullname.clone(),
-        _ => ctx.sym(sym).name.clone(),
-    }
-}
-
-/// Java: the TypeEnter completer installed as ClassSymbol.completer
-/// (Enter.java:523). The local TypeEnter is a shared RefCell service.
-struct TypeEnterCompleter {
-    type_enter: Rc<RefCell<crate::comp::type_enter::TypeEnter>>,
-}
-
-impl crate::code::symbol::Completer for TypeEnterCompleter {
-    fn complete(
-        &mut self,
-        ctx: &mut CompilerContext,
-        syms: &mut Symtab,
-        sym: SymbolId,
-    ) -> Result<(), CompletionFailure> {
-        self.type_enter.borrow_mut().complete(ctx, syms, sym);
-        Ok(())
     }
 }

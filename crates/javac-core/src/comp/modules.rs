@@ -28,9 +28,7 @@ use javac_tools::tools::java_file_manager::{JavaFileManager, JavaFileObjectRef, 
 use javac_tools::tools::java_file_object::{JavaFileObject, Kind as FileKind};
 use javac_tools::tools::standard_location::StandardLocation;
 
-use crate::code::class_finder::ClassFinder;
-use crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler;
-use crate::code::directive::{Directive, ExportsFlag, OpensFlag, RequiresFlag};
+use crate::code::directive::{Directive, RequiresFlag};
 use crate::code::flags;
 use crate::code::symbol::ModuleFlags;
 use crate::code::lint::LintCategory;
@@ -49,7 +47,7 @@ use crate::code::deferred_lint_handler::DeferredLintHandler;
 use crate::comp::env::Env;
 use crate::comp::type_envs::TypeEnvs;
 use crate::compiler_context::CompilerContext;
-use crate::ids::{DirectiveId, SymbolId, TreeId, TypeId};
+use crate::ids::{DirectiveId, SymbolId, TreeId};
 use crate::jvm::target::Target;
 use crate::resources::compiler_properties::{errors, warnings};
 use crate::resources::diagnostic_contract::SymbolArg;
@@ -59,7 +57,7 @@ use crate::tree::tree_info;
 use crate::util::list::List;
 use crate::util::abstract_log::AbstractLog;
 use crate::util::java_string::JavaString;
-use crate::util::jc_diagnostic::{Error as JCDiagnosticError, SimpleDiagnosticPosition, Warning as JCDiagnosticWarning, DiagnosticPosition};
+use crate::util::jc_diagnostic::{Error as JCDiagnosticError, SimpleDiagnosticPosition, Warning as JCDiagnosticWarning};
 use crate::util::log::Log;
 use crate::util::name::Name;
 use crate::util::names::Names;
@@ -231,7 +229,7 @@ impl Modules {
 impl Modules {
     /// Java: public void initModules(List<JCCompilationUnit> trees)
     /// (Modules.java:226-242).
-    pub fn init_modules(&self, ctx: &mut CompilerContext, syms: &mut Symtab, trees: &[TreeId]) {
+    pub fn init_modules(&self, ctx: &mut CompilerContext, syms: &Symtab, trees: &[TreeId]) {
         assert!(!self.in_init_modules.get(), "AssertionError: inInitModules");
         self.in_init_modules.set(true);
         assert!(self.root_modules.borrow().is_none(), "AssertionError: rootModules");
@@ -252,7 +250,7 @@ impl Modules {
     pub fn enter(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         trees: &[TreeId],
         c: Option<SymbolId>,
     ) -> bool {
@@ -270,10 +268,10 @@ impl Modules {
     fn enter_with(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         trees: &[TreeId],
         c: Option<SymbolId>,
-        init: &mut dyn FnMut(&Vec<SymbolId>, &mut CompilerContext, &mut Symtab),
+        init: &mut dyn FnMut(&Vec<SymbolId>, &mut CompilerContext, &Symtab),
     ) -> bool {
         if !self.allow_modules {
             for tree in trees {
@@ -323,7 +321,7 @@ impl Modules {
     fn enter_modules(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         trees: &[TreeId],
         c: Option<SymbolId>,
     ) -> Vec<SymbolId> {
@@ -344,7 +342,7 @@ impl Modules {
     fn enter_module(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         toplevel: TreeId,
         c: Option<SymbolId>,
         modules: &mut Vec<SymbolId>,
@@ -449,7 +447,7 @@ impl Modules {
     fn set_compilation_unit_modules(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         trees: &[TreeId],
         root_modules: &mut Vec<SymbolId>,
         c: Option<SymbolId>,
@@ -509,7 +507,7 @@ impl Modules {
                     }
                 } else if let Some(msplocn) = &msp_locn {
                     let decl = tree_info::get_module(ctx, *tree);
-                    if let Some(decl) = decl {
+                    if let Some(_decl) = decl {
                         let canonical = self
                             .file_manager
                             .get_java_file_for_input(
@@ -953,7 +951,7 @@ impl Modules {
     }
 
     /// Java: private void setupAllModules() (Modules.java:1220-1360).
-    fn setup_all_modules(&self, ctx: &mut CompilerContext, syms: &mut Symtab) {
+    fn setup_all_modules(&self, ctx: &mut CompilerContext, syms: &Symtab) {
         assert!(self.root_modules.borrow().is_some(), "AssertionError: rootModules");
         assert!(self.all_modules.borrow().is_none(), "AssertionError: allModules");
         let roots = self.root_modules.borrow().clone().expect("rootModules");
@@ -1012,7 +1010,7 @@ impl Modules {
         if roots.contains(&unnamed) {
             let java_se = syms.get_module(&self.java_se);
             let jdk_module_pred: Box<
-                dyn Fn(&mut CompilerContext, &mut Symtab, SymbolId)
+                dyn Fn(&mut CompilerContext, &Symtab, SymbolId)
                     -> Result<bool, CompletionFailure>,
             > = if self.target.all_api_modules_are_roots() {
                 Box::new(move |ctx, syms, sym| {
@@ -1046,7 +1044,7 @@ impl Modules {
                 Box::new(|_ctx, _syms, _sym| Ok(true))
             };
             let no_incubator_pred = |ctx: &mut CompilerContext,
-                                     syms: &mut Symtab,
+                                     syms: &Symtab,
                                      sym: SymbolId|
              -> Result<bool, CompletionFailure> {
                 ctx.complete_symbol(syms, sym)?;
@@ -1187,7 +1185,7 @@ impl Modules {
     fn compute_transitive_closure(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         base: &[SymbolId],
         root_modules: &[SymbolId],
         observable: Option<Vec<SymbolId>>,
@@ -1268,7 +1266,7 @@ impl Modules {
 
     /// Java: public ModuleSymbol getObservableModule(Name name)
     /// (Modules.java:1423-1431).
-    pub fn get_observable_module(&self, ctx: &mut CompilerContext, syms: &mut Symtab, name: &Name) -> Option<SymbolId> {
+    pub fn get_observable_module(&self, _ctx: &mut CompilerContext, syms: &Symtab, name: &Name) -> Option<SymbolId> {
         let module = syms.get_module(name)?;
         if self.all_modules().contains(&module) {
             Some(module)
@@ -1317,7 +1315,7 @@ impl Modules {
 
 impl Modules {
     /// Java: private void initAddExports() (Modules.java:1614-1678).
-    fn init_add_exports(&self, ctx: &mut CompilerContext, syms: &mut Symtab) {
+    fn init_add_exports(&self, ctx: &mut CompilerContext, syms: &Symtab) {
         if self.add_exports.borrow().is_some() {
             return;
         }
@@ -1400,7 +1398,7 @@ impl Modules {
     fn is_known_module(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         msym: SymbolId,
         unknown_modules: &mut HashSet<SymbolId>,
     ) -> bool {
@@ -1426,7 +1424,7 @@ impl Modules {
     }
 
     /// Java: private void initAddReads() (Modules.java:1695-1755).
-    fn init_add_reads(&self, ctx: &mut CompilerContext, syms: &mut Symtab) {
+    fn init_add_reads(&self, ctx: &mut CompilerContext, syms: &Symtab) {
         if self.add_reads.borrow().is_some() {
             return;
         }
@@ -1522,7 +1520,7 @@ impl Modules {
     fn init_visible_packages(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         msym: SymbolId,
         readable: &[SymbolId],
     ) {
@@ -1628,7 +1626,7 @@ impl Modules {
     fn retrieve_requires_transitive(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         msym: SymbolId,
     ) -> Vec<SymbolId> {
         if let Some(cached) = self.requires_transitive_cache.borrow().get(&msym) {
@@ -1668,7 +1666,7 @@ impl Modules {
 
     /// Java: private void completeModule(ModuleSymbol msym)
     /// (Modules.java:1460-1518).
-    fn complete_module(&self, ctx: &mut CompilerContext, syms: &mut Symtab, msym: SymbolId) {
+    fn complete_module(&self, ctx: &mut CompilerContext, syms: &Symtab, msym: SymbolId) {
         if self.in_init_modules.get() {
             set_module_completer(
                 ctx,
@@ -1760,7 +1758,7 @@ impl Modules {
     fn setup_automatic_module(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         msym: SymbolId,
     ) -> Result<(), CompletionFailure> {
         let mut directives: Vec<DirectiveId> = Vec::new();
@@ -1808,7 +1806,7 @@ impl Modules {
     fn complete_automatic_module(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         msym: SymbolId,
     ) {
         let mut directives: Vec<DirectiveId> = module_directives(ctx, msym).iter().collect();
@@ -1841,7 +1839,7 @@ impl Modules {
 
     /// Java: private void checkCyclicDependencies(JCModuleDecl mod)
     /// (Modules.java:1757-1782).
-    fn check_cyclic_dependencies(&self, ctx: &mut CompilerContext, syms: &mut Symtab, mod_tree: TreeId) {
+    fn check_cyclic_dependencies(&self, ctx: &mut CompilerContext, syms: &Symtab, mod_tree: TreeId) {
         let directives = match &ctx.tree(mod_tree).kind {
             TreeKind::ModuleDecl { directives, .. } => directives.clone().unwrap_or_else(List::nil),
             _ => return,
@@ -1925,7 +1923,7 @@ impl Completer for MainCompleter {
     fn complete(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
         self.modules.main_complete(ctx, syms, sym)
@@ -1943,7 +1941,7 @@ impl Completer for SourceCompleter {
     fn complete(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
         let modules = Rc::clone(&self.modules);
@@ -1957,13 +1955,13 @@ impl Completer for SourceCompleter {
             .borrow_mut()
             .set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(decl).pos)));
         ctx.sym_mut(sym).flags_field |= flags::UNATTRIBUTED as i64;
-        let result = (|| -> Result<(), CompletionFailure> {
+        let result = {
             let mut visitor = ModuleVisitor::new(&modules, ctx, syms, sym);
             visitor.visit_module_def(decl);
             modules.complete_module(ctx, syms, sym);
             modules.check_cyclic_dependencies(ctx, syms, decl);
             Ok(())
-        })();
+        };
         ctx.sym_mut(sym).flags_field &= !(flags::UNATTRIBUTED as i64);
         modules
             .deferred_lint_handler
@@ -1983,7 +1981,7 @@ impl Completer for UnnamedModuleCompleter {
     fn complete(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
         let modules = Rc::clone(&self.modules);
@@ -2012,7 +2010,7 @@ impl Modules {
     fn main_complete(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
         let msym = self.module_finder.borrow_mut().find_module(ctx, syms, sym);
@@ -2071,7 +2069,7 @@ impl Modules {
 struct ModuleVisitor<'a> {
     modules: &'a Modules,
     ctx: &'a mut CompilerContext,
-    syms: &'a mut Symtab,
+    syms: &'a Symtab,
     sym: Option<SymbolId>,
     all_requires: HashSet<SymbolId>,
     all_exports: HashMap<SymbolId, Vec<DirectiveId>>,
@@ -2082,7 +2080,7 @@ impl<'a> ModuleVisitor<'a> {
     fn new(
         modules: &'a Modules,
         ctx: &'a mut CompilerContext,
-        syms: &'a mut Symtab,
+        syms: &'a Symtab,
         _msym: SymbolId,
     ) -> ModuleVisitor<'a> {
         ModuleVisitor {
@@ -2736,7 +2734,7 @@ impl Completer for UsesProvidesCompleter {
     fn complete(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
         let modules = Rc::clone(&self.modules);
@@ -2751,7 +2749,7 @@ impl Modules {
     fn run_uses_provides(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         msym: SymbolId,
         attr: &mut Attr,
     ) -> Result<(), CompletionFailure> {
@@ -2798,7 +2796,7 @@ impl Modules {
     pub fn complete_uses_provides_from_attr(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         msym: SymbolId,
         attr: &mut Attr,
     ) -> Result<(), CompletionFailure> {
@@ -2823,7 +2821,7 @@ struct UsesProvidesVisitor<'a> {
     modules: &'a Modules,
     attr: &'a mut Attr,
     ctx: &'a mut CompilerContext,
-    syms: &'a mut Symtab,
+    syms: &'a Symtab,
     msym: SymbolId,
     env: Rc<Env<AttrContext>>,
     all_uses: HashSet<SymbolId>,
@@ -2836,7 +2834,7 @@ impl<'a> UsesProvidesVisitor<'a> {
         modules: &'a Modules,
         attr: &'a mut Attr,
         ctx: &'a mut CompilerContext,
-        syms: &'a mut Symtab,
+        syms: &'a Symtab,
         msym: SymbolId,
         env: Rc<Env<AttrContext>>,
     ) -> UsesProvidesVisitor<'a> {
@@ -3002,12 +3000,7 @@ impl<'a> UsesProvidesVisitor<'a> {
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
         );
-        for sym in candidates {
-            if self.ctx.sym(sym).kind == Kind::MTH && method_params_of(self.ctx, sym).is_empty() {
-                return Some(sym);
-            }
-        }
-        None
+        candidates.into_iter().find(|&sym| self.ctx.sym(sym).kind == Kind::MTH && method_params_of(self.ctx, sym).is_empty())
     }
 
     fn factory_method(&mut self, tsym: SymbolId) -> Option<SymbolId> {
@@ -3019,16 +3012,10 @@ impl<'a> UsesProvidesVisitor<'a> {
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
         );
-        for sym in candidates {
-            if self.ctx.sym(sym).kind == Kind::MTH
+        candidates.into_iter().find(|&sym| self.ctx.sym(sym).kind == Kind::MTH
                 && ctx_symbol_is_static(self.ctx, sym)
                 && (self.ctx.sym(sym).flags_field & (crate::code::flags::PUBLIC as i64)) != 0
-                && method_params_of(self.ctx, sym).is_empty()
-            {
-                return Some(sym);
-            }
-        }
-        None
+                && method_params_of(self.ctx, sym).is_empty())
     }
 
     fn visit_provides(&mut self, tree: TreeId) {
@@ -3038,7 +3025,7 @@ impl<'a> UsesProvidesVisitor<'a> {
         };
         let Some(service_name) = service_name else { return };
         let st = {
-            let syms = &mut *self.syms;
+            let syms = self.syms;
             self.attr
                 .attrib_type_with(self.ctx, syms, service_name, &self.env, Some(syms.object_type))
         };
@@ -3063,7 +3050,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                     prev
                 };
                 let result = {
-                    let syms = &mut *self.syms;
+                    let syms = self.syms;
                     self.attr.attrib_type_with(
                         self.ctx,
                         syms,
@@ -3264,7 +3251,7 @@ impl<'a> UsesProvidesVisitor<'a> {
         };
         let Some(qualid) = qualid else { return };
         let st = {
-            let syms = &mut *self.syms;
+            let syms = self.syms;
             self.attr
                 .attrib_type_with(self.ctx, syms, qualid, &self.env, Some(syms.object_type))
         };

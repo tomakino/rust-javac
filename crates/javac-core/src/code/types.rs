@@ -1208,7 +1208,7 @@ impl Types {
     /// Return the class that boxes the given primitive.
     ///
     /// Java: public ClassSymbol boxedClass(Type t)
-    pub fn boxed_class(&self, ctx: &mut CompilerContext, syms: &mut Symtab, t: TypeId) -> SymbolId {
+    pub fn boxed_class(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> SymbolId {
         let tag = ctx.typ(t).get_tag();
         let name = syms.boxed_name[tag_ordinal(tag) as usize]
             .clone()
@@ -1339,6 +1339,12 @@ impl Types {
                 return sup;
             }
             let tsym = ctx.typ(t).tsym.expect("class type symbol");
+            // Java: ClassSymbol.getSuperclass() completes the symbol before
+            // reading supertype_field (Symbol.java). The ported Symtab keeps its
+            // mutable tables internally, so completion writes the real table.
+            if !ctx.is_symbol_completed(tsym) {
+                let _ = ctx.complete_class_symbol(syms, tsym);
+            }
             let mut supertype_opt = class_symbol_get_superclass(ctx, tsym);
             if symbol_is_interface(ctx, tsym) {
                 let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
@@ -3295,7 +3301,7 @@ impl Types {
     pub fn boxed_type_or_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
     ) -> TypeId {
         if ctx.typ(t).is_primitive() {
@@ -3310,7 +3316,7 @@ impl Types {
     pub fn unboxed_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
     ) -> TypeId {
         if ctx.typ(t).has_tag(TypeTag::ERROR) {
@@ -3335,7 +3341,7 @@ impl Types {
     pub fn unboxed_type_or_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
     ) -> TypeId {
         let unboxed = self.unboxed_type(ctx, syms, t);
@@ -4570,7 +4576,7 @@ impl Types {
     pub fn make_array_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
     ) -> TypeId {
         let array = crate::code::type_::Type::new_array_type(t, syms.array_class);
@@ -7471,7 +7477,7 @@ impl Types {
     pub fn covariant_return_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
         s: TypeId,
         warn: &mut crate::util::warner::Warner,
@@ -7487,7 +7493,7 @@ impl Types {
     pub fn result_subtype(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
         s: TypeId,
         warner: &mut crate::util::warner::Warner,
@@ -7508,7 +7514,7 @@ impl Types {
     pub fn return_type_substitutable(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         r1: TypeId,
         r2: TypeId,
     ) -> bool {
@@ -7530,7 +7536,7 @@ impl Types {
     pub fn return_type_substitutable_with(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         r1: TypeId,
         r2: TypeId,
         r2res: TypeId,
@@ -7563,7 +7569,7 @@ impl Types {
     pub fn is_derived_raw(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
     ) -> bool {
         if let Some(result) = self.is_derived_raw_cache.borrow().get(&t) {
@@ -7578,7 +7584,7 @@ impl Types {
     pub fn is_derived_raw_internal(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
     ) -> bool {
         if self.is_erroneous(ctx, syms, t) {
@@ -7600,7 +7606,7 @@ impl Types {
     pub fn is_derived_raw_types(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         ts: &List<TypeId>,
     ) -> bool {
         let mut current = ts.clone();
@@ -7618,7 +7624,7 @@ impl Types {
     pub fn override_equivalent(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
         s: TypeId,
     ) -> bool {
@@ -7638,7 +7644,7 @@ impl Types {
     pub fn overrides_object_method(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         origin: SymbolId,
         msym: SymbolId,
     ) -> bool {
@@ -7694,7 +7700,7 @@ impl Types {
     pub fn members_closure(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         site: TypeId,
     ) -> crate::ids::ScopeId {
         self.members_closure_visit(ctx, syms, site)
@@ -7704,7 +7710,7 @@ impl Types {
     fn members_closure_visit(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
     ) -> crate::ids::ScopeId {
         use crate::code::type_::TypeKindData;
@@ -7774,7 +7780,7 @@ impl Types {
     pub fn implementation(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         ms: SymbolId,
         origin: SymbolId,
         check_result: bool,
@@ -7788,7 +7794,7 @@ impl Types {
     pub fn implementation_filtered(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         ms: SymbolId,
         origin: SymbolId,
         check_result: bool,
@@ -7830,7 +7836,7 @@ impl Types {
     fn implementation_internal(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         ms: SymbolId,
         origin: SymbolId,
         check_result: bool,
@@ -7889,7 +7895,7 @@ impl Types {
     pub fn interface_candidates(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         site: TypeId,
         ms: SymbolId,
     ) -> Vec<SymbolId> {
@@ -7901,7 +7907,7 @@ impl Types {
         let synthetic_flag = crate::code::flags::SYNTHETIC as i64;
         let mut candidates2: Vec<SymbolId> = Vec::new();
         let members = self.members_closure(ctx, syms, site);
-        let filter = |ctx: &mut CompilerContext, syms2: &mut Symtab, s: SymbolId| -> bool {
+        let filter = |ctx: &mut CompilerContext, syms2: &Symtab, s: SymbolId| -> bool {
             if ctx.sym(s).kind != crate::code::kinds::Kind::MTH
                 || ctx.sym(s).name.to_java_string() != ms_name.to_java_string()
                 || (ctx.sym(s).flags_field & synthetic_flag) != 0
@@ -7963,7 +7969,7 @@ impl Types {
     pub fn prune(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         methods: Vec<SymbolId>,
     ) -> Vec<SymbolId> {
         let mut methods_min: Vec<SymbolId> = Vec::new();
@@ -8012,7 +8018,7 @@ impl MostSpecificReturnCheck {
     pub fn test(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         mt1: TypeId,
         mt2: TypeId,
@@ -8087,7 +8093,7 @@ impl Types {
     pub fn merge_abstracts(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         chk: &crate::comp::check::Check,
         ambiguous_in_order: &[SymbolId],
         site: TypeId,
@@ -8227,7 +8233,7 @@ impl Types {
     fn descriptor_filter(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         origin: SymbolId,
         sym: SymbolId,
     ) -> bool {
@@ -8256,7 +8262,7 @@ impl Types {
     pub fn desc_cache_get(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
         origin: SymbolId,
@@ -8286,7 +8292,7 @@ impl Types {
     pub fn find_descriptor_internal(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
         origin: SymbolId,
@@ -8414,7 +8420,7 @@ impl Types {
     fn merge_descriptors(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         chk: &crate::comp::check::Check,
         origin: SymbolId,
         method_syms: &[SymbolId],
@@ -8428,7 +8434,7 @@ impl Types {
     pub fn find_descriptor_symbol(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
         origin: SymbolId,
@@ -8442,7 +8448,7 @@ impl Types {
     pub fn find_descriptor_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
         origin: TypeId,
@@ -8457,7 +8463,7 @@ impl Types {
     pub fn is_functional_interface(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
         origin: SymbolId,
@@ -8470,7 +8476,7 @@ impl Types {
     pub fn remove_wildcards(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         site: TypeId,
     ) -> TypeId {
         let actuals = crate::code::types::get_type_arguments(ctx, site);
@@ -8537,7 +8543,7 @@ impl FunctionDescriptor {
     pub fn get_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         chk: &crate::comp::check::Check,
         site: TypeId,
@@ -8581,7 +8587,7 @@ impl Types {
     pub fn make_functional_interface_class(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
         env: &std::rc::Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
@@ -8716,7 +8722,7 @@ impl Types {
     pub fn functional_interface_bridges(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
         enter: &crate::comp::enter::Enter,
@@ -8792,7 +8798,7 @@ impl Types {
     fn pending_bridges(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         enter: &crate::comp::enter::Enter,
         origin: SymbolId,
         s: SymbolId,
@@ -9410,7 +9416,7 @@ impl Types {
     pub fn first_unimplemented_abstract(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         envs: &crate::comp::type_envs::TypeEnvs,
         allow_default_methods: bool,
         sym: SymbolId,
@@ -9425,7 +9431,7 @@ impl Types {
     fn first_unimplemented_abstract_impl(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         allow_default_methods: bool,
         impl_sym: SymbolId,
         c: SymbolId,
@@ -9683,7 +9689,7 @@ impl Types {
     pub fn lambda_descriptor_type(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
         target: Option<TypeId>,
@@ -10513,7 +10519,7 @@ mod tests {
 
     #[test]
     fn boxed_class_enters_the_primitive_wrapper() {
-        let (mut ctx, mut symtab) = build();
+        let (mut ctx, symtab) = build();
         let types = Types::new();
         for (ty, expected) in [
             (symtab.int_type, "java.lang.Integer"),
@@ -10521,7 +10527,7 @@ mod tests {
             (symtab.boolean_type, "java.lang.Boolean"),
             (symtab.byte_type, "java.lang.Byte"),
         ] {
-            let boxed = types.boxed_class(&mut ctx, &mut symtab, ty);
+            let boxed = types.boxed_class(&mut ctx, &symtab, ty);
             let flatname = flat_name_of(&ctx, boxed);
             assert_eq!(flatname.to_java_string().to_string_lossy(), expected);
         }
@@ -10529,7 +10535,7 @@ mod tests {
 
     #[test]
     fn symtab_class_field_is_cached_and_has_the_jvm_shape() {
-        let (mut ctx, mut symtab) = build();
+        let (mut ctx, symtab) = build();
         let types = Types::new();
         let int_type = symtab.int_type;
         let field = symtab.get_class_field(&mut ctx, &types, int_type);
@@ -10549,7 +10555,7 @@ mod tests {
         assert_eq!(ctx.typ(field_type).get_tag(), TypeTag::CLASS);
         let args = get_type_arguments(&ctx, field_type);
         assert_eq!(args.length(), 1);
-        let boxed = types.boxed_class(&mut ctx, &mut symtab, int_type);
+        let boxed = types.boxed_class(&mut ctx, &symtab, int_type);
         let boxed_type = ctx.sym(boxed).ty.expect("boxed type");
         assert_eq!(args.head(), &boxed_type);
     }
@@ -10691,11 +10697,11 @@ mod tests {
     #[test]
     fn types_oracle_is_same_type_and_erasure() {
         let data = include_str!("../../tests/data/types-oracle.txt");
-        let (mut ctx, mut symtab) = build();
+        let (mut ctx, symtab) = build();
         let types = Types::new();
         let list_tsym = ctx.typ(symtab.list_type).tsym.expect("list symbol");
         let int_type = symtab.int_type;
-        let boxed_sym = types.boxed_class(&mut ctx, &mut symtab, int_type);
+        let boxed_sym = types.boxed_class(&mut ctx, &symtab, int_type);
         let boxed = ctx.sym(boxed_sym).ty.expect("boxed type");
         let int_array = new_array_type(&mut ctx, symtab.int_type, Some(symtab.array_class));
         let string_array = new_array_type(&mut ctx, symtab.string_type, Some(symtab.array_class));
@@ -11003,7 +11009,7 @@ mod tests {
     #[allow(clippy::too_many_arguments)]
     fn make_interface_with_method(
         ctx: &mut CompilerContext,
-        symtab: &mut Symtab,
+        symtab: &Symtab,
         names: &Rc<Names>,
         method_name: &str,
         param_types: &[TypeId],
@@ -11150,12 +11156,12 @@ mod tests {
     fn functional_interface_descriptor_identifies_the_sam() {
         let (mut ctx, syms_rc, types, log, diags, lint, deferred) = build_services();
         let names = Rc::new(Names::new(false));
-        let mut syms = syms_rc.borrow_mut();
+        let syms = syms_rc.borrow_mut();
         let int_type = syms.int_type;
         let java_base = syms.java_base;
         let (_, _, method) = make_interface_with_method(
             &mut ctx,
-            &mut syms,
+            &syms,
             &names,
             "apply",
             &[int_type],
@@ -11167,13 +11173,13 @@ mod tests {
         let chk = check_for_tests(&names, &log, &diags, &types, &lint, &deferred, &syms_rc);
         let interface_tsym = ctx.sym(method).owner.expect("interface owner");
         let desc_sym = types
-            .find_descriptor_symbol(&mut ctx, &mut syms, &diags, &chk, interface_tsym)
+            .find_descriptor_symbol(&mut ctx, &syms, &diags, &chk, interface_tsym)
             .expect("SAM descriptor");
         assert_eq!(desc_sym, method, "the single abstract method is the descriptor");
-        assert!(types.is_functional_interface(&mut ctx, &mut syms, &diags, &chk, interface_tsym));
+        assert!(types.is_functional_interface(&mut ctx, &syms, &diags, &chk, interface_tsym));
         let interface_ty = ctx.sym(interface_tsym).ty.expect("interface type");
         let desc_ty = types
-            .find_descriptor_type(&mut ctx, &mut syms, &diags, &chk, interface_ty)
+            .find_descriptor_type(&mut ctx, &syms, &diags, &chk, interface_ty)
             .expect("descriptor type");
         match &ctx.typ(desc_ty).kind {
             TypeKindData::MethodType {
@@ -11191,13 +11197,13 @@ mod tests {
     fn functional_interface_rejects_two_abstract_methods() {
         let (mut ctx, syms_rc, types, log, diags, lint, deferred) = build_services();
         let names = Rc::new(Names::new(false));
-        let mut syms = syms_rc.borrow_mut();
+        let syms = syms_rc.borrow_mut();
         let int_type = syms.int_type;
         let void_type = syms.void_type;
         let java_base = syms.java_base;
         let (_, _, method) = make_interface_with_method(
             &mut ctx,
-            &mut syms,
+            &syms,
             &names,
             "apply",
             &[int_type],
@@ -11208,22 +11214,22 @@ mod tests {
         );
         let chk = check_for_tests(&names, &log, &diags, &types, &lint, &deferred, &syms_rc);
         let interface_tsym = ctx.sym(method).owner.expect("interface owner");
-        let result = types.find_descriptor_symbol(&mut ctx, &mut syms, &diags, &chk, interface_tsym);
+        let result = types.find_descriptor_symbol(&mut ctx, &syms, &diags, &chk, interface_tsym);
         assert!(result.is_err(), "two abstract methods are not a SAM");
-        assert!(!types.is_functional_interface(&mut ctx, &mut syms, &diags, &chk, interface_tsym));
+        assert!(!types.is_functional_interface(&mut ctx, &syms, &diags, &chk, interface_tsym));
     }
 
     #[test]
     fn descriptor_type_keeps_the_sam_thrown_clause() {
         let (mut ctx, syms_rc, types, log, diags, lint, deferred) = build_services();
         let names = Rc::new(Names::new(false));
-        let mut syms = syms_rc.borrow_mut();
+        let syms = syms_rc.borrow_mut();
         let int_type = syms.int_type;
         let exception_type = syms.exception_type;
         let java_base = syms.java_base;
         let (_, _, method) = make_interface_with_method(
             &mut ctx,
-            &mut syms,
+            &syms,
             &names,
             "call",
             &[],
@@ -11236,7 +11242,7 @@ mod tests {
         let interface_tsym = ctx.sym(method).owner.expect("interface owner");
         let interface_ty = ctx.sym(interface_tsym).ty.expect("interface type");
         let desc_ty = types
-            .find_descriptor_type(&mut ctx, &mut syms, &diags, &chk, interface_ty)
+            .find_descriptor_type(&mut ctx, &syms, &diags, &chk, interface_ty)
             .expect("descriptor type");
         let thrown = crate::code::types::get_thrown_types(&ctx, desc_ty);
         assert_eq!(thrown.length(), 1);
@@ -11280,12 +11286,12 @@ mod tests {
         let names = Rc::new(Names::new(false));
         let chk = check_for_tests(&names, &log, &diags, &types, &lint, &deferred, &syms_rc);
         let (class, int_type, java_base) = {
-            let mut syms = syms_rc.borrow_mut();
+            let syms = syms_rc.borrow_mut();
             let int_type = syms.int_type;
             let java_base = syms.java_base;
             let (class, _, _) = make_interface_with_method(
                 &mut ctx,
-                &mut syms,
+                &syms,
                 &names,
                 "apply",
                 &[int_type],
@@ -11391,9 +11397,9 @@ mod tests {
 
     #[test]
     fn is_derived_raw_caches_and_new_round_clears_the_cache() {
-        let (mut ctx, mut syms, types) = build_with_types();
+        let (mut ctx, syms, types) = build_with_types();
         let int_type = syms.int_type;
-        assert!(!types.is_derived_raw(&mut ctx, &mut syms, int_type));
+        assert!(!types.is_derived_raw(&mut ctx, &syms, int_type));
         assert_eq!(
             types.is_derived_raw_cache.borrow().len(),
             1,

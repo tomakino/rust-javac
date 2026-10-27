@@ -167,6 +167,62 @@ impl Type {
         }
     }
 
+    /// Java: public UnionClassType(ClassType ct, List<? extends Type> alternatives)
+    /// (Type.java:1189-1198).
+    ///
+    /// # Arguments
+    /// - `ct` — the class type whose fields are cloned (outer/type parameters/tsym)
+    /// - `alternatives` — the union alternatives
+    ///
+    /// # Returns
+    /// the union class type
+    ///
+    /// # Panics
+    /// - `ct` is not a class type (upstream ClassCastException).
+    pub fn new_union_class_type(ct: &Type, alternatives: List<TypeId>) -> Type {
+        let (outer_field, typarams_field, allparams_field, supertype_field, interfaces_field) =
+            match &ct.kind {
+                TypeKindData::ClassType {
+                    outer_field,
+                    typarams_field,
+                    allparams_field,
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                }
+                | TypeKindData::ErasedClassType {
+                    outer_field,
+                    typarams_field,
+                    allparams_field,
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                } => (
+                    *outer_field,
+                    typarams_field.clone(),
+                    allparams_field.clone(),
+                    *supertype_field,
+                    interfaces_field.clone(),
+                ),
+                _ => panic!("ClassCastException: ClassType expected"),
+            };
+        Type {
+            tag: TypeTag::CLASS,
+            tsym: ct.tsym,
+            kind: TypeKindData::UnionClassType {
+                outer_field,
+                typarams_field,
+                allparams_field,
+                supertype_field,
+                interfaces_field: interfaces_field.clone(),
+                all_interfaces_field: interfaces_field,
+                alternatives_field: alternatives,
+            },
+            const_value: None,
+            metadata: None,
+        }
+    }
+
     /// Java: public TypeMetadata getMetadata() (Type.java:91-93)
     pub fn get_metadata(&self) -> Option<&crate::code::type_metadata::TypeMetadata> {
         self.metadata.as_ref()
@@ -1103,7 +1159,7 @@ pub fn type_list_to_string(ctx: &CompilerContext, list: &List<TypeId>) -> String
             sb.push(',');
         }
         first = false;
-        let ty = current.head().clone();
+        let ty = *current.head();
         type_to_string_into(ctx, ty, &mut sb);
         current = current.tail();
     }
@@ -1120,7 +1176,7 @@ fn class_type_parts(
         | TypeKindData::UnionClassType { outer_field, typarams_field, .. }
         | TypeKindData::IntersectionClassType { outer_field, typarams_field, .. }
         | TypeKindData::ErrorType { outer_field, typarams_field, .. } => {
-            (outer_field.clone(), typarams_field.clone())
+            (*outer_field, typarams_field.clone())
         }
         _ => panic!("ClassCastException: ClassType expected"),
     }
@@ -1136,7 +1192,7 @@ fn class_type_fields(
         | TypeKindData::UnionClassType { supertype_field, interfaces_field, .. }
         | TypeKindData::IntersectionClassType { supertype_field, interfaces_field, .. }
         | TypeKindData::ErrorType { supertype_field, interfaces_field, .. } => {
-            (supertype_field.clone(), interfaces_field.clone().unwrap_or_else(List::nil))
+            (*supertype_field, interfaces_field.clone().unwrap_or_else(List::nil))
         }
         _ => panic!("ClassCastException: ClassType expected"),
     }
@@ -1154,7 +1210,7 @@ fn class_name(ctx: &CompilerContext, ty: TypeId, sym: SymbolId, longform: bool) 
         let mut current = interfaces;
         while current.non_empty() {
             sb.push('&');
-            sb.push_str(&type_to_string(ctx, current.head().clone()));
+            sb.push_str(&type_to_string(ctx, *current.head()));
             current = current.tail();
         }
         sb
@@ -1227,13 +1283,13 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
             if !matches!(kind, crate::code::bound_kind::BoundKind::UNBOUND)
                 && let Some(type_) = type_
             {
-                type_to_string_into(ctx, type_.clone(), sb);
+                type_to_string_into(ctx, *type_, sb);
             }
             if more_info() && bound.is_some() && !is_printing_bound.get() {
                 is_printing_bound.set(true);
                 sb.push_str("{:");
                 if let Some(bound) = bound
-                    && let Some(upper) = ctx.typ(bound.clone()).get_upper_bound()
+                    && let Some(upper) = ctx.typ(*bound).get_upper_bound()
                 {
                     type_to_string_into(ctx, upper, sb);
                 }
@@ -1279,9 +1335,9 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
                 sb.push_str("<none>");
                 return;
             };
-            let mut root = elemtype.clone();
+            let mut root = *elemtype;
             while let TypeKindData::ArrayType { elemtype: Some(inner), .. } = &ctx.typ(root).kind {
-                root = inner.clone();
+                root = *inner;
             }
             type_to_string_into(ctx, root, sb);
             let mut current = ty;
@@ -1291,9 +1347,9 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
                 match &ctx.typ(current).kind {
                     TypeKindData::ArrayType { elemtype: Some(elemtype), .. }
                         if ctx
-                            .typ(elemtype.clone())
+                            .typ(*elemtype)
                             .has_tag(crate::code::type_tag::TypeTag::ARRAY) => {
-                        current = elemtype.clone();
+                        current = *elemtype;
                     }
                     _ => break,
                 }
@@ -1306,7 +1362,7 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
             sb.push_str(&{ let args = argtypes.clone(); type_list_to_string(ctx, &args) });
             sb.push(')');
             if let Some(restype) = restype {
-                type_to_string_into(ctx, restype.clone(), sb);
+                type_to_string_into(ctx, *restype, sb);
             }
         }
         TypeKindData::PartiallyInferredMethodType { argtypes, restype, .. } => {
@@ -1316,7 +1372,7 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
             sb.push_str(&{ let args = argtypes.clone(); type_list_to_string(ctx, &args) });
             sb.push(')');
             if let Some(restype) = restype {
-                type_to_string_into(ctx, restype.clone(), sb);
+                type_to_string_into(ctx, *restype, sb);
             }
         }
         TypeKindData::PackageType | TypeKindData::ModuleType => {
@@ -1335,16 +1391,16 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
             sb.push_str(&{ let args = tvars.clone(); type_list_to_string(ctx, &args) });
             sb.push('>');
             if let Some(qtype) = qtype {
-                type_to_string_into(ctx, qtype.clone(), sb);
+                type_to_string_into(ctx, *qtype, sb);
             }
         }
         TypeKindData::UndetVar { qtype, inst, .. } => {
             // Java: UndetVar.toString() (Type.java:1991-2000).
             push_annotations(ctx, ty, sb, false);
             if let Some(inst) = inst {
-                type_to_string_into(ctx, inst.clone(), sb);
+                type_to_string_into(ctx, *inst, sb);
             } else {
-                type_to_string_into(ctx, qtype.clone(), sb);
+                type_to_string_into(ctx, *qtype, sb);
                 sb.push('?');
             }
         }
@@ -1357,14 +1413,14 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
             sb.push_str(&id.to_string());
             sb.push_str(" of ");
             if let Some(wildcard) = wildcard {
-                type_to_string_into(ctx, wildcard.clone(), sb);
+                type_to_string_into(ctx, *wildcard, sb);
             }
         }
         TypeKindData::UninitializedType { qtype, .. } => {
             // Java: UninitializedType extends DelegatedType; DelegatedType.toString
             // (Type.java:1802) prints qtype.
             if let Some(qtype) = qtype {
-                type_to_string_into(ctx, qtype.clone(), sb);
+                type_to_string_into(ctx, *qtype, sb);
             }
         }
         TypeKindData::Deferred { .. } => {

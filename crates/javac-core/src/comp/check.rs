@@ -189,7 +189,7 @@ impl crate::comp::infer::FreeTypeListener for CheckFreeTypeListener {
     fn types_inferred(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         inference_context: &InferenceContext,
     ) -> Result<(), crate::comp::infer::InferenceException> {
@@ -1231,7 +1231,7 @@ impl Check {
     fn type_tag_error(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         required: JCDiagnostic,
         found: FoundArg,
@@ -1258,7 +1258,7 @@ impl Check {
     pub fn check_class_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         t: crate::ids::TypeId,
     ) -> crate::ids::TypeId {
@@ -1281,7 +1281,7 @@ impl Check {
     pub fn check_class_type_no_bounds(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         t: crate::ids::TypeId,
         no_bounds: bool,
@@ -1409,7 +1409,7 @@ impl Check {
     pub fn check_ref_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         t: TypeId,
     ) -> TypeId {
@@ -1634,7 +1634,7 @@ impl Check {
     pub fn check_non_void(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         t: TypeId,
     ) -> TypeId {
@@ -1651,7 +1651,7 @@ impl Check {
     pub fn check_class_or_array_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         t: TypeId,
     ) -> TypeId {
@@ -1674,7 +1674,7 @@ impl Check {
     pub fn check_null_or_ref_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         t: TypeId,
     ) -> TypeId {
@@ -1890,7 +1890,7 @@ impl Check {
     pub fn validate_list(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         trees: &List<TreeId>,
     ) {
@@ -1961,10 +1961,10 @@ impl Check {
 
     /// Java: void validateAnnotationTree(JCTree tree) (Check.java:2857-2873)
     pub fn validate_annotation_tree(&self, ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab, tree: TreeId) {
+        syms: &crate::code::symtab::Symtab, tree: TreeId) {
         struct AnnotationValidator<'a> {
             chk: &'a Check,
-            syms: &'a mut crate::code::symtab::Symtab,
+            syms: &'a crate::code::symtab::Symtab,
         }
         // Java: class AnnotationValidator extends TreeScanner { visitAnnotation }
         tree_scanner_visitor_delegate!(AnnotationValidator<'a>, 'a);
@@ -1997,7 +1997,7 @@ impl Check {
                     };
                     self.scan(ctx, annotation_type);
                     self.scan_list(ctx, &args);
-                    let _ = self.chk.validate_annotation_values(ctx, &mut *self.syms, tree);
+                    let _ = self.chk.validate_annotation_values(ctx, self.syms, tree);
                 }
             }
         }
@@ -2009,7 +2009,7 @@ impl Check {
     pub fn validate_annotations(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         annotations: &List<TreeId>,
         declaration_tree: Option<TreeId>,
         s: SymbolId,
@@ -2025,7 +2025,7 @@ impl Check {
     fn validate_annotation(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         a: TreeId,
         declaration_tree: Option<TreeId>,
         s: SymbolId,
@@ -2205,7 +2205,7 @@ impl Check {
     pub fn annotation_applicable(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         a: TreeId,
         s: SymbolId,
     ) -> Result<bool, CompletionFailure> {
@@ -2221,7 +2221,7 @@ impl Check {
     fn get_applicable_targets(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         a: TreeId,
         s: SymbolId,
     ) -> Result<Option<Vec<Name>>, CompletionFailure> {
@@ -2354,7 +2354,7 @@ impl Check {
     pub fn get_target_names(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         anno_sym: SymbolId,
     ) -> Result<Vec<Name>, CompletionFailure> {
         let arr = self.get_attribute_target_attribute(ctx, syms, anno_sym)?;
@@ -2384,7 +2384,7 @@ impl Check {
     fn get_attribute_target_attribute(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         s: SymbolId,
     ) -> Result<Option<AttributeId>, CompletionFailure> {
         let Some(metadata) = ctx.sym(s).get_annotation_type_metadata().cloned() else {
@@ -2435,7 +2435,7 @@ impl Check {
     pub fn validate_annotation_defer_errors(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         a: TreeId,
     ) -> Result<bool, CompletionFailure> {
         self.log
@@ -2451,7 +2451,7 @@ impl Check {
     fn validate_annotation_values(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         a: TreeId,
     ) -> Result<bool, CompletionFailure> {
         let mut is_valid = true;
@@ -2550,7 +2550,7 @@ impl Check {
     pub fn validate_target_annotation_value(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         a: TreeId,
     ) -> bool {
         let anno_ty = ctx.tree(a).ty.expect("annotation type");
@@ -2637,7 +2637,7 @@ impl Check {
     pub fn check_castable(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         pos: i32,
         found: TypeId,
         req: TypeId,
@@ -2651,7 +2651,7 @@ impl Check {
     pub fn check_castable_with_context(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         pos: i32,
         found: TypeId,
         req: TypeId,
@@ -2708,7 +2708,7 @@ impl Check {
     pub fn check_valid_generic_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
     ) -> bool {
         self.first_incompatible_type_arg(ctx, syms, t).is_none()
@@ -2719,7 +2719,7 @@ impl Check {
     fn first_incompatible_type_arg(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         t: TypeId,
     ) -> Option<TypeId> {
         use crate::code::type_::TypeKindData;
@@ -2839,7 +2839,7 @@ impl Check {
     fn check_extends(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         a: TypeId,
         bound: TypeId,
     ) -> bool {
@@ -2974,7 +2974,7 @@ impl Check {
     pub fn check_method(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         mtype: TypeId,
         sym: SymbolId,
         env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
@@ -3175,7 +3175,7 @@ impl Check {
     pub fn check_ref_types(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         trees: crate::util::list::List<TreeId>,
         types: crate::util::list::List<TypeId>,
     ) -> crate::util::list::List<TypeId> {
@@ -3406,7 +3406,7 @@ impl Check {
     fn is_deprecated_override_ignorable(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         m: SymbolId,
         origin: SymbolId,
     ) -> bool {
@@ -3630,7 +3630,7 @@ impl Check {
     pub fn check_override(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         tree: TreeId,
         m: SymbolId,
         other: SymbolId,
@@ -3905,7 +3905,7 @@ impl Check {
     pub fn check_implementations(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         tree: TreeId,
     ) {
         let sym = match &ctx.tree(tree).kind {
@@ -3935,7 +3935,7 @@ impl Check {
     pub fn check_implementations_for(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         tree: TreeId,
         origin: SymbolId,
         ic: SymbolId,
@@ -4006,7 +4006,7 @@ impl Check {
     pub fn check_override_at(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         tree: TreeId,
         site: TypeId,
         origin: SymbolId,
@@ -4052,7 +4052,7 @@ impl Check {
     pub fn check_constructor_ref_type(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         t: TypeId,
     ) -> TypeId {
@@ -4335,7 +4335,7 @@ impl Check {
     pub fn validate(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         tree: TreeId,
     ) {
@@ -4361,7 +4361,7 @@ impl Check {
     pub fn validate_with(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         tree: TreeId,
         check_raw: bool,
@@ -4374,7 +4374,7 @@ impl Check {
     fn validate_tree(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         tree: TreeId,
         check_raw: bool,
@@ -4391,7 +4391,7 @@ impl Check {
     fn validate_visit(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         tree: TreeId,
         check_raw: bool,
@@ -4550,7 +4550,7 @@ impl Check {
     fn visit_select_internal(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         tree: TreeId,
         check_raw: bool,
@@ -4593,7 +4593,7 @@ impl Check {
     pub fn check_class_bounds_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         t: TypeId,
     ) {
@@ -4606,7 +4606,7 @@ impl Check {
     fn check_class_bounds(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         seensofar: &mut std::collections::HashMap<SymbolId, TypeId>,
         t: TypeId,
@@ -4693,7 +4693,7 @@ impl Check {
     pub fn check_non_cyclic(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: Option<i32>,
         t: TypeId,
     ) -> bool {
@@ -4717,7 +4717,7 @@ impl Check {
     pub fn check_non_cyclic_typevar(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: Option<i32>,
         t: TypeId,
     ) {
@@ -4729,7 +4729,7 @@ impl Check {
     fn check_non_cyclic1(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: Option<i32>,
         t: TypeId,
         seen: List<TypeId>,
@@ -4784,7 +4784,7 @@ impl Check {
     fn check_non_cyclic_internal(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: Option<i32>,
         t: TypeId,
     ) -> bool {
@@ -4848,7 +4848,7 @@ impl Check {
     fn note_cyclic(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: Option<i32>,
         c: SymbolId,
     ) {
@@ -4918,7 +4918,7 @@ impl Check {
     pub fn check_all_defined(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         envs: &crate::comp::type_envs::TypeEnvs,
         pos: i32,
         c: SymbolId,
@@ -5306,7 +5306,7 @@ impl Check {
     pub fn check_class_override_equals_and_hash_if_needed(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         some_class: SymbolId,
     ) {
@@ -5422,7 +5422,7 @@ impl Check {
     pub fn check_functional_interface(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         tree: TreeId,
         cs: SymbolId,
     ) {
@@ -5508,7 +5508,7 @@ impl Check {
     pub fn validate_repeatable(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         s: SymbolId,
         a: AttributeId,
@@ -5555,7 +5555,7 @@ impl Check {
     fn validate_repeatable_value(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         container: SymbolId,
         contained: SymbolId,
         pos: i32,
@@ -5630,7 +5630,7 @@ impl Check {
     fn validate_repeatable_retention(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         container: SymbolId,
         contained: SymbolId,
         pos: i32,
@@ -5676,7 +5676,7 @@ impl Check {
     fn validate_repeatable_documented(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         container: SymbolId,
         contained: SymbolId,
         pos: i32,
@@ -5708,7 +5708,7 @@ impl Check {
     fn validate_repeatable_inherited(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         container: SymbolId,
         contained: SymbolId,
         pos: i32,
@@ -5740,7 +5740,7 @@ impl Check {
     fn validate_repeatable_target(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         container: SymbolId,
         contained: SymbolId,
         pos: i32,
@@ -5849,7 +5849,7 @@ fn is_target_subset_of(
     s: &[crate::util::name::Name],
     t: &[crate::util::name::Name],
     ctx: &mut crate::compiler_context::CompilerContext,
-    _syms: &mut crate::code::symtab::Symtab,
+    _syms: &crate::code::symtab::Symtab,
     names: &crate::util::names::Names,
 ) -> bool {
     let _ = ctx;
@@ -5893,7 +5893,7 @@ impl Check {
     pub fn check_compatible_concretes(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         site: TypeId,
     ) {
@@ -6017,7 +6017,7 @@ impl Check {
     pub fn check_compatible_abstracts(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         t1: TypeId,
         t2: TypeId,
@@ -6038,7 +6038,7 @@ impl Check {
     fn first_incompatibility(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         t1: TypeId,
         t2: TypeId,
@@ -6072,7 +6072,7 @@ impl Check {
     fn closure(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         t: TypeId,
         type_map: &mut std::collections::HashMap<SymbolId, TypeId>,
     ) {
@@ -6097,7 +6097,7 @@ impl Check {
     fn closure_skip(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         t: TypeId,
         types_skip: &std::collections::HashMap<SymbolId, TypeId>,
         type_map: &mut std::collections::HashMap<SymbolId, TypeId>,
@@ -6127,7 +6127,7 @@ impl Check {
     fn first_direct_incompatibility(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         t1: TypeId,
         t2: TypeId,
@@ -6259,7 +6259,7 @@ impl Check {
     fn check_common_overrider_in(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         s1: SymbolId,
         s2: SymbolId,
         site: TypeId,
@@ -6309,7 +6309,7 @@ impl Check {
     fn check_name_clash(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         origin: SymbolId,
         s1: SymbolId,
         s2: SymbolId,
@@ -6329,7 +6329,7 @@ impl Check {
     fn clash_filter_test(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         site_tsym: SymbolId,
         s: SymbolId,
     ) -> bool {
@@ -6372,7 +6372,7 @@ impl Check {
     pub fn check_default_method_clashes(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         site: TypeId,
     ) {
@@ -6432,7 +6432,7 @@ impl Check {
     fn incompatible_defaults_fragment(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         site: TypeId,
         site_tsym: SymbolId,
         m: SymbolId,
@@ -6492,7 +6492,7 @@ impl Check {
     pub fn check_leaks_not_accessible(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         env: &std::rc::Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         check: TreeId,
     ) {
@@ -6540,7 +6540,7 @@ impl Check {
 /// Java: the TreeScanner used by checkLeaksNotAccessible (Check.java:4096-4205).
 pub struct LeaksChecker<'a> {
     chk: &'a Check,
-    syms: &'a mut crate::code::symtab::Symtab,
+    syms: &'a crate::code::symtab::Symtab,
     in_package: SymbolId,
     in_export: Option<(Option<SymbolId>, Option<List<SymbolId>>)>,
     lint: Option<std::rc::Rc<crate::code::lint::Lint>>,
@@ -6574,7 +6574,7 @@ impl<'a> crate::tree::tree_scanner::TreeScannerVisitor for LeaksChecker<'a> {
         if let Some(lint) = prev_lint.clone() {
             let augmented = {
                 let sym_ref = ctx.sym(sym);
-                lint.augment(&*ctx, &*self.syms, sym_ref)
+                lint.augment(&*ctx, self.syms, sym_ref)
             };
             self.lint = Some(std::rc::Rc::new(augmented));
         }
@@ -6613,7 +6613,7 @@ impl<'a> crate::tree::tree_scanner::TreeScannerVisitor for LeaksChecker<'a> {
         if let Some(lint) = prev_lint.clone() {
             let augmented = {
                 let sym_ref = ctx.sym(sym);
-                lint.augment(&*ctx, &*self.syms, sym_ref)
+                lint.augment(&*ctx, self.syms, sym_ref)
             };
             self.lint = Some(std::rc::Rc::new(augmented));
         }
@@ -6659,7 +6659,7 @@ impl<'a> crate::tree::tree_scanner::TreeScannerVisitor for LeaksChecker<'a> {
         if let Some(lint) = prev_lint.clone() {
             let augmented = {
                 let sym_ref = ctx.sym(sym);
-                lint.augment(&*ctx, &*self.syms, sym_ref)
+                lint.augment(&*ctx, self.syms, sym_ref)
             };
             self.lint = Some(std::rc::Rc::new(augmented));
         }
@@ -6956,7 +6956,7 @@ impl Check {
     pub fn validate_type_annotations(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         annotations: &List<TreeId>,
         is_type_parameter: bool,
     ) {
@@ -6983,7 +6983,7 @@ impl Check {
     pub fn validate_type_annotation(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         a: TreeId,
         is_type_parameter: bool,
     ) {
@@ -7022,7 +7022,7 @@ impl Check {
     fn is_type_annotation_tree(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         a: TreeId,
         is_type_parameter: bool,
     ) -> bool {
@@ -7093,7 +7093,7 @@ impl Check {
     pub fn check_compatible_supertypes(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         c: TypeId,
     ) {
@@ -7144,7 +7144,7 @@ impl Check {
     pub fn check_diamond(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         tree: TreeId,
         t: TypeId,
     ) -> TypeId {
@@ -7205,9 +7205,9 @@ impl Check {
                 ctx.tree(clazz).pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
-            return self
+            self
                 .types
-                .create_error_type_original(ctx, Some(t), syms);
+                .create_error_type_original(ctx, Some(t), syms)
         } else {
             let typeargs_nonempty = match &ctx.tree(tree).kind {
                 crate::tree::jc_tree::TreeKind::NewClass { typeargs, .. } => !typeargs.is_empty(),
@@ -7338,7 +7338,7 @@ impl Check {
     pub fn import_accessible(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
         packge: SymbolId,
     ) -> bool {
@@ -7383,7 +7383,7 @@ impl Check {
     pub fn check_imports_unique(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         toplevel: TreeId,
     ) {
         let (defs, packge, top_level_scope) = match &ctx.tree(toplevel).kind {
@@ -7457,7 +7457,7 @@ impl Check {
     fn check_unique_import(
         &self,
         ctx: &mut CompilerContext,
-        _syms: &mut crate::code::symtab::Symtab,
+        _syms: &crate::code::symtab::Symtab,
         import_tree: TreeId,
         ordinally_imported_scope: ScopeId,
         statically_imported_scope: ScopeId,
@@ -7538,7 +7538,7 @@ impl Check {
     pub fn check_imports_resolvable(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         toplevel: TreeId,
     ) {
         let _ = syms;
@@ -7619,7 +7619,7 @@ impl Check {
     fn check_type_contains_importable_element(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         tsym: SymbolId,
         origin: SymbolId,
         packge: SymbolId,
@@ -7825,7 +7825,7 @@ impl Check {
     pub fn is_overrider(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         s: SymbolId,
     ) -> bool {
         if ctx.sym(s).kind != crate::code::kinds::Kind::MTH || ctx.sym(s).is_static(ctx) {
@@ -7885,7 +7885,7 @@ impl Check {
     pub fn check_override_env(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         tree: TreeId,
         m: SymbolId,
@@ -7949,7 +7949,7 @@ impl Check {
                 self.check_override_at(ctx, syms, tree, t, origin, m);
             }
             let interfaces = {
-                let syms: &crate::code::symtab::Symtab = &*syms;
+                let syms: &crate::code::symtab::Symtab = syms;
                 self.types.interfaces(ctx, syms, t)
             };
             let mut list = interfaces;
@@ -7959,7 +7959,7 @@ impl Check {
                 self.check_override_at(ctx, syms, tree, t2, origin, m);
             }
             let supertype = {
-                let syms: &crate::code::symtab::Symtab = &*syms;
+                let syms: &crate::code::symtab::Symtab = syms;
                 self.types.supertype(ctx, syms, t)
             };
             if supertype == t {
@@ -8241,7 +8241,7 @@ impl Check {
     pub fn check_override_clashes(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         site: TypeId,
         sym: SymbolId,
@@ -8393,7 +8393,7 @@ impl Check {
     fn member_parameter_types(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         site: TypeId,
         sym: SymbolId,
     ) -> Vec<crate::resources::diagnostic_contract::TypeArg> {
@@ -8441,7 +8441,7 @@ impl Check {
     pub fn check_hide_clashes(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         site: TypeId,
         sym: SymbolId,
@@ -8562,7 +8562,7 @@ impl Check {
     pub fn check_potentially_ambiguous_overloads(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         site: TypeId,
         msym1: SymbolId,
@@ -8742,7 +8742,7 @@ impl Check {
     fn descriptor_parameter_count(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         ty: TypeId,
     ) -> usize {
         let diags = Rc::clone(&self.diags);
@@ -8876,7 +8876,7 @@ impl Check {
     pub fn validate_annotation_method(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         pos: i32,
         m: SymbolId,
     ) {
@@ -8993,7 +8993,7 @@ impl Check {
     pub fn check_non_cyclic_decl(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         tree: TreeId,
     ) {
         let mut cc = CycleChecker {
@@ -9023,7 +9023,7 @@ struct CycleChecker<'a> {
     error_found: bool,
     partial_check: bool,
     check: &'a Check,
-    syms: &'a mut crate::code::symtab::Symtab,
+    syms: &'a crate::code::symtab::Symtab,
 }
 
 impl CycleChecker<'_> {
@@ -9077,7 +9077,7 @@ impl CycleChecker<'_> {
         }
         if self.seen_classes.contains(&c) {
             self.error_found = true;
-            self.check.note_cyclic(ctx, &mut *self.syms, pos, c);
+            self.check.note_cyclic(ctx, self.syms, pos, c);
             return;
         }
         let c_ty = match ctx.sym(c).ty {
@@ -9238,7 +9238,7 @@ impl Check {
             return;
         }
         let c_flags = ctx.sym(c).flags_field;
-        if (c_flags & (flags::ENUM as i64 | flags::RECORD as i64)) != 0 {
+        if (c_flags & (flags::ENUM as i64 | flags::RECORD)) != 0 {
             return;
         }
         if ctx.sym(c).is_anonymous() {
@@ -9450,7 +9450,7 @@ impl Check {
     fn complete_for_members(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) {
         if ctx.sym(sym).kind != crate::code::kinds::Kind::TYP {
@@ -9617,11 +9617,11 @@ mod tests {
             Rc::clone(&diags),
             Rc::clone(&names),
         );
-        let mut syms_guard = syms.borrow_mut();
+        let syms_guard = syms.borrow_mut();
         let inference = InferenceContext::new(
             Rc::clone(&infer),
             &mut ctx,
-            &mut syms_guard,
+            &syms_guard,
             &types,
             List::of(tvar),
         );
@@ -9649,9 +9649,9 @@ mod tests {
         assert_eq!(calls.get(), 1, "the immediate check runs");
         let uv = inference.as_undet_var(&mut ctx, &syms.borrow(), &types, tvar);
         types.undet_var_set_inst(&mut ctx, &syms.borrow(), uv, string_type);
-        let mut syms_for_notify = syms.borrow_mut();
+        let syms_for_notify = syms.borrow_mut();
         inference
-            .notify_change(&mut ctx, &mut syms_for_notify, &types)
+            .notify_change(&mut ctx, &syms_for_notify, &types)
             .expect("notify_change");
         assert_eq!(
             calls.get(),
@@ -9894,7 +9894,7 @@ impl Check {
     /// # Panics
     ///   - none.
     pub fn check_sun_api(&self, ctx: &CompilerContext, pos: i32, s: SymbolId) {
-        if (ctx.sym(s).flags_field & crate::code::flags::PROPRIETARY as i64) != 0 {
+        if (ctx.sym(s).flags_field & crate::code::flags::PROPRIETARY) != 0 {
             let warning = warning_from_info(warnings::sun_proprietary(SymbolArg::placeholder(
                 crate::comp::resolve::symbol_display_name(ctx, s),
             )));
@@ -9962,13 +9962,13 @@ impl Check {
     pub fn check_for_bad_auxiliary_class_access(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         pos: i32,
         env: &Rc<Env<AttrContext>>,
         c: SymbolId,
     ) {
         if !self.lint.is_enabled(LintCategory::AUXILIARYCLASS)
-            || (ctx.sym(c).flags_field & crate::code::flags::AUXILIARY as i64) == 0
+            || (ctx.sym(c).flags_field & crate::code::flags::AUXILIARY) == 0
         {
             return;
         }
@@ -10147,8 +10147,8 @@ impl Check {
                 }));
             }
         }
-        if preview.declared_using_preview_feature(ctx.sym(s)) {
-            if preview.is_enabled() {
+        if preview.declared_using_preview_feature(ctx.sym(s))
+            && preview.is_enabled() {
                 preview.mark_uses_preview(position.as_ref());
                 let lint = Rc::clone(&self.lint);
                 let preview_for_warning = Rc::clone(&preview);
@@ -10168,7 +10168,6 @@ impl Check {
                     }
                 }));
             }
-        }
     }
 
     /// Java: void checkPackageExistsForOpens(final DiagnosticPosition pos,
@@ -10578,6 +10577,83 @@ mod diagnostics_tests {
     }
 
     #[test]
+    fn supertype_completion_registers_class_in_real_symtab() {
+        // The supertype walk completes java.lang.Exception lazily (its
+        // supertype_field is filled by the class reader on completion); the
+        // completion must be written to the real Symtab tables, so lookups see
+        // the completed class (no cloned symbol table).
+        let (compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { void f() throws java.io.IOException { throw new java.io.IOException(); } }\n",
+            )],
+            |_options| {},
+        );
+        let errors: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .filter(|code| code.starts_with("compiler.err."))
+            .collect();
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+        let syms = compiler.syms.borrow();
+        let io_flat = compiler
+            .names
+            .from_string(&javac_strings::JavaString::from("java.io.IOException"));
+        assert!(
+            syms.get_class(syms.java_base, &io_flat).is_some(),
+            "java.io.IOException missing from the real Symtab class table"
+        );
+        let exception_flat = compiler
+            .names
+            .from_string(&javac_strings::JavaString::from("java.lang.Exception"));
+        let exception = syms
+            .get_class(syms.java_base, &exception_flat)
+            .expect("java.lang.Exception entered in the real Symtab class table");
+        assert!(
+            compiler.ctx.is_symbol_completed(exception),
+            "java.lang.Exception was not completed by the supertype walk"
+        );
+    }
+
+    #[test]
+    fn multicatch_disjoint_types_compile() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { void f() throws java.io.IOException { try { throw new java.io.IOException(); } catch (java.io.IOException | RuntimeException e) { } } }\n",
+            )],
+            |_options| {},
+        );
+        let errors: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .filter(|code| code.starts_with("compiler.err."))
+            .collect();
+        assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    }
+
+    #[test]
+    fn multicatch_related_types_report_disjoint_error() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T { void f() throws java.io.IOException { try { throw new java.io.IOException(); } catch (java.io.IOException | java.io.FileNotFoundException e) { } } }\n",
+            )],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.get_code_string().to_string())
+            .collect();
+        assert!(
+            codes
+                .iter()
+                .any(|code| code == "compiler.err.multicatch.types.must.be.disjoint"),
+            "multicatch.types.must.be.disjoint missing: {codes:?}"
+        );
+    }
+
+    #[test]
     fn strictfp_warning_is_reported() {
         let (_compiler, diagnostics) = compile_with_diagnostics(
             &[("C.java", "strictfp class C { strictfp void m() {} }
@@ -10637,7 +10713,7 @@ mod diagnostics_tests {
             .set_profile(Rc::new(crate::jvm::profile::Profile::COMPACT1));
         let object_type = syms.borrow().object_type;
         let symbol = ctx.typ(object_type).tsym.expect("object symbol");
-        ctx.sym_mut(symbol).flags_field |= crate::code::flags::PROPRIETARY as i64
+        ctx.sym_mut(symbol).flags_field |= crate::code::flags::PROPRIETARY
             | crate::code::flags::NOT_IN_PROFILE;
         log.borrow_mut().install_diagnostic_handler(
             crate::util::log::DiagnosticHandler::Deferred {

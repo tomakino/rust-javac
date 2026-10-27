@@ -138,7 +138,7 @@ impl AttrRecover {
     pub fn do_recovery(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         rs: &mut crate::comp::resolve::Resolve,
         infer: &Rc<crate::comp::infer::Infer>,
@@ -370,7 +370,7 @@ impl AttrRecover {
     pub fn recover_method_invocation(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         chk: &crate::comp::check::Check,
         diags: &crate::util::jc_diagnostic::Factory,
@@ -426,7 +426,7 @@ impl AttrRecover {
     fn basic_method_invocation_recovery(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         chk: &crate::comp::check::Check,
         diags: &crate::util::jc_diagnostic::Factory,

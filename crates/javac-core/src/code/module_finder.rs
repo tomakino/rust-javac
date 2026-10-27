@@ -25,7 +25,6 @@ use crate::code::symtab::Symtab;
 use crate::jvm::module_name_reader::ModuleNameReader;
 use crate::compiler_context::CompilerContext;
 use crate::resources::compiler_properties::{errors, fragments};
-use crate::resources::diagnostic_contract::IntoDiagnosticArg;
 use crate::util::abstract_log::AbstractLog;
 use crate::util::java_string::JavaString;
 use crate::util::jc_diagnostic::{Fragment, Factory};
@@ -79,11 +78,10 @@ impl ModuleLocationIterator {
     /// Java: public boolean hasNext() (ModuleFinder.java:131-150).
     fn has_next(&mut self, file_manager: &dyn JavaFileManager) -> bool {
         loop {
-            if let Some(inner) = &self.inner {
-                if self.inner_index < inner.len() {
+            if let Some(inner) = &self.inner
+                && self.inner_index < inner.len() {
                     return true;
                 }
-            }
             if self.outer_index >= MODULE_LOCATION_OUTERS.len() {
                 return false;
             }
@@ -188,7 +186,7 @@ impl ModuleFinder {
     pub fn find_module_by_name(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         name: &Name,
     ) -> crate::ids::SymbolId {
         let msym = syms.enter_module(ctx, name.clone());
@@ -212,7 +210,7 @@ impl ModuleFinder {
     pub fn find_module(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         msym: crate::ids::SymbolId,
     ) -> crate::ids::SymbolId {
         let (source_location, class_location) = module_locations(ctx, msym);
@@ -247,7 +245,7 @@ impl ModuleFinder {
     pub fn find_all_modules(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
     ) -> Vec<crate::ids::SymbolId> {
         let list = self.scan_module_path(ctx, syms, None);
         for msym in &list {
@@ -274,7 +272,7 @@ impl ModuleFinder {
     pub fn find_single_module(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
     ) -> Result<crate::ids::SymbolId, CompletionFailure> {
         let src_fo = self.get_module_info_from_location(
             &Some(Rc::new(StandardLocation::SOURCE_PATH)),
@@ -324,7 +322,7 @@ impl ModuleFinder {
     fn read_module(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         fo: JavaFileObjectRef,
     ) -> Result<crate::ids::SymbolId, CompletionFailure> {
         let name = match fo.get_kind() {
@@ -426,7 +424,7 @@ impl ModuleFinder {
     fn scan_module_path(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         to_find: Option<crate::ids::SymbolId>,
     ) -> Vec<crate::ids::SymbolId> {
         let mut results: Vec<crate::ids::SymbolId> = Vec::new();
@@ -640,7 +638,7 @@ impl Completer for ModuleInfoCompleter {
     fn complete(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         sym: crate::ids::SymbolId,
     ) -> Result<(), CompletionFailure> {
         // Java: classFinder.fillIn(msym.module_info).
@@ -827,7 +825,7 @@ mod tests {
     use javac_tools::tools::java_file_manager::{
         FileObjectRef, JavaFileObjectRef,
     };
-    use javac_tools::tools::java_file_object::{Kind as FileKind, JavaFileObject};
+    use javac_tools::tools::java_file_object::Kind as FileKind;
     use javac_tools::tools::option_checker::OptionChecker;
 
     use crate::code::class_finder::ClassFinder;
@@ -1077,13 +1075,13 @@ mod tests {
             Rc::clone(&fixture.diags),
         );
         let name = fixture.names.from_utf(b"m");
-        let module = module_finder.find_module_by_name(&mut fixture.ctx, &mut fixture.syms, &name);
+        let module = module_finder.find_module_by_name(&mut fixture.ctx, &fixture.syms, &name);
         assert_ne!(
             fixture.ctx.sym(module).kind,
             Kind::ERR,
             "the module on the module path is found"
         );
-        let class_location = match &fixture.ctx.sym(module).kind_data {
+        let _class_location = match &fixture.ctx.sym(module).kind_data {
             SymbolKind::ModuleSymbol { class_location, .. } => class_location.clone(),
             _ => None,
         };
@@ -1108,7 +1106,7 @@ mod tests {
             Rc::clone(&fixture.diags),
         );
         let name = fixture.names.from_utf(b"missing");
-        let module = module_finder.find_module_by_name(&mut fixture.ctx, &mut fixture.syms, &name);
+        let module = module_finder.find_module_by_name(&mut fixture.ctx, &fixture.syms, &name);
         assert_eq!(
             fixture.ctx.sym(module).kind,
             Kind::ERR,

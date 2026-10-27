@@ -176,7 +176,7 @@ impl BindingContext {
     fn binding_vars(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         make: &Rc<RefCell<TreeMaker>>,
         diag_pos: i32,
     ) -> List<TreeId> {
@@ -684,7 +684,7 @@ impl TransPatterns {
     fn decorate_statement(&mut self, ctx: &mut CompilerContext, stat: TreeId) -> TreeId {
         let pos = ctx.tree(stat).pos;
         let make = Rc::clone(&self.make);
-        let stats = self.binding_context.binding_vars(ctx, &mut self.syms.borrow_mut(), &make, pos);
+        let stats = self.binding_context.binding_vars(ctx, &self.syms.borrow_mut(), &make, pos);
         if stats.is_empty() {
             stat
         } else {
@@ -706,7 +706,7 @@ impl TransPatterns {
         let mut result = expr;
         for vsym in hoisted {
             let make = Rc::clone(&self.make);
-            let decl = make_hoisted_var_decl(ctx, &mut self.syms.borrow_mut(), &make, pos, vsym);
+            let decl = make_hoisted_var_decl(ctx, &self.syms.borrow_mut(), &make, pos, vsym);
             result = {
                 let mut make_ref = make.borrow_mut();
                 make_ref.at(pos);
@@ -837,14 +837,14 @@ impl TransPatterns {
         if !has_null_case {
             let attr_rc = Rc::clone(&self.attr);
             let mut attr = attr_rc.borrow_mut();
-            let mut syms = self.syms.borrow_mut();
-            temp_init = attr.make_null_check(ctx, &mut syms, selector);
+            let syms = self.syms.borrow_mut();
+            temp_init = attr.make_null_check(ctx, &syms, selector);
         }
         let temp_def = {
             let mut make = self.make.borrow_mut();
             make.at(pos);
-            let mut syms = self.syms.borrow_mut();
-            make.var_def_symbol(ctx, &mut syms, temp, Some(temp_init))
+            let syms = self.syms.borrow_mut();
+            make.var_def_symbol(ctx, &syms, temp, Some(temp_init))
         };
         statements.push(temp_def);
         let index_name = self.names.from_string(&javac_strings::JavaString::from(
@@ -859,8 +859,8 @@ impl TransPatterns {
         let index_def = {
             let mut make = self.make.borrow_mut();
             make.at(pos);
-            let mut syms = self.syms.borrow_mut();
-            make.var_def_symbol(ctx, &mut syms, index, Some(zero))
+            let syms = self.syms.borrow_mut();
+            make.var_def_symbol(ctx, &syms, index, Some(zero))
         };
         statements.push(index_def);
         let wildcard = ctx.alloc_type(crate::code::type_::Type::new(
@@ -880,8 +880,8 @@ impl TransPatterns {
             class_tsym,
         ));
         let class_array = {
-            let mut syms = self.syms.borrow_mut();
-            self.types.make_array_type(ctx, &mut syms, class_param)
+            let syms = self.syms.borrow_mut();
+            self.types.make_array_type(ctx, &syms, class_param)
         };
         let static_arg_types = List::from_iterable(vec![
             method_handle_lookup_type,
@@ -914,13 +914,13 @@ impl TransPatterns {
             let chk = Rc::clone(&attr.chk);
             let infer = Rc::clone(&attr.infer);
             let chk_borrow = chk.borrow();
-            let mut syms = self.syms.borrow_mut();
+            let syms = self.syms.borrow_mut();
             let diag_pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
                 Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos)));
             let mut rs = self.rs.borrow_mut();
             rs.resolve_internal_method(
                 ctx,
-                &mut syms,
+                &syms,
                 &self.types,
                 &mut attr,
                 &chk_borrow,
@@ -952,9 +952,9 @@ impl TransPatterns {
         let qualifier = {
             let mut make = self.make.borrow_mut();
             make.at(pos);
-            let mut syms = self.syms.borrow_mut();
+            let syms = self.syms.borrow_mut();
             let owner = ctx.sym(bsm).owner.expect("bootstrap owner");
-            let base = make.qual_ident(ctx, &mut syms, owner);
+            let base = make.qual_ident(ctx, &syms, owner);
             make.select(ctx, base, bootstrap_name.clone())
         };
         if let TreeKind::FieldAccess { sym: slot, .. } = &mut ctx.tree_mut(qualifier).kind {
@@ -1044,8 +1044,8 @@ impl TransPatterns {
                 };
                 let binding_stats = {
                     let make = Rc::clone(&self.make);
-                    let mut syms = self.syms.borrow_mut();
-                    self.binding_context.binding_vars(ctx, &mut syms, &make, case_pos)
+                    let syms = self.syms.borrow_mut();
+                    self.binding_context.binding_vars(ctx, &syms, &make, case_pos)
                 };
                 let new_stats = binding_stats.append_list(&stats.prepend(if_tree));
                 set_case_stats(ctx, case, new_stats);
@@ -1241,9 +1241,9 @@ impl TransPatterns {
     fn principal_type(&self, ctx: &mut CompilerContext, pattern: TreeId) -> TypeId {
         let primary = tree_info::primary_pattern_type(ctx, pattern);
         let ty = primary.ty.expect("primary pattern type");
-        let mut syms_borrow = self.syms.borrow_mut();
+        let syms_borrow = self.syms.borrow_mut();
         let erased = self.types.erasure(ctx, &syms_borrow, ty);
-        self.types.boxed_type_or_type(ctx, &mut syms_borrow, erased)
+        self.types.boxed_type_or_type(ctx, &syms_borrow, erased)
     }
 
     fn make_type_test(
@@ -1275,10 +1275,10 @@ impl TransPatterns {
         let lhs_ty = ctx.tree(lhs).ty.expect("lhs type");
         let rhs_ty = ctx.tree(rhs).ty.expect("rhs type");
         let operator = {
-            let mut syms = self.syms.borrow_mut();
+            let syms = self.syms.borrow_mut();
             self.operators.resolve_binary(
                 ctx,
-                &mut syms,
+                &syms,
                 &self.types,
                 ctx.tree(tree).pos,
                 optag,
@@ -1307,10 +1307,10 @@ impl TransPatterns {
         };
         let arg_ty = ctx.tree(arg).ty.expect("arg type");
         let operator = {
-            let mut syms = self.syms.borrow_mut();
+            let syms = self.syms.borrow_mut();
             self.operators.resolve_unary(
                 ctx,
-                &mut syms,
+                &syms,
                 &self.types,
                 ctx.tree(tree).pos,
                 optag,
@@ -1334,10 +1334,10 @@ impl TransPatterns {
     ) -> TreeId {
         let pos = ctx.tree(expr).pos;
         let type_tree = {
-            let mut syms = self.syms.borrow_mut();
+            let syms = self.syms.borrow_mut();
             let mut make = self.make.borrow_mut();
             make.at(pos);
-            make.type_from_type(ctx, &mut syms, target)
+            make.type_from_type(ctx, &syms, target)
         };
         let result = {
             let mut make = self.make.borrow_mut();
@@ -1369,7 +1369,7 @@ fn binding_is_alias_for(ctx: &CompilerContext, binding: SymbolId, other: SymbolI
 
 fn make_hoisted_var_decl(
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     make: &Rc<RefCell<TreeMaker>>,
     pos: i32,
     var_symbol: SymbolId,
@@ -2035,8 +2035,8 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
         let type_tree = {
             let mut make = self.make.borrow_mut();
             make.at(ctx.tree(tree).pos);
-            let mut syms = self.syms.borrow_mut();
-            make.type_from_type(ctx, &mut syms, principal)
+            let syms = self.syms.borrow_mut();
+            make.type_from_type(ctx, &syms, principal)
         };
         let current_ident = {
             let mut make = self.make.borrow_mut();
@@ -2050,8 +2050,8 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
             let var_def = {
                 let mut make = self.make.borrow_mut();
                 make.at(ctx.tree(tree).pos);
-                let mut syms = self.syms.borrow_mut();
-                make.var_def_symbol(ctx, &mut syms, current_value, Some(translated_expr))
+                let syms = self.syms.borrow_mut();
+                make.var_def_symbol(ctx, &syms, current_value, Some(translated_expr))
             };
             result_expression = {
                 let mut make = self.make.borrow_mut();

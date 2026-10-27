@@ -316,7 +316,7 @@ impl ArgumentAttr {
     pub fn check_speculative_type(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut Attr,
         t: TypeId,
@@ -355,7 +355,7 @@ impl ArgumentAttr {
     pub fn check_speculative(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut Attr,
         expr: TreeId,
@@ -404,7 +404,7 @@ impl ArgumentAttr {
     pub fn attrib_arg(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         log: &crate::util::log::Log,
         tree: TreeId,
@@ -421,7 +421,7 @@ impl ArgumentAttr {
     fn visit(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         log: &crate::util::log::Log,
         tree: TreeId,
@@ -474,7 +474,7 @@ impl ArgumentAttr {
     fn visit_parens(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         log: &crate::util::log::Log,
         tree: TreeId,
@@ -495,7 +495,7 @@ impl ArgumentAttr {
     fn visit_conditional(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         log: &crate::util::log::Log,
         tree: TreeId,
@@ -517,7 +517,7 @@ impl ArgumentAttr {
     fn visit_switch_expression(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         log: &crate::util::log::Log,
         tree: TreeId,
@@ -538,7 +538,7 @@ impl ArgumentAttr {
     fn visit_apply(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         log: &crate::util::log::Log,
         tree: TreeId,
@@ -576,7 +576,7 @@ impl ArgumentAttr {
     fn visit_new_class(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         log: &crate::util::log::Log,
         tree: TreeId,
@@ -610,7 +610,7 @@ impl ArgumentAttr {
     fn visit_lambda(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         log: &crate::util::log::Log,
         tree: TreeId,
@@ -636,7 +636,7 @@ impl ArgumentAttr {
     fn visit_reference(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         _log: &crate::util::log::Log,
         tree: TreeId,
@@ -758,7 +758,7 @@ impl ArgumentAttr {
     fn process_arg_with_speculation(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         log: &crate::util::log::Log,
         tree: TreeId,
@@ -796,7 +796,7 @@ impl ArgumentAttr {
     fn process_arg_with_lambda_speculation(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         log: &crate::util::log::Log,
         tree: TreeId,
@@ -886,10 +886,10 @@ impl ArgumentAttr {
     ) -> TypeId {
         let syms_rc = Rc::clone(&attr.syms);
         let types_rc = Rc::clone(&attr.types);
-        let mut syms_borrow = syms_rc.borrow_mut();
+        let syms_borrow = syms_rc.borrow_mut();
         crate::comp::deferred_attr::deferred_type_new(
             ctx,
-            &mut syms_borrow,
+            &syms_borrow,
             &types_rc,
             attr,
             tree,
@@ -908,10 +908,10 @@ impl ArgumentAttr {
     ) -> TypeId {
         let syms_rc = Rc::clone(&attr.syms);
         let types_rc = Rc::clone(&attr.types);
-        let mut syms_borrow = syms_rc.borrow_mut();
+        let syms_borrow = syms_rc.borrow_mut();
         let deferred_type = crate::comp::deferred_attr::deferred_type_new(
             ctx,
-            &mut syms_borrow,
+            &syms_borrow,
             &types_rc,
             attr,
             tree,
@@ -958,7 +958,7 @@ impl ArgumentAttr {
     pub fn argument_type_complete(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         t: TypeId,
         data: &Rc<RefCell<ArgumentTypeData>>,
@@ -1110,7 +1110,7 @@ impl ArgumentAttr {
     fn overload_check(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         data: &Rc<RefCell<ArgumentTypeData>>,
         result_info: &ResultInfo,
@@ -1371,7 +1371,7 @@ impl ArgumentAttr {
     fn check_return_in_statement_lambda(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         types: &crate::code::types::Types,
         speculative_lambda: TreeId,

@@ -111,7 +111,7 @@ impl Completer for DeferredCompleter {
     fn complete(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
         self.orig_completer.borrow_mut().complete(ctx, syms, sym)

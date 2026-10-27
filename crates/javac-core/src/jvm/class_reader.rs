@@ -403,7 +403,7 @@ impl ClassReader {
     fn get_module(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         index: i32,
     ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
         let value = {
@@ -430,7 +430,7 @@ impl ClassReader {
     fn get_package(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         index: i32,
     ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
         let value = {
@@ -455,7 +455,7 @@ impl ClassReader {
     fn get_class(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         index: i32,
     ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
         let value = {
@@ -481,7 +481,7 @@ impl ClassReader {
     fn get_type(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         index: i32,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
         let name = self.get_name(index)?;
@@ -495,7 +495,7 @@ impl ClassReader {
     fn get_name_and_type(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         index: i32,
     ) -> Result<(Name, TypeId), crate::code::symbol::CompletionFailure> {
         let value = {
@@ -537,7 +537,7 @@ impl ClassReader {
     fn sig_to_type_bytes(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sig: &[u8],
         offset: i32,
         len: i32,
@@ -552,7 +552,7 @@ impl ClassReader {
     fn sig_to_type(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
         let c = self.signature[self.sigp as usize] as char;
         match c {
@@ -727,7 +727,7 @@ impl ClassReader {
     fn sig_to_types(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         terminator: char,
     ) -> Result<List<TypeId>, crate::code::symbol::CompletionFailure> {
         let mut result = List::nil();
@@ -742,7 +742,7 @@ impl ClassReader {
     fn sig_to_type_params(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Result<List<TypeId>, crate::code::symbol::CompletionFailure> {
         let mut tvars = List::nil();
         if self.signature[self.sigp as usize] as char == '<' {
@@ -766,7 +766,7 @@ impl ClassReader {
     fn sig_to_type_param(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
         let start = self.sigp;
         while self.signature[self.sigp as usize] as char != ':' {
@@ -814,7 +814,7 @@ impl ClassReader {
     fn class_sig_to_type(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
         if self.signature[self.sigp as usize] as char != 'L' {
             return Err(self
@@ -923,7 +923,7 @@ impl ClassReader {
     fn find_type_var(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         name: &Name,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
         let typevars = self.typevars.expect("typevars scope");
@@ -950,7 +950,7 @@ impl ClassReader {
     fn enter_class(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         name: Name,
     ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
         Ok(syms.enter_class_flat(ctx, self.current_module.expect("currentModule"), name))
@@ -1113,7 +1113,7 @@ impl ClassReader {
     pub fn read_class_file(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         c: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         self.current_owner = Some(c);
@@ -1319,7 +1319,7 @@ impl ClassReader {
     fn read_class_buffer(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         c: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let magic = self.next_int();
@@ -1406,7 +1406,7 @@ impl ClassReader {
     fn read_class(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         c: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         // Java: target = null; repeatable = null; (ClassReader.readClass)
@@ -1593,7 +1593,7 @@ impl ClassReader {
     fn read_field(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
         let raw_flags = self.next_char() as i64;
         let flags = self.adjust_field_flags(raw_flags);
@@ -1614,7 +1614,7 @@ impl ClassReader {
     fn read_method(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
         let raw_flags = self.next_char() as i64;
         let mut flags = self.adjust_method_flags(raw_flags);
@@ -1921,7 +1921,7 @@ impl ClassReader {
     fn read_module_attr(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         if ctx.sym(sym).kind != crate::code::kinds::Kind::TYP
@@ -2173,7 +2173,7 @@ impl ClassReader {
     fn resolve_possible_proxy_type(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         t: TypeId,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
         let name = match &ctx.typ(t).kind {
@@ -2192,7 +2192,7 @@ impl ClassReader {
     fn read_annotations(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Result<List<AnnotationValue>, crate::code::symbol::CompletionFailure> {
         let num_attributes = self.next_char();
         let mut annotations = List::nil();
@@ -2206,7 +2206,7 @@ impl ClassReader {
     fn read_type_to_proxy(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         index: i32,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
         let module_info = self.current_module.and_then(|module| match &ctx.sym(module).kind_data {
@@ -2232,7 +2232,7 @@ impl ClassReader {
     fn read_compound_annotation(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Result<AnnotationValue, crate::code::symbol::CompletionFailure> {
         let ty = {
             let index = self.next_char() as i32;
@@ -2253,7 +2253,7 @@ impl ClassReader {
     fn read_attribute_value(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Result<AnnotationValue, crate::code::symbol::CompletionFailure> {
         use crate::code::attribute::ConstValue;
         let tag = self.next_byte() as u8 as char;
@@ -2326,7 +2326,7 @@ impl ClassReader {
     fn attach_annotations(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let annotations = self.read_annotations(ctx, syms)?;
@@ -2442,7 +2442,7 @@ impl ClassReader {
                 let services = Rc::clone(&annotate.services);
                 let class_file = self.current_class_file.clone();
                 let reader_handle = self.reader_handle.clone();
-                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &mut crate::code::symtab::Symtab| {
+                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab| {
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                         let mut reader_guard =
@@ -2510,7 +2510,7 @@ impl ClassReader {
                 let class_file = self.current_class_file.clone();
                 let reader_handle = self.reader_handle.clone();
                 let attach_type_annotations = self.add_type_annotations_to_symbol;
-                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &mut crate::code::symtab::Symtab| {
+                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab| {
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                         let mut reader_guard =
@@ -2566,7 +2566,7 @@ impl ClassReader {
     fn read_parameter_annotations(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let num_parameters = self.next_byte() as usize;
@@ -2604,7 +2604,7 @@ impl ClassReader {
     fn attach_annotation_default(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let value = self.read_attribute_value(ctx, syms)?;
@@ -2624,7 +2624,7 @@ impl ClassReader {
                 let services = Rc::clone(&annotate.services);
                 let class_file = self.current_class_file.clone();
                 let reader_handle = self.reader_handle.clone();
-                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &mut crate::code::symtab::Symtab| {
+                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab| {
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                         let mut reader_guard =
@@ -2674,7 +2674,7 @@ impl ClassReader {
     fn attach_type_annotations(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let num_attributes = self.next_char();
@@ -2694,7 +2694,7 @@ impl ClassReader {
     fn read_type_annotation(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Result<TypeAnnotationProxy, crate::code::symbol::CompletionFailure> {
         let position = self.read_position()?;
         let compound = self.read_compound_annotation(ctx, syms)?;
@@ -2850,7 +2850,7 @@ impl ClassReader {
     fn read_attrs(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
         kind: AttributeKind,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
@@ -2949,7 +2949,7 @@ impl ClassReader {
     fn read_attribute(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         reader: AttributeReaderKind,
         sym: SymbolId,
         attr_len: i32,
@@ -3266,7 +3266,7 @@ impl ClassReader {
     fn read_code(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         owner: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         self.next_char(); // max_stack
@@ -3282,7 +3282,7 @@ impl ClassReader {
     fn read_inner_classes(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         c: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let n = self.next_char();
@@ -3332,7 +3332,7 @@ impl ClassReader {
     fn read_enclosing_method_attr(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let owner = ctx.sym(sym).owner.expect("class owner");
@@ -3540,12 +3540,12 @@ impl ClassReader {
         }
     }
     /// Java: void readClassAttrs(ClassSymbol c)
-    fn read_class_attrs(&mut self, ctx: &mut CompilerContext, syms: &mut crate::code::symtab::Symtab, c: SymbolId) -> Result<(), crate::code::symbol::CompletionFailure> {
+    fn read_class_attrs(&mut self, ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, c: SymbolId) -> Result<(), crate::code::symbol::CompletionFailure> {
         self.read_attrs(ctx, syms, c, AttributeKind::CLASS)
     }
 
     /// Java: void readMemberAttrs(Symbol sym)
-    fn read_member_attrs(&mut self, ctx: &mut CompilerContext, syms: &mut crate::code::symtab::Symtab, sym: SymbolId) -> Result<(), crate::code::symbol::CompletionFailure> {
+    fn read_member_attrs(&mut self, ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, sym: SymbolId) -> Result<(), crate::code::symbol::CompletionFailure> {
         self.read_attrs(ctx, syms, sym, AttributeKind::MEMBER)
     }
 
@@ -3554,7 +3554,7 @@ impl ClassReader {
     fn read_signature_attr(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP {
@@ -3609,7 +3609,7 @@ impl ClassReader {
     fn read_record_attr(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         ctx.sym_mut(sym).flags_field |= crate::code::flags::RECORD;
@@ -3637,7 +3637,7 @@ impl ClassReader {
     fn set_parameters(
         &mut self,
         ctx: &mut CompilerContext,
-        _syms: &mut crate::code::symtab::Symtab,
+        _syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
         jvm_type: TypeId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
@@ -3813,7 +3813,7 @@ impl ClassReader {
 /// attached type annotations.
 fn add_type_annotations_to_symbol(
     ctx: &mut CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     sym: SymbolId,
     attributes: List<crate::ids::AttributeId>,
 ) -> Result<(), crate::code::symbol::CompletionFailure> {
@@ -3886,7 +3886,7 @@ fn type_annotation_position(
 
 fn visit_class_symbol_type_annotations(
     ctx: &mut CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     sym: SymbolId,
     attributes: &List<crate::ids::AttributeId>,
 ) -> Result<(), crate::code::symbol::CompletionFailure> {
@@ -3990,7 +3990,7 @@ fn visit_class_symbol_type_annotations(
 
 fn visit_method_symbol_type_annotations(
     ctx: &mut CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     sym: SymbolId,
     attributes: &List<crate::ids::AttributeId>,
 ) -> Result<(), crate::code::symbol::CompletionFailure> {
@@ -4095,7 +4095,7 @@ fn visit_method_symbol_type_annotations(
 
 fn visit_var_symbol_type_annotations(
     ctx: &mut CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     sym: SymbolId,
     attributes: &List<crate::ids::AttributeId>,
 ) -> Result<(), crate::code::symbol::CompletionFailure> {
@@ -4113,7 +4113,7 @@ fn visit_var_symbol_type_annotations(
 
 fn rewrite_type_parameters(
     ctx: &mut CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     tvars: List<TypeId>,
     attributes: &List<crate::ids::AttributeId>,
     bound_type: crate::code::target_type::TargetType,
@@ -4237,7 +4237,7 @@ fn rewrite_type_parameters(
 
 fn add_type_annotations_to_type(
     ctx: &mut CompilerContext,
-    _syms: &mut crate::code::symtab::Symtab,
+    _syms: &crate::code::symtab::Symtab,
     ty: TypeId,
     attributes: &List<crate::ids::AttributeId>,
     filter: TypeAnnotationFilter,
@@ -4751,7 +4751,7 @@ impl AnnotationTypeCompleter for CompleterDeproxy {
     fn complete(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         assert_eq!(self.proxy_on, sym, "AssertionError: proxyOn == sym");
@@ -4794,7 +4794,7 @@ impl AnnotationTypeCompleter for CompleterDeproxy {
 /// Java: AnnotationDeproxy.deproxyCompoundList (ClassReader.java:1917-1924)
 fn deproxy_compound_list(
     ctx: &mut CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     names: &Names,
     pl: &List<AnnotationValue>,
@@ -4820,7 +4820,7 @@ fn deproxy_compound_list(
 /// Java: AnnotationDeproxy.deproxyCompound (ClassReader.java:1926-1934)
 fn deproxy_compound(
     ctx: &mut CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     names: &Names,
     proxy: &AnnotationValue,
@@ -4868,7 +4868,7 @@ fn deproxy_compound(
 /// Java: AnnotationDeproxy.deproxy + the proxy visitors (ClassReader.java:1976-2075)
 fn deproxy_value(
     ctx: &mut CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     names: &Names,
     expected_ty: TypeId,
@@ -4934,7 +4934,7 @@ fn deproxy_value(
 /// Java: AnnotationDeproxy.findAccessMethod (ClassReader.java:1936-1974)
 fn find_access_method(
     ctx: &mut CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     container: TypeId,
     name: &Name,
 ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
@@ -4995,7 +4995,7 @@ fn find_access_method(
 /// (ClassReader.java:2015-2050).
 fn find_enum_constant(
     ctx: &mut CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     enum_ty: TypeId,
     enumerator: &Name,
 ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
@@ -5322,7 +5322,7 @@ mod tests {
             Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let class_name = names.from_string(&javac_strings::JavaString::from(binary_name));
         let java_base = syms.java_base;
         let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
@@ -5336,7 +5336,7 @@ mod tests {
             *classfile = Some(file);
         }
         reader
-            .read_class_file(&mut ctx, &mut syms, c)
+            .read_class_file(&mut ctx, &syms, c)
             .expect("readClassFile");
         let class_ty = ctx.sym(c).ty.expect("class type");
         let super_is_none = match &ctx.typ(class_ty).kind {
@@ -5527,7 +5527,7 @@ mod tests {
             Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let class_name = names.from_string(&javac_strings::JavaString::from(binary_name));
         let java_base = syms.java_base;
         let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
@@ -5540,7 +5540,7 @@ mod tests {
         {
             *classfile = Some(file);
         }
-        reader.read_class_file(&mut ctx, &mut syms, c)
+        reader.read_class_file(&mut ctx, &syms, c)
     }
 
     #[test]
@@ -5645,7 +5645,7 @@ mod tests {
             Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let class_name = names.from_string(&javac_strings::JavaString::from(binary_name));
         let java_base = syms.java_base;
         let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
@@ -5659,7 +5659,7 @@ mod tests {
             *classfile = Some(file);
         }
         reader
-            .read_class_file(&mut ctx, &mut syms, c)
+            .read_class_file(&mut ctx, &syms, c)
             .expect("readClassFile");
         let class_ty = ctx.sym(c).ty.expect("class type");
         let super_is_none = match &ctx.typ(class_ty).kind {
@@ -5742,7 +5742,7 @@ mod tests {
             Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let class_name = names.from_string(&javac_strings::JavaString::from("Fixtures"));
         let java_base = syms.java_base;
         let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
@@ -5756,7 +5756,7 @@ mod tests {
             *classfile = Some(file);
         }
         reader
-            .read_class_file(&mut ctx, &mut syms, c)
+            .read_class_file(&mut ctx, &syms, c)
             .expect("readClassFile");
         let sourcefile = match &ctx.sym(c).kind_data {
             crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile.clone(),
@@ -5847,7 +5847,7 @@ mod tests {
             Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let java_base = syms.java_base;
         // 1) read the outer class.
         let outer_name = names.from_string(&javac_strings::JavaString::from("Fixtures"));
@@ -5862,7 +5862,7 @@ mod tests {
             *classfile = Some(outer_file);
         }
         reader
-            .read_class_file(&mut ctx, &mut syms, outer)
+            .read_class_file(&mut ctx, &syms, outer)
             .expect("outer readClassFile");
         // 2) read the local class whose EnclosingMethod references the outer method.
         let local_name =
@@ -5878,7 +5878,7 @@ mod tests {
             *classfile = Some(local_file);
         }
         reader
-            .read_class_file(&mut ctx, &mut syms, local)
+            .read_class_file(&mut ctx, &syms, local)
             .expect("local readClassFile");
         let name = ctx.sym(local).name.to_java_string().to_string();
         assert_eq!(name, "Local", "simpleBinaryName");
@@ -5917,7 +5917,7 @@ mod tests {
     fn read_fixture_with_reader(
         reader: &mut ClassReader,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         names: &Rc<Names>,
         binary_name: &str,
         file_name: &str,
@@ -5965,11 +5965,11 @@ mod tests {
             Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let record = read_fixture_with_reader(
             &mut reader,
             &mut ctx,
-            &mut syms,
+            &syms,
             &names,
             "RecordFixture",
             "RecordFixture.class",
@@ -5993,7 +5993,7 @@ mod tests {
         let sealed = read_fixture_with_reader(
             &mut reader,
             &mut ctx,
-            &mut syms,
+            &syms,
             &names,
             "SealedFixture",
             "SealedFixture.class",
@@ -6046,7 +6046,7 @@ mod tests {
             Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let module_name = names.from_string(&javac_strings::JavaString::from("fixtures.mod"));
         let module = syms.enter_module(&mut ctx, module_name);
         let module_info_name = names.module_info.clone();
@@ -6067,7 +6067,7 @@ mod tests {
             *classfile = Some(file);
         }
         reader
-            .read_class_file(&mut ctx, &mut syms, c)
+            .read_class_file(&mut ctx, &syms, c)
             .expect("module-info readClassFile");
         assert_ne!(ctx.sym(c).flags_field & crate::code::flags::MODULE, 0);
         let (requires, exports, uses, provides) = match &ctx.sym(module).kind_data {
@@ -6172,7 +6172,7 @@ mod tests {
             Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let java_base = syms.java_base;
         let class_name = names.from_string(&javac_strings::JavaString::from("MyAnno"));
         let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
@@ -6186,7 +6186,7 @@ mod tests {
             *classfile = Some(file);
         }
         reader
-            .read_class_file(&mut ctx, &mut syms, c)
+            .read_class_file(&mut ctx, &syms, c)
             .expect("MyAnno readClassFile");
         assert!(
             ctx.sym(c).is_annotation_type(),
@@ -6222,7 +6222,7 @@ mod tests {
         let names = Rc::new(Names::new(false));
         let source = Source::JDK17;
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let types = crate::code::types::Types::with_names(Rc::clone(&names));
         let value_name = names.value.clone();
         let proxy = AnnotationValue::Compound {
@@ -6238,7 +6238,7 @@ mod tests {
             )),
         };
         let list = List::of(proxy);
-        let attributes = deproxy_compound_list(&mut ctx, &mut syms, &types, &names, &list, None)
+        let attributes = deproxy_compound_list(&mut ctx, &syms, &types, &names, &list, None)
             .expect("deproxy");
         assert_eq!(attributes.length(), 1);
         let attr = *attributes.head();
@@ -6306,7 +6306,7 @@ mod tests {
             Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let java_base = syms.java_base;
         let class_name = names.from_string(&javac_strings::JavaString::from("AnnotatedFixture"));
         let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
@@ -6320,7 +6320,7 @@ mod tests {
             *classfile = Some(file);
         }
         reader
-            .read_class_file(&mut ctx, &mut syms, c)
+            .read_class_file(&mut ctx, &syms, c)
             .expect("AnnotatedFixture readClassFile");
         assert_eq!(reader.pending_annotations.len(), 3, "class/field/method annotations");
         let class_annotation = &reader.pending_annotations[0].1;
@@ -6397,7 +6397,7 @@ mod tests {
             Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let java_base = syms.java_base;
         let class_name = names.from_string(&javac_strings::JavaString::from("MyAnno"));
         let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
@@ -6411,7 +6411,7 @@ mod tests {
             *classfile = Some(file);
         }
         reader
-            .read_class_file(&mut ctx, &mut syms, c)
+            .read_class_file(&mut ctx, &syms, c)
             .expect("MyAnno readClassFile");
         let mut defaults: Vec<(String, AnnotationValue)> = Vec::new();
         for (sym, value) in &reader.pending_annotation_defaults {
@@ -6478,7 +6478,7 @@ mod tests {
             Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let java_base = syms.java_base;
         let class_name = names.from_string(&javac_strings::JavaString::from("TypeAnnotated"));
         let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
@@ -6492,7 +6492,7 @@ mod tests {
             *classfile = Some(file);
         }
         reader
-            .read_class_file(&mut ctx, &mut syms, c)
+            .read_class_file(&mut ctx, &syms, c)
             .expect("TypeAnnotated readClassFile");
         let mut targets: Vec<(String, Vec<String>)> = Vec::new();
         for (_, proxies) in &reader.pending_type_annotations {
@@ -6608,7 +6608,7 @@ mod tests {
             Rc::new(RefCell::new(None)),
         );
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
+        let syms = Symtab::new(&mut ctx, Rc::clone(&names), Target::JDK1_17, source);
         let class_name = names.from_string(&javac_strings::JavaString::from(binary_name));
         let java_base = syms.java_base;
         let c = syms.enter_class_flat(&mut ctx, java_base, class_name);
@@ -6622,7 +6622,7 @@ mod tests {
             *classfile = Some(file);
         }
         reader
-            .read_class_file(&mut ctx, &mut syms, c)
+            .read_class_file(&mut ctx, &syms, c)
             .map_err(|failure| format!("{failure}"))
     }
 
@@ -6777,7 +6777,7 @@ mod tests {
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let mut reader = reader();
         let names = Rc::clone(&reader.names);
-        let mut syms = crate::code::symtab::Symtab::new(
+        let syms = crate::code::symtab::Symtab::new(
             &mut ctx,
             Rc::clone(&names),
             crate::jvm::target::Target::JDK1_17,
@@ -6791,7 +6791,7 @@ mod tests {
             crate::code::type_::TypeKindData::ProxyType { name: sig },
         ));
         let resolved = reader
-            .resolve_possible_proxy_type(&mut ctx, &mut syms, proxy)
+            .resolve_possible_proxy_type(&mut ctx, &syms, proxy)
             .expect("ProxyType.resolve");
         assert_eq!(
             ctx.typ(resolved).get_tag(),
@@ -6835,7 +6835,7 @@ mod tests {
     fn parameter_names_are_synthesized_and_access_flags_are_applied() {
         let mut reader = reader();
         let mut ctx = crate::compiler_context::CompilerContext::new();
-        let mut syms = crate::code::symtab::Symtab::new(
+        let syms = crate::code::symtab::Symtab::new(
             &mut ctx,
             Rc::clone(&reader.names),
             crate::jvm::target::Target::JDK1_17,

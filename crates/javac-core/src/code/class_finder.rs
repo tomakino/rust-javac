@@ -263,7 +263,7 @@ impl ClassFinder {
     pub fn complete(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
         if ctx.sym(sym).kind == SymKind::TYP {
@@ -288,18 +288,17 @@ impl ClassFinder {
             let p = sym;
             self.fill_in_package(ctx, syms, p)?;
         }
-        if !self.reader.borrow().filling {
-            if let Some(annotate) = self.annotate.borrow().clone() {
+        if !self.reader.borrow().filling
+            && let Some(annotate) = self.annotate.borrow().clone() {
                 annotate.flush(ctx, syms)?;
             }
-        }
         Ok(())
     }
 
     fn complete_class_body(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         c: SymbolId,
     ) -> Result<(), CompletionFailure> {
         if let Some(owner) = ctx.sym(c).owner {
@@ -313,7 +312,7 @@ impl ClassFinder {
     fn complete_owners(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         o: SymbolId,
     ) -> Result<(), CompletionFailure> {
         if ctx.sym(o).kind != SymKind::PCK
@@ -327,7 +326,7 @@ impl ClassFinder {
     fn complete_enclosing(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         c: SymbolId,
     ) -> Result<(), CompletionFailure> {
         let owner = ctx.sym(c).owner.expect("class owner");
@@ -375,7 +374,7 @@ impl ClassFinder {
     pub(crate) fn fill_in(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         c: SymbolId,
     ) -> Result<(), CompletionFailure> {
         self.fill_in_class(ctx, syms, c)
@@ -385,7 +384,7 @@ impl ClassFinder {
     fn fill_in_class(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         c: SymbolId,
     ) -> Result<(), CompletionFailure> {
         let fullname = class_fullname(ctx, c);
@@ -527,7 +526,7 @@ impl ClassFinder {
     pub fn load_class(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         msym: SymbolId,
         flatname: Name,
     ) -> Result<SymbolId, CompletionFailure> {
@@ -565,7 +564,7 @@ impl ClassFinder {
     fn include_class_file(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         p: SymbolId,
         file: &Rc<dyn JavaFileObject>,
     ) {
@@ -687,7 +686,7 @@ impl ClassFinder {
     fn fill_in_package(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         p: SymbolId,
     ) -> Result<(), CompletionFailure> {
         if class_members_field(ctx, p).is_none() {
@@ -731,7 +730,7 @@ impl ClassFinder {
     fn scan_module_paths(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         p: SymbolId,
         msym: SymbolId,
     ) -> Result<(), CompletionFailure> {
@@ -782,7 +781,7 @@ impl ClassFinder {
     fn scan_user_paths(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         p: SymbolId,
         include_source_path: bool,
     ) -> Result<(), CompletionFailure> {
@@ -824,7 +823,7 @@ impl ClassFinder {
     fn scan_platform_path(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         p: SymbolId,
     ) -> Result<(), CompletionFailure> {
         let location = standard_location(StandardLocation::PLATFORM_CLASS_PATH);
@@ -838,7 +837,7 @@ impl ClassFinder {
     fn fill_in_files(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         p: SymbolId,
         location: &LocationRef,
         files: Vec<JavaFileObjectRef>,
@@ -953,7 +952,7 @@ impl Completer for ClassFinderCompleter {
     fn complete(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
         let finder = self.finder.upgrade().expect("ClassFinder is alive");
@@ -1543,7 +1542,7 @@ mod tests {
             .from_string(&javac_strings::JavaString::from(binary_name));
         fixture
             .finder
-            .load_class(&mut fixture.ctx, &mut fixture.syms, fixture.java_base, flatname)
+            .load_class(&mut fixture.ctx, &fixture.syms, fixture.java_base, flatname)
     }
 
     #[test]

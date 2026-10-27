@@ -299,10 +299,10 @@ impl TransTypes {
         if !accessible {
             let env = self.env.clone().expect("env");
             {
-                let mut syms_borrow = self.syms.borrow_mut();
+                let syms_borrow = self.syms.borrow_mut();
                 self.resolve.borrow_mut().log_access_error_internal(
                     ctx,
-                    &mut syms_borrow,
+                    &syms_borrow,
                     &env,
                     tree,
                     target,
@@ -312,7 +312,7 @@ impl TransTypes {
         let pos = ctx.tree(tree).pos;
         let clazz_tree = {
             let mut make = self.make.borrow_mut();
-            make.at(pos).type_from_type(ctx, &mut *self.syms.borrow_mut(), target)
+            make.at(pos).type_from_type(ctx, &self.syms.borrow(), target)
         };
         let cast_tree = {
             let mut make = self.make.borrow_mut();
@@ -513,7 +513,7 @@ impl TransTypes {
         let restype_tree = {
             self.make
                 .borrow_mut()
-                .type_from_type(ctx, &mut *self.syms.borrow_mut(), bridge_return_type)
+                .type_from_type(ctx, &self.syms.borrow(), bridge_return_type)
         };
         let mut param_trees: List<TreeId> = List::nil();
         let mut params_current = bridge_params.clone();
@@ -526,7 +526,7 @@ impl TransTypes {
             let p_type_tree = {
                 self.make
                     .borrow_mut()
-                    .type_from_type(ctx, &mut *self.syms.borrow_mut(), param_ty)
+                    .type_from_type(ctx, &self.syms.borrow(), param_ty)
             };
             let p_tree = self.make.borrow_mut().var_def(
                 ctx,
@@ -676,9 +676,9 @@ impl TransTypes {
         {
             let meth = sym;
             let (bridge, impl_sym) = {
-                let mut syms = self.syms.borrow_mut();
-                let bridge = crate::code::symbol::binary_implementation(ctx, &mut syms, &self.types, meth, origin);
-                let impl_sym = crate::code::symbol::implementation(ctx, &mut syms, &self.types, meth, origin, true);
+                let syms = self.syms.borrow_mut();
+                let bridge = crate::code::symbol::binary_implementation(ctx, &syms, &self.types, meth, origin);
+                let impl_sym = crate::code::symbol::implementation(ctx, &syms, &self.types, meth, origin, true);
                 (bridge, impl_sym)
             };
             let bridge_is_absent_or_self = match bridge {
@@ -1156,9 +1156,9 @@ impl TreeVisitor for TransTypes {
             let diags = Rc::clone(&self.diags);
             let chk = Rc::clone(&self.chk);
             let chk = chk.borrow();
-            let mut syms = self.syms.borrow_mut();
+            let syms = self.syms.borrow_mut();
             self.types
-                .lambda_descriptor_type(ctx, &mut syms, &diags, &chk, target)
+                .lambda_descriptor_type(ctx, &syms, &diags, &chk, target)
         };
         self.return_type = Some(self.erased_return_type(ctx, descriptor));
         let params = self.translate_list_with_pt(ctx, &params, None);
@@ -1181,9 +1181,9 @@ impl TreeVisitor for TransTypes {
                         let diags = Rc::clone(&self.diags);
                         let chk = Rc::clone(&self.chk);
                         let chk = chk.borrow();
-                        let mut syms = self.syms.borrow_mut();
+                        let syms = self.syms.borrow_mut();
                         self.types
-                            .find_descriptor_symbol(ctx, &mut syms, &diags, &chk, tsym)
+                            .find_descriptor_symbol(ctx, &syms, &diags, &chk, tsym)
                             .expect("descriptor symbol")
                     };
                     let owner = ctx.sym(desc).owner.expect("descriptor owner");
@@ -1542,7 +1542,7 @@ impl TreeVisitor for TransTypes {
                 encl = self.translate_with_pt(ctx, Some(encl_tree), pt);
             } else {
                 let env = self.env.clone().expect("env");
-                let null_check = self.attr.borrow_mut().make_null_check(ctx, &mut self.syms.borrow_mut(), encl_tree);
+                let null_check = self.attr.borrow_mut().make_null_check(ctx, &self.syms.borrow_mut(), encl_tree);
                 let mut new_args: List<TreeId> = List::nil();
                 new_args = new_args.append(null_check);
                 let mut current = args;
@@ -1838,7 +1838,7 @@ impl TreeVisitor for TransTypes {
             // Java: result = make.at(tree.pos).Type(et);
             let pos = ctx.tree(tree).pos;
             let type_tree = {
-                self.make.borrow_mut().at(pos).type_from_type(ctx, &mut *self.syms.borrow_mut(), et)
+                self.make.borrow_mut().at(pos).type_from_type(ctx, &self.syms.borrow(), et)
             };
             self.result = Some(type_tree);
         } else if ctx.typ(ctx.tree(tree).ty.expect("ident type")).const_value().is_some() {
@@ -1917,7 +1917,7 @@ impl TreeVisitor for TransTypes {
         let expr = if is_unbound {
             let pos = ctx.tree(tree).pos;
             let type_tree = {
-                self.make.borrow_mut().at(pos).type_from_type(ctx, &mut *self.syms.borrow_mut(), receiver_target)
+                self.make.borrow_mut().at(pos).type_from_type(ctx, &self.syms.borrow(), receiver_target)
             };
             Some(type_tree)
         } else {
@@ -1933,9 +1933,9 @@ impl TreeVisitor for TransTypes {
                         let diags = Rc::clone(&self.diags);
                         let chk = Rc::clone(&self.chk);
                         let chk = chk.borrow();
-                        let mut syms = self.syms.borrow_mut();
+                        let syms = self.syms.borrow_mut();
                         self.types
-                            .find_descriptor_symbol(ctx, &mut syms, &diags, &chk, tsym)
+                            .find_descriptor_symbol(ctx, &syms, &diags, &chk, tsym)
                             .expect("descriptor symbol")
                     };
                     let owner = ctx.sym(desc).owner.expect("descriptor owner");

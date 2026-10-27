@@ -111,7 +111,7 @@ pub trait FreeTypeListener {
     fn types_inferred(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         inference_context: &InferenceContext,
     ) -> Result<(), InferenceException>;
@@ -254,7 +254,7 @@ fn incorporation_action_apply(
     infer: &Infer,
     action: &IncorporationAction,
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     inference_context: &InferenceContext,
     warn: &mut Warner,
@@ -487,7 +487,7 @@ fn check_bounds_to_check(from: InferenceBound) -> Vec<InferenceBound> {
 fn type_func_apply(
     func: TypeFunc,
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     inference_context: &InferenceContext,
     t: TypeId,
@@ -501,7 +501,7 @@ fn type_func_apply(
 fn type_filter_test(
     filter: TypeFilter,
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     inference_context: &InferenceContext,
     t: TypeId,
@@ -567,7 +567,7 @@ impl Infer {
     pub fn from_type_var_fun(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         tv: TypeId,
     ) -> TypeId {
@@ -596,7 +596,7 @@ impl Infer {
     pub fn do_incorporation(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         inference_context: &InferenceContext,
         warn: &mut Warner,
@@ -636,7 +636,7 @@ impl Infer {
     pub fn get_parameterized_supers(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
         s: TypeId,
@@ -671,7 +671,7 @@ impl Infer {
     fn as_super(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
         sup: TypeId,
@@ -691,7 +691,7 @@ impl Infer {
     pub fn instantiate_as_uninferred_vars(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         vars: List<TypeId>,
         inference_context: &InferenceContext,
@@ -967,7 +967,7 @@ impl InferenceContext {
     pub fn new(
         infer: Rc<Infer>,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         inferencevars: List<TypeId>,
     ) -> Rc<InferenceContext> {
@@ -986,7 +986,7 @@ impl InferenceContext {
     pub fn add_var(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
     ) {
@@ -1245,7 +1245,7 @@ impl InferenceContext {
     pub fn notify_change(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
     ) -> Result<(), InferenceException> {
         let restvars = self.restvars(ctx, syms, types);
@@ -1266,7 +1266,7 @@ impl InferenceContext {
     pub fn notify_change_list(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         inferred_vars: List<TypeId>,
     ) -> Result<(), InferenceException> {
@@ -1321,7 +1321,7 @@ impl InferenceContext {
     pub fn save(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
     ) -> List<TypeId> {
         let undetvars = self.inner.borrow().undetvars.clone();
@@ -1339,7 +1339,7 @@ impl InferenceContext {
     pub fn rollback(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         saved_undet: List<TypeId>,
     ) {
@@ -1377,7 +1377,7 @@ impl InferenceContext {
     pub fn dup_to(
         self: &Rc<Self>,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         that: &Rc<InferenceContext>,
         clone_undets: bool,
@@ -1444,7 +1444,7 @@ impl InferenceContext {
     pub fn min(
         self: &Rc<Self>,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         roots: List<TypeId>,
         should_solve: bool,
@@ -1572,7 +1572,7 @@ impl InferenceContext {
     pub fn solve(
         self: &Rc<InferenceContext>,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         warn: &mut Warner,
     ) -> Result<(), InferenceException> {
@@ -1586,7 +1586,7 @@ impl InferenceContext {
     pub fn solve_list(
         self: &Rc<InferenceContext>,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         vars: List<TypeId>,
         warn: &mut Warner,
@@ -1603,7 +1603,7 @@ impl InferenceContext {
     pub fn solve_any(
         self: &Rc<InferenceContext>,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         vars_to_solve: List<TypeId>,
         warn: &mut Warner,
@@ -1630,7 +1630,7 @@ impl InferenceContext {
     fn solve_with_strategy(
         self: &Rc<InferenceContext>,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         strategy: Rc<dyn GraphStrategy>,
         warn: &mut Warner,
@@ -1645,7 +1645,7 @@ impl InferenceContext {
     pub fn solve_basic(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         vars_to_solve: List<TypeId>,
         steps: &[InferenceStep],
@@ -1682,7 +1682,7 @@ impl InferenceContext {
     pub fn solve_legacy(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         partial: bool,
         steps: &[InferenceStep],
@@ -1792,7 +1792,7 @@ impl InferenceStep {
     pub fn accepts(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         uv: TypeId,
         inference_context: &InferenceContext,
@@ -1850,7 +1850,7 @@ impl InferenceStep {
         &self,
         infer: &Infer,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         uv: TypeId,
         inference_context: &InferenceContext,
@@ -1944,7 +1944,7 @@ impl InferenceStep {
     fn filter_bounds(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         uv: TypeId,
         inference_context: &InferenceContext,
@@ -1966,7 +1966,7 @@ impl InferenceStep {
 /// Java: Infer.BoundFilter.test (Infer.java:1233-1245)
 fn bound_filter(
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     inference_context: &InferenceContext,
     t: TypeId,
@@ -1982,7 +1982,7 @@ pub trait GraphStrategy {
     fn pick_node(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         graph: &InferenceGraph,
         inference_context: &InferenceContext,
@@ -1991,7 +1991,7 @@ pub trait GraphStrategy {
     fn done(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         inference_context: &InferenceContext,
     ) -> Result<bool, InferenceException>;
@@ -2012,7 +2012,7 @@ impl GraphStrategy for LeafSolver {
     fn pick_node(
         &self,
         _ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
+        _syms: &Symtab,
         _types: &Types,
         graph: &InferenceGraph,
         _inference_context: &InferenceContext,
@@ -2028,7 +2028,7 @@ impl GraphStrategy for LeafSolver {
     fn done(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         inference_context: &InferenceContext,
     ) -> Result<bool, InferenceException> {
@@ -2059,7 +2059,7 @@ impl BestLeafSolver {
     fn compute_tree_to_leafs(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         graph: &InferenceGraph,
         node: usize,
@@ -2093,7 +2093,7 @@ impl GraphStrategy for BestLeafSolver {
     fn pick_node(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         graph: &InferenceGraph,
         inference_context: &InferenceContext,
@@ -2122,7 +2122,7 @@ impl GraphStrategy for BestLeafSolver {
     fn done(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         inference_context: &InferenceContext,
     ) -> Result<bool, InferenceException> {
@@ -2177,7 +2177,7 @@ impl<'a> GraphSolver<'a> {
     pub fn solve(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         infer: &Infer,
         strategy: Rc<dyn GraphStrategy>,
@@ -2284,7 +2284,7 @@ impl InferenceGraph {
     /// Java: InferenceGraph() { initNodes(); } (Infer.java:1837-1917)
     pub fn new(
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         inference_context: &InferenceContext,
     ) -> InferenceGraph {
@@ -2379,7 +2379,7 @@ impl InferenceGraph {
     pub fn delete_node(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         _inference_context: &InferenceContext,
         node: usize,
@@ -2564,7 +2564,7 @@ impl ReachabilityVisitor {
     pub fn scan(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         roots: List<TypeId>,
     ) -> Result<(), InferenceException> {
@@ -2579,7 +2579,7 @@ impl ReachabilityVisitor {
     fn visit(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
     ) -> Result<(), InferenceException> {
@@ -2631,7 +2631,7 @@ impl ReachabilityVisitor {
     fn visit_undet_var(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
     ) -> Result<(), InferenceException> {
@@ -2674,7 +2674,7 @@ impl ReachabilityVisitor {
     fn is_equiv(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         from: TypeId,
         t: TypeId,
@@ -2706,7 +2706,7 @@ impl ReachabilityVisitor {
 /// min roots or bounds of UndetVars).
 fn inference_context_free_placeholder(
     _ctx: &mut CompilerContext,
-    _syms: &mut Symtab,
+    _syms: &Symtab,
     _types: &Types,
     t: TypeId,
 ) -> TypeId {
@@ -2723,7 +2723,7 @@ impl FreeTypeListener for NotifyChangeListener {
     fn types_inferred(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         _inference_context: &InferenceContext,
     ) -> Result<(), InferenceException> {
@@ -2747,7 +2747,7 @@ impl FreeTypeListener for PropagateListener {
     fn types_inferred(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         inference_context: &InferenceContext,
     ) -> Result<(), InferenceException> {
@@ -2779,7 +2779,7 @@ impl FreeTypeListener for UnreachableVarsListener {
     fn types_inferred(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         inference_context: &InferenceContext,
     ) -> Result<(), InferenceException> {
@@ -2839,7 +2839,7 @@ fn list_contains_all(ts: &List<TypeId>, ss: &List<TypeId>) -> bool {
 /// Java: Type.containsAny(List<Type> ts1, List<Type> ts2)
 fn contains_any_list(
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     ts1: List<TypeId>,
     ts2: List<TypeId>,
@@ -2959,7 +2959,7 @@ fn new_captured_type_ctx(
 fn check_bound(
     infer: &Infer,
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     s: TypeId,
     t: TypeId,
@@ -3091,7 +3091,7 @@ fn type_args(_inst: TypeId, bounds: &List<TypeId>) -> Vec<TypeArg> {
 fn check_compatible_upper_bounds(
     infer: &Infer,
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     inference_context: &InferenceContext,
     uv: TypeId,
@@ -3156,7 +3156,7 @@ impl Infer {
     pub fn instantiate_method(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -3212,7 +3212,7 @@ impl Infer {
     fn instantiate_method_inner(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -3413,7 +3413,7 @@ impl Infer {
     fn should_propagate(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         restype: TypeId,
         target: &crate::comp::attr::ResultInfo,
@@ -3449,7 +3449,7 @@ impl Infer {
     fn roots(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         mt: TypeId,
         deferred_attr_context: Option<&crate::comp::deferred_attr::DeferredAttrContext>,
@@ -3497,7 +3497,7 @@ impl Infer {
     fn generate_return_constraints(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         tree: Option<TreeId>,
         result_info: &crate::comp::attr::ResultInfo,
@@ -3596,7 +3596,7 @@ impl Infer {
     fn needs_eager_instantiation(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         from: TypeId,
         to: TypeId,
@@ -3675,7 +3675,7 @@ impl Infer {
     fn common_super_with_diff_parameterization(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
         s: TypeId,
@@ -3696,7 +3696,7 @@ impl Infer {
     fn generate_reference_to_target_constraint(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         tree: Option<TreeId>,
         from: TypeId,
@@ -3798,7 +3798,7 @@ impl Infer {
     pub fn partially_inferred_method_type_check(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         chk: &crate::comp::check::Check,
         t: TypeId,
@@ -3900,7 +3900,7 @@ impl Infer {
     pub fn instantiate_functional_interface(
         self: &Rc<Self>,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
@@ -4035,7 +4035,7 @@ impl Infer {
     pub fn instantiate_polymorphic_signature_instance(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -4151,7 +4151,7 @@ mod tests {
 
     fn new_type_var(
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         names: &Names,
         text: &str,
         flags: i64,
@@ -4180,7 +4180,7 @@ mod tests {
 
     fn context_with_var(
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         infer: &Rc<Infer>,
         names: &Names,
@@ -4199,8 +4199,8 @@ mod tests {
 
     #[test]
     fn from_type_var_fun_creates_an_undet_var_with_the_declared_bound() {
-        let (mut ctx, mut syms, types, infer, names) = harness(true);
-        let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
+        let (mut ctx, syms, types, infer, names) = harness(true);
+        let (context, tvar) = context_with_var(&mut ctx, &syms, &types, &infer, &names);
         let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         match &ctx.typ(uv).kind {
             TypeKindData::UndetVar { qtype, .. } => assert_eq!(*qtype, tvar),
@@ -4214,8 +4214,8 @@ mod tests {
 
     #[test]
     fn eq_bound_solves_to_the_bound_type() {
-        let (mut ctx, mut syms, types, infer, names) = harness(true);
-        let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
+        let (mut ctx, syms, types, infer, names) = harness(true);
+        let (context, tvar) = context_with_var(&mut ctx, &syms, &types, &infer, &names);
         let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         types.undet_var_add_bound(
@@ -4228,7 +4228,7 @@ mod tests {
         );
         let mut warn = Warner::new(None);
         context
-            .solve(&mut ctx, &mut syms, &types, &mut warn)
+            .solve(&mut ctx, &syms, &types, &mut warn)
             .expect("solve should succeed");
         assert!(context.restvars(&mut ctx, &syms, &types).is_empty());
         assert_eq!(
@@ -4239,8 +4239,8 @@ mod tests {
 
     #[test]
     fn lower_bound_solves_to_the_bound_type() {
-        let (mut ctx, mut syms, types, infer, names) = harness(true);
-        let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
+        let (mut ctx, syms, types, infer, names) = harness(true);
+        let (context, tvar) = context_with_var(&mut ctx, &syms, &types, &infer, &names);
         let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         types.undet_var_add_bound(
@@ -4253,7 +4253,7 @@ mod tests {
         );
         let mut warn = Warner::new(None);
         context
-            .solve(&mut ctx, &mut syms, &types, &mut warn)
+            .solve(&mut ctx, &syms, &types, &mut warn)
             .expect("solve should succeed");
         assert_eq!(
             context.inst_types(&mut ctx, &types),
@@ -4263,8 +4263,8 @@ mod tests {
 
     #[test]
     fn upper_bound_solves_to_the_bound_type() {
-        let (mut ctx, mut syms, types, infer, names) = harness(true);
-        let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
+        let (mut ctx, syms, types, infer, names) = harness(true);
+        let (context, tvar) = context_with_var(&mut ctx, &syms, &types, &infer, &names);
         let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         types.undet_var_add_bound(
@@ -4277,7 +4277,7 @@ mod tests {
         );
         let mut warn = Warner::new(None);
         context
-            .solve(&mut ctx, &mut syms, &types, &mut warn)
+            .solve(&mut ctx, &syms, &types, &mut warn)
             .expect("solve should succeed");
         assert_eq!(
             context.inst_types(&mut ctx, &types),
@@ -4287,8 +4287,8 @@ mod tests {
 
     #[test]
     fn save_and_rollback_restore_the_bounds_and_instances() {
-        let (mut ctx, mut syms, types, infer, names) = harness(true);
-        let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
+        let (mut ctx, syms, types, infer, names) = harness(true);
+        let (context, tvar) = context_with_var(&mut ctx, &syms, &types, &infer, &names);
         let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         let int_type = syms.int_type;
@@ -4300,7 +4300,7 @@ mod tests {
             string_type,
             false,
         );
-        let saved = context.save(&mut ctx, &mut syms, &types);
+        let saved = context.save(&mut ctx, &syms, &types);
         types.undet_var_add_bound(
             &mut ctx,
             &syms,
@@ -4316,7 +4316,7 @@ mod tests {
                 .length(),
             3
         );
-        context.rollback(&mut ctx, &mut syms, &types, saved);
+        context.rollback(&mut ctx, &syms, &types, saved);
         let uv_after = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         assert!(types.undet_var_get_inst(&ctx, uv_after).is_none());
         let object_type = syms.object_type;
@@ -4335,7 +4335,7 @@ mod tests {
             fn types_inferred(
                 &self,
                 _ctx: &mut CompilerContext,
-                _syms: &mut Symtab,
+                _syms: &Symtab,
                 _types: &Types,
                 _inference_context: &InferenceContext,
             ) -> Result<(), InferenceException> {
@@ -4343,8 +4343,8 @@ mod tests {
                 Ok(())
             }
         }
-        let (mut ctx, mut syms, types, infer, names) = harness(true);
-        let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
+        let (mut ctx, syms, types, infer, names) = harness(true);
+        let (context, tvar) = context_with_var(&mut ctx, &syms, &types, &infer, &names);
         let listener = Rc::new(RecordingListener {
             called: RefCell::new(false),
         });
@@ -4358,17 +4358,17 @@ mod tests {
         let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let object_type = syms.object_type;
         types.undet_var_set_inst(&mut ctx, &syms, uv, object_type);
-        let mut syms_for_notify = syms;
+        let syms_for_notify = syms;
         context
-            .notify_change(&mut ctx, &mut syms_for_notify, &types)
+            .notify_change(&mut ctx, &syms_for_notify, &types)
             .expect("notify_change should succeed");
         assert!(*listener.called.borrow());
     }
 
     #[test]
     fn as_inst_type_replaces_inference_vars_with_their_instances() {
-        let (mut ctx, mut syms, types, infer, names) = harness(true);
-        let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
+        let (mut ctx, syms, types, infer, names) = harness(true);
+        let (context, tvar) = context_with_var(&mut ctx, &syms, &types, &infer, &names);
         let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         types.undet_var_set_inst(&mut ctx, &syms, uv, string_type);
@@ -4399,8 +4399,8 @@ mod tests {
 
     #[test]
     fn inference_steps_accept_relevant_undet_vars() {
-        let (mut ctx, mut syms, types, infer, names) = harness(true);
-        let (context, tvar) = context_with_var(&mut ctx, &mut syms, &types, &infer, &names);
+        let (mut ctx, syms, types, infer, names) = harness(true);
+        let (context, tvar) = context_with_var(&mut ctx, &syms, &types, &infer, &names);
         let uv = context.as_undet_var(&mut ctx, &syms, &types, tvar);
         let string_type = syms.string_type;
         types.undet_var_add_bound(
@@ -4412,13 +4412,13 @@ mod tests {
             false,
         );
         assert!(InferenceStep::EQ
-            .accepts(&mut ctx, &mut syms, &types, uv, &context)
+            .accepts(&mut ctx, &syms, &types, uv, &context)
             .unwrap());
         assert!(!InferenceStep::LOWER
-            .accepts(&mut ctx, &mut syms, &types, uv, &context)
+            .accepts(&mut ctx, &syms, &types, uv, &context)
             .unwrap());
         let solved = InferenceStep::EQ
-            .solve(&infer, &mut ctx, &mut syms, &types, uv, &context)
+            .solve(&infer, &mut ctx, &syms, &types, uv, &context)
             .unwrap();
         assert_eq!(solved, string_type);
     }
@@ -4450,29 +4450,29 @@ mod tests {
                 oracle_actual, expected_name,
                 "oracle self-check for {label}"
             );
-            let (mut ctx, mut syms, types, infer, names) = harness(true);
+            let (mut ctx, syms, types, infer, names) = harness(true);
             let object_type = syms.object_type;
             let (tvar, ib, bound, expected_ty) = match label {
                 "eq_string" => (
-                    new_type_var(&mut ctx, &mut syms, &names, "T", 0, object_type),
+                    new_type_var(&mut ctx, &syms, &names, "T", 0, object_type),
                     InferenceBound::EQ,
                     syms.string_type,
                     syms.string_type,
                 ),
                 "lower_string" => (
-                    new_type_var(&mut ctx, &mut syms, &names, "T", 0, object_type),
+                    new_type_var(&mut ctx, &syms, &names, "T", 0, object_type),
                     InferenceBound::LOWER,
                     syms.string_type,
                     syms.string_type,
                 ),
                 "upper_string" => (
-                    new_type_var(&mut ctx, &mut syms, &names, "T", 0, object_type),
+                    new_type_var(&mut ctx, &syms, &names, "T", 0, object_type),
                     InferenceBound::UPPER,
                     syms.string_type,
                     syms.string_type,
                 ),
                 "upper_object" => (
-                    new_type_var(&mut ctx, &mut syms, &names, "T", 0, object_type),
+                    new_type_var(&mut ctx, &syms, &names, "T", 0, object_type),
                     InferenceBound::UPPER,
                     object_type,
                     object_type,
@@ -4480,7 +4480,7 @@ mod tests {
                 "throws_runtime" => (
                     new_type_var(
                         &mut ctx,
-                        &mut syms,
+                        &syms,
                         &names,
                         "T",
                         flags::THROWS,
@@ -4495,7 +4495,7 @@ mod tests {
             let context = InferenceContext::new(
                 Rc::clone(&infer),
                 &mut ctx,
-                &mut syms,
+                &syms,
                 &types,
                 List::of(tvar),
             );
@@ -4503,7 +4503,7 @@ mod tests {
             types.undet_var_add_bound(&mut ctx, &syms, uv, ib, bound, false);
             let mut warn = Warner::new(None);
             context
-                .solve(&mut ctx, &mut syms, &types, &mut warn)
+                .solve(&mut ctx, &syms, &types, &mut warn)
                 .expect("solve should succeed");
             let inst = context.inst_types(&mut ctx, &types);
             assert_eq!(

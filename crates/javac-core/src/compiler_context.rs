@@ -317,7 +317,7 @@ impl CompilerContext {
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
         types: &crate::code::types::Types,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Vec<SymbolId> {
         let snapshot = self.scope(scope).clone();
         snapshot.get_symbols_by_name_full(scope, name, lookup_kind, filter, types, syms, self)
@@ -350,7 +350,7 @@ impl CompilerContext {
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
         types: &crate::code::types::Types,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Vec<SymbolId> {
         let snapshot = self.scope(scope).clone();
         snapshot.get_symbols_full(scope, lookup_kind, filter, types, syms, self)
@@ -383,7 +383,7 @@ impl CompilerContext {
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
         types: &crate::code::types::Types,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> Vec<SymbolId> {
         let snapshot = self.scope(scope).clone();
         snapshot.get_symbols_by_name_full(scope, name, lookup_kind, filter, types, syms, self)
@@ -595,7 +595,7 @@ impl CompilerContext {
         &mut self,
         scope: ScopeId,
         types: &crate::code::types::Types,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) {
         let (sub_scopes, _name2_scopes) = match &self.scope(scope).data {
             crate::code::scope::ScopeData::ImportScope { sub_scopes, .. } => {
@@ -657,7 +657,7 @@ impl CompilerContext {
         &mut self,
         scope: ScopeId,
         types: &crate::code::types::Types,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
     ) -> ScopeId {
         let (owner, statically_imported) = match &self.scope(scope).data {
             crate::code::scope::ScopeData::FilterImportScope {
@@ -695,7 +695,7 @@ impl CompilerContext {
     /// the symbol table, ADR 0001).
     pub fn complete_symbol(
         &mut self,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         symbol: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let completer = self.sym_mut(symbol).completer.take();
@@ -718,7 +718,7 @@ impl CompilerContext {
     ///   - none.
     pub fn complete_uses_provides(
         &mut self,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         symbol: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let completer = match &mut self.sym_mut(symbol).kind_data {
@@ -738,7 +738,7 @@ impl CompilerContext {
     /// the public/static flags, then notifies the DeferredCompletionFailureHandler.
     pub fn complete_class_symbol(
         &mut self,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         symbol: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let orig_completer = self.sym(symbol).completer.clone();
@@ -791,7 +791,7 @@ impl CompilerContext {
     ///   - none.
     pub fn api_complete_symbol(
         &mut self,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         symbol: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         match self.complete_symbol(syms, symbol) {
@@ -826,7 +826,7 @@ impl CompilerContext {
     ///   - none.
     pub fn package_get_raw_attributes(
         &mut self,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         package: SymbolId,
     ) -> Result<List<AttributeId>, crate::code::symbol::CompletionFailure> {
         self.complete_symbol(syms, package)?;
@@ -875,7 +875,7 @@ impl CompilerContext {
     ///   - none.
     pub fn symbol_get_const_value(
         &mut self,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         symbol: SymbolId,
         attr: &mut crate::comp::attr::Attr,
     ) -> Option<crate::util::constants::ConstantValue> {
@@ -1078,6 +1078,95 @@ fn sub_scope_fields_mut(
 }
 
 
+impl CompilerContext {
+    /// Java: ClassSymbol.createRecordComponent(RecordComponent existing,
+    /// JCVariableDecl var, List<JCAnnotation> annotations) (Symbol.java:1522-1532).
+    ///
+    /// Adapter: the symbol arena allocation needs the compiler context, so the
+    /// ClassSymbol method is expressed as this context operation.
+    ///
+    /// # Arguments
+    ///   - class: the record class symbol;
+    ///   - existing: the component to replace, if any;
+    ///   - var: the record component field symbol;
+    ///   - annotations: the (original) annotations of the new component.
+    ///
+    /// # Returns
+    ///   - the created record component symbol.
+    ///
+    /// # Panics
+    ///   - the symbol is not a class symbol.
+    pub fn create_record_component(
+        &mut self,
+        class: SymbolId,
+        existing: Option<SymbolId>,
+        var: SymbolId,
+        annotations: List<TreeId>,
+    ) -> SymbolId {
+        let var_name = self.sym(var).name.clone();
+        let var_ty = self.sym(var).ty.expect("record component type");
+        let (original_annos, is_varargs) = match existing {
+            Some(existing) => match &self.sym(existing).kind_data {
+                crate::code::symbol::SymbolKind::RecordComponent {
+                    original_annos,
+                    is_varargs,
+                    ..
+                } => (original_annos.clone(), *is_varargs),
+                _ => (List::nil(), false),
+            },
+            None => (annotations, false),
+        };
+        let pos = match &self.sym(var).kind_data {
+            crate::code::symbol::SymbolKind::VarSymbol { pos, .. } => *pos,
+            _ => crate::util::position::NOPOS,
+        };
+        let rc = self.alloc_symbol(Symbol::new(
+            crate::code::kinds::Kind::VAR,
+            crate::code::flags::PUBLIC as i64,
+            var_name,
+            Some(var_ty),
+            Some(class),
+            crate::code::symbol::SymbolKind::RecordComponent {
+                accessor: None,
+                accessor_meth: None,
+                original_annos,
+                pos,
+                is_varargs,
+            },
+        ));
+        if let Some(existing) = existing {
+            match &mut self.sym_mut(class).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol {
+                    record_components, ..
+                } => {
+                    let mut filtered: List<SymbolId> = List::nil();
+                    let mut current = record_components.clone();
+                    while current.non_empty() {
+                        let component = *current.head();
+                        current = current.tail();
+                        if component != existing {
+                            filtered = filtered.append(component);
+                        }
+                    }
+                    *record_components = filtered.append(rc);
+                }
+                _ => panic!("ClassCastException: not a class symbol"),
+            }
+        } else {
+            match &mut self.sym_mut(class).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol {
+                    record_components, ..
+                } => {
+                    *record_components = record_components.append(rc);
+                }
+                _ => panic!("ClassCastException: not a class symbol"),
+            }
+        }
+        rc
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1140,7 +1229,7 @@ mod tests {
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
             &types,
-            &mut syms,
+            &syms,
         );
         assert_eq!(all.len(), 2);
         let by_name = ctx.scope_get_symbols_by_name_ctx(
@@ -1149,7 +1238,7 @@ mod tests {
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
             &types,
-            &mut syms,
+            &syms,
         );
         assert_eq!(by_name, vec![sym_b, sym_a]);
     }
@@ -1177,7 +1266,7 @@ mod tests {
         fn complete(
             &mut self,
             ctx: &mut CompilerContext,
-            _syms: &mut crate::code::symtab::Symtab,
+            _syms: &crate::code::symtab::Symtab,
             sym: SymbolId,
         ) -> Result<(), crate::code::symbol::CompletionFailure> {
             ctx.sym_mut(sym).flags_field |= crate::code::flags::DEPRECATED as i64;
@@ -1199,13 +1288,13 @@ mod tests {
         let completer: crate::code::symbol::CompleterRef =
             Rc::new(std::cell::RefCell::new(FlagCompleter));
         ctx.sym_mut(id).completer = Some(completer);
-        assert!(ctx.api_complete_symbol(&mut syms, id).is_ok());
+        assert!(ctx.api_complete_symbol(&syms, id).is_ok());
         assert!(
             (ctx.sym(id).flags_field & crate::code::flags::DEPRECATED as i64) != 0,
             "apiComplete runs Symbol.complete() like Symbol.java:686-692"
         );
         assert!(ctx.sym(id).completer.is_none());
-        assert!(ctx.api_complete_symbol(&mut syms, id).is_ok());
+        assert!(ctx.api_complete_symbol(&syms, id).is_ok());
     }
 
     #[test]
@@ -1317,94 +1406,5 @@ mod tests {
         assert_eq!(ctx.scope_get_symbols(scope, LookupKind::NON_RECURSIVE, &|_| true).len(), 2);
         assert!(!ctx.scope_is_empty(scope));
         assert!(ctx.scope_any_match(scope, &|_| true));
-    }
-}
-
-
-impl CompilerContext {
-    /// Java: ClassSymbol.createRecordComponent(RecordComponent existing,
-    /// JCVariableDecl var, List<JCAnnotation> annotations) (Symbol.java:1522-1532).
-    ///
-    /// Adapter: the symbol arena allocation needs the compiler context, so the
-    /// ClassSymbol method is expressed as this context operation.
-    ///
-    /// # Arguments
-    ///   - class: the record class symbol;
-    ///   - existing: the component to replace, if any;
-    ///   - var: the record component field symbol;
-    ///   - annotations: the (original) annotations of the new component.
-    ///
-    /// # Returns
-    ///   - the created record component symbol.
-    ///
-    /// # Panics
-    ///   - the symbol is not a class symbol.
-    pub fn create_record_component(
-        &mut self,
-        class: SymbolId,
-        existing: Option<SymbolId>,
-        var: SymbolId,
-        annotations: List<TreeId>,
-    ) -> SymbolId {
-        let var_name = self.sym(var).name.clone();
-        let var_ty = self.sym(var).ty.expect("record component type");
-        let (original_annos, is_varargs) = match existing {
-            Some(existing) => match &self.sym(existing).kind_data {
-                crate::code::symbol::SymbolKind::RecordComponent {
-                    original_annos,
-                    is_varargs,
-                    ..
-                } => (original_annos.clone(), *is_varargs),
-                _ => (List::nil(), false),
-            },
-            None => (annotations, false),
-        };
-        let pos = match &self.sym(var).kind_data {
-            crate::code::symbol::SymbolKind::VarSymbol { pos, .. } => *pos,
-            _ => crate::util::position::NOPOS,
-        };
-        let rc = self.alloc_symbol(Symbol::new(
-            crate::code::kinds::Kind::VAR,
-            crate::code::flags::PUBLIC as i64,
-            var_name,
-            Some(var_ty),
-            Some(class),
-            crate::code::symbol::SymbolKind::RecordComponent {
-                accessor: None,
-                accessor_meth: None,
-                original_annos,
-                pos,
-                is_varargs,
-            },
-        ));
-        if let Some(existing) = existing {
-            match &mut self.sym_mut(class).kind_data {
-                crate::code::symbol::SymbolKind::ClassSymbol {
-                    record_components, ..
-                } => {
-                    let mut filtered: List<SymbolId> = List::nil();
-                    let mut current = record_components.clone();
-                    while current.non_empty() {
-                        let component = *current.head();
-                        current = current.tail();
-                        if component != existing {
-                            filtered = filtered.append(component);
-                        }
-                    }
-                    *record_components = filtered.append(rc);
-                }
-                _ => panic!("ClassCastException: not a class symbol"),
-            }
-        } else {
-            match &mut self.sym_mut(class).kind_data {
-                crate::code::symbol::SymbolKind::ClassSymbol {
-                    record_components, ..
-                } => {
-                    *record_components = record_components.append(rc);
-                }
-                _ => panic!("ClassCastException: not a class symbol"),
-            }
-        }
-        rc
     }
 }

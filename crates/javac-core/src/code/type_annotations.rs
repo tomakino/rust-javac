@@ -109,7 +109,7 @@ impl TypeAnnotations {
     pub fn annotation_targets(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tsym: SymbolId,
     ) -> Option<List<AttributeId>> {
         let metadata = ctx.sym(tsym).get_annotation_type_metadata().cloned()?;
@@ -173,7 +173,7 @@ impl TypeAnnotations {
     pub fn annotation_target_type(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         a: AttributeId,
         s: SymbolId,
     ) -> AnnotationType {
@@ -337,7 +337,7 @@ impl TypeAnnotations {
     pub fn organize_type_annotations_bodies(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: crate::ids::TreeId,
     ) {
         let mut positions = TypeAnnotationPositions::new(self, syms, false);
@@ -368,7 +368,7 @@ impl TypeAnnotations {
         let env = Rc::clone(env);
         self.annotate.after_types(Box::new(
             move |ctx: &mut crate::compiler_context::CompilerContext,
-                  syms: &mut crate::code::symtab::Symtab| {
+                  syms: &crate::code::symtab::Symtab| {
                 let toplevel = env.toplevel.expect("env toplevel");
                 let sourcefile = match &ctx.tree(toplevel).kind {
                     crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => {
@@ -421,7 +421,7 @@ impl TypeAnnotations {
         let env = Rc::clone(env);
         self.annotate.validate(Box::new(
             move |ctx: &mut crate::compiler_context::CompilerContext,
-                  syms: &mut crate::code::symtab::Symtab| {
+                  syms: &crate::code::symtab::Symtab| {
                 let toplevel = env.toplevel.expect("env toplevel");
                 let sourcefile = match &ctx.tree(toplevel).kind {
                     crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => {
@@ -453,7 +453,7 @@ pub struct TypeAnnotationPositions<'a, 'b> {
     /// Java: the enclosing TypeAnnotations
     pub type_annotations: &'a TypeAnnotations,
     /// Adapter: the explicit syms service (ADR 0001)
-    pub syms: &'b mut Symtab,
+    pub syms: &'b Symtab,
     /// Java: private final boolean sigOnly
     pub sig_only: bool,
     /// Java: private List<JCTree> frames = List.nil() (head is the last)
@@ -468,7 +468,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     /// Java: TypeAnnotationPositions(boolean sigOnly) (TypeAnnotations.java:262-264).
     pub fn new(
         type_annotations: &'a TypeAnnotations,
-        syms: &'b mut Symtab,
+        syms: &'b Symtab,
         sig_only: bool,
     ) -> TypeAnnotationPositions<'a, 'b> {
         TypeAnnotationPositions {

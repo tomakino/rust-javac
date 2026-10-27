@@ -610,7 +610,7 @@ pub(crate) fn no_type_id(ctx: &mut CompilerContext) -> TypeId {
 /// TypeSymbol owner)
 fn enter_class_full(
     ctx: &mut CompilerContext,
-    names: &Names,
+    _names: &Names,
     maps: &mut SymtabMaps,
     msym: SymbolId,
     name: Name,
@@ -886,7 +886,7 @@ fn enter_module(
     let no_type = no_type_id(ctx);
     let module_info = new_class_symbol(
         ctx,
-        flags::MODULE as i64,
+        flags::MODULE,
         names.std.module_info.clone(),
         Some(module),
         no_type,
@@ -1060,9 +1060,9 @@ pub struct Symtab {
     /// (Rust: UniqueType equivalence is expressed by the Types.hashCode value
     /// plus Types.isSameType, so the map key is the hash and each bucket holds
     /// the (TypeId, VarSymbol) pairs; registered section 9).
-    class_fields: HashMap<i32, Vec<(TypeId, SymbolId)>>,
+    class_fields: std::rc::Rc<std::cell::RefCell<HashMap<i32, Vec<(TypeId, SymbolId)>>>>,
     names: Rc<Names>,
-    maps: SymtabMaps,
+    maps: std::rc::Rc<std::cell::RefCell<SymtabMaps>>,
 }
 
 impl Symtab {
@@ -1599,9 +1599,9 @@ impl Symtab {
                 type_of_tag,
                 boxed_name,
         boxed_class_ids,
-                class_fields: HashMap::new(),
+                class_fields: std::rc::Rc::new(std::cell::RefCell::new(HashMap::new())),
                 names: Rc::clone(&names),
-                maps,
+                maps: std::rc::Rc::new(std::cell::RefCell::new(maps)),
                 initial_completer: None,
                 module_completer: None,
             }
@@ -1610,13 +1610,14 @@ impl Symtab {
 
     /// Java: public ClassSymbol getClass(ModuleSymbol msym, Name flatName)
     pub fn get_class(&self, msym: SymbolId, flatname: &Name) -> Option<SymbolId> {
-        get_class_in(&self.maps, msym, flatname)
+        let maps = self.maps.borrow();
+        get_class_in(&maps, msym, flatname)
     }
 
     /// Java: public void removeClass(ModuleSymbol msym, Name flatName)
-    pub fn remove_class(&mut self, msym: SymbolId, flatname: &Name) {
-        if let Some((_, modules)) = self
-            .maps
+    pub fn remove_class(&self, msym: SymbolId, flatname: &Name) {
+        let mut maps = self.maps.borrow_mut();
+        if let Some((_, modules)) = maps
             .classes
             .iter_mut()
             .find(|(name, _)| name.to_java_string() == flatname.to_java_string())
@@ -1628,7 +1629,8 @@ impl Symtab {
     /// Java: public Iterable<ClassSymbol> getAllClasses()
     pub fn get_all_classes(&self) -> Vec<SymbolId> {
         let mut result = Vec::new();
-        for (_, modules) in &self.maps.classes {
+        let maps = self.maps.borrow();
+        for (_, modules) in &maps.classes {
             for (_, class) in modules {
                 result.push(*class);
             }
@@ -1638,12 +1640,14 @@ impl Symtab {
 
     /// Java: public PackageSymbol getPackage(ModuleSymbol module, Name fullname)
     pub fn get_package(&self, module: SymbolId, fullname: &Name) -> Option<SymbolId> {
-        get_package_in(&self.maps, module, fullname)
+        let maps = self.maps.borrow();
+        get_package_in(&maps, module, fullname)
     }
 
     /// Java: public ModuleSymbol getModule(Name name)
     pub fn get_module(&self, name: &Name) -> Option<SymbolId> {
-        get_module_in(&self.maps, name)
+        let maps = self.maps.borrow();
+        get_module_in(&maps, name)
     }
 
     /// Java: public Collection<ModuleSymbol> getAllModules() (Symtab.java:871-873).
@@ -1660,7 +1664,8 @@ impl Symtab {
     ///
     /// Upstream: Symtab.java:871-873.
     pub fn get_all_modules(&self) -> Vec<SymbolId> {
-        self.maps.modules.iter().map(|(_, module)| *module).collect()
+        let maps = self.maps.borrow();
+        maps.modules.iter().map(|(_, module)| *module).collect()
     }
 
     /// Java: public Iterable<ClassSymbol> getClassesForName(Name candidate)
@@ -1677,8 +1682,8 @@ impl Symtab {
     ///
     /// Upstream: Symtab.java:875-877.
     pub fn get_classes_for_name(&self, candidate: &Name) -> Vec<SymbolId> {
-        self.maps
-            .classes
+        let maps = self.maps.borrow();
+        maps.classes
             .iter()
             .find(|(name, _)| name.to_java_string() == candidate.to_java_string())
             .map(|(_, modules)| modules.iter().map(|(_, class)| *class).collect())
@@ -1701,8 +1706,8 @@ impl Symtab {
     /// # Panics
     ///   - none.
     pub(crate) fn class_by_flat_name(&self, flat_name: &JavaString) -> Option<SymbolId> {
-        self.maps
-            .classes
+        let maps = self.maps.borrow();
+        maps.classes
             .iter()
             .find(|(name, _)| name.to_java_string() == *flat_name)
             .and_then(|(_, modules)| modules.first().map(|(_, class)| *class))
@@ -1722,8 +1727,8 @@ impl Symtab {
     ///
     /// Upstream: Symtab.java:879-881.
     pub fn get_packages_for_name(&self, candidate: &Name) -> Vec<SymbolId> {
-        self.maps
-            .packages
+        let maps = self.maps.borrow();
+        maps.packages
             .iter()
             .find(|(name, _)| name.to_java_string() == candidate.to_java_string())
             .map(|(_, modules)| modules.iter().map(|(_, package)| *package).collect())
@@ -1739,8 +1744,8 @@ impl Symtab {
                 self.unnamed_module
             });
         }
-        let modules = self
-            .maps
+        let maps = self.maps.borrow();
+        let modules = maps
             .packages
             .iter()
             .find(|(name, _)| name.to_java_string() == package_name.to_java_string())
@@ -1768,8 +1773,8 @@ impl Symtab {
             return List::nil();
         }
         let mut result = List::nil();
-        if let Some((_, modules)) = self
-            .maps
+        let maps = self.maps.borrow();
+        if let Some((_, modules)) = maps
             .packages
             .iter()
             .find(|(name, _)| name.to_java_string() == package_name.to_java_string())
@@ -1821,20 +1826,23 @@ impl Symtab {
     }
 
     /// Java: public ClassSymbol defineClass(Name name, Symbol owner)
-    pub fn define_class(&mut self, ctx: &mut CompilerContext, name: Name, owner: Option<SymbolId>) -> SymbolId {
+    pub fn define_class(&self, ctx: &mut CompilerContext, name: Name, owner: Option<SymbolId>) -> SymbolId {
         define_class(ctx, &self.names, name, owner)
     }
 
     /// Java: public ClassSymbol enterClass(ModuleSymbol msym, Name name,
     /// TypeSymbol owner)
     pub fn enter_class(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         msym: SymbolId,
         name: Name,
         owner: Option<SymbolId>,
     ) -> SymbolId {
-        let class = enter_class_full(ctx, &self.names, &mut self.maps, msym, name, owner);
+        let class = {
+            let mut maps = self.maps.borrow_mut();
+            enter_class_full(ctx, &self.names, &mut maps, msym, name, owner)
+        };
         if let Some(factory) = &self.initial_completer {
             ctx.sym_mut(class).completer = Some(factory());
         }
@@ -1843,7 +1851,7 @@ impl Symtab {
 
     /// Java: public ClassSymbol enterClass(ModuleSymbol msym, Name flatname)
     pub fn enter_class_flat(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         msym: SymbolId,
         flatname: Name,
@@ -1860,16 +1868,22 @@ impl Symtab {
             SymbolKind::PackageSymbol { modle, .. } => modle.expect("package module"),
             _ => panic!("package expected"),
         };
-        if let Some(class) = get_class_in(&self.maps, package_module, &flatname) {
+        if let Some(class) = {
+            let maps = self.maps.borrow();
+            get_class_in(&maps, package_module, &flatname)
+        } {
             return class;
         }
         let class = define_class(ctx, &self.names, convert::short_name(&flatname), Some(ps));
-        do_enter_class(
-            &mut self.maps,
-            package_module,
-            class,
-            form_flat_name(ctx, &ctx.sym(class).name.clone(), Some(ps)),
-        );
+        {
+            let mut maps = self.maps.borrow_mut();
+            do_enter_class(
+                &mut maps,
+                package_module,
+                class,
+                form_flat_name(ctx, &ctx.sym(class).name.clone(), Some(ps)),
+            );
+        }
         if let Some(factory) = &self.initial_completer {
             ctx.sym_mut(class).completer = Some(factory());
         }
@@ -1878,11 +1892,12 @@ impl Symtab {
 
     /// Java: public PackageSymbol lookupPackage(ModuleSymbol msym, Name
     /// flatname)
-    pub fn lookup_package(&mut self, ctx: &mut CompilerContext, msym: SymbolId, flatname: &Name) -> SymbolId {
+    pub fn lookup_package(&self, ctx: &mut CompilerContext, msym: SymbolId, flatname: &Name) -> SymbolId {
+        let mut maps = self.maps.borrow_mut();
         lookup_package_impl(
             ctx,
             &self.names,
-            &mut self.maps,
+            &mut maps,
             msym,
             flatname,
             false,
@@ -1894,15 +1909,16 @@ impl Symtab {
     /// Java: private PackageSymbol lookupPackage(ModuleSymbol msym, Name
     /// flatname, boolean onlyExisting)
     pub fn lookup_package_only_existing(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         msym: SymbolId,
         flatname: &Name,
     ) -> SymbolId {
+        let mut maps = self.maps.borrow_mut();
         lookup_package_impl(
             ctx,
             &self.names,
-            &mut self.maps,
+            &mut maps,
             msym,
             flatname,
             true,
@@ -1912,7 +1928,7 @@ impl Symtab {
     }
 
     /// Java: public boolean packageExists(ModuleSymbol msym, Name fullname)
-    pub fn package_exists(&mut self, ctx: &mut CompilerContext, msym: SymbolId, fullname: &Name) -> bool {
+    pub fn package_exists(&self, ctx: &mut CompilerContext, msym: SymbolId, fullname: &Name) -> bool {
         let package = self.lookup_package_only_existing(ctx, msym, fullname);
         package_exists(ctx, package)
     }
@@ -1920,12 +1936,15 @@ impl Symtab {
     /// Java: public PackageSymbol enterPackage(ModuleSymbol currModule, Name
     /// fullname)
     pub fn enter_package(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         module: SymbolId,
         fullname: Name,
     ) -> SymbolId {
-        let package = enter_package(ctx, &self.names, &mut self.maps, module, fullname);
+        let package = {
+            let mut maps = self.maps.borrow_mut();
+            enter_package(ctx, &self.names, &mut maps, module, fullname)
+        };
         if let Some(factory) = &self.initial_completer
             && ctx.sym(package).completer.is_none() {
                 ctx.sym_mut(package).completer = Some(factory());
@@ -1934,8 +1953,11 @@ impl Symtab {
     }
 
     /// Java: public ModuleSymbol enterModule(Name name)
-    pub fn enter_module(&mut self, ctx: &mut CompilerContext, name: Name) -> SymbolId {
-        let module = enter_module(ctx, &self.names, &mut self.maps, name, self.root_package);
+    pub fn enter_module(&self, ctx: &mut CompilerContext, name: Name) -> SymbolId {
+        let module = {
+            let mut maps = self.maps.borrow_mut();
+            enter_module(ctx, &self.names, &mut maps, name, self.root_package)
+        };
         if let Some(factory) = &self.module_completer
             && ctx.sym(module).completer.is_none() {
                 ctx.sym_mut(module).completer = Some(factory());
@@ -1946,7 +1968,7 @@ impl Symtab {
     /// Adapter: add a visible package mapping to a module (the Modules port
     /// fills the unnamed module's visible packages; registered adapter).
     pub fn add_visible_package(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         module: SymbolId,
         package: SymbolId,
@@ -1961,9 +1983,12 @@ impl Symtab {
     pub fn set_initial_completer(&mut self, ctx: &mut CompilerContext, factory: CompleterFactory) {
         self.initial_completer = Some(Rc::clone(&factory));
         let mut classes: Vec<SymbolId> = Vec::new();
-        for (_, per_module) in &self.maps.classes {
-            for (_, symbol) in per_module {
-                classes.push(*symbol);
+        {
+            let maps = self.maps.borrow();
+            for (_, per_module) in &maps.classes {
+                for (_, symbol) in per_module {
+                    classes.push(*symbol);
+                }
             }
         }
         for symbol in classes {
@@ -1972,9 +1997,12 @@ impl Symtab {
             }
         }
         let mut packages: Vec<SymbolId> = Vec::new();
-        for (_, per_module) in &self.maps.packages {
-            for (_, symbol) in per_module {
-                packages.push(*symbol);
+        {
+            let maps = self.maps.borrow();
+            for (_, per_module) in &maps.packages {
+                for (_, symbol) in per_module {
+                    packages.push(*symbol);
+                }
             }
         }
         for symbol in packages {
@@ -2006,7 +2034,10 @@ impl Symtab {
         self.module_completer = Some(Rc::clone(&factory));
         // Java: java_base.completer = moduleCompleter::complete (bootstrap issues)
         ctx.sym_mut(self.java_base).completer = Some(factory());
-        let modules: Vec<SymbolId> = self.maps.modules.iter().map(|(_, m)| *m).collect();
+        let modules: Vec<SymbolId> = {
+            let maps = self.maps.borrow();
+            maps.modules.iter().map(|(_, m)| *m).collect()
+        };
         for module in modules {
             if ctx.sym(module).completer.is_none() {
                 ctx.sym_mut(module).completer = Some(factory());
@@ -2022,17 +2053,19 @@ impl Symtab {
 
     /// Java: public VarSymbol getClassField(Type type, Types types)
     pub fn get_class_field(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         types: &Types,
         t: TypeId,
     ) -> SymbolId {
         let hash = types.hash_code(ctx, t);
-        if let Some(bucket) = self.class_fields.get(&hash) {
-            for (existing, field) in bucket {
-                if types.is_same_type(ctx, self, *existing, t) {
-                    return *field;
-                }
+        let bucket: Vec<(TypeId, SymbolId)> = {
+            let class_fields = self.class_fields.borrow();
+            class_fields.get(&hash).cloned().unwrap_or_default()
+        };
+        for (existing, field) in bucket {
+            if types.is_same_type(ctx, self, existing, t) {
+                return field;
             }
         }
         let tag = ctx.typ(t).get_tag();
@@ -2069,7 +2102,7 @@ impl Symtab {
             Some(field_type),
             ctx.typ(t).tsym,
         );
-        self.class_fields.entry(hash).or_default().push((t, var));
+        self.class_fields.borrow_mut().entry(hash).or_default().push((t, var));
         var
     }
 }
@@ -2127,7 +2160,7 @@ mod tests {
 
     #[test]
     fn boxed_names_match_the_primitive_tags() {
-        let (ctx, symtab) = build();
+        let (_ctx, symtab) = build();
         for (tag, expected) in [
             (TypeTag::BYTE, "java.lang.Byte"),
             (TypeTag::SHORT, "java.lang.Short"),
@@ -2199,7 +2232,7 @@ mod tests {
         assert_eq!(symtab.get_class(symtab.java_base, &flat), None);
         // initType with a new primitive-like class symbol keeps tag order.
         let new_type = ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Base }));
-        let class = symtab.init_type_named(&mut ctx, new_type, name_of(symtab.names(), "testtype"), 0);
+        let _class = symtab.init_type_named(&mut ctx, new_type, name_of(symtab.names(), "testtype"), 0);
         assert_eq!(symtab.type_of_tag[tag_ordinal(TypeTag::NONE)], Some(new_type));
     }
 
@@ -2245,7 +2278,7 @@ mod tests {
     /// queries.
     #[test]
     fn module_class_and_package_queries_cover_all_modules() {
-        let (mut ctx, mut symtab, names) = build_with_names();
+        let (mut ctx, symtab, names) = build_with_names();
         let first = symtab.enter_module(&mut ctx, names.from_utf(b"m1"));
         let second = symtab.enter_module(&mut ctx, names.from_utf(b"m2"));
         let package_name = names.from_utf(b"pkg");

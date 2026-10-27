@@ -1741,7 +1741,7 @@ impl TreeMaker {
     pub fn qual_ident(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: crate::ids::SymbolId,
     ) -> TreeId {
         if self.is_unqualifiable(ctx, syms, sym) {
@@ -1801,7 +1801,7 @@ impl TreeMaker {
     pub fn qual_this(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         t: crate::ids::TypeId,
     ) -> TreeId {
         let tsym = ctx.typ(t).tsym.expect("type symbol");
@@ -1820,7 +1820,7 @@ impl TreeMaker {
     pub fn class_literal_symbol(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         clazz: crate::ids::SymbolId,
     ) -> TreeId {
         let ty = ctx.sym(clazz).ty.expect("class symbol type");
@@ -1831,7 +1831,7 @@ impl TreeMaker {
     pub fn class_literal(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         t: crate::ids::TypeId,
     ) -> TreeId {
         let tsym = ctx.typ(t).tsym.expect("type symbol");
@@ -1889,7 +1889,7 @@ impl TreeMaker {
         &mut self,
         ctx: &mut CompilerContext,
         types: &Types,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         ctor: crate::ids::SymbolId,
         args: List<TreeId>,
     ) -> TreeId {
@@ -1909,7 +1909,7 @@ impl TreeMaker {
     pub fn type_expr(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         t: crate::ids::TypeId,
     ) -> TreeId {
         let tag = ctx.typ(t).get_tag();
@@ -2037,7 +2037,7 @@ impl TreeMaker {
     pub fn types(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         ts: List<crate::ids::TypeId>,
     ) -> List<TreeId> {
         let mut result: List<TreeId> = List::nil();
@@ -2055,7 +2055,7 @@ impl TreeMaker {
     pub fn var_def_symbol(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         v: crate::ids::SymbolId,
         init: StdOption<TreeId>,
     ) -> TreeId {
@@ -2076,7 +2076,7 @@ impl TreeMaker {
     pub fn method_def_symbol(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         m: crate::ids::SymbolId,
         body: StdOption<TreeId>,
     ) -> TreeId {
@@ -2088,7 +2088,7 @@ impl TreeMaker {
     pub fn method_def_symbol_with_type(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         m: crate::ids::SymbolId,
         mtype: crate::ids::TypeId,
         body: StdOption<TreeId>,
@@ -2156,7 +2156,7 @@ impl TreeMaker {
     pub fn type_param(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         name: Name,
         tvar: crate::ids::TypeId,
     ) -> TreeId {
@@ -2171,7 +2171,7 @@ impl TreeMaker {
     pub fn type_params(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         typarams: List<crate::ids::TypeId>,
     ) -> List<TreeId> {
         let mut result: List<TreeId> = List::nil();
@@ -2194,7 +2194,7 @@ impl TreeMaker {
     pub fn param(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         name: Name,
         argtype: crate::ids::TypeId,
         owner: crate::ids::SymbolId,
@@ -2212,7 +2212,7 @@ impl TreeMaker {
     pub fn params(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         argtypes: List<crate::ids::TypeId>,
         owner: crate::ids::SymbolId,
     ) -> List<TreeId> {
@@ -2284,7 +2284,7 @@ impl TreeMaker {
     pub fn indexed_symbol(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         v: crate::ids::SymbolId,
         index: TreeId,
     ) -> TreeId {
@@ -2305,7 +2305,7 @@ impl TreeMaker {
     pub fn type_cast_typed(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         ty: crate::ids::TypeId,
         expr: TreeId,
     ) -> TreeId {
@@ -2388,7 +2388,7 @@ impl TreeMaker {
     fn is_unqualifiable(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: crate::ids::SymbolId,
     ) -> bool {
         let names = self.names.as_ref().expect("TreeMaker.names").clone();
@@ -2429,7 +2429,7 @@ impl TreeMaker {
                     _ => panic!("ClassCastException: JCCompilationUnit expected"),
                 };
             let name = ctx.sym(sym).name.clone();
-            let mut lookup = |ctx: &mut CompilerContext,
+            let lookup = |ctx: &mut CompilerContext,
                               scope: crate::ids::ScopeId|
              -> StdOption<bool> {
                 // Java: Scope.getSymbolsByName reads the Context Types/Symtab
@@ -2448,23 +2448,20 @@ impl TreeMaker {
                 }
                 Some(candidates.len() == 1 && candidates[0] == sym)
             };
-            if let StdOption::Some(scope) = named_import_scope {
-                if let StdOption::Some(result) = lookup(ctx, scope) {
+            if let StdOption::Some(scope) = named_import_scope
+                && let StdOption::Some(result) = lookup(ctx, scope) {
                     return result;
                 }
-            }
-            if let StdOption::Some(packge) = packge {
-                if let StdOption::Some(members) = ctx.sym(packge).members() {
+            if let StdOption::Some(packge) = packge
+                && let StdOption::Some(members) = ctx.sym(packge).members() {
                     if let StdOption::Some(result) = lookup(ctx, members) {
                         return result;
                     }
                 }
-            }
-            if let StdOption::Some(scope) = star_import_scope {
-                if let StdOption::Some(result) = lookup(ctx, scope) {
+            if let StdOption::Some(scope) = star_import_scope
+                && let StdOption::Some(result) = lookup(ctx, scope) {
                     return result;
                 }
-            }
         }
         false
     }
@@ -2488,7 +2485,7 @@ impl TreeMaker {
     fn raw_annotations(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: crate::ids::SymbolId,
     ) -> List<TreeId> {
         let attributes = ctx.sym(sym).get_raw_attributes();
@@ -2505,7 +2502,7 @@ impl TreeMaker {
     pub fn annotations_attributes(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attributes: List<crate::ids::AttributeId>,
     ) -> List<TreeId> {
         let mut result: List<TreeId> = List::nil();
@@ -2524,7 +2521,7 @@ impl TreeMaker {
     pub fn annotation_attribute(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
     ) -> TreeId {
         self.visit_compound_internal(ctx, syms, attribute)
@@ -2535,7 +2532,7 @@ impl TreeMaker {
     pub fn type_annotation_attribute(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
     ) -> TreeId {
         self.visit_type_compound_internal(ctx, syms, attribute)
@@ -2545,7 +2542,7 @@ impl TreeMaker {
     pub fn translate_attribute(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
     ) -> TreeId {
         use crate::code::attribute::AttributeKind;
@@ -2596,7 +2593,7 @@ impl TreeMaker {
     fn visit_class_attribute(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
     ) -> TreeId {
         let class_type = match &ctx.attr(attribute).kind {
@@ -2615,7 +2612,7 @@ impl TreeMaker {
     fn visit_enum_attribute(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
     ) -> TreeId {
         let value = match &ctx.attr(attribute).kind {
@@ -2629,7 +2626,7 @@ impl TreeMaker {
     fn visit_error_attribute(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
     ) -> TreeId {
         match &ctx.attr(attribute).kind {
@@ -2646,7 +2643,7 @@ impl TreeMaker {
     fn visit_compound_attribute(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
     ) -> TreeId {
         self.visit_compound_internal(ctx, syms, attribute)
@@ -2657,7 +2654,7 @@ impl TreeMaker {
     fn visit_compound_internal(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
     ) -> TreeId {
         let (values, compound_type) = {
@@ -2689,7 +2686,7 @@ impl TreeMaker {
     fn visit_type_compound_internal(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
     ) -> TreeId {
         let (values, compound_type) = {
@@ -2722,7 +2719,7 @@ impl TreeMaker {
     fn visit_array_attribute(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         attribute: crate::ids::AttributeId,
     ) -> TreeId {
         let (values, array_type) = {
@@ -2749,7 +2746,7 @@ impl TreeMaker {
     pub fn literal_constant(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         value: crate::util::constants::ConstantValue,
     ) -> TreeId {
         use crate::util::constants::ConstantValue;
@@ -2837,7 +2834,7 @@ impl TreeMaker {
     pub fn type_from_type(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
 
         t: crate::ids::TypeId,
     ) -> TreeId {
@@ -3172,7 +3169,7 @@ mod tests {
 
         // Java: Type(Type) — primitive, class and array types.
         let borrowed_int_type = syms_rc.borrow().int_type;
-        let int_tree = maker.type_expr(&mut ctx, &mut *syms_rc.borrow_mut(), borrowed_int_type);
+        let int_tree = maker.type_expr(&mut ctx, &syms_rc.borrow(), borrowed_int_type);
         assert_eq!(ctx.tree(int_tree).tag, Tag::TYPEIDENT);
         let TreeKind::PrimitiveTypeTree { typetag } = &ctx.tree(int_tree).kind else {
             panic!("primitive");
@@ -3185,7 +3182,7 @@ mod tests {
             syms_rc.borrow().int_type,
             array_class,
         ));
-        let array_tree = maker.type_expr(&mut ctx, &mut *syms_rc.borrow_mut(), int_array);
+        let array_tree = maker.type_expr(&mut ctx, &syms_rc.borrow(), int_array);
         assert_eq!(ctx.tree(array_tree).tag, Tag::TYPEARRAY);
         let _ = &types;
 
@@ -3194,7 +3191,7 @@ mod tests {
         let this_tree = maker.this_expr(&mut ctx, borrowed_object_type);
         assert_eq!(ctx.tree(this_tree).tag, Tag::IDENT);
         let borrowed_object_type = syms_rc.borrow().object_type;
-        let class_lit = maker.class_literal(&mut ctx, &mut *syms_rc.borrow_mut(), borrowed_object_type);
+        let class_lit = maker.class_literal(&mut ctx, &syms_rc.borrow(), borrowed_object_type);
         assert_eq!(ctx.tree(class_lit).tag, Tag::SELECT);
 
         // Java: App/Assignment/Indexed/TypeCast convenience helpers.
@@ -3211,7 +3208,7 @@ mod tests {
         let assignment = maker.assignment(&mut ctx, var, ident);
         assert_eq!(ctx.tree(assignment).tag, Tag::EXEC);
         let borrowed_int_type = syms_rc.borrow().int_type;
-        let casted = maker.type_cast_typed(&mut ctx, &mut *syms_rc.borrow_mut(), borrowed_int_type, ident);
+        let casted = maker.type_cast_typed(&mut ctx, &syms_rc.borrow(), borrowed_int_type, ident);
         assert_eq!(ctx.tree(casted).tag, Tag::TYPECAST);
         let array_class = syms_rc.borrow().array_class;
         let array_type = ctx.alloc_type(crate::code::type_::Type::new_array_type(
@@ -3225,7 +3222,7 @@ mod tests {
             syms_rc.borrow().java_base,
         ));
         let index = maker.literal_object(&mut ctx, LiteralValue::Integer(0));
-        let indexed = maker.indexed_symbol(&mut ctx, &mut *syms_rc.borrow_mut(), array_var, index);
+        let indexed = maker.indexed_symbol(&mut ctx, &syms_rc.borrow(), array_var, index);
         assert_eq!(ctx.tree(indexed).tag, Tag::INDEXED);
         assert_eq!(ctx.tree(indexed).ty, Some(syms_rc.borrow().int_type));
 
@@ -3240,14 +3237,14 @@ mod tests {
         use crate::util::constants::ConstantValue;
         let (mut ctx, syms_rc, _types, mut maker) = new_maker_with_syms();
         // Java: Literal(Object) — the constant type is attached to the tree.
-        let literal = maker.literal_constant(&mut ctx, &mut *syms_rc.borrow_mut(), ConstantValue::Integer(7));
+        let literal = maker.literal_constant(&mut ctx, &syms_rc.borrow(), ConstantValue::Integer(7));
         assert_eq!(ctx.tree(literal).tag, Tag::LITERAL);
         let constant_type = ctx.tree(literal).ty.expect("constant type");
         assert_eq!(ctx.type_const_value(constant_type), Some(&ConstantValue::Integer(7)));
         assert_eq!(ctx.type_base_type(constant_type), syms_rc.borrow().int_type);
         let string_literal = maker.literal_constant(
             &mut ctx,
-            &mut *syms_rc.borrow_mut(),
+            &syms_rc.borrow(),
             ConstantValue::String(javac_strings::JavaString::from("s")),
         );
         assert_eq!(
@@ -3277,7 +3274,7 @@ mod tests {
                 synthesized: false,
             },
         ));
-        let annotations = maker.annotations_attributes(&mut ctx, &mut *syms_rc.borrow_mut(), List::of(compound));
+        let annotations = maker.annotations_attributes(&mut ctx, &syms_rc.borrow(), List::of(compound));
         assert_eq!(annotations.length(), 1);
         let annotation = *annotations.head();
         assert_eq!(ctx.tree(annotation).tag, Tag::ANNOTATION);
@@ -3303,7 +3300,7 @@ mod tests {
         ));
         let metadata = ctx.symbol_inited_metadata(sym);
         metadata.set_declaration_attributes(List::of(compound));
-        let raw = maker.raw_annotations(&mut ctx, &mut *syms_rc.borrow_mut(), sym);
+        let raw = maker.raw_annotations(&mut ctx, &syms_rc.borrow(), sym);
         assert_eq!(raw.length(), 1);
         assert_eq!(ctx.tree(*raw.head()).tag, Tag::ANNOTATION);
     }

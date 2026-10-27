@@ -176,7 +176,7 @@ impl Operators {
     fn unary_promotion(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
     ) -> TypeId {
@@ -192,7 +192,7 @@ impl Operators {
     fn promoted_tag(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
     ) -> TypeTag {
@@ -203,7 +203,7 @@ impl Operators {
     fn promoted_is_numeric(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
     ) -> bool {
@@ -214,7 +214,7 @@ impl Operators {
     fn promoted_is_integral(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
     ) -> bool {
@@ -225,7 +225,7 @@ impl Operators {
     fn unboxed_tag(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
     ) -> TypeTag {
@@ -237,7 +237,7 @@ impl Operators {
     fn binary_promotion(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t1: TypeId,
         t2: TypeId,
@@ -272,7 +272,7 @@ impl Operators {
     pub fn resolve_unary(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         pos: i32,
         tag: Tag,
@@ -295,7 +295,7 @@ impl Operators {
     pub fn resolve_binary(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         pos: i32,
         tag: Tag,
@@ -316,7 +316,7 @@ impl Operators {
     fn unary_test(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         entry: &UnaryEntry,
         t: TypeId,
@@ -335,7 +335,7 @@ impl Operators {
     fn unary_applicable(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         entry: &UnaryEntry,
         expected: TypeId,
@@ -348,7 +348,7 @@ impl Operators {
     fn unary_expected(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         entry: &UnaryEntry,
         arg: TypeId,
@@ -367,7 +367,7 @@ impl Operators {
     fn binary_test(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         entry: &BinaryEntry,
         t1: TypeId,
@@ -410,7 +410,7 @@ impl Operators {
     fn binary_applicable(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         entry: &BinaryEntry,
         t1: TypeId,
@@ -426,7 +426,7 @@ impl Operators {
     fn binary_expected(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         entry: &BinaryEntry,
         t1: TypeId,
@@ -462,7 +462,7 @@ impl Operators {
     fn string_promotion(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         t: TypeId,
     ) -> TypeId {
@@ -488,7 +488,7 @@ impl Operators {
     fn equality_kind(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         arg1: TypeId,
         arg2: TypeId,
@@ -612,7 +612,7 @@ impl Operators {
     fn report_error_if_needed(
         &self,
         ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
+        _syms: &Symtab,
         pos: i32,
         tag: Tag,
         args: &[Option<TypeId>],
@@ -670,7 +670,7 @@ impl Operators {
     pub fn lookup_binary_op(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         _types: &Types,
         applicability_test: &dyn Fn(&CompilerContext, &Symtab, SymbolId) -> bool,
     ) -> Option<SymbolId> {
@@ -992,7 +992,7 @@ mod tests {
         let long_t = h.syms.long_type;
         let plus = h.operators.resolve_binary(
             &mut h.ctx,
-            &mut h.syms,
+            &h.syms,
             &h.types,
             0,
             Tag::PLUS,
@@ -1005,7 +1005,7 @@ mod tests {
 
         let concat = h.operators.resolve_binary(
             &mut h.ctx,
-            &mut h.syms,
+            &h.syms,
             &h.types,
             0,
             Tag::PLUS,
@@ -1018,7 +1018,7 @@ mod tests {
 
         let shift = h.operators.resolve_binary(
             &mut h.ctx,
-            &mut h.syms,
+            &h.syms,
             &h.types,
             0,
             Tag::SL,
@@ -1037,7 +1037,7 @@ mod tests {
         let bool_t = h.syms.boolean_type;
         let neg = h.operators.resolve_unary(
             &mut h.ctx,
-            &mut h.syms,
+            &h.syms,
             &h.types,
             0,
             Tag::NEG,
@@ -1049,7 +1049,7 @@ mod tests {
 
         let not = h.operators.resolve_unary(
             &mut h.ctx,
-            &mut h.syms,
+            &h.syms,
             &h.types,
             0,
             Tag::NOT,
@@ -1066,7 +1066,7 @@ mod tests {
         let long_t = h.syms.long_type;
         let first = h.operators.resolve_binary(
             &mut h.ctx,
-            &mut h.syms,
+            &h.syms,
             &h.types,
             0,
             Tag::MINUS,
@@ -1075,7 +1075,7 @@ mod tests {
         );
         let second = h.operators.resolve_binary(
             &mut h.ctx,
-            &mut h.syms,
+            &h.syms,
             &h.types,
             0,
             Tag::MINUS,

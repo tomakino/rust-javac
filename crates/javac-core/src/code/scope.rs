@@ -203,7 +203,7 @@ pub struct Entry {
 pub type FilterImportFn = Rc<
     dyn Fn(
         &mut crate::compiler_context::CompilerContext,
-        &mut crate::code::symtab::Symtab,
+        &crate::code::symtab::Symtab,
         ScopeId,
         SymbolId,
     ) -> bool,
@@ -984,7 +984,7 @@ impl Scope {
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
         types: &crate::code::types::Types,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Vec<SymbolId> {
         if !matches!(&self.data, ScopeData::FilterImportScope { .. }) {
@@ -1106,7 +1106,7 @@ impl Scope {
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
         types: &crate::code::types::Types,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Vec<SymbolId> {
         match &self.data {
@@ -1446,7 +1446,7 @@ impl Scope {
         self_id: ScopeId,
         sym: SymbolId,
         types: &crate::code::types::Types,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> bool {
         let name = ctx.sym(sym).name.clone();
@@ -1468,7 +1468,7 @@ impl Scope {
         self_id: ScopeId,
         by_name: SymbolId,
         types: &crate::code::types::Types,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Option<ScopeId> {
         match &self.data {
@@ -1525,7 +1525,7 @@ impl Scope {
         &self,
         by_name: SymbolId,
         types: &crate::code::types::Types,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> bool {
         match &self.data {
@@ -1615,7 +1615,7 @@ pub(crate) fn probe_index(
 fn symbol_importer_import_from(
     ctx: &mut crate::compiler_context::CompilerContext,
     types: &crate::code::types::Types,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     inspect_super_types: bool,
     by_name: Option<&Name>,
     sf: &dyn Fn(SymbolId) -> bool,
@@ -1693,7 +1693,7 @@ fn query_filter_import_scope_members(
     sf: &dyn Fn(SymbolId) -> bool,
     lookup_kind: LookupKind,
     types: &crate::code::types::Types,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     ctx: &mut crate::compiler_context::CompilerContext,
 ) -> Vec<SymbolId> {
     let origin_owner = ctx.scope(origin).owner.expect("import origin owner");
@@ -2217,7 +2217,7 @@ mod tests {
         let table = name_table();
         let mut ctx = crate::compiler_context::CompilerContext::new();
         let names = Rc::new(crate::util::names::Names::new(false));
-        let mut symtab = crate::code::symtab::Symtab::new(
+        let symtab = crate::code::symtab::Symtab::new(
             &mut ctx,
             Rc::clone(&names),
             crate::jvm::target::Target::DEFAULT,
@@ -2252,7 +2252,7 @@ mod tests {
             LookupKind::NON_RECURSIVE,
             &|_| true,
             &types,
-            &mut symtab,
+            &symtab,
         );
         assert!(all.is_empty());
         let by_name = ctx.scope_get_symbols_by_name_ctx(
@@ -2261,7 +2261,7 @@ mod tests {
             LookupKind::NON_RECURSIVE,
             &|_| true,
             &types,
-            &mut symtab,
+            &symtab,
         );
         assert!(by_name.is_empty());
         // Java: FilterImportScope.getSymbolsByName (Scope.java:954-976): a
@@ -2282,7 +2282,7 @@ mod tests {
             LookupKind::NON_RECURSIVE,
             &|_| true,
             &types,
-            &mut symtab,
+            &symtab,
         );
         assert!(named.is_empty());
     }

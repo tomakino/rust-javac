@@ -104,7 +104,7 @@ impl MemberEnter {
     pub fn signature(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         msym: SymbolId,
         typarams: List<TreeId>,
         params: List<TreeId>,
@@ -203,7 +203,7 @@ impl MemberEnter {
     fn attrib_type_variables(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         typarams: List<TreeId>,
         env: &Rc<Env<AttrContext>>,
     ) {
@@ -217,7 +217,7 @@ impl MemberEnter {
     fn attrib_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
@@ -236,7 +236,7 @@ impl MemberEnter {
     fn attrib_expr(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
@@ -250,7 +250,7 @@ impl MemberEnter {
     fn attrib_ident_as_enum_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) {
@@ -264,7 +264,7 @@ impl MemberEnter {
     pub fn member_enter(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) {
@@ -287,7 +287,7 @@ impl MemberEnter {
     pub fn member_enter_list(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         trees: List<TreeId>,
         env: &Rc<Env<AttrContext>>,
     ) {
@@ -302,7 +302,7 @@ impl MemberEnter {
     fn visit(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
     ) -> Result<(), CompletionFailure> {
         match ctx.tree(tree).tag {
@@ -317,7 +317,7 @@ impl MemberEnter {
     pub fn visit_method_def(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
     ) -> Result<(), CompletionFailure> {
         let env = self.env.clone().expect("env");
@@ -395,7 +395,7 @@ impl MemberEnter {
         let _ = ctx.scope_leave(local_scope);
         let unique = self.chk.borrow().check_unique(
             ctx,
-            &*syms,
+            syms,
             ctx.tree(tree).pos,
             m,
             encl_scope,
@@ -486,7 +486,7 @@ impl MemberEnter {
     pub fn visit_var_def(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
     ) -> Result<(), CompletionFailure> {
         let env = self.env.clone().expect("env");
@@ -597,7 +597,7 @@ impl MemberEnter {
         let unique = self
             .chk
             .borrow()
-            .check_unique(ctx, &*syms, ctx.tree(tree).pos, v, encl_scope);
+            .check_unique(ctx, syms, ctx.tree(tree).pos, v, encl_scope);
         if unique {
             self.chk
                 .borrow()
@@ -651,7 +651,7 @@ impl MemberEnter {
     fn check_type(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
         expected: TypeId,
         error: crate::resources::diagnostic_contract::ErrorInfo,
@@ -672,7 +672,7 @@ impl MemberEnter {
     fn check_receiver(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
         local_env: &Rc<Env<AttrContext>>,
     ) {
@@ -846,7 +846,7 @@ impl MemberEnter {
     fn visit_erroneous(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         tree: TreeId,
     ) -> Result<(), CompletionFailure> {
         let errs = match &ctx.tree(tree).kind {

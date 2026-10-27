@@ -147,7 +147,7 @@ impl SpeculativeCache {
 /// are free functions taking the arena context.
 pub fn deferred_type_new(
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     attr: &mut Attr,
     tree: TreeId,
@@ -254,7 +254,7 @@ pub fn deferred_type_speculative_tree(
 /// deferred_type_complete below).
 pub fn deferred_type_complete_base(
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     attr: &mut Attr,
     t: TypeId,
     result_info: &ResultInfo,
@@ -301,7 +301,7 @@ pub fn deferred_type_complete_base(
 /// ArgumentType override (ArgumentAttr.java:345-365) when present.
 pub fn deferred_type_complete(
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     attr: &mut Attr,
     t: TypeId,
     result_info: &ResultInfo,
@@ -468,7 +468,7 @@ impl DeferredAttrContext {
     pub fn complete(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         attr: &mut Attr,
         infer: &crate::comp::infer::Infer,
@@ -532,7 +532,7 @@ impl DeferredAttrContext {
     fn pick_deferred_node(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         infer: &crate::comp::infer::Infer,
     ) -> Result<Option<Rc<DeferredAttrNode>>, DeferredAttrFailure> {
@@ -557,7 +557,7 @@ impl DeferredAttrContext {
     fn build_stuck_graph(
         &self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         infer: &crate::comp::infer::Infer,
     ) -> Result<Vec<StuckNode>, DeferredAttrFailure> {
@@ -638,7 +638,7 @@ pub struct DeferredAttrNode {
 #[allow(clippy::too_many_arguments)]
 fn process_deferred_attr_node(
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     attr: &mut Attr,
     infer: &crate::comp::infer::Infer,
@@ -790,7 +790,7 @@ impl crate::comp::check::CheckContext for ParentCheckContext {
 /// List.from(stuckVars()))
 fn contains_any_inference_vars(
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     inference_context: &InferenceContext,
     ts: &[TypeId],
@@ -816,7 +816,7 @@ pub fn empty_deferred_attr_context() -> Rc<DeferredAttrContext> {
 /// Java: Type check(ResultInfo resultInfo) (DeferredAttr.java:333-343)
 pub fn deferred_type_check(
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     attr: &mut Attr,
     t: TypeId,
@@ -874,7 +874,7 @@ pub fn deferred_type_check(
 #[allow(clippy::collapsible_if, clippy::too_many_arguments)]
 fn check_with_policy(
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     _types: &Types,
     attr: &mut Attr,
     t: TypeId,
@@ -965,7 +965,7 @@ pub struct DeferredTypeMap {
 /// The explicit context required by the recovery-capable mapping (adapter ADR 0001).
 pub struct DeferredMapCtx<'a> {
     pub attr: &'a mut Attr,
-    pub syms: &'a mut Symtab,
+    pub syms: &'a Symtab,
     pub types: &'a Types,
     pub chk: &'a crate::comp::check::Check,
     pub diags: &'a crate::util::jc_diagnostic::Factory,
@@ -1570,7 +1570,7 @@ struct FilterScanner;
 ///
 /// Upstream: DeferredAttr.java:1050-1330 (inner-class service access, adapter bundle).
 pub struct StuckScannerEnv<'a> {
-    syms: &'a mut Symtab,
+    syms: &'a Symtab,
     diags: &'a crate::util::jc_diagnostic::Factory,
     chk: &'a crate::comp::check::Check,
 }
@@ -1877,7 +1877,7 @@ impl CheckStuckPolicy {
     /// Java: public CheckStuckPolicy(ResultInfo resultInfo, DeferredType dt)
     pub fn new(
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
@@ -1903,7 +1903,7 @@ impl CheckStuckPolicy {
             let context = Rc::clone(&policy.inference_context);
             context.add_free_type_listener(
                 ctx,
-                &*syms,
+                syms,
                 types,
                 List::from_iterable(stuck_vars),
                 listener,
@@ -2110,7 +2110,7 @@ impl crate::comp::infer::FreeTypeListener for CheckStuckPolicyListener {
     fn types_inferred(
         &self,
         _ctx: &mut CompilerContext,
-        _syms: &mut Symtab,
+        _syms: &Symtab,
         _types: &Types,
         _inference_context: &InferenceContext,
     ) -> Result<(), InferenceException> {
@@ -2134,7 +2134,7 @@ impl crate::comp::infer::FreeTypeListener for CheckStuckPolicyListener {
 /// Upstream: DeferredAttr.java:1160-1190 (new CheckStuckPolicy(resultInfo, dt)).
 pub fn check_stuck_policy_new(
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     diags: &crate::util::jc_diagnostic::Factory,
     chk: &crate::comp::check::Check,
@@ -2163,7 +2163,7 @@ impl OverloadStuckPolicy {
     /// Java: public OverloadStuckPolicy(ResultInfo resultInfo, DeferredType dt)
     pub fn new(
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &Types,
         diags: &crate::util::jc_diagnostic::Factory,
         chk: &crate::comp::check::Check,
@@ -2203,7 +2203,7 @@ impl DeferredStuckPolicy for OverloadStuckPolicy {
 /// Upstream: DeferredAttr.java:1300-1330.
 pub fn overload_stuck_policy_new(
     ctx: &mut CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &Types,
     diags: &crate::util::jc_diagnostic::Factory,
     chk: &crate::comp::check::Check,
@@ -2357,7 +2357,7 @@ impl DeferredAttrService {
     pub fn attrib_speculative(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         tree: TreeId,
         env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
@@ -2406,7 +2406,7 @@ impl DeferredAttrService {
     pub fn attrib_speculative_with_copier(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         tree: TreeId,
         env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
@@ -2435,7 +2435,7 @@ impl DeferredAttrService {
     pub fn attrib_speculative_with_diag(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         tree: TreeId,
         env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
@@ -2524,7 +2524,7 @@ impl DeferredAttrService {
     pub fn attrib_speculative_lambda(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         attr_recover: &mut crate::comp::attr_recover::AttrRecover,
         rs: &mut crate::comp::resolve::Resolve,
@@ -2634,7 +2634,7 @@ impl DeferredAttrService {
     pub fn structural_stuck_check(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         dt: TypeId,
         result_info: &Rc<ResultInfo>,
@@ -2658,7 +2658,7 @@ impl DeferredAttrService {
     fn structural_check_tree(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         state: &StructuralState,
         tree: TreeId,
@@ -2711,7 +2711,7 @@ impl DeferredAttrService {
     fn structural_check_lambda(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         state: &StructuralState,
         tree: TreeId,
@@ -2837,7 +2837,7 @@ impl DeferredAttrService {
     fn structural_check_reference(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         state: &StructuralState,
         tree: TreeId,
@@ -2970,7 +2970,7 @@ impl DeferredAttrService {
     fn can_lambda_body_complete_normally(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         state: &StructuralState,
         tree: TreeId,
@@ -3186,7 +3186,7 @@ impl DeferredAttrService {
     pub fn attrib_speculative_with_rewriter(
         &mut self,
         ctx: &mut CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         attr: &mut Attr,
         tree: TreeId,
         env: &Rc<Env<crate::comp::attr_context::AttrContext>>,

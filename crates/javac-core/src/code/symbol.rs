@@ -1081,7 +1081,7 @@ pub trait Completer {
     fn complete(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure>;
 
@@ -1103,7 +1103,7 @@ impl Completer for NullCompleter {
     fn complete(
         &mut self,
         _ctx: &mut crate::compiler_context::CompilerContext,
-        _syms: &mut crate::code::symtab::Symtab,
+        _syms: &crate::code::symtab::Symtab,
         _sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
         Ok(())
@@ -2410,7 +2410,7 @@ fn is_overridable_in(
 /// 2068-2072/2085-2141)
 pub fn overrides(
     ctx: &mut crate::compiler_context::CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
     other: SymbolId,
@@ -2425,7 +2425,7 @@ pub fn overrides(
 #[allow(clippy::too_many_arguments)]
 pub fn overrides_full(
     ctx: &mut crate::compiler_context::CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
     other: SymbolId,
@@ -2495,7 +2495,7 @@ pub fn overrides_full(
 /// Types types) (Symbol.java:2020-2035)
 pub fn binary_overrides(
     ctx: &mut crate::compiler_context::CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
     other: SymbolId,
@@ -2543,7 +2543,7 @@ pub fn binary_overrides(
 /// (Symbol.java:2042-2056)
 pub fn binary_implementation(
     ctx: &mut crate::compiler_context::CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
     origin: SymbolId,
@@ -2582,7 +2582,7 @@ pub fn binary_implementation(
 /// (Symbol.java:2168-2187)
 pub fn implementation(
     ctx: &mut crate::compiler_context::CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     sym: SymbolId,
     origin: SymbolId,
@@ -2760,7 +2760,7 @@ impl Symbol {
     /// Upstream: Symbol.java:1568-1582.
     pub fn mark_abstract_if_needed(
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         envs: &crate::comp::type_envs::TypeEnvs,
         allow_default_methods: bool,
@@ -3508,8 +3508,8 @@ fn method_symbol_to_string(
     };
     if let Some(method_ty) = method.ty {
         // Java: if (type.hasTag(FORALL)) s = "<" + getTypeArguments() + ">" + s.
-        if ctx.typ(method_ty).has_tag(crate::code::type_tag::TypeTag::FORALL) {
-            if let crate::code::type_::TypeKindData::ForAll { tvars, .. } =
+        if ctx.typ(method_ty).has_tag(crate::code::type_tag::TypeTag::FORALL)
+            && let crate::code::type_::TypeKindData::ForAll { tvars, .. } =
                 &ctx.typ(method_ty).kind
             {
                 result = format!(
@@ -3518,9 +3518,8 @@ fn method_symbol_to_string(
                     result
                 );
             }
-        }
         if let Some(params) = method_type_params(ctx, method_ty) {
-            let varargs = (flags & i64::from(crate::code::flags::VARARGS)) != 0;
+            let varargs = (flags & crate::code::flags::VARARGS) != 0;
             result.push('(');
             result.push_str(&argtypes_to_string(ctx, &params, varargs));
             result.push(')');
@@ -3563,17 +3562,128 @@ fn argtypes_to_string(
             if let crate::code::type_::TypeKindData::ArrayType { elemtype: Some(elemtype), .. } =
                 &ctx.typ(last).kind
             {
-                result.push_str(&crate::code::type_::type_to_string(ctx, elemtype.clone()));
+                result.push_str(&crate::code::type_::type_to_string(ctx, *elemtype));
                 // Java: argtypes(varargs) appends the array type's annotations
                 // before the ellipsis (Type.java:532-534).
                 result.push_str(&crate::code::type_::annotation_mirrors_string(ctx, last));
             }
             result.push_str("...");
         } else {
-            result.push_str(&crate::code::type_::type_to_string(ctx, last.clone()));
+            result.push_str(&crate::code::type_::type_to_string(ctx, last));
         }
     }
     result
+}
+
+
+
+impl Symbol {
+    /// Java: public NestingKind getNestingKind() (Symbol.java:1548-1560).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context.
+    ///
+    /// # Returns
+    ///   - the nesting kind.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn get_nesting_kind(&self, ctx: &CompilerContext) -> crate::code::kinds::NestingKind {
+        let Some(owner) = self.owner else {
+            return crate::code::kinds::NestingKind::TopLevel;
+        };
+        if ctx.sym(owner).kind == crate::code::kinds::Kind::PCK {
+            crate::code::kinds::NestingKind::TopLevel
+        } else if self.name.is_empty() {
+            crate::code::kinds::NestingKind::Anonymous
+        } else if ctx.sym(owner).kind == crate::code::kinds::Kind::MTH {
+            crate::code::kinds::NestingKind::Local
+        } else {
+            crate::code::kinds::NestingKind::Member
+        }
+    }
+
+    /// Java: public RecordComponent getRecordComponent(VarSymbol field)
+    /// (Symbol.java:1534-1541).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - field: the record component field.
+    ///
+    /// # Returns
+    ///   - the matching record component, if any.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn get_record_component(
+        &self,
+        ctx: &CompilerContext,
+        field: SymbolId,
+    ) -> Option<SymbolId> {
+        let crate::code::symbol::SymbolKind::ClassSymbol {
+            record_components, ..
+        } = &self.kind_data
+        else {
+            return None;
+        };
+        let field_name = ctx.sym(field).name.clone();
+        let mut current = record_components.clone();
+        while current.non_empty() {
+            let rc = *current.head();
+            current = current.tail();
+            if ctx.sym(rc).name == field_name {
+                return Some(rc);
+            }
+        }
+        None
+    }
+
+    /// Java: public RecordComponent findRecordComponentToRemove(JCVariableDecl var)
+    /// (Symbol.java:1506-1520).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - var: the record component field declaration tree.
+    ///
+    /// # Returns
+    ///   - the record component to replace, if any.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn find_record_component_to_remove(
+        &self,
+        ctx: &CompilerContext,
+        var: TreeId,
+    ) -> Option<SymbolId> {
+        let crate::code::symbol::SymbolKind::ClassSymbol {
+            record_components, ..
+        } = &self.kind_data
+        else {
+            return None;
+        };
+        let (name, pos) = match &ctx.tree(var).kind {
+            crate::tree::jc_tree::TreeKind::VariableDecl { name, .. } => {
+                (name.clone(), ctx.tree(var).pos)
+            }
+            _ => return None,
+        };
+        let mut to_remove: Option<SymbolId> = None;
+        let mut current = record_components.clone();
+        while current.non_empty() {
+            let rc = *current.head();
+            current = current.tail();
+            let (rc_pos, _rc_varargs) = match &ctx.sym(rc).kind_data {
+                crate::code::symbol::SymbolKind::RecordComponent { pos, is_varargs, .. } => {
+                    (*pos, *is_varargs)
+                }
+                _ => (crate::util::position::NOPOS, false),
+            };
+            if ctx.sym(rc).name == name && pos == rc_pos {
+                to_remove = Some(rc);
+            }
+        }
+        to_remove
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -3845,7 +3955,7 @@ mod tests {
         ctx.sym_mut(package_info)
             .append_attributes(List::nil().prepend(first));
         let raw = ctx
-            .package_get_raw_attributes(&mut syms, package)
+            .package_get_raw_attributes(&syms, package)
             .expect("package raw attributes");
         assert_eq!(raw.iter().count(), 1);
         assert_eq!(*raw.head(), first);
@@ -3853,7 +3963,7 @@ mod tests {
         ctx.sym_mut(package_info)
             .append_attributes(List::nil().prepend(second));
         let raw = ctx
-            .package_get_raw_attributes(&mut syms, package)
+            .package_get_raw_attributes(&syms, package)
             .expect("package raw attributes");
         assert_eq!(
             raw.iter().count(),
@@ -4182,116 +4292,5 @@ mod tests {
             }
             _ => panic!("expected an operator symbol"),
         }
-    }
-}
-
-
-
-impl Symbol {
-    /// Java: public NestingKind getNestingKind() (Symbol.java:1548-1560).
-    ///
-    /// # Arguments
-    ///   - ctx: the compiler context.
-    ///
-    /// # Returns
-    ///   - the nesting kind.
-    ///
-    /// # Panics
-    ///   - none.
-    pub fn get_nesting_kind(&self, ctx: &CompilerContext) -> crate::code::kinds::NestingKind {
-        let Some(owner) = self.owner else {
-            return crate::code::kinds::NestingKind::TopLevel;
-        };
-        if ctx.sym(owner).kind == crate::code::kinds::Kind::PCK {
-            crate::code::kinds::NestingKind::TopLevel
-        } else if self.name.is_empty() {
-            crate::code::kinds::NestingKind::Anonymous
-        } else if ctx.sym(owner).kind == crate::code::kinds::Kind::MTH {
-            crate::code::kinds::NestingKind::Local
-        } else {
-            crate::code::kinds::NestingKind::Member
-        }
-    }
-
-    /// Java: public RecordComponent getRecordComponent(VarSymbol field)
-    /// (Symbol.java:1534-1541).
-    ///
-    /// # Arguments
-    ///   - ctx: the compiler context;
-    ///   - field: the record component field.
-    ///
-    /// # Returns
-    ///   - the matching record component, if any.
-    ///
-    /// # Panics
-    ///   - none.
-    pub fn get_record_component(
-        &self,
-        ctx: &CompilerContext,
-        field: SymbolId,
-    ) -> Option<SymbolId> {
-        let crate::code::symbol::SymbolKind::ClassSymbol {
-            record_components, ..
-        } = &self.kind_data
-        else {
-            return None;
-        };
-        let field_name = ctx.sym(field).name.clone();
-        let mut current = record_components.clone();
-        while current.non_empty() {
-            let rc = *current.head();
-            current = current.tail();
-            if ctx.sym(rc).name == field_name {
-                return Some(rc);
-            }
-        }
-        None
-    }
-
-    /// Java: public RecordComponent findRecordComponentToRemove(JCVariableDecl var)
-    /// (Symbol.java:1506-1520).
-    ///
-    /// # Arguments
-    ///   - ctx: the compiler context;
-    ///   - var: the record component field declaration tree.
-    ///
-    /// # Returns
-    ///   - the record component to replace, if any.
-    ///
-    /// # Panics
-    ///   - none.
-    pub fn find_record_component_to_remove(
-        &self,
-        ctx: &CompilerContext,
-        var: TreeId,
-    ) -> Option<SymbolId> {
-        let crate::code::symbol::SymbolKind::ClassSymbol {
-            record_components, ..
-        } = &self.kind_data
-        else {
-            return None;
-        };
-        let (name, pos) = match &ctx.tree(var).kind {
-            crate::tree::jc_tree::TreeKind::VariableDecl { name, .. } => {
-                (name.clone(), ctx.tree(var).pos)
-            }
-            _ => return None,
-        };
-        let mut to_remove: Option<SymbolId> = None;
-        let mut current = record_components.clone();
-        while current.non_empty() {
-            let rc = *current.head();
-            current = current.tail();
-            let (rc_pos, _rc_varargs) = match &ctx.sym(rc).kind_data {
-                crate::code::symbol::SymbolKind::RecordComponent { pos, is_varargs, .. } => {
-                    (*pos, *is_varargs)
-                }
-                _ => (crate::util::position::NOPOS, false),
-            };
-            if ctx.sym(rc).name == name && pos == rc_pos {
-                to_remove = Some(rc);
-            }
-        }
-        to_remove
     }
 }

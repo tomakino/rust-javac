@@ -332,7 +332,7 @@ impl Attribute {
     /// constructor (makeClassType).
     pub fn new_class(
         ctx: &mut CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         class_type: TypeId,
     ) -> Attribute {
@@ -632,9 +632,9 @@ mod tests {
 
     #[test]
     fn class_attribute_make_class_type_boxes_primitives() {
-        let (mut ctx, mut syms, types, _names) = harness();
+        let (mut ctx, syms, types, _names) = harness();
         let int_type = syms.int_type;
-        let attribute = Attribute::new_class(&mut ctx, &mut syms, &types, int_type);
+        let attribute = Attribute::new_class(&mut ctx, &syms, &types, int_type);
         let class_type = match &attribute.kind {
             AttributeKind::Class { class_type } => class_type.expect("class type"),
             _ => panic!("class attribute expected"),
@@ -643,7 +643,7 @@ mod tests {
         let attribute_type = attribute.ty.expect("attribute type");
         let arguments = ctx.typ(attribute_type).get_type_arguments();
         assert_eq!(arguments.length(), 1);
-        let boxed = types.boxed_class(&mut ctx, &mut syms, int_type);
+        let boxed = types.boxed_class(&mut ctx, &syms, int_type);
         assert_eq!(
             ctx.typ(*arguments.head()).tsym,
             ctx.sym(boxed).ty.and_then(|ty| ctx.typ(ty).tsym)

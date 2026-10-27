@@ -272,7 +272,7 @@ impl Resolve {
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
-        env: &Rc<Env<AttrContext>>,
+        _env: &Rc<Env<AttrContext>>,
         c: SymbolId,
         base: SymbolId,
     ) -> bool {
@@ -298,7 +298,7 @@ impl Resolve {
     pub fn is_accessible_member(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         sym: SymbolId,
@@ -394,7 +394,7 @@ impl Resolve {
     fn not_overridden_in(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         site: TypeId,
         sym: SymbolId,
     ) -> bool {
@@ -469,7 +469,7 @@ impl Resolve {
     pub fn check_accessible_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         t: TypeId,
     ) {
@@ -495,7 +495,7 @@ impl Resolve {
                 //   if (!isAccessible(env, t, true))
                 //       accessBase(new AccessError(env, null, t.tsym),
                 //                  env.tree.pos(), env.enclClass.sym, t, t.tsym.name, true);
-                if !self.is_accessible_type(ctx, &*syms, env, t, true) {
+                if !self.is_accessible_type(ctx, syms, env, t, true) {
                     let error = self.new_access_error(ctx, syms, env, None, tsym);
                     let pos_tree = env.tree.expect("env.tree");
                     let pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
@@ -1151,7 +1151,7 @@ impl Resolve {
     fn symbol_not_found_diagnostic(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &Symtab,
+        _syms: &Symtab,
         absent_error: SymbolId,
         dkind: crate::util::jc_diagnostic::DiagnosticType,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
@@ -1587,7 +1587,7 @@ impl Resolve {
     fn find_field(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         name: &crate::util::name::Name,
@@ -1659,7 +1659,7 @@ impl Resolve {
     fn find_var(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
     ) -> SymbolId {
@@ -1807,7 +1807,7 @@ impl Resolve {
     fn find_immediate_member_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         name: &crate::util::name::Name,
@@ -1840,7 +1840,7 @@ impl Resolve {
     fn find_inherited_member_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         name: &crate::util::name::Name,
@@ -1877,7 +1877,7 @@ impl Resolve {
     fn find_member_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         name: &crate::util::name::Name,
@@ -1895,7 +1895,7 @@ impl Resolve {
     fn find_global_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         scope: Option<crate::ids::ScopeId>,
         name: &crate::util::name::Name,
@@ -1966,7 +1966,7 @@ impl Resolve {
     fn find_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
     ) -> SymbolId {
@@ -2121,7 +2121,7 @@ impl Resolve {
     fn new_access_error(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        _syms: &mut Symtab,
+        _syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         site: Option<TypeId>,
         sym: SymbolId,
@@ -2285,7 +2285,7 @@ impl Resolve {
     fn load_class(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
         recovery: RecoveryLoadClass,
@@ -2342,7 +2342,7 @@ impl Resolve {
     fn do_recovery_load_class(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
     ) -> SymbolId {
@@ -2372,7 +2372,7 @@ impl Resolve {
         //     return finder.loadClass(ms, candidate); } catch (CompletionFailure cf)
         //     { } } return null; }
         let mut load = |ctx: &mut crate::compiler_context::CompilerContext,
-                        syms: &mut Symtab,
+                        syms: &Symtab,
                         module: SymbolId,
                         _name: &crate::util::name::Name|
         -> Option<SymbolId> {
@@ -2385,7 +2385,7 @@ impl Resolve {
         };
         // Java: sym -> sym.kind == Kind.TYP.
         let mut validate = |ctx: &mut crate::compiler_context::CompilerContext,
-                            _syms: &mut Symtab,
+                            _syms: &Symtab,
                             sym: SymbolId|
         -> bool { ctx.sym(sym).kind == Kind::TYP };
         self.lookup_invisible_symbol(
@@ -2424,19 +2424,19 @@ impl Resolve {
     fn lookup_invisible_symbol(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
         get: &dyn Fn(&Symtab, &crate::util::name::Name) -> Vec<SymbolId>,
         load: &mut dyn FnMut(
             &mut crate::compiler_context::CompilerContext,
-            &mut Symtab,
+            &Symtab,
             SymbolId,
             &crate::util::name::Name,
         ) -> Option<SymbolId>,
         validate: &mut dyn FnMut(
             &mut crate::compiler_context::CompilerContext,
-            &mut Symtab,
+            &Symtab,
             SymbolId,
         ) -> bool,
         default_result: SymbolId,
@@ -2487,7 +2487,7 @@ impl Resolve {
     fn create_invisible_symbol_error(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         sym: SymbolId,
     ) -> SymbolId {
@@ -2513,7 +2513,7 @@ impl Resolve {
     fn recovery_import_scope_lookup(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        _syms: &mut Symtab,
+        _syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
         recovery: RecoveryLoadClass,
@@ -2565,7 +2565,7 @@ impl Resolve {
     fn lookup_package(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
     ) -> SymbolId {
@@ -2587,12 +2587,12 @@ impl Resolve {
                     syms.get_packages_for_name(name)
                 };
                 let mut load = |ctx: &mut crate::compiler_context::CompilerContext,
-                                syms: &mut Symtab,
+                                syms: &Symtab,
                                 module: SymbolId,
                                 name: &crate::util::name::Name|
                 -> Option<SymbolId> { Some(syms.enter_package(ctx, module, name.clone())) };
                 let mut validate = |ctx: &mut crate::compiler_context::CompilerContext,
-                                    syms: &mut Symtab,
+                                    syms: &Symtab,
                                     sym: SymbolId|
                 -> bool {
                     // Java: sym.complete(); return !sym.members().isEmpty();
@@ -2724,7 +2724,7 @@ impl Resolve {
     pub fn find_ident(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
@@ -2739,7 +2739,7 @@ impl Resolve {
     fn find_ident_internal(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
         kind: crate::code::kinds::KindSelector,
@@ -2773,7 +2773,7 @@ impl Resolve {
     pub fn find_ident_in_package(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         env: &Rc<Env<AttrContext>>,
         pck: SymbolId,
@@ -2790,7 +2790,7 @@ impl Resolve {
     fn find_ident_in_package_internal(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         pck: SymbolId,
         name: &crate::util::name::Name,
@@ -2832,7 +2832,7 @@ impl Resolve {
     pub fn find_ident_in_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
@@ -2849,7 +2849,7 @@ impl Resolve {
     fn find_ident_in_type_internal(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         name: &crate::util::name::Name,
@@ -2935,7 +2935,7 @@ impl Resolve {
     pub fn access_internal(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         sym: SymbolId,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         location: Option<SymbolId>,
@@ -2987,14 +2987,14 @@ impl Resolve {
                                 .as_ref()
                                 .expect("AssertionError: Attr service must be installed"),
                         );
-                        let mapped = attr_rc.borrow_mut().map_resolve_deferred_argtypes(
+                        
+                        attr_rc.borrow_mut().map_resolve_deferred_argtypes(
                             ctx,
                             syms,
                             current_argtypes,
                             Some(sym),
                             step,
-                        );
-                        mapped
+                        )
                     };
                     argtypes = Some(mapped);
                 }
@@ -3064,7 +3064,7 @@ impl Resolve {
     pub fn access_method(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         sym: SymbolId,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         location: Option<SymbolId>,
@@ -3097,7 +3097,7 @@ impl Resolve {
     pub fn access_base(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         sym: SymbolId,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         location: Option<SymbolId>,
@@ -3756,7 +3756,7 @@ pub trait MethodCheck {
     fn arguments_acceptable(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -3781,7 +3781,7 @@ impl MethodCheck for OwnedMethodCheck {
     fn arguments_acceptable(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -3820,7 +3820,7 @@ impl MethodCheck for NilMethodCheck {
     fn arguments_acceptable(
         &mut self,
         _ctx: &mut crate::compiler_context::CompilerContext,
-        _syms: &mut crate::code::symtab::Symtab,
+        _syms: &crate::code::symtab::Symtab,
         _types: &crate::code::types::Types,
         _attr: &mut crate::comp::attr::Attr,
         _chk: &crate::comp::check::Check,
@@ -3851,7 +3851,7 @@ pub trait AbstractMethodCheck: MethodCheck {
     fn check_arg(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -3883,7 +3883,7 @@ fn formals_head_is_not_varargs(
 pub fn abstract_method_check_arguments_acceptable(
     this: &mut dyn AbstractMethodCheck,
     ctx: &mut crate::compiler_context::CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     attr: &mut crate::comp::attr::Attr,
     chk: &crate::comp::check::Check,
@@ -4103,7 +4103,7 @@ impl MethodResultInfo {
     pub fn check(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -4208,7 +4208,7 @@ impl AbstractMethodCheck for MethodReferenceCheck {
     fn check_arg(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -4242,7 +4242,7 @@ impl MethodCheck for MethodReferenceCheck {
     fn arguments_acceptable(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -4283,7 +4283,7 @@ impl Resolve {
     pub fn raw_instantiate(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -4454,7 +4454,7 @@ impl Resolve {
     pub fn check_method(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -4531,7 +4531,7 @@ impl Resolve {
     pub fn instantiate(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -4607,7 +4607,7 @@ impl Resolve {
     pub fn select_best(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -4836,7 +4836,7 @@ Err(MethodCheckFailure::Inference(exception)) => {
     fn is_accessible(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
@@ -4854,7 +4854,7 @@ Err(MethodCheckFailure::Inference(exception)) => {
     fn most_specific(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -4914,7 +4914,7 @@ Err(MethodCheckFailure::Inference(exception)) => {
                                 & crate::code::flags::INTERFACE as i64)
                                 != 0;
                         if types
-                            .as_super(ctx, &*syms, m1_owner_ty, m2_owner)
+                            .as_super(ctx, syms, m1_owner_ty, m2_owner)
                             .is_some()
                             && (!m1_owner_interface || m2_owner_interface)
                             && crate::code::symbol::overrides(
@@ -4924,7 +4924,7 @@ Err(MethodCheckFailure::Inference(exception)) => {
                             return m1;
                         }
                         if types
-                            .as_super(ctx, &*syms, m2_owner_ty, m1_owner)
+                            .as_super(ctx, syms, m2_owner_ty, m1_owner)
                             .is_some()
                             && (!m2_owner_interface || m1_owner_interface)
                             && crate::code::symbol::overrides(
@@ -5016,7 +5016,7 @@ Err(MethodCheckFailure::Inference(exception)) => {
     fn signature_more_specific(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -5105,7 +5105,7 @@ Err(MethodCheckFailure::Inference(exception)) => {
     pub fn find_method_in_scope(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -5177,7 +5177,7 @@ impl AbstractMethodCheck for ArityMethodCheck {
     fn check_arg(
         &mut self,
         _ctx: &mut crate::compiler_context::CompilerContext,
-        _syms: &mut crate::code::symtab::Symtab,
+        _syms: &crate::code::symtab::Symtab,
         _types: &crate::code::types::Types,
         _attr: &mut crate::comp::attr::Attr,
         _chk: &crate::comp::check::Check,
@@ -5198,7 +5198,7 @@ impl MethodCheck for ArityMethodCheck {
     fn arguments_acceptable(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -5260,7 +5260,7 @@ impl AbstractMethodCheck for ResolveMethodCheck {
     fn check_arg(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -5313,7 +5313,7 @@ impl MethodCheck for ResolveMethodCheck {
     fn arguments_acceptable(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -5373,7 +5373,7 @@ impl MethodCheck for ResolveMethodCheck {
 /// (Resolve.java:880-900)
 fn varargs_accessible(
     ctx: &mut crate::compiler_context::CompilerContext,
-    syms: &mut crate::code::symtab::Symtab,
+    syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
     env: &Rc<Env<AttrContext>>,
     allow_modules: bool,
@@ -5393,7 +5393,7 @@ fn varargs_accessible(
             fn types_inferred(
                 &self,
                 ctx: &mut crate::compiler_context::CompilerContext,
-                syms: &mut crate::code::symtab::Symtab,
+                syms: &crate::code::symtab::Symtab,
                 types: &crate::code::types::Types,
                 inference_context: &crate::comp::infer::InferenceContext,
             ) -> Result<(), crate::comp::infer::InferenceException> {
@@ -5484,7 +5484,7 @@ impl MethodCheck for MostSpecificCheck {
     fn arguments_acceptable(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -5845,7 +5845,7 @@ pub trait LookupHelper {
         &mut self,
         rs: &mut Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -5867,7 +5867,7 @@ pub trait LookupHelper {
         &mut self,
         rs: &mut Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -5956,7 +5956,7 @@ impl LookupHelper for BasicLookupHelper {
         &mut self,
         rs: &mut Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6031,7 +6031,8 @@ impl LookupHelper for BasicLookupHelper {
         // Java: Resolve.java:3453-3459 and 4603-4606:
         // if (sym.kind == AMBIGUOUS) { AmbiguityError a_err = (AmbiguityError)sym.baseSymbol();
         //     sym = a_err.mergeAbstracts(site); }
-        let sym = if ctx.sym(sym).kind == crate::code::kinds::Kind::AMBIGUOUS {
+        
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::AMBIGUOUS {
             let error = base_symbol_id(ctx, sym);
             let ambiguous_in_order = match crate::code::symbol::symbol_resolve_error_data(ctx, error) {
                 Some(crate::code::symbol::ResolveErrorData::Ambiguity { syms }) => {
@@ -6047,8 +6048,7 @@ impl LookupHelper for BasicLookupHelper {
             }
         } else {
             sym
-        };
-        sym
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -6056,7 +6056,7 @@ impl LookupHelper for BasicLookupHelper {
         &mut self,
         rs: &mut Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6219,7 +6219,7 @@ fn symbol_for(
 /// (follows the upper bound of a type variable).
 fn skip_type_vars(
     ctx: &mut crate::compiler_context::CompilerContext,
-    syms: &crate::code::symtab::Symtab,
+    _syms: &crate::code::symtab::Symtab,
     t: TypeId,
 ) -> TypeId {
 
@@ -6262,7 +6262,7 @@ impl Resolve {
     pub fn find_constructor(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6305,7 +6305,7 @@ impl Resolve {
     pub fn find_diamond(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6411,7 +6411,7 @@ impl Resolve {
     pub fn resolve_method(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6450,7 +6450,7 @@ impl Resolve {
     pub fn resolve_qualified_method(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6484,7 +6484,7 @@ impl Resolve {
     pub fn resolve_internal_method(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6537,7 +6537,7 @@ impl Resolve {
     pub fn resolve_constructor(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6581,7 +6581,7 @@ impl Resolve {
     pub fn resolve_internal_constructor(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6632,7 +6632,7 @@ impl Resolve {
     pub fn resolve_diamond(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6681,7 +6681,7 @@ impl Resolve {
     pub fn lookup_method_with_check(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6716,7 +6716,7 @@ impl Resolve {
     pub fn lookup_method(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6797,7 +6797,7 @@ impl Resolve {
     fn member_scope(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         sym: SymbolId,
     ) -> Option<crate::ids::ScopeId> {
         if let Some(members) = ctx.sym(sym).members() {
@@ -6814,7 +6814,7 @@ impl Resolve {
     pub fn find_method(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6860,7 +6860,7 @@ impl Resolve {
     fn find_method_full(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -6998,7 +6998,7 @@ impl Resolve {
     pub fn find_fun(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -7152,7 +7152,7 @@ impl Resolve {
     fn find_fun_in_import_scope(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -7265,7 +7265,7 @@ impl Resolve {
     pub fn find_polymorphic_signature_instance(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -7298,7 +7298,7 @@ impl Resolve {
     pub fn find_polymorphic_signature_instance_with_type(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         sp_method: SymbolId,
         mtype: TypeId,
@@ -7465,7 +7465,7 @@ impl ReferenceLookupResult {
     pub fn can_ignore(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
     ) -> bool {
         match ctx.sym(self.sym).kind {
@@ -7520,7 +7520,7 @@ fn resolve_matches_method_check_diag(code: &str, _unused: bool) -> bool {
 /// Java: InapplicableSymbolsError.MostSpecificMap.put(Candidate) (Porting rules: Vec map).
 fn resolve_map_candidates(
     ctx: &mut crate::compiler_context::CompilerContext,
-    syms: &mut Symtab,
+    syms: &Symtab,
     types: &crate::code::types::Types,
     candidates: &[(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)],
 ) -> Vec<(SymbolId, Option<crate::util::jc_diagnostic::JCDiagnostic>)> {
@@ -7716,7 +7716,7 @@ impl ReferenceLookupHelper {
         &self,
         rs: &Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         inference_context: &Rc<crate::comp::infer::InferenceContext>,
     ) -> Option<ReferenceLookupHelper> {
@@ -7850,7 +7850,7 @@ impl LookupHelper for ReferenceLookupHelper {
         &mut self,
         rs: &mut Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -7978,7 +7978,7 @@ impl LookupHelper for ReferenceLookupHelper {
         &mut self,
         _rs: &mut Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -8032,7 +8032,7 @@ impl Resolve {
     pub fn enclosing_instance_missing(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
@@ -8073,7 +8073,7 @@ impl Resolve {
     pub fn resolve_self_containing_internal(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         env: &Rc<Env<AttrContext>>,
         member: SymbolId,
@@ -8149,7 +8149,7 @@ impl Resolve {
     pub fn make_reference_lookup_helper(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         reference_tree: TreeId,
         site: TypeId,
@@ -8261,7 +8261,7 @@ impl Resolve {
     fn skip_type_vars_capture(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         site: TypeId,
     ) -> TypeId {
@@ -8292,7 +8292,7 @@ impl Resolve {
     pub fn get_member_reference(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -8357,7 +8357,7 @@ impl Resolve {
     pub fn resolve_member_reference(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         attr: &mut crate::comp::attr::Attr,
         chk: &crate::comp::check::Check,
@@ -8466,7 +8466,7 @@ impl Resolve {
     fn reference_chooser_result(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         kind: ReferenceChooserKind,
         bound: &ReferenceLookupResult,
@@ -8481,7 +8481,7 @@ impl Resolve {
     fn reference_chooser_bound_result(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         kind: ReferenceChooserKind,
         bound: &ReferenceLookupResult,
@@ -8508,7 +8508,7 @@ impl Resolve {
     fn reference_chooser_unbound_result(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         kind: ReferenceChooserKind,
         bound: &ReferenceLookupResult,
@@ -8613,7 +8613,7 @@ impl Resolve {
     pub fn resolve_ident(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         env: &Rc<Env<AttrContext>>,
         name: crate::util::name::Name,
@@ -8661,7 +8661,7 @@ impl Resolve {
     pub fn resolve_self(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         env: &Rc<Env<AttrContext>>,
@@ -8796,7 +8796,7 @@ impl Resolve {
     fn prune_interfaces(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         t: TypeId,
     ) -> crate::util::list::List<TypeId> {
@@ -8847,7 +8847,7 @@ impl Resolve {
     pub(crate) fn find_member_type_pub(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
         name: &crate::util::name::Name,
@@ -8879,7 +8879,7 @@ impl Resolve {
     pub fn resolve_self_containing(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         env: &Rc<Env<AttrContext>>,
@@ -8928,7 +8928,7 @@ impl Resolve {
     pub fn resolve_implicit_this(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut Symtab,
+        syms: &Symtab,
         types: &crate::code::types::Types,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         env: &Rc<Env<AttrContext>>,
@@ -9056,7 +9056,7 @@ impl Resolve {
     pub fn is_accessible_pub(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
@@ -9088,7 +9088,7 @@ impl Resolve {
     pub fn log_access_error_internal(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        syms: &mut crate::code::symtab::Symtab,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
         tree: TreeId,
         target: TypeId,
@@ -9404,7 +9404,7 @@ mod check_channel_tests {
         let outer = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             catch_inapplicable_method_exception(|| panic!("unrelated bug"))
         }));
-        let payload = outer.err().expect("the unrelated panic must propagate");
+        let payload = outer.expect_err("the unrelated panic must propagate");
         assert!(
             payload.downcast_ref::<&str>().is_some() || payload.downcast_ref::<String>().is_some()
         );
@@ -9529,7 +9529,7 @@ mod check_channel_tests {
     ) -> bool {
         let mut current: Option<SymbolId> = Some(c);
         while let Some(class) = current {
-            if symbol_is_sub_class(ctx, &types, syms, class, base) {
+            if symbol_is_sub_class(ctx, types, syms, class, base) {
                 return true;
             }
             current = ctx
