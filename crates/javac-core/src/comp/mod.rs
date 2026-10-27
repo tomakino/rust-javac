@@ -16,6 +16,7 @@ pub mod infer;
 pub mod env;
 pub mod lower;
 pub mod match_bindings;
+pub mod modules;
 pub mod member_enter;
 pub mod operators;
 pub mod resolve;

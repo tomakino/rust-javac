@@ -125,6 +125,8 @@ pub enum Option {
     ADD_READS,
     MODULE,
     ADD_MODULES,
+    LIMIT_MODULES,
+    MODULE_VERSION,
     AT,
     SOURCEFILE,
     MULTIRELEASE,
@@ -132,7 +134,7 @@ pub enum Option {
 
 impl Option {
     /// Java: Option.values() (the trimmed constants are absent, see the header).
-    pub fn values() -> [Option; 39] {
+    pub fn values() -> [Option; 41] {
         [
             Option::G,
             Option::G_NONE,
@@ -170,6 +172,8 @@ impl Option {
             Option::ADD_READS,
             Option::MODULE,
             Option::ADD_MODULES,
+            Option::LIMIT_MODULES,
+            Option::MODULE_VERSION,
             Option::AT,
             Option::SOURCEFILE,
             Option::MULTIRELEASE,
@@ -215,6 +219,8 @@ impl Option {
             Option::ADD_READS => &["--add-reads"],
             Option::MODULE => &["--module", "-m"],
             Option::ADD_MODULES => &["--add-modules"],
+            Option::LIMIT_MODULES => &["--limit-modules"],
+            Option::MODULE_VERSION => &["--module-version"],
             Option::AT => &["@"],
             Option::SOURCEFILE => &["sourcefile"],
             Option::MULTIRELEASE => &["--multi-release"],
@@ -248,6 +254,8 @@ impl Option {
             Option::ADD_READS => Some("opt.arg.addReads"),
             Option::MODULE => Some("opt.arg.m"),
             Option::ADD_MODULES => Some("opt.arg.addmods"),
+            Option::LIMIT_MODULES => Some("opt.arg.limitmods"),
+            Option::MODULE_VERSION => Some("opt.arg.module.version"),
             Option::AT => Some("opt.arg.file"),
             Option::MULTIRELEASE => Some("opt.arg.multi-release"),
             _ => None,
@@ -294,6 +302,8 @@ impl Option {
             Option::ADD_READS => Some("opt.addReads"),
             Option::MODULE => Some("opt.m"),
             Option::ADD_MODULES => Some("opt.addmods"),
+            Option::LIMIT_MODULES => Some("opt.limitmods"),
+            Option::MODULE_VERSION => Some("opt.module.version"),
             Option::AT => Some("opt.AT"),
             Option::SOURCEFILE => None,
             Option::MULTIRELEASE => Some("opt.multi-release"),
@@ -327,7 +337,9 @@ impl Option {
             | Option::X
             | Option::AT
             | Option::MODULE
-            | Option::ADD_MODULES => OptionKind::STANDARD,
+            | Option::ADD_MODULES
+            | Option::LIMIT_MODULES
+            | Option::MODULE_VERSION => OptionKind::STANDARD,
             Option::XLINT
             | Option::XLINT_CUSTOM
             | Option::PATCH_MODULE
@@ -368,7 +380,9 @@ impl Option {
             | Option::ADD_EXPORTS
             | Option::ADD_READS
             | Option::MODULE
-            | Option::ADD_MODULES => OptionGroup::BASIC,
+            | Option::ADD_MODULES
+            | Option::LIMIT_MODULES
+            | Option::MODULE_VERSION => OptionGroup::BASIC,
             Option::CLASS_PATH
             | Option::SOURCE_PATH
             | Option::MODULE_SOURCE_PATH
@@ -942,11 +956,11 @@ mod tests {
     #[test]
     fn kept_options_are_complete_and_in_declaration_order() {
         let values = Option::values();
-        assert_eq!(values.len(), 39);
+        assert_eq!(values.len(), 41);
         assert_eq!(values[0], Option::G);
         assert_eq!(values[values.len() - 1], Option::MULTIRELEASE);
-        // 83 upstream constants - 39 kept = 44 trimmed (see the file header).
-        assert_eq!(39 + 44, 83);
+        // 83 upstream constants - 41 kept = 42 trimmed (see the file header).
+        assert_eq!(41 + 42, 83);
     }
 
     #[test]
@@ -1008,12 +1022,12 @@ mod tests {
     fn option_groups_partition_the_kept_options() {
         let tool = Option::get_javac_tool_options();
         let file_manager = Option::get_javac_file_manager_options();
-        assert_eq!(tool.len(), 23);
+        assert_eq!(tool.len(), 25);
         assert_eq!(file_manager.len(), 10);
         assert!(tool.iter().all(|option| !file_manager.contains(option)));
         // BASIC + FILEMANAGER + INFO = all kept options.
-        assert_eq!(tool.len() + file_manager.len(), 33);
-        assert_eq!(Option::get_java_compiler_options().len(), 39);
+        assert_eq!(tool.len() + file_manager.len(), 35);
+        assert_eq!(Option::get_java_compiler_options().len(), 41);
         assert!(Option::get_java_compiler_options().contains(&Option::VERSION));
         assert!(Option::get_java_compiler_options().contains(&Option::SOURCEFILE));
         assert_eq!(Option::get_javac_file_manager_options()[0], Option::CLASS_PATH);
@@ -1172,8 +1186,6 @@ mod tests {
             "--should-stop=at=FLOW",
             "--diags",
             "--add-opens",
-            "--limit-modules",
-            "--module-version",
             "--default-module-for-created-files",
             "--inherit-runtime-environment",
             "--help-lint",

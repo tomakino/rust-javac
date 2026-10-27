@@ -33,6 +33,7 @@ use crate::code::symbol::{
 };
 use crate::code::deferred_lint_handler::DeferredLintHandler;
 use crate::code::lint::{Lint, LintCategory};
+use crate::code::preview::Preview;
 use crate::code::kinds::Kind;
 use crate::code::symtab::Symtab;
 use crate::code::symbol::CompletionFailure;
@@ -57,7 +58,7 @@ use crate::util::abstract_log::AbstractLog;
 use crate::util::constants::ConstantValue;
 use crate::util::jc_diagnostic::{SimpleDiagnosticPosition, Warning};
 use crate::util::log::Log;
-use crate::util::mandatory_warning_handler::MandatoryWarningLog;
+use crate::util::mandatory_warning_handler::{MandatoryWarningHandler, MandatoryWarningLog};
 use crate::util::list::List;
 use crate::util::name::Name;
 use crate::util::names::Names;
@@ -108,6 +109,14 @@ pub struct Check {
     /// Java: private final Enter enter (Check.java:116) — injected at wiring
     /// time to avoid the Check/Enter construction cycle.
     pub enter: RefCell<Option<Rc<RefCell<Enter>>>>,
+    /// Java: MandatoryWarningHandler deprecationHandler (Check.java:177).
+    pub deprecation_handler:
+        Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
+    /// Java: MandatoryWarningHandler removalHandler (Check.java:181).
+    pub removal_handler: Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
+    /// Java: private final Preview preview (Check.java:99; installed by the
+    /// wiring because the ported Preview is created after Check).
+    pub preview: Rc<RefCell<Option<Rc<Preview>>>>,
 }
 
 
@@ -196,6 +205,24 @@ impl Check {
         deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
         syms: Rc<RefCell<Symtab>>,
     ) -> Check {
+        let verbose_deprecated = lint.is_enabled(LintCategory::DEPRECATION);
+        let verbose_removal = lint.is_enabled(LintCategory::REMOVAL);
+        let deprecation_handler = Rc::new(RefCell::new(MandatoryWarningHandler::new(
+            Rc::clone(&log),
+            None,
+            verbose_deprecated,
+            true,
+            "deprecated",
+            Some(LintCategory::DEPRECATION),
+        )));
+        let removal_handler = Rc::new(RefCell::new(MandatoryWarningHandler::new(
+            Rc::clone(&log),
+            None,
+            verbose_removal,
+            true,
+            "removal",
+            Some(LintCategory::REMOVAL),
+        )));
         let basic_handler: Rc<dyn CheckContext> = Rc::new(BasicCheckContext {
             log: Rc::clone(&log),
             types: Rc::clone(&types),
@@ -225,6 +252,9 @@ impl Check {
             method: None,
             warn_on_any_access_to_members: false,
             enter: RefCell::new(None),
+            deprecation_handler,
+            removal_handler,
+            preview: Rc::new(RefCell::new(None)),
             source,
         }
     }
@@ -9603,4 +9633,373 @@ impl Check {
             }));
         }
     }
+}
+
+impl Check {
+    /// Installs the Preview service (Java: final Preview preview; the ported
+    /// Preview is created after Check by the bootstrap; registered adapter).
+    pub fn set_preview(&mut self, preview: Rc<Preview>) {
+        *self.preview.borrow_mut() = Some(preview);
+    }
+
+    /// Java: void warnDeprecated(DiagnosticPosition pos, Symbol sym)
+    /// (Check.java:227-247), called from checkDeprecated's deferred report.
+    fn warn_deprecated(
+        &self,
+        ctx: &CompilerContext,
+        pos: i32,
+        sym: SymbolId,
+    ) {
+        let removal = ctx.sym(sym).is_deprecated_for_removal();
+        let is_module = ctx.sym(sym).kind == Kind::MDL;
+        let sym_name = ctx.sym(sym).name.to_java_string().to_string_lossy();
+        let loc_name = ctx
+            .sym(sym)
+            .location()
+            .map(|loc| ctx.sym(loc).name.to_java_string().to_string_lossy())
+            .unwrap_or_default();
+        let lint = Rc::clone(&self.lint);
+        let deprecation_handler = Rc::clone(&self.deprecation_handler);
+        let removal_handler = Rc::clone(&self.removal_handler);
+        let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+            Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
+        self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+            if removal {
+                if !lint.is_suppressed(LintCategory::REMOVAL) {
+                    if is_module {
+                        removal_handler.borrow_mut().report(
+                            Some(Rc::clone(&position)),
+                            crate::util::jc_diagnostic::Warning::from(
+                                crate::resources::compiler_properties::warnings::
+                                    has_been_deprecated_for_removal_module(
+                                        SymbolArg::placeholder(sym_name.clone()),
+                                    ),
+                            ),
+                        );
+                    } else {
+                        removal_handler.borrow_mut().report(
+                            Some(Rc::clone(&position)),
+                            crate::util::jc_diagnostic::Warning::from(
+                                crate::resources::compiler_properties::warnings::
+                                    has_been_deprecated_for_removal(
+                                        SymbolArg::placeholder(sym_name.clone()),
+                                        SymbolArg::placeholder(loc_name.clone()),
+                                    ),
+                            ),
+                        );
+                    }
+                }
+            } else if !lint.is_suppressed(LintCategory::DEPRECATION) {
+                if is_module {
+                    deprecation_handler.borrow_mut().report(
+                        Some(Rc::clone(&position)),
+                        crate::util::jc_diagnostic::Warning::from(
+                            crate::resources::compiler_properties::warnings::
+                                has_been_deprecated_module(SymbolArg::placeholder(sym_name.clone())),
+                        ),
+                    );
+                } else {
+                    deprecation_handler.borrow_mut().report(
+                        Some(Rc::clone(&position)),
+                        crate::util::jc_diagnostic::Warning::from(
+                            crate::resources::compiler_properties::warnings::
+                                has_been_deprecated(
+                                    SymbolArg::placeholder(sym_name.clone()),
+                                    SymbolArg::placeholder(loc_name.clone()),
+                                ),
+                        ),
+                    );
+                }
+            }
+        }));
+    }
+
+    /// Java: void warnPreviewAPI(DiagnosticPosition pos, Warning warnKey)
+    /// (Check.java:249-253).
+    fn warn_preview_api(
+        &self,
+        pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>,
+        warning: crate::util::jc_diagnostic::Warning,
+    ) {
+        if !self.lint.is_suppressed(LintCategory::PREVIEW) {
+            let preview = self
+                .preview
+                .borrow()
+                .clone()
+                .expect("AssertionError: preview service not installed");
+            preview.report_preview_warning(pos.as_ref(), warning);
+        }
+    }
+
+    /// Java: void warnDeclaredUsingPreview(DiagnosticPosition pos, Symbol sym)
+    /// (Check.java:260-263).
+    fn warn_declared_using_preview(
+        &self,
+        ctx: &CompilerContext,
+        pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>,
+        sym: SymbolId,
+    ) {
+        if !self.lint.is_suppressed(LintCategory::PREVIEW) {
+            let preview = self
+                .preview
+                .borrow()
+                .clone()
+                .expect("AssertionError: preview service not installed");
+            let kind_name = kind_name_of(ctx, sym);
+            let sym_name = ctx.sym(sym).name.to_java_string().to_string_lossy();
+            let warning = crate::util::jc_diagnostic::Warning::from(
+                crate::resources::compiler_properties::warnings::declared_using_preview(
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(kind_name),
+                    SymbolArg::placeholder(sym_name),
+                ),
+            );
+            preview.report_preview_warning(pos.as_ref(), warning);
+        }
+    }
+
+    /// Java: void checkDeprecated(final DiagnosticPosition pos,
+    /// final Symbol other, final Symbol s) (Check.java:3553-3564).
+    pub fn check_deprecated(
+        &self,
+        ctx: &CompilerContext,
+        pos: i32,
+        other: SymbolId,
+        s: SymbolId,
+    ) {
+        let s_outermost = outermost_class(ctx, s);
+        let other_outermost = outermost_class(ctx, other);
+        if (ctx.sym(s).is_deprecated_for_removal()
+            || (ctx.sym(s).is_deprecated() && !ctx.sym(other).is_deprecated()))
+            && (s_outermost != other_outermost || s_outermost.is_none())
+            && ctx.sym(s).kind != Kind::PCK
+        {
+            self.warn_deprecated(ctx, pos, s);
+        }
+    }
+
+    /// Java: void checkPreview(DiagnosticPosition pos, Symbol other, Symbol s)
+    /// (Check.java:3580-3602).
+    pub fn check_preview(
+        &self,
+        ctx: &CompilerContext,
+        pos: i32,
+        other: SymbolId,
+        s: SymbolId,
+    ) {
+        let preview = self
+            .preview
+            .borrow()
+            .clone()
+            .expect("AssertionError: preview service not installed");
+        let flags_field = ctx.sym(s).flags_field;
+        let same_module = package_module_of(ctx, s) == package_module_of(ctx, other);
+        let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+            Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
+        if (flags_field & crate::code::flags::PREVIEW_API) != 0 && !same_module {
+            if (flags_field & crate::code::flags::PREVIEW_REFLECTIVE) == 0 {
+                if !preview.is_enabled() {
+                    let sym_name = ctx.sym(s).name.to_java_string().to_string_lossy();
+                    self.log.borrow_mut().error_at(
+                        pos,
+                        crate::util::jc_diagnostic::Error::from(
+                            crate::resources::compiler_properties::errors::is_preview(
+                                SymbolArg::placeholder(sym_name),
+                            ),
+                        ),
+                    );
+                } else {
+                    preview.mark_uses_preview(position.as_ref());
+                    let lint = Rc::clone(&self.lint);
+                    let preview_for_warning = Rc::clone(&preview);
+                    let pos_for_warning = Rc::clone(&position);
+                    let sym_name = ctx.sym(s).name.to_java_string().to_string_lossy();
+                    let warning = crate::util::jc_diagnostic::Warning::from(
+                        crate::resources::compiler_properties::warnings::is_preview(
+                            SymbolArg::placeholder(sym_name),
+                        ),
+                    );
+                    self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+                        if !lint.is_suppressed(LintCategory::PREVIEW) {
+                            preview_for_warning
+                                .report_preview_warning(pos_for_warning.as_ref(), warning.clone());
+                        }
+                    }));
+                }
+            } else {
+                let lint = Rc::clone(&self.lint);
+                let preview_for_warning = Rc::clone(&preview);
+                let pos_for_warning = Rc::clone(&position);
+                let sym_name = ctx.sym(s).name.to_java_string().to_string_lossy();
+                let warning = crate::util::jc_diagnostic::Warning::from(
+                    crate::resources::compiler_properties::warnings::is_preview_reflective(
+                        SymbolArg::placeholder(sym_name),
+                    ),
+                );
+                self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+                    if !lint.is_suppressed(LintCategory::PREVIEW) {
+                        preview_for_warning
+                            .report_preview_warning(pos_for_warning.as_ref(), warning.clone());
+                    }
+                }));
+            }
+        }
+        if preview.declared_using_preview_feature(ctx.sym(s)) {
+            if preview.is_enabled() {
+                preview.mark_uses_preview(position.as_ref());
+                let lint = Rc::clone(&self.lint);
+                let preview_for_warning = Rc::clone(&preview);
+                let pos_for_warning = Rc::clone(&position);
+                let kind_name = kind_name_of(ctx, s);
+                let sym_name = ctx.sym(s).name.to_java_string().to_string_lossy();
+                let warning = crate::util::jc_diagnostic::Warning::from(
+                    crate::resources::compiler_properties::warnings::declared_using_preview(
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(kind_name),
+                        SymbolArg::placeholder(sym_name),
+                    ),
+                );
+                self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+                    if !lint.is_suppressed(LintCategory::PREVIEW) {
+                        preview_for_warning
+                            .report_preview_warning(pos_for_warning.as_ref(), warning.clone());
+                    }
+                }));
+            }
+        }
+    }
+
+    /// Java: void checkPackageExistsForOpens(final DiagnosticPosition pos,
+    /// PackageSymbol packge) (Check.java:4268-4276).
+    pub fn check_package_exists_for_opens(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        packge: SymbolId,
+    ) {
+        let members_empty = match ctx.sym(packge).members() {
+            None => true,
+            Some(scope) => ctx
+                .scope_get_symbols(scope, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true)
+                .is_empty(),
+        };
+        if members_empty && (ctx.sym(packge).flags_field & crate::code::flags::HAS_RESOURCE) == 0 {
+            let lint = Rc::clone(&self.lint);
+            let log = Rc::clone(&self.log);
+            let sym_name = ctx.sym(packge).name.to_java_string().to_string_lossy();
+            let warning = crate::util::jc_diagnostic::Warning::from(
+                crate::resources::compiler_properties::warnings::package_empty_or_not_found(
+                    SymbolArg::placeholder(sym_name),
+                ),
+            );
+            let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+                Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
+            self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+                if lint.is_enabled(LintCategory::OPENS) {
+                    log.borrow_mut().warning_lint_pos(
+                        LintCategory::OPENS,
+                        Some(Rc::clone(&position)),
+                        warning.clone(),
+                    );
+                }
+            }));
+        }
+    }
+
+    /// Java: void checkModuleRequires(final DiagnosticPosition pos,
+    /// final RequiresDirective rd) (Check.java:4278-4288).
+    pub fn check_module_requires(
+        &self,
+        ctx: &CompilerContext,
+        pos: i32,
+        rd: crate::ids::DirectiveId,
+    ) {
+        let (module, is_transitive) = match ctx.directive(rd) {
+            crate::code::directive::Directive::Requires { module, flags } => {
+                (*module, flags.contains(&crate::code::directive::RequiresFlag::TRANSITIVE))
+            }
+            _ => return,
+        };
+        let Some(module) = module else { return };
+        if (ctx.sym(module).flags_field & crate::code::flags::AUTOMATIC_MODULE) != 0 {
+            let lint = Rc::clone(&self.lint);
+            let log = Rc::clone(&self.log);
+            let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+                Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
+            self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+                if is_transitive
+                    && lint.is_enabled(LintCategory::REQUIRES_TRANSITIVE_AUTOMATIC)
+                {
+                    log.borrow_mut().warning_lint_pos(
+                        LintCategory::REQUIRES_TRANSITIVE_AUTOMATIC,
+                        Some(Rc::clone(&position)),
+                        crate::util::jc_diagnostic::Warning::from(
+                            crate::resources::compiler_properties::warnings::
+                                requires_transitive_automatic(),
+                        ),
+                    );
+                } else if lint.is_enabled(LintCategory::REQUIRES_AUTOMATIC) {
+                    log.borrow_mut().warning_lint_pos(
+                        LintCategory::REQUIRES_AUTOMATIC,
+                        Some(Rc::clone(&position)),
+                        crate::util::jc_diagnostic::Warning::from(
+                            crate::resources::compiler_properties::warnings::requires_automatic(),
+                        ),
+                    );
+                }
+            }));
+        }
+    }
+}
+
+/// Java: Kinds.kindName(Symbol sym).toString(locale) — the localized kind
+/// name used by Warnings.DeclaredUsingPreview (Kinds.java:272-317).
+fn kind_name_of(ctx: &CompilerContext, sym: SymbolId) -> String {
+    match ctx.sym(sym).get_kind(ctx) {
+        crate::code::symbol::ElementKind::PACKAGE => "package".to_string(),
+        crate::code::symbol::ElementKind::ENUM => "enum".to_string(),
+        crate::code::symbol::ElementKind::ANNOTATION_TYPE
+        | crate::code::symbol::ElementKind::CLASS => "class".to_string(),
+        crate::code::symbol::ElementKind::RECORD => "record".to_string(),
+        crate::code::symbol::ElementKind::INTERFACE => "interface".to_string(),
+        crate::code::symbol::ElementKind::TYPE_PARAMETER => "type variable".to_string(),
+        crate::code::symbol::ElementKind::BINDING_VARIABLE
+        | crate::code::symbol::ElementKind::ENUM_CONSTANT
+        | crate::code::symbol::ElementKind::PARAMETER
+        | crate::code::symbol::ElementKind::LOCAL_VARIABLE
+        | crate::code::symbol::ElementKind::EXCEPTION_PARAMETER
+        | crate::code::symbol::ElementKind::RESOURCE_VARIABLE => "variable".to_string(),
+        crate::code::symbol::ElementKind::FIELD => "variable".to_string(),
+        crate::code::symbol::ElementKind::METHOD => "method".to_string(),
+        crate::code::symbol::ElementKind::CONSTRUCTOR => "constructor".to_string(),
+        crate::code::symbol::ElementKind::STATIC_INIT => "static initializer".to_string(),
+        crate::code::symbol::ElementKind::INSTANCE_INIT => "instance initializer".to_string(),
+        crate::code::symbol::ElementKind::MODULE => "module".to_string(),
+        crate::code::symbol::ElementKind::RECORD_COMPONENT => "record component".to_string(),
+        _ => panic!("AssertionError: Unexpected kind"),
+    }
+}
+
+/// The module of the package enclosing the symbol (Check.checkPreview).
+fn package_module_of(ctx: &CompilerContext, sym: SymbolId) -> Option<SymbolId> {
+    let packge = crate::code::symbol::symbol_packge(ctx, sym)?;
+    match &ctx.sym(packge).kind_data {
+        SymbolKind::PackageSymbol { modle, .. } => *modle,
+        _ => None,
+    }
+}
+
+/// Java: Symbol.outermostClass() (Symbol.java:523-531).
+fn outermost_class(ctx: &CompilerContext, sym: SymbolId) -> Option<SymbolId> {
+    let mut sym = sym;
+    let mut prev: Option<SymbolId> = None;
+    loop {
+        if ctx.sym(sym).kind == Kind::PCK {
+            break;
+        }
+        prev = Some(sym);
+        match ctx.sym(sym).owner {
+            Some(owner) => sym = owner,
+            None => break,
+        }
+    }
+    prev
 }
