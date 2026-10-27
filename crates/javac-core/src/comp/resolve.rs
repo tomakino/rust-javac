@@ -192,9 +192,18 @@ impl Resolve {
     }
 
     /// Java: public static Resolve instance(Context context) (Resolve.java:167)
-    /// TODO(Context registration): needs the Context service registry.
-    pub fn instance() -> Self {
-        unimplemented!("TODO(Context registration batch): Resolve.instance")
+    ///
+    /// PORTING_RULES: the ported Resolve is created by the service wiring with
+    /// its explicit dependencies; the Context registration makes the instance
+    /// reachable like the Java Context singleton (registered adapter: the
+    /// instance must be registered by the compiler entry point).
+    pub fn instance(
+        context: &mut crate::util::context::Context,
+    ) -> Rc<RefCell<Resolve>> {
+        match context.get::<RefCell<Resolve>>() {
+            Some(instance) => instance,
+            None => panic!("AssertionError: Resolve is not registered in the Context"),
+        }
     }
 
     /// Java: protected static boolean isStatic(Env<AttrContext> env)
@@ -5951,6 +5960,7 @@ impl Resolve {
             let scope_ref = ctx.scope(members).clone();
             let symbols_arena = ctx.symbols_arena();
             let ctx_view: &crate::compiler_context::CompilerContext = ctx;
+            
             scope_ref.get_symbols_by_name(
                 members,
                 &self.names.init.clone(),
@@ -6756,6 +6766,7 @@ impl Resolve {
             let scope_ref = ctx.scope(scope).clone();
             let symbols_arena = ctx.symbols_arena();
             let ctx_view: &crate::compiler_context::CompilerContext = ctx;
+            
             scope_ref.get_symbols_by_name(
                 scope,
                 name,
@@ -8689,6 +8700,13 @@ impl Resolve {
 }
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    #[should_panic(expected = "Resolve is not registered in the Context")]
+    fn instance_requires_registration() {
+        let mut context = crate::util::context::Context::new();
+        let _ = Resolve::instance(&mut context);
+    }
     use super::*;
 
     fn names() -> crate::util::names::Names {

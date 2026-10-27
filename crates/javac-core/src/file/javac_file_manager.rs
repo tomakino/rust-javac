@@ -293,6 +293,55 @@ impl Container for DirectoryContainer {
     }
 }
 
+/// A URLClassLoader-equivalent over the ported file layer: the class loader
+/// returned by JavacFileManager.getClassLoader (registered adapter: Java returns
+/// a java.net.URLClassLoader; the port loads the class/resource bytes from the
+/// location paths, directories and archives, because it does not run a JVM).
+pub struct PathClassLoader {
+    /// Java: the URLClassLoader search path (the location paths).
+    paths: Vec<FsPath>,
+}
+
+impl PathClassLoader {
+    /// Creates a class loader over the given paths (directories and archives).
+    pub fn new(paths: Vec<FsPath>) -> PathClassLoader {
+        PathClassLoader { paths }
+    }
+
+    /// Reads the given relative resource from the search path (directories or
+    /// jar/jmod/zip archives).
+    fn read_resource(&self, relative: &str) -> StdOption<Vec<u8>> {
+        for path in &self.paths {
+            if path.as_path().is_dir() {
+                let file = path.as_path().join(relative);
+                if let Ok(bytes) = std::fs::read(file) {
+                    return Some(bytes);
+                }
+            } else {
+                let Ok(archive) = javac_zip::ZipArchive::open(&path.to_path_buf()) else {
+                    continue;
+                };
+                if let Some(bytes) = archive.get_entry(relative) {
+                    return Some(bytes);
+                }
+            }
+        }
+        None
+    }
+}
+
+impl javac_tools::jdk::ClassLoader for PathClassLoader {
+    fn find_class(&self, name: &JavaString) -> StdOption<Vec<u8>> {
+        let relative = format!("{}.class", name.to_string_lossy().replace('.', "/"));
+        self.read_resource(&relative)
+    }
+
+    fn find_resource(&self, name: &JavaString) -> StdOption<Vec<u8>> {
+        self.read_resource(&name.to_string_lossy())
+    }
+}
+
+
 /// Java: private final class JavacFileManager.ArchiveContainer
 /// (JavacFileManager.java:557-672): a read-only container over a jar/zip/jmod
 /// archive. The upstream uses the java.nio zip/jmod FileSystem; the port walks
@@ -1052,13 +1101,13 @@ impl JavaFileManager for JavacFileManager {
         if paths.is_none() {
             return None;
         }
-        // Java: URLClassLoader over File.toURI().toURL(); java.net.URLClassLoader is not
-        // ported (TODO(P6)), so the entry point is a TODO panic (no substitute loader).
-        unimplemented!(
-            "TODO(P6): JavacFileManager.getClassLoader needs java.net.URLClassLoader/reflection"
-        )
-    }
+        // Java: new URLClassLoader over File.toURI().toURL() (JavacFileManager.java:
+        // getClassLoader); the ported loader returns the class/resource bytes
+        // (registered adapter: the port does not run a JVM).
+        Some(Rc::new(PathClassLoader::new(paths.expect("location paths")))
+            as Rc<dyn javac_tools::jdk::ClassLoader>)
 
+    }
     fn list(
         &self,
         location: &dyn Location,
@@ -1511,6 +1560,33 @@ mod tests {
     use std::path::PathBuf;
     use std::rc::Rc;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn class_loader_reads_class_and_resource_bytes() {
+        let manager = manager();
+        let dir = temp_dir("loader");
+        let pkg = dir.join("pkg");
+        std::fs::create_dir_all(&pkg).expect("package dir");
+        let class_bytes = vec![0xCAu8, 0xFE, 0xBA, 0xBE];
+        std::fs::write(pkg.join("A.class"), &class_bytes).expect("class file");
+        std::fs::write(dir.join("resource.txt"), b"data").expect("resource file");
+        manager
+            .set_location(&StandardLocation::CLASS_PATH, Some(&[dir.clone()]))
+            .expect("set class path");
+        let loader = manager
+            .get_class_loader(&StandardLocation::CLASS_PATH)
+            .expect("class loader");
+        assert_eq!(
+            loader.find_class(&js("pkg.A")).expect("class bytes"),
+            class_bytes
+        );
+        assert_eq!(
+            loader.find_resource(&js("resource.txt")).expect("resource bytes"),
+            b"data".to_vec()
+        );
+        assert!(loader.find_class(&js("pkg.Missing")).is_none());
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
 
     fn temp_dir(tag: &str) -> PathBuf {
         let unique = SystemTime::now()

@@ -445,14 +445,19 @@ impl Annotate {
         }
     }
 
-    /// Java: public static Annotate instance(Context context).
+    /// Java: public static Annotate instance(Context context) (Annotate.java:100-120).
     ///
-    /// TODO(Context integration): the Context-key based singleton needs the
-    /// ported service wiring; the explicit constructor is used by the tests.
-    pub fn instance(_context: &mut crate::util::context::Context) -> Rc<Annotate> {
-        unimplemented!(
-            "TODO(Context integration batch): Annotate.instance(Context)"
-        )
+    /// PORTING_RULES: the ported Annotate is created by the service wiring with
+    /// its explicit dependencies; the Context registration makes the instance
+    /// reachable like the Java Context singleton (registered adapter: the
+    /// instance must be registered by the compiler entry point).
+    pub fn instance(
+        context: &mut crate::util::context::Context,
+    ) -> Rc<Annotate> {
+        match context.get::<Annotate>() {
+            Some(instance) => instance,
+            None => panic!("AssertionError: Annotate is not registered in the Context"),
+        }
     }
 
     /// Java: public void blockAnnotations() (Annotate.java:121-123)
@@ -2330,6 +2335,22 @@ struct UnusedFileManager;
     }
 
     fn harness() -> AnnotateHarness {
+
+    #[test]
+    fn instance_returns_the_registered_service() {
+        let harness = harness();
+        let mut context = Context::new();
+        context.put::<Annotate>(Rc::clone(&harness.annotate));
+        let instance = Annotate::instance(&mut context);
+        assert!(Rc::ptr_eq(&instance, &harness.annotate));
+    }
+
+    #[test]
+    #[should_panic(expected = "Annotate is not registered in the Context")]
+    fn instance_requires_registration() {
+        let mut context = Context::new();
+        let _ = Annotate::instance(&mut context);
+    }
         let mut ctx = CompilerContext::new();
         let mut context = Context::new();
         let log = Log::instance(&mut context);

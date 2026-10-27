@@ -6550,7 +6550,10 @@ impl crate::comp::infer::UndetVarListener for BoundsChangeRecorder {
         _types: &Types,
         _uv: TypeId,
     ) {
-        unimplemented!("TODO(Infer batch): BoundsChangeRecorder.varInstantiated");
+        // Java: UndetVarListener.varInstantiated default body Assert.error()
+        // (Type.java:1907): the listener used by substBounds does not expect an
+        // instantiation of the recorded variables.
+        panic!("AssertionError: varInstantiated must not be called on BoundsChangeRecorder");
     }
 }
 
@@ -9858,6 +9861,29 @@ impl Types {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[should_panic(expected = "varInstantiated must not be called")]
+    fn bounds_change_recorder_rejects_instantiation() {
+        let mut ctx = CompilerContext::new();
+        let names = crate::util::names::Names::new(false);
+        let syms = Symtab::new(
+            &mut ctx,
+            std::rc::Rc::new(names),
+            crate::jvm::target::Target::DEFAULT,
+            crate::code::source::Source::JDK17,
+        );
+        let types = Types::with_names(std::rc::Rc::new(crate::util::names::Names::new(false)));
+        let uv = ctx.alloc_type(Type::new(
+            TypeTag::NONE,
+            None,
+            crate::code::type_::TypeKindData::JCNoType {
+                kind: crate::code::type_::JCNoTypeKind::Base,
+            },
+        ));
+        let recorder = BoundsChangeRecorder::default();
+        crate::comp::infer::UndetVarListener::var_instantiated(&recorder, &mut ctx, &syms, &types, uv);
+    }
     use crate::code::source::Source;
     use crate::jvm::target::Target;
     use crate::util::names::Names;

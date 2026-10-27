@@ -8,6 +8,7 @@ use super::java_compiler::JavaCompiler;
 use crate::jdk::ClassLoader;
 use javac_strings::JavaString;
 use std::rc::Rc;
+use std::sync::{Arc, OnceLock};
 
 /// Provides methods for locating tool providers, for example,
 /// providers of compilers.  This class complements the
@@ -44,6 +45,21 @@ fn system_documentation_tool_name() -> JavaString {
     JavaString::from("jdk.javadoc.internal.api.JavadocTool")
 }
 
+/// The factory installed for the platform compiler (registered adapter for the
+/// ServiceLoader lookup of javax.tools.ToolProvider; see get_system_java_compiler).
+pub type SystemJavaCompilerFactory = Arc<dyn Fn() -> Option<Rc<dyn JavaCompiler>> + Send + Sync>;
+
+static SYSTEM_JAVA_COMPILER: OnceLock<SystemJavaCompilerFactory> = OnceLock::new();
+
+/// Installs the platform compiler factory (the ported replacement for the
+/// ServiceLoader discovery; registered adapter, §9). Returns the factory back
+/// when a factory was already installed.
+pub fn install_system_java_compiler(
+    factory: SystemJavaCompilerFactory,
+) -> Result<(), SystemJavaCompilerFactory> {
+    SYSTEM_JAVA_COMPILER.set(factory)
+}
+
 impl ToolProvider {
     /// Returns the Java programming language compiler provided
     /// with this platform.
@@ -65,10 +81,11 @@ impl ToolProvider {
     ///   systemJavaCompilerName   = "com.sun.tools.javac.api.JavacTool"
     pub fn get_system_java_compiler() -> Option<Rc<dyn JavaCompiler>> {
         let _ = (system_java_compiler_module(), system_java_compiler_name());
-        unimplemented!(
-            "TODO(P6): the system compiler instance is provided by the API \
-             phase (javac-core); Java: getSystemTool(JavaCompiler.class, ...)"
-        )
+        // Java: ServiceLoader discovery of com.sun.tools.javac.api.JavacTool in
+        // the jdk.compiler module; the port reads the factory installed by the
+        // compiler entry point (registered adapter). None means that the
+        // platform compiler is not available (upstream null).
+        SYSTEM_JAVA_COMPILER.get().and_then(|factory| factory())
     }
 
     /// Returns the Java programming language documentation tool provided
@@ -114,6 +131,20 @@ impl ToolProvider {
 mod tests {
     use super::ToolProvider;
     use javac_strings::JavaString;
+
+    #[test]
+    fn system_compiler_factory_registration_round_trip() {
+        // This test owns the process-wide registration: run the unregistered
+        // assertion first, then install a factory that reports an unavailable
+        // platform compiler (the JavacTool implementation is provided by the
+        // compiler entry point and is not registered in this crate test).
+        assert!(super::ToolProvider::get_system_java_compiler().is_none());
+        let factory: super::SystemJavaCompilerFactory = std::sync::Arc::new(|| None);
+        assert!(super::install_system_java_compiler(factory).is_ok());
+        assert!(super::ToolProvider::get_system_java_compiler().is_none());
+        let duplicate: super::SystemJavaCompilerFactory = std::sync::Arc::new(|| None);
+        assert!(super::install_system_java_compiler(duplicate).is_err());
+    }
 
     #[test]
     fn system_documentation_tool_is_absent() {

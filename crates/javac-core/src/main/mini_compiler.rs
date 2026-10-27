@@ -324,6 +324,7 @@ impl MiniCompiler {
             .borrow()
             .clone()
             .expect("resolve service installed");
+        util_context.put::<RefCell<Resolve>>(Rc::clone(&resolve));
         let operators = Rc::clone(&attr.borrow().operators);
         let flow = attr
             .borrow()
@@ -338,6 +339,7 @@ impl MiniCompiler {
             .clone()
             .expect("annotate service installed");
         *enter.borrow().annotate.borrow_mut() = Some(Rc::clone(&annotate));
+        util_context.put::<Annotate>(Rc::clone(&annotate));
         let type_annotations = Rc::new(TypeAnnotations::new(
             Rc::clone(&names),
             Rc::clone(&log),

@@ -51,7 +51,17 @@ impl<S> Default for Class<S> {
 ///
 /// The Rust compiler does not run annotation processors (docs/PLAN.md §3.1), so
 /// no implementation is provided; the trait only keeps the API signature.
-pub trait ClassLoader {}
+pub trait ClassLoader {
+    /// Finds the class with the given binary name (Java:
+    /// URLClassLoader.findClass). The byte content of the class file is
+    /// returned instead of a java.lang.Class (the port does not run a JVM;
+    /// registered adapter, see the javax.tools class loader contract).
+    fn find_class(&self, name: &javac_strings::JavaString) -> Option<Vec<u8>>;
+
+    /// Finds the resource with the given name (Java:
+    /// URLClassLoader.findResource).
+    fn find_resource(&self, name: &javac_strings::JavaString) -> Option<Vec<u8>>;
+}
 
 /// Mapping of `java.lang.annotation.Annotation`.
 ///
@@ -89,7 +99,15 @@ mod tests {
     use std::rc::Rc;
 
     struct Loader;
-    impl ClassLoader for Loader {}
+    impl ClassLoader for Loader {
+        fn find_class(&self, _name: &javac_strings::JavaString) -> Option<Vec<u8>> {
+            None
+        }
+
+        fn find_resource(&self, _name: &javac_strings::JavaString) -> Option<Vec<u8>> {
+            None
+        }
+    }
 
     struct P;
     impl Processor for P {}
