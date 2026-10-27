@@ -167,10 +167,10 @@ impl FDBigInteger {
         if p5 != 0 {
             if (p5 as usize) < SMALL_5_POW.len() {
                 let pow5 = SMALL_5_POW[p5 as usize] as i64 & LONG_MASK;
-                let mut carry = (v0 as i64 & LONG_MASK) * pow5;
+                let mut carry = (v0 as i64 & LONG_MASK).wrapping_mul(pow5);
                 v0 = carry as i32;
                 carry = (carry as u64 >> 32) as i64;
-                carry = (v1 as i64 & LONG_MASK) * pow5 + carry;
+                carry = (v1 as i64 & LONG_MASK).wrapping_mul(pow5).wrapping_add(carry);
                 v1 = carry as i32;
                 let v2 = (carry as u64 >> 32) as i32;
                 if bitcount == 0 {
@@ -1081,20 +1081,46 @@ impl FDBigInteger {
     }
 
     // for debugging ...
-    /// Java: public BigInteger toBigInteger()
+    /// Java: public BigInteger toBigInteger().
     ///
-    /// TODO: java.math.BigInteger is not ported; this debug-only conversion is
-    /// left unimplemented (no substitute is provided).
-    #[allow(dead_code)]
-    pub(crate) fn to_big_integer(&self) -> ! {
-        unimplemented!("TODO: java.math.BigInteger is not ported (FDBigInteger.toBigInteger)");
+    /// # Arguments
+    ///   - none.
+    ///
+    /// # Returns
+    ///   - the value as a BigInteger.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: FDBigInteger.java:toBigInteger.
+    pub(crate) fn to_big_integer(&self) -> crate::big_integer::BigInteger {
+        let n_words = self.n_words as usize;
+        let mut magnitude = vec![0u8; n_words * 4 + 1];
+        let len = magnitude.len();
+        for i in 0..n_words {
+            let w = self.data[i];
+            magnitude[len - 4 * i - 1] = w as u8;
+            magnitude[len - 4 * i - 2] = (w >> 8) as u8;
+            magnitude[len - 4 * i - 3] = (w >> 16) as u8;
+            magnitude[len - 4 * i - 4] = (w >> 24) as u8;
+        }
+        crate::big_integer::BigInteger::from_byte_array(&magnitude).shift_left(self.offset * 32)
     }
 
-    // for debugging ...
-    /// Java: public String toString()
-    #[allow(dead_code)]
-    pub(crate) fn to_string_debug(&self) -> ! {
-        unimplemented!("TODO: java.math.BigInteger is not ported (FDBigInteger.toString)");
+    /// Java: public String toString().
+    ///
+    /// # Arguments
+    ///   - none.
+    ///
+    /// # Returns
+    ///   - the decimal string.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: FDBigInteger.java:toString.
+    pub(crate) fn to_string_debug(&self) -> String {
+        self.to_big_integer().to_debug_string()
     }
 
     /// Java: zero as an FDBigInteger (upstream static ZERO field).
@@ -1163,3 +1189,21 @@ pub(crate) fn long5pow_len() -> usize {
     LONG_5_POW.len()
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Upstream FDBigInteger.toBigInteger/toString (development-time oracle:
+    /// 5^3 * 2^2 = 500).
+    #[test]
+    fn to_big_integer_and_to_string_use_the_integer_value() {
+        let value = FDBigInteger::value_of_pow52(3, 2);
+        assert_eq!(value.to_string_debug(), "500");
+        assert_eq!(
+            value.to_big_integer().to_debug_string(),
+            "500"
+        );
+        assert_eq!(FDBigInteger::zero().to_string_debug(), "0");
+    }
+}
