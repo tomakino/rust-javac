@@ -47,6 +47,8 @@
 //!   until the S3b handler chain stores it.
 //! * setContext awaits Locations.update (S3b) and therefore stays unimplemented for now.
 
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::io::Read;
@@ -104,6 +106,10 @@ pub struct BaseFileManager {
 
     /// Java: protected long deferredCloseTimeout = 0;
     deferred_close_timeout: Cell<i64>,
+    /// The shared deferred-close state (Java: the synchronized object
+    /// monitor + lastUsedTime/deferredCloseTimeout of BaseFileManager; the port
+    /// shares it with the deferred-close thread — registered adapter).
+    deferred: Arc<DeferredCloseState>,
 
     /// Java: private String encodingName;
     #[allow(dead_code)]
@@ -119,7 +125,7 @@ pub struct BaseFileManager {
     byte_buffer_cache: RefCell<ByteBufferCache>,
 
     /// Java: protected final Map<JavaFileObject, ContentCacheEntry> contentCache.
-    content_cache: RefCell<HashMap<String, ContentCacheEntry>>,
+    content_cache: Arc<Mutex<HashMap<String, ContentCacheEntry>>>,
 }
 
 impl BaseFileManager {
@@ -138,10 +144,11 @@ impl BaseFileManager {
             auto_close: false,
             last_used_time: Cell::new(now_millis()),
             deferred_close_timeout: Cell::new(0),
+            deferred: Arc::new(DeferredCloseState::new()),
             encoding_name: RefCell::new(None),
             multi_release_value: RefCell::new(None),
             byte_buffer_cache: RefCell::new(ByteBufferCache::new()),
-            content_cache: RefCell::new(HashMap::new()),
+            content_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -183,6 +190,7 @@ impl BaseFileManager {
                 Err(_) => 60 * 1000,
             };
             self.deferred_close_timeout.set(millis);
+            self.deferred.set_timeout(millis);
         }
     }
 
@@ -204,14 +212,44 @@ impl BaseFileManager {
     }
 
     /// Java: protected final Map<JavaFileObject, ContentCacheEntry> contentCache; (clear()).
+    /// Java: protected void clearContentCache() — contentCache.clear().
     pub(crate) fn clear_content_cache(&mut self) {
-        self.content_cache.borrow_mut().clear();
+        self.content_cache
+            .lock()
+            .expect("content cache")
+            .clear();
+    }
+
+    /// The shared deferred-close state (used by the file-manager close path).
+    pub(crate) fn deferred_state(&self) -> Arc<DeferredCloseState> {
+        Arc::clone(&self.deferred)
+    }
+
+    /// The shared content-cache handle (cleared by the deferred-close thread).
+    pub(crate) fn content_cache_handle(
+        &self,
+    ) -> Arc<Mutex<HashMap<String, ContentCacheEntry>>> {
+        Arc::clone(&self.content_cache)
     }
 
     /// Java: synchronized void updateLastUsedTime().
+    /// Java: synchronized void updateLastUsedTime() (BaseFileManager.java:168-172):
+    /// refreshes the last-used time when a deferred close is armed.
+    ///
+    /// # Arguments
+    ///   - none.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: BaseFileManager.java:168-172.
     pub fn update_last_used_time(&self) {
         if self.deferred_close_timeout.get() > 0 {
             self.last_used_time.set(now_millis());
+            self.deferred.update_last_used();
         }
     }
 
@@ -513,7 +551,7 @@ impl BaseFileManager {
     /// Java: public CharBuffer getCachedContent(JavaFileObject file).
     pub fn get_cached_content(&self, file: &PathFileObject) -> StdOption<JavaString> {
         let key = file.get_name().to_string_lossy();
-        let mut cache = self.content_cache.borrow_mut();
+        let mut cache = self.content_cache.lock().expect("content cache");
         match cache.get(&key) {
             None => None,
             Some(entry) => {
@@ -531,14 +569,15 @@ impl BaseFileManager {
     pub fn cache(&self, file: &PathFileObject, cb: JavaString) {
         let key = file.get_name().to_string_lossy();
         self.content_cache
-            .borrow_mut()
+            .lock()
+            .expect("content cache")
             .insert(key, ContentCacheEntry::new(file, cb));
     }
 
     /// Java: public void flushCache(JavaFileObject file).
     pub fn flush_cache_object(&self, file: &PathFileObject) {
         let key = file.get_name().to_string_lossy();
-        self.content_cache.borrow_mut().remove(&key);
+        self.content_cache.lock().expect("content cache").remove(&key);
     }
 
     /// Java: public static Kind getKind(Path path).
@@ -675,8 +714,115 @@ impl ByteBufferCache {
     }
 }
 
-/// Java: protected static class ContentCacheEntry.
-struct ContentCacheEntry {
+/// The shared state of the deferred close (Java: synchronized BaseFileManager
+/// monitor with lastUsedTime/deferredCloseTimeout; BaseFileManager.java:145-175).
+/// The file manager and the deferred-close thread share it through Arc.
+pub struct DeferredCloseState {
+    /// The mutex-protected last-used time and timeout (Java: the monitor fields).
+    inner: Mutex<DeferredCloseInner>,
+    /// The condition variable replacing Object.wait (BaseFileManager.java:153).
+    condvar: Condvar,
+}
+
+/// The mutable part of DeferredCloseState (Java: lastUsedTime/deferredCloseTimeout).
+struct DeferredCloseInner {
+    /// Java: private long lastUsedTime
+    last_used: Instant,
+    /// Java: protected long deferredCloseTimeout (millis; 0 means no deferral)
+    timeout_ms: i64,
+}
+
+impl DeferredCloseState {
+    /// Java: private long lastUsedTime = System.currentTimeMillis() together with
+    /// the default deferredCloseTimeout = 0 (BaseFileManager.java:174-175).
+    ///
+    /// # Arguments
+    ///   - none.
+    ///
+    /// # Returns
+    ///   - the fresh state with the current instant as the last-used time.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: BaseFileManager.java:174-175.
+    pub fn new() -> DeferredCloseState {
+        DeferredCloseState {
+            inner: Mutex::new(DeferredCloseInner {
+                last_used: Instant::now(),
+                timeout_ms: 0,
+            }),
+            condvar: Condvar::new(),
+        }
+    }
+
+    /// Java: the setContext deferredCloseTimeout assignment (BaseFileManager.java:104-112).
+    pub fn set_timeout(&self, millis: i64) {
+        self.inner.lock().expect("deferred close state").timeout_ms = millis;
+    }
+
+    /// The current deferred-close timeout in milliseconds (0 = disabled).
+    pub fn timeout_ms(&self) -> i64 {
+        self.inner.lock().expect("deferred close state").timeout_ms
+    }
+
+    /// Java: synchronized void updateLastUsedTime() (BaseFileManager.java:168-172).
+    pub fn update_last_used(&self) {
+        let mut inner = self.inner.lock().expect("deferred close state");
+        if inner.timeout_ms > 0 {
+            inner.last_used = Instant::now();
+        }
+    }
+
+    /// Java: protected void deferredClose() (BaseFileManager.java:145-166): spawn a
+    /// daemon thread that waits for the configured inactivity period and then
+    /// runs the close action.
+    ///
+    /// # Arguments
+    ///   - close: the close action (the file-manager cleanup), which must be
+    ///     Send because the Java thread receives the captured state.
+    ///
+    /// # Returns
+    ///   - none.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: BaseFileManager.java:145-166.
+    pub fn spawn_deferred_close<F>(self: &Arc<Self>, close: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let state = Arc::clone(self);
+        std::thread::spawn(move || {
+            loop {
+                let wait_for = {
+                    let inner = state.inner.lock().expect("deferred close state");
+                    if inner.timeout_ms <= 0 {
+                        None
+                    } else {
+                        let deadline =
+                            inner.last_used + Duration::from_millis(inner.timeout_ms as u64);
+                        let now = Instant::now();
+                        if now >= deadline {
+                            None
+                        } else {
+                            Some(deadline - now)
+                        }
+                    }
+                };
+                let Some(wait_for) = wait_for else {
+                    break;
+                };
+                let guard = state.inner.lock().expect("deferred close state");
+                let _ = state.condvar.wait_timeout(guard, wait_for);
+            }
+            state.inner.lock().expect("deferred close state").timeout_ms = 0;
+            close();
+        });
+    }
+}
+pub(crate) struct ContentCacheEntry {
     /// Java: final long timestamp;
     timestamp: i64,
     /// Java: final SoftReference<CharBuffer> ref; — the decoded content is kept directly
@@ -710,7 +856,7 @@ fn now_millis() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::BaseFileManager;
+    use super::{BaseFileManager, DeferredCloseState};
     use crate::file::path_file_object::PathFileObject;
     use javac_fs::Path as FsPath;
     use javac_strings::JavaString;
@@ -868,6 +1014,28 @@ mod tests {
         );
         let result = std::panic::catch_unwind(|| BaseFileManager::null_check::<u32>(None));
         assert!(result.is_err());
+    }
+
+    /// Java: BaseFileManager.updateLastUsedTime (BaseFileManager.java:168-172):
+    /// the last-used time is refreshed only while a deferred close is armed.
+    #[test]
+    fn deferred_close_state_refreshes_the_last_used_time_only_when_armed() {
+        let state = DeferredCloseState::new();
+        state.set_timeout(100);
+        let before = state.inner.lock().expect("state").last_used;
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        state.update_last_used();
+        let after = state.inner.lock().expect("state").last_used;
+        assert!(after > before, "the last-used time is refreshed");
+        state.set_timeout(0);
+        let before_disabled = state.inner.lock().expect("state").last_used;
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        state.update_last_used();
+        assert_eq!(
+            state.inner.lock().expect("state").last_used,
+            before_disabled,
+            "no refresh without an armed timeout"
+        );
     }
 }
 

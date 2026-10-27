@@ -86,6 +86,8 @@ use javac_tools::tools::java_file_manager::{
 use javac_tools::tools::java_file_object::Kind;
 use javac_tools::tools::standard_java_file_manager::{PathFactory, StandardJavaFileManager};
 
+use std::sync::Arc;
+use std::sync::Mutex;
 use javac_charset::Charset;
 use crate::file::base_file_manager::BaseFileManager;
 use crate::file::base_file_manager_api::BaseFileManagerApi;
@@ -133,7 +135,7 @@ fn jstr<T: AsRef<str>>(value: T) -> JavaString {
 }
 
 /// Java: private interface Container.
-trait Container {
+trait Container: Send + Sync {
     /// Java: void list(Path userPath, RelativeDirectory subdirectory,
     /// Set<JavaFileObject.Kind> fileKinds, boolean recurse, ListBuffer<JavaFileObject>).
     fn list(
@@ -592,7 +594,7 @@ impl Container for JRTImageContainer {
 #[derive(Clone)]
 struct PathAndContainer {
     path: FsPath,
-    container: Rc<dyn Container>,
+    container: Arc<dyn Container>,
     index: usize,
 }
 
@@ -617,14 +619,36 @@ pub struct JavacFileManager {
     /// Java: private JRTIndex jrtIndex;
     jrt_index: RefCell<StdOption<Rc<JRTIndex>>>,
     /// Java: private final Map<Path, Container> containers.
-    containers: RefCell<HashMap<FsPath, Rc<dyn Container>>>,
+    containers: Arc<Mutex<HashMap<FsPath, Arc<dyn Container>>>>,
     /// Java: pathsAndContainersByLocationAndRelativeDirectory (two-layer cache).
-    paths_and_containers: RefCell<HashMap<String, HashMap<RelativeDirectory, Vec<PathAndContainer>>>>,
+    paths_and_containers: Arc<std::sync::Mutex<HashMap<String, HashMap<RelativeDirectory, Vec<PathAndContainer>>>>>,
     /// Java: private Map<Location, List<PathAndContainer>> nonIndexingContainersByLocation.
-    non_indexing_containers: RefCell<HashMap<String, Vec<PathAndContainer>>>,
+    non_indexing_containers: Arc<std::sync::Mutex<HashMap<String, Vec<PathAndContainer>>>>,
 }
 
 impl JavacFileManager {
+    /// The immediate close action (the non-deferred branch of JavacFileManager.close).
+    fn close_now(&self) -> Result<(), Error> {
+        self.base.borrow_mut().locations_mut().close()?;
+        let containers: Vec<Arc<dyn Container>> = self
+            .containers
+            .lock()
+            .expect("containers")
+            .values()
+            .cloned()
+            .collect();
+        for container in containers {
+            container.close()?;
+        }
+        self.containers.lock().expect("containers").clear();
+        self.paths_and_containers.lock().expect("paths").clear();
+        self.non_indexing_containers
+            .lock()
+            .expect("non indexing")
+            .clear();
+        self.base.borrow_mut().clear_content_cache();
+        Ok(())
+    }
     /// Java: public JavacFileManager(Context, boolean, Charset) + setContext.
     ///
     /// PORTING_RULES: the services and java.home are injected (see the file header).
@@ -657,9 +681,9 @@ impl JavacFileManager {
                 java_home,
                 this_system_modules,
                 jrt_index: RefCell::new(None),
-                containers: RefCell::new(HashMap::new()),
-                paths_and_containers: RefCell::new(HashMap::new()),
-                non_indexing_containers: RefCell::new(HashMap::new()),
+                containers: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                paths_and_containers: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                non_indexing_containers: Arc::new(std::sync::Mutex::new(HashMap::new())),
             }
         })
     }
@@ -774,14 +798,13 @@ impl JavacFileManager {
     }
 
     /// Java: synchronized Container getContainer(Path path) throws IOException.
-    fn get_container(&self, path: &FsPath) -> Result<Rc<dyn Container>, Error> {
-        if let Some(container) = self.containers.borrow().get(path) {
+    fn get_container(&self, path: &FsPath) -> Result<Arc<dyn Container>, Error> {
+        if let Some(container) = self.containers.lock().unwrap().get(path) {
             return Ok(container.clone());
         }
         if self.fs_info.is_file(path) && path == &self.this_system_modules {
-            let container: Rc<dyn Container> = Rc::new(JRTImageContainer);
-            self.containers
-                .borrow_mut()
+            let container: Arc<dyn Container> = Arc::new(JRTImageContainer);
+            self.containers.lock().unwrap()
                 .insert(path.clone(), container.clone());
             return Ok(container);
         }
@@ -795,33 +818,29 @@ impl JavacFileManager {
             .replace('\\', "/")
             .starts_with("/modules/")
         {
-            let container: Rc<dyn Container> = Rc::new(JRTImageContainer);
-            self.containers
-                .borrow_mut()
+            let container: Arc<dyn Container> = Arc::new(JRTImageContainer);
+            self.containers.lock().unwrap()
                 .insert(path.clone(), container.clone());
             return Ok(container);
         }
         let real_path = self.fs_info.get_canonical_file(path);
-        if let Some(container) = self.containers.borrow().get(&real_path) {
-            self.containers
-                .borrow_mut()
+        if let Some(container) = self.containers.lock().unwrap().get(&real_path) {
+            self.containers.lock().unwrap()
                 .insert(path.clone(), container.clone());
             return Ok(container.clone());
         }
-        let container: Rc<dyn Container> = if !self.fs_info.exists(&real_path) {
-            Rc::new(MissingContainer)
+        let container: Arc<dyn Container> = if !self.fs_info.exists(&real_path) {
+            Arc::new(MissingContainer)
         } else if self.fs_info.is_directory(&real_path) {
-            Rc::new(DirectoryContainer {
+            Arc::new(DirectoryContainer {
                 directory: real_path.clone(),
             })
         } else {
-            Rc::new(ArchiveContainer::new(&real_path)?)
+            Arc::new(ArchiveContainer::new(&real_path)?)
         };
-        self.containers
-            .borrow_mut()
+        self.containers.lock().unwrap()
             .insert(real_path, container.clone());
-        self.containers
-            .borrow_mut()
+        self.containers.lock().unwrap()
             .insert(path.clone(), container.clone());
         Ok(container)
     }
@@ -833,17 +852,17 @@ impl JavacFileManager {
         relative_directory: &RelativeDirectory,
     ) -> Result<Vec<PathAndContainer>, Error> {
         let key = location.get_name().to_string_lossy();
-        if !self.paths_and_containers.borrow().contains_key(&key) {
+        if !self.paths_and_containers.lock().unwrap().contains_key(&key) {
             let index = self.index_paths_and_containers_by_relative_directory(location)?;
-            self.paths_and_containers.borrow_mut().insert(key.clone(), index);
+            self.paths_and_containers.lock().unwrap().insert(key.clone(), index);
         }
-        let cache = self.paths_and_containers.borrow();
+        let cache = self.paths_and_containers.lock().unwrap();
         let index = cache.get(&key).expect("index");
         match index.get(relative_directory) {
             Some(list) => Ok(list.clone()),
             None => Ok(self
                 .non_indexing_containers
-                .borrow()
+                .lock().unwrap()
                 .get(&key)
                 .cloned()
                 .unwrap_or_default()),
@@ -876,7 +895,7 @@ impl JavacFileManager {
             list.sort_by(|a, b| a.index.cmp(&b.index));
         }
         let key = location.get_name().to_string_lossy();
-        self.non_indexing_containers.borrow_mut().insert(key, non_indexing);
+        self.non_indexing_containers.lock().unwrap().insert(key, non_indexing);
         Ok(result)
     }
 
@@ -910,14 +929,14 @@ impl JavacFileManager {
     /// Java: private void clearCachesForLocation(Location location).
     fn clear_caches_for_location(&self, location: &dyn Location) {
         let key = location.get_name().to_string_lossy();
-        self.paths_and_containers.borrow_mut().remove(&key);
-        self.non_indexing_containers.borrow_mut().remove(&key);
+        self.paths_and_containers.lock().unwrap().remove(&key);
+        self.non_indexing_containers.lock().unwrap().remove(&key);
     }
 
     /// Java: private void clearCaches() (used by handleOption).
     fn clear_caches(&self) {
-        self.paths_and_containers.borrow_mut().clear();
-        self.non_indexing_containers.borrow_mut().clear();
+        self.paths_and_containers.lock().unwrap().clear();
+        self.non_indexing_containers.lock().unwrap().clear();
     }
 
     /// Java: private Path getClassOutDir().
@@ -1252,23 +1271,50 @@ impl JavaFileManager for JavacFileManager {
         Ok(())
     }
 
+    /// Java: public void close() throws IOException (JavacFileManager.java:422-432):
+    /// with a deferred-close timeout the cleanup runs on a daemon thread after the
+    /// inactivity period (BaseFileManager.java:145-166).
+    ///
+    /// # Arguments
+    ///   - none.
+    ///
+    /// # Returns
+    ///   - Ok(()) when the close was scheduled or completed.
+    ///
+    /// # Panics
+    ///   - none.
+    ///
+    /// Upstream: JavacFileManager.java:422-432, BaseFileManager.java:145-175.
     fn close(&self) -> Result<(), Error> {
         if self.base.borrow().deferred_close_timeout() > 0 {
-            // Java: deferredClose() (daemon thread watching lastUsedTime); threads are not
-            // ported (TODO(P6)) -> no substitute.
-            unimplemented!("TODO(P6): BaseFileManager.deferredClose (daemon thread/wait semantics)");
+            let deferred = self.base.borrow().deferred_state();
+            let containers = Arc::clone(&self.containers);
+            let paths_and_containers = Arc::clone(&self.paths_and_containers);
+            let non_indexing_containers = Arc::clone(&self.non_indexing_containers);
+            let content_cache = self.base.borrow().content_cache_handle();
+            // Java: BaseFileManager.deferredClose spawns the daemon thread; the
+            // ported Locations.close is a no-op (no java.nio FileSystem is opened),
+            // so the deferred action is the cache/container cleanup (registered adapter).
+            deferred.spawn_deferred_close(move || {
+                let opened: Vec<Arc<dyn Container>> = containers
+                    .lock()
+                    .expect("containers")
+                    .values()
+                    .cloned()
+                    .collect();
+                for container in opened {
+                    let _ = container.close();
+                }
+                containers.lock().expect("containers").clear();
+                paths_and_containers.lock().expect("paths").clear();
+                non_indexing_containers.lock().expect("non indexing").clear();
+                content_cache.lock().expect("content cache").clear();
+            });
+            return Ok(());
         }
-        self.base.borrow_mut().locations_mut().close()?;
-        let containers: Vec<Rc<dyn Container>> = self.containers.borrow().values().cloned().collect();
-        for container in containers {
-            container.close()?;
-        }
-        self.containers.borrow_mut().clear();
-        self.paths_and_containers.borrow_mut().clear();
-        self.non_indexing_containers.borrow_mut().clear();
-        self.base.borrow_mut().clear_content_cache();
-        Ok(())
+        self.close_now()
     }
+
 
     fn get_location_for_module(
         &self,
@@ -1559,6 +1605,7 @@ mod tests {
     use javac_tools::tools::standard_location::StandardLocation;
     use std::path::PathBuf;
     use std::rc::Rc;
+use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -1833,4 +1880,109 @@ mod tests {
         assert!(is_relative_uri("pkg/File.java"));
     }
 
+
+    fn manager_with_defer_close(seconds: &str) -> Rc<JavacFileManager> {
+        let mut context = Context::new();
+        let log = Log::instance(&mut context);
+        let options = Options::instance(&mut context);
+        options.put("fileManager.deferClose", seconds);
+        JavacFileManager::new(
+            None,
+            java_home(),
+            log,
+            options,
+            Rc::new(CacheFSInfo::new()),
+        )
+    }
+
+    /// Java: BaseFileManager.deferredClose (BaseFileManager.java:145-166): close()
+    /// with a deferred-close timeout schedules the cleanup after the inactivity
+    /// period instead of running it immediately.
+    #[test]
+    fn deferred_close_cleans_the_caches_after_the_inactivity_timeout() {
+        let manager = manager_with_defer_close("0.05");
+        let dir = temp_dir("deferred");
+        std::fs::write(dir.join("A.class"), b"bytes").expect("class file");
+        manager
+            .set_location(&StandardLocation::CLASS_PATH, Some(&[dir.clone()]))
+            .expect("class path");
+        let listed = manager
+            .list(&StandardLocation::CLASS_PATH, &js(""), &[Kind::CLASS], false)
+            .expect("list");
+        assert!(!listed.is_empty(), "the test directory lists A.class");
+        assert!(
+            !manager.paths_and_containers.lock().unwrap().is_empty(),
+            "the directory cache is populated"
+        );
+        manager.close().expect("close");
+        assert!(
+            !manager.paths_and_containers.lock().unwrap().is_empty(),
+            "the cleanup is deferred"
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while !manager.paths_and_containers.lock().unwrap().is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the deferred close thread did not clean the caches"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    /// Java: repeated close() calls with the timeout armed schedule independent
+    /// deferred-close threads (BaseFileManager.java:145-166); the cleanup is
+    /// idempotent and the timeout is reset by the first expiring thread.
+    #[test]
+    fn repeated_close_schedules_cleanups_without_panicking() {
+        let manager = manager_with_defer_close("0.05");
+        manager.close().expect("first close");
+        manager.close().expect("second close");
+        let deferred = manager.base.borrow().deferred_state();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while deferred.timeout_ms() > 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the deferred close thread did not reset the timeout"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        // The timeout is now zero: a third close runs the immediate path.
+        manager.close().expect("third close");
+    }
+
+    /// Java: BaseFileManager.updateLastUsedTime (BaseFileManager.java:168-172) —
+    /// a use of the manager extends the inactivity window (PathFileObject calls
+    /// it from openInputStream/openOutputStream).
+    #[test]
+    fn deferred_close_defers_when_the_manager_reports_usage() {
+        use crate::file::base_file_manager_api::BaseFileManagerApi;
+
+        let manager = manager_with_defer_close("0.2");
+        let dir = temp_dir("deferred-used");
+        std::fs::write(dir.join("A.class"), b"bytes").expect("class file");
+        manager
+            .set_location(&StandardLocation::CLASS_PATH, Some(&[dir.clone()]))
+            .expect("class path");
+        manager
+            .list(&StandardLocation::CLASS_PATH, &js(""), &[Kind::CLASS], false)
+            .expect("list");
+        manager.close().expect("close");
+        // A use after close() refreshes the last-used time and extends the window.
+        manager.update_last_used_time();
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        assert!(
+            !manager.paths_and_containers.lock().unwrap().is_empty(),
+            "the refreshed last-used time extends the deferred close"
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while !manager.paths_and_containers.lock().unwrap().is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the deferred close runs after the extended window"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
 }
