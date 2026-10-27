@@ -14,6 +14,7 @@
 //! is ported without its JVM/filesystem-dependent parts (dependency report in
 //! jdk_platform_provider.rs).
 
+pub mod ct_sym_java_file_manager;
 pub mod jdk_platform_provider;
 pub mod platform_description;
 pub mod platform_provider;

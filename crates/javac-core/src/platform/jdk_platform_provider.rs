@@ -87,6 +87,13 @@ use javac_tools::error::Error;
 use javac_tools::jdk::Processor;
 use javac_tools::tools::java_file_manager::JavaFileManager;
 
+use crate::code::source::{Feature, Source};
+use crate::file::cache_fs_info::CacheFSInfo;
+use crate::file::javac_file_manager::JavacFileManager;
+use crate::platform::ct_sym_java_file_manager::CtSymJavaFileManager;
+use crate::util::context::Context;
+use crate::util::log::Log;
+use crate::util::options::Options;
 use crate::jvm::target::Target;
 use crate::platform::platform_description::{PlatformDescription, PluginInfo};
 use crate::platform::platform_provider::{PlatformNotSupported, PlatformProvider};
@@ -228,7 +235,10 @@ impl PlatformProvider for JDKPlatformProvider {
         platform_name: &JavaString,
         _options: &JavaString,
     ) -> Result<Rc<dyn PlatformDescription>, PlatformNotSupported> {
-        Ok(Rc::new(PlatformDescriptionImpl::new(platform_name)))
+        Ok(Rc::new(PlatformDescriptionImpl::with_java_home(
+            platform_name,
+            self.java_home.clone(),
+        )))
     }
 }
 
@@ -296,6 +306,9 @@ struct PlatformDescriptionImpl {
     /// ported yet; the field is part of the 1:1 state.
     #[allow(dead_code)]
     ct_sym_version: JavaString,
+    /// The JDK home (Java: System.getProperty("java.home") read by findCtSym();
+    /// injected because the port runs without a JVM - registered deviation).
+    java_home: std::option::Option<FsPath>,
     // Java: private final Map<Path, FileSystem> ctSym2FileSystem = new HashMap<>();
     // TODO(S3): the map is only filled by getFileManager(); no FileSystem handle is kept in
     // this (javac-ctsym reads the archive once and drops it), so the field is not
@@ -320,17 +333,58 @@ impl PlatformDescriptionImpl {
         PlatformDescriptionImpl {
             source_version,
             ct_sym_version,
+            java_home: None,
         }
+    }
+
+    /// Creates the description with the injected JDK home (the upstream reads
+    /// java.home from the system properties in findCtSym).
+    fn with_java_home(source_version: &JavaString, java_home: FsPath) -> PlatformDescriptionImpl {
+        let mut description = PlatformDescriptionImpl::new(source_version);
+        description.java_home = Some(java_home);
+        description
     }
 }
 
 impl PlatformDescription for PlatformDescriptionImpl {
     fn get_file_manager(&self) -> Rc<dyn JavaFileManager> {
-        // TODO(S3): needs file.JavacFileManager/CacheFSInfo, util.Log, main.Option,
-        // java.nio (javac-fs) plus the ct.sym archive layout; see the file header.
-        unimplemented!(
-            "TODO(S3): JDKPlatformProvider.PlatformDescriptionImpl.getFileManager (JavacFileManager/Log/locations are not ported)"
-        )
+        let java_home = self
+            .java_home
+            .clone()
+            .expect("IllegalStateException: java.home is not injected (registered deviation)");
+        let ct_sym_path = JDKPlatformProvider::find_ct_sym(&java_home);
+        // Java: if (Files.exists(file)) { ... } else throw new
+        // IllegalStateException("Cannot find ct.sym!");
+        if !Files::exists(&ct_sym_path) {
+            panic!("IllegalStateException: Cannot find ct.sym!");
+        }
+        let archive = Rc::new(
+            CtSym::open(&ct_sym_path.as_path()).unwrap_or_else(|error| {
+                panic!("IllegalStateException: cannot open ct.sym: {error:?}")
+            }),
+        );
+        // Java: Context context = new Context(); context.put(Log.errKey, pw);
+        // CacheFSInfo.preRegister(context); new JavacFileManager(context, true, null).
+        // The ported wiring injects the services (registered adapter).
+        let mut context = Context::new();
+        let log = Log::instance(&mut context);
+        let options = Options::instance(&mut context);
+        let fs_info = Rc::new(CacheFSInfo::new());
+        let inner = JavacFileManager::new(None, java_home, log, options, fs_info);
+        // Java: fm.handleOption(Option.MULTIRELEASE, sourceVersion);
+        let mut multi_release_args = std::iter::once(self.source_version.clone());
+        let _ = JavaFileManager::handle_option(
+            &*inner,
+            &JavaString::from("--multi-release"),
+            &mut multi_release_args,
+        );
+        let release = parse_int(&self.source_version);
+        let has_modules = Source::lookup(&self.source_version.to_string_lossy())
+            .map(|source| Feature::MODULES.allowed_in_source(source))
+            .unwrap_or(false);
+        // Java: the ctSym2FileSystem cache is unnecessary in the port (javac-ctsym
+        // reads the archive once; close() has nothing to release — registered).
+        CtSymJavaFileManager::new(inner, archive, release, has_modules) as Rc<dyn JavaFileManager>
     }
 
     /// Java: public String getSourceVersion() { return sourceVersion; }
@@ -627,5 +681,85 @@ mod tests {
     #[should_panic(expected = "NumberFormatException")]
     fn a_non_numeric_platform_name_throws_number_format() {
         let _ = PlatformDescriptionImpl::new(&js("not-a-version"));
+    }
+
+    /// Java: PlatformDescriptionImpl.getFileManager (JDKPlatformProvider.java:154-247):
+    /// a pre-modules release reads the .sig files of ct.sym through the platform
+    /// file manager (the Java anonymous JavacFileManager subclass).
+    #[test]
+    fn platform_file_manager_reads_ct_sym_signature_files() {
+        use javac_tools::tools::file_object::FileObject;
+        use javac_tools::tools::java_file_manager::JavaFileManager;
+        use javac_tools::tools::java_file_object::Kind;
+        use javac_tools::tools::standard_location::StandardLocation;
+        use std::io::Read;
+
+        let Some(home) = baseline_java_home() else {
+            return;
+        };
+        let provider = JDKPlatformProvider::new(FsPath::from_path_buf(home));
+        let description = provider.get_platform(&js("8"), &js("")).expect("platform 8");
+        let file_manager = description.get_file_manager();
+        assert!(file_manager.has_location(&StandardLocation::PLATFORM_CLASS_PATH));
+        assert!(!file_manager.has_location(&StandardLocation::SYSTEM_MODULES));
+        let object = file_manager
+            .get_java_file_for_input(
+                &StandardLocation::PLATFORM_CLASS_PATH,
+                &js("java.lang.Object"),
+                Kind::CLASS,
+            )
+            .expect("java.lang.Object input")
+            .expect("java.lang.Object exists in ct.sym release 8");
+        assert_eq!(object.get_kind(), Kind::CLASS);
+        let mut bytes = Vec::new();
+        object
+            .open_input_stream()
+            .expect("signature stream")
+            .read_to_end(&mut bytes)
+            .expect("signature bytes");
+        assert!(bytes.len() > 4, "the signature file is a class file");
+        assert_eq!(&bytes[..4], &[0xCA, 0xFE, 0xBA, 0xBE]);
+        assert_eq!(
+            file_manager.infer_binary_name(&StandardLocation::PLATFORM_CLASS_PATH, &object),
+            Some(js("java.lang.Object"))
+        );
+        let listed = file_manager
+            .list(
+                &StandardLocation::PLATFORM_CLASS_PATH,
+                &js("java.lang"),
+                &[Kind::CLASS],
+                false,
+            )
+            .expect("java.lang listing");
+        assert!(
+            listed
+                .iter()
+                .any(|file| file.get_name().to_string_lossy().ends_with("Object.sig")),
+            "the listing contains the java.lang.Object signature file"
+        );
+    }
+
+    /// Java: PlatformDescriptionImpl.getFileManager: for a modules release the
+    /// platform file manager exposes the running image system modules
+    /// (JDKPlatformProvider.java:284-295) and does not expose PLATFORM_CLASS_PATH.
+    #[test]
+    fn platform_file_manager_uses_system_modules_for_a_current_release() {
+        use javac_tools::tools::java_file_manager::JavaFileManager;
+        use javac_tools::tools::standard_location::StandardLocation;
+
+        let Some(home) = baseline_java_home() else {
+            return;
+        };
+        let provider = JDKPlatformProvider::new(FsPath::from_path_buf(home));
+        let description = provider.get_platform(&js("17"), &js("")).expect("platform 17");
+        let file_manager = description.get_file_manager();
+        assert!(file_manager.has_location(&StandardLocation::SYSTEM_MODULES));
+        assert!(!file_manager.has_location(&StandardLocation::PLATFORM_CLASS_PATH));
+        assert!(
+            file_manager
+                .get_location_for_module(&StandardLocation::SYSTEM_MODULES, &js("java.base"))
+                .is_ok(),
+            "the java.base module location is available"
+        );
     }
 }
