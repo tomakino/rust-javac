@@ -7846,7 +7846,7 @@ impl Attr {
         } else {
             let mut make = self.make.borrow_mut();
             make.at(crate::util::position::NOPOS);
-            make.type_from_type(ctx, syms, ty)
+            make.type_from_type(ctx, ty)
         };
         if let TreeKind::VariableDecl { vartype: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(vartype);
@@ -10489,6 +10489,13 @@ pub fn wire_attr_services(
             Rc::clone(&a.annotate),
         )
     };
+    {
+        // Java: the TreeMaker singleton holds the Context Types/Symtab
+        // (TreeMaker.java:1105-1135); explicit adapter wiring.
+        let mut maker = make.borrow_mut();
+        maker.types = Some(Rc::clone(&types));
+        maker.syms = Some(Rc::clone(&syms));
+    }
     // 1. Resolve (Resolve.java:120-200)
     let rs = Rc::new(RefCell::new(crate::comp::resolve::Resolve::new(
         ctx,
@@ -12323,7 +12330,7 @@ impl Attr {
             };
             let encl_type_tree = {
                 let mut make = self.make.borrow_mut();
-                make.at(clazz_pos).type_from_type(ctx, syms, encltype)
+                make.at(clazz_pos).type_from_type(ctx, encltype)
             };
             let selected = {
                 let mut make = self.make.borrow_mut();
@@ -15169,6 +15176,11 @@ mod tests {
         let dependencies: Rc<RefCell<dyn crate::code::dependencies::Dependencies>> =
             Rc::new(RefCell::new(DummyDependencies));
         let make = Rc::new(RefCell::new(TreeMaker::new(Some(Rc::clone(&names)))));
+        {
+            let mut maker = make.borrow_mut();
+            maker.types = Some(Rc::clone(&types));
+            maker.syms = Some(Rc::clone(&syms));
+        }
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let todo = crate::comp::todo::Todo::instance(&mut context);
         let enter = Rc::new(RefCell::new(Enter::new(

@@ -311,9 +311,8 @@ impl TransTypes {
         }
         let pos = ctx.tree(tree).pos;
         let clazz_tree = {
-            let syms = self.syms.borrow();
             let mut make = self.make.borrow_mut();
-            make.at(pos).type_from_type(ctx, &syms, target)
+            make.at(pos).type_from_type(ctx, target)
         };
         let cast_tree = {
             let mut make = self.make.borrow_mut();
@@ -512,10 +511,9 @@ impl TransTypes {
         };
         let mods = { self.make.borrow_mut().modifiers(ctx, bridge_flags) };
         let restype_tree = {
-            let syms = self.syms.borrow();
             self.make
                 .borrow_mut()
-                .type_from_type(ctx, &syms, bridge_return_type)
+                .type_from_type(ctx, bridge_return_type)
         };
         let mut param_trees: List<TreeId> = List::nil();
         let mut params_current = bridge_params.clone();
@@ -526,10 +524,9 @@ impl TransTypes {
             let (p_name, p_flags) = (ctx.sym(param).name.clone(), ctx.sym(param).flags_field);
             let p_mods = { self.make.borrow_mut().modifiers(ctx, p_flags) };
             let p_type_tree = {
-                let syms = self.syms.borrow();
                 self.make
                     .borrow_mut()
-                    .type_from_type(ctx, &syms, param_ty)
+                    .type_from_type(ctx, param_ty)
             };
             let p_tree = self.make.borrow_mut().var_def(
                 ctx,
@@ -1841,8 +1838,7 @@ impl TreeVisitor for TransTypes {
             // Java: result = make.at(tree.pos).Type(et);
             let pos = ctx.tree(tree).pos;
             let type_tree = {
-                let syms = self.syms.borrow();
-                self.make.borrow_mut().at(pos).type_from_type(ctx, &syms, et)
+                self.make.borrow_mut().at(pos).type_from_type(ctx, et)
             };
             self.result = Some(type_tree);
         } else if ctx.typ(ctx.tree(tree).ty.expect("ident type")).const_value().is_some() {
@@ -1921,8 +1917,7 @@ impl TreeVisitor for TransTypes {
         let expr = if is_unbound {
             let pos = ctx.tree(tree).pos;
             let type_tree = {
-                let syms = self.syms.borrow();
-                self.make.borrow_mut().at(pos).type_from_type(ctx, &syms, receiver_target)
+                self.make.borrow_mut().at(pos).type_from_type(ctx, receiver_target)
             };
             Some(type_tree)
         } else {

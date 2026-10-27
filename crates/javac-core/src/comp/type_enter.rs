@@ -752,7 +752,7 @@ impl TypeEnter {
         let imp = {
             let mut make = self.make.borrow_mut();
             make.at(pos);
-            let qual = make.qual_ident(ctx, syms, java_lang);
+            let qual = make.qual_ident(ctx, java_lang);
             make.import(ctx, qual, false)
         };
         self.import_all(ctx, imp, java_lang, env);
@@ -973,8 +973,8 @@ impl TypeEnter {
         let class_type = ctx.sym(symbol).ty.expect("enum class type");
         let mut make = self.make.borrow_mut();
         make.at(pos);
-        let qual = make.qual_ident(ctx, syms, syms.enum_sym);
-        let ty_tree = make.type_expr(ctx, syms, class_type);
+        let qual = make.qual_ident(ctx, syms.enum_sym);
+        let ty_tree = make.type_expr(ctx, class_type);
         make.type_apply(ctx, qual, List::of(ty_tree))
     }
 
@@ -1962,7 +1962,7 @@ impl TypeEnter {
         let values = {
             let mut make = self.make.borrow_mut();
             make.at(ctx.tree(tree).pos);
-            let elem_tree = make.type_expr(ctx, syms, sym_ty);
+            let elem_tree = make.type_expr(ctx, sym_ty);
             let values_type = make.type_array(ctx, elem_tree);
             let mods = make.modifiers(ctx, (flags::PUBLIC as i64) | (flags::STATIC as i64));
             make.method_def(
@@ -1987,8 +1987,8 @@ impl TypeEnter {
         let value_of = {
             let mut make = self.make.borrow_mut();
             make.at(ctx.tree(tree).pos);
-            let ret = make.type_expr(ctx, syms, sym_ty);
-            let param_type = make.type_expr(ctx, syms, syms.string_type);
+            let ret = make.type_expr(ctx, sym_ty);
+            let param_type = make.type_expr(ctx, syms.string_type);
             let param_mods = make.modifiers(
                 ctx,
                 (flags::PARAMETER) | (flags::MANDATED as i64),
@@ -2047,7 +2047,7 @@ impl TypeEnter {
         let make_no_arg = |this: &mut TypeEnter, ctx: &mut CompilerContext, syms: &Symtab, name: crate::util::name::Name, ret: TypeId| {
             let mut make = this.make.borrow_mut();
             make.at(ctx.tree(tree).pos);
-            let ret_tree = make.type_expr(ctx, syms, ret);
+            let ret_tree = make.type_expr(ctx, ret);
             let mods = make.modifiers(
                 ctx,
                 (flags::PUBLIC as i64)
@@ -2107,8 +2107,8 @@ impl TypeEnter {
             let equals = {
                 let mut make = self.make.borrow_mut();
                 make.at(ctx.tree(tree).pos);
-                let ret = make.type_expr(ctx, syms, syms.boolean_type);
-                let object_ty = make.type_expr(ctx, syms, syms.object_type);
+                let ret = make.type_expr(ctx, syms.boolean_type);
+                let object_ty = make.type_expr(ctx, syms.object_type);
                 let param_mods = make.modifiers(ctx, flags::PARAMETER);
                 let param = make.var_def(
                     ctx,
@@ -2377,7 +2377,7 @@ impl TypeEnter {
             let typeargs = {
                 let type_args = ctx.typ(init_type).get_type_arguments();
                 if type_args.non_empty() {
-                    make.types(ctx, syms, type_args)
+                    make.types(ctx, type_args)
                 } else {
                     List::nil()
                 }
@@ -2400,7 +2400,7 @@ impl TypeEnter {
         };
         let result = {
             let mut make = self.make.borrow_mut();
-            make.method_def_symbol(ctx, syms, init_sym, Some(body))
+            make.method_def_symbol(ctx, init_sym, Some(body))
         };
         helper.final_adjustment(ctx, syms, &names, result)
     }
@@ -2987,7 +2987,7 @@ impl DefaultConstructorHelper for AnonClassConstructorHelper {
             .constructor_type(ctx, syms, types, names)
             .expect("constructor type");
         let argtypes = ctx.typ(ctor_type).get_parameter_types(ctx);
-        let make_params = make.params(ctx, syms, argtypes, ctor_symbol);
+        let make_params = make.params(ctx, argtypes, ctor_symbol);
         let mut current = make_params;
         if self.encl.is_some() {
             current = current.tail();

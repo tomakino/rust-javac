@@ -1582,8 +1582,7 @@ impl AnnotateServices {
             let anno_tree = {
                 let mut make = self.make.borrow_mut();
                 make.at(pos);
-                let syms = self.syms.borrow();
-                make.translate_attribute(ctx, &syms, at)
+                make.translate_attribute(ctx, at)
             };
             let defer_ok = {
                 let chk = self.chk.borrow();
@@ -1615,8 +1614,7 @@ impl AnnotateServices {
         let anno_tree = {
             let mut make = self.make.borrow_mut();
             make.at(pos);
-            let syms = self.syms.borrow();
-            make.translate_attribute(ctx, &syms, c)
+            make.translate_attribute(ctx, c)
         };
         let is_record_member = (ctx.sym(on).flags_field & flags::RECORD) != 0
             || ctx
@@ -2505,8 +2503,7 @@ struct UnusedFileManager;
         let compound_tree = {
             let mut make = h.make.borrow_mut();
             make.at(0);
-            let syms = h.syms.borrow();
-            make.translate_attribute(&mut h.ctx, &syms, compound)
+            make.translate_attribute(&mut h.ctx, compound)
         };
         assert!(h.ctx.tree(compound_tree).has_tag(Tag::ANNOTATION));
         let array = h
@@ -2515,8 +2512,7 @@ struct UnusedFileManager;
         let array_tree = {
             let mut make = h.make.borrow_mut();
             make.at(0);
-            let syms = h.syms.borrow();
-            make.translate_attribute(&mut h.ctx, &syms, array)
+            make.translate_attribute(&mut h.ctx, array)
         };
         assert!(h.ctx.tree(array_tree).has_tag(Tag::NEWARRAY));
         assert_eq!(h.log.borrow().nerrors, 0);

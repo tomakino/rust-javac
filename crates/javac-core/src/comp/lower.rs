@@ -355,8 +355,7 @@ impl Lower {
     ) -> TreeId {
         let tsym = ctx.typ(ctype).tsym.expect("class type symbol");
         let qual = {
-            let syms = self.syms.borrow();
-            self.make.borrow_mut().qual_ident(ctx, &syms, tsym)
+            self.make.borrow_mut().qual_ident(ctx, tsym)
         };
         let tree = self.make.borrow_mut().new_class(
             ctx,
@@ -499,8 +498,7 @@ impl Lower {
             List::of(ty),
         );
         let qual = {
-            let syms = self.syms.borrow();
-            self.make.borrow_mut().qual_ident(ctx, &syms, value_of_sym)
+            self.make.borrow_mut().qual_ident(ctx, value_of_sym)
         };
         self.make.borrow_mut().app_with_args(ctx, qual, List::of(tree))
     }
@@ -1299,8 +1297,7 @@ impl Lower {
                                 self.select_symbol(ctx, base, access)
                             } else {
                                 let qual = {
-                                    let syms = self.syms.borrow();
-                                    self.make.borrow_mut().qual_ident(ctx, &syms, access_owner)
+                                    self.make.borrow_mut().qual_ident(ctx, access_owner)
                                 };
                                 self.select_symbol(ctx, qual, access)
                             };
@@ -1345,8 +1342,7 @@ impl Lower {
         if (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) != 0 {
             let owner = ctx.sym(sym).owner.expect("symbol owner");
             let qual = {
-                let syms = self.syms.borrow();
-                self.make.borrow_mut().qual_ident(ctx, &syms, owner)
+                self.make.borrow_mut().qual_ident(ctx, owner)
             };
             self.access(ctx, sym, qual, None, false)
         } else {
@@ -1647,8 +1643,7 @@ impl Lower {
     /// The maker needs the symbol table to qualify class names; the borrow is
     /// kept local so callers can continue using the context afterwards.
     fn type_tree(&mut self, ctx: &mut CompilerContext, t: TypeId) -> TreeId {
-        let syms = self.syms.borrow();
-        self.make.borrow_mut().type_from_type(ctx, &syms, t)
+        self.make.borrow_mut().type_from_type(ctx, t)
     }
 
     /// Build a variable declaration tree for a variable symbol.
@@ -3171,8 +3166,7 @@ impl Lower {
             List::of(tree_ty),
         );
         let qual = {
-            let syms = self.syms.borrow();
-            self.make.borrow_mut().qual_ident(ctx, &syms, value_of_sym)
+            self.make.borrow_mut().qual_ident(ctx, value_of_sym)
         };
         self.make.borrow_mut().app_with_args(ctx, qual, List::of(tree))
     }
@@ -3413,10 +3407,9 @@ impl Lower {
                     _ => panic!("expected an enum constant symbol"),
                 };
                 let value_ident = {
-                    let syms = self.syms.borrow();
                     self.make
                         .borrow_mut()
-                        .qual_ident(ctx, &syms, def_sym)
+                        .qual_ident(ctx, def_sym)
                 };
                 values = values.append(value_ident);
                 enum_defs = enum_defs.append(def);
@@ -3927,10 +3920,9 @@ impl Lower {
         );
         let site_tsym = ctx.typ(site).tsym.expect("site symbol");
         let site_qual = {
-            let syms = self.syms.borrow();
             self.make
                 .borrow_mut()
-                .qual_ident(ctx, &syms, site_tsym)
+                .qual_ident(ctx, site_tsym)
         };
         let qualifier = {
             let syms = self.syms.borrow();
@@ -4003,10 +3995,9 @@ impl Lower {
                 if ctx.sym(type_sym).kind == Kind::VAR {
                     let _ = ctx.sym(type_sym).get_const_value();
                 }
-                let syms = self.syms.borrow();
                 self.make
                     .borrow_mut()
-                    .qual_ident(ctx, &syms, type_sym)
+                    .qual_ident(ctx, type_sym)
             }
             TypeTag::CLASS | TypeTag::ARRAY => {
                 let ty_tsym = ctx.typ(ty).tsym.expect("class type symbol");
@@ -5056,8 +5047,7 @@ impl Lower {
                 let current_pos = ctx.tree(current_def).pos;
                 self.make.borrow_mut().at(current_pos);
                 let flag_ident = {
-                    let syms = self.syms.borrow();
-                    self.make.borrow_mut().qual_ident(ctx, &syms, var)
+                    self.make.borrow_mut().qual_ident(ctx, var)
                 };
                 let skip = self.make.borrow_mut().skip(ctx);
                 let dummy = self.make.borrow_mut().if_(ctx, flag_ident, skip, None);
@@ -6593,8 +6583,7 @@ impl Lower {
             let ordinal_sel = self.select_symbol(ctx, dollar_ident, ordinal);
             let ordinal_app = self.make.borrow_mut().app(ctx, ordinal_sel);
             let map_ident = {
-                let syms = self.syms.borrow();
-                self.make.borrow_mut().qual_ident(ctx, &syms, map_var)
+                self.make.borrow_mut().qual_ident(ctx, map_var)
             };
             let indexed = self.make.borrow_mut().indexed(ctx, map_ident, ordinal_app);
             let dollar_ident2 = self.make.borrow_mut().ident_symbol(ctx, dollar_s);
@@ -6611,8 +6600,7 @@ impl Lower {
             let ordinal_sel = self.select_symbol(ctx, selector, ordinal);
             let ordinal_app = self.make.borrow_mut().app(ctx, ordinal_sel);
             let map_ident = {
-                let syms = self.syms.borrow();
-                self.make.borrow_mut().qual_ident(ctx, &syms, map_var)
+                self.make.borrow_mut().qual_ident(ctx, map_var)
             };
             self.make.borrow_mut().indexed(ctx, map_ident, ordinal_app)
         };
@@ -7574,8 +7562,7 @@ impl EnumMapping {
         let values_name = lower.names.values.clone();
         let values_method = lower.lookup_method(ctx, pos.clone(), values_name, for_enum_ty, List::nil());
         let values_qual = {
-            let syms = lower.syms.borrow();
-            lower.make.borrow_mut().qual_ident(ctx, &syms, values_method)
+            lower.make.borrow_mut().qual_ident(ctx, values_method)
         };
         let values_app = lower.make.borrow_mut().app(ctx, values_qual);
         let length_var = lower.syms.borrow().length_var;
@@ -7591,8 +7578,7 @@ impl EnumMapping {
             },
         ));
         let type_tree = {
-            let syms = lower.syms.borrow();
-            lower.make.borrow_mut().type_from_type(ctx, &syms, int_type)
+            lower.make.borrow_mut().type_from_type(ctx, int_type)
         };
         let map_var_init = lower.make.borrow_mut().new_array(
             ctx,
@@ -7610,8 +7596,7 @@ impl EnumMapping {
         let ex_symbol = Symbol::new_var_symbol(ex_flags, ex_name, no_such_field, no_symbol);
         let ex_sym = ctx.alloc_symbol(ex_symbol);
         let ex_type_tree = {
-            let syms = lower.syms.borrow();
-            lower.make.borrow_mut().type_from_type(ctx, &syms, no_such_field)
+            lower.make.borrow_mut().type_from_type(ctx, no_such_field)
         };
         let ex_mods = lower.make.borrow_mut().modifiers(ctx, 0);
         let ex_param = {
@@ -7631,14 +7616,12 @@ impl EnumMapping {
         let values = self.values.clone();
         for (enumerator, mapped_value) in values {
             let enumerator_qual = {
-                let syms = lower.syms.borrow();
-                lower.make.borrow_mut().qual_ident(ctx, &syms, enumerator)
+                lower.make.borrow_mut().qual_ident(ctx, enumerator)
             };
             let ordinal_sel = lower.select_symbol(ctx, enumerator_qual, ordinal_method);
             let ordinal_app = lower.make.borrow_mut().app(ctx, ordinal_sel);
             let map_var_ident = {
-                let syms = lower.syms.borrow();
-                lower.make.borrow_mut().qual_ident(ctx, &syms, self.map_var)
+                lower.make.borrow_mut().qual_ident(ctx, self.map_var)
             };
             let indexed = lower.make.borrow_mut().indexed(ctx, map_var_ident, ordinal_app);
             let literal = lower
@@ -7660,8 +7643,7 @@ impl EnumMapping {
         let map_var_flags = ctx.sym(self.map_var).flags_field;
         let map_var_name = ctx.sym(self.map_var).name.clone();
         let map_var_type_tree = {
-            let syms = lower.syms.borrow();
-            lower.make.borrow_mut().type_from_type(ctx, &syms, array_ty)
+            lower.make.borrow_mut().type_from_type(ctx, array_ty)
         };
         let map_var_mods = lower.make.borrow_mut().modifiers(ctx, map_var_flags);
         let map_var_def = lower.make.borrow_mut().var_def(
