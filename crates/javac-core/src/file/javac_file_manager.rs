@@ -559,6 +559,22 @@ impl Container for JRTImageContainer {
         _user_path: &FsPath,
         name: &RelativeFile,
     ) -> Result<StdOption<JavaFileObjectRef>, Error> {
+        // The jrt: FileSystem is unavailable in the port (registered adapter): when the
+        // container is a module root (/modules/<module>), resolve the file against that
+        // module directly. The aggregated JRTIndex entry below cannot distinguish files
+        // with the same relative name in different modules (e.g. module-info.class).
+        if let Some(module) = jrt_module_name(_user_path) {
+            let relative = name.as_relative_path().get_path().to_string_lossy().replace('\\', "/");
+            let candidate = FsPath::from_path_buf(PathBuf::from(format!(
+                "{MODULES_JRT_PREFIX}{module}/{relative}"
+            )));
+            let index = manager.get_jrt_index();
+            if index.get_resource(&candidate).is_some() {
+                let fo = PathFileObject::for_jrt_path(manager.manager_api(), &candidate);
+                manager.register(&fo);
+                return Ok(Some(fo as JavaFileObjectRef));
+            }
+        }
         let index = manager.get_jrt_index();
         let entry = index
             .get_entry(&name.dirname())
@@ -588,6 +604,19 @@ impl Container for JRTImageContainer {
     fn indexed_directories(&self) -> Vec<RelativeDirectory> {
         Vec::new()
     }
+}
+
+/// Java: the jrt path prefix of module roots (/modules/<module>).
+const MODULES_JRT_PREFIX: &str = "/modules/";
+
+/// Return the module name when the path is a jrt module root ("/modules/<module>").
+fn jrt_module_name(path: &FsPath) -> StdOption<String> {
+    let text = path.to_java_string().to_string().replace('\\', "/");
+    let module = text.strip_prefix(MODULES_JRT_PREFIX)?;
+    if module.is_empty() || module.contains('/') {
+        return None;
+    }
+    Some(module.to_string())
 }
 
 /// Java: private static class PathAndContainer implements Comparable<PathAndContainer>.

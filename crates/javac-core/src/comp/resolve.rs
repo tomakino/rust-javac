@@ -9362,7 +9362,7 @@ mod check_channel_tests {
                     || visible
                     || package == syms.root_package
                     || (package_module == Some(syms.unnamed_module)
-                        && package_module.map(|module| reads.contains(&module)).unwrap_or(false));
+                        && reads.contains(&syms.unnamed_module));
             } else {
                 is_accessible = true;
             }

@@ -1567,7 +1567,7 @@ impl Modules {
             if !exported {
                 continue;
             }
-            let package_name = ctx.sym(package).name.clone();
+            let package_name = package_fullname(ctx, package);
             let previous = seen_packages.get(&package_name).copied();
             if let Some(previous) = previous
                 && previous != exports_from

@@ -14030,7 +14030,10 @@ impl Attr {
             chk.set_lint(prev_lint);
             chk.set_method(prev_method);
         }
-        Ok(ctx.sym(m).ty.expect("method type"))
+        // Java: result = tree.type = m.type; (Attr.java:1245).
+        let method_type = ctx.sym(m).ty.expect("method type");
+        ctx.tree_mut(tree).ty = Some(method_type);
+        Ok(method_type)
     }
 
     /// The record accessor/canonical-constructor checks of visitMethodDef.

@@ -889,6 +889,14 @@ fn enter_module(
         Some(module),
         no_type,
     );
+    // Java: ModuleSymbol.create installs the module-info members scope
+    // (Symbol.java:993-999: info.members_field = WriteableScope.create(info)).
+    let members = ctx.scope_create(Some(module_info));
+    if let SymbolKind::ClassSymbol { members_field, .. } =
+        &mut ctx.sym_mut(module_info).kind_data
+    {
+        *members_field = Some(members);
+    }
     if let SymbolKind::ModuleSymbol {
         module_info: slot, ..
     } = &mut ctx.sym_mut(module).kind_data

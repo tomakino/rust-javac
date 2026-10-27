@@ -725,6 +725,13 @@ impl MiniCompiler {
         for env in &envs {
             let make = Rc::clone(&self.make);
             self.flow.analyze_tree(&mut self.ctx, env, &make);
+            // JavaCompiler.flow: compileStates.put(env, CompileState.FLOW)
+            // (JavaCompiler.java:1380-1381).
+            self.trans_types
+                .borrow()
+                .compile_states
+                .borrow_mut()
+                .put(env, crate::comp::compile_states::CompileState::FLOW);
         }
         if self.error_count() > 0 {
             return Err(self.error_message());
@@ -732,18 +739,23 @@ impl MiniCompiler {
         // JavaCompiler.desugar(envs): TransTypes then Lower.
         let mut classes: Vec<CompiledClass> = Vec::new();
         for env in envs {
-            let cdef = env.encl_class.expect("env.enclClass");
             let local_make = Rc::new(RefCell::new(
                 self.make.borrow().for_toplevel(env.toplevel),
             ));
-            let translated = self
-                .trans_types
-                .borrow_mut()
-                .translate_top_level_class(&mut self.ctx, cdef, Rc::clone(&local_make))
-                .expect("transTypes result");
-            let translated = match &mut self.ctx.tree_mut(cdef).kind {
-                TreeKind::ClassDecl { .. } => translated,
-                _ => translated,
+            // JavaCompiler.desugar: package/module declarations are lowered
+            // directly (JavaCompiler.java:1516-1527); class declarations go
+            // through TransTypes first.
+            let top_tree = env.tree.expect("env.tree");
+            let top_is_info = self.ctx.tree(top_tree).has_tag(crate::tree::jc_tree::Tag::PACKAGEDEF)
+                || self.ctx.tree(top_tree).has_tag(crate::tree::jc_tree::Tag::MODULEDEF);
+            let translated = if top_is_info {
+                top_tree
+            } else {
+                let cdef = env.encl_class.expect("env.enclClass");
+                self.trans_types
+                    .borrow_mut()
+                    .translate_top_level_class(&mut self.ctx, cdef, Rc::clone(&local_make))
+                    .expect("transTypes result")
             };
             let defs = self.lower.borrow_mut().translate_top_level_class(
                 &mut self.ctx,

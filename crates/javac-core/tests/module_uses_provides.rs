@@ -17,7 +17,6 @@ fn write_source(root: &Path, relative: &str, source: &str) -> PathBuf {
 }
 
 #[test]
-#[ignore = "blocked: Locations.getLocationForModule(SYSTEM_MODULES) resolves module-info class files to a wrong relative path (e.g. crates/javac-core/modules/jdk.zipfs/module-info.class), so the java.base module graph is not completed; requires the Locations S3c ModuleTable.update port"]
 fn module_info_uses_provides_compiles() {
     let root = std::env::temp_dir().join(format!(
         "rust-javac-module-uses-provides-{}-{}",

@@ -362,6 +362,13 @@ impl JumpKind {
 
 /// Copy helper for Bits (the ported Bits has no Clone; Porting rules adapter).
 pub fn clone_bits(bits: &Bits) -> Bits {
+    // Java: new Bits(Bits someBits) keeps the UNKNOWN (reset) state when the
+    // source has no bits array (Bits.java constructor/getState).
+    if bits.is_reset() {
+        let mut copy = Bits::new();
+        copy.reset();
+        return copy;
+    }
     let mut copy = Bits::new();
     let mut next = bits.next_bit(0);
     while next >= 0 {
@@ -3984,15 +3991,15 @@ impl<'a> AssignAnalyzer<'a> {
         self.class_def = None;
         self.is_initial_constructor = false;
         self.start_pos = ctx.tree(tree).pos;
-        self.reset_bits();
-        self.lint = self.flow.augmented_lint(
-            ctx,
-            class_symbol(ctx, tree).expect("analyzeTree class symbol"),
-        );
-        let scope = class_symbol(ctx, tree).and(None::<crate::ids::ScopeId>);
-        self.unrefd_resources = scope;
+        // Java: unrefdResources = WriteableScope.create(env.enclClass.sym)
+        // (Flow.java:2870); the resource-reference scope is not wired in the
+        // port (registered gap), as before this batch.
+        self.unrefd_resources = None;
         *self.flow.attr_env.borrow_mut() = Some(Rc::clone(env));
         self.scan(ctx, Some(tree));
+        // Java: finally { resetBits(inits, uninits, uninitsTry, ...);
+        // startPos = -1; firstadr = 0; nextadr = 0; ... } (Flow.java:2872-2887).
+        self.reset_bits();
         self.pending_exits = prev_pending;
         self.first_adr = prev_first_adr;
         self.next_adr = prev_next_adr;

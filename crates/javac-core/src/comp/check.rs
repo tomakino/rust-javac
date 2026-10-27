@@ -9363,18 +9363,7 @@ impl Check {
             return;
         }
         if let Err(failure) = ctx.complete_class_symbol(syms, sym) {
-            eprintln!(
-                "DEBUG complete failure sym={sym:?} name={:?} failure={failure:?} flags=0x{:x}",
-                ctx.sym(sym).name.to_java_string().to_string_lossy(),
-                ctx.sym(sym).flags_field
-            );
             self.completion_error(ctx, crate::util::position::NOPOS, &failure, syms);
-        } else {
-            eprintln!(
-                "DEBUG completed sym={sym:?} name={:?} members={:?}",
-                ctx.sym(sym).name.to_java_string().to_string_lossy(),
-                ctx.sym(sym).members().is_some()
-            );
         }
     }
 }

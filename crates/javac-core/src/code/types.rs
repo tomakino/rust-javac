@@ -1131,7 +1131,10 @@ impl Types {
             // Java: Symbol.ClassSymbol.erasure(Types):
             // erasure_field = new ClassType(types.erasure(type.getEnclosingType()),
             // List.nil(), this, type.getMetadata());
-            let enclosing = get_enclosing_type(ctx, ty).expect("class type enclosing type");
+            // Java: ClassType.getEnclosingType() returns Type.noType for a
+            // top-level class; the port stores that as None.
+            let enclosing = get_enclosing_type(ctx, ty)
+                .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
             let erased_enclosing = self.erasure_recurse(ctx, syms, enclosing, false);
             ctx.alloc_type(Type::new(
                 TypeTag::CLASS,
