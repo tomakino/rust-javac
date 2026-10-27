@@ -16,7 +16,7 @@
 // - NOT PORTED: getDeclarationAttributes (Symbol.java:218)
 // - NOT PORTED: hasAnnotations (Symbol.java:224)
 // - NOT PORTED: hasTypeAnnotations (Symbol.java:228)
-// - NOT PORTED: isCompleted (Symbol.java:232)
+// - isCompleted is implemented as CompilerContext::is_symbol_completed (registered adapter).
 // - NOT PORTED: prependAttributes (Symbol.java:236)
 // - NOT PORTED: resetAnnotations (Symbol.java:242)
 // - NOT PORTED: setAttributes (Symbol.java:246)
@@ -34,7 +34,7 @@
 // - NOT PORTED: isInheritedIn (Symbol.java:651)
 // - NOT PORTED: asMemberOf (Symbol.java:659)
 // - NOT PORTED: overrides (Symbol.java:672)
-// - NOT PORTED: apiComplete (Symbol.java:686)
+// - apiComplete is implemented as CompilerContext::api_complete_symbol (registered adapter).
 // - NOT PORTED: exists (Symbol.java:696)
 // - NOT PORTED: asType (Symbol.java:701)
 // - NOT PORTED: getEnclosingElement (Symbol.java:706)

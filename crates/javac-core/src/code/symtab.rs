@@ -510,8 +510,8 @@ fn add_root_package_for(
 ) {
     do_enter_package(ctx, maps, module, root_package);
     let unnamed_package = new_package_symbol(ctx, 0, names.std.empty.clone(), Some(root_package));
-    // Java: unnamedPackage.completer = s -> initialCompleter.complete(s);
-    // NOT PORTED (Completer is not ported).
+    // Java: unnamedPackage.completer = s -> initialCompleter.complete(s)
+    // (bound by set_initial_completer; registered adapter).
     if let SymbolKind::PackageSymbol { modle, .. } = &mut ctx.sym_mut(unnamed_package).kind_data {
         *modle = Some(module);
     }
@@ -765,7 +765,7 @@ fn lookup_package_impl(
     if module == no_module {
         return enter_package(ctx, names, maps, module, flatname.clone());
     }
-    // Java: msym.complete(); - NOT PORTED (Completer).
+    // Java: msym.complete(); (module completer: pending the Modules port, batch 1b).
     if let Some(visible) = visible_package(ctx, module, flatname) {
         return visible;
     }
@@ -872,7 +872,7 @@ fn enter_module(
         *slot = Some(module_info);
     }
     add_root_package_for(ctx, names, maps, module, root_package);
-    // Java: msym.completer = s -> moduleCompleter.complete(s); - NOT PORTED.
+    // Java: msym.completer = s -> moduleCompleter.complete(s); (enter_module binds it once module_completer is installed).
     maps.modules.push((name, module));
     module
 }
@@ -897,7 +897,7 @@ fn enter_package(
     let parent = convert::package_part(&fullname);
     let parent_package = enter_package(ctx, names, maps, module, parent);
     let package = new_package_symbol(ctx, 0, short_name, Some(parent_package));
-    // Java: p.completer = initialCompleter; - NOT PORTED.
+    // Java: p.completer = initialCompleter; (bound by enter_package; registered adapter).
     if let SymbolKind::PackageSymbol { modle, .. } = &mut ctx.sym_mut(package).kind_data {
         *modle = Some(module);
     }
@@ -1238,7 +1238,7 @@ impl Symtab {
         set_members(ctx, predef_class, predef_scope);
 
         // Java: initialCompleter = ClassFinder.instance(context).getCompleter();
-        // NOT PORTED (ClassFinder/Completer).
+        // bound by set_initial_completer from the bootstrap (registered adapter).
         let root_scope = new_scope(ctx, root_package);
         set_members(ctx, root_package, root_scope);
 
@@ -1253,13 +1253,13 @@ impl Symtab {
         let java_base = if Feature::MODULES.allowed_in_source(source) {
             let java_base = enter_module(ctx, &names, &mut maps, names.std.java_base.clone(), root_package);
             // Java: avoid completing java.base during the Symtab initialization
-            // (java_base.completer = Completer.NULL_COMPLETER) - NOT PORTED.
+            // (java_base.completer = NULL_COMPLETER): set_initial_completer skips java_base.
             java_base
         } else {
             no_module
         };
         // Java: moduleCompleter = Modules.instance(context).getCompleter();
-        // NOT PORTED (Modules/Completer).
+        // (module completer: pending the Modules port, batch 1b).
 
         // Enter predefined classes. All are assumed to be in the java.base module.
         let object_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.Object");
@@ -1913,11 +1913,26 @@ impl Symtab {
                 ctx.sym_mut(symbol).completer = Some(factory());
             }
         }
+        // Java: unnamedPackage.completer = s -> initialCompleter.complete(s)
+        // (Symtab.java:810). The ported unnamed package is created before the
+        // ClassFinder exists, so it is bound when the completer is installed.
+        let unnamed_package = match &ctx.sym(self.unnamed_module).kind_data {
+            SymbolKind::ModuleSymbol {
+                unnamed_package, ..
+            } => *unnamed_package,
+            _ => None,
+        };
+        if let Some(unnamed_package) = unnamed_package
+            && ctx.sym(unnamed_package).completer.is_none()
+        {
+            ctx.sym_mut(unnamed_package).completer = Some(factory());
+        }
     }
 
     /// Java: Symtab constructor binds moduleCompleter from
-    /// Modules.instance(context).getCompleter() (Modules is not ported: the
-    /// bootstrap may pass the module completer explicitly; registered adapter).
+    /// Modules.instance(context).getCompleter() (Modules port is pending,
+    /// batch 1b: the bootstrap may pass the module completer explicitly;
+    /// registered adapter).
     pub fn set_module_completer(&mut self, ctx: &mut CompilerContext, factory: CompleterFactory) {
         self.module_completer = Some(Rc::clone(&factory));
         // Java: java_base.completer = moduleCompleter::complete (bootstrap issues)

@@ -18,8 +18,8 @@
 //
 // Still not ported (no substitutes):
 // - NOT PORTED: instance(Context) — the port injects dependencies in new();
-// - NOT PORTED: annotate.blockAnnotations/unblockAnnotationsNoFlush/flush
-// calls in complete() — Annotate (registered TODO in the method);
+// - the annotate.blockAnnotations/unblockAnnotationsNoFlush/flush calls are
+// wired through the injected Annotate service (registered adapter);
 // - NOT PORTED: getSupplementaryFlags jrtIndex!=null path (JRTIndex.isInJRT
 // needs the PathFileObject downcast; JRTIndex integration);
 // - NOT PORTED: verbose path printing (StandardJavaFileManager.getLocationAsPaths
@@ -51,6 +51,7 @@ use javac_tools::tools::standard_location::StandardLocation;
 
 use crate::code::dependencies::{CompletionCause, Dependencies};
 use crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler;
+use crate::comp::annotate::Annotate;
 use crate::code::flags;
 use crate::code::kinds::Kind as SymKind;
 use crate::code::symbol::{Completer, CompleterRef, CompletionFailure};
@@ -114,6 +115,12 @@ pub struct ClassFinder {
     pub verbose_path: std::cell::Cell<bool>,
     /// Java: private boolean preferCurrent;
     pub prefer_current: std::cell::Cell<bool>,
+    /// Java: final Annotate annotate (ClassFinder.java:116)
+    ///
+    /// PORTING_RULES adapter: the Annotate service is created after the
+    /// ClassFinder by the bootstrap; the shared injection cell mirrors the
+    /// ClassReader/Enter/MemberEnter adapter (registered section 9).
+    pub annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
     /// Java: private final Completer thisCompleter = this::complete;
     /// PORTING_RULES adapter: a Weak self reference breaks the Rc cycle.
     pub self_ref: std::rc::Weak<ClassFinder>,
@@ -136,6 +143,7 @@ impl ClassFinder {
         profile: Rc<Profile>,
         options: &Options,
         jrt_index: Option<Rc<JRTIndex>>,
+        annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
     ) -> Rc<ClassFinder> {
         let verbose = options.is_set_option(crate::main::option::Option::VERBOSE);
         let cache_completion_failure = options.is_unset("dev");
@@ -172,6 +180,7 @@ impl ClassFinder {
             current_owner: std::cell::Cell::new(None),
             profile,
             jrt_index,
+            annotate,
             supplementary_flags: RefCell::new(std::collections::HashMap::new()),
             current_loc: RefCell::new(None),
             verbose_path: std::cell::Cell::new(true),
@@ -261,20 +270,28 @@ impl ClassFinder {
             self.dependencies
                 .borrow_mut()
                 .push(ctx, c, CompletionCause::CLASS_READER);
-            // TODO(Annotate): annotate.blockAnnotations();
+            if let Some(annotate) = self.annotate.borrow().clone() {
+                annotate.block_annotations();
+            }
             let error_scope = ctx.scope_create_error(Some(c));
             if let SymData::ClassSymbol { members_field, .. } = &mut ctx.sym_mut(c).kind_data {
                 *members_field = Some(error_scope);
             }
             let result = self.complete_class_body(ctx, syms, c);
-            // TODO(Annotate): annotate.unblockAnnotationsNoFlush();
+            if let Some(annotate) = self.annotate.borrow().clone() {
+                annotate.unblock_annotations_no_flush();
+            }
             self.dependencies.borrow_mut().pop();
             result?;
         } else if ctx.sym(sym).kind == SymKind::PCK {
             let p = sym;
             self.fill_in_package(ctx, syms, p)?;
         }
-        // TODO(Annotate): if (!reader.filling) annotate.flush();
+        if !self.reader.borrow().filling {
+            if let Some(annotate) = self.annotate.borrow().clone() {
+                annotate.flush(ctx)?;
+            }
+        }
         Ok(())
     }
 
@@ -1446,6 +1463,7 @@ mod tests {
             Rc::clone(&profile),
             &options,
             None,
+            std::rc::Rc::new(std::cell::RefCell::new(None)),
         );
         let factory = finder.get_completer_factory();
         syms.set_initial_completer(&mut ctx, factory);

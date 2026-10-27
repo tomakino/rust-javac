@@ -229,6 +229,7 @@ impl MiniCompiler {
             Rc::clone(&profile),
             &options,
             None,
+            Rc::clone(&annotate_cell),
         );
         let java_home_path = java_home().as_path().to_path_buf();
         let todo = Todo::instance(&mut util_context);

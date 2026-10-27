@@ -817,6 +817,7 @@ mod tests {
             Rc::clone(&profile),
             &options,
             None,
+            std::rc::Rc::new(std::cell::RefCell::new(None)),
         );
         let factory = finder.get_completer_factory();
         syms.set_initial_completer(&mut ctx, factory);

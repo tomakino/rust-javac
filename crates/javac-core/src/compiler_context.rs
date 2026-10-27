@@ -713,6 +713,53 @@ impl CompilerContext {
         }
     }
 
+    /// Java: Symbol.isCompleted() (Symbol.java:232-234): a symbol is completed
+    /// when its completer is terminal (the ported None value is
+    /// Completer.NULL_COMPLETER).
+    ///
+    /// # Arguments
+    ///   - symbol: the symbol to inspect.
+    ///
+    /// # Returns
+    ///   - true when the completer is terminal.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn is_symbol_completed(&self, symbol: SymbolId) -> bool {
+        match &self.sym(symbol).completer {
+            None => true,
+            Some(completer) => completer.borrow().is_terminal(),
+        }
+    }
+
+    /// Java: Symbol.apiComplete() (Symbol.java:686-692): complete the symbol and
+    /// route a CompletionFailure through the DeferredCompletionFailureHandler.
+    ///
+    /// # Arguments
+    ///   - syms: the symbol table;
+    ///   - symbol: the symbol to complete.
+    ///
+    /// # Returns
+    ///   - Ok(()) when complete() succeeded or the handler absorbed the failure.
+    ///
+    /// # Panics
+    ///   - none.
+    pub fn api_complete_symbol(
+        &mut self,
+        syms: &mut crate::code::symtab::Symtab,
+        symbol: SymbolId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        match self.complete_symbol(syms, symbol) {
+            Ok(()) => Ok(()),
+            Err(failure) => match failure.dcfh.clone() {
+                Some(dcfh) => dcfh.handle_api_completion_failure(failure),
+                // Java always has a dcfh here; when the ported failure carries
+                // none, rethrowing preserves the default JavacCodeHandler rule.
+                None => Err(failure),
+            },
+        }
+    }
+
     /// Java: Symbol.reset() (ModuleSymbol/ClassSymbol overrides; see Symbol::reset).
     pub fn reset_symbol(&mut self, symbol: SymbolId) {
         self.sym_mut(symbol).reset();
