@@ -1603,7 +1603,7 @@ impl Resolve {
         }
         let mut best_so_far = self.var_not_found;
         let c_type = ctx.sym(c).ty.expect("type symbol type");
-        let members = ctx.sym(c).members();
+        let members = self.member_scope(ctx, syms, c);
         if let Some(members) = members {
             let candidates = ctx.scope_get_symbols_by_name_full(
                 members,
@@ -1808,7 +1808,7 @@ impl Resolve {
         name: &crate::util::name::Name,
         c: SymbolId,
     ) -> SymbolId {
-        let members = ctx.sym(c).members();
+        let members = self.member_scope(ctx, syms, c);
         if let Some(members) = members {
             let candidates = ctx.scope_get_symbols_by_name_full(
                 members,
@@ -2249,6 +2249,8 @@ pub(crate) fn symbol_flat_name(
 ) -> crate::util::name::Name {
     match &ctx.sym(symbol).kind_data {
         crate::code::symbol::SymbolKind::ClassSymbol { flatname, .. } => flatname.clone(),
+        crate::code::symbol::SymbolKind::PackageSymbol { fullname, .. }
+        | crate::code::symbol::SymbolKind::RootPackageSymbol { fullname, .. } => fullname.clone(),
         _ => ctx.sym(symbol).name.clone(),
     }
 }
@@ -5225,6 +5227,18 @@ impl AbstractMethodCheck for ResolveMethodCheck {
             check_context,
         };
         let _ = self.diags.clone();
+        // Java: Type.getTypeArguments() lazily completes a class symbol whose
+        // type parameters are not installed (Type.java:1085-1095); completing the
+        // checked operand types before the relation reproduces that state
+        // (registered adapter: the ported relation entry points do not return
+        // CompletionFailure).
+        for operand in [actual, formal] {
+            if let Some(tsym) = ctx.typ(operand).tsym
+                && ctx.sym(tsym).members().is_none()
+            {
+                let _ = ctx.complete_symbol(syms, tsym);
+            }
+        }
         mresult
             .check(ctx, syms, types, attr, chk, &self.diags, pos, actual, warn)
             .map(|_| ())
@@ -6248,7 +6262,9 @@ impl Resolve {
         } else {
             site_tsym
         };
-        let members = ctx.sym(tsym).members().expect("diamond class members");
+        let members = self
+            .member_scope(ctx, syms, tsym)
+            .expect("diamond class members");
         let symbols = {
             let scope_ref = ctx.scope(members).clone();
             
@@ -6707,6 +6723,23 @@ impl Resolve {
         }
     }
 
+    /// Java: Symbol.members() (Symbol.java:1100-1110): a symbol's member
+    /// scope is installed by completing the symbol when it is still absent.
+    /// The CompletionFailure channel is the Attr boundary (registered adapter:
+    /// the ported resolve entry points do not return CompletionFailure).
+    fn member_scope(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &mut Symtab,
+        sym: SymbolId,
+    ) -> Option<crate::ids::ScopeId> {
+        if let Some(members) = ctx.sym(sym).members() {
+            return Some(members);
+        }
+        let _ = ctx.complete_symbol(syms, sym);
+        ctx.sym(sym).members()
+    }
+
     /// Java: Symbol findMethod(Env<AttrContext> env, Type site, Name name,
     /// List<Type> argtypes, List<Type> typeargtypes, boolean allowBoxing,
     /// boolean useVarargs) (Resolve.java:1824-1844)
@@ -6783,7 +6816,7 @@ impl Resolve {
         let mut best_so_far = best_so_far;
         let mut current = symbol_for(ctx, syms, &mut seen, intype);
         while let Some(s) = current {
-            if let Some(members) = ctx.sym(s).members() {
+            if let Some(members) = self.member_scope(ctx, syms, s) {
                 best_so_far = self.find_method_in_scope(
                     ctx,
                     syms,
@@ -6848,7 +6881,7 @@ impl Resolve {
                     let has_default =
                         (ctx.sym(tsym).flags_field & crate::code::flags::DEFAULT) != 0;
                     if !(default_ok && !has_default) {
-                        if let Some(members) = ctx.sym(tsym).members() {
+                        if let Some(members) = self.member_scope(ctx, syms, tsym) {
                             best_so_far = self.find_method_in_scope(
                                 ctx,
                                 syms,

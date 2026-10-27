@@ -531,6 +531,11 @@ impl ClassFinder {
         msym: SymbolId,
         flatname: Name,
     ) -> Result<SymbolId, CompletionFailure> {
+        // Java: Symtab.lookupPackage(msym, packagePart) starts with
+        // msym.complete() (Symtab.java:691), which maps the module's visible
+        // packages before the package lookup; the port completes the module at
+        // this API boundary so the resulting package is the visible one.
+        ctx.complete_symbol(syms, msym)?;
         let package_name = convert::package_part(&flatname);
         let ps = syms.lookup_package(ctx, msym, &package_name);
         let package_module = match &ctx.sym(ps).kind_data {

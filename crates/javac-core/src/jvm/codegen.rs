@@ -1525,6 +1525,19 @@ impl Gen {
     /// Generate code for a method definition.
     pub fn gen_method_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let local_env = self.dup_env(Some(tree), GenContext::new());
+        // Java: localEnv.enclMethod = tree (Gen.java:924); dupEnv keeps the
+        // enclosing method of the previous environment, so the fresh method
+        // environment must be rebound to the method being generated.
+        let local_env = Rc::new(crate::comp::env::Env {
+            next: local_env.next.clone(),
+            outer: local_env.outer.clone(),
+            tree: Some(tree),
+            toplevel: local_env.toplevel,
+            encl_class: local_env.encl_class,
+            encl_method: Some(tree),
+            info: Rc::clone(&local_env.info),
+            base_clause: local_env.base_clause,
+        });
         let (sym, erasure) = match &ctx.tree(tree).kind {
             TreeKind::MethodDecl {
                 sym: Some(sym), ..
@@ -1588,6 +1601,11 @@ impl Gen {
             );
             self.nerrs += 1;
         } else if let Some(body) = body {
+            // Java: the method body is generated with the method environment
+            // installed as Gen.env (Gen.genDef sets this.env; the ported
+            // genMethod derives the environment explicitly).
+            let prev_env = self.env.clone();
+            self.env = Some(Rc::clone(env));
             let startpc_crt = self.init_code(ctx, tree, env, fatcode);
             self.gen_stat_crt(ctx, body, CRT_BLOCK);
             if self.get_code().borrow().state.stacksize != 0 {
@@ -1648,6 +1666,7 @@ impl Gen {
             };
             if failed {
                 self.nerrs += 1;
+                self.env = prev_env;
                 return;
             }
             let is_fat = self.get_code().borrow().fatcode;
@@ -1664,6 +1683,7 @@ impl Gen {
             self.get_code()
                 .borrow_mut()
                 .fill_exception_parameter_positions(ctx);
+            self.env = prev_env;
         }
     }
 

@@ -336,11 +336,9 @@ impl Lower {
     /// The upstream Select(base, symbol) overload is expressed as
     /// Select(base, symbol.name) followed by the symbol type assignment.
     fn select_symbol(&mut self, ctx: &mut CompilerContext, base: TreeId, sym: SymbolId) -> TreeId {
-        let selector = ctx.sym(sym).name.clone();
-        let symbol_ty = ctx.sym(sym).ty;
-        let tree = self.make.borrow_mut().select(ctx, base, selector);
-        ctx.tree_mut(tree).ty = symbol_ty;
-        tree
+        // Java: TreeMaker.Select(JCExpression base, Symbol field) sets the
+        // selected field symbol in addition to the name/type.
+        self.make.borrow_mut().select_symbol(ctx, base, sym)
     }
 
     /// Resolve and attach a constructor call to a fresh new-class tree.
@@ -3885,6 +3883,9 @@ impl Lower {
             site,
             static_arg_types,
         );
+        // Java: ((MethodSymbol)bsm).asHandle() (Lower.java:2596): the dynamic
+        // method symbol stores a method-handle symbol for its bootstrap.
+        let bsm = crate::code::symbol::as_method_handle(ctx, bsm, false);
         let msym_ty = ctx.sym(msym).ty.expect("method type");
         let indy_type = if let TypeKindData::MethodType {
             argtypes,
@@ -3940,6 +3941,8 @@ impl Lower {
         if let TreeKind::FieldAccess { sym: sym_slot, .. } = &mut ctx.tree_mut(qualifier).kind {
             *sym_slot = Some(dynamic_sym);
         }
+        // Java: qualifier.type = msym.type.asMethodType().restype
+        // (Lower.java:2601).
         let restype = self.types.get_return_type_public(ctx, msym_ty);
         ctx.tree_mut(qualifier).ty = Some(restype);
         qualifier
@@ -4194,6 +4197,7 @@ impl Lower {
         args: List<TreeId>,
         varargs_element: Option<TypeId>,
     ) -> List<TreeId> {
+        let original_args = args.clone();
         let mut args = args;
         if parameters.is_empty() {
             return args;
@@ -4242,6 +4246,11 @@ impl Lower {
             ctx.tree_mut(boxed_args).ty = Some(boxed_ty);
             result = result.append(boxed_args);
         } else {
+            // Java: if (args.length() != 1) throw new AssertionError(args);
+            assert!(
+                args.length() == 1,
+                "AssertionError: boxArgs trailing argument count"
+            );
             let arg = *args.head();
             let translated = self
                 .translate_with_type(ctx, Some(arg), parameter)
@@ -4249,7 +4258,9 @@ impl Lower {
             any_changes |= translated != arg;
             result = result.append(translated);
             if !any_changes {
-                return args;
+                // Java: if (!anyChanges) return _args; (the original argument
+                // list, not the tail consumed by the loop).
+                return original_args;
             }
         }
         let _ = any_changes;

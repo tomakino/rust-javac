@@ -835,3 +835,10 @@ Lead 对执行者的任何汇报持零信任态度:汇报中的断言、数字�
 - 流程:执行者 → Lead(汇总状态/文件清单/diff 摘要/验证结果/风险/下一批计划)→ 负责人 → 同意后 Lead 通知执行者继续/commit;
 - 未获负责人明确同意前:不 commit、不开始新一批、不修改工作树(保持 clean);
 - 审核记录必须包含实际代码读取证据(§32);负责人可要求回退任意批次;
+
+## 34. 验证步骤精简(负责人指示)
+
+- 每批必做(最小验证集):`cargo test --workspace --all-targets` + `cargo clippy --workspace --all-targets`(errors=0)+ `unimplemented/unreachable=0`;报告附真实输出;
+- **双环境验证(有/无 JAVA_HOME)仅在必要场景执行**:本批改动涉及 java_home/JRT/JRTIndex/ct.sym/FileManager/Locations/模块系统环境探测时;其它批次不重复跑;
+- 现有 e2e 回归(module/annotation/constant_field)默认环境通过即可;仅当上述环境相关文件被改动时补无 JAVA_HOME 复跑;
+- 精简不降低真实性:所有『通过』结论仍必须来自本地真实命令输出;虚报仍视为严重违规。

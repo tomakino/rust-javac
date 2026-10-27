@@ -602,7 +602,7 @@ pub(crate) fn new_error_type_for_class(ctx: &mut CompilerContext, tsym: SymbolId
 }
 
 pub(crate) fn no_type_id(ctx: &mut CompilerContext) -> TypeId {
-    ctx.alloc_type(Type::new(TypeTag::NONE, None, TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::NoType }))
+    ctx.no_type_id()
 }
 
 /// Java: public ClassSymbol enterClass(ModuleSymbol msym, Name name,

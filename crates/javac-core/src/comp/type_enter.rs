@@ -1912,7 +1912,11 @@ impl TypeEnter {
                 while current.non_empty() {
                     let rf = *current.head();
                     current = current.tail();
-                    if tree_info::name(ctx, rf) == Some(name.clone()) {
+                    if let TreeKind::VariableDecl {
+                        name: rf_name, ..
+                    } = &ctx.tree(rf).kind
+                        && *rf_name == name
+                    {
                         found = Some(rf);
                         break;
                     }
@@ -2363,13 +2367,6 @@ impl TypeEnter {
         argtypes: List<TypeId>,
     ) -> Option<SymbolId> {
         let scope = class_members_scope(ctx, c)?;
-        let synthetic_type = crate::code::types::new_method_type_2(
-            ctx,
-            argtypes,
-            Some(syms.void_type),
-            List::nil(),
-            Some(syms.method_class),
-        );
         let symbols = ctx.scope_get_symbols_by_name(
             scope,
             &name,
@@ -2377,10 +2374,18 @@ impl TypeEnter {
             &|_| true,
         );
         for sym in symbols {
-            if let Some(ty) = ctx.sym(sym).ty {
-                if self.types.has_same_args(ctx, syms, ty, synthetic_type) {
-                    return Some(sym);
-                }
+            if ctx.sym(sym).kind != crate::code::kinds::Kind::MTH {
+                continue;
+            }
+            let Some(ty) = ctx.sym(sym).ty else {
+                continue;
+            };
+            let parameter_types = ctx.typ(ty).get_parameter_types(ctx);
+            if self
+                .types
+                .is_same_types(ctx, syms, &parameter_types, &argtypes)
+            {
+                return Some(sym);
             }
         }
         None

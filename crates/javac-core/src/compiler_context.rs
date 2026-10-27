@@ -40,6 +40,10 @@ pub struct CompilerContext {
     pub scopes: Arena<Scope>,
     pub attributes: Arena<Attribute>,
     pub directives: Arena<Directive>,
+    /// The canonical Type.noType singleton (Java: Type.noType). The port keeps
+    /// one JCNoType instance per compiler context so identity comparisons of
+    /// enclosing types match the upstream singleton (registered adapter).
+    no_type: Option<crate::ids::TypeId>,
 }
 
 impl CompilerContext {
@@ -65,6 +69,22 @@ impl CompilerContext {
     /// Allocates a type in the type arena and returns its ID.
     pub fn alloc_type(&mut self, ty: Type) -> TypeId {
         TypeId::new(self.types.push(ty))
+    }
+
+    /// The canonical missing type, Type.noType (a per-context singleton).
+    pub fn no_type_id(&mut self) -> TypeId {
+        if let Some(no_type) = self.no_type {
+            return no_type;
+        }
+        let no_type = self.alloc_type(Type::new(
+            crate::code::type_tag::TypeTag::NONE,
+            None,
+            crate::code::type_::TypeKindData::JCNoType {
+                kind: crate::code::type_::JCNoTypeKind::NoType,
+            },
+        ));
+        self.no_type = Some(no_type);
+        no_type
     }
 
     /// Allocates a tree node in the tree arena and returns its ID.

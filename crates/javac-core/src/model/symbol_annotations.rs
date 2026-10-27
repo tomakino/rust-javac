@@ -1128,6 +1128,36 @@ mod tests {
     }
 
     #[test]
+    fn e2e_record_source_compile_and_classfile() {
+        let source = "record Point(int x, int y) {}\n";
+        let (compiler, compiled) = compile_annotation_source(source);
+        assert_eq!(compiler.error_count(), 0);
+        let point = compiled
+            .iter()
+            .find(|class| class.name == "Point")
+            .expect("Point class file");
+        assert!(has_bytes(&point.bytes, b"toString"));
+        assert!(has_bytes(&point.bytes, b"hashCode"));
+        assert!(has_bytes(&point.bytes, b"equals"));
+        assert!(has_bytes(&point.bytes, b"Record"));
+        assert_eq!(compiled.len(), 1);
+    }
+
+    #[test]
+    fn e2e_sealed_source_compile_and_classfile() {
+        let source = "sealed interface Shape permits Circle, Square {}\nfinal class Circle implements Shape {}\nfinal class Square implements Shape {}\n";
+        let (compiler, compiled) = compile_annotation_source(source);
+        assert_eq!(compiler.error_count(), 0);
+        let shape = compiled
+            .iter()
+            .find(|class| class.name == "Shape")
+            .expect("Shape class file");
+        assert!(has_bytes(&shape.bytes, b"PermittedSubclasses"));
+        assert!(compiled.iter().any(|class| class.name == "Circle"));
+        assert!(compiled.iter().any(|class| class.name == "Square"));
+        assert_eq!(compiled.len(), 3);
+    }
+    #[test]
     fn e2e_annotation_interface_and_usage_compile() {
         let source = "@interface A { int value() default 7; String name() default \"d\"; }\n@A(3) class C { static final int K = 3; }\n";
         let (mut compiler, compiled) = compile_annotation_source(source);
