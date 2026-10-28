@@ -2133,10 +2133,30 @@ impl Check {
             && !is_record_field
             && (ctx.sym(s).flags_field & crate::code::flags::GENERATED_MEMBER as i64) != 0
         {
-            // Java: Check.java:2988-3060 removes annotations propagated to the
-            // generated record members; they are not applicability errors. The
-            // removal pass is registered as a TODO, so skip their validation.
-            return Ok(());
+            // Java: Check.java:3068-3074: @SafeVarargs on a compiler-generated
+            // record accessor is validated (and rejected unless the accessor is
+            // varargs); all other annotations propagated to generated record
+            // members are not applicability errors.
+            let trust_me_tsym = ctx.typ(syms.trust_me_type).tsym;
+            let is_trust_me = match &ctx.tree(a).kind {
+                TreeKind::Annotation {
+                    annotation_type: Some(annotation_type),
+                    ..
+                } => ctx
+                    .tree(*annotation_type)
+                    .ty
+                    .and_then(|ty| ctx.typ(ty).tsym)
+                    == trust_me_tsym,
+                _ => false,
+            };
+            let is_generated_accessor = is_trust_me
+                && ctx.sym(s).kind == crate::code::kinds::Kind::MTH
+                && declaration_tree
+                    .map(|declaration_tree| ctx.tree(declaration_tree).has_tag(Tag::METHODDEF))
+                    .unwrap_or(false);
+            if !is_generated_accessor {
+                return Ok(());
+            }
         }
         let _ = is_record_member;
         let annotation_type_ty = match &ctx.tree(a).kind {
@@ -2405,15 +2425,25 @@ impl Check {
             _ => return Ok(Vec::new()),
         };
         let mut targets: Vec<Name> = Vec::new();
+        let mut unknown = false;
         for value in values {
             let enum_value = match &ctx.attr(value).kind {
                 crate::code::attribute::AttributeKind::Enum { value } => *value,
                 _ => return Ok(Vec::new()),
             };
             let Some(enum_value) = enum_value else {
-                return Ok(Vec::new());
+                // The classfile deproxy could not resolve this ElementType
+                // constant. javac's UnknownEnumConstant recovery keeps the
+                // synthetic constant; the ported Attribute.Enum has no symbol,
+                // so assume the annotation is applicable instead of rejecting
+                // a valid target.
+                unknown = true;
+                continue;
             };
             targets.push(ctx.sym(enum_value).name.clone());
+        }
+        if unknown {
+            return Ok(self.default_target_meta_info());
         }
         Ok(targets)
     }
@@ -9627,7 +9657,7 @@ mod tests {
         let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
         let lint = crate::code::lint::Lint::instance(&mut jcontext);
         let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
-        let check = Rc::new(RefCell::new(Check::new(
+        let check = Rc::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
             Rc::clone(&diags),
@@ -9637,7 +9667,7 @@ mod tests {
             Rc::clone(&lint),
             Rc::clone(&deferred),
             Rc::clone(&syms),
-        )));
+        ));
         crate::comp::check::attach_self(&check);
         attach_self(&check);
         let (object_type, string_type) = {
@@ -9692,7 +9722,7 @@ mod tests {
         });
         // The listener is registered; the immediate check also consults the
         // context once.
-        check.borrow().check_type(
+        check.check_type(
             &mut ctx,
             &syms.borrow(),
             0,
@@ -11497,7 +11527,7 @@ mod diagnostics_tests {
         let diags = Rc::new(crate::util::jc_diagnostic::Factory::new(messages, "compiler"));
         let lint = crate::code::lint::Lint::instance(&mut jcontext);
         let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
-        let check = Rc::new(RefCell::new(Check::new(
+        let check = Rc::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
             diags,
@@ -11507,11 +11537,9 @@ mod diagnostics_tests {
             lint,
             deferred,
             Rc::clone(&syms),
-        )));
+        ));
         attach_self(&check);
-        check
-            .borrow()
-            .set_profile(Rc::new(crate::jvm::profile::Profile::COMPACT1));
+        check.set_profile(Rc::new(crate::jvm::profile::Profile::COMPACT1));
         let object_type = syms.borrow().object_type;
         let symbol = ctx.typ(object_type).tsym.expect("object symbol");
         ctx.sym_mut(symbol).flags_field |= crate::code::flags::PROPRIETARY
@@ -11523,8 +11551,8 @@ mod diagnostics_tests {
                 filter: None,
             },
         );
-        check.borrow().check_sun_api(&ctx, -1, symbol);
-        check.borrow().check_profile(&ctx, -1, symbol);
+        check.check_sun_api(&ctx, -1, symbol);
+        check.check_profile(&ctx, -1, symbol);
         let diagnostics = log.borrow_mut().take_deferred_diagnostics();
         log.borrow_mut().pop_diagnostic_handler();
         let codes: Vec<String> = diagnostics

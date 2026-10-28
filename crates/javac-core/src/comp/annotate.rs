@@ -2597,7 +2597,7 @@ struct UnusedFileManager;
         )));
         let types = Rc::new(Types::with_names(Rc::clone(&names)));
         let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
-        let check = Rc::new(RefCell::new(Check::new(
+        let check = Rc::new(Check::new(
             Rc::clone(&names),
             Rc::clone(&log),
             Rc::clone(&diags),
@@ -2607,7 +2607,7 @@ struct UnusedFileManager;
             Rc::clone(&lint),
             Rc::clone(&deferred),
             Rc::clone(&syms),
-        )));
+        ));
         crate::comp::check::attach_self(&check);
         let make = Rc::new(RefCell::new(TreeMaker::new(Some(Rc::clone(&names)))));
         let type_envs = Rc::new(RefCell::new(TypeEnvs::new()));
@@ -2651,7 +2651,7 @@ struct UnusedFileManager;
             Rc::clone(&annotate_cell),
             Rc::clone(&todo)
         )));
-        let basic_handler = Rc::clone(&check.borrow().basic_handler);
+        let basic_handler = Rc::clone(&check.basic_handler);
         let infer = crate::comp::infer::Infer::new(
             &mut ctx,
             Feature::GRAPH_INFERENCE.allowed_in_source(Source::JDK17),

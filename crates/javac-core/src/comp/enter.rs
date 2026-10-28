@@ -1642,7 +1642,7 @@ mod tests {
         let types = Rc::new(crate::code::types::Types::with_names(Rc::clone(&harness.names)));
         let lint = crate::code::lint::Lint::instance(&mut harness.context);
         let deferred = Rc::new(RefCell::new(DeferredLintHandler::new()));
-        let chk = Rc::new(RefCell::new(Check::new(
+        let chk = Rc::new(Check::new(
             Rc::clone(&harness.names),
             Rc::clone(&harness.log),
             Rc::clone(&harness.diags),
@@ -1652,7 +1652,7 @@ mod tests {
             lint,
             Rc::clone(&deferred),
             Rc::clone(&syms),
-        )));
+        ));
         crate::comp::check::attach_self(&chk);
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let todo = crate::comp::todo::Todo::instance(&mut harness.context);
