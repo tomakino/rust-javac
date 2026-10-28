@@ -816,10 +816,13 @@ impl TypeEnter {
         if ctx.sym(tsym).kind == Kind::TYP {
             let named_scope =
                 compilation_unit_named_import_scope(ctx, toplevel(env)).expect("named scope");
+            // Java: tsym.owner.members() — the owner is a package for
+            // top-level imports and a class for nested-class imports; both
+            // symbol kinds expose their members scope through Symbol.members().
             let owner_members = ctx
                 .sym(tsym)
                 .owner
-                .and_then(|owner| class_members_scope(ctx, owner))
+                .and_then(|owner| ctx.sym(owner).members())
                 .expect("owner members");
             let new_scope = ctx.scope_import_type(named_scope, owner_members, owner_members, tsym);
             set_import_scope(ctx, tree, new_scope);

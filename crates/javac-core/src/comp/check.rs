@@ -7414,12 +7414,12 @@ impl Check {
             let Some(import_scope) = import_scope else {
                 continue;
             };
-            let scope_snapshot = ctx.scope(import_scope).clone();
-            let candidates = scope_snapshot.get_symbols(
+            let candidates = ctx.scope_get_symbols_ctx(
                 import_scope,
                 crate::code::scope::LookupKind::NON_RECURSIVE,
                 &|_| true,
-                ctx,
+                &self.types,
+                syms,
             );
             let symbols: Vec<SymbolId> = candidates
                 .into_iter()
@@ -10404,6 +10404,9 @@ mod diagnostics_tests {
         let mut files = Vec::new();
         for (name, text) in sources {
             let file = src.join(name);
+            if let Some(parent) = file.parent() {
+                std::fs::create_dir_all(parent).expect("source parent");
+            }
             std::fs::write(&file, text).expect("write source");
             files.push(file);
         }
@@ -10971,6 +10974,31 @@ mod diagnostics_tests {
     fn nested_resolve_completion_compiles() {
         let (_compiler, diagnostics) = compile_with_diagnostics(
             &[("T.java", "class T { class A { B f; } class B { int x; } }\n")],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    }
+    #[test]
+    fn cross_package_import_compiles() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[
+                ("p/C.java", "package p; public class C {}\n"),
+                ("q/D.java", "package q; import p.C; class D { C c; }\n"),
+            ],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    }
+
+    #[test]
+    fn nested_class_import_compiles() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[
+                ("p/Outer.java", "package p; public class Outer { public static class Inner {} }\n"),
+                ("q/E.java", "package q; import p.Outer.Inner; class E { Inner i; }\n"),
+            ],
             |_options| {},
         );
         let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();

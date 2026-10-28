@@ -143,3 +143,10 @@
 - `MemberEnter.env: Option<Rc<Env>>` → `RefCell<Option<Rc<Env>>>`;读 `borrow().clone()`、写 `borrow_mut()`,短借;成员方法 `&mut self`→`&self`(12 处 + visit_tree);全仓 `member_enter.borrow_mut()`→`borrow()`(含跨行 2 处)。
 - 测试:1149 passed / 0 failed(一次并发 flaky `guard_effectively_final_uses_guard_fragment` 重跑通过并如实记录);clippy 0/205;unimplemented 0;3 files changed, 34 insertions(+), 44 deletions(-)。
 - gson:MemberEnter 重入已解除,新 panic `type_enter.rs:823` `import_named` 的 `class_members_scope(ctx, tsym).expect("type members")`(owner.members 未建立),栈 import_named←do_import←resolve_imports←run_imports_phase;登记 A3f(imports 阶段需完成 owner 的 members/等价处理),按指令停手,opt-in gson 测试暂不入库。
+
+### A3f import_named 的 owner members(完成;gson 前进到 A3g check_imports_unique 无 Attr 完成)
+- `import_named` 的 owner members 改为通用 `ctx.sym(owner).members()`(包/类都可用,上游 tsym.owner.members() 语义),不再假定 class;`import_named_static` 仍只接受类。
+- `check_imports_unique` 的 scope 枚举从 `Scope::get_symbols`(FilterImportScope 断言路径)改为 `CompilerContext::scope_get_symbols_ctx`(Types/Symtab 感知,上游 Scope.getSymbols 的 FilterImportScope 分派)。
+- 测试:新增 `cross_package_import_compiles`(`package p; public class C{}` + `package q; import p.C; class D{C c;}`) 与 `nested_class_import_compiles`(`import p.Outer.Inner;`) 通过;diagnostics 测试辅助支持嵌套子目录。
+- 验收:1151 passed / 0 failed;clippy 0/205;unimplemented 0;2 files changed, 35 insertions(+), 4 deletions(-)。
+- gson 80 文件:前进到 `TypeEnter::complete`(type_enter.rs:247 `attr.borrow_mut()`),栈 complete_symbol←complete_class_symbol←scope_get_symbols_ctx(FilterImportScope completion)←check_imports_unique;即 check_imports_unique 在 Attr 借用期触发无 Attr 完成,登记 A3g(需把 finish_imports 的 Attr 传进 check_imports_unique/scope_get_symbols_ctx),按指令停手。
