@@ -1134,6 +1134,17 @@ impl Types {
         recurse: bool,
     ) -> TypeId {
         match &ctx.typ(t).kind {
+            TypeKindData::ArrayType { elemtype, .. } => {
+                // Java: StructuralTypeMapping.visitArrayType erases the element
+                // type and rebuilds the array type when it changed.
+                let elem = elemtype.expect("array element type");
+                let erased = self.erasure(ctx, syms, elem);
+                if erased == elem {
+                    t
+                } else {
+                    self.make_array_type(ctx, syms, erased)
+                }
+            }
             TypeKindData::WildcardType { .. } => {
                 let upper = self.wild_upper_bound(ctx, syms, t);
                 self.erasure_recurse(ctx, syms, upper, recurse)

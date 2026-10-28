@@ -188,5 +188,15 @@ Date: 2026-10-28
 
 **验证**（真实输出）：`cargo test --workspace --all-targets` → `828 passed; 0 failed`；`cargo clippy --workspace --all-targets` → `Finished`（errors=0）；gson_probe → `gson files=80 errors=0 classes=207`，`test result: ok`。临时探针全部删除（grep `[ALLOC17141]/[SC30113]/[UNWIND]/[LAB]/[CASE]/[WC]/[LN]/[ES]/[SELFENTER]/[INNER]/FNSTACK/fn_enter/[GEN]/[STAGE]/[PHASE]` = 0）。未提交。
 
+## 12. A3m 续（四）：gson 生成 class 运行时验证通过（2026-10-29 00:14，执行者）
+
+Smoke 输出 `{"a":1,"b":2}`（exit 0），gson 生成的 class 可在 JDK 17 上加载并运行。根因与修复：
+
+1. **常量池父子顺序（32769）**：`PoolWriter.write_constant` 的子条目必须经 `write_if_needed` 入队、父条目先写完再由外层 FIFO drain；`put_name`/`put_descriptor` 直接落盘会把子条目写进父条目中间，index 与物理顺序错位（32769 是读出的垃圾索引）。已把 6 处子条目改为入队，`Module` 分支恢复 tag 先写。
+2. **数组元素擦除**：`Types.erasure` 的 `erasure_visit` 缺 `ArrayType` 分支，`T[]`/`E[]` 未擦除，产生 `([TT;)`、`[TE;` 非法签名（10 个类）。按上游 `StructuralTypeMapping.visitArrayType` 补上。
+3. **StackMapTable 帧压缩边界**：`StackMapTableFrame::get_instance` 的 append/chop 用 `(-MAX..0)`/`(0..MAX)`（含 -MAX），上游 `ClassWriter.getStackMapFrame`（ClassWriter.java:1400/1409）是严格 `-MAX < diff < 0`、`0 < diff < MAX`。`getAdapter` 的 pc=213（prev 6 → 10，diff=-4）因此被误判 Append 4（只写 4 个 locals），baseline 是 Full（10 个），SMT 长度 70 vs 90。改为严格边界后 Full 10，SMT 正常。
+
+**验证**（真实输出）：`gson files=80 errors=0 classes=207`；`java -Xverify:all` 逐类加载 **207/207**；`javac` 编译 Smoke 成功；`java -Xverify:all Smoke` → **`{"a":1,"b":2}`（exit 0）**；`cargo test --workspace --all-targets` → 828 passed；`cargo clippy` → Finished（errors=0）。探针 grep=0。未提交。
+
 
 

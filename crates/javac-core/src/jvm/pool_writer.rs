@@ -162,7 +162,7 @@ impl PoolWriter {
     ) -> i32 {
         let erased = self.types.erasure(ctx, syms, t);
         let name = self.type_sig(ctx, syms, erased);
-        self.put_name(name)
+        self.write_if_needed(ctx, syms, PoolConstantRef::Utf8(name))
     }
 
     /// Put a symbol descriptor into the pool.
@@ -423,13 +423,13 @@ impl PoolWriter {
                 self.pool.poolbuf.append_byte(class_file::CONSTANT_CLASS);
                 let name_index = if ctx.typ(ty).has_tag(TypeTag::ARRAY) {
                     let name = self.type_sig(ctx, syms, ty);
-                    self.put_name(name)
+                    self.write_if_needed(ctx, syms, PoolConstantRef::Utf8(name))
                 } else {
                     let tsym = ctx.typ(ty).tsym.expect("class type symbol");
                     let flat = ctx.sym(tsym).flat_name();
                     let external = class_file::externalize_name(&flat);
                     let name = self.names.from_utf(&external);
-                    self.put_name(name)
+                    self.write_if_needed(ctx, syms, PoolConstantRef::Utf8(name))
                 };
                 self.pool.poolbuf.append_char(name_index);
                 if ctx.typ(ty).has_tag(TypeTag::CLASS)
@@ -459,13 +459,13 @@ impl PoolWriter {
                 let external = class_file::externalize_name(&flat);
                 let name = self.names.from_utf(&external);
                 self.pool.poolbuf.append_byte(class_file::CONSTANT_PACKAGE);
-                let name_index = self.put_name(name);
+                let name_index = self.write_if_needed(ctx, syms, PoolConstantRef::Utf8(name));
                 self.pool.poolbuf.append_char(name_index);
             }
             PoolConstantRef::Module(module) => {
-                let name = ctx.sym(module).name.clone();
-                let mod_name = self.put_name(name);
                 self.pool.poolbuf.append_byte(class_file::CONSTANT_MODULE);
+                let name = ctx.sym(module).name.clone();
+                let mod_name = self.write_if_needed(ctx, syms, PoolConstantRef::Utf8(name));
                 self.pool.poolbuf.append_char(mod_name);
             }
             PoolConstantRef::Basic(basic) => {
@@ -483,7 +483,7 @@ impl PoolWriter {
                     }
                     PoolKey::String(text) => {
                         let name = self.names.from_string(&text);
-                        let name_index = self.put_name(name);
+                        let name_index = self.write_if_needed(ctx, syms, PoolConstantRef::Utf8(name));
                         self.pool.poolbuf.append_char(name_index);
                     }
                     _ => panic!("AssertionError: unexpected basic constant"),
@@ -507,7 +507,7 @@ impl PoolWriter {
             }
             PoolConstantRef::NameAndType(nt) => {
                 self.pool.poolbuf.append_byte(class_file::CONSTANT_NAMEANDTYPE);
-                let name_index = self.put_name(nt.name.clone());
+                let name_index = self.write_if_needed(ctx, syms, PoolConstantRef::Utf8(nt.name.clone()));
                 self.pool.poolbuf.append_char(name_index);
                 let descriptor = self.put_descriptor(ctx, syms, nt.type_);
                 self.pool.poolbuf.append_char(descriptor);

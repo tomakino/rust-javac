@@ -5806,14 +5806,13 @@ impl Lower {
             _ => panic!("expected an enhanced for loop"),
         };
         let expr_ty = ctx.tree(expr).ty.expect("loop expression type");
-        let elem_ty = {
-            let syms = self.syms.borrow();
-            self.types.elemtype(ctx, &syms, expr_ty)
-        };
-        if ctx.typ(elem_ty).has_tag(TypeTag::NONE) {
-            self.lower_iterable_foreach_loop(ctx, tree);
-        } else {
+        // Java: Lower.visitForeachLoop tests types.elemtype(expr.type) == null:
+        // only array types have an element type here; a List/Iterable takes the
+        // iterator path even though elemtype returns the type itself for them.
+        if ctx.typ(expr_ty).has_tag(TypeTag::ARRAY) {
             self.lower_array_foreach_loop(ctx, tree);
+        } else {
+            self.lower_iterable_foreach_loop(ctx, tree);
         }
     }
 

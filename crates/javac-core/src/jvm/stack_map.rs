@@ -285,7 +285,9 @@ impl StackMapTableFrame {
             if diff_length == 0 {
                 return StackMapTableFrame::Same { offset_delta };
             }
-            if (-MAX_LOCAL_LENGTH_DIFF..0).contains(&diff_length) {
+            // Java: -MAX_LOCAL_LENGTH_DIFF < diff_length < 0 (strict; a
+            // difference of exactly -MAX is a full frame).
+            if diff_length > -MAX_LOCAL_LENGTH_DIFF && diff_length < 0 {
                 let mut local_diff = Vec::new();
                 let mut i = prev_locals.len();
                 while i < locals.len() {
@@ -298,7 +300,8 @@ impl StackMapTableFrame {
                     locals: local_diff,
                 };
             }
-            if (0..MAX_LOCAL_LENGTH_DIFF).contains(&diff_length) {
+            // Java: 0 < diff_length < MAX_LOCAL_LENGTH_DIFF (strict).
+            if diff_length > 0 && diff_length < MAX_LOCAL_LENGTH_DIFF {
                 return StackMapTableFrame::Chop {
                     frame_type: SAME_FRAME_EXTENDED - diff_length,
                     offset_delta,
