@@ -192,12 +192,12 @@ pub struct Resolve {
     pub default_method_check: Rc<RefCell<dyn MethodCheck>>,
     /// Java: WriteableScope polymorphicSignatureScope (Resolve.java:118; lazily
     /// created on first use because the port Resolve has no Symtab field, Porting rules).
-    pub polymorphic_signature_scope: Option<ScopeId>,
+    pub polymorphic_signature_scope: std::cell::Cell<Option<ScopeId>>,
     /// Java: MethodResolutionContext currentResolutionContext (Resolve.java:5005):
     /// the step read by accessInternal for the deferred argument-type mapping
     /// (the resolution context is otherwise passed explicitly; registered adapter:
     /// the port stores the immutable step while a method check runs).
-    pub current_resolution_step: Option<MethodResolutionPhase>,
+    pub current_resolution_step: std::cell::Cell<Option<MethodResolutionPhase>>,
     /// The Attr service used by the deferred argument-type mapping in
     /// accessInternal (Java: methodLogResolveHelper/DeferredAttr; the port wires
     /// the Attr cell after construction — registered adapter).
@@ -209,7 +209,7 @@ pub struct Resolve {
     /// Java: MethodResolutionContext currentResolutionContext.methodCheck (the
     /// applicability check of the active lookup; the port stores it next to
     /// current_resolution_step for signatureMoreSpecific; registered adapter).
-    pub current_method_check: Option<Rc<RefCell<dyn MethodCheck>>>,
+    pub current_method_check: RefCell<Option<Rc<RefCell<dyn MethodCheck>>>>,
     pub verbose_resolution_mode: Vec<VerboseResolutionMode>,
     pub dump_method_reference_search_results: bool,
     pub compact_method_diags: bool,
@@ -289,9 +289,9 @@ impl Resolve {
             allow_modules,
             options,
             default_method_check,
-            polymorphic_signature_scope: None,
-            current_resolution_step: None,
-            current_method_check: None,
+            polymorphic_signature_scope: std::cell::Cell::new(None),
+            current_resolution_step: std::cell::Cell::new(None),
+            current_method_check: RefCell::new(None),
             verbose_resolution_mode,
             dump_method_reference_search_results,
             compact_method_diags,
@@ -344,7 +344,7 @@ impl Resolve {
     /// Java: public boolean isAccessible(Env<AttrContext> env, TypeSymbol c)
     /// and isAccessible(Env, TypeSymbol, boolean checkInner) (Resolve.java:309-375)
     pub fn is_accessible_class(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -357,7 +357,7 @@ impl Resolve {
     /// Java: private boolean isInnerSubClass(ClassSymbol c, Symbol base)
     /// (Resolve.java:376)
     pub fn is_inner_sub_class(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         _env: &Rc<Env<AttrContext>>,
@@ -370,7 +370,7 @@ impl Resolve {
     /// Java: boolean isAccessible(Env<AttrContext> env, Type t)
     /// and (Env, Type, boolean checkInner) (Resolve.java:383-395)
     pub fn is_accessible_type(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -384,7 +384,7 @@ impl Resolve {
     /// Symbol sym) and (Env, Type, Symbol, boolean checkInner)
     /// (Resolve.java:404-460)
     pub fn is_accessible_member(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -480,7 +480,7 @@ impl Resolve {
     /// Java: private boolean notOverriddenIn(Type site, Symbol sym)
     /// (Resolve.java:467-474)
     fn not_overridden_in(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         site: TypeId,
@@ -502,7 +502,7 @@ impl Resolve {
     /// Java: private boolean isProtectedAccessible(Symbol sym, ClassSymbol c,
     /// Type site) (Resolve.java:484-498)
     fn is_protected_accessible(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
@@ -555,7 +555,7 @@ impl Resolve {
     /// (Resolve.java:501) and the AccessibilityChecker SimpleVisitor
     /// (Resolve.java:506-551).
     pub fn check_accessible_type(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -724,7 +724,7 @@ pub(crate) fn method_decl_flags(
 impl Resolve {
     /// Java: R? no direct counterpart: creates a ResolveError symbol.
     pub fn new_resolve_error(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         kind: Kind,
         debug_name: &str,
@@ -761,7 +761,7 @@ impl Resolve {
     ///
     /// Port note: upstream ResolveError.access overrides.
     pub fn resolve_error_access(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         error: SymbolId,
@@ -880,7 +880,7 @@ impl Resolve {
     ///
     /// Port note: upstream getDiagnostic overrides.
     pub fn resolve_error_diagnostic(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         error: SymbolId,
@@ -1228,7 +1228,7 @@ impl Resolve {
     /// Port note: upstream InapplicableSymbolsError.candidateDetails entry.
     #[allow(clippy::too_many_arguments)]
     fn inapplicable_candidate_detail(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -1267,7 +1267,7 @@ impl Resolve {
     /// the methodArguments formatting keeps the ADR 0002 P4 display placeholder.
     #[allow(clippy::too_many_arguments)]
     fn inapplicable_symbol_diagnostic(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         _syms: &Symtab,
         dkind: crate::util::jc_diagnostic::DiagnosticType,
@@ -1346,7 +1346,7 @@ impl Resolve {
     /// Java: SymbolNotFoundError.getDiagnostic (Resolve.java:4022-4102)
     #[allow(clippy::too_many_arguments)]
     fn symbol_not_found_diagnostic(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         _syms: &Symtab,
         absent_error: SymbolId,
@@ -1460,7 +1460,7 @@ impl Resolve {
 
     /// Java: SymbolNotFoundError.getLocationDiag (Resolve.java:4009-4017)
     fn location_diag(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         location: SymbolId,
         site: Option<TypeId>,
@@ -1491,7 +1491,7 @@ impl Resolve {
     /// Java: AccessError.getDiagnostic (Resolve.java:4362-4420)
     #[allow(clippy::too_many_arguments)]
     fn access_diagnostic(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         dkind: crate::util::jc_diagnostic::DiagnosticType,
@@ -1591,7 +1591,7 @@ impl Resolve {
     /// Java: InvisibleSymbolError.getDiagnostic (Resolve.java:4430-4480)
     #[allow(clippy::too_many_arguments)]
     fn invisible_diagnostic(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         dkind: crate::util::jc_diagnostic::DiagnosticType,
@@ -1663,7 +1663,7 @@ impl Resolve {
     /// Java: Resolve.inaccessiblePackageReason(Env, PackageSymbol)
     /// (Resolve.java:4425-4494)
     fn inaccessible_package_reason(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env_snapshot: &crate::code::symbol::ResolveEnvSnapshot,
@@ -1770,7 +1770,7 @@ impl Resolve {
     /// Java: public boolean isAccessible(Env, TypeSymbol) — the loadClass call
     /// site uses the one-argument overload.
     fn class_accessible(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -1782,7 +1782,7 @@ impl Resolve {
     /// Java: Symbol findField(Env, Type site, Name name, TypeSymbol c)
     /// (Resolve.java:1432-1471)
     fn find_field(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -1854,7 +1854,7 @@ impl Resolve {
 
     /// Java: Symbol findVar(Env, Name) (Resolve.java:1484-1560)
     fn find_var(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2002,7 +2002,7 @@ impl Resolve {
 impl Resolve {
     /// Java: Symbol findImmediateMemberType(...) (Resolve.java:2221-2235)
     fn find_immediate_member_type(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2035,7 +2035,7 @@ impl Resolve {
 
     /// Java: Symbol findInheritedMemberType(...) (Resolve.java:2244-2274)
     fn find_inherited_member_type(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2073,7 +2073,7 @@ impl Resolve {
 
     /// Java: Symbol findMemberType(...) (Resolve.java:2281-2294)
     fn find_member_type(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2092,7 +2092,7 @@ impl Resolve {
     /// Java: Symbol findGlobalType(Env, Scope, Name, RecoveryLoadClass)
     /// (Resolve.java:2296-2307)
     fn find_global_type(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2129,7 +2129,7 @@ impl Resolve {
     /// Java: Symbol findTypeVar(Env, Name, boolean staticOnly)
     /// (Resolve.java:2309-2327)
     fn find_type_var(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
@@ -2163,7 +2163,7 @@ impl Resolve {
 
     /// Java: Symbol findType(Env, Name) (Resolve.java:2329-2400)
     fn find_type(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2319,7 +2319,7 @@ impl Resolve {
 impl Resolve {
     /// Java: new AccessError(env, site, sym) (Resolve.java:4351-4360)
     fn new_access_error(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         _syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2348,7 +2348,7 @@ impl Resolve {
 
     /// Java: new AmbiguityError(sym1, sym2) (Resolve.java:4548-4577)
     fn new_ambiguity_error(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         sym1: SymbolId,
         sym2: SymbolId,
@@ -2366,7 +2366,7 @@ impl Resolve {
 
     /// Java: new StaticError(sym) (Resolve.java:4521-4528)
     fn new_static_error(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         sym: SymbolId,
     ) -> SymbolId {
@@ -2384,7 +2384,7 @@ impl Resolve {
     /// baseSymbol/poolKey; the port copies the fields (baseSymbol/poolKey have
     /// no local consumer yet; registered Porting rules adapter).
     fn clone_symbol_with_owner(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         sym: SymbolId,
         new_owner: SymbolId,
@@ -2483,7 +2483,7 @@ impl Resolve {
     /// Java: Symbol loadClass(Env, Name, RecoveryLoadClass)
     /// (Resolve.java:2049-2064)
     fn load_class(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2540,7 +2540,7 @@ impl Resolve {
     ///
     /// Upstream: Resolve.java:2073-2091.
     fn do_recovery_load_class(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2622,7 +2622,7 @@ impl Resolve {
     /// Upstream: Resolve.java:2152-2193.
     #[allow(clippy::too_many_arguments)]
     fn lookup_invisible_symbol(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2685,7 +2685,7 @@ impl Resolve {
     /// Java: private Symbol createInvisibleSymbolError(Env, Symbol)
     /// (Resolve.java:2195-2201).
     fn create_invisible_symbol_error(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2711,7 +2711,7 @@ impl Resolve {
     /// Java: namedImportScopeRecovery/starImportScopeRecovery (Resolve.java
     /// 2087-2122): importScope.findFirst(Convert.shortName(name), predicate).
     fn recovery_import_scope_lookup(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         _syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2763,7 +2763,7 @@ impl Resolve {
 
     /// Java: Symbol lookupPackage(Env, Name) (Resolve.java:2124-2150)
     fn lookup_package(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2868,7 +2868,7 @@ impl Resolve {
     /// Java: private Symbol checkRestrictedType(pos, bestSoFar, name)
     /// (Resolve.java:2515-2532)
     fn check_restricted_type(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         mut best_so_far: SymbolId,
@@ -2922,7 +2922,7 @@ impl Resolve {
 impl Resolve {
     /// Java: Symbol findIdent(pos, Env, Name, KindSelector) (Resolve.java:2401)
     pub fn find_ident(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
@@ -2938,7 +2938,7 @@ impl Resolve {
     /// Java: Symbol findIdentInternal(Env, Name, KindSelector)
     /// (Resolve.java:2405-2423)
     fn find_ident_internal(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -2973,7 +2973,7 @@ impl Resolve {
     /// KindSelector) (Resolve.java:2435-2440)
     #[allow(clippy::too_many_arguments)]
     pub fn find_ident_in_package(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
@@ -2990,7 +2990,7 @@ impl Resolve {
     /// KindSelector) (Resolve.java:2441-2470)
     #[allow(clippy::too_many_arguments)]
     fn find_ident_in_package_internal(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -3032,7 +3032,7 @@ impl Resolve {
     /// (Resolve.java:2472-2477)
     #[allow(clippy::too_many_arguments)]
     pub fn find_ident_in_type(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
@@ -3049,7 +3049,7 @@ impl Resolve {
     /// (Resolve.java:2478-2513)
     #[allow(clippy::too_many_arguments)]
     fn find_ident_in_type_internal(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -3135,7 +3135,7 @@ impl Resolve {
     /// Java: Symbol accessInternal(...) (Resolve.java:2535-2554)
     #[allow(clippy::too_many_arguments)]
     pub fn access_internal(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
@@ -3170,6 +3170,7 @@ impl Resolve {
                 if let Some(current_argtypes) = argtypes.clone() {
                     let step = self
                         .current_resolution_step
+                        .get()
                         .expect("AssertionError: currentResolutionContext is null");
                     // The caller may already hold the mutable Attr borrow (the
                     // attribution pass); otherwise the installed service cell is
@@ -3229,7 +3230,7 @@ impl Resolve {
     /// (Resolve.java:3866-3880)
     #[allow(clippy::too_many_arguments)]
     fn log_resolve_error(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         error: SymbolId,
@@ -3264,7 +3265,7 @@ impl Resolve {
     /// argtypes, typeargtypes) (Resolve.java:2559-2583)
     #[allow(clippy::too_many_arguments)]
     pub fn access_method(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
@@ -3297,7 +3298,7 @@ impl Resolve {
     /// (Resolve.java:2586-2602)
     #[allow(clippy::too_many_arguments)]
     pub fn access_base(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
@@ -3692,7 +3693,7 @@ impl Candidate {
 /// Java: Resolve.MethodResolutionContext (Resolve.java:4938-5006)
 pub struct MethodResolutionContext {
     /// Java: private List<Candidate> candidates
-    pub(crate) candidates: Vec<Candidate>,
+    pub(crate) candidates: RefCell<Vec<Candidate>>,
     /// Java: MethodResolutionPhase step (null -> None)
     pub step: Option<MethodResolutionPhase>,
     /// Java: private boolean internalResolution
@@ -3720,7 +3721,7 @@ impl MethodResolutionContext {
 ///
     pub fn new() -> MethodResolutionContext {
         MethodResolutionContext {
-            candidates: Vec::new(),
+            candidates: RefCell::new(Vec::new()),
             step: None,
             internal_resolution: false,
             attr_mode: crate::comp::deferred_attr::AttrMode::SPECULATIVE,
@@ -3730,12 +3731,12 @@ impl MethodResolutionContext {
 
     /// Java: void addInapplicableCandidate(Symbol sym, JCDiagnostic details)
     pub fn add_inapplicable_candidate(
-        &mut self,
+        &self,
         sym: SymbolId,
         details: Option<crate::util::jc_diagnostic::JCDiagnostic>,
     ) {
         let step = self.step.expect("resolution step");
-        self.candidates.push(Candidate {
+        self.candidates.borrow_mut().push(Candidate {
             step,
             sym,
             details,
@@ -3744,9 +3745,9 @@ impl MethodResolutionContext {
     }
 
     /// Java: void addApplicableCandidate(Symbol sym, Type mtype)
-    pub fn add_applicable_candidate(&mut self, sym: SymbolId, mtype: TypeId) {
+    pub fn add_applicable_candidate(&self, sym: SymbolId, mtype: TypeId) {
         let step = self.step.expect("resolution step");
-        self.candidates.push(Candidate {
+        self.candidates.borrow_mut().push(Candidate {
             step,
             sym,
             details: None,
@@ -3796,6 +3797,7 @@ impl MethodResolutionContext {
     /// resolveContext.candidates and skips the applicable ones).
     pub fn inapplicable_candidates(&self) -> Vec<Candidate> {
         self.candidates
+            .borrow()
             .iter()
             .filter(|candidate| !candidate.is_applicable())
             .cloned()
@@ -3956,7 +3958,7 @@ pub trait MethodCheck {
     /// List<Type>, Warner)
     #[allow(clippy::too_many_arguments)]
     fn arguments_acceptable(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -3981,7 +3983,7 @@ pub struct OwnedMethodCheck(pub Box<dyn MethodCheck>);
 
 impl MethodCheck for OwnedMethodCheck {
     fn arguments_acceptable(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -4020,7 +4022,7 @@ pub struct NilMethodCheck;
 
 impl MethodCheck for NilMethodCheck {
     fn arguments_acceptable(
-        &mut self,
+        &self,
         _ctx: &mut crate::compiler_context::CompilerContext,
         _syms: &crate::code::symtab::Symtab,
         _types: &crate::code::types::Types,
@@ -4051,7 +4053,7 @@ pub trait AbstractMethodCheck: MethodCheck {
     /// Type actual, Type formal, DeferredAttrContext, Warner)
     #[allow(clippy::too_many_arguments)]
     fn check_arg(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -4083,7 +4085,7 @@ fn formals_head_is_not_varargs(
 /// resolveMethodCheck/MethodReferenceCheck/arityMethodCheck implementations.
 #[allow(clippy::too_many_arguments)]
 pub fn abstract_method_check_arguments_acceptable(
-    this: &mut dyn AbstractMethodCheck,
+    this: &dyn AbstractMethodCheck,
     ctx: &mut crate::compiler_context::CompilerContext,
     syms: &crate::code::symtab::Symtab,
     types: &crate::code::types::Types,
@@ -4408,7 +4410,7 @@ pub struct MethodReferenceCheck {
 impl AbstractMethodCheck for MethodReferenceCheck {
     #[allow(clippy::too_many_arguments)]
     fn check_arg(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -4442,7 +4444,7 @@ impl AbstractMethodCheck for MethodReferenceCheck {
 impl MethodCheck for MethodReferenceCheck {
     #[allow(clippy::too_many_arguments)]
     fn arguments_acceptable(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -4619,7 +4621,7 @@ impl Resolve {
             .clone()
             .unwrap_or_else(|| Rc::new(RefCell::new(NilMethodCheck)));
         {
-            let mut check = method_check.borrow_mut();
+            let check = method_check.borrow_mut();
             check.arguments_acceptable(
                 ctx,
                 syms,
@@ -4654,7 +4656,7 @@ impl Resolve {
     /// Warner warn) (Resolve.java:640-668)
     #[allow(clippy::too_many_arguments)]
     pub fn check_method(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -4694,8 +4696,8 @@ impl Resolve {
             .pending_resolution_phase
             .expect("pending resolution phase");
         resolution_context.step = Some(step);
-        let previous_step = self.current_resolution_step;
-        self.current_resolution_step = Some(step);
+        let previous_step = self.current_resolution_step.get();
+        self.current_resolution_step.set(Some(step));
         // Java: finally { currentResolutionContext = prevContext; } (Resolve.java:647-665).
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.raw_instantiate(
@@ -4717,7 +4719,7 @@ impl Resolve {
                 warn,
             )
         }));
-        self.current_resolution_step = previous_step;
+        self.current_resolution_step.set(previous_step);
         match result {
             Ok(value) => value,
             Err(payload) => std::panic::resume_unwind(payload),
@@ -4807,7 +4809,7 @@ impl Resolve {
     /// (Resolve.java:1562-1665)
     #[allow(clippy::too_many_arguments)]
     pub fn select_best(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -5036,7 +5038,7 @@ Err(MethodCheckFailure::Inference(exception)) => {
     /// accessibility check for members (Resolve A); the full upstream body adds
     /// the protected/private owner walk registered with the Attr.
     fn is_accessible(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -5054,7 +5056,7 @@ Err(MethodCheckFailure::Inference(exception)) => {
     /// Types.overrideEquivalent/Symbol.overrides (registered Symbol).
     #[allow(clippy::too_many_arguments)]
     fn most_specific(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -5216,7 +5218,7 @@ Err(MethodCheckFailure::Inference(exception)) => {
     /// boolean useVarargs) (Resolve.java:1745-1770)
     #[allow(clippy::too_many_arguments)]
     fn signature_more_specific(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -5235,8 +5237,8 @@ Err(MethodCheckFailure::Inference(exception)) => {
         // Java: currentResolutionContext.step = prevResolutionContext.step;
         // currentResolutionContext.methodCheck =
         //     prevResolutionContext.methodCheck.mostSpecificCheck(actuals);
-        resolution_context.step = self.current_resolution_step;
-        resolution_context.method_check = self.current_method_check.as_ref().map(|check| {
+        resolution_context.step = self.current_resolution_step.get();
+        resolution_context.method_check = self.current_method_check.borrow().clone().as_ref().map(|check| {
             let boxed = check.borrow().most_specific_check(actuals.clone());
             let owned: Rc<RefCell<dyn MethodCheck>> =
                 Rc::new(RefCell::new(OwnedMethodCheck(boxed)));
@@ -5282,7 +5284,7 @@ Err(MethodCheckFailure::Inference(exception)) => {
     /// Java: Symbol ambiguityError(Symbol m1, Symbol m2)
     /// (Resolve.java:1772-1780)
     fn ambiguity_error(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         m1: SymbolId,
         m2: SymbolId,
@@ -5305,7 +5307,7 @@ Err(MethodCheckFailure::Inference(exception)) => {
     /// boolean abstractok) (Resolve.java:1777-1800)
     #[allow(clippy::too_many_arguments)]
     pub fn find_method_in_scope(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -5377,7 +5379,7 @@ pub struct ArityMethodCheck;
 
 impl AbstractMethodCheck for ArityMethodCheck {
     fn check_arg(
-        &mut self,
+        &self,
         _ctx: &mut crate::compiler_context::CompilerContext,
         _syms: &crate::code::symtab::Symtab,
         _types: &crate::code::types::Types,
@@ -5398,7 +5400,7 @@ impl AbstractMethodCheck for ArityMethodCheck {
 impl MethodCheck for ArityMethodCheck {
     #[allow(clippy::too_many_arguments)]
     fn arguments_acceptable(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -5460,7 +5462,7 @@ pub struct ResolveMethodCheck {
 impl AbstractMethodCheck for ResolveMethodCheck {
     #[allow(clippy::too_many_arguments)]
     fn check_arg(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -5513,7 +5515,7 @@ impl AbstractMethodCheck for ResolveMethodCheck {
 impl MethodCheck for ResolveMethodCheck {
     #[allow(clippy::too_many_arguments)]
     fn arguments_acceptable(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -5684,7 +5686,7 @@ pub struct MostSpecificCheck {
 impl MethodCheck for MostSpecificCheck {
     #[allow(clippy::too_many_arguments)]
     fn arguments_acceptable(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -5802,7 +5804,7 @@ impl Resolve {
     /// Java: new InapplicableSymbolError(currentResolutionContext)
     /// (Resolve.java:4104-4183)
     fn new_inapplicable_symbol_error(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         resolve_context: &MethodResolutionContext,
         kind: crate::code::kinds::Kind,
@@ -5826,7 +5828,7 @@ impl Resolve {
     /// Java: new InapplicableSymbolsError(currentResolutionContext)
     /// (Resolve.java:4183-4300)
     fn new_inapplicable_symbols_error(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         resolve_context: &MethodResolutionContext,
         kind: crate::code::kinds::Kind,
@@ -5853,7 +5855,7 @@ impl Resolve {
     /// Java: new DiamondError(sym, currentResolutionContext)
     /// (Resolve.java:4313-4350)
     fn new_diamond_error(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         sym: SymbolId,
     ) -> SymbolId {
@@ -5880,7 +5882,7 @@ impl Resolve {
     /// Java: new BadVarargsMethod((ResolveError)bestSoFar.baseSymbol())
     /// (Resolve.java:4617-4650)
     fn new_bad_varargs_method(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         delegated: SymbolId,
     ) -> SymbolId {
@@ -6055,8 +6057,8 @@ pub trait LookupHelper {
     /// phase)
     #[allow(clippy::too_many_arguments)]
     fn lookup(
-        &mut self,
-        rs: &mut Resolve,
+        &self,
+        rs: &Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -6073,8 +6075,8 @@ pub trait LookupHelper {
     /// resolution diagnostic; the other helpers keep the default empty body.
     #[allow(unused_variables)]
     fn debug(
-        &mut self,
-        rs: &mut Resolve,
+        &self,
+        rs: &Resolve,
         ctx: &crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
@@ -6087,8 +6089,8 @@ pub trait LookupHelper {
     /// pos, Symbol location, Symbol sym)
     #[allow(clippy::too_many_arguments)]
     fn access(
-        &mut self,
-        rs: &mut Resolve,
+        &self,
+        rs: &Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -6175,8 +6177,8 @@ impl LookupHelper for BasicLookupHelper {
     }
 
     fn debug(
-        &mut self,
-        rs: &mut Resolve,
+        &self,
+        rs: &Resolve,
         ctx: &crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
@@ -6199,8 +6201,8 @@ impl LookupHelper for BasicLookupHelper {
 
     #[allow(clippy::too_many_arguments)]
     fn lookup(
-        &mut self,
-        rs: &mut Resolve,
+        &self,
+        rs: &Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -6299,8 +6301,8 @@ impl LookupHelper for BasicLookupHelper {
 
     #[allow(clippy::too_many_arguments)]
     fn access(
-        &mut self,
-        rs: &mut Resolve,
+        &self,
+        rs: &Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -6506,7 +6508,7 @@ impl Resolve {
     /// boolean allowBoxing, boolean useVarargs) (Resolve.java:2881-2895)
     #[allow(clippy::too_many_arguments)]
     pub fn find_constructor(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -6549,7 +6551,7 @@ impl Resolve {
     /// boolean useVarargs) (Resolve.java:2920-2990)
     #[allow(clippy::too_many_arguments)]
     pub fn find_diamond(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -6657,7 +6659,7 @@ impl Resolve {
     /// (Resolve.java:2696-2715)
     #[allow(clippy::too_many_arguments)]
     pub fn resolve_method(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -6696,7 +6698,7 @@ impl Resolve {
     /// List<Type> typeargtypes) (Resolve.java:2729-2745)
     #[allow(clippy::too_many_arguments)]
     pub fn resolve_qualified_method(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -6741,7 +6743,7 @@ impl Resolve {
     ///
     /// Port note: upstream resolveInternalField.
     pub fn resolve_internal_field(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -6768,7 +6770,7 @@ impl Resolve {
     /// List<Type> typeargtypes) (Resolve.java:2822-2835)
     #[allow(clippy::too_many_arguments)]
     pub fn resolve_internal_method(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -6828,7 +6830,7 @@ impl Resolve {
     /// (Resolve.java:2844-2860)
     #[allow(clippy::too_many_arguments)]
     pub fn resolve_constructor(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -6872,7 +6874,7 @@ impl Resolve {
     /// List<Type> typeargtypes) (Resolve.java:2868-2880)
     #[allow(clippy::too_many_arguments)]
     pub fn resolve_internal_constructor(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -6931,7 +6933,7 @@ impl Resolve {
     /// (Resolve.java:2914-2932)
     #[allow(clippy::too_many_arguments)]
     pub fn resolve_diamond(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -6980,7 +6982,7 @@ impl Resolve {
 /// Upstream: Resolve.java:4300-4330 (lookupMethod with a helper).
 ///
     pub fn lookup_method_with_check(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -7018,7 +7020,7 @@ impl Resolve {
     ///
     /// Port note: upstream dumpMethodReferenceSearchResults.
     fn dump_method_reference_search_results(
-        &mut self,
+        &self,
         ctx: &crate::compiler_context::CompilerContext,
         reference_tree: TreeId,
         resolve_context: &MethodResolutionContext,
@@ -7031,7 +7033,7 @@ impl Resolve {
         let mut sub_diags: Vec<crate::util::jc_diagnostic::JCDiagnostic> = Vec::new();
         let mut pos = 0i32;
         let mut most_specific_pos = -1i32;
-        for candidate in &resolve_context.candidates {
+        for candidate in resolve_context.candidates.borrow().iter() {
             if resolve_context.step != Some(candidate.step) || !candidate.is_applicable() {
                 continue;
             }
@@ -7103,7 +7105,7 @@ impl Resolve {
     /// Port note: upstream reportVerboseResolutionDiagnostic.
     #[allow(clippy::too_many_arguments)]
     pub fn report_verbose_resolution_diagnostic(
-        &mut self,
+        &self,
         ctx: &crate::compiler_context::CompilerContext,
         syms: &Symtab,
         resolve_context: &MethodResolutionContext,
@@ -7146,7 +7148,7 @@ impl Resolve {
         let mut sub_diags: Vec<crate::util::jc_diagnostic::JCDiagnostic> = Vec::new();
         let mut pos = 0i32;
         let mut most_specific_pos = -1i32;
-        for candidate in &resolve_context.candidates {
+        for candidate in resolve_context.candidates.borrow().iter() {
             if resolve_context.step != Some(candidate.step) {
                 continue;
             }
@@ -7225,7 +7227,7 @@ impl Resolve {
     ///
     /// Port note: upstream getVerboseApplicableCandidateDiag.
     fn get_verbose_applicable_candidate_diag(
-        &mut self,
+        &self,
         ctx: &crate::compiler_context::CompilerContext,
         pos: i32,
         sym: SymbolId,
@@ -7264,7 +7266,7 @@ impl Resolve {
     ///
     /// Port note: upstream getVerboseInapplicableCandidateDiag.
     fn get_verbose_inapplicable_candidate_diag(
-        &mut self,
+        &self,
         ctx: &crate::compiler_context::CompilerContext,
         pos: i32,
         sym: SymbolId,
@@ -7287,7 +7289,7 @@ impl Resolve {
         ))
     }
     pub fn lookup_method(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -7304,10 +7306,10 @@ impl Resolve {
         // currentResolutionContext; try { currentResolutionContext =
         // resolveContext; ... } finally { currentResolutionContext =
         // prevResolutionContext; } (Resolve.java:3696-3714).
-        let previous_step = self.current_resolution_step;
-        self.current_resolution_step = resolve_context.step;
-        let previous_method_check = self.current_method_check.clone();
-        self.current_method_check = resolve_context.method_check.clone();
+        let previous_step = self.current_resolution_step.get();
+        self.current_resolution_step.set(resolve_context.step);
+        let previous_method_check = self.current_method_check.borrow().clone().clone();
+        *self.current_method_check.borrow_mut() = resolve_context.method_check.clone();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut best_so_far = self.method_not_found;
             let steps = method_resolution_steps();
@@ -7320,7 +7322,7 @@ impl Resolve {
                 let prev_phase = resolve_context.step;
                 let prev_best = best_so_far;
                 resolve_context.step = Some(phase);
-                self.current_resolution_step = Some(phase);
+                self.current_resolution_step.set(Some(phase));
                 let sym = helper.lookup(
                     self,
                     ctx,
@@ -7333,13 +7335,13 @@ impl Resolve {
                     phase,
                     resolve_context,
                 );
-                helper.debug(&mut *self, ctx, syms, pos.clone(), &*resolve_context, sym);
+                helper.debug(&*self, ctx, syms, pos.clone(), &*resolve_context, sym);
                 best_so_far = phase.merge_results(ctx, best_so_far, sym);
                 env.info.borrow_mut().pending_resolution_phase =
                     if prev_best == best_so_far { prev_phase } else { Some(phase) };
                 current = current.tail();
             }
-            self.current_resolution_step = resolve_context.step;
+            self.current_resolution_step.set(resolve_context.step);
             helper.access(
                 self,
                 ctx,
@@ -7355,8 +7357,8 @@ impl Resolve {
                 resolve_context,
             )
         }));
-        self.current_resolution_step = previous_step;
-        self.current_method_check = previous_method_check;
+        self.current_resolution_step.set(previous_step);
+        *self.current_method_check.borrow_mut() = previous_method_check;
         match result {
             Ok(sym) => sym,
             Err(payload) => std::panic::resume_unwind(payload),
@@ -7385,7 +7387,7 @@ impl Resolve {
     /// boolean useVarargs) (Resolve.java:1824-1844)
     #[allow(clippy::too_many_arguments)]
     pub fn find_method(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -7431,7 +7433,7 @@ impl Resolve {
     /// (Resolve.java:1844-1900)
     #[allow(clippy::too_many_arguments)]
     fn find_method_full(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -7569,7 +7571,7 @@ impl Resolve {
     /// boolean useVarargs) (Resolve.java:1978-2100)
     #[allow(clippy::too_many_arguments)]
     pub fn find_fun(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -7723,7 +7725,7 @@ impl Resolve {
     /// (Resolve.java:2030-2095).
     #[allow(clippy::too_many_arguments)]
     fn find_fun_in_import_scope(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -7809,15 +7811,15 @@ impl Resolve {
 impl Resolve {
     /// Java: WriteableScope polymorphicSignatureScope (Resolve.java:118/152)
     fn polymorphic_signature_scope_init(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
     ) -> ScopeId {
-        if let Some(scope) = self.polymorphic_signature_scope {
+        if let Some(scope) = self.polymorphic_signature_scope.get() {
             return scope;
         }
         let scope = ctx.scope_create(Some(syms.no_symbol));
-        self.polymorphic_signature_scope = Some(scope);
+        self.polymorphic_signature_scope.set(Some(scope));
         scope
     }
 
@@ -7838,7 +7840,7 @@ impl Resolve {
 /// Upstream: Resolve.java:2764-2770.
 ///
     pub fn find_polymorphic_signature_instance(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -7871,7 +7873,7 @@ impl Resolve {
 /// Upstream: Resolve.java:2772-2812.
 ///
     pub fn find_polymorphic_signature_instance_with_type(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -8008,7 +8010,7 @@ impl ReferenceLookupResult {
         let static_kind = match ctx.sym(sym).kind {
             crate::code::kinds::Kind::MTH | crate::code::kinds::Kind::AMBIGUOUS => {
                 let mut kind = StaticKind::UNDEFINED;
-                for candidate in &resolve_context.candidates {
+                for candidate in resolve_context.candidates.borrow().iter() {
                     if candidate.is_applicable()
                         && Some(candidate.step) == resolve_context.step
                     {
@@ -8429,8 +8431,8 @@ impl LookupHelper for ReferenceLookupHelper {
     }
 
     fn lookup(
-        &mut self,
-        rs: &mut Resolve,
+        &self,
+        rs: &Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -8557,8 +8559,8 @@ impl LookupHelper for ReferenceLookupHelper {
     }
 
     fn access(
-        &mut self,
-        _rs: &mut Resolve,
+        &self,
+        _rs: &Resolve,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -8612,7 +8614,7 @@ impl Resolve {
 /// Upstream: Resolve.java:3746-3752.
 ///
     pub fn enclosing_instance_missing(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -8653,7 +8655,7 @@ impl Resolve {
 /// Upstream: Resolve.java:3760-3800.
 ///
     pub fn resolve_self_containing_internal(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -8729,7 +8731,7 @@ impl Resolve {
 /// Upstream: Resolve.java:3027-3045.
 ///
     pub fn make_reference_lookup_helper(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -8841,7 +8843,7 @@ impl Resolve {
 
     /// Java: Types.skipTypeVars(site, capture=true).
     fn skip_type_vars_capture(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -8872,7 +8874,7 @@ impl Resolve {
 /// Upstream: Resolve.java:3000-3016.
 ///
     pub fn get_member_reference(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -8937,7 +8939,7 @@ impl Resolve {
 /// Upstream: Resolve.java:3071-3130.
 ///
     pub fn resolve_member_reference(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -9064,7 +9066,7 @@ impl Resolve {
     /// Java: ReferenceChooser.result(boundRes, unboundRes)
     #[allow(clippy::too_many_arguments)]
     fn reference_chooser_result(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -9079,7 +9081,7 @@ impl Resolve {
     }
 
     fn reference_chooser_bound_result(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -9106,7 +9108,7 @@ impl Resolve {
 
     #[allow(clippy::too_many_arguments)]
     fn reference_chooser_unbound_result(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -9170,7 +9172,7 @@ impl Resolve {
     }
 
     fn bad_method_reference_error(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         sym: SymbolId,
         unbound_lookup: bool,
@@ -9211,7 +9213,7 @@ impl Resolve {
     ///
     /// Upstream: Resolve.java:2676-2690.
     pub fn resolve_ident(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
@@ -9260,7 +9262,7 @@ impl Resolve {
     /// Upstream: Resolve.java:3724-3775.
     #[allow(clippy::too_many_arguments)]
     pub fn resolve_self(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -9395,7 +9397,7 @@ impl Resolve {
     ///
     /// Upstream: Resolve.java:3777-3790.
     fn prune_interfaces(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -9446,7 +9448,7 @@ impl Resolve {
     /// Upstream: Resolve.java:2461-2480.
 impl Resolve {
     pub(crate) fn find_member_type_pub(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -9479,7 +9481,7 @@ impl Resolve {
     /// Upstream: Resolve.java:3793-3803.
     #[allow(clippy::too_many_arguments)]
     pub fn resolve_self_containing(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -9528,7 +9530,7 @@ impl Resolve {
     /// Upstream: Resolve.java:3845-3852.
     #[allow(clippy::too_many_arguments)]
     pub fn resolve_implicit_this(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         types: &crate::code::types::Types,
@@ -9585,7 +9587,7 @@ impl Resolve {
     ///
     /// Upstream: Resolve.java:2655-2667.
     pub fn check_non_abstract(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         sym: SymbolId,
@@ -9629,7 +9631,7 @@ impl Resolve {
     ///
     /// Upstream: Resolve.java:4520-4530.
     pub fn new_static_error_pub(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         sym: SymbolId,
     ) -> SymbolId {
@@ -9656,7 +9658,7 @@ impl Resolve {
     ///
     /// Upstream: Resolve.java:1042-1060.
     pub fn is_accessible_pub(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         types: &crate::code::types::Types,
@@ -9688,7 +9690,7 @@ impl Resolve {
     ///
     /// Upstream: Resolve.java:3861-3866.
     pub fn log_access_error_internal(
-        &mut self,
+        &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -9835,9 +9837,9 @@ mod tests {
         context.step = Some(MethodResolutionPhase::BASIC);
         context.add_applicable_candidate(sym, TypeId::new(0));
         context.add_inapplicable_candidate(sym, None);
-        assert_eq!(context.candidates.len(), 2);
-        assert!(context.candidates[0].is_applicable());
-        assert!(!context.candidates[1].is_applicable());
+        assert_eq!(context.candidates.borrow().len(), 2);
+        assert!(context.candidates.borrow()[0].is_applicable());
+        assert!(!context.candidates.borrow()[1].is_applicable());
         let deferred = context.deferred_attr_context(
             sym,
             crate::comp::infer::empty_context(),

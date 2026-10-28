@@ -367,7 +367,7 @@ impl Lower {
         let env = self.attr_env.clone().expect("attribution environment");
         let pos = self.make_pos.clone();
         let constructor = {
-            let mut rs = self.rs.borrow_mut();
+            let rs = self.rs.borrow_mut();
             let mut syms = self.syms.borrow_mut();
             let mut attr = self.attr.borrow_mut();
             let chk = self.chk.borrow();
@@ -559,7 +559,7 @@ impl Lower {
         args: List<TypeId>,
     ) -> SymbolId {
         let env = self.attr_env.clone().expect("attribution environment");
-        let mut rs = self.rs.borrow_mut();
+        let rs = self.rs.borrow_mut();
         let mut syms = self.syms.borrow_mut();
         let mut attr = self.attr.borrow_mut();
         let chk = self.chk.borrow();
@@ -3975,7 +3975,7 @@ impl Lower {
                     crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
                 );
                 let type_sym = {
-                    let mut rs = self.rs.borrow_mut();
+                    let rs = self.rs.borrow_mut();
                     let mut syms = self.syms.borrow_mut();
                     rs.find_ident_in_type(
                         ctx,
@@ -3988,7 +3988,7 @@ impl Lower {
                     )
                 };
                 let type_sym = {
-                    let mut rs = self.rs.borrow_mut();
+                    let rs = self.rs.borrow_mut();
                     let mut syms = self.syms.borrow_mut();
                     rs.access_base(
                         ctx,

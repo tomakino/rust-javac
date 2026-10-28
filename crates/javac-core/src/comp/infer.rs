@@ -3244,7 +3244,7 @@ impl Infer {
             .clone()
             .unwrap_or_else(|| Rc::new(RefCell::new(crate::comp::resolve::NilMethodCheck)));
         {
-            let mut check = method_check.borrow_mut();
+            let check = method_check.borrow_mut();
             check
                 .arguments_acceptable(
                     ctx,

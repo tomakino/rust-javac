@@ -685,7 +685,7 @@ impl ArgumentAttr {
         local_env.info.borrow_mut().select_super = is_super;
         let expr_type = ctx.tree(expr_tree).ty.expect("qualifier type");
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
-        let mut rs = rs_rc.borrow_mut();
+        let rs = rs_rc.borrow_mut();
         let chk_rc = Rc::clone(&attr.chk);
         let chk = chk_rc.borrow();
         let types_rc = Rc::clone(&attr.types);

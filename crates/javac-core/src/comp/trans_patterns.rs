@@ -917,7 +917,7 @@ impl TransPatterns {
             let syms = self.syms.borrow_mut();
             let diag_pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
                 Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos)));
-            let mut rs = self.rs.borrow_mut();
+            let rs = self.rs.borrow_mut();
             rs.resolve_internal_method(
                 ctx,
                 &syms,

@@ -299,7 +299,7 @@ fn resolve_url(base: &str, input: &str) -> Result<String, javac_fs::Error> {
         }
     }
     let (authority, base_path) = split_file_url(base)?;
-    let mut relative = input.replace('\\', "/");
+    let relative = input.replace('\\', "/");
     if let Some(rest) = relative.strip_prefix("//") {
         // A UNC reference: the first segment is the host.
         let (host, path) = match rest.find('/') {

@@ -2904,7 +2904,7 @@ impl DeferredAttrService {
         let expr_type = ctx.tree(expr_tree).ty.expect("qualifier type");
         let site = ctx.typ(expr_type).tsym.expect("qualifier type symbol");
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
-        let mut rs = rs_rc.borrow_mut();
+        let rs = rs_rc.borrow_mut();
         let chk_rc = Rc::clone(&attr.chk);
         let chk = chk_rc.borrow();
         let types_rc = Rc::clone(&attr.types);

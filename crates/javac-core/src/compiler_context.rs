@@ -1223,7 +1223,7 @@ mod tests {
     fn prototype_scope_query_with_context_borrow_split() {
         let mut ctx = CompilerContext::new();
         let names = Rc::new(crate::util::names::Names::new(false));
-        let mut syms = crate::code::symtab::Symtab::new(
+        let syms = crate::code::symtab::Symtab::new(
             &mut ctx,
             Rc::clone(&names),
             crate::jvm::target::Target::DEFAULT,
@@ -1321,7 +1321,7 @@ mod tests {
     fn api_complete_symbol_runs_the_completer_and_clears_it() {
         let mut ctx = CompilerContext::new();
         let names = Rc::new(crate::util::names::Names::new(false));
-        let mut syms = crate::code::symtab::Symtab::new(
+        let syms = crate::code::symtab::Symtab::new(
             &mut ctx,
             Rc::clone(&names),
             crate::jvm::target::Target::DEFAULT,

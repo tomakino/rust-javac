@@ -3341,7 +3341,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                             let env = self.flow.attr_env.borrow().clone();
                             env.expect("AssertionError: attrEnv")
                         };
-                        let mut rs = self.flow.rs.borrow_mut();
+                        let rs = self.flow.rs.borrow_mut();
                         let mut syms = self.flow.syms.borrow_mut();
                         let location = ctx.typ(site).tsym.expect("close site symbol");
                         rs.resolve_qualified_method(

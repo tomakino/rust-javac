@@ -1242,7 +1242,7 @@ impl AnnotateServices {
             _ => panic!("expected an identifier"),
         };
         let method = {
-            let mut resolve = self.resolve.borrow_mut();
+            let resolve = self.resolve.borrow_mut();
             let chk = self.chk.borrow();
             let infer = Rc::clone(&self.infer);
             let location = env
