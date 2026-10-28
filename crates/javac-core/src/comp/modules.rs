@@ -299,6 +299,33 @@ impl Modules {
         self.log.borrow().nerrors == start_errors
     }
 
+    /// Returns the completer of the unnamed module after loading the module
+    /// paths into the symbol table.
+    ///
+    /// Port adapter: the upstream getUnnamedModuleCompleter calls
+    /// moduleFinder.findAllModules() before returning the completer; the port
+    /// calls it at each installation point so java.se and the other system
+    /// modules exist before setupAllModules computes the observable graph.
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler services.
+    ///
+    /// # Returns
+    ///   - the unnamed module completer.
+    ///
+    /// # Panics
+    ///   - the Modules value is not registered yet.
+    fn get_unnamed_module_completer(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+    ) -> CompleterRef {
+        self.module_finder.borrow_mut().find_all_modules(ctx, syms);
+        Rc::new(RefCell::new(UnnamedModuleCompleter {
+            modules: self.self_ref.upgrade().expect("Modules self"),
+        }))
+    }
+
     /// Java: public Completer getCompleter() (Modules.java:281-283).
     pub fn get_completer(self: &Rc<Modules>) -> CompleterRef {
         Rc::new(RefCell::new(MainCompleter {
@@ -657,11 +684,8 @@ impl Modules {
             }
             let unnamed = syms.unnamed_module;
             if module_source_location(ctx, unnamed).is_none() {
-                ctx.sym_mut(unnamed).completer = Some(Rc::new(RefCell::new(
-                    UnnamedModuleCompleter {
-                        modules: self.self_ref.upgrade().expect("Modules self"),
-                    },
-                )));
+                ctx.sym_mut(unnamed).completer =
+                    Some(self.get_unnamed_module_completer(ctx, syms));
                 set_module_source_location(
                     ctx,
                     unnamed,
@@ -716,13 +740,8 @@ impl Modules {
                                 self.check_no_all_module_path();
                             }
                         } else {
-                            set_module_completer(
-                                ctx,
-                                default,
-                                Some(Rc::new(RefCell::new(UnnamedModuleCompleter {
-                                    modules: self.self_ref.upgrade().expect("Modules self"),
-                                }))),
-                            );
+                            let completer = self.get_unnamed_module_completer(ctx, syms);
+                            set_module_completer(ctx, default, Some(completer));
                             set_module_source_location(
                                 ctx,
                                 default,
@@ -814,11 +833,8 @@ impl Modules {
         if let Some(default) = default
             && default != syms.unnamed_module
         {
-            ctx.sym_mut(syms.unnamed_module).completer = Some(Rc::new(RefCell::new(
-                UnnamedModuleCompleter {
-                    modules: self.self_ref.upgrade().expect("Modules self"),
-                },
-            )));
+            ctx.sym_mut(syms.unnamed_module).completer =
+                Some(self.get_unnamed_module_completer(ctx, syms));
             set_module_class_location(
                 ctx,
                 syms.unnamed_module,

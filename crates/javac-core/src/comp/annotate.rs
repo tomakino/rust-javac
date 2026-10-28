@@ -1108,8 +1108,25 @@ impl AnnotateServices {
 
 /// Annotate : annotation element values.
 impl AnnotateServices {
-    /// Java: private List<Pair<MethodSymbol, Attribute>> attributeAnnotationValues(
-    /// JCAnnotation a, Type expected, Env<AttrContext> env) (Annotate.java:513-550)
+    /// Attributes the name/value pairs of an annotation, including the elided
+    /// single `value` element.
+    ///
+    /// Port adapter: the synthesized `value=` assignment is written back into
+    /// the annotation tree, matching the upstream in-place replacement of the
+    /// single argument.
+    ///
+    /// # Arguments
+    ///   - ctx/syms: the compiler services;
+    ///   - a: the annotation tree;
+    ///   - expected: the annotation type;
+    ///   - env: the attribution environment;
+    ///   - attr: the enclosing Attr.
+    ///
+    /// # Returns
+    ///   - the name/value pairs.
+    ///
+    /// # Panics
+    ///   - completion failures are returned.
     fn attribute_annotation_values(
         &self,
         ctx: &mut CompilerContext,
@@ -1167,6 +1184,16 @@ impl AnnotateServices {
                     make.assign(ctx, ident, head)
                 };
                 args = List::of(assign);
+                // The upstream replaces the single argument with the
+                // synthesized "value=" assignment in the tree itself, so the
+                // later Check.validateAnnotation inventory sees the elided
+                // value as provided.
+                if let TreeKind::Annotation {
+                    args: tree_args, ..
+                } = &mut ctx.tree_mut(a).kind
+                {
+                    *tree_args = args.clone();
+                }
                 elided_value = true;
             }
         }

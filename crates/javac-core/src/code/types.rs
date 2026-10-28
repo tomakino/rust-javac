@@ -1233,16 +1233,29 @@ impl Types {
         erased
     }
 
-    /// Return the class that boxes the given primitive.
+    /// Returns the class that boxes the given primitive.
     ///
-    /// Java: public ClassSymbol boxedClass(Type t)
+    /// Port adapter: the class is entered through the package-owned flat entry
+    /// so the symbol carries the `java.lang` package owner (upstream enters
+    /// the same class from the boxed name).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - t: the primitive type.
+    ///
+    /// # Returns
+    ///   - the boxed class symbol.
+    ///
+    /// # Panics
+    ///   - the type has no boxed class name.
     pub fn boxed_class(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> SymbolId {
         let tag = ctx.typ(t).get_tag();
         let name = syms.boxed_name[tag_ordinal(tag) as usize]
             .clone()
             .expect("boxed class name");
         let java_base = syms.java_base;
-        syms.enter_class(ctx, java_base, name, None)
+        syms.enter_class_flat(ctx, java_base, name)
     }
 
     /// Get a wildcard's upper bound, returning non-wildcards unchanged.

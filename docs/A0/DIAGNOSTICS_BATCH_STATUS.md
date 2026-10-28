@@ -175,3 +175,14 @@
 - gson 80 文件(79 源 + generated,跳过 module-info,无 SOURCE_PATH):A3i panic 消失;`gson files=80 result_ok=true diagnostics=161 classes=0`,首条 `wrong.number.type.args`、`type java.lang.Enum does not take parameters`、`cannot find Boolean/Integer`、`already.defined` 等,按指令停手;输出 target/gson-a3i-run4.txt。
 - 旁路发现:源码注解 `@Target(...)` 的验证触发 annotate.rs:2262 `RefCell already borrowed`(AnnotationTypeVisitor 的 attr 重入),本批未修,已将测试缩小为 classfile `@Deprecated`;建议登记下一批。
 - 未提交;gson 源码未改;临时 gson 测试已删除。
+
+### A3j gson 161 诊断的类型系统分诊(完成;gson 161→13,无 panic)
+- 分诊:161 = 86 `annotation.missing.default.value` + 26 `cant.resolve.location` + 16 `type.doesnt.take.params` + 16 `wrong.number.type.args` + 11 `already.defined` + 5 `mod.not.allowed.here` + 1 deprecated warning。最小用例:`class T { java.lang.Boolean b; java.lang.Integer i; }` 在 class_finder 包 module 处 panic;`class T<E extends Enum<E>>` 在 Enum owner 处 panic;`enum E { A }` 8 诊断;`java.sql.Timestamp` 4 诊断;`@interface A { String value() default "x"; }` 与普通重载方法 0 诊断。
+- 修复1(boxed):`boxed_class_ids` 预创建用全限定名 + `Some(no_symbol)` 造出 owner=no_symbol、name=全限定名的占位类;改为 `java.lang` 包 + short name 的 `enter_class_full`,`Types::boxed_class` 改走 `enter_class_flat`;删除 BOT 的伪 boxed 名。上游 `Types.boxedClass`/`Symtab.initType`。
+- 修复2(Enum):`enum_sym` 以 owner=None 创建;改为 `java.lang` 包 + short name。上游 `Symtab.enterClass(java_base, java_lang_Enum)`。
+- 修复3(模块):创建 unnamed module completer 前未调用 `ModuleFinder.findAllModules`,setupAllModules 时 `java.se=None`、all_modules=1,java.sql 不可见;新增 `Modules::get_unnamed_module_completer` 调用 `find_all_modules`,替换 3 处安装点。上游 `Modules.getUnnamedModuleCompleter`。
+- 修复4(简写注解):`Annotate` 的 elided `value=` Assign 只在局部 args,未写回 `tree.args`,`Check.validateAnnotation` 跳过非 ASSIGN 后误报 missing default(86 条);写回 `ctx.tree_mut(a).kind`。上游 `Annotate.attributeAnnotation` 原地替换 args.head。
+- 测试:新增 `platform_boxed_types_resolve`、`enum_type_parameters_resolve`、`sql_package_is_visible`、`elided_annotation_value_is_not_a_missing_default`(断言无 error),保留 `annotation_type_target_metadata_compiles`;lib 826 passed;workspace 1159 passed / 0 failed / 3 ignored;clippy errors=0(javac-core lib 176 / lib test 203);unimplemented/unreachable=0。
+- gson 80 文件(79 源 + generated,跳过 module-info,无 SOURCE_PATH):161→13(12 `Entry` 类型参数 + 1 既有 deprecated warning),`result_ok=true classes=0`,无 panic;输出 target/a3j-gson5.txt。
+- 剩余(已定位未修):`LinkedTreeMap` 的继承 `Entry<K,V>`(12 条)根因是上游 `ClassType.getTypeArguments()` 会惰性 complete 类符号,本地直接取 nil;尝试在 `Attr.visit_type_apply` 读取 formals 前完成类符号后 Entry 错误消失,但暴露 (a) `AbstractMap<K,V>`/`Map<K,V>` 层次替换错误、(b) `InferenceException` 从 resolve.rs:3850 逃逸(栈 lookup_method→find_method→select_best),为避免半修复引入 panic 已回退该完成点;建议下一批统一补 `getTypeArguments` 完成语义后再修层次替换。
+- 临时探针 tests/a3j_probe.rs 已删除;未提交;gson 源码/构建文件未改。

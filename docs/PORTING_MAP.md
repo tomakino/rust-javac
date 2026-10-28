@@ -116,3 +116,13 @@ Status: template only; entries are appended by the executing agent and reviewed 
 | `code/symtab.rs::Symtab::enter_class` | `Symtab.enterClass` | installs the initial completer only for a newly created symbol; an existing symbol keeps its completer, so a completed class is not re-read by a later package scan |
 | `code/symtab.rs::tests::enter_class_keeps_the_completer_of_an_existing_symbol` | — | regression: re-entering an existing symbol does not re-arm its completer |
 | `comp/check.rs::diagnostics_tests::annotation_type_target_metadata_compiles` | — | classfile annotation `@Deprecated` exercises the `@Target` metadata path (`AnnotationTypeMetadata::getTarget`) |
+
+## A3j platform/annotation/module triage
+
+| Local symbol | Upstream location | Notes |
+|---|---|---|
+| `code/symtab.rs` boxed-class pre-entry + `code/types.rs::Types::boxed_class` | `Types.boxedClass` / `Symtab.initType` | boxed names are entered with the short name and the `java.lang` package owner (flat entry), not the full name with `no_symbol`; `BOT` has no boxed class |
+| `code/symtab.rs::Symtab` enum symbol | `Symtab.enterClass(java_base, java_lang_Enum)` | package-owned `Enum` symbol |
+| `comp/modules.rs::Modules::get_unnamed_module_completer` | `Modules.getUnnamedModuleCompleter` | calls `ModuleFinder.findAllModules` before installing the unnamed-module completer, making `java.se`/`java.sql` observable |
+| `comp/annotate.rs` elided annotation value | `Annotate.attributeAnnotation` | writes the synthesized `value=` Assign back into the annotation tree so `Check.validateAnnotation` sees it |
+| tests `platform_boxed_types_resolve` / `enum_type_parameters_resolve` / `sql_package_is_visible` / `elided_annotation_value_is_not_a_missing_default` | — | regressions for platform boxed types, Enum type parameters, java.sql visibility, elided values |

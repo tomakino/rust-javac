@@ -11021,6 +11021,58 @@ mod diagnostics_tests {
     }
 
     #[test]
+    fn platform_boxed_types_resolve() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T { java.lang.Boolean b; java.lang.Integer i; }\n")],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    }
+
+    #[test]
+    fn enum_type_parameters_resolve() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "class T<E extends java.lang.Enum<E>> { java.lang.Enum<?> e; }\n",
+            )],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    }
+
+    #[test]
+    fn sql_package_is_visible() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "T.java",
+                "import java.sql.Timestamp; class T { Timestamp t; java.sql.Time u; java.sql.Date d; }\n",
+            )],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    }
+
+    #[test]
+    fn elided_annotation_value_is_not_a_missing_default() {
+        // @SuppressWarnings has no default for "value"; the elided form
+        // @SuppressWarnings("unchecked") must count as an explicit value.
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("B.java", "@SuppressWarnings(\"unchecked\") class B {}\n")],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        let errors: Vec<&String> = codes
+            .iter()
+            .filter(|code| code.starts_with("compiler.err."))
+            .collect();
+        assert!(errors.is_empty(), "unexpected errors: {errors:?} (all: {codes:?})");
+    }
+
+    #[test]
     fn annotation_type_target_metadata_compiles() {
         // @Deprecated is a classfile annotation type: validating its use reads
         // the @Target metadata through AnnotationTypeMetadata::getTarget.

@@ -1229,7 +1229,7 @@ impl Symtab {
         boxed_name[TypeTag::DOUBLE as usize] = Some(name_of(&names, "java.lang.Double"));
         boxed_name[TypeTag::BOOLEAN as usize] = Some(name_of(&names, "java.lang.Boolean"));
         boxed_name[TypeTag::VOID as usize] = Some(name_of(&names, "java.lang.Void"));
-        boxed_name[TypeTag::BOT as usize] = Some(name_of(&names, "<nulltype>"));
+
 
         // the builtin class of all arrays
         let array_class = new_class_symbol(
@@ -1336,8 +1336,21 @@ impl Symtab {
             (flags::PUBLIC | flags::INTERFACE | flags::ANNOTATION) as i64;
     }
         let class_loader_type = enter_class_named(ctx, &names, &mut maps, java_base, "java.lang.ClassLoader");
-        let enum_sym =
-            enter_class_full(ctx, &names, &mut maps, java_base, names.std.java_lang_Enum.clone(), None);
+        let enum_package = enter_package(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            convert::package_part(&names.std.java_lang_Enum),
+        );
+        let enum_sym = enter_class_full(
+            ctx,
+            &names,
+            &mut maps,
+            java_base,
+            convert::short_name(&names.std.java_lang_Enum),
+            Some(enum_package),
+        );
         let finalize_type =
             new_method_type(ctx, List::nil(), Some(void_type), List::nil(), method_class);
         let enum_final_finalize = new_method_symbol(
@@ -1484,20 +1497,27 @@ impl Symtab {
             );
             ctx.scope_enter(array_scope, array_clone_method);
 
-            // Java: Types.boxedClass(t) enters syms.enterClass(java_base,
-    // boxedName[tag]); the port pre-enters the same symbols at startup so
-    // that the read-only relation is available (registered adapter adapter).
+            // The boxed classes are pre-entered at startup so the read-only
+            // relation can return a symbol; upstream lazily enters the boxed
+            // class from the boxed name (Port adapter).
     let mut boxed_class_ids: Vec<Option<SymbolId>> =
         vec![None; TypeTag::get_type_tag_count() as usize];
     for (tag, boxed) in boxed_name.iter().enumerate() {
         if let Some(name) = boxed {
+            let package = enter_package(
+                ctx,
+                &names,
+                &mut maps,
+                java_base,
+                convert::package_part(name),
+            );
             let class = enter_class_full(
                 ctx,
                 &names,
                 &mut maps,
                 java_base,
-                name.clone(),
-                Some(no_symbol),
+                convert::short_name(name),
+                Some(package),
             );
             boxed_class_ids[tag] = Some(class);
         }
