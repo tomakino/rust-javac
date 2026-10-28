@@ -186,3 +186,19 @@
 - gson 80 文件(79 源 + generated,跳过 module-info,无 SOURCE_PATH):161→13(12 `Entry` 类型参数 + 1 既有 deprecated warning),`result_ok=true classes=0`,无 panic;输出 target/a3j-gson5.txt。
 - 剩余(已定位未修):`LinkedTreeMap` 的继承 `Entry<K,V>`(12 条)根因是上游 `ClassType.getTypeArguments()` 会惰性 complete 类符号,本地直接取 nil;尝试在 `Attr.visit_type_apply` 读取 formals 前完成类符号后 Entry 错误消失,但暴露 (a) `AbstractMap<K,V>`/`Map<K,V>` 层次替换错误、(b) `InferenceException` 从 resolve.rs:3850 逃逸(栈 lookup_method→find_method→select_best),为避免半修复引入 panic 已回退该完成点;建议下一批统一补 `getTypeArguments` 完成语义后再修层次替换。
 - 临时探针 tests/a3j_probe.rs 已删除;未提交;gson 源码/构建文件未改。
+
+### A3k 类型系统（进行中，A3l 后基线）
+- A3l 执行者当前 gson：80 files / **68 errors / 0 classes**；68 = 30 does-not-override、12 cannot-implement/override、10 inference、5 cannot find symbol、5 method application、4 constructor access、1 conversion、1 other。最小证据 `ConcurrentMap<String,String>.get` 的继承/泛型成员查找，归 A3k。
+- A3l 顺带修复的真实根因：resolveSelf（Outer.this）、handleSwitch addVars 顺序、annotate/check metadata 转发、lookupPackage complete、lower.accessBase static。
+- A3l 表结构：原计划 chaining 是 Lead 依据错误；982d53c Scope.java 是 **open addressing**（Scope.java:405/431/542，dble 只搬 slot head）。已裁决 B 回退 open addressing，保留上述修复；chaining 补丁 target/a3l-chaining.patch 仅存档。
+
+### A3l 状态（裁决 B）
+- 裁决 B（2026-10-28 18:19）：回退 chaining → open addressing；gson 68 不作为本批清零条件。
+- 待复跑：834/826、clippy、gson（回退后是否 leave panic）；Lead 审核 scope.rs/compiler_context.rs diff；未 commit。
+- 进展（2026-10-28 18:55）：Lead 复跑 828 passed/0、clippy 0、gson 80 files/63 errors/0 classes（无 leave panic）。关键修复：scope_leave 链尾改 Deleted（墓碑）；as_super 读取接口 flags 前 complete_class_symbol（Port adapter）；is_overrider 前 complete_for_members。剩余 31 does-not-override + 14 override-incompatible-ret 等，主因是 Symbol.overrides 对接口泛型成员的 member_type/is_sub_signature 不正确。
+
+### A3k 结果（2026-10-28 19:40，执行者）
+- gson 63 → **10 errors / 0 classes**（80 files，无 panic）；关闭 6 个根因：ForAll.getTypeArguments（type_.rs/types.rs）、class 类型 noType enclosing 编码（symtab/types subst/class_reader）、Resolve.notOverriddenIn 完整四条件、TransTypes.addBridge 恢复 bridge arena id、visit_new_class 用 rsEnv 解析/检查构造器（selectSuper）、erasure 处理方法类型（MethodType/PartiallyInferredMethodType）。
+- 验证：`cargo test --workspace --all-targets` 29 套件全 ok（lib 828 passed / 0 failed）；clippy Finished errors=0；unimplemented/unreachable/todo=0；gson_probe 断言（errors==0）仍失败，如实记录。
+- 剩余 10 条全部是 diamond 目标类型推断（GsonBuilder 4、DefaultDateTypeAdapter 4、TypeToken 2）：`new HashMap<>(m)` 在方法实参上下文的 speculative 树类型仍为 `HashMap<K,V>`；`Infer.instantiateMethod` 的 shouldPropagate 返回 `HashMap<K?,V?>` 后外层 check 未通过 `minContext.dupTo`/free 延迟，立即 compatible 失败。下一步按 Infer.java:194-233 对齐传播；属 A3k 未关闭项。
+- 未提交；临时探针打印与 tests/a3k_probe.rs 已删除（grep=0）。

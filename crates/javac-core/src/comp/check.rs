@@ -1960,11 +1960,16 @@ impl Check {
     }
 
     /// Java: void validateAnnotationTree(JCTree tree) (Check.java:2857-2873)
+    ///
+    /// Port adapter: the caller's Attr is forwarded to annotation metadata
+    /// completion; the upstream single Attr instance can always be reused.
     pub fn validate_annotation_tree(&self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, tree: TreeId) {
+        syms: &crate::code::symtab::Symtab, tree: TreeId,
+        attr: Option<&mut crate::comp::attr::Attr>) {
         struct AnnotationValidator<'a> {
             chk: &'a Check,
             syms: &'a crate::code::symtab::Symtab,
+            attr: Option<&'a mut crate::comp::attr::Attr>,
         }
         // Java: class AnnotationValidator extends TreeScanner { visitAnnotation }
         tree_scanner_visitor_delegate!(AnnotationValidator<'a>, 'a);
@@ -1997,11 +2002,16 @@ impl Check {
                     };
                     self.scan(ctx, annotation_type);
                     self.scan_list(ctx, &args);
-                    let _ = self.chk.validate_annotation_values(ctx, self.syms, tree);
+                    let _ = self.chk.validate_annotation_values(
+                        ctx,
+                        self.syms,
+                        tree,
+                        self.attr.as_deref_mut(),
+                    );
                 }
             }
         }
-        let mut validator = AnnotationValidator { chk: self, syms };
+        let mut validator = AnnotationValidator { chk: self, syms, attr };
         validator.scan(ctx, Some(tree));
     }
     /// Java: public void validateAnnotations(List<JCAnnotation> annotations,
@@ -2013,9 +2023,10 @@ impl Check {
         annotations: &List<TreeId>,
         declaration_tree: Option<TreeId>,
         s: SymbolId,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<(), CompletionFailure> {
         for a in annotations.iter() {
-            self.validate_annotation(ctx, syms, a, declaration_tree, s)?;
+            self.validate_annotation(ctx, syms, a, declaration_tree, s, attr.as_deref_mut())?;
         }
         Ok(())
     }
@@ -2029,8 +2040,9 @@ impl Check {
         a: TreeId,
         declaration_tree: Option<TreeId>,
         s: SymbolId,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<(), CompletionFailure> {
-        self.validate_annotation_tree(ctx, syms, a);
+        self.validate_annotation_tree(ctx, syms, a, attr.as_deref_mut());
         let is_record_member = (ctx.sym(s).flags_field & crate::code::flags::RECORD) != 0
             || ctx
                 .sym(s)
@@ -2054,7 +2066,8 @@ impl Check {
             };
             let annotation_type = ctx.tree(annotation_type_tree).ty.expect("annotation type");
             let annotation_tsym = ctx.typ(annotation_type).tsym.expect("annotation tsym");
-            let targets = self.get_target_names(ctx, syms, annotation_tsym)?;
+            let targets =
+                self.get_target_names(ctx, syms, annotation_tsym, attr.as_deref_mut())?;
             let applies_to_records = targets.iter().any(|target| {
                 *target == self.names.FIELD
                     || *target == self.names.PARAMETER
@@ -2091,7 +2104,12 @@ impl Check {
                         current = current.tail();
                         let anno_ty = ctx.attr(annotation).ty.expect("annotation type");
                         let anno_tsym = ctx.typ(anno_ty).tsym.expect("annotation tsym");
-                        let anno_targets = self.get_target_names(ctx, syms, anno_tsym)?;
+                        let anno_targets = self.get_target_names(
+                            ctx,
+                            syms,
+                            anno_tsym,
+                            attr.as_deref_mut(),
+                        )?;
                         if anno_targets
                             .iter()
                             .any(|name| *name == self.names.RECORD_COMPONENT)
@@ -2125,7 +2143,8 @@ impl Check {
             & crate::code::flags::ANNOTATION as i64)
             != 0;
         if is_annotation_type {
-            let applicable_targets = self.get_applicable_targets(ctx, syms, a, s)?;
+            let applicable_targets =
+                self.get_applicable_targets(ctx, syms, a, s, attr.as_deref_mut())?;
             let Some(applicable_targets) = applicable_targets else {
                 return Ok(());
             };
@@ -2208,8 +2227,9 @@ impl Check {
         syms: &crate::code::symtab::Symtab,
         a: TreeId,
         s: SymbolId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<bool, CompletionFailure> {
-        let targets = self.get_applicable_targets(ctx, syms, a, s)?;
+        let targets = self.get_applicable_targets(ctx, syms, a, s, attr)?;
         Ok(match targets {
             None => true,
             Some(targets) => !targets.is_empty(),
@@ -2224,6 +2244,7 @@ impl Check {
         syms: &crate::code::symtab::Symtab,
         a: TreeId,
         s: SymbolId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<Option<Vec<Name>>, CompletionFailure> {
         let annotation_tsym = match &ctx.tree(a).kind {
             TreeKind::Annotation { annotation_type, .. } => *annotation_type,
@@ -2232,7 +2253,7 @@ impl Check {
         let annotation_ty = annotation_tsym;
         let annotation_ty = annotation_ty.and_then(|t| ctx.tree(t).ty).expect("annotation type");
         let anno_sym = ctx.typ(annotation_ty).tsym.expect("annotation tsym");
-        let arr = self.get_attribute_target_attribute(ctx, syms, anno_sym)?;
+        let arr = self.get_attribute_target_attribute(ctx, syms, anno_sym, attr)?;
         let targets: Vec<Name> = match arr {
             None => self.default_target_meta_info(),
             Some(arr) => {
@@ -2356,8 +2377,9 @@ impl Check {
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         anno_sym: SymbolId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<Vec<Name>, CompletionFailure> {
-        let arr = self.get_attribute_target_attribute(ctx, syms, anno_sym)?;
+        let arr = self.get_attribute_target_attribute(ctx, syms, anno_sym, attr)?;
         let Some(arr) = arr else {
             return Ok(self.default_target_meta_info());
         };
@@ -2386,12 +2408,14 @@ impl Check {
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         s: SymbolId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<Option<AttributeId>, CompletionFailure> {
         let Some(metadata) = ctx.sym(s).get_annotation_type_metadata().cloned() else {
             return Ok(None);
         };
-        let at_target =
-            crate::comp::annotate::AnnotationTypeMetadata::get_target_shared(&metadata, ctx, syms)?;
+        let at_target = crate::comp::annotate::AnnotationTypeMetadata::get_target_shared(
+            &metadata, ctx, syms, attr,
+        )?;
         let Some(at_target) = at_target else {
             return Ok(None);
         };
@@ -2441,7 +2465,7 @@ impl Check {
         self.log
             .borrow_mut()
             .install_diagnostic_handler(crate::util::log::DiagnosticHandler::Discard { prev: None });
-        let result = self.validate_annotation_values(ctx, syms, a);
+        let result = self.validate_annotation_values(ctx, syms, a, None);
         self.log.borrow_mut().pop_diagnostic_handler();
         result
     }
@@ -2453,6 +2477,7 @@ impl Check {
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         a: TreeId,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<bool, CompletionFailure> {
         let mut is_valid = true;
         let annotation_ty = ctx.tree(a).ty.expect("annotation type");
@@ -2461,7 +2486,7 @@ impl Check {
             return Ok(true);
         };
         let mut elements = crate::comp::annotate::AnnotationTypeMetadata::get_annotation_elements_shared(
-            &metadata, ctx, syms,
+            &metadata, ctx, syms, attr.as_deref_mut(),
         )?;
         let args = match &ctx.tree(a).kind {
             TreeKind::Annotation { args, .. } => args.clone(),
@@ -2505,7 +2530,7 @@ impl Check {
         }
         let members_with_default =
             crate::comp::annotate::AnnotationTypeMetadata::get_annotation_elements_with_default_shared(
-                &metadata, ctx, syms,
+                &metadata, ctx, syms, attr,
             )?;
         let mut missing_defaults: List<Name> = List::nil();
         for element in elements {
@@ -2759,9 +2784,13 @@ impl Check {
         while args_iter.non_empty() && tvars_cap.non_empty() {
             let arg = *args_iter.head();
             let tv = *tvars_cap.head();
-            if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(arg).kind {
-                *bound = Some(tv);
-            }
+            // The argument is viewed through the captured type variable.
+            // Type.withTypeVar is a no-op except in
+            // WildcardType, where it records the bound type variable; mutating
+            // a TypeVar's declared bound here corrupts the enclosing method's
+            // type parameter (A3k: produced a bogus bound from the Class<T>
+            // capture in FieldAttributes/Objects.requireNonNull).
+            self.types.with_type_var(ctx, arg, tv);
             args_iter = args_iter.tail();
             tvars_cap = tvars_cap.tail();
         }
@@ -3299,7 +3328,7 @@ impl Check {
         // upward project the initializer type
         let captures = self.types.captures(ctx, syms, t);
         let upward = self.types.upward(ctx, syms, t, &captures);
-        self.types.base_type_of(ctx, upward)
+        self.types.base_type_of(ctx, syms, upward)
     }
 }
 
@@ -3736,6 +3765,7 @@ impl Check {
             &mut override_warner,
         );
         if !result_types_ok {
+
             let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                 if (m_flags & (flags::STATIC as i64)) != 0 && (other_flags & (flags::STATIC as i64)) != 0 {
                     crate::resources::compiler_properties::fragments::cant_hide(
@@ -5745,11 +5775,13 @@ impl Check {
         contained: SymbolId,
         pos: i32,
     ) {
-        let container_targets = match self.get_attribute_target_attribute(ctx, syms, container) {
-            Ok(Some(arr)) => self.target_set_from_array(ctx, arr),
-            _ => self.default_target_meta_info(),
-        };
-        let contained_targets = match self.get_attribute_target_attribute(ctx, syms, contained) {
+        let container_targets =
+            match self.get_attribute_target_attribute(ctx, syms, container, None) {
+                Ok(Some(arr)) => self.target_set_from_array(ctx, arr),
+                _ => self.default_target_meta_info(),
+            };
+        let contained_targets =
+            match self.get_attribute_target_attribute(ctx, syms, contained, None) {
             Ok(Some(arr)) => self.target_set_from_array(ctx, arr),
             _ => self.default_target_meta_info(),
         };
@@ -6988,7 +7020,7 @@ impl Check {
         is_type_parameter: bool,
     ) {
         assert!(ctx.tree(a).ty.is_some(), "AssertionError: annotation type");
-        self.validate_annotation_tree(ctx, syms, a);
+        self.validate_annotation_tree(ctx, syms, a, None);
         let is_type_annotation_tag = ctx.tree(a).tag == crate::tree::jc_tree::Tag::TYPE_ANNOTATION;
         let annotation_type_erroneous = match &ctx.tree(a).kind {
             crate::tree::jc_tree::TreeKind::Annotation { annotation_type, .. } => {
@@ -7849,6 +7881,7 @@ impl Check {
             let Some(sup_tsym) = ctx.typ(sup).tsym else {
                 continue;
             };
+            self.complete_for_members(ctx, syms, sup_tsym);
             let Some(members) = ctx.sym(sup_tsym).members() else {
                 continue;
             };

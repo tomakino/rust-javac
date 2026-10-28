@@ -173,6 +173,8 @@ fn package_exists(ctx: &CompilerContext, pack: SymbolId) -> bool {
 }
 
 fn new_class_type(ctx: &mut CompilerContext, no_type: TypeId) -> TypeId {
+    // Java: new ClassType(Type.noType, null, null) — the symbol's initial class
+    // type keeps the noType enclosing type (Type.noType singleton semantics).
     ctx.alloc_type(Type::new(
         TypeTag::CLASS,
         None,

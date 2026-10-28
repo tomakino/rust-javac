@@ -228,7 +228,9 @@ impl BasicDiagnosticFormatter {
             .config
             .get_format(BasicFormatKind::DEFAULT_NO_POS_FORMAT);
         if let Some(source) = source {
-            if d.get_int_position() != NOPOS {
+            // Java: source != DiagnosticSource.NO_SOURCE; the port's NO_SOURCE
+            // has no file, so a file-less source selects the no-position format.
+            if source.get_file().is_some() && d.get_int_position() != NOPOS {
                 format = self.config.get_format(BasicFormatKind::DEFAULT_POS_FORMAT);
             } else if let Some(file) = source.get_file()
                 && file.get_kind()

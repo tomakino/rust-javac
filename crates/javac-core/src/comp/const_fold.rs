@@ -445,12 +445,9 @@ impl ConstFold {
         result.map(|(ty, value)| self.const_type(ctx, syms, ty, value))
     }
 
-    /// Java: Type.stringValue() for the constant String value.
+    /// The constant value converted to a String.
     fn string_value(value: &ConstantValue) -> JavaString {
-        match value {
-            ConstantValue::String(s) => s.clone(),
-            _ => panic!("ClassCastException: String constant expected"),
-        }
+        JavaString::from(value.display().as_str())
     }
 
     /// Java: Type coerce(Type etype, Type ttype) (ConstFold.java:345-372)

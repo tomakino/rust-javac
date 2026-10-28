@@ -1,39 +1,4 @@
 // Origin: com/sun/tools/javac/code/Scope.java @ 982d53c (jdk-17.0.19-ga)
-// Gap registration (method-level audit of the ported upstream class):
-// Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
-// Not yet ported upstream methods (no substitutes in this file):
-// - NOT PORTED: isStaticallyImported (Scope.java:162)
-// - NOT PORTED: create (Scope.java:268)
-// - NOT PORTED: hasNext (Scope.java:581)
-// - NOT PORTED: doNext (Scope.java:598)
-// - NOT PORTED: skipToNextMatchingEntry (Scope.java:619)
-// - NOT PORTED: hasNext (Scope.java:635)
-// - NOT PORTED: doNext (Scope.java:651)
-// - NOT PORTED: isStaticallyImported (Scope.java:672)
-// - NOT PORTED: toString (Scope.java:676)
-// - NOT PORTED: finalizeScope (Scope.java:749)
-// - NOT PORTED: finalizeSingleScope (Scope.java:755)
-// - NOT PORTED: importByName (Scope.java:799)
-// - NOT PORTED: importType (Scope.java:803)
-// - NOT PORTED: appendScope (Scope.java:807)
-// - NOT PORTED: finalizeScope (Scope.java:830)
-// - NOT PORTED: isStaticallyImported (Scope.java:871)
-// - NOT PORTED: importAll (Scope.java:884)
-// - NOT PORTED: isFilled (Scope.java:898)
-// - NOT PORTED: accepts (Scope.java:905)
-// - NOT PORTED: doLookup (Scope.java:939)
-// - NOT PORTED: doLookup (Scope.java:963)
-// - NOT PORTED: isStaticallyImported (Scope.java:984)
-// - NOT PORTED: isStaticallyImported (Scope.java:988)
-// - NOT PORTED: importFrom (Scope.java:999)
-// - NOT PORTED: doLookup (Scope.java:1013)
-// - NOT PORTED: prependSubScope (Scope.java:1033)
-// - NOT PORTED: appendSubScope (Scope.java:1042)
-// - NOT PORTED: getMark (Scope.java:1061)
-// - NOT PORTED: toString (Scope.java:1066)
-// - NOT PORTED: isStaticallyImported (Scope.java:1110)
-// End of Gap registration.
-
 //! A scope represents an area of visibility in a Java program. The Scope class
 //! is a container for symbols which provides efficient access to symbols given
 //! their names. Scopes are implemented as hash tables with "open addressing"
@@ -45,40 +10,22 @@
 //! This code and its internal interfaces are subject to change or
 //! deletion without notice.</b>
 //!
-//! PORTING_RULES: ADR 0001 (arena + IDs):
-//! - a Scope is a value in the scope arena (ScopeId); the Entry storage is
-//!   owned by the scope and entries refer to symbols by SymbolId;
-//! - the Java abstract class hierarchy is represented by ScopeData variants
-//!   (ScopeImpl / ErrorScope via the error_scope flag / CompoundScope /
-//!   ImportScope / NamedImportScope / StarImportScope / SingleEntryScope);
-//! - the upstream getIndex() reads the symbol name (and enterIfAbsent the
-//!   symbol kind) through the Symbol object; the ported methods take the symbol
-//!   arena slice for that read (the CompilerContext wrappers pass it, so the
-//!   public API is CompilerContext-based);
-//! - methods that need the receiver's arena ID (Entry.scope) take a
-//!   self_id: ScopeId parameter (registered section 9);
-//! - ITERATION ORDER IS PRESERVED: the hash table uses the same open
-//!   addressing / double hashing algorithm as the upstream ScopeImpl (getIndex
-//!   uses Name.get_index(), the Java Name.hashCode(), so the probing order is
-//!   the upstream one) and the same elems / shadowed entry chains. No
-//!   randomized hash container is used for the table; the visual (iteration)
-//!   order is the upstream insertion-order-reversed elems chain.
-//!   PORTING_RULES: getSymbols/getSymbolsByName return a Vec snapshot instead of
-//!   a live iterator; this is equivalent for iterations without concurrent
-//!   modification (registered section 9).
-//!
-//! NOT PORTED IN THIS STEP (see docs/STATUS.md; no placeholder logic):
-//! - dup/dupUnshared/leave: the upstream scopes share one Entry[] table object
-//!   mutated through several scopes; that needs the ScopeArena table-sharing
-//!   design (not implemented yet);
-//! - cross-scope behavior (RECURSIVE getSymbols/getSymbolsByName, getOrigin,
-//!   includes across outward scopes) needs the scope arena to resolve the next
-//!   scope / entry scope;
-//! - CompoundScope/ImportScope/NamedImportScope/StarImportScope/SingleEntryScope
-//!   method bodies need Types/JCImport/CompletionFailure or cross-scope
-//!   iteration; their structure and constructors ARE ported;
-//! - ErrorScope.lookup override (the upstream returns a synthetic entry);
-//! - ImportFilter/FilterImportScope/SymbolImporter.
+//! Port notes:
+//! - A Scope is a value in the scope arena (ScopeId); Entry storage is owned by
+//!   the scope and refers to symbols by SymbolId (ADR 0001).
+//! - The table is the upstream open-addressing table: get_index probes with
+//!   double hashing and stops at an empty or same-name slot; deleted slots are
+//!   the sentinel; dup/dupUnshared/leave share and detach the same table.
+//! - ScopeData variants map the upstream subclasses; ErrorScope is the
+//!   error_scope flag, and FilterImportScope carries the Types/ImportFilter
+//!   services explicitly.
+//! - getSymbols/getSymbolsByName return Vec snapshots; iteration without
+//!   concurrent modification is equivalent to the upstream iterator.
+//! - Methods that need the receiver's arena id or the symbol arena take self_id
+//!   and the arena explicitly (the CompilerContext wrappers pass them).
+//! - Not ported: Scope.Entry's iterator protocol (Vec snapshot),
+//!   WriteableScope.create (new_scope_impl), the ScopeImpl/CompoundScope
+//!   toString views, and ErrorScope.lookup (synthetic entry).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -312,6 +259,11 @@ pub(crate) type SharedTable = Rc<RefCell<Vec<TableSlot>>>;
 pub(crate) type SharedEntries = Rc<RefCell<Vec<Entry>>>;
 
 impl Scope {
+    /// The owner of this scope.
+    pub fn owner(&self) -> Option<SymbolId> {
+        self.owner
+    }
+
     /// Constructs a fresh writable scope (Java: new ScopeImpl(owner), which uses
     /// a fresh table of length INITIAL_SIZE).
     pub fn new_scope_impl(owner: Option<SymbolId>) -> Scope {
@@ -2381,6 +2333,121 @@ mod tests {
             None,
         );
         assert!(named.is_empty());
+    }
+
+    fn push_generated_symbol(
+        symbols: &mut Arena<Symbol>,
+        table: &Rc<NameTableHandle>,
+        text: &str,
+    ) -> SymbolId {
+        let units: Vec<u16> = text.encode_utf16().collect();
+        SymbolId::new(symbols.push(Symbol::new(
+            Kind::TYP,
+            0,
+            table.from_chars(&units, 0, units.len() as i32),
+            None,
+            None,
+            SymbolKind::VarSymbol {
+                pos: 0,
+                adr: 0,
+                data_kind: None,
+                data: None,
+                lazy_const_value: None,
+            },
+        )))
+    }
+
+    /// 300 straight-line entries survive repeated table doublings; every name
+    /// remains reachable through its probed slot and the elems order is the
+    /// upstream reverse-insertion order.
+    #[test]
+    fn three_hundred_symbols_survive_multiple_doublings() {
+        let table = name_table();
+        let mut symbols = Arena::new();
+        let mut ids = Vec::new();
+        let mut names = Vec::new();
+        for index in 0..300 {
+            let text = format!("com.example.generated.Type{index}");
+            names.push(name(&table, &text));
+            ids.push(push_generated_symbol(&mut symbols, &table, &text));
+        }
+        let mut scope = Scope::new_scope_impl(None);
+        let self_id = scope_id(0);
+        for sym in &ids {
+            scope.enter(self_id, *sym, &symbols);
+        }
+        let (table_len, nelems) = match &scope.data {
+            ScopeData::ScopeImpl { table, nelems, .. } => (table.borrow().len(), *nelems),
+            _ => panic!("expected a ScopeImpl"),
+        };
+        assert!(table_len >= 512, "the table doubled: {table_len}");
+        assert_eq!(nelems, 300);
+        for (entry_name, sym) in names.iter().zip(ids.iter()) {
+            let entry = scope.lookup(entry_name, &symbols).expect("every name remains found");
+            match &scope.data {
+                ScopeData::ScopeImpl { entries, .. } => {
+                    assert_eq!(entries.borrow()[entry.index() as usize].sym, Some(*sym));
+                }
+                _ => panic!("expected a ScopeImpl"),
+            }
+        }
+        let all = scope.get_symbols(
+            self_id,
+            LookupKind::NON_RECURSIVE,
+            &|_| true,
+            &mut crate::compiler_context::CompilerContext::new(),
+        );
+        assert_eq!(all.len(), 300);
+        assert_eq!(all.first(), Some(&ids[299]));
+        assert_eq!(all.last(), Some(&ids[0]));
+    }
+
+    /// Distinct names with the same low hash bits probe to different slots and
+    /// remain reachable after a doubling.
+    #[test]
+    fn names_with_the_same_initial_low_bits_are_all_found() {
+        let table = name_table();
+        let mut first = None;
+        let mut second = None;
+        let mut index = 0;
+        while second.is_none() {
+            let candidate = name(&table, &format!("Probe{index}"));
+            if (candidate.get_index() as usize) & (INITIAL_SIZE - 1) == 3 {
+                if first.is_none() {
+                    first = Some(candidate);
+                } else {
+                    second = Some(candidate);
+                }
+            }
+            index += 1;
+        }
+        let first = first.expect("first name");
+        let second = second.expect("second name");
+        let mut symbols = Arena::new();
+        let first_sym = push_generated_symbol(&mut symbols, &table, &first.to_string());
+        let second_sym = push_generated_symbol(&mut symbols, &table, &second.to_string());
+        let mut scope = Scope::new_scope_impl(None);
+        let self_id = scope_id(0);
+        scope.enter(self_id, first_sym, &symbols);
+        scope.enter(self_id, second_sym, &symbols);
+        let first_entry = scope.lookup(&first, &symbols).expect("first entry");
+        let second_entry = scope.lookup(&second, &symbols).expect("second entry");
+        match &scope.data {
+            ScopeData::ScopeImpl { entries, .. } => {
+                assert_eq!(
+                    entries.borrow()[first_entry.index() as usize].sym,
+                    Some(first_sym)
+                );
+                assert_eq!(
+                    entries.borrow()[second_entry.index() as usize].sym,
+                    Some(second_sym)
+                );
+            }
+            _ => panic!("expected a ScopeImpl"),
+        }
+        scope.dble(&symbols);
+        assert!(scope.lookup(&first, &symbols).is_some());
+        assert!(scope.lookup(&second, &symbols).is_some());
     }
 }
 

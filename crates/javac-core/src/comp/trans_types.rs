@@ -341,7 +341,10 @@ impl TransTypes {
 
     /// Java: JCExpression coerce(JCExpression tree, Type target) (TransTypes.java).
     fn coerce_tree(&mut self, ctx: &mut CompilerContext, tree: TreeId, target: TypeId) -> TreeId {
-        let base_target = self.types.base_type_of(ctx, target);
+        let base_target = {
+            let syms = self.syms.borrow();
+            self.types.base_type_of(ctx, &syms, target)
+        };
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
         if ctx.typ(tree_ty).is_primitive() == ctx.typ(target).is_primitive() {
             let syms = self.syms.borrow();
@@ -499,6 +502,11 @@ impl TransTypes {
         // read-only context; the target symbol is updated through a local clone)
         let impl_symbol = ctx.sym(impl_sym).clone();
         let mut bridge_symbol = ctx.sym(bridge).clone();
+        // Port adapter: Symbol::clone clears the arena id because a clone only
+        // becomes addressable through alloc_symbol; this clone is written back
+        // into the already-allocated bridge slot, so restore that id for the
+        // metadata back-reference (initedMetadata reads it).
+        bridge_symbol.id.set(Some(bridge));
         bridge_symbol.set_attributes(ctx, &impl_symbol);
         *ctx.sym_mut(bridge) = bridge_symbol;
         // Java: JCMethodDecl md = make.MethodDef(bridge, null);

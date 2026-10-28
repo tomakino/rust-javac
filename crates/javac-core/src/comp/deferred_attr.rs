@@ -275,7 +275,7 @@ pub fn deferred_type_complete_base(
                 .expect("AssertionError: deferredAttr service must be installed");
             let result_info_rc = Rc::new(result_info.clone());
             let speculative_tree = {
-                let mut deferred = deferred.borrow_mut();
+                let deferred = deferred.borrow();
                 deferred
                     .attrib_speculative(ctx, syms, attr, tree, &env, result_info)
                     .map_err(|failure| match failure {
@@ -315,7 +315,11 @@ pub fn deferred_type_complete(
                 .borrow()
                 .clone()
                 .expect("AssertionError: argumentAttr service must be installed");
-            let mut argument_attr = argument_attr.borrow_mut();
+            // Port adapter (A3k): run the completion on a session clone; the
+            // surrounding speculative attribution may re-enter Attr::attribTree
+            // and clone the canonical service again (upstream has one Java
+            // object). The ArgumentType cache is a shared Rc.
+            let mut argument_attr = argument_attr.borrow().clone();
             argument_attr.argument_type_complete(
                 ctx,
                 syms,
@@ -2355,7 +2359,7 @@ impl DeferredAttrService {
     /// 
     ///    Upstream: DeferredAttr.java:470-472.
     pub fn attrib_speculative(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: &mut Attr,
@@ -2404,7 +2408,7 @@ impl DeferredAttrService {
     /// 
     #[allow(clippy::too_many_arguments)]
     pub fn attrib_speculative_with_copier(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: &mut Attr,
@@ -2433,7 +2437,7 @@ impl DeferredAttrService {
     /// registered with the ArgumentAttr stage (Porting rules of the registration).
     #[allow(clippy::too_many_arguments)]
     pub fn attrib_speculative_with_diag(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: &mut Attr,
@@ -2522,7 +2526,7 @@ impl DeferredAttrService {
     /// 
     #[allow(clippy::too_many_arguments)]
     pub fn attrib_speculative_lambda(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: &mut Attr,
@@ -2600,7 +2604,7 @@ impl DeferredAttrService {
                 make.lambda(ctx, args, lambda_body)
             };
             attr.pre_flow(ctx, syms, attr_recover, rs, &self.infer, chk, diags, env, speculative_lambda);
-            flow.analyze_lambda(ctx, env, speculative_lambda, &self.make, false);
+            flow.analyze_lambda(ctx, syms, env, speculative_lambda, &self.make, false);
             Ok(speculative_lambda)
         })();
         if let Some(scope) = local_env.info.borrow().scope {
@@ -3184,7 +3188,7 @@ impl DeferredAttrService {
     /// Upstream: DeferredAttr.java:496-520.
     #[allow(clippy::too_many_arguments)]
     pub fn attrib_speculative_with_rewriter(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: &mut Attr,

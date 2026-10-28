@@ -278,7 +278,12 @@ impl Operators {
         tag: Tag,
         op: TypeId,
     ) -> SymbolId {
-        for entry in self.unary.iter().filter(|entry| entry.tag == tag) {
+        let op_name = self.operator_name(tag);
+        for entry in self
+            .unary
+            .iter()
+            .filter(|entry| self.operator_name(entry.tag) == op_name)
+        {
             if self.unary_test(ctx, syms, types, entry, op) {
                 let expected = self.unary_expected(ctx, syms, types, entry, op);
                 if self.unary_applicable(ctx, syms, types, entry, expected) {

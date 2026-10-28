@@ -496,7 +496,7 @@ impl PoolWriter {
             }
             PoolConstantRef::MethodType(ty) => {
                 self.pool.poolbuf.append_byte(class_file::CONSTANT_METHODTYPE);
-                let base = self.types.base_type_of(ctx, ty);
+                let base = self.types.base_type_of(ctx, syms, ty);
                 let descriptor = self.put_descriptor(ctx, syms, base);
                 self.pool.poolbuf.append_char(descriptor);
             }

@@ -243,6 +243,7 @@ impl TreeCopier {
             Tag::VARDEF => self.visit_variable(ctx, tree),
             Tag::WHILELOOP => self.visit_while_loop(ctx, tree),
             Tag::WILDCARD => self.visit_wildcard(ctx, tree),
+            Tag::TYPEBOUNDKIND => self.visit_type_bound_kind(ctx, tree),
             Tag::MODULEDEF => self.visit_module(ctx, tree),
             Tag::EXPORTS => self.visit_exports(ctx, tree),
             Tag::OPENS => self.visit_opens(ctx, tree),
@@ -1587,6 +1588,16 @@ impl TreeCopier {
         };
         let pos = ctx.tree(tree).pos;
         self.mk(ctx, pos, Tag::WILDCARD, TreeKind::Wildcard { kind, inner })
+    }
+
+    /// Copy a type-bound-kind node (the bound kind is preserved).
+    fn visit_type_bound_kind(&self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
+        let kind = match &ctx.tree(tree).kind {
+            TreeKind::TypeBoundKind { kind } => *kind,
+            _ => panic!("ClassCastException: TypeBoundKind expected"),
+        };
+        let pos = ctx.tree(tree).pos;
+        self.mk(ctx, pos, Tag::TYPEBOUNDKIND, TreeKind::TypeBoundKind { kind })
     }
 
     /// Java: public JCTree visitModule(ModuleTree node, P p)

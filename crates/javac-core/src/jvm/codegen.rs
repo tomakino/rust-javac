@@ -2258,6 +2258,8 @@ impl Gen {
             }
             let state_switch = self.get_code().borrow().state.dup();
             self.get_code().borrow_mut().mark_dead();
+            let prev_env = self.env.clone();
+            self.env = Some(Rc::clone(&switch_env));
             let mut l = cases.clone();
             for i in 0..labels.len() {
                 let case_tree = *l.head();
@@ -2285,6 +2287,7 @@ impl Gen {
                 };
                 self.gen_stats_crt(ctx, stats, CRT_FLOW_TARGET);
             }
+            self.env = prev_env;
             let cont = switch_env.info.borrow().cont.clone();
             if let Some(cont) = cont {
                 assert!(pattern_switch, "AssertionError: pattern switch expected");

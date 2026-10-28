@@ -618,7 +618,7 @@ impl CompilerContext {
         syms: &crate::code::symtab::Symtab,
         mut attr: Option<&mut crate::comp::attr::Attr>,
     ) {
-        let (sub_scopes, _name2_scopes) = match &self.scope(scope).data {
+        let (sub_scopes, name2_scopes) = match &self.scope(scope).data {
             crate::code::scope::ScopeData::ImportScope { sub_scopes, .. } => {
                 (sub_scopes.clone(), None)
             }
@@ -632,14 +632,36 @@ impl CompilerContext {
             }
             _ => return,
         };
-        let mut finalized: Vec<(ScopeId, ScopeId)> = Vec::new();
         let mut out: Vec<ScopeId> = Vec::new();
         for sub in sub_scopes.iter() {
-            let result = self.finalize_single_scope(sub, types, syms, attr.as_deref_mut());
-            finalized.push((sub, result));
-            out.push(result);
+            out.push(self.finalize_single_scope(sub, types, syms, attr.as_deref_mut()));
         }
         let new_sub_scopes = List::from_iterable(out);
+        // Java: NamedImportScope.finalizeScope calls super.finalizeScope (the
+        // subScopes rewrite below) and then finalizes each scope of name2Scopes
+        // again (Scope.java:830-837); a finalized static filter scope therefore
+        // gets a distinct replacement instance in the two structures, exactly as
+        // upstream. The name map is finalized before the scope is borrowed
+        // mutably.
+        let named_updated = match name2_scopes {
+            Some(name2_scopes) => {
+                let mut updated = std::collections::HashMap::new();
+                for (name, scopes) in name2_scopes {
+                    let mut remapped = Vec::new();
+                    for candidate in scopes {
+                        remapped.push(self.finalize_single_scope(
+                            candidate,
+                            types,
+                            syms,
+                            attr.as_deref_mut(),
+                        ));
+                    }
+                    updated.insert(name, remapped);
+                }
+                Some(updated)
+            }
+            None => None,
+        };
         match &mut self.scope_mut(scope).data {
             crate::code::scope::ScopeData::ImportScope { sub_scopes, .. } => {
                 *sub_scopes = new_sub_scopes;
@@ -650,21 +672,7 @@ impl CompilerContext {
                 ..
             } => {
                 *sub_scopes = new_sub_scopes;
-                let mut updated = std::collections::HashMap::new();
-                for (name, scopes) in name2_scopes.iter() {
-                    let remapped: Vec<ScopeId> = scopes
-                        .iter()
-                        .map(|candidate| {
-                            finalized
-                                .iter()
-                                .find(|(old, _)| old == candidate)
-                                .map(|(_, new)| *new)
-                                .unwrap_or(*candidate)
-                        })
-                        .collect();
-                    updated.insert(name.clone(), remapped);
-                }
-                *name2_scopes = updated;
+                *name2_scopes = named_updated.expect("NamedImportScope name index");
             }
             crate::code::scope::ScopeData::StarImportScope { sub_scopes, .. } => {
                 *sub_scopes = new_sub_scopes;
@@ -1043,7 +1051,7 @@ impl CompilerContext {
                     TableSlot::Entry(head) if head == entry_id => {
                         table_ref[hash] = match entries_ref[entry_id.index() as usize].shadowed {
                             Some(shadowed) => TableSlot::Entry(shadowed),
-                            None => TableSlot::Empty,
+                            None => TableSlot::Deleted,
                         };
                     }
                     _ => panic!("leave(): entry not found in the shared table"),

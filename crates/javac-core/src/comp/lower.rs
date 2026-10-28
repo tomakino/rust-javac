@@ -1343,7 +1343,10 @@ impl Lower {
             let qual = {
                 self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), owner)
             };
-            self.access(ctx, sym, qual, None, false)
+            // Java: access(make.QualIdent(sym.owner)) — the single-argument
+            // access reads the symbol from the qualifier tree (the owner), not
+            // the accessed member.
+            self.access(ctx, owner, qual, None, false)
         } else {
             self.make_owner_this_diag(ctx, pos, sym, true)
         }

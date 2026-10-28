@@ -1233,9 +1233,47 @@ impl std::fmt::Debug for CompletionFailure {
 
 impl std::error::Error for CompletionFailure {}
 
+thread_local! {
+    /// Port adapter: the completion failures currently unwinding on this
+    /// thread. The error value is not Send, so the panic payload is a marker
+    /// and the failure travels in this stack.
+    static COMPLETION_FAILURES: std::cell::RefCell<Vec<CompletionFailure>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Port adapter: the panic payload of a completion failure signalled from a
+/// type query that cannot return a result value.
+#[derive(Debug)]
+pub struct CompletionFailurePayload;
+
+/// Port adapter: signals a completion failure to the nearest attribution
+/// boundary.
+pub fn throw_completion_failure(failure: CompletionFailure) -> ! {
+    COMPLETION_FAILURES.with(|stack| stack.borrow_mut().push(failure));
+    std::panic::panic_any(CompletionFailurePayload);
+}
+
+/// Port adapter: runs a type query and restores a completion failure signalled
+/// through the panic channel; unrelated panics are resumed unchanged.
+pub fn catch_completion_failure<R>(body: impl FnOnce() -> R) -> Result<R, CompletionFailure> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(value) => Ok(value),
+        Err(payload) => {
+            if payload.is::<CompletionFailurePayload>() {
+                let failure = COMPLETION_FAILURES
+                    .with(|stack| stack.borrow_mut().pop())
+                    .expect("completion failure payload");
+                Err(failure)
+            } else {
+                std::panic::resume_unwind(payload)
+            }
+        }
+    }
+}
+
 
 // ----------------------------------------------------------------------
-// Java: Symbol subclass constructors (P2 ClassReader). The ClassSymbol
+// Symbol subclass constructors (P2 ClassReader). The ClassSymbol
 // constructor is produced by Symtab.enterClass (fullname/flatname); these
 // helpers cover the member symbols.
 // ----------------------------------------------------------------------

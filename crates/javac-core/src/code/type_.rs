@@ -1019,7 +1019,8 @@ impl Type {
         }
     }
 
-    /// Java: public List<Type> getTypeArguments() (ClassType view).
+    /// Java: public List<Type> getTypeArguments() (ClassType: typarams_field;
+    /// ForAll: tvars; other types: List.nil()).
     pub fn get_type_arguments(&self) -> List<TypeId> {
         match &self.kind {
             TypeKindData::ClassType { typarams_field, .. }
@@ -1029,6 +1030,7 @@ impl Type {
             | TypeKindData::ErrorType { typarams_field, .. } => {
                 typarams_field.clone().unwrap_or_else(List::nil)
             }
+            TypeKindData::ForAll { tvars, .. } => tvars.clone(),
             _ => List::nil(),
         }
     }

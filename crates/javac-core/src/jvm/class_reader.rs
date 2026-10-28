@@ -860,8 +860,15 @@ impl ClassReader {
                     );
                     let t = self.enter_class(ctx, syms, class_name)?;
                     let args = self.sig_to_types(ctx, syms, '>')?;
+                    // Upstream: ClassReader.classSigToType starts with
+                    // outer = Type.noType and builds new ClassType(outer, args, t).
+                    // The local scanner represents that sentinel as None, so a
+                    // top-level parameterized class keeps the explicit noType
+                    // enclosing used by the erasure(sym.type) plain path.
+                    let outer_ty = outer
+                        .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
                     outer = Some(ctx.alloc_type(
-                        crate::code::type_::Type::new_class_type(outer, Some(args), t),
+                        crate::code::type_::Type::new_class_type(Some(outer_ty), Some(args), t),
                     ));
                     let sep = self.signature[self.sigp as usize] as char;
                     self.sigp += 1;
@@ -4821,7 +4828,11 @@ impl AnnotationTypeCompleter for CompleterDeproxy {
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        // The classfile deproxy reads only the stored annotation values; it has
+        // no Attr-driven sub-attribution (the caller's Attr is not needed).
+        let _ = attr;
         assert_eq!(self.proxy_on, sym, "AssertionError: proxyOn == sym");
         // adapter adapter: Types is value-held by ClassReader; the completer builds an
         // equivalent Types instance from the same Names service (Types has no

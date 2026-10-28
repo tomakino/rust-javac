@@ -114,7 +114,7 @@ impl TypeAnnotations {
     ) -> Option<List<AttributeId>> {
         let metadata = ctx.sym(tsym).get_annotation_type_metadata().cloned()?;
         let at_target =
-            crate::comp::annotate::AnnotationTypeMetadata::get_target_shared(&metadata, ctx, syms)
+            crate::comp::annotate::AnnotationTypeMetadata::get_target_shared(&metadata, ctx, syms, None)
                 .ok()??;
         let value = self.compound_member(ctx, at_target, &self.names.value)?;
         let values = match &ctx.attr(value).kind {

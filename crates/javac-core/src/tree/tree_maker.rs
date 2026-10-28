@@ -2840,15 +2840,17 @@ impl TreeMaker {
         t: crate::ids::TypeId,
     ) -> TreeId {
         let tag = ctx.typ(t).get_tag();
-        match tag {
+        let result = match tag {
             TypeTag::BYTE | TypeTag::CHAR | TypeTag::SHORT | TypeTag::INT | TypeTag::LONG
             | TypeTag::FLOAT | TypeTag::DOUBLE | TypeTag::BOOLEAN | TypeTag::VOID => {
                 self.type_ident(ctx, tag)
             }
             TypeTag::TYPEVAR => {
+                // The identifier publishes the type-variable symbol (unlike an
+                // identifier created from a name, which leaves tree.sym null and
+                // later breaks Lower.visitIdent).
                 let tsym = ctx.typ(t).tsym.expect("type variable symbol");
-                let name = ctx.sym(tsym).name.clone();
-                self.ident(ctx, name)
+                self.ident_symbol(ctx, tsym)
             }
             TypeTag::WILDCARD => {
                 let (inner, kind) = match &ctx.typ(t).kind {
@@ -2874,7 +2876,9 @@ impl TreeMaker {
                         components = components.append(tree);
                         current = current.tail();
                     }
-                    return self.type_union(ctx, components);
+                    let tree = self.type_union(ctx, components);
+                    ctx.tree_mut(tree).ty = Some(t);
+                    return tree;
                 }
                 if ctx.typ(t).is_intersection() {
                     let components_types = ctx.typ(t).get_explicit_components();
@@ -2886,7 +2890,9 @@ impl TreeMaker {
                         components = components.append(tree);
                         current = current.tail();
                     }
-                    return self.type_intersection(ctx, components);
+                    let tree = self.type_intersection(ctx, components);
+                    ctx.tree_mut(tree).ty = Some(t);
+                    return tree;
                 }
                 let tsym = ctx.typ(t).tsym.expect("class type symbol");
                 let outer = ctx.typ(t).get_enclosing_type();
@@ -2929,7 +2935,10 @@ impl TreeMaker {
                 self.type_array(ctx, elem_tree)
             }
             other => panic!("AssertionError: unexpected type tag: {:?}", other),
-        }
+        };
+        // The tree type is set on the returned identifier.
+        ctx.tree_mut(result).ty = Some(t);
+        result
     }
 
 }

@@ -621,8 +621,17 @@ impl Flow {
 
     /// Java: Lint.augment(tree.sym) — Lint.augment is registered with the
     /// Attribute/Symtab (unimplemented at that entry).
-    pub fn augmented_lint(&self, ctx: &CompilerContext, sym: SymbolId) -> Rc<Lint> {
-        Rc::new(self.lint.augment(ctx, &self.syms.borrow(), ctx.sym(sym)))
+    pub fn augmented_lint(
+        &self,
+        ctx: &CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        sym: SymbolId,
+    ) -> Rc<Lint> {
+        // Port adapter (A3k): the caller's Symtab is forwarded. During Attr the
+        // Symtab cell is already lent out, so re-borrowing self.syms here would
+        // abort the compiler even though the data is unchanged (upstream has a
+        // single Java Symtab object).
+        Rc::new(self.lint.augment(ctx, syms, ctx.sym(sym)))
     }
 }
 
@@ -1496,6 +1505,8 @@ pub trait FlowVisitor: TreeVisitor + Sized {
 /// Java: class Flow.AliveAnalyzer extends BaseAnalyzer (Flow.java:471-958)
 pub struct AliveAnalyzer<'a> {
     flow: &'a Flow,
+    /// Port adapter (A3k): the Symtab lent by the caller (see augmented_lint).
+    syms: &'a crate::code::symtab::Symtab,
     pending_exits: List<PendingExit>,
     pub(crate) alive: Liveness,
     lint: Rc<Lint>,
@@ -1503,9 +1514,10 @@ pub struct AliveAnalyzer<'a> {
 
 impl<'a> AliveAnalyzer<'a> {
     /// Java: implicit AliveAnalyzer() (the upstream inner class captures Flow)
-    pub fn new(flow: &'a Flow) -> AliveAnalyzer<'a> {
+    pub fn new(flow: &'a Flow, syms: &'a crate::code::symtab::Symtab) -> AliveAnalyzer<'a> {
         AliveAnalyzer {
             flow,
+            syms,
             pending_exits: List::nil(),
             alive: Liveness::ALIVE,
             lint: Rc::clone(&flow.lint),
@@ -1639,8 +1651,7 @@ impl<'a> AliveAnalyzer<'a> {
                 Kind::TYP => {
                     let sym_type = ctx.sym(sym).ty.expect("class symbol type");
                     let supers = {
-                        let syms = self.flow.syms.borrow();
-                        self.flow.types.direct_supertypes(ctx, &syms, sym_type)
+                        self.flow.types.direct_supertypes(ctx, self.syms, sym_type)
                     };
                     let mut current = supers;
                     while current.non_empty() {
@@ -1766,7 +1777,7 @@ impl<'a> FlowVisitor for AliveAnalyzer<'a> {
         let pending_exits_prev = self.pending_exits.clone();
         let lint_prev = Rc::clone(&self.lint);
         self.pending_exits = List::nil();
-        self.lint = self.flow.augmented_lint(ctx, class_sym);
+        self.lint = self.flow.augmented_lint(ctx, self.syms, class_sym);
         let defs = class_defs(ctx, tree);
         // process all the static initializers
         for def in defs.iter() {
@@ -1802,7 +1813,7 @@ impl<'a> FlowVisitor for AliveAnalyzer<'a> {
         let method_sym = method_symbol(ctx, tree);
         let lint_prev = Rc::clone(&self.lint);
         if let Some(method_sym) = method_sym {
-            self.lint = self.flow.augmented_lint(ctx, method_sym);
+            self.lint = self.flow.augmented_lint(ctx, self.syms, method_sym);
         }
         assert!(
             self.pending_exits.is_empty(),
@@ -1837,7 +1848,7 @@ impl<'a> FlowVisitor for AliveAnalyzer<'a> {
         if let Some(init) = init {
             let lint_prev = Rc::clone(&self.lint);
             if let Some(sym) = sym {
-                self.lint = self.flow.augmented_lint(ctx, sym);
+                self.lint = self.flow.augmented_lint(ctx, self.syms, sym);
             }
             self.scan(ctx, Some(init));
             self.lint = lint_prev;
@@ -2297,9 +2308,12 @@ impl<'a> LambdaAliveAnalyzer<'a> {
         self.inner.analyze_tree(ctx, env, tree);
     }
 
-    pub fn new(flow: &'a Flow) -> LambdaAliveAnalyzer<'a> {
+    pub fn new(
+        flow: &'a Flow,
+        syms: &'a crate::code::symtab::Symtab,
+    ) -> LambdaAliveAnalyzer<'a> {
         LambdaAliveAnalyzer {
-            inner: AliveAnalyzer::new(flow),
+            inner: AliveAnalyzer::new(flow, syms),
             in_lambda: false,
         }
     }
@@ -2351,9 +2365,12 @@ impl<'a> SnippetAliveAnalyzer<'a> {
         self.inner.analyze_tree(ctx, env, tree);
     }
 
-    pub fn new(flow: &'a Flow) -> SnippetAliveAnalyzer<'a> {
+    pub fn new(
+        flow: &'a Flow,
+        syms: &'a crate::code::symtab::Symtab,
+    ) -> SnippetAliveAnalyzer<'a> {
         SnippetAliveAnalyzer {
-            inner: AliveAnalyzer::new(flow),
+            inner: AliveAnalyzer::new(flow, syms),
         }
     }
 
@@ -2400,9 +2417,12 @@ impl<'a> SnippetBreakAnalyzer<'a> {
         self.inner.analyze_tree(ctx, env, tree);
     }
 
-    pub fn new(flow: &'a Flow) -> SnippetBreakAnalyzer<'a> {
+    pub fn new(
+        flow: &'a Flow,
+        syms: &'a crate::code::symtab::Symtab,
+    ) -> SnippetBreakAnalyzer<'a> {
         SnippetBreakAnalyzer {
-            inner: AliveAnalyzer::new(flow),
+            inner: AliveAnalyzer::new(flow, syms),
             seen_trees: HashSet::new(),
             breaks_out: false,
         }
@@ -2515,6 +2535,8 @@ fn scan_synthetic_break<V: FlowVisitor>(
 /// Java: class Flow.FlowAnalyzer extends BaseAnalyzer (Flow.java:959-1544)
 pub struct FlowAnalyzer<'a> {
     flow: &'a Flow,
+    /// Port adapter (A3k): the Symtab lent by the caller (see augmented_lint).
+    syms: &'a crate::code::symtab::Symtab,
     pending_exits: List<PendingExit>,
     precise_rethrow_types: HashMap<SymbolId, List<TypeId>>,
     caught: List<TypeId>,
@@ -2534,9 +2556,13 @@ pub struct FlowAnalyzer<'a> {
 
 impl<'a> FlowAnalyzer<'a> {
     /// Java: public FlowAnalyzer() (Flow.java:966-980)
-    pub fn new(flow: &'a Flow) -> FlowAnalyzer<'a> {
+    pub fn new(
+        flow: &'a Flow,
+        syms: &'a crate::code::symtab::Symtab,
+    ) -> FlowAnalyzer<'a> {
         FlowAnalyzer {
             flow,
+            syms,
             pending_exits: List::nil(),
             precise_rethrow_types: HashMap::new(),
             caught: List::nil(),
@@ -2551,8 +2577,11 @@ impl<'a> FlowAnalyzer<'a> {
     }
 
     /// Java: LambdaFlowAnalyzer() (Flow.java:1686-1722)
-    pub fn new_lambda(flow: &'a Flow) -> FlowAnalyzer<'a> {
-        let mut analyzer = FlowAnalyzer::new(flow);
+    pub fn new_lambda(
+        flow: &'a Flow,
+        syms: &'a crate::code::symtab::Symtab,
+    ) -> FlowAnalyzer<'a> {
+        let mut analyzer = FlowAnalyzer::new(flow, syms);
         analyzer.lambda_mode = true;
         analyzer
     }
@@ -2627,7 +2656,7 @@ impl<'a> FlowAnalyzer<'a> {
 
     /// Java: void markThrown(JCTree tree, Type exc) (Flow.java:1032-1041)
     fn mark_thrown(&mut self, ctx: &mut CompilerContext, tree: TreeId, exc: TypeId) {
-        let syms = self.flow.syms.borrow();
+        let syms = self.syms;
         let pos = tree_info::diagnostic_position_for(
             ctx,
             tree_info::symbol(ctx, tree).unwrap_or(syms.no_symbol),
@@ -2668,7 +2697,7 @@ impl<'a> FlowAnalyzer<'a> {
         thrown_in_try: &List<TypeId>,
         caught_in_try: &List<TypeId>,
     ) {
-        let syms = self.flow.syms.borrow();
+        let syms = self.syms;
         let chk = self.flow.chk.borrow();
         if chk.subset(ctx, &syms, exc, caught_in_try) {
             self.flow
@@ -2752,7 +2781,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
         }
         self.class_def = Some(tree);
         self.thrown = List::nil();
-        self.lint = self.flow.augmented_lint(ctx, class_sym);
+        self.lint = self.flow.augmented_lint(ctx, self.syms, class_sym);
         let defs = class_defs(ctx, tree);
         // process all the static initializers
         for def in defs.iter() {
@@ -2776,7 +2805,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                         self.caught = mthrown;
                         first_constructor = false;
                     } else {
-                        let syms = self.flow.syms.borrow();
+                        let syms = self.syms;
                         self.caught =
                             self.flow
                                 .chk
@@ -2815,7 +2844,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             return;
         };
         let lint_prev = Rc::clone(&self.lint);
-        self.lint = self.flow.augmented_lint(ctx, method_sym);
+        self.lint = self.flow.augmented_lint(ctx, self.syms, method_sym);
         let caught_prev = self.caught.clone();
         let thrown_prev = self.thrown.clone();
         let method_type = ctx.sym(method_sym).ty.expect("method type");
@@ -2828,7 +2857,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             self.scan(ctx, Some(param));
         }
         if tree_info::is_initial_constructor(ctx, tree) {
-            let syms = self.flow.syms.borrow();
+            let syms = self.syms;
             self.caught = self
                 .flow
                 .chk
@@ -3095,7 +3124,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             {
                 let mut caught = self.caught.clone();
                 {
-                    let syms = self.flow.syms.borrow();
+                    let syms = self.syms;
                     let chk = self.flow.chk.borrow();
                     for ty in thrown_types_of(ctx, constructor_signature).iter() {
                         caught = chk.incl(ctx, &syms, ty, &caught);
@@ -3122,7 +3151,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             let prev_thrown = self.thrown.clone();
             let prev_pending = std::mem::take(&mut self.pending_exits);
             self.in_lambda = true;
-            self.caught = List::of(self.flow.syms.borrow().throwable_type);
+            self.caught = List::of(self.syms.throwable_type);
             self.thrown = List::nil();
             let body = match &ctx.tree(tree).kind {
                 TreeKind::Lambda { body, .. } => *body,
@@ -3145,13 +3174,13 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             _ => panic!("expected a lambda"),
         };
         let descriptor = {
-            let mut syms = self.flow.syms.borrow_mut();
+            let syms = self.syms;
             let chk = self.flow.chk.borrow();
             self.flow
                 .types
                 .find_descriptor_type(
                     ctx,
-                    &mut syms,
+                    &syms,
                     &self.flow.diags,
                     &chk,
                     target.expect("lambda target type"),
@@ -3267,7 +3296,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             };
             for clause in catch_sub_clauses(ctx, catcher, param).iter() {
                 let clause_type = ctx.tree(clause).ty.expect("catch type");
-                let syms = self.flow.syms.borrow();
+                let syms = self.syms;
                 self.caught = self
                     .flow
                     .chk
@@ -3296,11 +3325,11 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                     .is_compound_public(ctx, resource_type)
                 {
                     let mut supers = {
-                        let syms = self.flow.syms.borrow();
+                        let syms = self.syms;
                         self.flow.types.interfaces(ctx, &syms, resource_type)
                     };
                     supers = supers.prepend({
-                        let syms = self.flow.syms.borrow();
+                        let syms = self.syms;
                         self.flow.types.supertype(ctx, &syms, resource_type, None)
                     });
                     supers
@@ -3312,13 +3341,13 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                     let sup = *current.head();
                     current = current.tail();
                     let auto_closeable_tsym = {
-                        let syms = self.flow.syms.borrow();
+                        let syms = self.syms;
                         ctx.typ(syms.auto_closeable_type)
                             .tsym
                             .expect("AutoCloseable symbol")
                     };
                     let as_super = {
-                        let syms = self.flow.syms.borrow();
+                        let syms = self.syms;
                         self.flow
                             .types
                             .as_super(ctx, &syms, sup, auto_closeable_tsym)
@@ -3342,11 +3371,11 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                             env.expect("AssertionError: attrEnv")
                         };
                         let rs = self.flow.rs.borrow_mut();
-                        let mut syms = self.flow.syms.borrow_mut();
+                        let syms = self.syms;
                         let location = ctx.typ(site).tsym.expect("close site symbol");
                         rs.resolve_qualified_method(
                             ctx,
-                            &mut syms,
+                            &syms,
                             &self.flow.types,
                             &mut attr,
                             &chk,
@@ -3361,7 +3390,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                         )
                     };
                     let member_type = {
-                        let syms = self.flow.syms.borrow();
+                        let syms = self.syms;
                         self.flow
                             .types
                             .member_type(ctx, &syms, resource_type, close_method)
@@ -3387,7 +3416,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             }
         }
         self.scan(ctx, body);
-        let syms = self.flow.syms.borrow();
+        let syms = self.syms;
         let mut thrown_in_try = self
             .flow
             .chk
@@ -3571,6 +3600,8 @@ fn symbol_is_enclosed_by(ctx: &CompilerContext, sym: SymbolId, clazz: SymbolId) 
 /// (Flow.java:1724-2899) — definite assignment/unassignment analysis.
 pub struct AssignAnalyzer<'a> {
     flow: &'a Flow,
+    /// Port adapter (A3k): the Symtab lent by the caller (see augmented_lint).
+    syms: &'a crate::code::symtab::Symtab,
     pending_exits: List<PendingExit>,
     pub inits: Bits,
     pub uninits: Bits,
@@ -3599,9 +3630,13 @@ pub struct AssignAnalyzer<'a> {
 
 impl<'a> AssignAnalyzer<'a> {
     /// Java: public AssignAnalyzer() (Flow.java:1770-1778)
-    pub fn new(flow: &'a Flow) -> AssignAnalyzer<'a> {
+    pub fn new(
+        flow: &'a Flow,
+        syms: &'a crate::code::symtab::Symtab,
+    ) -> AssignAnalyzer<'a> {
         AssignAnalyzer {
             flow,
+            syms,
             pending_exits: List::nil(),
             inits: Bits::new(),
             uninits: Bits::new(),
@@ -3627,8 +3662,12 @@ impl<'a> AssignAnalyzer<'a> {
     }
 
     /// Java: LambdaAssignAnalyzer(Env<AttrContext> env) (Flow.java:1648-1650)
-    pub fn new_lambda(flow: &'a Flow, enclosed_scope: crate::ids::ScopeId) -> AssignAnalyzer<'a> {
-        let mut analyzer = AssignAnalyzer::new(flow);
+    pub fn new_lambda(
+        flow: &'a Flow,
+        syms: &'a crate::code::symtab::Symtab,
+        enclosed_scope: crate::ids::ScopeId,
+    ) -> AssignAnalyzer<'a> {
+        let mut analyzer = AssignAnalyzer::new(flow, syms);
         analyzer.enclosed_scope = Some(enclosed_scope);
         analyzer.lambda_mode = true;
         analyzer
@@ -4081,7 +4120,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
             return;
         };
         let lint_prev = Rc::clone(&self.lint);
-        self.lint = self.flow.augmented_lint(ctx, class_sym);
+        self.lint = self.flow.augmented_lint(ctx, self.syms, class_sym);
         let class_def_prev = self.class_def;
         let first_adr_prev = self.first_adr;
         let next_adr_prev = self.next_adr;
@@ -4153,7 +4192,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
             return;
         }
         let lint_prev = Rc::clone(&self.lint);
-        self.lint = self.flow.augmented_lint(ctx, method_sym);
+        self.lint = self.flow.augmented_lint(ctx, self.syms, method_sym);
         let inits_prev = clone_bits(&self.inits);
         let uninits_prev = clone_bits(&self.uninits);
         let next_adr_prev = self.next_adr;
@@ -4266,7 +4305,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
             ctx.scope_enter(scope, sym);
         }
         let lint_prev = Rc::clone(&self.lint);
-        self.lint = self.flow.augmented_lint(ctx, sym);
+        self.lint = self.flow.augmented_lint(ctx, self.syms, sym);
         let track = self.trackable(ctx, sym);
         let owner_kind = ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind);
         if track && matches!(owner_kind, Some(Kind::MTH) | Some(Kind::VAR)) {
@@ -5396,14 +5435,15 @@ impl Flow {
     pub fn analyze_tree(
         &self,
         ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
         make: &Rc<RefCell<TreeMaker>>,
     ) {
         *self.make.borrow_mut() = Some(Rc::clone(make));
         let tree = env.tree.expect("analyzeTree env.tree");
-        AliveAnalyzer::new(self).analyze_tree(ctx, env, tree);
-        AssignAnalyzer::new(self).analyze_tree(ctx, env, tree);
-        FlowAnalyzer::new(self).analyze_tree(ctx, env, tree);
+        AliveAnalyzer::new(self, syms).analyze_tree(ctx, env, tree);
+        AssignAnalyzer::new(self, syms).analyze_tree(ctx, env, tree);
+        FlowAnalyzer::new(self, syms).analyze_tree(ctx, env, tree);
         CaptureAnalyzer::new(self).analyze_tree(ctx, env, tree);
         *self.make.borrow_mut() = None;
     }
@@ -5413,6 +5453,7 @@ impl Flow {
     pub fn analyze_lambda(
         &self,
         ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
         that: TreeId,
         make: &Rc<RefCell<TreeMaker>>,
@@ -5424,7 +5465,7 @@ impl Flow {
                 .install_diagnostic_handler(DiagnosticHandler::Discard { prev: None });
         }
         *self.make.borrow_mut() = Some(Rc::clone(make));
-        LambdaAliveAnalyzer::new(self).analyze_tree(ctx, env, that);
+        LambdaAliveAnalyzer::new(self, syms).analyze_tree(ctx, env, that);
         if !speculative {
             self.log.borrow_mut().pop_diagnostic_handler();
         }
@@ -5436,6 +5477,7 @@ impl Flow {
     pub fn analyze_lambda_thrown_types(
         &self,
         ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
         that: TreeId,
         make: &Rc<RefCell<TreeMaker>>,
@@ -5448,8 +5490,8 @@ impl Flow {
             .encl_class
             .and_then(|encl_class| class_symbol(ctx, encl_class));
         let scope = ctx.scope_create(enclosed_class);
-        AssignAnalyzer::new_lambda(self, scope).analyze_tree(ctx, env, that);
-        let mut flow_analyzer = FlowAnalyzer::new_lambda(self);
+        AssignAnalyzer::new_lambda(self, syms, scope).analyze_tree(ctx, env, that);
+        let mut flow_analyzer = FlowAnalyzer::new_lambda(self, syms);
         flow_analyzer.analyze_tree(ctx, env, that);
         self.log.borrow_mut().pop_diagnostic_handler();
         *self.make.borrow_mut() = None;
@@ -5461,6 +5503,7 @@ impl Flow {
     pub fn alive_after(
         &self,
         ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
         that: TreeId,
         make: &Rc<RefCell<TreeMaker>>,
@@ -5469,7 +5512,7 @@ impl Flow {
             .borrow_mut()
             .install_diagnostic_handler(DiagnosticHandler::Discard { prev: None });
         *self.make.borrow_mut() = Some(Rc::clone(make));
-        let mut analyzer = SnippetAliveAnalyzer::new(self);
+        let mut analyzer = SnippetAliveAnalyzer::new(self, syms);
         analyzer.analyze_tree(ctx, env, that);
         self.log.borrow_mut().pop_diagnostic_handler();
         *self.make.borrow_mut() = None;
@@ -5481,6 +5524,7 @@ impl Flow {
     pub fn breaks_out_of(
         &self,
         ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         env: &Rc<Env<AttrContext>>,
         _loop_tree: TreeId,
         body: TreeId,
@@ -5490,7 +5534,7 @@ impl Flow {
             .borrow_mut()
             .install_diagnostic_handler(DiagnosticHandler::Discard { prev: None });
         *self.make.borrow_mut() = Some(Rc::clone(make));
-        let mut analyzer = SnippetBreakAnalyzer::new(self);
+        let mut analyzer = SnippetBreakAnalyzer::new(self, syms);
         analyzer.analyze_tree(ctx, env, body);
         self.log.borrow_mut().pop_diagnostic_handler();
         *self.make.borrow_mut() = None;
@@ -5722,7 +5766,8 @@ mod tests {
             info: Rc::new(RefCell::new(AttrContext::new())),
             base_clause: false,
         });
-        flow.analyze_tree(&mut ctx, &env, &make);
+        let syms_guard = syms.borrow();
+        flow.analyze_tree(&mut ctx, &syms_guard, &env, &make);
         assert_eq!(log.borrow().nerrors, 0);
     }
 
@@ -5800,7 +5845,8 @@ mod tests {
             source,
             None,
         );
-        let mut analyzer = AliveAnalyzer::new(&flow);
+        let syms_guard = syms.borrow();
+        let mut analyzer = AliveAnalyzer::new(&flow, &syms_guard);
         let no_type = ctx.alloc_type(Type::new(
             TypeTag::NONE,
             None,

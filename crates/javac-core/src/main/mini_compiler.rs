@@ -954,7 +954,9 @@ impl MiniCompiler {
         // JavaCompiler.flow(envs)
         for env in &envs {
             let make = Rc::clone(&self.make);
-            self.flow.analyze_tree(&mut self.ctx, env, &make);
+            let syms_guard = self.syms.borrow();
+            self.flow
+                .analyze_tree(&mut self.ctx, &syms_guard, env, &make);
             // JavaCompiler.flow: compileStates.put(env, CompileState.FLOW)
             // (JavaCompiler.java:1380-1381).
             self.trans_types

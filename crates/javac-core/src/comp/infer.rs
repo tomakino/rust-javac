@@ -2017,12 +2017,14 @@ impl GraphStrategy for LeafSolver {
         graph: &InferenceGraph,
         _inference_context: &InferenceContext,
     ) -> Result<usize, NodeNotFoundException> {
-        if graph.nodes.is_empty() {
-            return Err(NodeNotFoundException {
+        // The node list drops deleted entries; the port keeps stable ids with
+        // None holes, so the first live node is returned here.
+        match graph.nodes.iter().position(|node| node.is_some()) {
+            Some(index) => Ok(index),
+            None => Err(NodeNotFoundException {
                 node_count: graph.nodes.len(),
-            });
+            }),
         }
-        Ok(0)
     }
 
     fn done(
@@ -2207,35 +2209,58 @@ impl<'a> GraphSolver<'a> {
                 .data
                 .clone();
             let saved_undet = self.inference_context.save(ctx, syms, types);
-            let mut failed = false;
-            'outer: loop {
+            // The failure is caught around the whole solve loop and recovered.
+            //
+            // Port adapter (A3k): the ported InferenceException travels as the
+            // Err value of the solve calls, so the upstream catch is expressed
+            // as one outcome variable covering the whole loop body. A failure
+            // is not swallowed: the same rollback/recovery as upstream runs and
+            // the recovery's own failures still propagate.
+            let mut inference_failure: Option<InferenceException> = None;
+            let mut solved_all = false;
+            'outer: while !solved_all {
                 let restvars = self.inference_context.restvars(ctx, syms, types);
                 if !contains_any_list(ctx, syms, types, restvars, vars_to_solve.clone()) {
+                    solved_all = true;
                     break;
                 }
+                let mut progressed = false;
                 for steps in graph_inference_steps() {
-                    let solved = self.inference_context.solve_basic(
+                    let solved = match self.inference_context.solve_basic(
                         ctx,
                         syms,
                         types,
                         vars_to_solve.clone(),
                         &steps,
-                    )?;
+                    ) {
+                        Ok(solved) => solved,
+                        Err(ex) => {
+                            inference_failure = Some(ex);
+                            break 'outer;
+                        }
+                    };
                     if !solved.is_empty() {
-                        infer.do_incorporation(
+                        if let Err(ex) = infer.do_incorporation(
                             ctx,
                             syms,
                             types,
                             self.inference_context,
                             warn,
-                        )?;
+                        ) {
+                            inference_failure = Some(ex);
+                            break 'outer;
+                        }
+                        progressed = true;
                         continue 'outer;
                     }
                 }
-                failed = true;
-                break;
+                if !progressed {
+                    // No progress: report an inference failure.
+                    inference_failure = Some(infer.error(None));
+                    break;
+                }
             }
-            if failed {
+            if inference_failure.is_some() {
                 self.inference_context
                     .rollback(ctx, syms, types, saved_undet);
                 infer.instantiate_as_uninferred_vars(
@@ -3244,7 +3269,8 @@ impl Infer {
             .clone()
             .unwrap_or_else(|| Rc::new(RefCell::new(crate::comp::resolve::NilMethodCheck)));
         {
-            let check = method_check.borrow_mut();
+            // MethodCheck methods take &self; see Resolve::raw_instantiate.
+            let check = method_check.borrow();
             check
                 .arguments_acceptable(
                     ctx,
@@ -3261,8 +3287,16 @@ impl Infer {
                 )
                 .map_err(|failure| match failure {
                     crate::comp::resolve::MethodCheckFailure::Inference(ex) => ex,
-                    crate::comp::resolve::MethodCheckFailure::Inapplicable(_ex) => {
-                        InferenceException::new()
+                    crate::comp::resolve::MethodCheckFailure::Inapplicable(ex) => {
+                        // resolveContext.methodCheck.argumentsAcceptable(...)
+                        // throws InapplicableMethodException; Infer.instantiateMethod
+                        // catches only InferenceException, so the inapplicable
+                        // failure continues to the caller (Resolve.rawInstantiate
+                        // and then selectBest's catch). The ported throw/catch
+                        // channel for InapplicableMethodException is preserved.
+                        crate::comp::resolve::throw_inapplicable_method_exception(
+                            ex.get_diagnostic(),
+                        )
                     }
                 })?;
         }
@@ -3881,7 +3915,20 @@ impl Infer {
             Ok(result_info.check(ctx, syms, chk, pos, ret))
         })();
         inference_context.rollback(ctx, syms, types, saved_undet);
-        result
+        match result {
+            Ok(ty) => Ok(ty),
+            Err(exception) => {
+                if let Some(diag) = exception.get_diagnostic() {
+                    result_info.check_context.report(
+                        ctx,
+                        crate::util::position::NOPOS,
+                        &diag,
+                    );
+                }
+                // The report above throws; this point is unreachable.
+                panic!("AssertionError: cannot get here (the report above throws)");
+            }
+        }
     }
 }
 

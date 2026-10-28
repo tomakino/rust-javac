@@ -458,8 +458,8 @@ impl MemberEnter {
         // Java: localEnv.info.yieldResult = null; (MemberEnter.java:248)
         info.yield_result = None;
         Rc::new(Env {
-            next: None,
-            outer: Some(Rc::clone(env)),
+            next: Some(Rc::clone(env)),
+            outer: env.outer.clone(),
             tree: Some(tree),
             toplevel: env.toplevel,
             encl_class: env.encl_class,

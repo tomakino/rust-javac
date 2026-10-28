@@ -290,3 +290,193 @@ fn simple_class_with_field_and_branch() {
         .expect("constructor");
     assert!(init.attributes.iter().any(|a| a == "Code"));
 }
+
+/// Compiles a set of sources and returns the generated class names and the
+/// diagnostic count. The sources are written as given (a name may contain a
+/// package directory) and are never part of the repository.
+fn compile_sources(label: &str, sources: &[(&str, &str)]) -> (Vec<String>, i32) {
+    let dir = std::env::temp_dir().join(format!(
+        "rust-javac-imports-{}-{label}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("output directory");
+    let mut paths = Vec::new();
+    for (name, source) in sources {
+        let path = dir.join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("source directory");
+        }
+        std::fs::write(&path, source).expect("source file");
+        paths.push(path);
+    }
+    let mut compiler = MiniCompiler::new(&dir);
+    let compiled = compiler
+        .compile_files(&paths)
+        .unwrap_or_else(|message| panic!("{label} compilation failed: {message}"));
+    if compiler.error_count() > 0 {
+        for diagnostic in compiler.log.borrow().deferred_diagnostics() {
+            eprintln!(
+                "[DIAG] {}: {}",
+                diagnostic.get_code_string(),
+                diagnostic.get_message(None).to_string_lossy()
+            );
+        }
+    }
+    (
+        compiled.iter().map(|class| class.name.clone()).collect(),
+        compiler.error_count(),
+    )
+}
+
+/// @Deprecated is resolved through the java.lang.* star import; the
+/// annotation type comes from the platform classes and must not be an
+/// ABSENT_TYP (regression for the import-scope lookup).
+#[test]
+fn deprecated_annotation_resolves_through_java_lang_star_import() {
+    let (classes, errors) = compile_sources(
+        "deprecated",
+        &[("B.java", "@Deprecated
+class B {}
+")],
+    );
+    assert_eq!(errors, 0, "classes: {classes:?}");
+    assert!(classes.iter().any(|class| class == "B"), "classes: {classes:?}");
+}
+
+/// A named annotation import plus @Target(ElementType.TYPE): the annotation
+/// type, the enum constant and the annotation's @Target metadata all resolve.
+#[test]
+fn target_annotation_with_element_type_resolves() {
+    let (classes, errors) = compile_sources(
+        "target",
+        &[(
+            "B.java",
+            "import java.lang.annotation.ElementType;
+             import java.lang.annotation.Target;
+             @Target(ElementType.TYPE)
+             @interface Marker {}
+             @Marker
+             class B {}
+",
+        )],
+    );
+    assert_eq!(errors, 0, "classes: {classes:?}");
+    assert!(classes.iter().any(|class| class == "B"), "classes: {classes:?}");
+    assert!(
+        classes.iter().any(|class| class == "Marker"),
+        "classes: {classes:?}"
+    );
+}
+
+/// A named static import from java.lang (Math.max is overloaded: the
+/// resolution must select the applicable int overload).
+#[test]
+fn static_import_of_java_lang_math_max_resolves() {
+    let (classes, errors) = compile_sources(
+        "static-import",
+        &[(
+            "MaxUse.java",
+            "import static java.lang.Math.max;
+             class MaxUse { int m() { return max(1, 2); } }
+",
+        )],
+    );
+    assert_eq!(errors, 0, "classes: {classes:?}");
+    assert!(
+        classes.iter().any(|class| class == "MaxUse"),
+        "classes: {classes:?}"
+    );
+}
+
+/// An on-demand java.util import makes List/ArrayList visible to the class.
+#[test]
+fn star_import_of_java_util_resolves() {
+    let (classes, errors) = compile_sources(
+        "util-star",
+        &[(
+            "ListUse.java",
+            "import java.util.*;
+             class ListUse { List<String> names; }
+",
+        )],
+    );
+    assert_eq!(errors, 0, "classes: {classes:?}");
+    assert!(
+        classes.iter().any(|class| class == "ListUse"),
+        "classes: {classes:?}"
+    );
+}
+
+/// A class in the current package resolves through the package members scope
+/// (and not only through the toplevel scope of its own compilation unit).
+#[test]
+fn package_member_class_resolves_across_sources() {
+    let (classes, errors) = compile_sources(
+        "package",
+        &[
+            ("p/A.java", "package p; class A {}
+"),
+            (
+                "p/B.java",
+                "package p; class B extends A { A field; }
+",
+            ),
+        ],
+    );
+    assert_eq!(errors, 0, "classes: {classes:?}");
+    assert!(classes.iter().any(|class| class == "p.A"), "classes: {classes:?}");
+    assert!(classes.iter().any(|class| class == "p.B"), "classes: {classes:?}");
+}
+
+/// A field declared in the class scope is found from a method body.
+#[test]
+fn field_reference_in_method_compiles() {
+    let (classes, errors) = compile_sources(
+        "field-reference",
+        &[(
+            "Cached.java",
+            "class Cached {\n\
+             \x20 private final String cache = \"x\";\n\
+             \x20 String f() { return cache; }\n\
+             }\n",
+        )],
+    );
+    assert_eq!(errors, 0, "classes: {classes:?}");
+    assert!(classes.iter().any(|class| class == "Cached"), "classes: {classes:?}");
+}
+
+/// An Object method override resolves through the java.lang members scope.
+#[test]
+fn override_of_object_method_compiles() {
+    let (classes, errors) = compile_sources(
+        "object-override",
+        &[(
+            "Over.java",
+            "class Over {\n\
+             \x20 @Override public String toString() { return \"x\"; }\n\
+             \x20 @Override public int hashCode() { return 1; }\n\
+             \x20 @Override public boolean equals(Object other) { return other == this; }\n\
+             }\n",
+        )],
+    );
+    assert_eq!(errors, 0, "classes: {classes:?}");
+    assert!(classes.iter().any(|class| class == "Over"), "classes: {classes:?}");
+}
+
+/// A qualified this reference (Outer.this) resolves the enclosing class.
+#[test]
+fn qualified_this_of_enclosing_class_compiles() {
+    let (classes, errors) = compile_sources(
+        "qualified-this",
+        &[(
+            "Outer.java",
+            "class Outer {\n\
+             \x20 int value;\n\
+             \x20 class Inner { int read() { return Outer.this.value; } }\n\
+             }\n",
+        )],
+    );
+    assert_eq!(errors, 0, "classes: {classes:?}");
+    assert!(classes.iter().any(|class| class == "Outer"), "classes: {classes:?}");
+}

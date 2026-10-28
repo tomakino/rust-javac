@@ -1086,11 +1086,12 @@ impl Types {
                 self.is_subtype_no_capture(ctx, syms, t, s)
             }
             TypeKindData::ForAll { .. } => {
-                // Java: HasSameArgs.visitForAll (Types.java:2830-2840):
-                // non-strict allows comparing a ForAll with its method type.
+                // Non-strict allows comparing a ForAll with its method type.
                 self.has_same_args_strict(ctx, syms, t, s, true)
             }
-            _ => panic!("AssertionError: hasSameArgs {:?}", ctx.typ(t).get_tag()),
+            // Non-method types never have the same argument list as a method
+            // type; the relation yields false for them.
+            _ => false,
         }
     }
 
@@ -1180,6 +1181,43 @@ impl Types {
                 // Java: SimpleVisitor.visitForAll -> visit(t.qtype).
                 let qtype = qtype.expect("for-all qtype");
                 self.erasure_recurse(ctx, syms, qtype, recurse)
+            }
+            TypeKindData::MethodType { .. }
+            | TypeKindData::PartiallyInferredMethodType { .. } => {
+                // Java: StructuralTypeMapping.visitMethodType — erase the
+                // parameter, return and thrown types (the erasure visitor
+                // dispatches on the method type like any structural mapping).
+                let (argtypes, restype, thrown) = match &ctx.typ(t).kind {
+                    TypeKindData::MethodType {
+                        argtypes,
+                        restype,
+                        thrown,
+                        ..
+                    }
+                    | TypeKindData::PartiallyInferredMethodType {
+                        argtypes,
+                        restype,
+                        thrown,
+                        ..
+                    } => (argtypes.clone(), *restype, thrown.clone()),
+                    _ => crate::util::assert::error(),
+                };
+                let mut argtypes1: List<TypeId> = List::nil();
+                for arg in argtypes.iter() {
+                    argtypes1 = argtypes1.append(self.erasure_recurse(ctx, syms, arg, recurse));
+                }
+                let restype1 = restype.map(|restype| self.erasure_recurse(ctx, syms, restype, recurse));
+                let mut thrown1: List<TypeId> = List::nil();
+                for thrown_type in thrown.iter() {
+                    thrown1 = thrown1.append(self.erasure_recurse(ctx, syms, thrown_type, recurse));
+                }
+                if list_same(&argtypes, &argtypes1)
+                    && restype1 == restype
+                    && list_same(&thrown, &thrown1)
+                {
+                    return t;
+                }
+                new_method_type_2(ctx, argtypes1, restype1, thrown1, ctx.typ(t).tsym)
             }
             _ => {
                 // Java: visitType - not primitive, "other cases already handled"
@@ -1394,10 +1432,16 @@ impl Types {
                 // reentrant completion reuses the same Attr object.
                 match attr.as_deref_mut() {
                     Some(attr) => {
-                        let _ = ctx.complete_class_symbol_with_attr(syms, tsym, attr);
+                        if let Err(failure) =
+                            ctx.complete_class_symbol_with_attr(syms, tsym, attr)
+                        {
+                            crate::code::symbol::throw_completion_failure(failure);
+                        }
                     }
                     None => {
-                        let _ = ctx.complete_class_symbol(syms, tsym);
+                        if let Err(failure) = ctx.complete_class_symbol(syms, tsym) {
+                            crate::code::symbol::throw_completion_failure(failure);
+                        }
                     }
                 }
             }
@@ -1417,8 +1461,12 @@ impl Types {
             let supertype = supertype_opt.unwrap_or_else(|| no_type_of(ctx, syms));
             let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
             let class_bound_type = class_bound(ctx, syms, t, attr.as_deref_mut());
-            let actuals = allparams_of(ctx, class_bound_type);
-            let formals = allparams_of(ctx, tsym_type);
+            // The actual type arguments of the class bound and the formal
+            // type parameters of the class symbol.
+            // Port adapter: allparams() calls getTypeArguments(), whose upstream
+            // implementation lazily completes the class symbol.
+            let actuals = allparams_of_completed(ctx, syms, class_bound_type, attr.as_deref_mut());
+            let formals = allparams_of_completed(ctx, syms, tsym_type, attr.as_deref_mut());
             let result = if has_erased_supertypes(ctx, t) {
                 self.erasure_recursive(ctx, syms, supertype)
             } else if formals.non_empty() {
@@ -1480,22 +1528,21 @@ impl Types {
             }
             let tsym = ctx.typ(t).tsym.expect("class type symbol");
             let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
-            let declared = class_symbol_get_interfaces_option(ctx, tsym);
-            let result = match declared {
-                Some(list) => list,
-                None => {
-                    if t == tsym_type {
-                        List::nil()
-                    } else {
-                        let actuals = allparams_of(ctx, t);
-                        let formals = allparams_of(ctx, tsym_type);
-                        if formals.non_empty() {
-                            let interfaces = class_symbol_get_interfaces(ctx, tsym);
-                            self.subst_types(ctx, syms, &interfaces, &formals, &actuals)
-                        } else {
-                            List::nil()
-                        }
-                    }
+            // The declared interfaces are substituted with the actual type
+            // the declared interfaces of the symbol are substituted with the
+            // actual type arguments whenever t is not the symbol's own type.
+            // The ported previous version returned the declared list unchanged,
+            // which left the hierarchy as Collection<E> for a List<T>.
+            let interfaces = class_symbol_get_interfaces(ctx, tsym);
+            let result = if t == tsym_type {
+                interfaces
+            } else {
+                let actuals = allparams_of(ctx, t);
+                let formals = allparams_of(ctx, tsym_type);
+                if formals.non_empty() {
+                    self.subst_types(ctx, syms, &interfaces, &formals, &actuals)
+                } else {
+                    interfaces
                 }
             };
             set_class_interfaces_field(ctx, t, Some(result.clone()));
@@ -1587,7 +1634,16 @@ impl Types {
                 return t;
             }
             let tsym = ctx.typ(t).tsym;
-            let outer_field = if outer1 == no_type { None } else { Some(outer1) };
+            // Upstream: Types.Subst.visitClassType — new ClassType(outer1,
+            // typarams1, tsym); Type.noType is the single absent-enclosing
+            // sentinel. The local model
+            // carries it either as None or as Some(noType); a rebuilt class type
+            // keeps the encoding of the source type so structural comparisons
+            // against that type still line up.
+            let outer_field = match outer {
+                Some(_) => Some(outer1),
+                None => None,
+            };
             return new_class_type(ctx, outer_field, Some(typarams1), tsym);
         }
         if matches!(&ctx.typ(t).kind, TypeKindData::WildcardType { .. }) {
@@ -1626,10 +1682,19 @@ impl Types {
             return new_array_type(ctx, elem1, tsym);
         }
         if tag == TypeTag::METHOD {
+            // A partially inferred method type extends MethodType, so
+            // Subst.visitMethodType (Types.StructuralTypeMapping) maps it like
+            // any MethodType and rebuilds a plain MethodType.
             let (argtypes, restype, thrown) = match &ctx.typ(t).kind {
                 TypeKindData::MethodType { argtypes, restype, thrown, .. } => {
                     (argtypes.clone(), *restype, thrown.clone())
                 }
+                TypeKindData::PartiallyInferredMethodType {
+                    argtypes,
+                    restype,
+                    thrown,
+                    ..
+                } => (argtypes.clone(), *restype, thrown.clone()),
                 _ => crate::util::assert::error(),
             };
             let argtypes1 = self.subst(ctx, syms, &argtypes, from, to);
@@ -1758,6 +1823,21 @@ impl Types {
         let tag = ctx.typ(original).get_tag();
         match &kind {
             TypeKindData::MethodType {
+                argtypes,
+                thrown,
+                recvtype,
+                ..
+            } => ctx.alloc_type(crate::code::type_::Type::new(
+                TypeTag::METHOD,
+                tsym,
+                TypeKindData::MethodType {
+                    argtypes: argtypes.clone(),
+                    restype: Some(new_return),
+                    thrown: thrown.clone(),
+                    recvtype: *recvtype,
+                },
+            )),
+            TypeKindData::PartiallyInferredMethodType {
                 argtypes,
                 thrown,
                 recvtype,
@@ -2030,6 +2110,14 @@ impl Types {
         if ctx.sym(sym).ty == Some(syms.object_type) {
             return Some(syms.object_type);
         }
+        // Port adapter: ensure a classfile stub has its INTERFACE/access flags
+        // before asSuper reads them; upstream ClassSymbol.flags() observes the
+        // completed symbol (the local stub carries CLASS_SEEN only).
+        if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP
+            && (ctx.sym(sym).flags() & crate::code::flags::INTERFACE as i64) == 0
+        {
+            let _ = ctx.complete_class_symbol(syms, sym);
+        }
         let mut seen: Vec<SymbolId> = Vec::new();
         self.as_super_visit(ctx, syms, t, sym, &mut seen)
     }
@@ -2301,6 +2389,17 @@ impl Types {
         }
         let cls = t;
         let tsym = ctx.typ(cls).tsym.expect("class type symbol");
+        // getTypeArguments() lazily completes the class symbol
+        // capture() reads t.tsym.type.getTypeArguments()
+        // as the formal parameter list, so the symbol must be completed before
+        // the list is read; otherwise a classfile generic such as
+        // java.util.List yields an empty formal list and capture() falls into
+        // the rare-type erasure branch.
+        if !ctx.is_symbol_completed(tsym)
+            && let Err(failure) = ctx.complete_class_symbol(syms, tsym)
+        {
+            crate::code::symbol::throw_completion_failure(failure);
+        }
         let tsym_type = ctx.sym(tsym).ty.expect("class symbol type");
         let a_list = get_type_arguments(ctx, tsym_type);
         let t_list = get_type_arguments(ctx, cls);
@@ -3225,7 +3324,93 @@ impl Types {
             }
             return false;
         }
-        self.is_same_type(ctx, syms, t, s)
+        if self.is_same_type(ctx, syms, t, s) {
+            return true;
+        }
+        match ctx.typ(t).kind.clone() {
+            TypeKindData::ClassType { .. }
+            | TypeKindData::ErasedClassType { .. }
+            | TypeKindData::UnionClassType { .. }
+            | TypeKindData::IntersectionClassType { .. } => {
+                if is_parameterized_type(ctx, t) {
+                    if let Some(enclosing) = get_enclosing_type(ctx, t)
+                        && self.contains(ctx, syms, enclosing, s)
+                    {
+                        return true;
+                    }
+                    let mut args = get_type_arguments(ctx, t);
+                    while args.non_empty() {
+                        if self.contains(ctx, syms, *args.head(), s) {
+                            return true;
+                        }
+                        args = args.tail();
+                    }
+                }
+                if self.is_compound(ctx, t) {
+                    let sup = self.supertype(ctx, syms, t, None);
+                    if self.contains(ctx, syms, sup, s) {
+                        return true;
+                    }
+                    let mut interfaces = self.interfaces(ctx, syms, t);
+                    while interfaces.non_empty() {
+                        if self.contains(ctx, syms, *interfaces.head(), s) {
+                            return true;
+                        }
+                        interfaces = interfaces.tail();
+                    }
+                }
+                false
+            }
+            TypeKindData::ArrayType { elemtype, .. } => {
+                let elem = elemtype.expect("array element type");
+                self.contains(ctx, syms, elem, s)
+            }
+            TypeKindData::MethodType {
+                argtypes,
+                restype,
+                thrown,
+                ..
+            } => {
+                let ret = restype.expect("method return type");
+                self.contains_list(ctx, syms, argtypes, s)
+                    || self.contains(ctx, syms, ret, s)
+                    || self.contains_list(ctx, syms, thrown, s)
+            }
+            TypeKindData::PartiallyInferredMethodType {
+                argtypes,
+                restype,
+                thrown,
+                ..
+            } => {
+                let ret = restype.expect("partially inferred return type");
+                self.contains_list(ctx, syms, argtypes, s)
+                    || self.contains(ctx, syms, ret, s)
+                    || self.contains_list(ctx, syms, thrown, s)
+            }
+            TypeKindData::ForAll { qtype, .. } => {
+                let qtype = qtype.expect("for-all qtype");
+                self.contains(ctx, syms, qtype, s)
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether any type in the list contains the given type.
+    fn contains_list(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ts: List<TypeId>,
+        s: TypeId,
+    ) -> bool {
+        let mut current = ts;
+        while current.non_empty() {
+            if self.contains(ctx, syms, *current.head(), s) {
+                return true;
+            }
+            current = current.tail();
+        }
+        false
     }
 
     /// Java: public boolean Type.containsAny(List<Type> ts)
@@ -3982,6 +4167,76 @@ pub(crate) fn get_type_arguments(ctx: &CompilerContext, t: TypeId) -> List<TypeI
         | TypeKindData::ErrorType { typarams_field, .. } => {
             typarams_field.clone().unwrap_or_else(List::nil)
         }
+        // Java: ForAll.getTypeArguments() returns tvars.
+        TypeKindData::ForAll { tvars, .. } => tvars.clone(),
+        _ => List::nil(),
+    }
+}
+
+/// The lazily completed type arguments of a class type:
+///
+/// <pre>
+/// public List&lt;Type&gt; getTypeArguments() {
+///     if (typarams_field == null) {
+///         complete();
+///         if (typarams_field == null)
+///             typarams_field = List.nil();
+///     }
+///     return typarams_field;
+/// }
+/// </pre>
+///
+/// Port notes (A3k): the local ClassType stores the upstream nullable
+/// typarams_field as Option; None is the "not filled in yet" state. Completion
+/// is the ported ClassSymbol.complete(); the caller's Attr is reused through
+/// complete_class_symbol_with_attr when one is available and the Attr-less
+/// complete_class_symbol entry point is used otherwise (no RefCell probing).
+pub(crate) fn get_type_arguments_completed(
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    t: TypeId,
+    mut attr: Option<&mut crate::comp::attr::Attr>,
+) -> List<TypeId> {
+    let needs_completion = match &ctx.typ(t).kind {
+        TypeKindData::ClassType { typarams_field, .. }
+        | TypeKindData::ErasedClassType { typarams_field, .. }
+        | TypeKindData::UnionClassType { typarams_field, .. }
+        | TypeKindData::IntersectionClassType { typarams_field, .. }
+        | TypeKindData::ErrorType { typarams_field, .. } => typarams_field.is_none(),
+        _ => return List::nil(),
+    };
+    if !needs_completion {
+        return get_type_arguments(ctx, t);
+    }
+    // Complete the class symbol before the parameter list is read.
+    if let Some(tsym) = ctx.typ(t).tsym
+        && !ctx.is_symbol_completed(tsym)
+    {
+        match attr.as_deref_mut() {
+            Some(attr) => {
+                if let Err(failure) = ctx.complete_class_symbol_with_attr(syms, tsym, attr) {
+                    crate::code::symbol::throw_completion_failure(failure);
+                }
+            }
+            None => {
+                if let Err(failure) = ctx.complete_class_symbol(syms, tsym) {
+                    crate::code::symbol::throw_completion_failure(failure);
+                }
+            }
+        }
+    }
+    // An absent parameter list is cached as the empty list.
+    match &mut ctx.typ_mut(t).kind {
+        TypeKindData::ClassType { typarams_field, .. }
+        | TypeKindData::ErasedClassType { typarams_field, .. }
+        | TypeKindData::UnionClassType { typarams_field, .. }
+        | TypeKindData::IntersectionClassType { typarams_field, .. }
+        | TypeKindData::ErrorType { typarams_field, .. } => {
+            if typarams_field.is_none() {
+                *typarams_field = Some(List::nil());
+            }
+            typarams_field.clone().unwrap_or_else(List::nil)
+        }
         _ => List::nil(),
     }
 }
@@ -4034,6 +4289,58 @@ pub(crate) fn allparams_of(ctx: &CompilerContext, t: TypeId) -> List<TypeId> {
         TypeKindData::ArrayType { elemtype: Some(elem), .. } => allparams_of(ctx, *elem),
         TypeKindData::ArrayType { elemtype: None, .. } => List::nil(),
         _ => List::nil(),
+    }
+}
+
+/// All type parameters of a class type:
+///
+/// <pre>
+/// public List&lt;Type&gt; allparams() {
+///     if (allparams_field == null) {
+///         allparams_field = getTypeArguments().prependList(getEnclosingType().allparams());
+///     }
+///     return allparams_field;
+/// }
+/// </pre>
+///
+/// Port notes (A3k): every hop follows the lazy getTypeArguments() completion
+/// semantics of get_type_arguments_completed; the local allparams_of does not
+/// cache allparams_field, so the value is recomputed from the (now completed)
+/// typarams_field. The enclosing chain is walked with the caller's Attr.
+pub(crate) fn allparams_of_completed(
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    t: TypeId,
+    mut attr: Option<&mut crate::comp::attr::Attr>,
+) -> List<TypeId> {
+    enum AllParamsView {
+        Class(Option<TypeId>),
+        Array(Option<TypeId>),
+        Other,
+    }
+    let view = match &ctx.typ(t).kind {
+        TypeKindData::ClassType { outer_field, .. }
+        | TypeKindData::ErasedClassType { outer_field, .. }
+        | TypeKindData::UnionClassType { outer_field, .. }
+        | TypeKindData::IntersectionClassType { outer_field, .. }
+        | TypeKindData::ErrorType { outer_field, .. } => AllParamsView::Class(*outer_field),
+        TypeKindData::ArrayType { elemtype, .. } => AllParamsView::Array(*elemtype),
+        _ => AllParamsView::Other,
+    };
+    match view {
+        AllParamsView::Class(outer) => {
+            let params = get_type_arguments_completed(ctx, syms, t, attr.as_deref_mut());
+            match outer {
+                Some(outer) => {
+                    params.prepend_list(&allparams_of_completed(ctx, syms, outer, attr))
+                }
+                None => params,
+            }
+        }
+        AllParamsView::Array(Some(elem)) => {
+            allparams_of_completed(ctx, syms, elem, attr)
+        }
+        AllParamsView::Array(None) | AllParamsView::Other => List::nil(),
     }
 }
 
@@ -6592,7 +6899,7 @@ impl Types {
             return;
         }
         let mapped = self.map_undet_vars_to_typevars(ctx, syms, bound);
-        let bound2 = self.base_type_of(ctx, mapped);
+        let bound2 = self.base_type_of(ctx, syms, mapped);
         let qtype = self.undet_var_qtype(ctx, uv);
         if bound == qtype {
             return;
@@ -6726,11 +7033,17 @@ impl Types {
         result
     }
 
-    /// Java: UndetVar.baseType() (Type.java:2043-2048)
-    pub(crate) fn base_type_of(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
+    /// The base type of a type: an inference variable maps to the base type of
+    /// its instantiated type and every other type maps to itself.
+    pub(crate) fn base_type_of(
+        &self,
+        ctx: &mut CompilerContext,
+        _syms: &Symtab,
+        t: TypeId,
+    ) -> TypeId {
         match &ctx.typ(t).kind {
             TypeKindData::UndetVar { .. } => match self.undet_var_get_inst(ctx, t) {
-                Some(inst) => self.base_type_of(ctx, inst),
+                Some(inst) => self.base_type_of(ctx, _syms, inst),
                 None => t,
             },
             _ => t,

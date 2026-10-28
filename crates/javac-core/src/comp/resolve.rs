@@ -492,11 +492,27 @@ impl Resolve {
         if !is_method || is_constructor || is_static {
             return true;
         }
-        // Java: ((MethodSymbol)sym).implementation(site.tsym, types, true) == sym
-        // (Resolve.java:467-474; Symbol.java:2168-2187).
+        // Upstream: Resolve.notOverriddenIn — s2 = implementation(site.tsym,
+        // types, true); the member is still visible when s2 is null, s2 is the
+        // symbol itself, both share an owner, or the two member types are not
+        // sub-signatures.
         let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
-        crate::code::symbol::implementation(ctx, syms, &self.types, sym, site_tsym, true)
-            == Some(sym)
+        let implementation =
+            crate::code::symbol::implementation(ctx, syms, &self.types, sym, site_tsym, true);
+        match implementation {
+            None => true,
+            Some(s2) => {
+                if s2 == sym || ctx.sym(sym).owner == ctx.sym(s2).owner {
+                    true
+                } else {
+                    let s2_type = self.types.member_type(ctx, syms, site, s2);
+                    let sym_type = self.types.member_type(ctx, syms, site, sym);
+                    !self
+                        .types
+                        .is_sub_signature(ctx, syms, s2_type, sym_type)
+                }
+            }
+        }
     }
 
     /// Java: private boolean isProtectedAccessible(Symbol sym, ClassSymbol c,
@@ -1816,6 +1832,7 @@ impl Resolve {
                 syms,
                 None,
             );
+
             for candidate in candidates {
                 if ctx.sym(candidate).kind == Kind::VAR
                     && (ctx.sym(candidate).flags_field & flags::SYNTHETIC as i64) == 0
@@ -1880,6 +1897,7 @@ impl Resolve {
                     syms,
                     None,
                 );
+
                 for candidate in candidates {
                     if ctx.sym(candidate).kind == Kind::VAR
                         && (ctx.sym(candidate).flags_field & flags::SYNTHETIC as i64) == 0
@@ -2778,6 +2796,11 @@ impl Resolve {
         let module = env_toplevel_module(ctx, env).expect("toplevel module");
         let pack = syms.lookup_package(ctx, module, name);
         if self.allow_modules && self.import_on_demand(ctx, env, name) {
+            // Port adapter: upstream PackageSymbol members are materialized by
+            // the package completer; the ported members() accessor does not
+            // complete, so complete the package before deciding whether it is
+            // an invisible symbol.
+            let _ = ctx.complete_symbol(syms, pack);
             let members_empty = ctx.sym(pack).members().is_none()
                 || ctx
                     .sym(pack)
@@ -3822,7 +3845,9 @@ thread_local! {
     /// this thread (the Java exception payload is not Send, so the diagnostic
     /// travels in a thread-local stack and the panic payload is a marker;
     /// registered adapter for the throw/catch control flow).
-    static INAPPLICABLE_DIAGNOSTICS: std::cell::RefCell<Vec<crate::util::jc_diagnostic::JCDiagnostic>> =
+    static INAPPLICABLE_DIAGNOSTICS: std::cell::RefCell<
+    Vec<Option<crate::util::jc_diagnostic::JCDiagnostic>>,
+> =
         const { std::cell::RefCell::new(Vec::new()) };
     /// Inference exceptions currently unwinding on this thread (same adapter).
     static INFERENCE_EXCEPTIONS: std::cell::RefCell<Vec<crate::comp::infer::InferenceException>> =
@@ -3838,8 +3863,10 @@ pub struct InapplicableMethodExceptionPayload;
 pub struct InferenceExceptionPayload;
 
 /// Java: throw new InapplicableMethodException(details) (Resolve.java:1040-1042).
-pub fn throw_inapplicable_method_exception(details: &crate::util::jc_diagnostic::JCDiagnostic) -> ! {
-    INAPPLICABLE_DIAGNOSTICS.with(|stack| stack.borrow_mut().push(details.clone()));
+pub fn throw_inapplicable_method_exception(
+    details: Option<&crate::util::jc_diagnostic::JCDiagnostic>,
+) -> ! {
+    INAPPLICABLE_DIAGNOSTICS.with(|stack| stack.borrow_mut().push(details.cloned()));
     std::panic::panic_any(InapplicableMethodExceptionPayload);
 }
 
@@ -3897,7 +3924,7 @@ pub fn catch_inference_exception<R>(
 /// RuntimeException (Resolve.java:1398-1411)
 #[derive(Clone, Debug)]
 pub struct InapplicableMethodException {
-    diagnostic: crate::util::jc_diagnostic::JCDiagnostic,
+    diagnostic: Option<crate::util::jc_diagnostic::JCDiagnostic>,
 }
 
 impl InapplicableMethodException {
@@ -3908,13 +3935,13 @@ impl InapplicableMethodException {
 ///
 /// Upstream: Resolve.java:1398-1411.
 ///
-    pub fn new(diagnostic: crate::util::jc_diagnostic::JCDiagnostic) -> InapplicableMethodException {
+    pub fn new(diagnostic: Option<crate::util::jc_diagnostic::JCDiagnostic>) -> InapplicableMethodException {
         InapplicableMethodException { diagnostic }
     }
 
     /// Java: public JCDiagnostic getDiagnostic()
-    pub fn get_diagnostic(&self) -> &crate::util::jc_diagnostic::JCDiagnostic {
-        &self.diagnostic
+    pub fn get_diagnostic(&self) -> Option<&crate::util::jc_diagnostic::JCDiagnostic> {
+        self.diagnostic.as_ref()
     }
 }
 
@@ -4136,7 +4163,7 @@ pub fn abstract_method_check_arguments_acceptable(
         }
         if arg_count != formal_count {
             return Err(MethodCheckFailure::Inapplicable(
-                InapplicableMethodException::new(method_check_diag(diags, "arity mismatch")),
+                InapplicableMethodException::new(Some(method_check_diag(diags, "arity mismatch"))),
             ));
         }
     }
@@ -4168,7 +4195,7 @@ pub fn abstract_method_check_arguments_acceptable(
     }
     if formals_head_is_not_varargs(&formals, varargs_formal) {
         return Err(MethodCheckFailure::Inapplicable(InapplicableMethodException::new(
-            method_check_diag(diags, "arity mismatch"),
+            Some(method_check_diag(diags, "arity mismatch")),
         )));
     }
     if use_varargs {
@@ -4271,7 +4298,7 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         details: &crate::util::jc_diagnostic::JCDiagnostic,
     ) {
         // Java: throw new InapplicableMethodException(details) (Resolve.java:1040-1042).
-        throw_inapplicable_method_exception(details);
+        throw_inapplicable_method_exception(Some(details));
     }
 
     fn check_warner(
@@ -4341,7 +4368,7 @@ impl MethodResultInfo {
                     // ported method-check path only reports inference failures
                     // (the CompletionFailure path is Attr, registered).
                     MethodCheckFailure::Inapplicable(InapplicableMethodException::new(
-                        method_check_diag(diags, "completion failure"),
+                        Some(method_check_diag(diags, "completion failure")),
                     ))
                 }
             });
@@ -4360,7 +4387,7 @@ impl MethodResultInfo {
         };
         if !self.check_context.compatible(ctx, syms, types, captured_type, self.pt, warn) {
             return Err(MethodCheckFailure::Inapplicable(
-                InapplicableMethodException::new(method_check_diag(diags, "no conforming assignment")),
+                InapplicableMethodException::new(Some(method_check_diag(diags, "no conforming assignment"))),
             ));
         }
         // Java: super.check(pos, chk.checkNonVoid(pos, capturedType)) — the
@@ -4537,7 +4564,7 @@ impl Resolve {
                     .into(),
                 );
                 return Err(MethodCheckFailure::Inapplicable(
-                    InapplicableMethodException::new(diag),
+                    InapplicableMethodException::new(Some(diag)),
                 ));
             }
             let mut formals = pmt_tvars.clone();
@@ -4557,7 +4584,7 @@ impl Resolve {
                             .into(),
                         );
                         return Err(MethodCheckFailure::Inapplicable(
-                            InapplicableMethodException::new(diag),
+                            InapplicableMethodException::new(Some(diag)),
                         ));
                     }
                     bounds = bounds.tail();
@@ -4627,7 +4654,11 @@ impl Resolve {
             .clone()
             .unwrap_or_else(|| Rc::new(RefCell::new(NilMethodCheck)));
         {
-            let check = method_check.borrow_mut();
+            // MethodCheck methods take &self (the upstream Java methods are
+            // non-mutating here); a shared borrow keeps nested re-entrant
+            // resolution (e.g. an argument expression that resolves its own
+            // call) from re-borrowing the shared defaultMethodCheck cell.
+            let check = method_check.borrow();
             check.arguments_acceptable(
                 ctx,
                 syms,
@@ -4706,24 +4737,24 @@ impl Resolve {
         self.current_resolution_step.set(Some(step));
         // Java: finally { currentResolutionContext = prevContext; } (Resolve.java:647-665).
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.raw_instantiate(
-                ctx,
-                syms,
-                types,
-                attr,
-                chk,
-                infer,
-                env,
-                site,
-                m,
-                Some(result_info),
-                argtypes,
-                typeargtypes,
-                step.is_boxing_required(),
-                step.is_varargs_required(),
-                &mut resolution_context,
-                warn,
-            )
+            self.raw_instantiate(
+                ctx,
+                syms,
+                types,
+                attr,
+                chk,
+                infer,
+                env,
+                site,
+                m,
+                Some(result_info),
+                argtypes,
+                typeargtypes,
+                step.is_boxing_required(),
+                step.is_varargs_required(),
+                &mut resolution_context,
+                warn,
+            )
         }));
         self.current_resolution_step.set(previous_step);
         match result {
@@ -4803,8 +4834,13 @@ impl LookupFilter {
 /// Upstream: Resolve.java:1880-1895.
 ///
     pub fn test(&self, ctx: &crate::compiler_context::CompilerContext, sym: SymbolId) -> bool {
-        let flags = ctx.sym(sym).flags_field;
-        (flags & crate::code::flags::ABSTRACT as i64) != 0 || self.abstractok
+        let symbol = ctx.sym(sym);
+        let flags = symbol.flags_field;
+        symbol.kind == crate::code::kinds::Kind::MTH
+            && (flags & crate::code::flags::SYNTHETIC as i64) == 0
+            && (self.abstractok
+                || (flags & crate::code::flags::DEFAULT as i64) != 0
+                || (flags & crate::code::flags::ABSTRACT as i64) == 0)
     }
 }
 
@@ -4885,8 +4921,18 @@ impl Resolve {
         };
         match inner_result {
             Ok(mt) => resolve_context.add_applicable_candidate(sym, mt),
-            Err(MethodCheckFailure::Inapplicable(ex)) => {
-                resolve_context.add_inapplicable_candidate(sym, Some(ex.get_diagnostic().clone()));
+            Err(failure) => {
+                // An inference failure is an inapplicable-method failure (the
+                // exception hierarchy), so the candidate is recorded as
+                // inapplicable and its diagnostic is kept for the resolution
+                // error instead of aborting the whole overload resolution.
+                let ex = match failure {
+                    MethodCheckFailure::Inapplicable(ex) => ex,
+                    MethodCheckFailure::Inference(ex) => {
+                        InapplicableMethodException::new(ex.get_diagnostic())
+                    }
+                };
+                resolve_context.add_inapplicable_candidate(sym, ex.get_diagnostic().cloned());
                 // Currently, an InapplicableMethodException occurs.
                 // If bestSoFar.kind was ABSENT_MTH, return an
                 // InapplicableSymbolError(kind is WRONG_MTH).
@@ -4941,12 +4987,6 @@ impl Resolve {
                     }
                     _ => return best_so_far,
                 }
-            }
-Err(MethodCheckFailure::Inference(exception)) => {
-                // Java: InferenceException propagates out of selectBest (Resolve.java:1580-1609
-                // catches only InapplicableMethodException); the port throws the
-                // inference exception through the panic channel and Infer catches it.
-                throw_inference_exception(exception);
             }
         }
         if !self.is_accessible(ctx, syms, types, env, site, sym) {
@@ -5676,7 +5716,7 @@ fn varargs_accessible(
             info.args,
         );
         Err(MethodCheckFailure::Inapplicable(
-            InapplicableMethodException::new(diag),
+            InapplicableMethodException::new(Some(diag)),
         ))
     }
 }
@@ -9288,7 +9328,7 @@ impl Resolve {
                 static_only = true;
             }
             if let Some(encl_tree) = env1.encl_class {
-                if let Some(encl_sym) = crate::tree::tree_info::symbol(ctx, encl_tree) {
+                if let Some(encl_sym) = crate::tree::tree_info::symbol_for(ctx, encl_tree) {
                     if encl_sym == c {
                         let scope = env1.info.borrow().scope;
                         if let Some(scope) = scope {
@@ -9886,8 +9926,11 @@ mod tests {
         let fragment = diags.fragment(crate::resources::compiler_properties::fragments::wrong_number_type_args(
             javac_strings::JavaString::from("1"),
         ).into());
-        let ex = InapplicableMethodException::new(fragment.clone());
-        assert_eq!(ex.get_diagnostic().get_type(), crate::util::jc_diagnostic::DiagnosticType::FRAGMENT);
+        let ex = InapplicableMethodException::new(Some(fragment.clone()));
+        assert_eq!(
+            ex.get_diagnostic().expect("fragment diagnostic").get_type(),
+            crate::util::jc_diagnostic::DiagnosticType::FRAGMENT
+        );
         let _ = &mut ctx;
     }
     #[test]
@@ -9976,9 +10019,10 @@ mod tests {
             },
         ));
         let strict = LookupFilter { abstractok: false };
-        assert!(strict.test(&ctx, abstract_sym));
-        assert!(!strict.test(&ctx, concrete_sym));
+        assert!(!strict.test(&ctx, abstract_sym));
+        assert!(strict.test(&ctx, concrete_sym));
         let lenient = LookupFilter { abstractok: true };
+        assert!(lenient.test(&ctx, abstract_sym));
         assert!(lenient.test(&ctx, concrete_sym));
     }
 
@@ -10001,11 +10045,15 @@ mod check_channel_tests {
     fn inapplicable_panic_is_caught_at_the_boundary() {
         let diag = diagnostic();
         let result =
-            catch_inapplicable_method_exception(|| throw_inapplicable_method_exception(&diag));
+            catch_inapplicable_method_exception(|| throw_inapplicable_method_exception(Some(&diag)));
         match result {
             Err(MethodCheckFailure::Inapplicable(exception)) => {
                 assert_eq!(
-                    exception.get_diagnostic().get_message(None).to_string_lossy(),
+                    exception
+                        .get_diagnostic()
+                        .expect("inapplicable diagnostic")
+                        .get_message(None)
+                        .to_string_lossy(),
                     diag.get_message(None).to_string_lossy()
                 );
             }

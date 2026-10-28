@@ -119,6 +119,7 @@ pub struct ArgumentTypeData {
 ///   - none.
 ///
 /// Upstream: ArgumentAttr.java:96-130.
+#[derive(Clone)]
 pub struct ArgumentAttr {
     /// Java: final DeferredAttr deferredAttr (cell: DeferredAttr and
     /// ArgumentAttr are mutually recursive services, Porting rules).
@@ -130,7 +131,11 @@ pub struct ArgumentAttr {
     /// Java: Type result
     pub result: Option<TypeId>,
     /// Java: Map<UniquePos, ArgumentType<?>> argumentTypeCache
-    pub argument_type_cache: std::collections::HashMap<UniquePos, Rc<RefCell<ArgumentTypeData>>>,
+    ///
+    /// Port adapter (A3k): the cache is shared by the per-attribution session
+    /// clones, so completions started from the canonical service observe the
+    /// same entries (upstream has a single ArgumentAttr object).
+    pub argument_type_cache: Rc<RefCell<std::collections::HashMap<UniquePos, Rc<RefCell<ArgumentTypeData>>>>>,
     /// Java: final Flow flow (cell: the wiring installs it; Porting rules). Used by
     /// attribSpeculativeLambda's flow.analyzeLambda call.
     pub flow: Rc<RefCell<Option<Rc<crate::comp::flow::Flow>>>>,
@@ -226,9 +231,9 @@ impl LocalCacheContext {
     ///   - none.
     ///
     /// Upstream: ArgumentAttr.java:226-230.
-    pub fn leave(&mut self, argument_attr: &mut ArgumentAttr) {
+    pub fn leave(&mut self, argument_attr: &ArgumentAttr) {
         if let Some(prev) = self.prev_cache.take() {
-            argument_attr.argument_type_cache = prev;
+            *argument_attr.argument_type_cache.borrow_mut() = prev;
         }
     }
 }
@@ -257,7 +262,7 @@ impl ArgumentAttr {
             diags,
             env: None,
             result: None,
-            argument_type_cache: std::collections::HashMap::new(),
+            argument_type_cache: Rc::new(RefCell::new(std::collections::HashMap::new())),
             flow: Rc::new(RefCell::new(None)),
         }))
     }
@@ -379,8 +384,9 @@ impl ArgumentAttr {
     ///   - none.
     ///
     /// Upstream: ArgumentAttr.java:196-198.
-    pub fn with_local_cache_context(&mut self) -> LocalCacheContext {
-        let prev = std::mem::take(&mut self.argument_type_cache);
+    pub fn with_local_cache_context(&self) -> LocalCacheContext {
+        let mut cache = self.argument_type_cache.borrow_mut();
+        let prev = std::mem::take(&mut *cache);
         LocalCacheContext {
             prev_cache: Some(prev),
         }
@@ -628,7 +634,7 @@ impl ArgumentAttr {
         } else {
             // otherwise just use a deferred type
             let env = self.env.clone().expect("env");
-            let deferred_type = self.new_plain_deferred(ctx, attr, tree, &env);
+            let deferred_type = self.new_plain_deferred(ctx, syms, attr, tree, &env);
             self.set_result(ctx, tree, deferred_type);
             Ok(Some(deferred_type))
         }
@@ -661,7 +667,7 @@ impl ArgumentAttr {
         let deferred = self.deferred.borrow().clone().expect("deferred attr service");
         let mut local_cache = self.with_local_cache_context();
         let expr_tree = {
-            let mut deferred = deferred.borrow_mut();
+            let deferred = deferred.borrow();
             deferred
                 .attrib_speculative(ctx, syms, attr, expr, &local_env, &qualifier_result)
                 .map_err(deferred_failure_to_completion)?
@@ -739,7 +745,7 @@ impl ArgumentAttr {
         }
         // return a plain old deferred type for this
         let env_for_deferred = self.env.clone().expect("env");
-        let deferred_type = self.new_plain_deferred(ctx, attr, tree, &env_for_deferred);
+        let deferred_type = self.new_plain_deferred(ctx, syms, attr, tree, &env_for_deferred);
         self.set_result(ctx, tree, deferred_type);
         Ok(Some(deferred_type))
     }
@@ -767,28 +773,30 @@ impl ArgumentAttr {
         factory: impl FnOnce(TreeId) -> ArgumentTypeData,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         let pos = UniquePos::new(ctx, &log.borrow(), tree);
-        if let Some(finished) = self.process_arg_cached(ctx, attr, tree, pos.clone())? {
+        if let Some(finished) = self.process_arg_cached(ctx, syms, attr, tree, pos.clone())? {
             return Ok(Some(finished));
         }
         let result_info = self.argument_result_info(attr, ctx, log, tree);
         let env = self.env.clone().expect("argument attr env");
         let deferred = self.deferred.borrow().clone().expect("deferred attr service");
         let speculative_tree = {
-            let deferred = deferred.borrow_mut();
+            let deferred = deferred.borrow();
             deferred
                 .tree_copier
                 .copy(ctx, Some(tree))
                 .expect("copied speculative tree")
         };
         let speculative_tree = {
-            let mut deferred = deferred.borrow_mut();
+            let deferred = deferred.borrow();
             deferred
                 .attrib_speculative(ctx, syms, attr, speculative_tree, &env, &result_info)
                 .map_err(deferred_failure_to_completion)?
         };
         let data = factory(speculative_tree);
-        let deferred_type = self.new_argument_deferred(ctx, attr, tree, &env, data.clone());
-        self.argument_type_cache.insert(pos, Rc::new(RefCell::new(data)));
+        let deferred_type = self.new_argument_deferred(ctx, syms, attr, tree, &env, data.clone());
+        self.argument_type_cache
+            .borrow_mut()
+            .insert(pos, Rc::new(RefCell::new(data)));
         self.set_result(ctx, tree, deferred_type);
         Ok(Some(deferred_type))
     }
@@ -804,7 +812,7 @@ impl ArgumentAttr {
         tree: TreeId,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         let pos = UniquePos::new(ctx, &log.borrow(), tree);
-        if let Some(finished) = self.process_arg_cached(ctx, attr, tree, pos.clone())? {
+        if let Some(finished) = self.process_arg_cached(ctx, syms, attr, tree, pos.clone())? {
             return Ok(Some(finished));
         }
         let result_info = attr.method_attr_info.clone();
@@ -819,7 +827,7 @@ impl ArgumentAttr {
         let diags = Rc::clone(&attr.diags);
         let flow_rc = self.flow.borrow().clone().expect("flow service");
         let speculative_lambda = {
-            let mut deferred = deferred.borrow_mut();
+            let deferred = deferred.borrow();
             deferred.attrib_speculative_lambda(
                 ctx,
                 syms,
@@ -843,8 +851,10 @@ impl ArgumentAttr {
             argtypes: None,
             return_expressions: None,
         };
-        let deferred_type = self.new_argument_deferred(ctx, attr, tree, &env, data.clone());
-        self.argument_type_cache.insert(pos, Rc::new(RefCell::new(data)));
+        let deferred_type = self.new_argument_deferred(ctx, syms, attr, tree, &env, data.clone());
+        self.argument_type_cache
+            .borrow_mut()
+            .insert(pos, Rc::new(RefCell::new(data)));
         self.set_result(ctx, tree, deferred_type);
         Ok(Some(deferred_type))
     }
@@ -854,12 +864,14 @@ impl ArgumentAttr {
     fn process_arg_cached(
         &mut self,
         ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         tree: TreeId,
         pos: UniquePos,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         let env = self.env.clone().expect("argument attr env");
-        if let Some(cached) = self.argument_type_cache.get(&pos).cloned() {
+        let cached_entry = self.argument_type_cache.borrow().get(&pos).cloned();
+        if let Some(cached) = cached_entry {
             let cached = cached.borrow();
             let data = ArgumentTypeData {
                 kind: cached.kind,
@@ -870,7 +882,7 @@ impl ArgumentAttr {
                 return_expressions: cached.return_expressions.clone(),
             };
             drop(cached);
-            let deferred_type = self.new_argument_deferred(ctx, attr, tree, &env, data);
+            let deferred_type = self.new_argument_deferred(ctx, syms, attr, tree, &env, data);
             self.set_result(ctx, tree, deferred_type);
             Ok(Some(deferred_type))
         } else {
@@ -882,16 +894,19 @@ impl ArgumentAttr {
     fn new_plain_deferred(
         &mut self,
         ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         tree: TreeId,
         env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
     ) -> TypeId {
-        let syms_rc = Rc::clone(&attr.syms);
+        // Port adapter (A3k): the caller's Symtab borrow is forwarded instead of
+        // re-borrowing attr.syms (which is already mutably borrowed while the
+        // enclosing Attr::attrib_tree runs). Upstream has a single Symtab
+        // service, so no re-borrow is involved.
         let types_rc = Rc::clone(&attr.types);
-        let syms_borrow = syms_rc.borrow_mut();
         crate::comp::deferred_attr::deferred_type_new(
             ctx,
-            &syms_borrow,
+            syms,
             &types_rc,
             attr,
             tree,
@@ -903,23 +918,23 @@ impl ArgumentAttr {
     fn new_argument_deferred(
         &mut self,
         ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         attr: &mut Attr,
         tree: TreeId,
         env: &Rc<Env<crate::comp::attr_context::AttrContext>>,
         data: ArgumentTypeData,
     ) -> TypeId {
-        let syms_rc = Rc::clone(&attr.syms);
+        // Port adapter (A3k): use the caller's Symtab borrow; see
+        // new_plain_deferred.
         let types_rc = Rc::clone(&attr.types);
-        let syms_borrow = syms_rc.borrow_mut();
         let deferred_type = crate::comp::deferred_attr::deferred_type_new(
             ctx,
-            &syms_borrow,
+            syms,
             &types_rc,
             attr,
             tree,
             env,
         );
-        drop(syms_borrow);
         if let crate::code::type_::TypeKindData::Deferred { argument, .. } =
             &mut ctx.typ_mut(deferred_type).kind
         {
@@ -968,7 +983,9 @@ impl ArgumentAttr {
         deferred_attr_context: &crate::comp::deferred_attr::DeferredAttrContext,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
         if deferred_attr_context.mode == crate::comp::deferred_attr::AttrMode::SPECULATIVE {
-            let recovery_type = attr.syms.borrow().recovery_type;
+            // Port adapter (A3k): use the caller's Symtab borrow; attr.syms is
+            // already mutably borrowed by the enclosing attribution.
+            let recovery_type = syms.recovery_type;
             let tt = if result_info.pt == Some(recovery_type) {
                 crate::comp::deferred_attr::deferred_type_complete_base(
                     ctx,
@@ -992,7 +1009,7 @@ impl ArgumentAttr {
                 let log = attr.log.borrow();
                 let pos = UniquePos::new(ctx, &log, data.borrow().speculative_tree);
                 drop(log);
-                self.argument_type_cache.remove(&pos);
+                self.argument_type_cache.borrow_mut().remove(&pos);
             }
             crate::comp::deferred_attr::deferred_type_complete_base(
                 ctx,
@@ -1136,7 +1153,7 @@ impl ArgumentAttr {
             }
             ArgumentKind::Conditional => {
                 // Java: ConditionalType.overloadCheck (ArgumentAttr.java:430-456)
-                let cond_ctx = attr.conditional_context();
+                let cond_ctx = attr.conditional_context(Rc::clone(&result_info.check_context));
                 let local_info = result_info.dup_context(Rc::clone(&cond_ctx));
                 let (is_standalone, truepart, falsepart) = match &ctx.tree(speculative_tree).kind {
                     crate::tree::jc_tree::TreeKind::Conditional {
@@ -1173,7 +1190,7 @@ impl ArgumentAttr {
             }
             ArgumentKind::SwitchExpression => {
                 // Java: SwitchExpressionType.overloadCheck (ArgumentAttr.java:480-500)
-                let cond_ctx = attr.conditional_context();
+                let cond_ctx = attr.conditional_context(Rc::clone(&result_info.check_context));
                 let local_info = result_info.dup_context(Rc::clone(&cond_ctx));
                 let pt = result_info.pt.unwrap_or_else(|| no_type_of(ctx));
                 if ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::VOID) {

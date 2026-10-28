@@ -628,22 +628,34 @@ impl Attr {
         let needs_argument_attr = result_info.needs_argument_attr(ctx, tree);
         self.env = Some(Rc::clone(env));
         self.result_info = Some(result_info);
-        let result = if needs_argument_attr {
+        // Port adapter: a symbol completion performed by a nested type query
+        // cannot return a result value; the failure travels through the panic
+        // channel and is restored here, where the attribution boundary reports
+        // it and yields the error type.
+        let result = crate::code::symbol::catch_completion_failure(|| {
+            if needs_argument_attr {
             // Java: result = argumentAttr.attribArg(tree, env); (Attr.java:674-676)
             let argument_attr = self
                 .argument_attr
                 .borrow()
                 .clone()
                 .expect("AssertionError: argumentAttr service must be installed");
-            let mut argument_attr = argument_attr.borrow_mut();
+            // Port adapter: upstream ArgumentAttr is one Java object that
+            // is re-entered while a speculative argument attribution resolves
+            // nested calls. The ported session state (env/result) is cloned per
+            // attribution; the cache and services are shared Rcs, so deferred
+            // completions started from the canonical service still see the
+            // same ArgumentType entries.
+            let mut argument_attr = argument_attr.borrow().clone();
             let log_rc = Rc::clone(&self.log);
             match argument_attr.attrib_arg(ctx, syms, self, &log_rc, tree, env) {
                 Ok(result) => Ok(result.expect("AssertionError: argument attribution result")),
                 Err(failure) => Err(failure),
             }
-        } else {
-            self.visit(ctx, syms, tree)
-        };
+            } else {
+                self.visit(ctx, syms, tree)
+            }
+        });
         // TODO(MatchBindingsComputer): matchBindings =
         // matchBindingsComputer.finishBindings(tree, matchBindings);
         // TODO(DeferredAttr): if (tree == breakTree &&
@@ -652,10 +664,13 @@ impl Attr {
         self.env = prev_env;
         self.result_info = prev_result_info;
         let value = match result {
-            Ok(value) => value,
-            Err(failure) => {
+            Ok(Ok(value)) => value,
+            Ok(Err(failure)) | Err(failure) => {
+                // Report the completion failure and continue with the error type.
                 ctx.tree_mut(tree).ty = Some(syms.err_type);
-                return Err(failure);
+                let pos = ctx.tree(tree).pos;
+                let chk = self.chk.borrow();
+                return Ok(chk.completion_error(ctx, pos, &failure, syms));
             }
         };
         self.result = Some(value);
@@ -699,7 +714,7 @@ impl Attr {
             let scope_ref = ctx.scope(scope_id).clone();
             scope_ref.get_symbols_full(
                 scope_id,
-                crate::code::scope::LookupKind::NON_RECURSIVE,
+                crate::code::scope::LookupKind::RECURSIVE,
                 &|_| true,
                 types,
                 syms,
@@ -803,7 +818,14 @@ impl Attr {
             _ => panic!("ClassCastException: JCLiteral expected"),
         };
         let lit_type = self.lit_type(syms, typetag);
-        let constant = ctx.type_const_type(lit_type, literal_value_to_constant(value));
+        // The literal type carries the constant value when one is present.
+        // The null literal is JCLiteral(BOT, null); BotType.constType keeps the
+        // bot type (Type.const_type BOT/ERROR branch), so no constant value is
+        // recorded for it.
+        let constant = match value {
+            Some(value) => ctx.type_const_type(lit_type, literal_value_to_constant(Some(value))),
+            None => lit_type,
+        };
         let result_info = self.result_info.clone().expect("resultInfo");
         Ok(self.check(ctx, syms, tree, constant, KindSelector::VAL, &result_info))
     }
@@ -882,7 +904,15 @@ impl Attr {
         if ctx.typ(clazztype).has_tag(TypeTag::CLASS) {
             let clazz_tsym = ctx.typ(clazztype).tsym.expect("class type symbol");
             let clazz_sym_type = ctx.sym(clazz_tsym).ty.expect("class symbol type");
-            let formals = type_arguments(ctx, clazz_sym_type);
+            // The formal type parameters of the class symbol; the lazy completion
+            // runs before the list is read, so the ported read reuses this Attr
+            // for the reentrant completion.
+            let formals = crate::code::types::get_type_arguments_completed(
+                ctx,
+                syms,
+                clazz_sym_type,
+                Some(self),
+            );
             if actuals.is_empty() {
                 // diamond
                 actuals = formals.clone();
@@ -948,30 +978,43 @@ impl Attr {
                     class_type,
                 ));
             } else {
-                // Java: log.error(tree.pos(), Errors.WrongNumberTypeArgs(
-                // Integer.toString(formals.length()))) / Errors.TypeDoesntTakeParams(
-                // clazztype.tsym); (Attr.java:2125-2135)
+                // A wrong number of type arguments is reported below.
+                // Errors.WrongNumberTypeArgs(Integer.toString(formals.length())));
+                // } else { log.error(tree.pos(),
+                // Errors.TypeDoesntTakeParams(clazztype.tsym)); }
+                // The wrong-number and does-not-take-parameters diagnostics are alternatives.
                 let formals_len = list_len_type(&formals);
-                let diag = crate::resources::compiler_properties::errors::wrong_number_type_args(
-                    crate::util::java_string::JavaString::from(formals_len.to_string().as_str()),
-                );
-                crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *self.log.borrow_mut(),
-                    ctx.tree(tree).pos,
-                    crate::util::jc_diagnostic::Error::from(diag),
-                );
-                let clazz_tsym = ctx.typ(clazztype).tsym;
-                if let Some(clazz_tsym) = clazz_tsym {
-                    let diag = crate::resources::compiler_properties::errors::type_doesnt_take_params(
-                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                            ctx.sym(clazz_tsym).name.to_java_string().to_string_lossy().to_string(),
-                        ),
-                    );
+                if formals_len != 0 {
+                    let diag =
+                        crate::resources::compiler_properties::errors::wrong_number_type_args(
+                            crate::util::java_string::JavaString::from(
+                                formals_len.to_string().as_str(),
+                            ),
+                        );
                     crate::util::abstract_log::AbstractLog::error_at(
                         &mut *self.log.borrow_mut(),
                         ctx.tree(tree).pos,
                         crate::util::jc_diagnostic::Error::from(diag),
                     );
+                } else {
+                    let clazz_tsym = ctx.typ(clazztype).tsym;
+                    if let Some(clazz_tsym) = clazz_tsym {
+                        let diag =
+                            crate::resources::compiler_properties::errors::type_doesnt_take_params(
+                                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                    ctx.sym(clazz_tsym)
+                                        .name
+                                        .to_java_string()
+                                        .to_string_lossy()
+                                        .to_string(),
+                                ),
+                            );
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            ctx.tree(tree).pos,
+                            crate::util::jc_diagnostic::Error::from(diag),
+                        );
+                    }
                 }
             }
         }
@@ -3452,9 +3495,12 @@ impl Attr {
 ///
 /// Upstream: Attr.java:3335-3350 (conditionalContext).
 ///
-    pub fn conditional_context(&self) -> Rc<dyn crate::comp::check::CheckContext> {
+    pub fn conditional_context(
+        &self,
+        enclosing: Rc<dyn crate::comp::check::CheckContext>,
+    ) -> Rc<dyn crate::comp::check::CheckContext> {
         Rc::new(ConditionalCheckContext {
-            enclosing: Rc::clone(&self.basic_handler),
+            enclosing,
             diags: Rc::clone(&self.diags),
         })
     }
@@ -4700,7 +4746,7 @@ impl Attr {
                 return types.create_error_type_original(ctx, Some(site), syms);
             }
             Err(crate::comp::resolve::MethodCheckFailure::Inapplicable(ex)) => {
-                let diag = ex.get_diagnostic().clone();
+                let diag = ex.get_diagnostic().cloned();
                 let err_symbol = crate::code::symbol::symbol_new_resolve_error(
                     ctx,
                     crate::code::kinds::Kind::ERR,
@@ -4709,7 +4755,7 @@ impl Attr {
                     crate::code::symbol::ResolveErrorData::Inapplicable {
                         kind: crate::code::kinds::Kind::MTH,
                         sym,
-                        details: Some(diag),
+                        details: diag,
                     },
                 );
                 // Java: argtypes2 = argtypes.map(new ResolveDeferredRecoveryMap(...));
@@ -6766,16 +6812,22 @@ impl Attr {
         let cond_info = if poly_kind == crate::tree::jc_tree::PolyKind::STANDALONE {
             self.unknown_expr_info.clone()
         } else {
-            result_info.dup_context(self.conditional_context())
+            result_info.dup_context(
+            self.conditional_context(Rc::clone(&result_info.check_context)),
+        )
         };
         let cond_bindings_true = cond_bindings.bindings_when_true.clone();
         let cond_bindings_false = cond_bindings.bindings_when_false.clone();
         let true_env = self.binding_env(ctx, syms, &env, cond_bindings_true);
         let truetype = self.attrib_tree_use(ctx, syms, truepart, &true_env, cond_info.clone());
         let true_bindings = self.match_bindings.clone();
+        let true_scope = true_env.info.borrow().scope.expect("true env scope");
+        ctx.scope_leave(true_scope);
         let false_env = self.binding_env(ctx, syms, &env, cond_bindings_false);
         let falsetype = self.attrib_tree_use(ctx, syms, falsepart, &false_env, cond_info);
         let false_bindings = self.match_bindings.clone();
+        let false_scope = false_env.info.borrow().scope.expect("false env scope");
+        ctx.scope_leave(false_scope);
         let mut owntype = if poly_kind == crate::tree::jc_tree::PolyKind::STANDALONE {
             self.cond_type(
                 ctx,
@@ -6901,7 +6953,7 @@ impl Attr {
                 let class_name = remove_class_params(ctx, clazz);
                 let speculative = {
                     let deferred = self.deferred_attr.borrow().clone().expect("deferred attr service");
-                    let mut deferred = deferred.borrow_mut();
+                    let deferred = deferred.borrow();
                     let unknown_type = self.unknown_type_info.clone();
                     match deferred.attrib_speculative(ctx, syms, self, class_name, &env, &unknown_type) {
                         Ok(t) => t,
@@ -6928,7 +6980,7 @@ impl Attr {
         env: &Rc<Env<AttrContext>>,
     ) -> TreeId {
         let deferred = self.deferred_attr.borrow().clone().expect("deferred attr service");
-        let mut deferred = deferred.borrow_mut();
+        let deferred = deferred.borrow();
         let unknown = self.unknown_expr_info.clone();
         deferred
             .attrib_speculative(ctx, syms, self, tree, env, &unknown)
@@ -7263,6 +7315,8 @@ impl Attr {
             chk.check_non_void(ctx, syms, ctx.tree(rhs).pos, right_attr)
         };
         let rhs_bindings = self.match_bindings.clone();
+        let rhs_scope = rhs_env.info.borrow().scope.expect("rhs env scope");
+        ctx.scope_leave(rhs_scope);
         self.match_bindings = self.match_bindings_computer.binary(ctx, tag, ctx.tree(tree).pos, &lhs_bindings, &rhs_bindings);
         let operator = {
             let ops = self.operators.borrow().clone().expect("AssertionError: operators service must be installed");
@@ -7595,7 +7649,7 @@ impl Attr {
         let flow_rc = self.flow.borrow().clone().expect("AssertionError: flow service must be installed");
         let make = Rc::clone(&self.make);
         let env = self.env.clone().expect("env");
-        flow_rc.breaks_out_of(ctx, &env, loop_tree, body, &make)
+        flow_rc.breaks_out_of(ctx, syms, &env, loop_tree, body, &make)
     }
 
     /// Java: void enterScope(Env<AttrContext> env) — the bindingEnvironment
@@ -7649,19 +7703,9 @@ impl Attr {
         if let Some(scope) = then_env.info.borrow().scope {
             ctx.scope_leave(scope);
         }
-        {
-            let recover_rc = self.attr_recover.borrow().clone();
-            let rs_rc = self.rs.borrow().clone();
-            let chk_rc = Rc::clone(&self.chk);
-            if let (Some(rs_rc), Some(recover_rc)) = (rs_rc, recover_rc) {
-                let rs = rs_rc.borrow();
-                let mut recover = recover_rc.borrow_mut();
-                let chk = chk_rc.borrow();
-                let infer_rc = Rc::clone(&self.infer);
-                let diags = Rc::clone(&self.diags);
-                self.pre_flow(ctx, syms, &mut recover, &rs, &infer_rc, &chk, &diags, &env, thenpart);
-            }
-        }
+        // The statement pre-flow of the then branch; the statement
+        // overload, not the lambda overload.
+        self.statement_pre_flow(ctx, syms, thenpart);
         let alive_after_then = {
             let flow_rc = self
                 .flow
@@ -7669,7 +7713,7 @@ impl Attr {
                 .clone()
                 .expect("AssertionError: flow service must be installed");
             let make = Rc::clone(&self.make);
-            flow_rc.alive_after(ctx, &env, thenpart, &make)
+            flow_rc.alive_after(ctx, syms, &env, thenpart, &make)
         };
         let alive_after_else = if let Some(elsepart) = elsepart {
             let else_env = self.binding_env(
@@ -7682,26 +7726,15 @@ impl Attr {
             if let Some(scope) = else_env.info.borrow().scope {
                 ctx.scope_leave(scope);
             }
-            {
-                let recover_rc = self.attr_recover.borrow().clone();
-                let rs_rc = self.rs.borrow().clone();
-                let chk_rc = Rc::clone(&self.chk);
-                if let (Some(rs_rc), Some(recover_rc)) = (rs_rc, recover_rc) {
-                    let rs = rs_rc.borrow();
-                    let mut recover = recover_rc.borrow_mut();
-                    let chk = chk_rc.borrow();
-                    let infer_rc = Rc::clone(&self.infer);
-                    let diags = Rc::clone(&self.diags);
-                    self.pre_flow(ctx, syms, &mut recover, &rs, &infer_rc, &chk, &diags, &env, elsepart);
-                }
-            }
+            // The statement pre-flow of the else branch.
+            self.statement_pre_flow(ctx, syms, elsepart);
             let flow_rc = self
                 .flow
                 .borrow()
                 .clone()
                 .expect("AssertionError: flow service must be installed");
             let make = Rc::clone(&self.make);
-            flow_rc.alive_after(ctx, &env, elsepart, &make)
+            flow_rc.alive_after(ctx, syms, &env, elsepart, &make)
         } else {
             true
         };
@@ -7814,6 +7847,8 @@ impl Attr {
             // Create a new local environment with a local scope.
             let local_env = self.dup_env_with_scope(ctx, &env, Some(tree), None);
             self.attrib_stats(ctx, syms, stats, &local_env);
+            let local_scope = local_env.info.borrow().scope.expect("local env scope");
+            ctx.scope_leave(local_scope);
         }
         Ok(self.no_type(ctx))
     }
@@ -7868,6 +7903,8 @@ impl Attr {
         let while_env = self.binding_env(ctx, syms, &env, cond_bindings.bindings_when_true.clone());
         let body_env = while_env.dup(Some(tree), while_env.info.borrow().dup(while_env.info.borrow().scope));
         self.attrib_stat(ctx, syms, body, &body_env);
+        let while_scope = while_env.info.borrow().scope.expect("while env scope");
+        ctx.scope_leave(while_scope);
         if !self.breaks_out_of(ctx, syms, tree, body) {
             let scope = env.info.borrow().scope.expect("env scope");
             let mut current = cond_bindings.bindings_when_false.clone();
@@ -7915,6 +7952,10 @@ impl Attr {
         });
         self.attrib_stats(ctx, syms, step, &body_env);
         self.attrib_stat(ctx, syms, body, &body_env);
+        let body_scope = body_env.info.borrow().scope.expect("for body scope");
+        ctx.scope_leave(body_scope);
+        let loop_scope = loop_env.info.borrow().scope.expect("loop env scope");
+        ctx.scope_leave(loop_scope);
         if !self.breaks_out_of(ctx, syms, tree, body) {
             let scope = env.info.borrow().scope.expect("env scope");
             let mut current = cond_bindings.bindings_when_false.clone();
@@ -8084,7 +8125,10 @@ impl Attr {
         let local_env = self.dup_env_with_scope(ctx, &env, Some(tree), None);
         let is_try_with_resource = !resources.is_empty();
         let try_env = if is_try_with_resource {
-            self.dup_env_with_scope(ctx, &env, Some(tree), None)
+            let local_scope = local_env.info.borrow().scope.expect("local env scope");
+            let try_scope = ctx.scope_dup(local_scope, None);
+            let info = local_env.info.borrow().dup(Some(try_scope));
+            env.dup(Some(tree), info)
         } else {
             Rc::clone(&local_env)
         };
@@ -8128,6 +8172,10 @@ impl Attr {
         }
         // Attribute body.
         self.attrib_stat(ctx, syms, body, &try_env);
+        if is_try_with_resource {
+            let try_scope = try_env.info.borrow().scope.expect("try env scope");
+            ctx.scope_leave(try_scope);
+        }
         // Attribute catch clauses.
         let mut c = catchers;
         while c.non_empty() {
@@ -8183,12 +8231,16 @@ impl Attr {
                 );
             }
             self.attrib_stat(ctx, syms, catch_body, &catch_env);
+            let catch_scope = catch_env.info.borrow().scope.expect("catch env scope");
+            ctx.scope_leave(catch_scope);
             c = c.tail();
         }
         // Attribute finalizer.
         if let Some(finalizer) = finalizer {
             self.attrib_stat(ctx, syms, finalizer, &local_env);
         }
+        let local_scope = local_env.info.borrow().scope.expect("local env scope");
+        ctx.scope_leave(local_scope);
         Ok(self.no_type(ctx))
     }
 
@@ -8530,6 +8582,8 @@ impl Attr {
             base_clause: loop_env.base_clause,
         });
         self.attrib_stat(ctx, syms, body, &loop_env);
+        let loop_scope = loop_env.info.borrow().scope.expect("foreach env scope");
+        ctx.scope_leave(loop_scope);
         Ok(self.no_type(ctx))
     }}
 
@@ -8825,6 +8879,8 @@ impl Attr {
             after_pattern.bindings_when_true.clone(),
         );
         self.attrib_expr_with_type(ctx, syms, expr, &body_env, Some(syms.boolean_type));
+        let body_scope = body_env.info.borrow().scope.expect("guard body scope");
+        ctx.scope_leave(body_scope);
         let ty = ctx.tree(patt).ty.unwrap_or_else(|| self.no_type(ctx));
         ctx.tree_mut(tree).ty = Some(ty);
         self.result = Some(ty);
@@ -8963,7 +9019,9 @@ impl Attr {
     ) -> Option<(Vec<i32>, Vec<TypeId>)> {
         let env = self.env.clone().expect("env");
         let seltype = self.attrib_expr(ctx, syms, selector, &env);
-        let switch_env = self.dup_env_with_scope(ctx, &env, Some(switch_tree), None);
+        let switch_scope = env.info.borrow().scope.expect("env scope");
+        let switch_scope = ctx.scope_dup(switch_scope, None);
+        let switch_env = env.dup(Some(switch_tree), env.info.borrow().dup(Some(switch_scope)));
         let enum_switch = ctx
             .typ(seltype)
             .tsym
@@ -9228,12 +9286,17 @@ impl Attr {
                 yield_positions.extend(collector.positions);
                 yield_types.extend(collector.types);
             }
+            // Java: finally { caseEnv.info.scope.leave(); } addVars(c.stats,
+            // switchEnv.info.scope); (Attr.java:1804-1814): the case scope is
+            // left before the case variables are entered into the switch scope.
+            let case_scope = case_env.info.borrow().scope.expect("case env scope");
+            ctx.scope_leave(case_scope);
             self.add_vars(ctx, case_stats.clone(), switch_env.info.borrow().scope.expect("switch env scope"));
             self.statement_pre_flow(ctx, syms, case);
             let completes_normally = {
                 let flow_rc = self.flow.borrow().clone().expect("AssertionError: flow service must be installed");
                 let make = Rc::clone(&self.make);
-                flow_rc.alive_after(ctx, &case_env, case, &make)
+                flow_rc.alive_after(ctx, syms, &case_env, case, &make)
             };
             if let TreeKind::Case { completes_normally: slot, .. } = &mut ctx.tree_mut(case).kind {
                 *slot = completes_normally;
@@ -9250,6 +9313,8 @@ impl Attr {
             let chk = chk_rc.borrow();
             chk.check_switch_case_structure(ctx, cases);
         }
+        let switch_env_scope = switch_env.info.borrow().scope.expect("switch env scope");
+        ctx.scope_leave(switch_env_scope);
         let has_total = has_default || has_total_pattern;
         match ctx.tree(switch_tree).tag {
             Tag::SWITCH => {
@@ -10201,7 +10266,7 @@ impl Attr {
         {
             let flow_rc = self.flow.borrow().clone().expect("AssertionError: flow service must be installed");
             let make = Rc::clone(&self.make);
-            flow_rc.analyze_lambda(ctx, &env, that, &make, is_speculative_round);
+            flow_rc.analyze_lambda(ctx, syms, &env, that, &make, is_speculative_round);
         }
         ctx.tree_mut(that).ty = Some(current_target);
         self.check_lambda_compatible(ctx, syms, that, lambda_type, &result_info.check_context);
@@ -10213,7 +10278,7 @@ impl Attr {
                 let inferred_thrown_types = {
                     let flow_rc = self.flow.borrow().clone().expect("AssertionError: flow service must be installed");
                     let make = Rc::clone(&self.make);
-                    flow_rc.analyze_lambda_thrown_types(ctx, &env, that, &make)
+                    flow_rc.analyze_lambda_thrown_types(ctx, syms, &env, that, &make)
                 };
                 if !self.check_ex_constraints(ctx, syms, inferred_thrown_types, lambda_thrown.clone(), &inference_context) {
                     let thrown_display = self
@@ -12751,7 +12816,10 @@ impl Attr {
                     return;
                 };
                 crate::comp::annotate::AnnotationTypeMetadata::get_repeatable_shared(
-                    &metadata, ctx, syms,
+                    &metadata,
+                    ctx,
+                    syms,
+                    Some(&mut *self),
                 )
             };
             let repeatable = match repeatable {
@@ -13245,7 +13313,8 @@ impl Attr {
                     diags: Rc::clone(&self.diags),
                     tsym: clazztype_tsym,
                 }) as Rc<dyn crate::comp::check::CheckContext>;
-                let diamond_result = result_info.dup_pt_context_mode(
+                let diamond_result = ResultInfo::new_with_mode(
+                    self.pkind(),
                     Some(method_template),
                     diamond_check_context,
                     crate::comp::check::CheckMode::NO_TREE_UPDATE,
@@ -13296,6 +13365,11 @@ impl Attr {
                     let chk = chk_rc.borrow();
                     let infer_rc = Rc::clone(&self.infer);
                     let types_rc = Rc::clone(&self.types);
+                    // Upstream: Attr.visitNewClass — rs.resolveConstructor runs in
+                    // rsEnv, whose selectSuper = cdef != null. The accessibility
+                    // check (Resolve.isAccessible PROTECTED branch) requires that
+                    // flag when a protected superclass constructor is called from
+                    // an anonymous class.
                     rs.resolve_constructor(
                         ctx,
                         syms,
@@ -13304,7 +13378,7 @@ impl Attr {
                         &chk,
                         &infer_rc,
                         simple_diag_pos(ctx.tree(tree).pos),
-                        &local_env,
+                        &rs_env_config,
                         clazztype,
                         argtypes.clone(),
                         Some(typeargtypes.clone()),
@@ -13322,14 +13396,16 @@ impl Attr {
                         argtypes.clone(),
                         Some(typeargtypes.clone()),
                     );
-                    let rs_env_config2 = local_env.dup(Some(tree), local_env.info.borrow().dup_ctx());
+                    // Upstream: Attr.visitNewClass — checkId runs in the same rsEnv
+                    // that resolved the constructor, which carries the resolution
+                    // phase the lookup recorded.
                     let constructor_type = {
                         let info = result_info.dup_pt_context_mode(
                             Some(method_template),
                             Rc::clone(&result_info.check_context),
                             crate::comp::check::CheckMode::NO_TREE_UPDATE,
                         );
-                        self.check_id(ctx, syms, tree, clazztype, constructor, &rs_env_config2, &info)
+                        self.check_id(ctx, syms, tree, clazztype, constructor, &rs_env_config, &info)
                     };
                     if let TreeKind::NewClass { constructor_type: slot, .. } = &mut ctx.tree_mut(tree).kind {
                         *slot = Some(constructor_type);
@@ -13989,14 +14065,14 @@ impl Attr {
             .and_then(|_| {
                 let argument_attr = self.argument_attr.borrow().clone();
                 argument_attr
-                    .map(|argument_attr| argument_attr.borrow_mut().with_local_cache_context())
+                    .map(|argument_attr| argument_attr.borrow().with_local_cache_context())
             });
         let result = self.visit_class_def_body(ctx, syms, tree);
         // Java: finally localCacheContext.ifPresent(LocalCacheContext::leave);
         if let Some(mut local_cache_context) = local_cache_context {
             let argument_attr = self.argument_attr.borrow().clone();
             if let Some(argument_attr) = argument_attr {
-                local_cache_context.leave(&mut argument_attr.borrow_mut());
+                local_cache_context.leave(&argument_attr.borrow());
             }
         }
         result
@@ -14117,7 +14193,8 @@ impl Attr {
 }
 
 impl Attr {
-    /// Java: public JCExpression makeNullCheck(JCExpression arg) (Attr.java:3036-3050).
+    /// Build a null-check expression around an argument, skipping checks that
+    /// are statically known to be unnecessary.
     ///
     /// # Arguments
     ///   - ctx: the compiler context;
@@ -14127,9 +14204,7 @@ impl Attr {
     ///   - the (possibly optimized) null-check expression.
     ///
     /// # Panics
-    ///   - the operators service must be installed.
-    ///
-    /// Upstream: Attr.java:3036-3050.
+    ///   - none.
     pub fn make_null_check(
         &mut self,
         ctx: &mut CompilerContext,

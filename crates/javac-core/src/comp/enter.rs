@@ -210,7 +210,7 @@ impl Enter {
             .map(|env_tree| tree_info::is_diamond(ctx, env_tree))
             .unwrap_or(false);
         Rc::new(Env {
-            next: None,
+            next: Some(Rc::clone(env)),
             outer: Some(Rc::clone(env)),
             tree: Some(tree),
             toplevel: env.toplevel,
@@ -296,7 +296,7 @@ impl Enter {
         info.is_self_call = false;
         info.lint = None;
         Rc::new(Env {
-            next: None,
+            next: Some(Rc::clone(env)),
             outer: Some(Rc::clone(env)),
             tree: Some(tree),
             toplevel: env.toplevel,
