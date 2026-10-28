@@ -578,14 +578,17 @@ impl MiniCompiler {
             Rc::new(move || Rc::clone(&module_completer));
         syms.borrow_mut()
             .set_module_completer(&mut ctx, module_completer_factory);
-        let mut parser_context = UtilContext::new();
+        // Port adapter: ParserFactory obtains Log/Options from its Context, so the
+        // parser must share the compiler context; otherwise parse-time
+        // log.useSource would not reach the parser log and syntax errors would
+        // be reported without a source (upstream Log is a single Context service).
         let scanner_factory = crate::parser::scanner_factory::ScannerFactory::new(
-            &mut parser_context,
+            &mut util_context,
             Rc::clone(&names),
             source,
         );
         let parser_factory = Rc::new(crate::parser::parser_factory::ParserFactory::new(
-            &mut parser_context,
+            &mut util_context,
             Rc::clone(&names),
             source,
             scanner_factory,

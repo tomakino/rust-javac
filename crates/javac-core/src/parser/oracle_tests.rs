@@ -433,6 +433,26 @@ fn tokens_lookup_and_scanner_helpers() {
     scanner.next_token();
     assert_eq!(scanner.token().kind, TokenKind::IDENTIFIER);
 
+    // D3e: the closing run of a nested generic after an identifier.
+    let mut scanner = factory.new_scanner(&JavaString::from("A<B<C<String>>> f;"), true);
+    for _ in 0..8 {
+        scanner.next_token();
+    }
+    assert_eq!(scanner.token().kind, TokenKind::GTGTGT, "nested close run");
+    // D3e: consecutive '>' runs after an identifier (no spaces).
+    for (text, expected) in [
+        ("a>>>b", TokenKind::GTGTGT),
+        ("a>>b", TokenKind::GTGT),
+        ("a>>>>b", TokenKind::GTGTGT),
+        ("a>>=b", TokenKind::GTGTEQ),
+        ("a>>>=b", TokenKind::GTGTGTEQ),
+    ] {
+        let mut scanner = factory.new_scanner(&JavaString::from(text), true);
+        scanner.next_token();
+        assert_eq!(scanner.token().kind, TokenKind::IDENTIFIER, "{text}");
+        scanner.next_token();
+        assert_eq!(scanner.token().kind, expected, "{text}");
+    }
     // split() of '>>>'/'>>='.
     let mut scanner = factory.new_scanner(&JavaString::from("a >>> b"), true);
     scanner.next_token();

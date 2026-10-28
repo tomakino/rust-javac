@@ -10918,6 +10918,19 @@ mod diagnostics_tests {
         assert_eq!(compiler.last_compiled_classes.len(), 3);
     }
     #[test]
+    fn syntax_error_carries_source_and_position() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T { int x = ; }\n")],
+            |_options| {},
+        );
+        let d = diagnostics
+            .iter()
+            .find(|d| d.get_code_string().starts_with("compiler.err."))
+            .expect("expected syntax diagnostic");
+        assert!(d.get_source().is_some(), "diagnostic must carry a source");
+        assert!(d.get_int_position() > 0, "diagnostic must carry a position");
+    }
+    #[test]
     fn package_declaration_compiles() {
         let (_compiler, diagnostics) = compile_with_diagnostics(
             &[("X.java", "package com.google.gson; interface X {}\n")],
