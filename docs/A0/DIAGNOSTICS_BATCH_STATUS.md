@@ -158,3 +158,12 @@
 - gson:无 SOURCE_PATH、79 源 + generated GsonBuildConfig(共 80 文件,跳过 module-info)时 A3g panic 消失,前进到 `types.rs:923` `NullPointerException: null enclosing type in isSameType`,栈 Enter::complete←MemberEnter::visit_method_def←Check::check_unique←is_same_type_enclosing(与 Attr/服务重入无关),按指令停手;带 SOURCE_PATH 时 Modules 在 `gson/src/main/java/module-info.java` 报 `compiler.err.cant.access`("file does not contain module declaration"),0 classes(模块支持缺口)。
 - 未提交 `crates/javac-core/tests/gson_real_project.rs`(opt-in,禁止提交);gson 源码/构建文件未改。
 - 偏差:`scope_finalize` 也加可选 Attr(超出任务点名清单,与 finish_imports 的 finalize 链一致);Resolve 侧查询仍传 None(本批不扩展)。
+
+### A3h 顶层类 noType 的 isSameType(完成;gson 前进到 Annotate target already set)
+- `is_same_type_enclosing` 按上游 visitType 的 NONE 分支实现:noType 与 noType 相等、noType 与类不等;即 `(None,None)=>true`、`(Some,Some)=>is_same_type`、`_=>false`;删除 NPE panic;注释注明 `None` 是 `Type.noType` 适配,不是 null。
+- `hash_class_type` 的 `expect("class type enclosing type")` 改为 noType 适配(上游 HashCodeVisitor 对顶层类 hash noType),避免同类误 panic。
+- 审计 types.rs 其它 `get_enclosing_type` 调用点:as_super/capture/type_contains/erasure/signature/class_type 等 `None` 均按 noType/absent 处理;其它文件的 `expect("enclosing")` 属上游要求的嵌套类断言,未改。
+- 测试:新增 `is_same_type_handles_absent_enclosing_type_as_no_type`(顶层类 None/None 相等、None/Some(noType) 不等、noType vs class 不等、hash 路径不 panic);1154 passed / 0 failed / 3 ignored;clippy errors=0(javac-core lib 176 / lib test 203 warnings);unimplemented/unreachable=0。
+- gson 80 文件(79 源 + generated GsonBuildConfig,跳过 module-info,无 SOURCE_PATH):isSameType panic 消失,前进到 annotate.rs:315 `AssertionError: target already set`;栈 Annotate::enter_done←flush_with_attr←Check::validate_annotations←validate_annotation←get_applicable_targets←get_attribute_target_attribute←AnnotationTypeMetadata::get_target_shared←complete_shared←CompleterDeproxy::complete←set_target;与 A3h 无关,按指令停手;backtrace 在 target/gson-a3h-run1.txt。
+- 注:opt-in gson 测试文件现由 58e8fe8 跟踪(本批未修改该文件);gson 源码/构建文件未改。
+- 未提交;工作树只有 types.rs 与两份 docs 修改。

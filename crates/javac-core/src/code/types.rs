@@ -639,9 +639,25 @@ impl Types {
         }
     }
 
-    /// Java: HashCodeVisitor.visitClassType
+    /// Hash code of a class type: the enclosing type, the flat name, and the
+    /// type arguments.
+    ///
+    /// Port adapter: `None` is the local representation of `Type.noType` for a
+    /// top-level class, so the no-type value is hashed; upstream hashes
+    /// `getEnclosingType()`, which returns noType rather than null here.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - t: the class type.
+    ///
+    /// # Returns
+    ///   - the hash code.
+    ///
+    /// # Panics
+    ///   - none.
     fn hash_class_type(&self, ctx: &mut CompilerContext, t: TypeId) -> i32 {
-        let enclosing = get_enclosing_type(ctx, t).expect("class type enclosing type");
+        let enclosing = get_enclosing_type(ctx, t)
+            .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
         let mut result = self.hash_code_impl(ctx, enclosing, false);
         result = result.wrapping_mul(127);
         let tsym = ctx.typ(t).tsym.expect("class type symbol");
@@ -904,9 +920,24 @@ impl Types {
             )
     }
 
-    /// Java: visit(t.getEnclosingType(), s.getEnclosingType()) inside
-    /// visitClassType (the upstream code only calls this for class types whose
-    /// enclosing type is a type, never null).
+    /// Compares the enclosing types of two class types in the class-type case
+    /// of the type-equality relation.
+    ///
+    /// Port adapter: `None` is the local representation of the absent enclosing
+    /// type (`Type.noType` for a top-level class), not a null reference. Two
+    /// absent enclosing types are equal, and an absent one differs from a
+    /// present one; the upstream visitor compares the noType values directly.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - t/s: the enclosing types, where `None` is noType.
+    ///
+    /// # Returns
+    ///   - true iff both enclosing types are absent or both are the same type.
+    ///
+    /// # Panics
+    ///   - none.
     fn is_same_type_enclosing(
         &self,
         ctx: &mut CompilerContext,
@@ -915,12 +946,9 @@ impl Types {
         s: Option<TypeId>,
     ) -> bool {
         match (t, s) {
+            (None, None) => true,
             (Some(t), Some(s)) => self.is_same_type(ctx, syms, t, s),
-            // NOT PORTED: a null enclosing type is an upstream assertion
-            // violation (visit(null,...)); do not invent a value.
-            // Java: SimpleVisitor.visit(null, ...) throws NullPointerException (the
-        // upstream isSameType visitor never guards the enclosing type).
-        _ => panic!("NullPointerException: null enclosing type in isSameType"),
+            _ => false,
         }
     }
 
@@ -3910,10 +3938,11 @@ fn type_identity_hash(t: TypeId) -> i32 {
     t.index() as i32
 }
 
-/// Java: Type.getEnclosingType() (ClassType: outer_field; other types: null).
+/// The enclosing type of a type: the `outer_field` of the class-type family,
+/// and `None` for every other type.
 ///
-/// PORTING_RULES: reproduced here because type_.rs has not ported getEnclosingType
-/// yet (TODO Type; registered).
+/// Port adapter: `None` is the local representation of the absent enclosing
+/// type (`Type.noType` for a top-level class), not a null reference.
 fn get_enclosing_type(ctx: &CompilerContext, t: TypeId) -> Option<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::ClassType { outer_field, .. }
@@ -4364,7 +4393,8 @@ fn type_contains(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, elem: Type
 }
 
 
-/// Java: Type.getEnclosingType() for the class-type family (None == null).
+/// The enclosing type of the class-type family; `None` is the local
+/// `Type.noType` representation for a top-level class.
 fn enclosing_of(ctx: &CompilerContext, t: TypeId) -> Option<TypeId> {
     get_enclosing_type(ctx, t)
 }
@@ -10506,6 +10536,53 @@ mod tests {
                 varargs: false,
             },
         ));        assert!(types.is_same_type(&mut ctx, &symtab, string_array, string_array2));
+    }
+
+    #[test]
+    fn is_same_type_handles_absent_enclosing_type_as_no_type() {
+        fn top_level_class_type(ctx: &mut CompilerContext, tsym: SymbolId) -> TypeId {
+            ctx.alloc_type(Type::new(
+                TypeTag::CLASS,
+                Some(tsym),
+                TypeKindData::ClassType {
+                    outer_field: None,
+                    typarams_field: Some(List::nil()),
+                    allparams_field: None,
+                    supertype_field: None,
+                    interfaces_field: None,
+                    all_interfaces_field: None,
+                },
+            ))
+        }
+        let (mut ctx, symtab) = build();
+        let types = Types::new();
+        let string_tsym = ctx.typ(symtab.string_type).tsym.expect("string symbol");
+        let first = top_level_class_type(&mut ctx, string_tsym);
+        let second = top_level_class_type(&mut ctx, string_tsym);
+        // Both top-level classes have no enclosing type (Type.noType); upstream
+        // compares the two noType values as equal.
+        assert!(types.is_same_type(&mut ctx, &symtab, first, second));
+        let no_type = ctx.sym(symtab.no_symbol).ty.expect("no type");
+        let with_no_type_outer = ctx.alloc_type(Type::new(
+            TypeTag::CLASS,
+            Some(string_tsym),
+            TypeKindData::ClassType {
+                outer_field: Some(no_type),
+                typarams_field: Some(List::nil()),
+                allparams_field: None,
+                supertype_field: None,
+                interfaces_field: None,
+                all_interfaces_field: None,
+            },
+        ));
+        // noType and a class type are different.
+        assert!(!types.is_same_type(&mut ctx, &symtab, first, with_no_type_outer));
+        assert!(!types.is_same_type(&mut ctx, &symtab, no_type, first));
+        // The class-type hash uses the same noType adapter instead of panicking.
+        assert_eq!(
+            types.hash_code(&mut ctx, first),
+            types.hash_code(&mut ctx, second)
+        );
     }
 
     #[test]

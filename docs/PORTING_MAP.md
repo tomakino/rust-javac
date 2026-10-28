@@ -99,3 +99,12 @@ Status: template only; entries are appended by the executing agent and reviewed 
 | `comp/check.rs::Check::check_imports_unique` | `Check.checkImportsUnique` | optional Attr; the static-import FilterImportScope query completes the imported class |
 | `comp/type_enter.rs::TypeEnter::check_imports_unique` | `TypeEnter.finishImports` completion path | forwards `Some(attr)`; the normal entry keeps the Attr from `finish_imports` |
 | `comp/check.rs::diagnostics_tests::cross_package_static_import_scope_completes_with_attr` | — | regression: a cross-package static import triggers the scope query and the Attr-aware class completion |
+
+## A3h absent enclosing type (noType)
+
+| Local symbol | Upstream location | Notes |
+|---|---|---|
+| `code/types.rs::Types::is_same_type_enclosing` | `Types.isSameTypeVisitor.visitClassType` | `None` is `Type.noType`; two absent enclosing types are equal, an absent and a present one differ; no panic |
+| `code/types.rs::Types::hash_class_type` | `Types.HashCodeVisitor.visitClassType` | hashes the no-type value for a top-level class instead of panicking |
+| `code/types.rs::get_enclosing_type` / `enclosing_of` | `Type.getEnclosingType` | documentation clarification: `None` is the local `Type.noType`, not null |
+| `code/types.rs::tests::is_same_type_handles_absent_enclosing_type_as_no_type` | — | regression: top-level class equality, noType/class inequality, hash path |
