@@ -476,7 +476,7 @@ fn super_class_to_search_for_annotations(
     symbol: SymbolId,
 ) -> Option<SymbolId> {
     let class_type = ctx.sym(symbol).ty?;
-    let super_type = types.supertype(ctx, syms, class_type);
+    let super_type = types.supertype(ctx, syms, class_type, None);
     if !ctx.typ(super_type).has_tag(TypeTag::CLASS) {
         return None;
     }

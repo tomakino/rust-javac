@@ -1790,7 +1790,7 @@ impl TypeEnter {
             let supertype = {
                 let syms_borrow = syms;
                 let types = Rc::clone(&self.types);
-                types.supertype(ctx, syms_borrow, sym_ty)
+                types.supertype(ctx, syms_borrow, sym_ty, Some(attr))
             };
             if let Some(super_tsym) = ctx.typ(supertype).tsym
                 && (ctx.sym(super_tsym).flags_field & flags::ENUM as i64) == 0
@@ -2860,7 +2860,7 @@ impl DefaultConstructorHelper for BasicConstructorHelper {
             let owner_ty = ctx.sym(self.owner).ty.expect("owner type");
             let flags_value = if (owner_flags & flags::ENUM as i64) != 0
                 && {
-                    let supertype = types.supertype(ctx, syms, owner_ty);
+                    let supertype = types.supertype(ctx, syms, owner_ty, None);
                     ctx.typ(supertype).tsym == Some(syms.enum_sym)
                 }
             {

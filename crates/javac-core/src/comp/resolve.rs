@@ -1827,7 +1827,7 @@ impl Resolve {
                 }
             }
         }
-        let st = self.types.supertype(ctx, syms, c_type);
+        let st = self.types.supertype(ctx, syms, c_type, None);
         if ctx.typ(st).has_tag(TypeTag::CLASS) || ctx.typ(st).has_tag(TypeTag::TYPEVAR) {
             let st_tsym = ctx.typ(st).tsym.expect("supertype symbol");
             let sym = self.find_field(ctx, syms, env, site, name, st_tsym);
@@ -2042,13 +2042,14 @@ impl Resolve {
         site: TypeId,
         name: &crate::util::name::Name,
         c: SymbolId,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         let mut best_so_far = self.type_not_found;
         let c_type = ctx.sym(c).ty.expect("type symbol type");
-        let st = self.types.supertype(ctx, syms, c_type);
+        let st = self.types.supertype(ctx, syms, c_type, attr.as_deref_mut());
         if ctx.typ(st).has_tag(TypeTag::CLASS) {
             let st_tsym = ctx.typ(st).tsym.expect("supertype symbol");
-            let sym = self.find_member_type(ctx, syms, env, site, name, st_tsym);
+            let sym = self.find_member_type(ctx, syms, env, site, name, st_tsym, attr.as_deref_mut());
             best_so_far = best_of(ctx, best_so_far, sym);
         }
         let interfaces = self.types.interfaces(ctx, syms, c_type);
@@ -2056,7 +2057,7 @@ impl Resolve {
         while ctx.sym(best_so_far).kind != Kind::AMBIGUOUS && current.non_empty() {
             let interface = *current.head();
             let interface_tsym = ctx.typ(interface).tsym.expect("interface symbol");
-            let sym = self.find_member_type(ctx, syms, env, site, name, interface_tsym);
+            let sym = self.find_member_type(ctx, syms, env, site, name, interface_tsym, attr.as_deref_mut());
             if !ctx.sym(best_so_far).kind.is_resolution_error()
                 && !ctx.sym(sym).kind.is_resolution_error()
                 && ctx.sym(sym).owner != ctx.sym(best_so_far).owner
@@ -2079,12 +2080,13 @@ impl Resolve {
         site: TypeId,
         name: &crate::util::name::Name,
         c: SymbolId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         let sym = self.find_immediate_member_type(ctx, syms, env, site, name, c);
         if sym != self.type_not_found {
             return sym;
         }
-        self.find_inherited_member_type(ctx, syms, env, site, name, c)
+        self.find_inherited_member_type(ctx, syms, env, site, name, c, attr)
     }
 
     /// Java: Symbol findGlobalType(Env, Scope, Name, RecoveryLoadClass)
@@ -2166,6 +2168,7 @@ impl Resolve {
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         let empty = &self.names.empty;
         if name == empty {
@@ -2200,7 +2203,7 @@ impl Resolve {
                 }
             }
             if sym == self.type_not_found {
-                sym = self.find_inherited_member_type(ctx, syms, &env1, encl_type, name, encl_sym);
+                sym = self.find_inherited_member_type(ctx, syms, &env1, encl_type, name, encl_sym, attr.as_deref_mut());
             }
             if static_only && ctx.sym(sym).kind == Kind::TYP {
                 let sym_type = ctx.sym(sym).ty.expect("type symbol");
@@ -2926,8 +2929,9 @@ impl Resolve {
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
         kind: crate::code::kinds::KindSelector,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
-        let found = self.find_ident_internal(ctx, syms, env, name, kind);
+        let found = self.find_ident_internal(ctx, syms, env, name, kind, attr);
         self.check_restricted_type(ctx, pos, found, name)
     }
 
@@ -2940,6 +2944,7 @@ impl Resolve {
         env: &Rc<Env<AttrContext>>,
         name: &crate::util::name::Name,
         kind: crate::code::kinds::KindSelector,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         use crate::code::kinds::KindSelector;
         let mut best_so_far = self.type_not_found;
@@ -2951,7 +2956,7 @@ impl Resolve {
             best_so_far = best_of(ctx, best_so_far, sym);
         }
         if kind.contains(KindSelector::TYP) {
-            let sym = self.find_type(ctx, syms, env, name);
+            let sym = self.find_type(ctx, syms, env, name, attr);
             if crate::code::symbol::symbol_exists(ctx, sym) {
                 return sym;
             }
@@ -3064,7 +3069,7 @@ impl Resolve {
         }
         if kind.contains(KindSelector::TYP) {
             let site_tsym = ctx.typ(site).tsym.expect("site symbol");
-            let sym = self.find_member_type(ctx, syms, env, site, name, site_tsym);
+            let sym = self.find_member_type(ctx, syms, env, site, name, site_tsym, None);
             if crate::code::symbol::symbol_exists(ctx, sym) {
                 return sym;
             }
@@ -4552,7 +4557,7 @@ impl Resolve {
                 formals = formals.tail();
                 actuals = actuals.tail();
             }
-            mt = types.subst_type(ctx, syms, pmt_qtype, &pmt_tvars, &typeargtypes);
+            mt = types.subst_type(ctx, syms, pmt_qtype, &pmt_tvars, &typeargtypes, None);
         } else if ctx.typ(mt).has_tag(crate::code::type_tag::TypeTag::FORALL) {
             let (pmt_tvars, pmt_qtype) = match &ctx.typ(mt).kind {
                 crate::code::type_::TypeKindData::ForAll { tvars, qtype } => {
@@ -4568,7 +4573,7 @@ impl Resolve {
                 current = current.tail();
             }
             tvars = appended;
-            mt = types.subst_type(ctx, syms, pmt_qtype, &pmt_tvars, &tvars1);
+            mt = types.subst_type(ctx, syms, pmt_qtype, &pmt_tvars, &tvars1, None);
         }
         // find out whether we need to go the slow route via infer
         let mut inst_needed = !tvars.is_empty();
@@ -7489,7 +7494,7 @@ impl Resolve {
             }
             // next superclass
             let st = ctx.sym(s).ty.expect("class type");
-            let supertype = types.supertype(ctx, syms, st);
+            let supertype = types.supertype(ctx, syms, st, None);
             current = symbol_for(ctx, syms, &mut seen, supertype);
         }
         let concrete_kind = ctx.sym(best_so_far).kind;
@@ -9213,10 +9218,11 @@ impl Resolve {
         env: &Rc<Env<AttrContext>>,
         name: crate::util::name::Name,
         kind: crate::code::kinds::KindSelector,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         // Java: return accessBase(findIdent(pos, env, name, kind), pos,
         // env.enclClass.sym.type, name, false);
-        let found = self.find_ident(ctx, syms, pos.clone(), env, &name, kind);
+        let found = self.find_ident(ctx, syms, pos.clone(), env, &name, kind, attr);
         let encl_tree = env.encl_class.expect("resolving ident outside class");
         // Java: env.enclClass.sym.type (Resolve.java:2683).
         let encl_sym = match &ctx.tree(encl_tree).kind {
@@ -9447,8 +9453,9 @@ impl Resolve {
         site: TypeId,
         name: &crate::util::name::Name,
         c: SymbolId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
-        self.find_member_type(ctx, syms, env, site, name, c)
+        self.find_member_type(ctx, syms, env, site, name, c, attr)
     }
 }
 

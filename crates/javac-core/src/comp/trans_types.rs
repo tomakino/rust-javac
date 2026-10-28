@@ -567,7 +567,7 @@ impl TransTypes {
                 self.make.borrow_mut().this_expr(ctx, origin_erasure)
             } else {
                 let syms = self.syms.borrow();
-                let st = self.types.supertype(ctx, &syms, origin_ty);
+                let st = self.types.supertype(ctx, &syms, origin_ty, None);
                 let st_tsym = ctx.typ(st).tsym.expect("supertype symbol");
                 let st_erasure = self.symbol_erasure(ctx, st_tsym);
                 drop(syms);
@@ -813,7 +813,7 @@ impl TransTypes {
         let origin_ty = ctx.sym(origin).ty.expect("origin type");
         let mut st = {
             let syms = self.syms.borrow();
-            self.types.supertype(ctx, &syms, origin_ty)
+            self.types.supertype(ctx, &syms, origin_ty, None)
         };
         while ctx.typ(st).has_tag(TypeTag::CLASS) {
             if let Some(tsym) = ctx.typ(st).tsym {
@@ -821,7 +821,7 @@ impl TransTypes {
             }
             st = {
                 let syms = self.syms.borrow();
-                self.types.supertype(ctx, &syms, st)
+                self.types.supertype(ctx, &syms, st, None)
             };
         }
         let interfaces = {
@@ -851,7 +851,7 @@ impl TransTypes {
         let c_type = ctx.sym(c).ty.expect("class type");
         let st = {
             let syms = self.syms.borrow();
-            self.types.supertype(ctx, &syms, c_type)
+            self.types.supertype(ctx, &syms, c_type, None)
         };
         if ctx.typ(st).has_tag(TypeTag::CLASS)
             && let Some(st_tsym) = ctx.typ(st).tsym
@@ -1211,7 +1211,7 @@ impl TreeVisitor for TransTypes {
         let selector_ty = selector.and_then(|selector| ctx.tree(selector).ty).expect("switch selector type");
         let enum_switch = {
             let syms = self.syms.borrow();
-            let selsuper = self.types.supertype(ctx, &syms, selector_ty);
+            let selsuper = self.types.supertype(ctx, &syms, selector_ty, None);
             ctx.typ(selsuper).tsym == Some(syms.enum_sym)
         };
         let target = if enum_switch {
@@ -1267,7 +1267,7 @@ impl TreeVisitor for TransTypes {
         let selector_ty = selector.and_then(|selector| ctx.tree(selector).ty).expect("selector type");
         let enum_switch = {
             let syms = self.syms.borrow();
-            let selsuper = self.types.supertype(ctx, &syms, selector_ty);
+            let selsuper = self.types.supertype(ctx, &syms, selector_ty, None);
             ctx.typ(selsuper).tsym == Some(syms.enum_sym)
         };
         let target = if enum_switch {

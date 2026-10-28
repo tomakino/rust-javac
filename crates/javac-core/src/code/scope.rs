@@ -1633,7 +1633,7 @@ fn symbol_importer_import_from(
     processed.push(tsym);
     if inspect_super_types {
         let tsym_type = ctx.sym(tsym).ty.expect("type symbol type");
-        let super_type = types.supertype(ctx, syms, tsym_type);
+        let super_type = types.supertype(ctx, syms, tsym_type, None);
         let super_tsym = ctx.typ(super_type).tsym;
         symbol_importer_import_from(
             ctx,

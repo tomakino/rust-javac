@@ -81,3 +81,10 @@ Status: template only; entries are appended by the executing agent and reviewed 
 | `code/symbol.rs::Completer::complete_with_attr` | `Completer.complete` call sites inside Attr | default falls back to complete; TypeEnterCompleter overrides with the enclosing Attr |
 | `compiler_context.rs::CompilerContext::complete_symbol_with_attr` | `Symbol.complete` | optional Attr context for the reentrant completion chain |
 | `compiler_context.rs::CompilerContext::complete_class_symbol_with_attr` | `ClassSymbol.complete` | same failure recovery as complete_class_symbol |
+
+## A3a Types/Resolve Attr threading
+
+| Local symbol | Upstream location | Notes |
+|---|---|---|
+| `code/types.rs::Types::supertype` (+`class_bound`/`subst_type`/`subst_visit`) | `Types.supertype` | optional `&mut Attr` for the reentrant completion point; None keeps the Attr-less entry points |
+| `comp/resolve.rs::Resolve::find_member_type` / `find_inherited_member_type` / `find_type` / `find_ident` / `find_ident_internal` / `resolve_ident` / `find_member_type_pub` | `Resolve.find*` | optional `&mut Attr`, `Some(self)` from Attr-inside callers |

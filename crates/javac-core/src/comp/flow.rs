@@ -3301,7 +3301,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                     };
                     supers = supers.prepend({
                         let syms = self.flow.syms.borrow();
-                        self.flow.types.supertype(ctx, &syms, resource_type)
+                        self.flow.types.supertype(ctx, &syms, resource_type, None)
                     });
                     supers
                 } else {

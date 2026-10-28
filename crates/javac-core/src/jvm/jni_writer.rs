@@ -546,7 +546,7 @@ impl JNIWriter {
         class: SymbolId,
     ) -> Option<SymbolId> {
         let ty = ctx.sym(class).ty?;
-        let super_type = self.types.supertype(ctx, syms, ty);
+        let super_type = self.types.supertype(ctx, syms, ty, None);
         if ctx.typ(super_type).get_tag() != TypeTag::CLASS {
             return None;
         }

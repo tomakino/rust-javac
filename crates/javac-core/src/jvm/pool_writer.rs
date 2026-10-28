@@ -576,7 +576,7 @@ impl PoolWriter {
                 .assemble_params_sig(ctx, syms, typarams)
                 .expect("assembled type parameters");
         }
-        let super_ty = self.types.supertype(ctx, syms, t);
+        let super_ty = self.types.supertype(ctx, syms, t, None);
         self.signature_gen
             .assemble_sig(ctx, syms, super_ty)
             .expect("assembled super type");

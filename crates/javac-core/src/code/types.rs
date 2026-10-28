@@ -864,8 +864,8 @@ impl Types {
                 && self.is_same_type(ctx, syms, t, lower);
         }
         if self.is_compound(ctx, t) && self.is_compound(ctx, s) {
-            let sup_t = self.supertype(ctx, syms, t);
-            let sup_s = self.supertype(ctx, syms, s);
+            let sup_t = self.supertype(ctx, syms, t, None);
+            let sup_s = self.supertype(ctx, syms, s, None);
             if !self.is_same_type(ctx, syms, sup_t, sup_s) {
                 return false;
             }
@@ -999,7 +999,7 @@ impl Types {
             _ => crate::util::assert::error(),
         };
         self.has_same_bounds(ctx, syms, &t_tvars, &s_tvars) && {
-            let substituted = self.subst_type(ctx, syms, s_qtype, &s_tvars, &t_tvars);
+            let substituted = self.subst_type(ctx, syms, s_qtype, &s_tvars, &t_tvars, None);
             self.is_same_type(ctx, syms, t_qtype, substituted)
         }
     }
@@ -1315,7 +1315,13 @@ impl Types {
     /// Return the supertype of given type.
     ///
     /// Java: public Type supertype(Type t)
-    pub fn supertype(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
+    pub fn supertype(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
+    ) -> TypeId {
         let tag = ctx.typ(t).get_tag();
         if tag == TypeTag::ERROR {
             return no_type_of(ctx, syms);
@@ -1343,7 +1349,16 @@ impl Types {
             // reading supertype_field (Symbol.java). The ported Symtab keeps its
             // mutable tables internally, so completion writes the real table.
             if !ctx.is_symbol_completed(tsym) {
-                let _ = ctx.complete_class_symbol(syms, tsym);
+                // Port adapter: the Attr-inside callers pass their Attr so the
+                // reentrant completion reuses the same Attr object.
+                match attr.as_deref_mut() {
+                    Some(attr) => {
+                        let _ = ctx.complete_class_symbol_with_attr(syms, tsym, attr);
+                    }
+                    None => {
+                        let _ = ctx.complete_class_symbol(syms, tsym);
+                    }
+                }
             }
             let mut supertype_opt = class_symbol_get_superclass(ctx, tsym);
             if symbol_is_interface(ctx, tsym) {
@@ -1360,13 +1375,13 @@ impl Types {
             }
             let supertype = supertype_opt.unwrap_or_else(|| no_type_of(ctx, syms));
             let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
-            let class_bound_type = class_bound(ctx, syms, t);
+            let class_bound_type = class_bound(ctx, syms, t, attr.as_deref_mut());
             let actuals = allparams_of(ctx, class_bound_type);
             let formals = allparams_of(ctx, tsym_type);
             let result = if has_erased_supertypes(ctx, t) {
                 self.erasure_recursive(ctx, syms, supertype)
             } else if formals.non_empty() {
-                self.subst_type(ctx, syms, supertype, &formals, &actuals)
+                self.subst_type(ctx, syms, supertype, &formals, &actuals, attr.as_deref_mut())
             } else {
                 supertype
             };
@@ -1382,7 +1397,7 @@ impl Types {
             {
                 return upper;
             }
-            return self.supertype(ctx, syms, upper);
+            return self.supertype(ctx, syms, upper, attr);
         }
         if tag == TypeTag::ARRAY {
             let elem = match &ctx.typ(t).kind {
@@ -1394,7 +1409,7 @@ impl Types {
             if elem_is_primitive || elem_is_object {
                 return self.array_super_type(ctx, syms);
             }
-            let sup = self.supertype(ctx, syms, elem);
+            let sup = self.supertype(ctx, syms, elem, attr);
             let tsym = ctx.typ(t).tsym;
             return new_array_type(ctx, sup, tsym);
         }
@@ -1482,6 +1497,7 @@ impl Types {
         t: TypeId,
         from: &List<TypeId>,
         to: &List<TypeId>,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> TypeId {
         let tag = ctx.typ(t).get_tag();
         if tag == TypeTag::TYPEVAR {
@@ -1515,7 +1531,7 @@ impl Types {
             };
             let no_type = no_type_of(ctx, syms);
             let outer1 = match outer {
-                Some(outer) => self.subst_visit(ctx, syms, outer, from, to),
+                Some(outer) => self.subst_visit(ctx, syms, outer, from, to, attr.as_deref_mut()),
                 // Java: a class type may have Type.noType as its enclosing
                 // type; the structural mapping visits it unchanged.
                 None => no_type,
@@ -1541,7 +1557,7 @@ impl Types {
             let Some(type_) = type_ else {
                 return t;
             };
-            let visited = self.subst_visit(ctx, syms, type_, from, to);
+            let visited = self.subst_visit(ctx, syms, type_, from, to, attr.as_deref_mut());
             let t2 = if visited == type_ {
                 t
             } else {
@@ -1561,7 +1577,7 @@ impl Types {
                 TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
                 _ => crate::util::assert::error(),
             };
-            let elem1 = self.subst_visit(ctx, syms, elem, from, to);
+            let elem1 = self.subst_visit(ctx, syms, elem, from, to, attr.as_deref_mut());
             if elem1 == elem {
                 return t;
             }
@@ -1577,7 +1593,7 @@ impl Types {
             };
             let argtypes1 = self.subst(ctx, syms, &argtypes, from, to);
             let restype = restype.expect("method return type");
-            let restype1 = self.subst_visit(ctx, syms, restype, from, to);
+            let restype1 = self.subst_visit(ctx, syms, restype, from, to, attr.as_deref_mut());
             let thrown1 = self.subst(ctx, syms, &thrown, from, to);
             if list_same(&argtypes, &argtypes1)
                 && restype1 == restype
@@ -1600,19 +1616,19 @@ impl Types {
             if self.type_list_contains_any(ctx, syms, to, &tvars, &mut Vec::new()) {
                 let freevars = self.new_instances(ctx, syms, &tvars);
                 let substituted =
-                    self.subst_type(ctx, syms, qtype_cur, &tvars, &freevars);
+                    self.subst_type(ctx, syms, qtype_cur, &tvars, &freevars, None);
                 qtype_cur = substituted;
                 tvars_cur = freevars;
             }
             let tvars1 = self.subst_bounds(ctx, syms, &tvars_cur, from, to);
-            let qtype1 = self.subst_visit(ctx, syms, qtype_cur, from, to);
+            let qtype1 = self.subst_visit(ctx, syms, qtype_cur, from, to, attr.as_deref_mut());
             if list_same(&tvars_cur, &tvars1) && qtype1 == qtype_cur {
                 return t;
             }
             let new_qtype = if list_same(&tvars_cur, &tvars1) {
                 qtype1
             } else {
-                self.subst_type(ctx, syms, qtype1, &tvars_cur, &tvars1)
+                self.subst_type(ctx, syms, qtype1, &tvars_cur, &tvars1, None)
             };
             let qtype_tsym = ctx.typ(new_qtype).tsym;
             return ctx.alloc_type(crate::code::type_::Type::new(
@@ -1626,14 +1642,14 @@ impl Types {
         }
         if self.is_compound(ctx, t) {
             // Java: Subst.visitClassType for compound types (Types.java:3355-3365)
-            let supertype = self.supertype(ctx, syms, t);
-            let st = self.subst_visit(ctx, syms, supertype, from, to);
+            let supertype = self.supertype(ctx, syms, t, None);
+            let st = self.subst_visit(ctx, syms, supertype, from, to, attr.as_deref_mut());
             let interfaces = self.interfaces(ctx, syms, t);
             let mut is: List<TypeId> = List::nil();
             let mut current = interfaces.clone();
             while current.non_empty() {
                 let interface = *current.head();
-                let substituted = self.subst_visit(ctx, syms, interface, from, to);
+                let substituted = self.subst_visit(ctx, syms, interface, from, to, attr.as_deref_mut());
                 is = is.append(substituted);
                 current = current.tail();
             }
@@ -1676,7 +1692,7 @@ impl Types {
         while current.non_empty() {
             let tvar = *current.head();
             let upper = ctx.typ(tvar).get_upper_bound().expect("type var upper bound");
-            let substituted = self.subst_type(ctx, syms, upper, tvars, &tvars1);
+            let substituted = self.subst_type(ctx, syms, upper, tvars, &tvars1, None);
             if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(tvar).kind {
                 *bound = Some(substituted);
             }
@@ -1750,7 +1766,7 @@ impl Types {
         while current.non_empty() {
             let tvar = *current.head();
             let upper = ctx.typ(tvar).get_upper_bound().expect("type var upper bound");
-            let bound = self.subst_type(ctx, syms, upper, from, to);
+            let bound = self.subst_type(ctx, syms, upper, from, to, None);
             if bound != upper {
                 changed = true;
             }
@@ -1778,7 +1794,7 @@ impl Types {
         }
         let mut substituted_bounds: Vec<TypeId> = Vec::new();
         for bound in &new_bounds {
-            let substituted = self.subst_type(ctx, syms, *bound, tvars, &new_tvars);
+            let substituted = self.subst_type(ctx, syms, *bound, tvars, &new_tvars, None);
             substituted_bounds.push(substituted);
         }
         let mut current = new_tvars.clone();
@@ -1848,7 +1864,7 @@ impl Types {
         t: TypeId,
     ) -> List<TypeId> {
         if !ctx.typ(t).is_intersection() {
-            let sup = self.supertype(ctx, syms, t);
+            let sup = self.supertype(ctx, syms, t, None);
             let no_type = no_type_of(ctx, syms);
             let interfaces = self.interfaces(ctx, syms, t);
             if sup == no_type || sup == t {
@@ -1902,7 +1918,7 @@ impl Types {
         let (from, to) = self.align_subst_lists(from, to);
         let mut elements = Vec::new();
         for t in ts.iter() {
-            elements.push(self.subst_visit(ctx, syms, t, &from, &to));
+            elements.push(self.subst_visit(ctx, syms, t, &from, &to, None));
         }
         let mut result = List::nil();
         for t in elements.into_iter().rev() {
@@ -1922,9 +1938,10 @@ impl Types {
         t: TypeId,
         from: &List<TypeId>,
         to: &List<TypeId>,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> TypeId {
         let (from, to) = self.align_subst_lists(from, to);
-        self.subst_visit(ctx, syms, t, &from, &to)
+        self.subst_visit(ctx, syms, t, &from, &to, attr)
     }
 
     /// Java: subst(List<Type> ts, from, to) for a list of types.
@@ -1998,7 +2015,7 @@ impl Types {
                 }
                 seen.push(c);
                 let result = (|| {
-                    let st = self.supertype(ctx, syms, t);
+                    let st = self.supertype(ctx, syms, t, None);
                     if (ctx.typ(st).has_tag(TypeTag::CLASS)
                         || ctx.typ(st).has_tag(TypeTag::TYPEVAR))
                         && let Some(x) = self.as_super_visit(ctx, syms, st, sym, seen)
@@ -2197,6 +2214,7 @@ impl Types {
                                     sym_type,
                                     &owner_params,
                                     &base_params,
+                                    None,
                                 );
                             }
                         }
@@ -2234,7 +2252,7 @@ impl Types {
                 let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
                 let formals = get_type_arguments(ctx, tsym_type);
                 let actuals = get_type_arguments(ctx, t);
-                return self.subst_type(ctx, syms, type1, &formals, &actuals);
+                return self.subst_type(ctx, syms, type1, &formals, &actuals, None);
             }
         }
         if is_raw_type(ctx, t) || !is_parameterized_type(ctx, t) {
@@ -2268,7 +2286,7 @@ impl Types {
                 };
                 let (upper, lower) = match kind {
                     crate::code::bound_kind::BoundKind::UNBOUND => {
-                        let upper = self.subst_type(ctx, syms, ui, &a_list, &s_list);
+                        let upper = self.subst_type(ctx, syms, ui, &a_list, &s_list, None);
                         (upper, syms.bot_type)
                     }
                     crate::code::bound_kind::BoundKind::EXTENDS => {
@@ -2278,12 +2296,12 @@ impl Types {
                             }
                             _ => crate::util::assert::error(),
                         };
-                        let ui_subst = self.subst_type(ctx, syms, ui, &a_list, &s_list);
+                        let ui_subst = self.subst_type(ctx, syms, ui, &a_list, &s_list, None);
                         let upper = self.glb(ctx, syms, extends_bound, ui_subst);
                         (upper, syms.bot_type)
                     }
                     crate::code::bound_kind::BoundKind::SUPER => {
-                        let upper = self.subst_type(ctx, syms, ui, &a_list, &s_list);
+                        let upper = self.subst_type(ctx, syms, ui, &a_list, &s_list, None);
                         let super_bound = match &ctx.typ(wildcard).kind {
                             TypeKindData::WildcardType { type_, .. } => {
                                 type_.expect("super bound")
@@ -2619,7 +2637,7 @@ impl Types {
         if self.is_compound(ctx, s) {
             let components = self
                 .interfaces(ctx, syms, s)
-                .prepend(self.supertype(ctx, syms, s));
+                .prepend(self.supertype(ctx, syms, s, None));
             for s2 in components.iter() {
                 if !self.is_subtype_with_capture(ctx, syms, t, s2, capture) {
                     return false;
@@ -2847,7 +2865,7 @@ impl Types {
         to: &List<TypeId>,
     ) -> TypeId {
         let bound = ctx.typ(t).get_upper_bound().expect("type var upper bound");
-        let bound1 = self.subst_type(ctx, syms, bound, from, to);
+        let bound1 = self.subst_type(ctx, syms, bound, from, to, None);
         if bound1 == bound {
             return t;
         }
@@ -2866,6 +2884,7 @@ impl Types {
             bound1,
             &List::of(t),
             &List::of(new_tvar),
+            None,
         );
         ctx.typ_mut(new_tvar).set_upper_bound(Some(new_bound));
         new_tvar
@@ -2889,7 +2908,7 @@ impl Types {
                 .typ(*l2.head())
                 .get_upper_bound()
                 .expect("type var upper bound");
-            let substituted = self.subst_type(ctx, syms, b2, s_tvars, t_tvars);
+            let substituted = self.subst_type(ctx, syms, b2, s_tvars, t_tvars, None);
             if !self.is_same_type(ctx, syms, b1, substituted) {
                 return false;
             }
@@ -2946,7 +2965,7 @@ impl Types {
             if name.to_java_string() == names.std.java_lang_Object.to_java_string() {
                 return 0;
             }
-            let sup = self.supertype(ctx, syms, t);
+            let sup = self.supertype(ctx, syms, t, None);
             let mut r = self.rank(ctx, syms, sup);
             for l in self.interfaces(ctx, syms, t).iter() {
                 let rank_l = self.rank(ctx, syms, l);
@@ -2957,7 +2976,7 @@ impl Types {
             return r + 1;
         }
         if tag == TypeTag::TYPEVAR {
-            let sup = self.supertype(ctx, syms, t);
+            let sup = self.supertype(ctx, syms, t, None);
             let mut r = self.rank(ctx, syms, sup);
             for l in self.interfaces(ctx, syms, t).iter() {
                 let rank_l = self.rank(ctx, syms, l);
@@ -3102,7 +3121,7 @@ impl Types {
                 let s_qtype = s_qtype.expect("for-all qtype");
                 self.has_same_bounds(ctx, syms, &t_tvars, &s_tvars)
                     && {
-                        let substituted = self.subst_type(ctx, syms, s_qtype, &s_tvars, &t_tvars);
+                        let substituted = self.subst_type(ctx, syms, s_qtype, &s_tvars, &t_tvars, None);
                         let t_qtype = t_qtype.expect("for-all qtype");
                         self.has_same_args_strict(ctx, syms, t_qtype, substituted, strict)
                     }
@@ -4111,7 +4130,7 @@ fn class_symbol_get_interfaces(ctx: &CompilerContext, symbol: SymbolId) -> List<
 }
 
 /// Java: Types.classBound(Type t)
-fn class_bound(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
+fn class_bound(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, mut attr: Option<&mut crate::comp::attr::Attr>) -> TypeId {
     match &ctx.typ(t).kind {
         TypeKindData::ClassType { outer_field, .. }
         | TypeKindData::ErasedClassType { outer_field, .. }
@@ -4121,7 +4140,7 @@ fn class_bound(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
             let Some(outer) = *outer_field else {
                 return t;
             };
-            let outer1 = class_bound(ctx, syms, outer);
+            let outer1 = class_bound(ctx, syms, outer, attr.as_deref_mut());
             if outer1 == outer {
                 t
             } else {
@@ -4131,8 +4150,8 @@ fn class_bound(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
             }
         }
         TypeKindData::TypeVar { .. } => {
-            let sup = Types::new().supertype(ctx, syms, t);
-            class_bound(ctx, syms, sup)
+            let sup = Types::new().supertype(ctx, syms, t, attr);
+            class_bound(ctx, syms, sup, None)
         }
         _ => t,
     }
@@ -4331,7 +4350,7 @@ fn type_contains(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, elem: Type
         }
     }
     if Types::new().is_compound(ctx, t) {
-        let sup = Types::new().supertype(ctx, syms, t);
+        let sup = Types::new().supertype(ctx, syms, t, None);
         if type_contains(ctx, syms, sup, elem) {
             return true;
         }
@@ -5059,7 +5078,7 @@ impl Types {
             let tsym_type = ctx.sym(tsym).ty.expect("class symbol type");
             let from_list = List::from_iterable(from);
             let to_list = List::from_iterable(rewrite);
-            self.subst_type(ctx, syms, tsym_type, &from_list, &to_list)
+            self.subst_type(ctx, syms, tsym_type, &from_list, &to_list, None)
         } else {
             t
         }
@@ -5304,7 +5323,7 @@ impl Types {
         t: TypeId,
     ) -> List<TypeId> {
         let mut cl: List<TypeId>;
-        let st = self.supertype(ctx, syms, t);
+        let st = self.supertype(ctx, syms, t, None);
         if !self.is_compound(ctx, t) {
             if ctx.typ(st).has_tag(TypeTag::CLASS) {
                 let super_closure = self.closure(ctx, syms, st);
@@ -5505,7 +5524,7 @@ impl Types {
             }
         }
         if self.is_compound(ctx, t) {
-            let supertype = self.supertype(ctx, syms, t);
+            let supertype = self.supertype(ctx, syms, t, None);
             if type_equals_ignore_metadata(ctx, supertype, elem) {
                 return true;
             }
@@ -5540,7 +5559,7 @@ impl Types {
         };
         let from_list = List::from_iterable(from);
         let to_list = List::from_iterable(to);
-        let mut res = self.subst_type(ctx, syms, sym_type, &from_list, &to_list);
+        let mut res = self.subst_type(ctx, syms, sym_type, &from_list, &to_list, None);
         if !self.is_subtype(ctx, syms, res, t) {
             return None;
         }
@@ -5570,7 +5589,7 @@ impl Types {
                     ));
                     wildcards = wildcards.append(wildcard);
                 }
-                res = self.subst_type(ctx, syms, res, &opens, &wildcards);
+                res = self.subst_type(ctx, syms, res, &opens, &wildcards, None);
             }
         }
         Some(res)
@@ -5609,7 +5628,7 @@ impl Types {
                     let tsym = ctx.typ(t).tsym.expect("class type symbol");
                     let tsym_type = ctx.sym(tsym).ty.expect("class symbol type");
                     let tsym_params = self.class_allparams(ctx, tsym_type);
-                    self.subst_type(ctx, syms, tsym_type, &tsym_params, &rewritten)
+                    self.subst_type(ctx, syms, tsym_type, &tsym_params, &rewritten, None)
                 } else {
                     t
                 }
@@ -6188,7 +6207,7 @@ impl Types {
         let erasure_tsym = ctx.typ(erasure).tsym.expect("erasure symbol");
         if (ctx.sym(erasure_tsym).flags_field & crate::code::flags::INTERFACE as i64) == 0 {
             let interfaces = self.interfaces(ctx, syms, t);
-            let supertype = self.supertype(ctx, syms, t);
+            let supertype = self.supertype(ctx, syms, t, None);
             interfaces.prepend(supertype)
         } else {
             self.interfaces(ctx, syms, t)
@@ -6780,7 +6799,7 @@ impl Types {
             }
             self.undet_var_set_bounds(ctx, uv, ib, new_bounds);
             for dep in deps {
-                let substituted = self.subst_type(ctx, syms, dep, from, to);
+                let substituted = self.subst_type(ctx, syms, dep, from, to, None);
                 self.undet_var_add_bound(ctx, syms, uv, ib, substituted, true);
             }
         }
@@ -7600,7 +7619,7 @@ impl Types {
         if self.is_erroneous(ctx, syms, t) {
             return false;
         }
-        let super_type = self.supertype(ctx, syms, t);
+        let super_type = self.supertype(ctx, syms, t, None);
         let no_type = ctx.sym(syms.no_symbol).ty.expect("no type");
         if is_raw_type(ctx, t) {
             return true;
@@ -7751,7 +7770,7 @@ impl Types {
                     ctx.scope_prepend_sub_scope(closure_scope, sub);
                     current = current.tail();
                 }
-                let super_type = self.supertype(ctx, syms, t);
+                let super_type = self.supertype(ctx, syms, t, None);
                 let super_scope = self.members_closure_visit(ctx, syms, super_type);
                 ctx.scope_prepend_sub_scope(closure_scope, super_scope);
                 let members = match &ctx.sym(tsym).kind_data {
@@ -7894,7 +7913,7 @@ impl Types {
             if best_so_far.is_some() {
                 return best_so_far;
             }
-            let super_type = self.supertype(ctx, syms, t);
+            let super_type = self.supertype(ctx, syms, t, None);
             t = super_type;
         }
         None
@@ -9590,7 +9609,7 @@ impl Types {
                 .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0)
                 .unwrap_or(false);
             if !erasure_is_interface {
-                let supertype = self.supertype(ctx, syms, t);
+                let supertype = self.supertype(ctx, syms, t, None);
                 buf.push_str(&crate::code::type_::type_to_string(ctx, supertype));
                 for interface in self.interfaces(ctx, syms, t).iter() {
                     buf.push('&');

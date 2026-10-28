@@ -1181,7 +1181,7 @@ impl ClassReader {
                 _ => panic!("ClassCastException: ClassType expected"),
             };
             let new_supertype =
-                supertype.map(|supertype| types.subst_type(ctx, syms, supertype, &missing, &found));
+                supertype.map(|supertype| types.subst_type(ctx, syms, supertype, &missing, &found, None));
             let new_interfaces =
                 interfaces.map(|interfaces| types.subst(ctx, syms, &interfaces, &missing, &found));
             let new_bounds = types.subst_bounds(ctx, syms, &bounds, &missing, &found);

@@ -126,3 +126,9 @@
 - A2:`Completer` 增加 `complete_with_attr`(默认回退 complete);`CompilerContext` 增加 `complete_symbol_with_attr`/`complete_class_symbol_with_attr`(同一失败恢复);`TypeEnterCompleter` override 用外层 `&mut Attr`;imports 链(check_class_package_clash/do_import/import_all/import_static_all/import_named_static/import_named/import_all_java_lang)与 Annotate 的 Attr 内完成点改为传当前 Attr。
 - 测试:新增 `nested_member_class_completion_compiles`(`class T { class A<X> { X v; } A<String> f; }`)通过;1147 passed / 0 failed;clippy 0/208;unimplemented 0。
 - gson 80 文件仍触发未覆盖路径(A3):`Types::supertype`→`complete_class_symbol`(无 Attr)→`complete_symbol`→`TypeEnterCompleter::complete`→`TypeEnter::complete`(type_enter.rs:247 `attr.borrow_mut()`),Attr 已借;按批准范围 ①-④ 停手,Check/ClassFinder/Types/Enter/Modules 的无 Attr 完成路径登记 A3(需给这些调用点注入 Attr 或延后完成)。
+
+### A3a Types/Resolve 定向 Attr 穿透(部分完成,gson 仍卡 Resolve 重入)
+- 实现:`Types::supertype/class_bound/subst_type/subst_visit` 增加 `Option<&mut Attr>`(完成点走 `complete_class_symbol_with_attr`;所有递归调用传递;Attr 内调用点 `Some(self)`,其余 `None`);`Resolve::find_member_type/find_inherited_member_type/find_type/find_ident/find_ident_internal/resolve_ident/find_member_type_pub` 增加 `Option<&mut Attr>`,Attr 内 `visit_ident`/`find_member_type_pub` 传 `Some(self)`。
+- 测试:1148 passed / 0 failed;clippy 0/208;unimplemented 0;最小 `nested_supertype_completion_compiles` 通过。
+- gson 80 文件:仍 panic,新栈 `Attr::visit_ident`(attr.rs:1375 `self.rs.borrow_mut()`,Resolve 已借)→ `Resolve::resolve_ident`;这是 Resolve 服务本身 `Rc<RefCell<Resolve>>` 不可重入(A3d),不是无 Attr 完成;按“停手报告、不扩大范围”登记 A3d。
+- 偏离说明:批准设计写“新增 supertype_with_attr 及 helper”,实际实现选择给 supertype/class_bound/subst_type/subst_visit 加 `Option<&mut Attr>`(避免复制约 300 行、保持单一实现);调用点全量 `None` 编译驱动;若需改回新增方法请裁决。

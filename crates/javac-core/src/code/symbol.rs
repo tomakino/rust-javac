@@ -1735,7 +1735,7 @@ pub fn symbol_is_sub_class(
                 }
                 current = current.tail();
             }
-            t = types.supertype(ctx, syms, t);
+            t = types.supertype(ctx, syms, t, None);
         }
         false
     } else {
@@ -1744,7 +1744,7 @@ pub fn symbol_is_sub_class(
             if ctx.typ(t).tsym == Some(base) {
                 return true;
             }
-            t = types.supertype(ctx, syms, t);
+            t = types.supertype(ctx, syms, t, None);
         }
         false
     }
@@ -1804,7 +1804,7 @@ pub fn symbol_is_accessible_in(
         if symbol_packge(ctx, current) != Some(this_package) {
             return false;
         }
-        let next = types.supertype(ctx, syms, current_ty);
+        let next = types.supertype(ctx, syms, current_ty, None);
         sup = ctx.typ(next).tsym;
     }
     (ctx.sym(clazz).flags_field & flags::INTERFACE as i64) == 0
@@ -1873,7 +1873,7 @@ fn symbol_hidden_in_internal(
         }
     }
     let current_ty = ctx.sym(current_class).ty.expect("current class type");
-    let supertype = types.supertype(ctx, syms, current_ty);
+    let supertype = types.supertype(ctx, syms, current_ty, None);
     let mut supers = types.interfaces(ctx, syms, current_ty).prepend(supertype);
     let mut hidden_sym: Option<SymbolId> = None;
     while supers.non_empty() {
@@ -2160,7 +2160,7 @@ pub fn is_sub_class(
                 }
                 current = current.tail();
             }
-            t = types.supertype(ctx, syms, t);
+            t = types.supertype(ctx, syms, t, None);
         }
         false
     } else {
@@ -2169,7 +2169,7 @@ pub fn is_sub_class(
             if ctx.typ(t).tsym == Some(base) {
                 return true;
             }
-            t = types.supertype(ctx, syms, t);
+            t = types.supertype(ctx, syms, t, None);
         }
         false
     }
@@ -2232,7 +2232,7 @@ pub fn is_accessible_in(
             if packge(ctx, sup_sym) != this_package {
                 return false;
             }
-            let super_type = types.supertype(ctx, syms, sup_type);
+            let super_type = types.supertype(ctx, syms, sup_type, None);
             sup = ctx.typ(super_type).tsym;
         }
         return (ctx.sym(clazz).flags_field & crate::code::flags::INTERFACE as i64) == 0;
@@ -2345,7 +2345,7 @@ fn hidden_in_internal(
     let mut supertypes =
         types
             .interfaces(ctx, syms, current_ty)
-            .prepend(types.supertype(ctx, syms, current_ty));
+            .prepend(types.supertype(ctx, syms, current_ty, None));
     let mut hidden_sym: Option<SymbolId> = None;
     while supertypes.non_empty() {
         let st = *supertypes.head();
@@ -2601,7 +2601,7 @@ pub fn binary_implementation(
             }
         }
         let current_ty = ctx.sym(current_sym).ty.expect("class type");
-        let super_type = types.supertype(ctx, syms, current_ty);
+        let super_type = types.supertype(ctx, syms, current_ty, None);
         current = ctx.typ(super_type).tsym;
     }
     None
@@ -2632,7 +2632,7 @@ pub fn implementation(
     let origin_ty = ctx.sym(origin).ty.expect("origin type");
     let is_interface = (ctx.sym(origin).flags_field & crate::code::flags::INTERFACE as i64) != 0;
     if types.is_derived_raw(ctx, syms, origin_ty) && !is_interface {
-        let super_type = types.supertype(ctx, syms, origin_ty);
+        let super_type = types.supertype(ctx, syms, origin_ty, None);
         let super_tsym = ctx.typ(super_type).tsym.expect("supertype symbol");
         return implementation(ctx, syms, types, sym, super_tsym, check_result);
     }
@@ -2807,7 +2807,7 @@ impl Symbol {
         if (flags_value & (crate::code::flags::ENUM as i64)) == 0 {
             return;
         }
-        let supertype = types.supertype(ctx, syms, c_ty);
+        let supertype = types.supertype(ctx, syms, c_ty, None);
         let super_tsym = ctx.typ(supertype).tsym;
         if super_tsym != Some(syms.enum_sym) {
             return;

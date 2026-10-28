@@ -429,7 +429,7 @@ impl Check {
         exc: TypeId,
     ) -> bool {
         if ctx.typ(exc).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
-            let supertype = self.types.supertype(ctx, syms, exc);
+            let supertype = self.types.supertype(ctx, syms, exc, None);
             self.is_unchecked_type(ctx, syms, supertype)
         } else if ctx.typ(exc).has_tag(crate::code::type_tag::TypeTag::CLASS) {
             let tsym = ctx.typ(exc).tsym.expect("class type symbol");
@@ -2933,7 +2933,7 @@ impl Check {
             .map(|tsym| ctx.sym(tsym).flags_field & (crate::code::flags::COMPOUND as i64) != 0)
             .unwrap_or(false);
         if formal_is_compound {
-            let supertype = self.types.supertype(ctx, syms, formal);
+            let supertype = self.types.supertype(ctx, syms, formal, None);
             let interfaces = self.types.interfaces(ctx, syms, formal);
             let actual_subtype_super = self.types.is_subtype(ctx, syms, actual, supertype);
             let mut actual_subtype_interfaces = true;
@@ -3412,7 +3412,7 @@ impl Check {
     ) -> bool {
         let mc = crate::code::symbol::symbol_encl_class(ctx, m);
         let origin_type = ctx.sym(origin).ty.expect("origin type");
-        let st = self.types.supertype(ctx, syms, origin_type);
+        let st = self.types.supertype(ctx, syms, origin_type, None);
         if !ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS) {
             return true;
         }
@@ -4651,7 +4651,7 @@ impl Check {
             self.check_class_bounds(ctx, syms, pos, seensofar, it);
             current = current.tail();
         }
-        let st = self.types.supertype(ctx, syms, t);
+        let st = self.types.supertype(ctx, syms, t, None);
         if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS)
             && !ctx.typ(st).has_tag(crate::code::type_tag::TypeTag::CLASS)
         {
@@ -4874,7 +4874,7 @@ impl Check {
             new_interfaces = new_interfaces.prepend(error);
             current = current.tail();
         }
-        let supertype = self.types.supertype(ctx, syms, c_ty);
+        let supertype = self.types.supertype(ctx, syms, c_ty, None);
         let supertype_field_value = if ctx
             .typ(supertype)
             .has_tag(crate::code::type_tag::TypeTag::CLASS)
@@ -5897,7 +5897,7 @@ impl Check {
         pos: i32,
         site: TypeId,
     ) {
-        let sup = self.types.supertype(ctx, syms, site);
+        let sup = self.types.supertype(ctx, syms, site, None);
         if !ctx.typ(sup).has_tag(crate::code::type_tag::TypeTag::CLASS) {
             return;
         }
@@ -5990,11 +5990,11 @@ impl Check {
                                 }
                             }
                         }
-                        t2 = self.types.supertype(ctx, syms, t2);
+                        t2 = self.types.supertype(ctx, syms, t2, None);
                     }
                 }
             }
-            t1 = self.types.supertype(ctx, syms, t1);
+            t1 = self.types.supertype(ctx, syms, t1, None);
         }
     }
 
@@ -6081,7 +6081,7 @@ impl Check {
         }
         let tsym = ctx.typ(t).tsym.expect("closure symbol");
         if type_map.insert(tsym, t).is_none() {
-            let sup = self.types.supertype(ctx, syms, t);
+            let sup = self.types.supertype(ctx, syms, t, None);
             self.closure(ctx, syms, sup, type_map);
             let interfaces = self.types.interfaces(ctx, syms, t);
             let mut current = interfaces;
@@ -6110,7 +6110,7 @@ impl Check {
             return;
         }
         if type_map.insert(tsym, t).is_none() {
-            let sup = self.types.supertype(ctx, syms, t);
+            let sup = self.types.supertype(ctx, syms, t, None);
             self.closure_skip(ctx, syms, sup, types_skip, type_map);
             let interfaces = self.types.interfaces(ctx, syms, t);
             let mut current = interfaces;
@@ -7098,7 +7098,7 @@ impl Check {
         c: TypeId,
     ) {
         let mut supertypes = self.types.interfaces(ctx, syms, c);
-        let supertype = self.types.supertype(ctx, syms, c);
+        let supertype = self.types.supertype(ctx, syms, c, None);
         if ctx.typ(supertype).has_tag(crate::code::type_tag::TypeTag::CLASS) {
             let super_tsym = ctx.typ(supertype).tsym.expect("supertype symbol");
             if (ctx.sym(super_tsym).flags_field & crate::code::flags::ABSTRACT as i64) != 0 {
@@ -7635,7 +7635,7 @@ impl Check {
         };
         let supertype = {
             let syms_ref: &crate::code::symtab::Symtab = syms;
-            self.types.supertype(ctx, syms_ref, ty)
+            self.types.supertype(ctx, syms_ref, ty, None)
         };
         if let Some(super_tsym) = ctx.typ(supertype).tsym
             && super_tsym != tsym
@@ -7960,7 +7960,7 @@ impl Check {
             }
             let supertype = {
                 let syms: &crate::code::symtab::Symtab = syms;
-                self.types.supertype(ctx, syms, t)
+                self.types.supertype(ctx, syms, t, None)
             };
             if supertype == t {
                 break;
@@ -8614,7 +8614,7 @@ impl Check {
                 );
                 mt2 = {
                     self.types
-                        .subst_type(ctx, syms, mt2, &tvars2, &tvars1)
+                        .subst_type(ctx, syms, mt2, &tvars2, &tvars1, None)
                 };
             }
         }
@@ -8926,7 +8926,7 @@ impl Check {
                 }
             }
             sup = {
-                self.types.supertype(ctx, syms, sup)
+                self.types.supertype(ctx, syms, sup, None)
             };
         }
     }
@@ -10953,6 +10953,15 @@ mod diagnostics_tests {
     fn nested_member_class_completion_compiles() {
         let (_compiler, diagnostics) = compile_with_diagnostics(
             &[("T.java", "class T { class A<X> { X v; } A<String> f; }\n")],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    }
+    #[test]
+    fn nested_supertype_completion_compiles() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T { class A extends B {} class B {} }\n")],
             |_options| {},
         );
         let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();

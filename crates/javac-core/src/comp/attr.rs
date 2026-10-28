@@ -1367,14 +1367,14 @@ impl Attr {
                 let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
                 let mut rs = rs_rc.borrow_mut();
                 let pos = simple_diag_pos(ctx.tree(tree).pos);
-                sym = rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind());
+                sym = rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind(), Some(self));
             }
         } else {
             // Java: sym = rs.resolveIdent(tree.pos(), env, tree.name, pkind());
             let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
             let mut rs = rs_rc.borrow_mut();
             let pos = simple_diag_pos(ctx.tree(tree).pos);
-            sym = rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind());
+            sym = rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind(), Some(self));
         }
         set_ident_symbol(ctx, tree, sym);
         let sym_kind = ctx.sym(sym).kind;
@@ -2937,7 +2937,7 @@ impl Attr {
                     .clone()
                     .expect("AssertionError: rs service must be installed");
                 let mut rs = rs_rc.borrow_mut();
-                rs.find_member_type_pub(ctx, syms, env, site_type, &name, site)
+                rs.find_member_type_pub(ctx, syms, env, site_type, &name, site, Some(self))
             }
             Tag::IDENT => {
                 let name = ident_name(ctx, tree);
@@ -2954,6 +2954,7 @@ impl Attr {
                     env,
                     &name,
                     crate::code::kinds::KindSelector::TYP_PCK,
+                    Some(self),
                 )
             }
             _ => panic!("AssertionError: unexpected tree kind"),
@@ -4585,7 +4586,7 @@ impl Attr {
             let encl_type = ctx.tree(encl_tree).ty.expect("enclosing class type");
             let supers = types
                 .interfaces(ctx, syms, encl_type)
-                .prepend(types.supertype(ctx, syms, encl_type));
+                .prepend(types.supertype(ctx, syms, encl_type, Some(self)));
             for sup in supers.iter() {
                 let sup_tsym = ctx.typ(sup).tsym.expect("supertype symbol");
                 let sym_encl = crate::code::symbol::symbol_encl_class(ctx, sym)
@@ -5865,7 +5866,8 @@ impl Attr {
                     );
                     site = self.types.create_error_type_original(ctx, Some(syms.object_type), syms);
                 } else {
-                    site = self.types.supertype(ctx, syms, site);
+                    let types_rc = Rc::clone(&self.types);
+                    site = types_rc.supertype(ctx, syms, site, Some(self));
                 }
             }
             if ctx.typ(site).has_tag(TypeTag::CLASS) {
@@ -12218,7 +12220,10 @@ impl Attr {
             let chk = chk_rc.borrow();
             chk.check_non_cyclic(ctx, syms, None, c_ty);
         }
-        let st = self.types.supertype(ctx, syms, c_ty);
+        let st = {
+            let types_rc = Rc::clone(&self.types);
+            types_rc.supertype(ctx, syms, c_ty, Some(self))
+        };
         let flags_value = ctx.sym(c).flags_field;
         let compound_flag = crate::code::flags::COMPOUND as i64;
         let super_owner_attributed = crate::code::flags::SUPER_OWNER_ATTRIBUTED as i64;
@@ -15988,7 +15993,7 @@ mod tests {
         }
         let result = {
             let mut a = attr.borrow_mut();
-            let mut syms_mut = syms.borrow_mut();
+            let syms_mut = syms.borrow_mut();
             a.visit_anonymous_class_definition(
                 &mut ctx,
                 &syms_mut,
@@ -16062,7 +16067,7 @@ mod tests {
         }
         let result = {
             let mut a = attr.borrow_mut();
-            let mut syms_mut = syms.borrow_mut();
+            let syms_mut = syms.borrow_mut();
             a.visit_anonymous_class_definition(
                 &mut ctx,
                 &syms_mut,
@@ -16687,6 +16692,7 @@ mod tests {
             &method_env,
             &f1_name,
             KindSelector::VAL,
+            None,
         );
         assert_eq!(harness.ctx.sym(f1).name, f1_name);
         assert_eq!(harness.ctx.sym(f1).kind, crate::code::kinds::Kind::VAR);
@@ -17066,7 +17072,7 @@ class Sample {
             let mut a = attr.borrow_mut();
             a.env = Some(Rc::clone(&harness.env));
         }
-        let mut syms = harness.syms.borrow_mut();
+        let syms = harness.syms.borrow_mut();
         let result = attr
             .borrow_mut()
             .visit_type_parameter(ctx, &syms, type_param)
@@ -17183,7 +17189,7 @@ class Sample {
             let mut a = attr.borrow_mut();
             a.env = Some(Rc::clone(&env));
         }
-        let mut syms = harness.syms.borrow_mut();
+        let syms = harness.syms.borrow_mut();
         attr.borrow_mut()
             .visit_type_parameter(ctx, &syms, type_param)
             .expect("visit_type_parameter");

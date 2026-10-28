@@ -632,7 +632,7 @@ impl Lower {
     ) -> TreeId {
         let empty_name = self.names.empty.clone();
         let c = {
-            let mut syms = self.syms.borrow_mut();
+            let syms = self.syms.borrow_mut();
             syms.define_class(ctx, empty_name, Some(owner))
         };
         let flat = match flatname {
@@ -2290,7 +2290,7 @@ impl Lower {
                 let encl_ty = ctx.sym(encl).ty.expect("enclosing type");
                 let super_ty = {
                     let syms = self.syms.borrow();
-                    self.types.supertype(ctx, &syms, encl_ty)
+                    self.types.supertype(ctx, &syms, encl_ty, None)
                 };
                 let erasure = {
                     let syms = self.syms.borrow();
@@ -2731,7 +2731,7 @@ impl Lower {
         let tree_ty = ctx.sym(tree_sym).ty.expect("class type");
         let super_tsym = self
             .types
-            .supertype(ctx, &self.syms.borrow(), tree_ty);
+            .supertype(ctx, &self.syms.borrow(), tree_ty, None);
         let super_is_enum = ctx
             .typ(super_tsym)
             .tsym
@@ -3369,7 +3369,7 @@ impl Lower {
             None => {
                 let super_ty = {
                     let syms = self.syms.borrow();
-                    self.types.supertype(ctx, &syms, tree_ty)
+                    self.types.supertype(ctx, &syms, tree_ty, None)
                 };
                 self.type_tree(ctx, super_ty)
             }
@@ -3634,7 +3634,7 @@ impl Lower {
                 }
             }
             let syms = self.syms.borrow();
-            current_t = self.types.supertype(ctx, &syms, current_t);
+            current_t = self.types.supertype(ctx, &syms, current_t, None);
         }
         vars
     }
@@ -6496,7 +6496,7 @@ impl Lower {
         let selector_ty = ctx.tree(selector).ty.expect("selector type");
         let selsuper = {
             let syms = self.syms.borrow();
-            self.types.supertype(ctx, &syms, selector_ty)
+            self.types.supertype(ctx, &syms, selector_ty, None)
         };
         let selsuper_is_class = ctx.typ(selsuper).has_tag(TypeTag::CLASS);
         let enum_switch = selsuper_is_class
@@ -8148,7 +8148,7 @@ impl ConflictsChecker {
                 }
             }
             let syms = self.syms.borrow();
-            ct = self.types.supertype(ctx, &syms, ct);
+            ct = self.types.supertype(ctx, &syms, ct, None);
         }
     }
 

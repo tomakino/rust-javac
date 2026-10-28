@@ -1919,7 +1919,7 @@ impl ClassWriter {
     ) -> Result<(), ClassWriterError> {
         let c_ty = ctx.sym(c).ty.expect("class type");
         let syms = Rc::clone(&self.syms);
-        let supertype = self.types.supertype(ctx, &syms.borrow(), c_ty);
+        let supertype = self.types.supertype(ctx, &syms.borrow(), c_ty, None);
         let interfaces = self.types.interfaces(ctx, &syms.borrow(), c_ty);
         let typarams = ctx.typ(c_ty).get_type_arguments();
         let owner = ctx.sym(c).owner.expect("class owner");
