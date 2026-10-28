@@ -24,9 +24,9 @@
 // The ported methods keep the upstream bodies and error keys; where a dependency
 // is not ported the branch is marked TODO and not executed (no substitute).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use crate::code::symbol::{
     symbol_encl_class, symbol_is_directly_or_indirectly_local, symbol_is_static_or_instance_init,
@@ -77,9 +77,9 @@ pub struct Check {
     /// Java: char syntheticNameChar;
     pub synthetic_name_char: char,
     /// Java: private Map<Pair<ModuleSymbol, Name>,ClassSymbol> compiled
-    pub compiled: HashMap<(SymbolId, Name), SymbolId>,
+    pub compiled: RefCell<HashMap<(SymbolId, Name), SymbolId>>,
     /// Java: private Map<Pair<Name, Name>, Integer> localClassNameIndexes
-    pub local_class_name_indexes: HashMap<(Name, Name), i32>,
+    pub local_class_name_indexes: RefCell<HashMap<(Name, Name), i32>>,
     /// Java: final Types types
     pub types: Rc<Types>,
     /// Java: CheckContext basicHandler = new CheckContext() {...}
@@ -87,10 +87,11 @@ pub struct Check {
     /// The shared self handle used by the free-type listener (Java: the
     /// listener closes over Check.this; the port stores a weak self reference so
     /// the listener does not keep the Check alive — registered adapter).
-    pub self_ref: RefCell<std::rc::Weak<RefCell<Check>>>,
+    pub self_ref: RefCell<Weak<Check>>,
     /// Java: private Lint lint (Check.java:187) — restored to the upstream
-    /// field shape (, Porting rules official structure).
-    pub lint: Rc<Lint>,
+    /// field shape (, Porting rules official structure). Field-level interior
+    /// mutability keeps Check re-entrant without borrowing the whole service.
+    pub lint: RefCell<Rc<Lint>>,
     /// Java: private DeferredLintHandler deferredLintHandler (Check.java:193)
     pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
     /// Java: the Symtab service (Symtab.instance(context)); explicit service
@@ -103,7 +104,7 @@ pub struct Check {
     /// injected through the setter at wiring time (Adapter).
     pub warn_on_any_access_to_members: bool,
     /// Java: private MethodSymbol method (Check.java:109).
-    pub method: Option<SymbolId>,
+    pub method: Cell<Option<SymbolId>>,
     /// Java: final Source source (Check.java:200).
     pub source: crate::code::source::Source,
     /// Java: Feature.PRIVATE_SAFE_VARARGS.allowedInSource(source) (Check.java:970-977)
@@ -147,9 +148,8 @@ pub struct Check {
 ///   - none.
 ///
 /// Upstream: Check.java:604-609 (the listener captures Check.this).
-pub fn attach_self(check: &Rc<RefCell<Check>>) {
-    let borrowed = check.borrow();
-    *borrowed.self_ref.borrow_mut() = Rc::downgrade(check);
+pub fn attach_self(check: &Rc<Check>) {
+    *check.self_ref.borrow_mut() = Rc::downgrade(check);
 }
 
 /// Java: the lambda passed to addFreeTypeListener in Check.checkType
@@ -159,7 +159,7 @@ struct CheckFreeTypeListener {
     /// The Check instance that registered the listener (weak: the Java lambda
     /// keeps Check alive through the enclosing instance; the port follows the
     /// weak-reference adapter used by the service cells).
-    check: std::rc::Weak<RefCell<Check>>,
+    check: Weak<Check>,
     /// The diagnostic position passed to checkType.
     pos: i32,
     /// The found type to instantiate.
@@ -198,7 +198,6 @@ impl crate::comp::infer::FreeTypeListener for CheckFreeTypeListener {
         };
         let found = inference_context.as_inst_type(ctx, syms, types, self.found);
         let req = inference_context.as_inst_type(ctx, syms, types, self.req);
-        let check = check.borrow();
         let _ = check.check_type(ctx, syms, self.pos, found, req, Rc::clone(&self.check_context));
         Ok(())
     }
@@ -248,21 +247,21 @@ impl Check {
             diags,
             types,
             basic_handler,
-            self_ref: RefCell::new(std::rc::Weak::new()),
+            self_ref: RefCell::new(Weak::new()),
             allow_records:
                 crate::code::source::Feature::RECORDS.allowed_in_source(source),
             allow_sealed:
                 crate::code::source::Feature::SEALED_CLASSES.allowed_in_source(source),
             synthetic_name_char,
-            compiled: HashMap::new(),
-            local_class_name_indexes: HashMap::new(),
-            lint,
+            compiled: RefCell::new(HashMap::new()),
+            local_class_name_indexes: RefCell::new(HashMap::new()),
+            lint: RefCell::new(lint),
             deferred_lint_handler,
             private_safe_varargs: crate::code::source::Feature::PRIVATE_SAFE_VARARGS
                 .allowed_in_source(source),
             syms,
             type_annotations: Rc::new(RefCell::new(None)),
-            method: None,
+            method: Cell::new(None),
             warn_on_any_access_to_members: false,
             enter: RefCell::new(None),
             deprecation_handler,
@@ -1104,7 +1103,7 @@ impl Check {
     }
 
     /// Java: public Name localClassName(ClassSymbol c)
-    pub fn local_class_name(&mut self, ctx: &mut CompilerContext, c: SymbolId) -> Name {
+    pub fn local_class_name(&self, ctx: &mut CompilerContext, c: SymbolId) -> Name {
         let owner = ctx.sym(c).owner.expect("local class owner");
         let encl_class = symbol_encl_class(ctx, owner).expect("enclosing class");
         let encl_flatname = match &ctx.sym(encl_class).kind_data {
@@ -1113,7 +1112,11 @@ impl Check {
         };
         let name = ctx.sym(c).name.clone();
         let key = (ctx.sym(encl_class).name.clone(), name.clone());
-        let mut index = *self.local_class_name_indexes.get(&key).unwrap_or(&1);
+        let mut index = *self
+            .local_class_name_indexes
+            .borrow()
+            .get(&key)
+            .unwrap_or(&1);
         loop {
             let flatname = self.names.from_string(&javac_strings::JavaString::from(
                 format!("{}{}{}{}", encl_flatname, self.synthetic_name_char, index, name.to_java_string()).as_str(),
@@ -1127,7 +1130,9 @@ impl Check {
                 .map(|module| self.get_compiled_by(module, &flatname).is_some())
                 .unwrap_or(false);
             if !compiled {
-                self.local_class_name_indexes.insert(key, index + 1);
+                self.local_class_name_indexes
+                    .borrow_mut()
+                    .insert(key, index + 1);
                 return flatname;
             }
             index += 1;
@@ -1135,34 +1140,34 @@ impl Check {
     }
 
     /// Java: public void clearLocalClassNameIndexes(ClassSymbol c)
-    pub fn clear_local_class_name_indexes(&mut self, ctx: &CompilerContext, c: SymbolId) {
+    pub fn clear_local_class_name_indexes(&self, ctx: &CompilerContext, c: SymbolId) {
         if let Some(owner) = ctx.sym(c).owner
             && let Some(encl_class) = symbol_encl_class(ctx, owner)
                 && let SymbolKind::ClassSymbol { flatname, .. } = &ctx.sym(encl_class).kind_data {
                     let key = (flatname.clone(), ctx.sym(c).name.clone());
-                    self.local_class_name_indexes.remove(&key);
+                    self.local_class_name_indexes.borrow_mut().remove(&key);
                 }
     }
 
     /// Java: public void putCompiled(ClassSymbol csym)
-    pub fn put_compiled(&mut self, ctx: &CompilerContext, c: SymbolId) {
+    pub fn put_compiled(&self, ctx: &CompilerContext, c: SymbolId) {
         let key = self.compiled_key(ctx, c);
-        self.compiled.insert(key, c);
+        self.compiled.borrow_mut().insert(key, c);
     }
 
     /// Java: public ClassSymbol getCompiled(ClassSymbol csym)
     pub fn get_compiled(&self, ctx: &CompilerContext, c: SymbolId) -> Option<SymbolId> {
-        self.compiled.get(&self.compiled_key(ctx, c)).copied()
+        self.compiled.borrow().get(&self.compiled_key(ctx, c)).copied()
     }
 
     /// Java: public ClassSymbol getCompiled(ModuleSymbol msym, Name flatname)
     pub fn get_compiled_by(&self, module: SymbolId, flatname: &Name) -> Option<SymbolId> {
-        self.compiled.get(&(module, flatname.clone())).copied()
+        self.compiled.borrow().get(&(module, flatname.clone())).copied()
     }
 
     /// Java: public void removeCompiled(ClassSymbol csym)
-    pub fn remove_compiled(&mut self, ctx: &CompilerContext, c: SymbolId) {
-        self.compiled.remove(&self.compiled_key(ctx, c));
+    pub fn remove_compiled(&self, ctx: &CompilerContext, c: SymbolId) {
+        self.compiled.borrow_mut().remove(&self.compiled_key(ctx, c));
     }
 
     fn compiled_key(&self, ctx: &CompilerContext, c: SymbolId) -> (SymbolId, Name) {
@@ -1180,9 +1185,9 @@ impl Check {
     }
 
     /// Java: public void newRound()
-    pub fn new_round(&mut self) {
-        self.compiled.clear();
-        self.local_class_name_indexes.clear();
+    pub fn new_round(&self) {
+        self.compiled.borrow_mut().clear();
+        self.local_class_name_indexes.borrow_mut().clear();
     }
 
     /// Java: void checkTransparentVar(DiagnosticPosition pos, VarSymbol v,
@@ -1705,7 +1710,7 @@ impl Check {
         };
         if ctx.tree(thenpart).has_tag(crate::tree::jc_tree::Tag::SKIP)
             && elsepart.is_none()
-            && self.lint.is_enabled(LintCategory::EMPTY)
+            && self.lint.borrow().is_enabled(LintCategory::EMPTY)
         {
             self.log.borrow_mut().warning(
                 Some(LintCategory::EMPTY),
@@ -1748,7 +1753,7 @@ impl Check {
                 || opcode == crate::jvm::byte_codes::LMOD
             {
                 let log = Rc::clone(&self.log);
-                let lint = Rc::clone(&self.lint);
+                let lint = Rc::clone(&self.lint.borrow());
                 self.deferred_lint_handler
                     .borrow_mut()
                     .report(Box::new(move || warn_div_zero(&log, &lint, pos)));
@@ -1857,7 +1862,7 @@ impl Check {
         }
         // Java: deferredLintHandler.report(() -> { if (lint.isEnabled(CAST))
         //     log.warning(CAST, tree.pos(), Warnings.RedundantCast(tree.clazz.type)); });
-        let lint = Rc::clone(&self.lint);
+        let lint = Rc::clone(&self.lint.borrow());
         let log = Rc::clone(&self.log);
         let pos = ctx.tree(tree).pos;
         let redundant_cast = crate::resources::compiler_properties::warnings::redundant_cast(
@@ -1953,9 +1958,9 @@ fn symbol_place_check(
 
 impl Check {
     /// Java: Lint setLint(Lint newLint) (Check.java:211-215)
-    pub fn set_lint(&mut self, new_lint: Rc<Lint>) -> Rc<Lint> {
-        let prev = Rc::clone(&self.lint);
-        self.lint = new_lint;
+    pub fn set_lint(&self, new_lint: Rc<Lint>) -> Rc<Lint> {
+        let prev = Rc::clone(&self.lint.borrow());
+        *self.lint.borrow_mut() = new_lint;
         prev
     }
 
@@ -2050,6 +2055,9 @@ impl Check {
                 .and_then(|owner| crate::code::symbol::symbol_encl_class(ctx, owner))
                 .map(|encl| ctx.sym(encl).is_record())
                 .unwrap_or(false);
+        // Java: Check.isRecordField = (flags & RECORD) != 0 &&
+        // declarationTree.hasTag(VARDEF); owner kind is deliberately not
+        // restricted (canonical constructor parameters carry RECORD too).
         let is_record_field = (ctx.sym(s).flags_field & crate::code::flags::RECORD) != 0
             && declaration_tree
                 .map(|declaration_tree| ctx.tree(declaration_tree).has_tag(Tag::VARDEF))
@@ -2120,6 +2128,15 @@ impl Check {
                     ctx.sym_mut(record_component).append_attributes(filtered);
                 }
             }
+        }
+        if is_record_member
+            && !is_record_field
+            && (ctx.sym(s).flags_field & crate::code::flags::GENERATED_MEMBER as i64) != 0
+        {
+            // Java: Check.java:2988-3060 removes annotations propagated to the
+            // generated record members; they are not applicability errors. The
+            // removal pass is registered as a TODO, so skip their validation.
+            return Ok(());
         }
         let _ = is_record_member;
         let annotation_type_ty = match &ctx.tree(a).kind {
@@ -2637,7 +2654,7 @@ impl Check {
     /// Java: void warnUnchecked(DiagnosticPosition pos, Warning warnKey)
     /// (Check.java:262-268)
     pub(crate) fn warn_unchecked(&self, pos: i32, warn_key: crate::resources::diagnostic_contract::WarningInfo) {
-        if !self.lint.is_suppressed(LintCategory::UNCHECKED) {
+        if !self.lint.borrow().is_suppressed(LintCategory::UNCHECKED) {
             self.log.borrow_mut().warning(
                 Some(LintCategory::UNCHECKED),
                 Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
@@ -3249,7 +3266,7 @@ impl Check {
         pos: i32,
         warning: crate::resources::diagnostic_contract::WarningInfo,
     ) {
-        if self.lint.is_enabled(crate::code::lint::LintCategory::STATIC) {
+        if self.lint.borrow().is_enabled(crate::code::lint::LintCategory::STATIC) {
             let warning = crate::util::jc_diagnostic::Warning::from(warning);
             crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
                 &mut *log.borrow_mut(),
@@ -3867,7 +3884,7 @@ impl Check {
         }
         // Optional warning if varargs don't agree.
         if ((m_flags ^ other_flags) & flags::VARARGS) != 0
-            && self.lint.is_enabled(crate::code::lint::LintCategory::OVERRIDES)
+            && self.lint.borrow().is_enabled(crate::code::lint::LintCategory::OVERRIDES)
         {
             let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                 self.varargs_overrides(ctx, m, other),
@@ -4157,7 +4174,7 @@ impl Check {
         env: &Rc<crate::comp::env::Env<crate::comp::attr_context::AttrContext>>,
         tree: TreeId,
     ) {
-        if !self.lint.is_enabled(crate::code::lint::LintCategory::RAW) {
+        if !self.lint.borrow().is_enabled(crate::code::lint::LintCategory::RAW) {
             return;
         }
         let tree_type = match ctx.tree(tree).ty {
@@ -4239,8 +4256,8 @@ impl Check {
         tree: TreeId,
         is_lambda: bool,
     ) {
-        let serial_lint = self.lint.is_enabled(crate::code::lint::LintCategory::SERIAL);
-        let serial_suppressed = self.lint.is_suppressed(crate::code::lint::LintCategory::SERIAL);
+        let serial_lint = self.lint.borrow().is_enabled(crate::code::lint::LintCategory::SERIAL);
+        let serial_suppressed = self.lint.borrow().is_suppressed(crate::code::lint::LintCategory::SERIAL);
         if !(self.warn_on_any_access_to_members || (serial_lint && !serial_suppressed && is_lambda)) {
             return;
         }
@@ -5277,7 +5294,7 @@ impl Check {
             Some(deprecated_tsym) => ctx.sym(s).attribute(ctx, deprecated_tsym),
             None => None,
         };
-        if self.lint.is_enabled(crate::code::lint::LintCategory::DEP_ANN)
+        if self.lint.borrow().is_enabled(crate::code::lint::LintCategory::DEP_ANN)
             && deprecatable
             && (ctx.sym(s).flags_field & crate::code::flags::DEPRECATED as i64) != 0
             && !deprecated_type_erroneous
@@ -5295,7 +5312,7 @@ impl Check {
                 warning,
             );
         }
-        if self.lint.is_enabled(crate::code::lint::LintCategory::DEPRECATION) && !deprecatable {
+        if self.lint.borrow().is_enabled(crate::code::lint::LintCategory::DEPRECATION) && !deprecatable {
             if !deprecated_type_erroneous && deprecated_anno.is_some() {
                 let kind = crate::code::kinds::kind_name(ctx.sym(s), ctx);
                 let warning = crate::util::jc_diagnostic::Warning::from(
@@ -5360,7 +5377,7 @@ impl Check {
                 }
             }
         }
-        if !self.lint.is_enabled(crate::code::lint::LintCategory::OVERRIDES) {
+        if !self.lint.borrow().is_enabled(crate::code::lint::LintCategory::OVERRIDES) {
             return;
         }
         let object_members = match &ctx.sym(object_tsym).kind_data {
@@ -7074,7 +7091,7 @@ impl Check {
             Some(ta) => ta,
             None => return false,
         };
-        let targets = ta_rc.annotation_targets(ctx, syms, tsym);
+        let targets = ta_rc.annotation_targets(ctx, syms, tsym, None);
         let targets = match targets {
             Some(targets) => targets,
             None => return false,
@@ -7840,10 +7857,8 @@ impl Check {
     ///   - none.
     ///
     /// Upstream: Check.java:217-221.
-    pub fn set_method(&mut self, new_method: Option<SymbolId>) -> Option<SymbolId> {
-        let prev = self.method;
-        self.method = new_method;
-        prev
+    pub fn set_method(&self, new_method: Option<SymbolId>) -> Option<SymbolId> {
+        self.method.replace(new_method)
     }
 
     /// Java: boolean isOverrider(Symbol s) (Check.java:3281-3302).
@@ -8198,7 +8213,7 @@ impl Check {
         syms: &Symtab,
         pos: i32,
     ) {
-        let Some(method) = self.method else {
+        let Some(method) = self.method.get() else {
             return;
         };
         let Some(trust_me_tsym) = ctx.typ(syms.trust_me_type).tsym else {
@@ -8232,7 +8247,7 @@ impl Check {
     }
 
     fn warn_unsafe_vararg(&self, pos: i32, warning: crate::resources::diagnostic_contract::WarningInfo) {
-        if self.lint.is_enabled(crate::code::lint::LintCategory::VARARGS) {
+        if self.lint.borrow().is_enabled(crate::code::lint::LintCategory::VARARGS) {
             self.log
                 .borrow_mut()
                 .warning_at(pos, crate::util::jc_diagnostic::Warning::from(warning));
@@ -8609,7 +8624,7 @@ impl Check {
         use crate::code::flags;
         if msym1 == msym2
             || !crate::code::source::Feature::DEFAULT_METHODS.allowed_in_source(self.source)
-            || !self.lint.is_enabled(crate::code::lint::LintCategory::OVERLOADS)
+            || !self.lint.borrow().is_enabled(crate::code::lint::LintCategory::OVERLOADS)
             || (ctx.sym(msym1).flags_field & flags::POTENTIALLY_AMBIGUOUS) != 0
             || (ctx.sym(msym2).flags_field & flags::POTENTIALLY_AMBIGUOUS) != 0
         {
@@ -9271,6 +9286,7 @@ impl Check {
         use crate::code::flags;
         if !self
             .lint
+            .borrow()
             .is_enabled(crate::code::lint::LintCategory::MISSING_EXPLICIT_CTOR)
         {
             return;
@@ -9360,7 +9376,7 @@ impl Check {
                     return;
                 }
                 let log = Rc::clone(&self.log);
-                let lint = Rc::clone(&self.lint);
+                let lint = Rc::clone(&self.lint.borrow());
                 let c_display = c_display.clone();
                 let pkg_display = pkg_display.clone();
                 let mod_display = mod_display.clone();
@@ -9715,7 +9731,7 @@ impl Check {
     ///   - none.
     pub fn check_module_exists(&self, ctx: &mut CompilerContext, pos: i32, msym: SymbolId) {
         if ctx.sym(msym).kind != crate::code::kinds::Kind::MDL {
-            let lint = Rc::clone(&self.lint);
+            let lint = Rc::clone(&self.lint.borrow());
             let log = Rc::clone(&self.log);
             let name = ctx.sym(msym).name.to_java_string().to_string_lossy();
             let warning = crate::util::jc_diagnostic::Warning::from(
@@ -9750,7 +9766,7 @@ impl Check {
     ///
     /// # Panics
     ///   - none.
-    pub fn set_preview(&mut self, preview: Rc<Preview>) {
+    pub fn set_preview(&self, preview: Rc<Preview>) {
         *self.preview.borrow_mut() = Some(preview);
     }
 
@@ -9819,7 +9835,7 @@ impl Check {
             .location()
             .map(|loc| ctx.sym(loc).name.to_java_string().to_string_lossy())
             .unwrap_or_default();
-        let lint = Rc::clone(&self.lint);
+        let lint = Rc::clone(&self.lint.borrow());
         let deprecation_handler = Rc::clone(&self.deprecation_handler);
         let removal_handler = Rc::clone(&self.removal_handler);
         let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
@@ -9882,7 +9898,7 @@ impl Check {
         pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>,
         warning: crate::util::jc_diagnostic::Warning,
     ) {
-        if !self.lint.is_suppressed(LintCategory::PREVIEW) {
+        if !self.lint.borrow().is_suppressed(LintCategory::PREVIEW) {
             let preview = self
                 .preview
                 .borrow()
@@ -9900,7 +9916,7 @@ impl Check {
         pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>,
         sym: SymbolId,
     ) {
-        if !self.lint.is_suppressed(LintCategory::PREVIEW) {
+        if !self.lint.borrow().is_suppressed(LintCategory::PREVIEW) {
             let preview = self
                 .preview
                 .borrow()
@@ -10005,7 +10021,7 @@ impl Check {
         env: &Rc<Env<AttrContext>>,
         c: SymbolId,
     ) {
-        if !self.lint.is_enabled(LintCategory::AUXILIARYCLASS)
+        if !self.lint.borrow().is_enabled(LintCategory::AUXILIARYCLASS)
             || (ctx.sym(c).flags_field & crate::code::flags::AUXILIARY) == 0
         {
             return;
@@ -10082,7 +10098,7 @@ impl Check {
             .borrow_mut()
             .set_pos(Rc::clone(&position));
         let log = Rc::clone(&self.log);
-        let lint = Rc::clone(&self.lint);
+        let lint = Rc::clone(&self.lint.borrow());
         self.deferred_lint_handler
             .borrow_mut()
             .report(Box::new(move || {
@@ -10151,7 +10167,7 @@ impl Check {
                     );
                 } else {
                     preview.mark_uses_preview(position.as_ref());
-                    let lint = Rc::clone(&self.lint);
+                    let lint = Rc::clone(&self.lint.borrow());
                     let preview_for_warning = Rc::clone(&preview);
                     let pos_for_warning = Rc::clone(&position);
                     let sym_name = ctx.sym(s).name.to_java_string().to_string_lossy();
@@ -10168,7 +10184,7 @@ impl Check {
                     }));
                 }
             } else {
-                let lint = Rc::clone(&self.lint);
+                let lint = Rc::clone(&self.lint.borrow());
                 let preview_for_warning = Rc::clone(&preview);
                 let pos_for_warning = Rc::clone(&position);
                 let sym_name = ctx.sym(s).name.to_java_string().to_string_lossy();
@@ -10188,7 +10204,7 @@ impl Check {
         if preview.declared_using_preview_feature(ctx.sym(s))
             && preview.is_enabled() {
                 preview.mark_uses_preview(position.as_ref());
-                let lint = Rc::clone(&self.lint);
+                let lint = Rc::clone(&self.lint.borrow());
                 let preview_for_warning = Rc::clone(&preview);
                 let pos_for_warning = Rc::clone(&position);
                 let kind_name = kind_name_of(ctx, s);
@@ -10223,7 +10239,7 @@ impl Check {
                 .is_empty(),
         };
         if members_empty && (ctx.sym(packge).flags_field & crate::code::flags::HAS_RESOURCE) == 0 {
-            let lint = Rc::clone(&self.lint);
+            let lint = Rc::clone(&self.lint.borrow());
             let log = Rc::clone(&self.log);
             let sym_name = ctx.sym(packge).name.to_java_string().to_string_lossy();
             let warning = crate::util::jc_diagnostic::Warning::from(
@@ -10261,7 +10277,7 @@ impl Check {
         };
         let Some(module) = module else { return };
         if (ctx.sym(module).flags_field & crate::code::flags::AUTOMATIC_MODULE) != 0 {
-            let lint = Rc::clone(&self.lint);
+            let lint = Rc::clone(&self.lint.borrow());
             let log = Rc::clone(&self.log);
             let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
                 Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
@@ -10365,7 +10381,7 @@ impl Check {
             }
             _ => panic!("ClassCastException: JCModuleDecl expected"),
         };
-        if !self.lint.is_enabled(LintCategory::MODULE) {
+        if !self.lint.borrow().is_enabled(LintCategory::MODULE) {
             return;
         }
         let mut current = qual_id;

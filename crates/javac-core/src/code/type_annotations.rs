@@ -42,7 +42,7 @@ pub struct TypeAnnotations {
     /// Java: final Log log
     pub log: Rc<std::cell::RefCell<Log>>,
     /// Java: final Check chk
-    pub chk: Rc<std::cell::RefCell<crate::comp::check::Check>>,
+    pub chk: Rc<crate::comp::check::Check>,
     /// Java: final Attr attr (used by validateTypeAnnotationsSignatures).
     pub attr: Rc<std::cell::RefCell<crate::comp::attr::Attr>>,
     /// Java: final Annotate annotate (afterTypes/validate hooks).
@@ -72,7 +72,7 @@ impl TypeAnnotations {
     pub fn new(
         names: Rc<Names>,
         log: Rc<std::cell::RefCell<Log>>,
-        chk: Rc<std::cell::RefCell<crate::comp::check::Check>>,
+        chk: Rc<crate::comp::check::Check>,
         attr: Rc<std::cell::RefCell<crate::comp::attr::Attr>>,
         annotate: Rc<crate::comp::annotate::Annotate>,
         types: Rc<crate::code::types::Types>,
@@ -111,10 +111,11 @@ impl TypeAnnotations {
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
         tsym: SymbolId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Option<List<AttributeId>> {
         let metadata = ctx.sym(tsym).get_annotation_type_metadata().cloned()?;
         let at_target =
-            crate::comp::annotate::AnnotationTypeMetadata::get_target_shared(&metadata, ctx, syms, None)
+            crate::comp::annotate::AnnotationTypeMetadata::get_target_shared(&metadata, ctx, syms, attr)
                 .ok()??;
         let value = self.compound_member(ctx, at_target, &self.names.value)?;
         let values = match &ctx.attr(value).kind {
@@ -176,6 +177,7 @@ impl TypeAnnotations {
         syms: &Symtab,
         a: AttributeId,
         s: SymbolId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> AnnotationType {
         let Some(anno_type) = ctx.attr(a).ty else {
             return AnnotationType::NONE;
@@ -186,7 +188,7 @@ impl TypeAnnotations {
         if !ctx.sym(tsym).is_annotation_type() {
             return AnnotationType::NONE;
         }
-        let targets = self.annotation_targets(ctx, syms, tsym);
+        let targets = self.annotation_targets(ctx, syms, tsym, attr);
         match targets {
             None => AnnotationType::DECLARATION,
             Some(targets) => {
@@ -369,7 +371,7 @@ impl TypeAnnotations {
         self.annotate.after_types(Box::new(
             move |ctx: &mut crate::compiler_context::CompilerContext,
                   syms: &crate::code::symtab::Symtab,
-                  _attr: &mut crate::comp::attr::Attr| {
+                  attr: &mut crate::comp::attr::Attr| {
                 let toplevel = env.toplevel.expect("env toplevel");
                 let sourcefile = match &ctx.tree(toplevel).kind {
                     crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => {
@@ -381,7 +383,7 @@ impl TypeAnnotations {
                     &mut *ta.log.borrow_mut(),
                     sourcefile,
                 );
-                let mut positions = TypeAnnotationPositions::new(&ta, syms, true);
+                let mut positions = TypeAnnotationPositions::new_with_attr(&ta, syms, true, attr);
                 crate::tree::tree_scanner::TreeScannerVisitor::scan(
                     &mut positions,
                     ctx,
@@ -463,6 +465,9 @@ pub struct TypeAnnotationPositions<'a, 'b> {
     pub current_lambda: Option<crate::ids::TreeId>,
     /// Java: private boolean isInClass = false
     pub is_in_class: bool,
+    /// Port adapter: the caller's Attr while running inside Annotate.flush, so
+    /// annotation-target completion does not re-borrow the shared Attr service.
+    pub attr: Option<&'a mut crate::comp::attr::Attr>,
 }
 
 impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
@@ -479,6 +484,25 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
             frames: Vec::new(),
             current_lambda: None,
             is_in_class: false,
+            attr: None,
+        }
+    }
+
+    /// Construct with the caller's Attr (Annotate.flush path).
+    pub fn new_with_attr(
+        type_annotations: &'a TypeAnnotations,
+        syms: &'b Symtab,
+        sig_only: bool,
+        attr: &'a mut crate::comp::attr::Attr,
+    ) -> TypeAnnotationPositions<'a, 'b> {
+        TypeAnnotationPositions {
+            type_annotations,
+            syms,
+            sig_only,
+            frames: Vec::new(),
+            current_lambda: None,
+            is_in_class: false,
+            attr: Some(attr),
         }
     }
 
@@ -1131,7 +1155,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
             current = current.tail();
             let target = self
                 .type_annotations
-                .annotation_target_type(ctx, self.syms, a, sym);
+                .annotation_target_type(ctx, self.syms, a, sym, self.attr.as_deref_mut());
             match target {
                 AnnotationType::DECLARATION => {
                     decl_annos = decl_annos.append(a);

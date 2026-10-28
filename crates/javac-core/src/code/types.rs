@@ -170,6 +170,18 @@ fn flat_name_of(ctx: &CompilerContext, symbol: SymbolId) -> Name {
     }
 }
 
+thread_local! {
+    static TYPE_RECURSION_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+struct TypeRecursionGuard;
+
+impl Drop for TypeRecursionGuard {
+    fn drop(&mut self) {
+        TYPE_RECURSION_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    }
+}
+
 /// Utility routines for the Type interface.
 ///
 /// Java: public class Types
@@ -209,6 +221,9 @@ pub struct Types {
     >,
     /// Java: Map<Type,Boolean> isDerivedRawCache (Types.java:2668).
     is_derived_raw_cache: std::cell::RefCell<std::collections::HashMap<TypeId, bool>>,
+    /// Java: Types.Lub.mergeCache (Types.java:3855): the per-Types guard that
+    /// stops merge -> lub -> merge recursion.
+    merge_cache: std::cell::RefCell<Vec<(TypeId, TypeId)>>,
 }
 
 /// Java: ImplementationCache.Entry (Types.java:2936-2958).
@@ -239,11 +254,6 @@ pub fn implementation_filter_matches(
     sym: SymbolId,
 ) -> bool {
     let flags_value = ctx.sym(sym).flags_field;
-    if ctx.sym(sym).kind != crate::code::kinds::Kind::MTH
-        || (flags_value & crate::code::flags::SYNTHETIC as i64) != 0
-    {
-        return false;
-    }
     match kind {
         ImplementationFilterKind::Default => true,
         ImplementationFilterKind::EqualsHasCode => {
@@ -413,9 +423,7 @@ impl ClosureHolder {
 
     /// Java: List<Type> closure() (Types.java:3762-3764)
     pub fn closure(&self, types: &Types, ctx: &mut CompilerContext, syms: &Symtab) -> List<TypeId> {
-        if self.min_closure {
-            types.closure_min(ctx, syms, self.closure.clone())
-        } else {
+ else {
             self.closure.clone()
         }
     }
@@ -494,6 +502,7 @@ impl Types {
             members_closure_seen,
             candidates_cache,
             is_derived_raw_cache,
+            merge_cache: std::cell::RefCell::new(Vec::new()),
         }
     }
 
@@ -517,6 +526,7 @@ impl Types {
             members_closure_seen,
             candidates_cache,
             is_derived_raw_cache,
+            merge_cache: std::cell::RefCell::new(Vec::new()),
         }
     }
 
@@ -545,6 +555,7 @@ impl Types {
             members_closure_seen,
             candidates_cache,
             is_derived_raw_cache,
+            merge_cache: std::cell::RefCell::new(Vec::new()),
         }
     }
 
@@ -594,11 +605,6 @@ impl Types {
             | TypeKindData::IntersectionClassType { .. } => self.hash_class_type(ctx, t),
             TypeKindData::WildcardType { kind, type_, .. } => {
                 let mut result = bound_kind_ordinal(*kind);
-                if let Some(type_) = type_ {
-                    result = result
-                        .wrapping_mul(127)
-                        .wrapping_add(self.hash_code_impl(ctx, *type_, strict));
-                }
                 result
             }
             TypeKindData::ArrayType { elemtype, .. } => {
@@ -729,18 +735,7 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if ctx.typ(s).has_tag(TypeTag::WILDCARD) {
-            // FIXME, this might be leftovers from before capture conversion
-            return false;
-        }
         let qtype = self.undet_var_qtype(ctx, t);
-        if t == s
-            || qtype == s
-            || ctx.typ(s).has_tag(TypeTag::ERROR)
-            || ctx.typ(s).has_tag(TypeTag::UNKNOWN)
-        {
-            return true;
-        }
         self.undet_var_add_bound(
             ctx,
             syms,
@@ -761,13 +756,7 @@ impl Types {
         s: TypeId,
     ) -> bool {
         let qtype = self.undet_var_qtype(ctx, t);
-        if t == s
-            || qtype == s
-            || ctx.typ(s).has_tag(TypeTag::ERROR)
-            || ctx.typ(s).has_tag(TypeTag::UNKNOWN)
-        {
-            return true;
-        } else if ctx.typ(s).has_tag(TypeTag::BOT) {
+ else if ctx.typ(s).has_tag(TypeTag::BOT) {
             // if 's' is 'null' there's no instantiated type U for which
             // U <: s (but 'null' itself, which is not a valid type)
             return false;
@@ -791,12 +780,6 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if self.equals_ignore_metadata(ctx, t, s) {
-            return true;
-        }
-        if ctx.typ(s).is_partial() {
-            return self.is_same_type(ctx, syms, s, t);
-        }
         match ctx.typ(t).get_tag() {
             TypeTag::BYTE
             | TypeTag::CHAR
@@ -810,11 +793,7 @@ impl Types {
             | TypeTag::BOT
             | TypeTag::NONE => ctx.typ(t).has_tag(ctx.typ(s).get_tag()),
             TypeTag::TYPEVAR => {
-                if ctx.typ(s).has_tag(TypeTag::TYPEVAR) {
-                    // type-substitution does not preserve type-var types; check
-                    // that type var symbols and bounds are indeed the same.
-                    t == s
-                } else {
+ else {
                     // special case for s == ? super X, where upper(s) = u; check
                     // that u == t, where u has been set by Type.withTypeVar.
                     ctx.typ(s).is_super_bound()
@@ -837,9 +816,6 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if !ctx.typ(s).has_tag(TypeTag::WILDCARD) {
-            return false;
-        }
         let (t_kind, t_type) = match &ctx.typ(t).kind {
             TypeKindData::WildcardType { kind, type_, .. } => (*kind, *type_),
             _ => crate::util::assert::error(),
@@ -865,44 +841,6 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if t == s {
-            return true;
-        }
-        if ctx.typ(s).is_partial() {
-            return self.is_same_type(ctx, syms, s, t);
-        }
-        if ctx.typ(s).is_super_bound() && !ctx.typ(s).is_extends_bound() {
-            let upper = self.wild_upper_bound(ctx, syms, s);
-            let lower = self.wild_lower_bound(ctx, syms, s);
-            return self.is_same_type(ctx, syms, t, upper)
-                && self.is_same_type(ctx, syms, t, lower);
-        }
-        if self.is_compound(ctx, t) && self.is_compound(ctx, s) {
-            let sup_t = self.supertype(ctx, syms, t, None);
-            let sup_s = self.supertype(ctx, syms, s, None);
-            if !self.is_same_type(ctx, syms, sup_t, sup_s) {
-                return false;
-            }
-            let mut t_map: Vec<(SymbolId, TypeId)> = Vec::new();
-            for ti in self.interfaces(ctx, syms, t).iter() {
-                let tsym = ctx.typ(ti).tsym.expect("interface tsym");
-                if t_map.iter().any(|(symbol, _)| *symbol == tsym) {
-                    panic!("AssertionError: Malformed intersection");
-                }
-                t_map.push((tsym, ti));
-            }
-            for si in self.interfaces(ctx, syms, s).iter() {
-                let s_tsym = ctx.typ(si).tsym.expect("interface tsym");
-                let Some(position) = t_map.iter().position(|(symbol, _)| *symbol == s_tsym) else {
-                    return false;
-                };
-                let ti = t_map.remove(position).1;
-                if !self.is_same_type(ctx, syms, ti, si) {
-                    return false;
-                }
-            }
-            return t_map.is_empty();
-        }
         ctx.typ(t).tsym == ctx.typ(s).tsym
             && self.is_same_type_enclosing(
                 ctx,
@@ -958,15 +896,6 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if t == s {
-            return true;
-        }
-        if ctx.typ(s).is_partial() {
-            return self.is_same_type(ctx, syms, s, t);
-        }
-        if !ctx.typ(s).has_tag(TypeTag::ARRAY) {
-            return false;
-        }
         let elemtype = match &ctx.typ(t).kind {
             TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
             _ => crate::util::assert::error(),
@@ -986,9 +915,6 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if !self.has_same_args(ctx, syms, t, s) {
-            return false;
-        }
         // Java: visit(t.getReturnType(), s.getReturnType()) (Types.java:1443);
         // Type.getReturnType() returns null for a non-method type and the
         // upstream visitor then throws NullPointerException.
@@ -1009,9 +935,6 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if !ctx.typ(s).has_tag(TypeTag::FORALL) {
-            return false;
-        }
         let (t_qtype, t_tvars) = match &ctx.typ(t).kind {
             TypeKindData::ForAll { qtype, tvars } => {
                 (qtype.expect("for-all qtype"), tvars.clone())
@@ -1058,10 +981,6 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if self.is_same_type(ctx, syms, t, s) {
-            // shortcut
-            return true;
-        }
         // Java: containsType(t, s) && containsType(s, t)
         self.contains_type(ctx, syms, t, s) && self.contains_type(ctx, syms, s, t)
     }
@@ -1096,9 +1015,7 @@ impl Types {
     /// Java: public Type erasure(Type t) { return eraseNotNeeded(t) ? t :
     /// erasure(t, false); }
     pub fn erasure(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
-        if self.erase_not_needed(ctx, syms, t) {
-            t
-        } else {
+ else {
             self.erasure_recurse(ctx, syms, t, false)
         }
     }
@@ -1116,10 +1033,6 @@ impl Types {
         t: TypeId,
         recurse: bool,
     ) -> TypeId {
-        if ctx.typ(t).is_primitive() {
-            // fast special case
-            return t;
-        }
         self.erasure_visit(ctx, syms, t, recurse)
     }
 
@@ -1139,9 +1052,7 @@ impl Types {
                 // type and rebuilds the array type when it changed.
                 let elem = elemtype.expect("array element type");
                 let erased = self.erasure(ctx, syms, elem);
-                if erased == elem {
-                    t
-                } else {
+ else {
                     self.make_array_type(ctx, syms, erased)
                 }
             }
@@ -1157,24 +1068,7 @@ impl Types {
             | TypeKindData::ErrorType { .. } => {
                 let tsym = ctx.typ(t).tsym.expect("class type symbol");
                 let erased = self.symbol_erasure(ctx, syms, tsym);
-                if recurse {
-                    // Java: new ErasedClassType(erased.getEnclosingType(),
-                    // erased.tsym, metadata).
-                    let outer = get_enclosing_type(ctx, erased);
-                    let erased_tsym = ctx.typ(erased).tsym;
-                    ctx.alloc_type(Type::new(
-                        TypeTag::CLASS,
-                        erased_tsym,
-                        TypeKindData::ErasedClassType {
-                            outer_field: outer,
-                            typarams_field: Some(List::nil()),
-                            allparams_field: None,
-                            supertype_field: None,
-                            interfaces_field: None,
-                            all_interfaces_field: None,
-                        },
-                    ))
-                } else {
+ else {
                     // combineMetadata(erased, t) == erased (no metadata).
                     erased
                 }
@@ -1220,12 +1114,6 @@ impl Types {
                 for thrown_type in thrown.iter() {
                     thrown1 = thrown1.append(self.erasure_recurse(ctx, syms, thrown_type, recurse));
                 }
-                if list_same(&argtypes, &argtypes1)
-                    && restype1 == restype
-                    && list_same(&thrown, &thrown1)
-                {
-                    return t;
-                }
                 new_method_type_2(ctx, argtypes1, restype1, thrown1, ctx.typ(t).tsym)
             }
             _ => {
@@ -1243,9 +1131,6 @@ impl Types {
         syms: &Symtab,
         symbol: SymbolId,
     ) -> TypeId {
-        if let Some(erasure_field) = ctx.sym(symbol).erasure_field {
-            return erasure_field;
-        }
         let ty = ctx.sym(symbol).ty.expect("symbol type");
         let erased = if matches!(
             ctx.sym(symbol).kind_data,
@@ -1309,27 +1194,7 @@ impl Types {
     ///
     /// Java: public Type wildUpperBound(Type t)
     pub fn wild_upper_bound(&self, ctx: &CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
-        if ctx.typ(t).has_tag(TypeTag::WILDCARD) {
-            if ctx.typ(t).is_super_bound() {
-                let bound = match &ctx.typ(t).kind {
-                    TypeKindData::WildcardType { bound, .. } => *bound,
-                    _ => crate::util::assert::error(),
-                };
-                match bound {
-                    None => syms.object_type,
-                    Some(bound) => ctx
-                        .typ(bound)
-                        .get_upper_bound()
-                        .expect("wildcard bound upper bound"),
-                }
-            } else {
-                let type_ = match &ctx.typ(t).kind {
-                    TypeKindData::WildcardType { type_, .. } => *type_,
-                    _ => crate::util::assert::error(),
-                };
-                self.wild_upper_bound(ctx, syms, type_.expect("wildcard bound type"))
-            }
-        } else {
+ else {
             t
         }
     }
@@ -1338,17 +1203,7 @@ impl Types {
     ///
     /// Java: public Type wildLowerBound(Type t)
     pub fn wild_lower_bound(&self, ctx: &CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
-        if ctx.typ(t).has_tag(TypeTag::WILDCARD) {
-            if ctx.typ(t).is_extends_bound() {
-                syms.bot_type
-            } else {
-                let type_ = match &ctx.typ(t).kind {
-                    TypeKindData::WildcardType { type_, .. } => *type_,
-                    _ => crate::util::assert::error(),
-                };
-                self.wild_lower_bound(ctx, syms, type_.expect("wildcard bound type"))
-            }
-        } else {
+ else {
             t
         }
     }
@@ -1381,9 +1236,6 @@ impl Types {
     /// overrides it as "(this == arrayType || elemtype.equals(arrayType.elemtype))";
     /// both are reproduced here (TypeMetadata is not ported).
     fn equals_ignore_metadata(&self, ctx: &CompilerContext, t: TypeId, s: TypeId) -> bool {
-        if t == s {
-            return true;
-        }
         match (
             &ctx.typ(t).kind,
             &ctx.typ(s).kind,
@@ -1411,9 +1263,6 @@ impl Types {
         mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> TypeId {
         let tag = ctx.typ(t).get_tag();
-        if tag == TypeTag::ERROR {
-            return no_type_of(ctx, syms);
-        }
         let is_class_family = matches!(
             &ctx.typ(t).kind,
             TypeKindData::ClassType { .. }
@@ -1421,96 +1270,6 @@ impl Types {
                 | TypeKindData::UnionClassType { .. }
                 | TypeKindData::IntersectionClassType { .. }
         );
-        if is_class_family {
-            let existing = match &ctx.typ(t).kind {
-                TypeKindData::ClassType { supertype_field, .. }
-                | TypeKindData::ErasedClassType { supertype_field, .. }
-                | TypeKindData::UnionClassType { supertype_field, .. }
-                | TypeKindData::IntersectionClassType { supertype_field, .. } => *supertype_field,
-                _ => crate::util::assert::error(),
-            };
-            if let Some(sup) = existing {
-                return sup;
-            }
-            let tsym = ctx.typ(t).tsym.expect("class type symbol");
-            // Java: ClassSymbol.getSuperclass() completes the symbol before
-            // reading supertype_field (Symbol.java). The ported Symtab keeps its
-            // mutable tables internally, so completion writes the real table.
-            if !ctx.is_symbol_completed(tsym) {
-                // Port adapter: the Attr-inside callers pass their Attr so the
-                // reentrant completion reuses the same Attr object.
-                match attr.as_deref_mut() {
-                    Some(attr) => {
-                        if let Err(failure) =
-                            ctx.complete_class_symbol_with_attr(syms, tsym, attr)
-                        {
-                            crate::code::symbol::throw_completion_failure(failure);
-                        }
-                    }
-                    None => {
-                        if let Err(failure) = ctx.complete_class_symbol(syms, tsym) {
-                            crate::code::symbol::throw_completion_failure(failure);
-                        }
-                    }
-                }
-            }
-            let mut supertype_opt = class_symbol_get_superclass(ctx, tsym);
-            if symbol_is_interface(ctx, tsym) {
-                let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
-                supertype_opt = match &ctx.typ(tsym_type).kind {
-                    TypeKindData::ClassType { supertype_field, .. }
-                    | TypeKindData::ErasedClassType { supertype_field, .. }
-                    | TypeKindData::UnionClassType { supertype_field, .. }
-                    | TypeKindData::IntersectionClassType { supertype_field, .. } => {
-                        *supertype_field
-                    }
-                    _ => None,
-                };
-            }
-            let supertype = supertype_opt.unwrap_or_else(|| no_type_of(ctx, syms));
-            let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
-            let class_bound_type = class_bound(self, ctx, syms, t, attr.as_deref_mut());
-            // The actual type arguments of the class bound and the formal
-            // type parameters of the class symbol.
-            // Port adapter: allparams() calls getTypeArguments(), whose upstream
-            // implementation lazily completes the class symbol.
-            let actuals = allparams_of_completed(ctx, syms, class_bound_type, attr.as_deref_mut());
-            let formals = allparams_of_completed(ctx, syms, tsym_type, attr.as_deref_mut());
-            let result = if has_erased_supertypes(ctx, t) {
-                self.erasure_recursive(ctx, syms, supertype)
-            } else if formals.non_empty() {
-                self.subst_type(ctx, syms, supertype, &formals, &actuals, attr.as_deref_mut())
-            } else {
-                supertype
-            };
-            set_class_supertype_field(ctx, t, Some(result));
-            return result;
-        }
-        if tag == TypeTag::TYPEVAR {
-            let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
-            let upper_is_compound = self.is_compound(ctx, upper);
-            let upper_is_interface = type_is_interface(ctx, upper);
-            if ctx.typ(upper).has_tag(TypeTag::TYPEVAR)
-                || (!upper_is_compound && !upper_is_interface)
-            {
-                return upper;
-            }
-            return self.supertype(ctx, syms, upper, attr);
-        }
-        if tag == TypeTag::ARRAY {
-            let elem = match &ctx.typ(t).kind {
-                TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
-                _ => crate::util::assert::error(),
-            };
-            let elem_is_primitive = ctx.typ(elem).is_primitive();
-            let elem_is_object = self.is_same_type(ctx, syms, elem, syms.object_type);
-            if elem_is_primitive || elem_is_object {
-                return self.array_super_type(ctx, syms);
-            }
-            let sup = self.supertype(ctx, syms, elem, attr);
-            let tsym = ctx.typ(t).tsym;
-            return new_array_type(ctx, sup, tsym);
-        }
         no_type_of(ctx, syms)
     }
 
@@ -1522,68 +1281,7 @@ impl Types {
                 | TypeKindData::UnionClassType { .. }
                 | TypeKindData::IntersectionClassType { .. }
         );
-        if is_class_family {
-            let existing = match &ctx.typ(t).kind {
-                TypeKindData::ClassType { interfaces_field, .. }
-                | TypeKindData::ErasedClassType { interfaces_field, .. }
-                | TypeKindData::UnionClassType { interfaces_field, .. }
-                | TypeKindData::IntersectionClassType { interfaces_field, .. } => {
-                    interfaces_field.clone()
-                }
-                _ => crate::util::assert::error(),
-            };
-            if let Some(list) = existing {
-                return list;
-            }
-            let tsym = ctx.typ(t).tsym.expect("class type symbol");
-            let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
-            // The declared interfaces are substituted with the actual type
-            // the declared interfaces of the symbol are substituted with the
-            // actual type arguments whenever t is not the symbol's own type.
-            // The ported previous version returned the declared list unchanged,
-            // which left the hierarchy as Collection<E> for a List<T>.
-            let interfaces = class_symbol_get_interfaces(ctx, tsym);
-            let result = if t == tsym_type {
-                interfaces
-            } else {
-                let actuals = allparams_of(ctx, t);
-                let formals = allparams_of(ctx, tsym_type);
-                if formals.non_empty() {
-                    self.subst_types(ctx, syms, &interfaces, &formals, &actuals)
-                } else {
-                    interfaces
-                }
-            };
-            set_class_interfaces_field(ctx, t, Some(result.clone()));
-            return result;
-        }
         let tag = ctx.typ(t).get_tag();
-        if tag == TypeTag::ERROR {
-            let existing = match &ctx.typ(t).kind {
-                TypeKindData::ErrorType { interfaces_field, .. } => interfaces_field.clone(),
-                _ => None,
-            };
-            if let Some(list) = existing {
-                return list;
-            }
-            let tsym = ctx.typ(t).tsym.expect("error type symbol");
-            let declared = class_symbol_get_interfaces_option(ctx, tsym);
-            let result = declared.unwrap_or_else(List::nil);
-            set_class_interfaces_field(ctx, t, Some(result.clone()));
-            return result;
-        }
-        if tag == TypeTag::TYPEVAR {
-            let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
-            let upper_is_compound = self.is_compound(ctx, upper);
-            let upper_is_interface = type_is_interface(ctx, upper);
-            if upper_is_compound {
-                return self.interfaces(ctx, syms, upper);
-            }
-            if upper_is_interface {
-                return List::of(upper);
-            }
-            return List::nil();
-        }
         List::nil()
     }
 
@@ -1597,18 +1295,6 @@ impl Types {
         mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> TypeId {
         let tag = ctx.typ(t).get_tag();
-        if tag == TypeTag::TYPEVAR {
-            let mut from = from.clone();
-            let mut to = to.clone();
-            while from.non_empty() {
-                if type_equals_ignore_metadata(self, ctx, t, *from.head()) {
-                    return with_type_var(ctx, *to.head(), t);
-                }
-                from = from.tail();
-                to = to.tail();
-            }
-            return t;
-        }
         let is_class_family = matches!(
             &ctx.typ(t).kind,
             TypeKindData::ClassType { .. }
@@ -1616,46 +1302,7 @@ impl Types {
                 | TypeKindData::UnionClassType { .. }
                 | TypeKindData::IntersectionClassType { .. }
         );
-        if is_class_family && !self.is_compound(ctx, t) {
-            let (outer, typarams) = match &ctx.typ(t).kind {
-                TypeKindData::ClassType { outer_field, typarams_field, .. }
-                | TypeKindData::ErasedClassType { outer_field, typarams_field, .. }
-                | TypeKindData::UnionClassType { outer_field, typarams_field, .. }
-                | TypeKindData::IntersectionClassType { outer_field, typarams_field, .. } => {
-                    (*outer_field, typarams_field.clone().unwrap_or_else(List::nil))
-                }
-                _ => crate::util::assert::error(),
-            };
-            let no_type = no_type_of(ctx, syms);
-            let outer1 = match outer {
-                Some(outer) => self.subst_visit(ctx, syms, outer, from, to, attr.as_deref_mut()),
-                // Java: a class type may have Type.noType as its enclosing
-                // type; the structural mapping visits it unchanged.
-                None => no_type,
-            };
-            let typarams1 = self.subst(ctx, syms, &typarams, from, to);
-            let outer_unchanged = match outer {
-                Some(outer) => outer1 == outer,
-                None => outer1 == no_type,
-            };
-            let unchanged = outer_unchanged && list_same(&typarams, &typarams1);
-            if unchanged {
-                return t;
-            }
-            let tsym = ctx.typ(t).tsym;
-            // Upstream: Types.Subst.visitClassType — new ClassType(outer1,
-            // typarams1, tsym); Type.noType is the single absent-enclosing
-            // sentinel. The local model
-            // carries it either as None or as Some(noType); a rebuilt class type
-            // keeps the encoding of the source type so structural comparisons
-            // against that type still line up.
-            let outer_field = match outer {
-                Some(_) => Some(outer1),
-                None => None,
-            };
-            return new_class_type(ctx, outer_field, Some(typarams1), tsym);
-        }
-        if matches!(&ctx.typ(t).kind, TypeKindData::WildcardType { .. }) {
+) {
             let (type_, kind, bound) = match &ctx.typ(t).kind {
                 TypeKindData::WildcardType { type_, kind, bound, .. } => (*type_, *kind, *bound),
                 _ => crate::util::assert::error(),
@@ -1670,109 +1317,7 @@ impl Types {
                 let tsym = ctx.typ(t).tsym;
                 new_wildcard_type(ctx, Some(visited), kind, tsym, bound)
             };
-            if t2 != t && ctx.typ(t).is_extends_bound() && ctx.typ(visited).is_extends_bound() {
-                let upper = self.wild_upper_bound(ctx, syms, visited);
-                if let TypeKindData::WildcardType { type_, .. } = &mut ctx.typ_mut(t2).kind {
-                    *type_ = Some(upper);
-                }
-            }
             return t2;
-        }
-        if tag == TypeTag::ARRAY {
-            let elem = match &ctx.typ(t).kind {
-                TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
-                _ => crate::util::assert::error(),
-            };
-            let elem1 = self.subst_visit(ctx, syms, elem, from, to, attr.as_deref_mut());
-            if elem1 == elem {
-                return t;
-            }
-            let tsym = ctx.typ(t).tsym;
-            return new_array_type(ctx, elem1, tsym);
-        }
-        if tag == TypeTag::METHOD {
-            // A partially inferred method type extends MethodType, so
-            // Subst.visitMethodType (Types.StructuralTypeMapping) maps it like
-            // any MethodType and rebuilds a plain MethodType.
-            let (argtypes, restype, thrown) = match &ctx.typ(t).kind {
-                TypeKindData::MethodType { argtypes, restype, thrown, .. } => {
-                    (argtypes.clone(), *restype, thrown.clone())
-                }
-                TypeKindData::PartiallyInferredMethodType {
-                    argtypes,
-                    restype,
-                    thrown,
-                    ..
-                } => (argtypes.clone(), *restype, thrown.clone()),
-                _ => crate::util::assert::error(),
-            };
-            let argtypes1 = self.subst(ctx, syms, &argtypes, from, to);
-            let restype = restype.expect("method return type");
-            let restype1 = self.subst_visit(ctx, syms, restype, from, to, attr.as_deref_mut());
-            let thrown1 = self.subst(ctx, syms, &thrown, from, to);
-            if list_same(&argtypes, &argtypes1)
-                && restype1 == restype
-                && list_same(&thrown, &thrown1)
-            {
-                return t;
-            }
-            let tsym = ctx.typ(t).tsym;
-            return new_method_type_2(ctx, argtypes1, Some(restype1), thrown1, tsym);
-        }
-        if tag == TypeTag::FORALL {
-            // Java: Subst.visitForAll (Types.java:3375-3400)
-            let (tvars, qtype) = match &ctx.typ(t).kind {
-                TypeKindData::ForAll { tvars, qtype } => (tvars.clone(), *qtype),
-                _ => crate::util::assert::error(),
-            };
-            let qtype = qtype.expect("for-all qtype");
-            let mut tvars_cur = tvars.clone();
-            let mut qtype_cur = qtype;
-            if self.type_list_contains_any(ctx, syms, to, &tvars, &mut Vec::new()) {
-                let freevars = self.new_instances(ctx, syms, &tvars);
-                let substituted =
-                    self.subst_type(ctx, syms, qtype_cur, &tvars, &freevars, None);
-                qtype_cur = substituted;
-                tvars_cur = freevars;
-            }
-            let tvars1 = self.subst_bounds(ctx, syms, &tvars_cur, from, to);
-            let qtype1 = self.subst_visit(ctx, syms, qtype_cur, from, to, attr.as_deref_mut());
-            if list_same(&tvars_cur, &tvars1) && qtype1 == qtype_cur {
-                return t;
-            }
-            let new_qtype = if list_same(&tvars_cur, &tvars1) {
-                qtype1
-            } else {
-                self.subst_type(ctx, syms, qtype1, &tvars_cur, &tvars1, None)
-            };
-            let qtype_tsym = ctx.typ(new_qtype).tsym;
-            return ctx.alloc_type(crate::code::type_::Type::new(
-                TypeTag::FORALL,
-                qtype_tsym,
-                TypeKindData::ForAll {
-                    tvars: tvars1,
-                    qtype: Some(new_qtype),
-                },
-            ));
-        }
-        if self.is_compound(ctx, t) {
-            // Java: Subst.visitClassType for compound types (Types.java:3355-3365)
-            let supertype = self.supertype(ctx, syms, t, None);
-            let st = self.subst_visit(ctx, syms, supertype, from, to, attr.as_deref_mut());
-            let interfaces = self.interfaces(ctx, syms, t);
-            let mut is: List<TypeId> = List::nil();
-            let mut current = interfaces.clone();
-            while current.non_empty() {
-                let interface = *current.head();
-                let substituted = self.subst_visit(ctx, syms, interface, from, to, attr.as_deref_mut());
-                is = is.append(substituted);
-                current = current.tail();
-            }
-            if st == supertype && list_same(&interfaces, &is) {
-                return t;
-            }
-        let names = std::rc::Rc::clone(&self.names);
-            return self.make_intersection_type(ctx, syms, &names, is.prepend(st), false);
         }
         t
     }
@@ -1808,7 +1353,7 @@ impl Types {
             let tvar = *current.head();
             let upper = ctx.typ(tvar).get_upper_bound().expect("type var upper bound");
             let substituted = self.subst_type(ctx, syms, upper, tvars, &tvars1, None);
-            if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(tvar).kind {
+ = &mut ctx.typ_mut(tvar).kind {
                 *bound = Some(substituted);
             }
             result = result.append(tvar);
@@ -1887,9 +1432,6 @@ impl Types {
         from: &List<TypeId>,
         to: &List<TypeId>,
     ) -> List<TypeId> {
-        if tvars.is_empty() {
-            return tvars.clone();
-        }
         let mut new_bounds: Vec<TypeId> = Vec::new();
         let mut changed = false;
         let mut current = tvars.clone();
@@ -1897,14 +1439,8 @@ impl Types {
             let tvar = *current.head();
             let upper = ctx.typ(tvar).get_upper_bound().expect("type var upper bound");
             let bound = self.subst_type(ctx, syms, upper, from, to, None);
-            if bound != upper {
-                changed = true;
-            }
             new_bounds.push(bound);
             current = current.tail();
-        }
-        if !changed {
-            return tvars.clone();
         }
         let mut new_tvars: List<TypeId> = List::nil();
         let mut current = tvars.clone();
@@ -1932,7 +1468,7 @@ impl Types {
         while current.non_empty() {
             let tvar = *current.head();
             let bound = substituted_bounds[index];
-            if let TypeKindData::TypeVar { bound: bound_field, .. } =
+ =
                 &mut ctx.typ_mut(tvar).kind
             {
                 *bound_field = Some(bound);
@@ -1956,9 +1492,6 @@ impl Types {
         let mut current = ts.clone();
         while current.non_empty() {
             let t = *current.head();
-            if self.type_list_contains(ctx, syms, tvs, t, cache) {
-                return true;
-            }
             current = current.tail();
         }
         false
@@ -1976,9 +1509,6 @@ impl Types {
         let mut current = ts.clone();
         while current.non_empty() {
             let t = *current.head();
-            if self.type_contains(ctx, _syms, t, elem) {
-                return true;
-            }
             current = current.tail();
         }
         false
@@ -1993,16 +1523,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
     ) -> List<TypeId> {
-        if !ctx.typ(t).is_intersection() {
-            let sup = self.supertype(ctx, syms, t, None);
-            let no_type = no_type_of(ctx, syms);
-            let interfaces = self.interfaces(ctx, syms, t);
-            if sup == no_type || sup == t {
-                interfaces
-            } else {
-                interfaces.prepend(sup)
-            }
-        } else {
+ else {
             ctx.typ(t).get_explicit_components()
         }
     }
@@ -2116,17 +1637,9 @@ impl Types {
         sym: SymbolId,
     ) -> Option<TypeId> {
         // optimization: sym.type == syms.objectType
-        if ctx.sym(sym).ty == Some(syms.object_type) {
-            return Some(syms.object_type);
-        }
         // Port adapter: ensure a classfile stub has its INTERFACE/access flags
         // before asSuper reads them; upstream ClassSymbol.flags() observes the
         // completed symbol (the local stub carries CLASS_SEEN only).
-        if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP
-            && (ctx.sym(sym).flags() & crate::code::flags::INTERFACE as i64) == 0
-        {
-            let _ = ctx.complete_class_symbol(syms, sym);
-        }
         let mut seen: Vec<SymbolId> = Vec::new();
         self.as_super_visit(ctx, syms, t, sym, &mut seen)
     }
@@ -2144,31 +1657,10 @@ impl Types {
             | TypeKindData::ErasedClassType { .. }
             | TypeKindData::UnionClassType { .. }
             | TypeKindData::IntersectionClassType { .. } => {
-                if ctx.typ(t).tsym == Some(sym) {
-                    return Some(t);
-                }
                 let c = ctx.typ(t).tsym.expect("class type symbol");
-                if seen.contains(&c) {
-                    return None;
-                }
                 seen.push(c);
                 let result = (|| {
                     let st = self.supertype(ctx, syms, t, None);
-                    if (ctx.typ(st).has_tag(TypeTag::CLASS)
-                        || ctx.typ(st).has_tag(TypeTag::TYPEVAR))
-                        && let Some(x) = self.as_super_visit(ctx, syms, st, sym, seen)
-                    {
-                        return Some(x);
-                    }
-                    if (ctx.sym(sym).flags() & crate::code::flags::INTERFACE as i64) != 0 {
-                        for i in self.interfaces(ctx, syms, t).iter() {
-                            if !ctx.typ(i).has_tag(TypeTag::ERROR)
-                                && let Some(x) = self.as_super_visit(ctx, syms, i, sym, seen)
-                            {
-                                return Some(x);
-                            }
-                        }
-                    }
                     None
                 })();
                 seen.pop();
@@ -2176,16 +1668,12 @@ impl Types {
             }
             TypeKindData::ArrayType { .. } => {
                 let sym_type = ctx.sym(sym).ty.expect("symbol type");
-                if self.is_subtype_no_capture(ctx, syms, t, sym_type) {
-                    Some(sym_type)
-                } else {
+ else {
                     None
                 }
             }
             TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
-                if ctx.typ(t).tsym == Some(sym) {
-                    Some(t)
-                } else {
+ else {
                     let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
                     self.as_super_visit(ctx, syms, upper, sym, seen)
                 }
@@ -2210,9 +1698,6 @@ impl Types {
             TypeTag::CLASS => {
                 let mut t = t;
                 loop {
-                    if let Some(s) = self.as_super(ctx, syms, t, sym) {
-                        return Some(s);
-                    }
                     match enclosing_of(ctx, t) {
                         Some(outer) if ctx.typ(outer).has_tag(TypeTag::CLASS) => t = outer,
                         _ => return None,
@@ -2221,9 +1706,7 @@ impl Types {
             }
             TypeTag::ARRAY => {
                 let sym_type = ctx.sym(sym).ty.expect("symbol type");
-                if self.is_subtype_no_capture(ctx, syms, t, sym_type) {
-                    Some(sym_type)
-                } else {
+ else {
                     None
                 }
             }
@@ -2249,9 +1732,6 @@ impl Types {
             TypeTag::CLASS => {
                 let mut t = t;
                 loop {
-                    if let Some(s) = self.as_super(ctx, syms, t, sym) {
-                        return Some(s);
-                    }
                     let outer = get_enclosing_type(ctx, t);
                     let next = match outer {
                         Some(outer) if ctx.typ(outer).has_tag(TypeTag::CLASS) => outer,
@@ -2268,17 +1748,12 @@ impl Types {
                         }
                     };
                     t = next;
-                    if !ctx.typ(t).has_tag(TypeTag::CLASS) {
-                        return None;
-                    }
                 }
                 None
             }
             TypeTag::ARRAY => {
                 let sym_type = ctx.sym(sym).ty.expect("symbol type");
-                if self.is_subtype_no_capture(ctx, syms, t, sym_type) {
-                    Some(sym_type)
-                } else {
+ else {
                     None
                 }
             }
@@ -2298,9 +1773,6 @@ impl Types {
         t: TypeId,
         sym: SymbolId,
     ) -> TypeId {
-        if (ctx.sym(sym).flags() & crate::code::flags::STATIC as i64) != 0 {
-            return ctx.sym(sym).ty.expect("member type");
-        }
         self.member_type_visit(ctx, syms, t, sym)
     }
 
@@ -2322,42 +1794,6 @@ impl Types {
             | TypeKindData::IntersectionClassType { .. } => {
                 let owner = ctx.sym(sym).owner;
                 let flags = ctx.sym(sym).flags();
-                if (flags & crate::code::flags::STATIC as i64) == 0
-                    && owner
-                        .and_then(|owner| ctx.sym(owner).ty)
-                        .map(|owner_type| is_parameterized_type(ctx, owner_type))
-                        .unwrap_or(false)
-                {
-                    let owner = owner.expect("member owner");
-                    let base = self.as_outer_super(ctx, syms, t, owner);
-                    let base = if self.is_compound(ctx, t) {
-                        // Java: base = t.isCompound() ? capture(base) : base;
-                        base.map(|base| self.capture(ctx, syms, base))
-                    } else {
-                        base
-                    };
-                    if let Some(base) = base {
-                        let sym_type = ctx.sym(sym).ty.expect("member type");
-                        let owner_type = ctx.sym(owner).ty.expect("owner type");
-                        let owner_params = allparams_of(ctx, owner_type);
-                        let base_params = allparams_of(ctx, base);
-                        if owner_params.non_empty() {
-                            if base_params.is_empty() {
-                                // then base is a raw type
-                                return self.erasure(ctx, syms, sym_type);
-                            } else {
-                                return self.subst_type(
-                                    ctx,
-                                    syms,
-                                    sym_type,
-                                    &owner_params,
-                                    &base_params,
-                                    None,
-                                );
-                            }
-                        }
-                    }
-                }
                 ctx.sym(sym).ty.expect("member type")
             }
             TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
@@ -2376,26 +1812,7 @@ impl Types {
     /// that needs fresh captured variables panics with an explicit
     /// unimplemented message (no approximation).
     pub fn capture(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> TypeId {
-        if !ctx.typ(t).has_tag(TypeTag::CLASS) {
-            return t;
-        }
         let no_type = no_type_of(ctx, syms);
-        if let Some(encl) = enclosing_of(ctx, t)
-            && encl != no_type
-        {
-            let captured_encl = self.capture(ctx, syms, encl);
-            if captured_encl != encl {
-                let tsym = ctx.typ(t).tsym.expect("class type symbol");
-                let type1 = self.member_type(ctx, syms, captured_encl, tsym);
-                let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
-                let formals = get_type_arguments(ctx, tsym_type);
-                let actuals = get_type_arguments(ctx, t);
-                return self.subst_type(ctx, syms, type1, &formals, &actuals, None);
-            }
-        }
-        if is_raw_type(ctx, t) || !is_parameterized_type(ctx, t) {
-            return t;
-        }
         let cls = t;
         let tsym = ctx.typ(cls).tsym.expect("class type symbol");
         // getTypeArguments() lazily completes the class symbol
@@ -2404,11 +1821,6 @@ impl Types {
         // the list is read; otherwise a classfile generic such as
         // java.util.List yields an empty formal list and capture() falls into
         // the rare-type erasure branch.
-        if !ctx.is_symbol_completed(tsym)
-            && let Err(failure) = ctx.complete_class_symbol(syms, tsym)
-        {
-            crate::code::symbol::throw_completion_failure(failure);
-        }
         let tsym_type = ctx.sym(tsym).ty.expect("class symbol type");
         let a_list = get_type_arguments(ctx, tsym_type);
         let t_list = get_type_arguments(ctx, cls);
@@ -2420,98 +1832,9 @@ impl Types {
         while current_a.non_empty() && current_t.non_empty() && current_s.non_empty() {
             let head_s = *current_s.head();
             let head_t = *current_t.head();
-            if head_s != head_t {
-                captured = true;
-                let head_a = *current_a.head();
-                let wildcard = head_t;
-                // Ui = A.head.getUpperBound() (or Object when absent)
-                let ui = ctx
-                    .typ(head_a)
-                    .get_upper_bound()
-                    .unwrap_or(syms.object_type);
-                let kind = match &ctx.typ(wildcard).kind {
-                    TypeKindData::WildcardType { kind, .. } => *kind,
-                    _ => crate::code::bound_kind::BoundKind::UNBOUND,
-                };
-                let (upper, lower) = match kind {
-                    crate::code::bound_kind::BoundKind::UNBOUND => {
-                        let upper = self.subst_type(ctx, syms, ui, &a_list, &s_list, None);
-                        (upper, syms.bot_type)
-                    }
-                    crate::code::bound_kind::BoundKind::EXTENDS => {
-                        let extends_bound = match &ctx.typ(wildcard).kind {
-                            TypeKindData::WildcardType { type_, .. } => {
-                                type_.expect("extends bound")
-                            }
-                            _ => crate::util::assert::error(),
-                        };
-                        let ui_subst = self.subst_type(ctx, syms, ui, &a_list, &s_list, None);
-                        let upper = self.glb(ctx, syms, extends_bound, ui_subst);
-                        (upper, syms.bot_type)
-                    }
-                    crate::code::bound_kind::BoundKind::SUPER => {
-                        let upper = self.subst_type(ctx, syms, ui, &a_list, &s_list, None);
-                        let super_bound = match &ctx.typ(wildcard).kind {
-                            TypeKindData::WildcardType { type_, .. } => {
-                                type_.expect("super bound")
-                            }
-                            _ => crate::util::assert::error(),
-                        };
-                        (upper, super_bound)
-                    }
-                };
-                // Java: Si.setUpperBound(upper); Si.lower = lower;
-                if let TypeKindData::CapturedType { bound: b, lower: l, .. } =
-                    &mut ctx.typ_mut(head_s).kind
-                {
-                    *b = Some(upper);
-                    *l = Some(lower);
-                }
-                let upper = ctx
-                    .typ(head_s)
-                    .get_upper_bound()
-                    .expect("captured upper bound");
-                let lower = match &ctx.typ(head_s).kind {
-                    TypeKindData::CapturedType { lower, .. } => {
-                        lower.expect("captured lower bound")
-                    }
-                    _ => crate::util::assert::error(),
-                };
-                let tmp_bound_err = ctx.typ(upper).has_tag(TypeTag::ERROR);
-                let tmp_lower_err = ctx.typ(lower).has_tag(TypeTag::ERROR);
-                if !tmp_bound_err
-                    && !tmp_lower_err
-                    && self.is_same_type(ctx, syms, upper, lower)
-                {
-                    current_s = current_s.tail().prepend(upper);
-                }
-            }
             current_a = current_a.tail();
             current_t = current_t.tail();
             current_s = current_s.tail();
-        }
-        if !current_a.is_empty() || !current_t.is_empty() || !current_s.is_empty() {
-            // some "rare" type involved
-            return self.erasure(ctx, syms, t);
-        }
-        if captured {
-            let no_type = no_type_of(ctx, syms);
-            let enclosing = ctx
-                .typ(cls)
-                .get_enclosing_type()
-                .filter(|enclosing| *enclosing != no_type);
-            return ctx.alloc_type(crate::code::type_::Type::new(
-                TypeTag::CLASS,
-                Some(tsym),
-                TypeKindData::ClassType {
-                    outer_field: enclosing,
-                    typarams_field: Some(s_list),
-                    allparams_field: None,
-                    supertype_field: None,
-                    interfaces_field: None,
-                    all_interfaces_field: None,
-                },
-            ));
         }
         t
     }
@@ -2529,22 +1852,7 @@ impl Types {
         let mut current = types;
         while current.non_empty() {
             let t = *current.head();
-            if ctx.typ(t).has_tag(TypeTag::WILDCARD) {
-                let bound = match &ctx.typ(t).kind {
-                    TypeKindData::WildcardType { type_, .. } => *type_,
-                    _ => None,
-                }
-                .unwrap_or(syms.object_type);
-                let captured = self.new_captured_type_with_symbol(
-                    ctx,
-                    syms,
-                    captured_name.clone(),
-                    bound,
-                    syms.bot_type,
-                    t,
-                );
-                result = result.append(captured);
-            } else {
+ else {
                 result = result.append(t);
             }
             current = current.tail();
@@ -2595,38 +1903,7 @@ impl Types {
     ) -> bool {
         match ctx.typ(t).get_tag() {
             TypeTag::UNDETVAR => {
-                if ctx.typ(s).has_tag(TypeTag::WILDCARD) {
-                    let kind = match &ctx.typ(s).kind {
-                        TypeKindData::WildcardType { kind, .. } => *kind,
-                        _ => crate::util::assert::error(),
-                    };
-                    match kind {
-                        crate::code::bound_kind::BoundKind::UNBOUND => {}
-                        crate::code::bound_kind::BoundKind::EXTENDS => {
-                            let bound = self.wild_upper_bound(ctx, syms, s);
-                            self.undet_var_add_bound(
-                                ctx,
-                                syms,
-                                t,
-                                crate::code::type_::InferenceBound::UPPER,
-                                bound,
-                                false,
-                            );
-                        }
-                        crate::code::bound_kind::BoundKind::SUPER => {
-                            let bound = self.wild_lower_bound(ctx, syms, s);
-                            self.undet_var_add_bound(
-                                ctx,
-                                syms,
-                                t,
-                                crate::code::type_::InferenceBound::LOWER,
-                                bound,
-                                false,
-                            );
-                        }
-                    }
-                    true
-                } else {
+ else {
                     self.is_same_type(ctx, syms, t, s)
                 }
             }
@@ -2645,9 +1922,7 @@ impl Types {
     ) -> bool {
         match &ctx.typ(t).kind {
             TypeKindData::WildcardType { .. } => {
-                if ctx.typ(s).is_partial() {
-                    self.contained_by(ctx, syms, s, t)
-                } else {
+ else {
                     let t_ext = ctx.typ(t).is_extends_bound();
                     let t_sup = ctx.typ(t).is_super_bound();
                     let lower_t = self.wild_lower_bound(ctx, syms, t);
@@ -2663,9 +1938,7 @@ impl Types {
             TypeKindData::ErrorType { .. } => true,
             TypeKindData::UndetVar { .. } => {
                 // Java: ContainsType.visitUndetVar (Types.java:1593)
-                if !ctx.typ(s).has_tag(TypeTag::WILDCARD) {
-                    self.is_same_type(ctx, syms, t, s)
-                } else {
+ else {
                     false
                 }
             }
@@ -2674,9 +1947,7 @@ impl Types {
                 self.contains_type(ctx, syms, qtype, s)
             }
             _ => {
-                if ctx.typ(s).is_partial() {
-                    self.contained_by(ctx, syms, s, t)
-                } else {
+ else {
                     self.is_same_type(ctx, syms, t, s)
                 }
             }
@@ -2711,9 +1982,6 @@ impl Types {
         s: TypeId,
         t: TypeId,
     ) -> bool {
-        if !ctx.typ(s).has_tag(TypeTag::TYPEVAR) || !ctx.typ(s).is_captured() {
-            return false;
-        }
         let wildcard = match &ctx.typ(s).kind {
             TypeKindData::CapturedType { wildcard, .. } => *wildcard,
             _ => None,
@@ -2732,9 +2000,6 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if !ctx.typ(s).has_tag(TypeTag::WILDCARD) {
-            return false;
-        }
         let (t_kind, t_type) = match &ctx.typ(t).kind {
             TypeKindData::WildcardType { kind, type_, .. } => (*kind, *type_),
             _ => return false,
@@ -2777,30 +2042,6 @@ impl Types {
         s: TypeId,
         capture: bool,
     ) -> bool {
-        if type_equals_ignore_metadata(self, ctx, t, s) {
-            return true;
-        }
-        if ctx.typ(s).is_partial() {
-            return self.is_super_type(ctx, syms, s, t);
-        }
-        if self.is_compound(ctx, s) {
-            let components = self
-                .interfaces(ctx, syms, s)
-                .prepend(self.supertype(ctx, syms, s, None));
-            for s2 in components.iter() {
-                if !self.is_subtype_with_capture(ctx, syms, t, s2, capture) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        if !ctx.typ(t).has_tag(TypeTag::UNDETVAR) && !self.is_compound(ctx, t) {
-            let lower = cvar_lower_bound(ctx, self.wild_lower_bound(ctx, syms, s));
-            if s != lower && !ctx.typ(lower).has_tag(TypeTag::BOT) {
-                let t2 = if capture { self.capture(ctx, syms, t) } else { t };
-                return self.is_subtype_with_capture(ctx, syms, t2, lower, false);
-            }
-        }
         let t2 = if capture { self.capture(ctx, syms, t) } else { t };
         self.is_subtype_visit(ctx, syms, t2, s)
     }
@@ -2873,9 +2114,6 @@ impl Types {
                     return false;
                 };
                 // If t is an intersection, sup might not be a class type
-                if !ctx.typ(sup).has_tag(TypeTag::CLASS) {
-                    return self.is_subtype_no_capture(ctx, syms, sup, s);
-                }
                 ctx.typ(sup).tsym == ctx.typ(s).tsym
                     && (!is_parameterized_type(ctx, s)
                         || self.contains_type_recursive(ctx, syms, s, sup))
@@ -2891,17 +2129,7 @@ impl Types {
                     TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
                     _ => crate::util::assert::error(),
                 };
-                if ctx.typ(s).has_tag(TypeTag::ARRAY) {
-                    let s_elem = match &ctx.typ(s).kind {
-                        TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
-                        _ => crate::util::assert::error(),
-                    };
-                    if ctx.typ(t_elem).is_primitive() {
-                        self.is_same_type(ctx, syms, t_elem, s_elem)
-                    } else {
-                        self.is_subtype_no_capture(ctx, syms, t_elem, s_elem)
-                    }
-                } else if ctx.typ(s).has_tag(TypeTag::CLASS) {
+ else if ctx.typ(s).has_tag(TypeTag::CLASS) {
                     // Java: s.tsym.getQualifiedName() compared with the
                     // java.lang.Object/java.lang.Cloneable/java.io.Serializable
                     // names (Types.java IsSubtype.visitArrayType).
@@ -2948,13 +2176,6 @@ impl Types {
             TypeTag::ERROR => true,
             TypeTag::UNDETVAR => {
                 let qtype = self.undet_var_qtype(ctx, t);
-                if t == s
-                    || qtype == s
-                    || ctx.typ(s).has_tag(TypeTag::ERROR)
-                    || ctx.typ(s).has_tag(TypeTag::BOT)
-                {
-                    return true;
-                }
                 self.undet_var_add_bound(
                     ctx,
                     syms,
@@ -3015,9 +2236,6 @@ impl Types {
     ) -> TypeId {
         let bound = ctx.typ(t).get_upper_bound().expect("type var upper bound");
         let bound1 = self.subst_type(ctx, syms, bound, from, to, None);
-        if bound1 == bound {
-            return t;
-        }
         let tsym = ctx.typ(t).tsym;
         let new_tvar = ctx.alloc_type(crate::code::type_::Type::new(
             TypeTag::TYPEVAR,
@@ -3058,9 +2276,6 @@ impl Types {
                 .get_upper_bound()
                 .expect("type var upper bound");
             let substituted = self.subst_type(ctx, syms, b2, s_tvars, t_tvars, None);
-            if !self.is_same_type(ctx, syms, b1, substituted) {
-                return false;
-            }
             l1 = l1.tail();
             l2 = l2.tail();
         }
@@ -3074,30 +2289,6 @@ impl Types {
     #[allow(clippy::only_used_in_recursion)]
     pub fn is_reifiable(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
         let tag = ctx.typ(t).get_tag();
-        if tag == TypeTag::CLASS {
-            if self.is_compound(ctx, t) {
-                return false;
-            }
-            if !is_parameterized_type(ctx, t) {
-                return true;
-            }
-            for param in allparams_of(ctx, t).iter() {
-                if !ctx.typ(param).is_unbound() {
-                    return false;
-                }
-            }
-            return true;
-        }
-        if tag == TypeTag::ARRAY {
-            let elem = match &ctx.typ(t).kind {
-                TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element type"),
-                _ => crate::util::assert::error(),
-            };
-            return self.is_reifiable(ctx, syms, elem);
-        }
-        if tag == TypeTag::TYPEVAR {
-            return false;
-        }
         true
     }
 
@@ -3107,37 +2298,6 @@ impl Types {
     /// are not used; the rank is recomputed each time (same result).
     pub fn rank(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> i32 {
         let tag = ctx.typ(t).get_tag();
-        if tag == TypeTag::CLASS {
-            let tsym = ctx.typ(t).tsym.expect("class type symbol");
-            let names = syms.names();
-            let name = flat_name_of(ctx, tsym);
-            if name.to_java_string() == names.std.java_lang_Object.to_java_string() {
-                return 0;
-            }
-            let sup = self.supertype(ctx, syms, t, None);
-            let mut r = self.rank(ctx, syms, sup);
-            for l in self.interfaces(ctx, syms, t).iter() {
-                let rank_l = self.rank(ctx, syms, l);
-                if rank_l > r {
-                    r = rank_l;
-                }
-            }
-            return r + 1;
-        }
-        if tag == TypeTag::TYPEVAR {
-            let sup = self.supertype(ctx, syms, t, None);
-            let mut r = self.rank(ctx, syms, sup);
-            for l in self.interfaces(ctx, syms, t).iter() {
-                let rank_l = self.rank(ctx, syms, l);
-                if rank_l > r {
-                    r = rank_l;
-                }
-            }
-            return r + 1;
-        }
-        if tag == TypeTag::ERROR || tag == TypeTag::NONE {
-            return 0;
-        }
         panic!("AssertionError: rank {:?}", ctx.typ(t).get_tag())
     }
 
@@ -3150,9 +2310,6 @@ impl Types {
                 | TypeKindData::UnionClassType { .. }
                 | TypeKindData::IntersectionClassType { .. }
         );
-        if !is_class_family {
-            return true;
-        }
         let tsym = ctx.typ(t).tsym.expect("class type symbol");
         let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
         let mut parms = allparams_of(ctx, tsym_type);
@@ -3166,9 +2323,6 @@ impl Types {
                 Some(syms.bound_class),
                 Some(bound),
             );
-            if !self.contains_type(ctx, syms, *args.head(), unb) {
-                return false;
-            }
             parms = parms.tail();
             args = args.tail();
         }
@@ -3254,14 +2408,6 @@ impl Types {
                     TypeKindData::ForAll { tvars, qtype } => (tvars.clone(), *qtype),
                     _ => crate::util::assert::error(),
                 };
-                if !ctx.typ(s).has_tag(TypeTag::FORALL) {
-                    return if strict {
-                        false
-                    } else {
-                        let t_method = t_qtype.expect("for-all qtype");
-                        self.has_same_args_strict(ctx, syms, t_method, s, strict)
-                    };
-                }
                 let (s_tvars, s_qtype) = match &ctx.typ(s).kind {
                     TypeKindData::ForAll { tvars, qtype } => (tvars.clone(), *qtype),
                     _ => crate::util::assert::error(),
@@ -3288,9 +2434,6 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if self.has_same_args(ctx, syms, t, s) {
-            return true;
-        }
         let erased = self.erasure(ctx, syms, s);
         self.has_same_args(ctx, syms, t, erased)
     }
@@ -3305,9 +2448,6 @@ impl Types {
         s: TypeId,
         strict: bool,
     ) -> bool {
-        if self.has_same_args_strict(ctx, syms, t, s, strict) {
-            return true;
-        }
         let erased = self.erasure(ctx, syms, s);
         self.has_same_args_strict(ctx, syms, t, erased, strict)
     }
@@ -3322,51 +2462,15 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if let crate::code::type_::TypeKindData::WildcardType {
-            type_, kind, ..
-        } = &ctx.typ(t).kind
+ = &ctx.typ(t).kind
         {
-            if *kind != crate::code::bound_kind::BoundKind::UNBOUND {
-                let inner = type_.expect("wildcard bound type");
-                return self.contains(ctx, syms, inner, s);
-            }
             return false;
-        }
-        if self.is_same_type(ctx, syms, t, s) {
-            return true;
         }
         match ctx.typ(t).kind.clone() {
             TypeKindData::ClassType { .. }
             | TypeKindData::ErasedClassType { .. }
             | TypeKindData::UnionClassType { .. }
             | TypeKindData::IntersectionClassType { .. } => {
-                if is_parameterized_type(ctx, t) {
-                    if let Some(enclosing) = get_enclosing_type(ctx, t)
-                        && self.contains(ctx, syms, enclosing, s)
-                    {
-                        return true;
-                    }
-                    let mut args = get_type_arguments(ctx, t);
-                    while args.non_empty() {
-                        if self.contains(ctx, syms, *args.head(), s) {
-                            return true;
-                        }
-                        args = args.tail();
-                    }
-                }
-                if self.is_compound(ctx, t) {
-                    let sup = self.supertype(ctx, syms, t, None);
-                    if self.contains(ctx, syms, sup, s) {
-                        return true;
-                    }
-                    let mut interfaces = self.interfaces(ctx, syms, t);
-                    while interfaces.non_empty() {
-                        if self.contains(ctx, syms, *interfaces.head(), s) {
-                            return true;
-                        }
-                        interfaces = interfaces.tail();
-                    }
-                }
                 false
             }
             TypeKindData::ArrayType { elemtype, .. } => {
@@ -3413,9 +2517,6 @@ impl Types {
     ) -> bool {
         let mut current = ts;
         while current.non_empty() {
-            if self.contains(ctx, syms, *current.head(), s) {
-                return true;
-            }
             current = current.tail();
         }
         false
@@ -3432,9 +2533,6 @@ impl Types {
         let mut current = ts.clone();
         while current.non_empty() {
             let s = *current.head();
-            if self.contains(ctx, syms, t, s) {
-                return true;
-            }
             current = current.tail();
         }
         false
@@ -3449,7 +2547,7 @@ impl Types {
         t: TypeId,
         tvar: TypeId,
     ) -> TypeId {
-        if let crate::code::type_::TypeKindData::WildcardType { bound, .. } =
+ =
             &mut ctx.typ_mut(t).kind
         {
             // Java: if (bound == t) return this; bound = (TypeVar)t; return this;
@@ -3467,30 +2565,11 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if ctx.typ(t).has_tag(TypeTag::ERROR) {
-            return true;
-        }
         let t_primitive = ctx.typ(t).is_primitive();
         let s_primitive = ctx.typ(s).is_primitive();
-        if t_primitive == s_primitive {
-            return self.is_subtype_unchecked(ctx, syms, t, s);
-        }
         let t_undet = ctx.typ(t).has_tag(TypeTag::UNDETVAR);
         let s_undet = ctx.typ(s).has_tag(TypeTag::UNDETVAR);
-        if t_undet || s_undet {
-            return if t_undet {
-                let boxed = self.boxed_type_or_type_ro(ctx, syms, s);
-                self.is_subtype(ctx, syms, t, boxed)
-            } else {
-                let boxed = self.boxed_type_or_type_ro(ctx, syms, t);
-                self.is_subtype(ctx, syms, boxed, s)
-            };
-        }
-        if t_primitive {
-            let boxed = self.boxed_class_ro(ctx, syms, t);
-            let boxed_type = ctx.sym(boxed).ty.expect("boxed type");
-            self.is_subtype(ctx, syms, boxed_type, s)
-        } else {
+ else {
             let unboxed = self.unboxed_type_ro(ctx, syms, t);
             self.is_subtype(ctx, syms, unboxed, s)
         }
@@ -3519,10 +2598,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
     ) -> TypeId {
-        if ctx.typ(t).is_primitive() {
-            let boxed = self.boxed_class_ro(ctx, syms, t);
-            ctx.sym(boxed).ty.expect("boxed type")
-        } else {
+ else {
             t
         }
     }
@@ -3536,16 +2612,8 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
     ) -> TypeId {
-        if ctx.typ(t).has_tag(TypeTag::ERROR) {
-            return no_type_of(ctx, syms);
-        }
         let boxed_ids = syms.boxed_class_ids.clone();
         for (index, boxed) in boxed_ids.iter().enumerate() {
-            if let Some(boxed) = boxed {
-                if self.as_super(ctx, syms, t, *boxed).is_some() {
-                    return syms.type_of_tag[index].expect("typeOfTag entry");
-                }
-            }
         }
         no_type_of(ctx, syms)
     }
@@ -3557,10 +2625,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
     ) -> TypeId {
-        if ctx.typ(t).is_primitive() {
-            let boxed = self.boxed_class(ctx, syms, t);
-            ctx.sym(boxed).ty.expect("boxed type")
-        } else {
+ else {
             t
         }
     }
@@ -3572,20 +2637,10 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
     ) -> TypeId {
-        if ctx.typ(t).has_tag(TypeTag::ERROR) {
-            return no_type_of(ctx, syms);
-        }
         let boxed_names = syms.boxed_name.clone();
         let java_base = syms.java_base;
         let no_symbol = syms.no_symbol;
         for (index, boxed) in boxed_names.iter().enumerate() {
-            if let Some(boxed) = boxed {
-                let boxed_tsym =
-                    syms.enter_class(ctx, java_base, boxed.clone(), Some(no_symbol));
-                if self.as_super(ctx, syms, t, boxed_tsym).is_some() {
-                    return syms.type_of_tag[index].expect("typeOfTag entry");
-                }
-            }
         }
         no_type_of(ctx, syms)
     }
@@ -3598,9 +2653,7 @@ impl Types {
         t: TypeId,
     ) -> TypeId {
         let unboxed = self.unboxed_type(ctx, syms, t);
-        if ctx.typ(unboxed).has_tag(TypeTag::NONE) {
-            t
-        } else {
+ else {
             unboxed
         }
     }
@@ -3701,33 +2754,8 @@ impl Types {
         s: TypeId,
         capture: bool,
     ) -> bool {
-        if ctx.typ(t).has_tag(TypeTag::ARRAY) && ctx.typ(s).has_tag(TypeTag::ARRAY) {
-            // Java: isSameType(elemtype(t), elemtype(s)) /
-            // isSubtypeUncheckedInternal(elemtype(t), elemtype(s), false, warn)
-            let t_elem = elemtype_of(self, ctx, syms, t).expect("array element type");
-            let s_elem = elemtype_of(self, ctx, syms, s).expect("array element type");
-            if ctx.typ(t_elem).is_primitive() {
-                return self.is_same_type(ctx, syms, t_elem, s_elem);
-            }
-            return self.is_subtype_unchecked_internal(ctx, syms, t_elem, s_elem, false);
-        }
-        if self.is_subtype_with_capture(ctx, syms, t, s, capture) {
-            return true;
-        }
-        if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
-            let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
-            return self.is_subtype_unchecked_internal(ctx, syms, upper, s, false);
-        }
-        if !is_raw_type(ctx, s) {
-            let Some(s_tsym) = ctx.typ(s).tsym else {
-                return false;
-            };
-            if let Some(t2) = self.as_super(ctx, syms, t, s_tsym)
-                && is_raw_type(ctx, t2)
-            {
-                return true;
-            }
-        }
+        // Java: ClassType.visit's TYPEVAR case (Types.java:1732-1738):
+        // isSubtype(t, T extends B) is isCastable(t, B, noWarnings).
         false
     }
 
@@ -3768,35 +2796,9 @@ impl Types {
         s: TypeId,
         warn: &mut crate::util::warner::Warner,
     ) -> bool {
-        if t == s {
-            return true;
-        }
-        if ctx.typ(t).is_primitive() != ctx.typ(s).is_primitive() {
-            let t = self.skip_type_vars(ctx, t);
-            if self.is_convertible(ctx, syms, t, s) {
-                return true;
-            }
-            if ctx.typ(s).is_primitive() {
-                let boxed = self.boxed_class_ro(ctx, syms, s);
-                let boxed_type = ctx.sym(boxed).ty.expect("boxed type");
-                return self.is_subtype(ctx, syms, boxed_type, t);
-            }
-            return false;
-        }
         // Java: if (warn != warnStack.head) { push; checkUnsafeVarargsConversion;
         // result = isCastable.visit(t,s); pop; } else visit(t,s)
         let result = self.is_castable_visit(ctx, syms, t, s, warn);
-        if result && ctx.typ(t).has_tag(TypeTag::CLASS) && ctx.typ(s).has_tag(TypeTag::CLASS) {
-            let tsym = ctx.typ(t).tsym.expect("class type symbol");
-            let ssym = ctx.typ(s).tsym.expect("class type symbol");
-            if symbol_is_sealed(ctx, tsym) || symbol_is_sealed(ctx, ssym) {
-                return if self.is_compound(ctx, t) || self.is_compound(ctx, s) {
-                    true
-                } else {
-                    !self.are_disjoint(ctx, syms, tsym, ssym)
-                };
-            }
-        }
         result
     }
 
@@ -3815,9 +2817,6 @@ impl Types {
             | TypeKindData::BottomType
             | TypeKindData::JCNoType { .. }
             | TypeKindData::UnknownType => {
-                if ctx.typ(s).has_tag(TypeTag::ERROR) || ctx.typ(t).has_tag(TypeTag::NONE) {
-                    return true;
-                }
                 match ctx.typ(t).get_tag() {
                     TypeTag::BYTE
                     | TypeTag::CHAR
@@ -3838,55 +2837,11 @@ impl Types {
             }
             TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
                 let tag = ctx.typ(s).get_tag();
-                if tag == TypeTag::ERROR || tag == TypeTag::BOT {
-                    return true;
-                }
                 let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
-                if tag == TypeTag::TYPEVAR {
-                    if self.is_subtype(ctx, syms, t, s) {
-                        return true;
-                    }
-                    // Java: isCastable(t.getUpperBound(), s, noWarnings) then warn.
-                    let mut no_warnings = crate::util::warner::Warner::new(None);
-                    if self.is_castable_with_warn(ctx, syms, upper, s, &mut no_warnings) {
-                        warn.warn(crate::code::lint::LintCategory::UNCHECKED);
-                        return true;
-                    }
-                    return false;
-                }
                 self.is_castable_with_warn(ctx, syms, upper, s, warn)
             }
             TypeKindData::ArrayType { .. } => {
                 let tag = ctx.typ(s).get_tag();
-                if tag == TypeTag::ERROR || tag == TypeTag::BOT {
-                    return true;
-                }
-                if tag == TypeTag::TYPEVAR {
-                    // Java: isCastable(s, t, noWarnings) then warn.
-                    let mut no_warnings = crate::util::warner::Warner::new(None);
-                    if self.is_castable_with_warn(ctx, syms, s, t, &mut no_warnings) {
-                        warn.warn(crate::code::lint::LintCategory::UNCHECKED);
-                        return true;
-                    }
-                    return false;
-                }
-                if tag == TypeTag::CLASS {
-                    return self.is_subtype(ctx, syms, t, s);
-                }
-                if tag == TypeTag::ARRAY {
-                    let t_elem = match &ctx.typ(t).kind {
-                        TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
-                        _ => crate::util::assert::error(),
-                    };
-                    let s_elem = match &ctx.typ(s).kind {
-                        TypeKindData::ArrayType { elemtype, .. } => elemtype.expect("array element"),
-                        _ => crate::util::assert::error(),
-                    };
-                    if ctx.typ(t_elem).is_primitive() || ctx.typ(s_elem).is_primitive() {
-                        return ctx.typ(t_elem).has_tag(ctx.typ(s_elem).get_tag());
-                    }
-                    return self.is_castable_visit(ctx, syms, t_elem, s_elem, warn);
-                }
                 false
             }
             TypeKindData::ClassType { .. }
@@ -3894,157 +2849,6 @@ impl Types {
             | TypeKindData::UnionClassType { .. }
             | TypeKindData::IntersectionClassType { .. } => {
                 let tag = ctx.typ(s).get_tag();
-                if tag == TypeTag::ERROR || tag == TypeTag::BOT {
-                    return true;
-                }
-                if tag == TypeTag::TYPEVAR {
-                    // Java: if (isCastable(t, s.getUpperBound(), noWarnings)) {
-                    // warnStack.head.warn(UNCHECKED); return true; } else false;
-                    let upper = ctx.typ(s).get_upper_bound().expect("type var upper bound");
-                    let mut no_warnings = crate::util::warner::Warner::new(None);
-                    if self.is_castable_with_warn(ctx, syms, t, upper, &mut no_warnings) {
-                        warn.warn(crate::code::lint::LintCategory::UNCHECKED);
-                        return true;
-                    }
-                    return false;
-                }
-                if self.is_compound(ctx, t) || self.is_compound(ctx, s) {
-                    return if !self.is_compound(ctx, t) {
-                        self.visit_compound_type(ctx, syms, s, t, true, warn)
-                    } else {
-                        self.visit_compound_type(ctx, syms, t, s, false, warn)
-                    };
-                }
-                if tag == TypeTag::CLASS || tag == TypeTag::ARRAY {
-                    let t_erasure = self.erasure(ctx, syms, t);
-                    let s_erasure = self.erasure(ctx, syms, s);
-                    let upcast = self.is_subtype(ctx, syms, t_erasure, s_erasure);
-                    if upcast || self.is_subtype(ctx, syms, s_erasure, t_erasure) {
-                        if !upcast && tag == TypeTag::ARRAY {
-                            if !self.is_reifiable(ctx, syms, s) {
-                                warn.warn(crate::code::lint::LintCategory::UNCHECKED);
-                            }
-                            return true;
-                        } else if is_raw_type(ctx, s) {
-                            return true;
-                        } else if is_raw_type(ctx, t) {
-                            if !self.is_unbounded(ctx, syms, s) {
-                                warn.warn(crate::code::lint::LintCategory::UNCHECKED);
-                            }
-                            return true;
-                        }
-                        let (a, b) = if upcast { (t, s) } else { (s, t) };
-                        let high = true;
-                        let low = false;
-                        let no_rewrite = false;
-                        let mut a_high =
-                            self.rewrite_quantifiers(ctx, syms, a, high, no_rewrite);
-                        let mut a_low =
-                            self.rewrite_quantifiers(ctx, syms, a, low, no_rewrite);
-                        let mut b_high =
-                            self.rewrite_quantifiers(ctx, syms, b, high, no_rewrite);
-                        let mut b_low =
-                            self.rewrite_quantifiers(ctx, syms, b, low, no_rewrite);
-                        let mut low_sub = {
-                            let a_low_tsym = ctx.typ(a_low).tsym.expect("rewritten symbol");
-                            self.as_sub(ctx, syms, b_low, a_low_tsym)
-                        };
-                        let mut high_sub = low_sub.and_then(|low_sub| {
-                            let a_high_tsym = ctx.typ(a_high).tsym.expect("rewritten symbol");
-                            let _ = low_sub;
-                            self.as_sub(ctx, syms, b_high, a_high_tsym)
-                        });
-                        if high_sub.is_none() {
-                            let rewrite = true;
-                            a_high = self.rewrite_quantifiers(ctx, syms, a, high, rewrite);
-                            a_low = self.rewrite_quantifiers(ctx, syms, a, low, rewrite);
-                            b_high = self.rewrite_quantifiers(ctx, syms, b, high, rewrite);
-                            b_low = self.rewrite_quantifiers(ctx, syms, b, low, rewrite);
-                            low_sub = {
-                                let a_low_tsym = ctx.typ(a_low).tsym.expect("rewritten symbol");
-                                self.as_sub(ctx, syms, b_low, a_low_tsym)
-                            };
-                            high_sub = low_sub.and_then(|_unused| {
-                                let a_high_tsym = ctx.typ(a_high).tsym.expect("rewritten symbol");
-                                self.as_sub(ctx, syms, b_high, a_high_tsym)
-                            });
-                        }
-                        if let (Some(low_sub), Some(high_sub)) = (low_sub, high_sub) {
-                            let a_high_params = self.class_allparams(ctx, a_high);
-                            let a_low_params = self.class_allparams(ctx, a_low);
-                            let high_params = self.class_allparams(ctx, high_sub);
-                            let low_params = self.class_allparams(ctx, low_sub);
-                            let disjoint = self.disjoint_types(
-                                ctx,
-                                syms,
-                                a_high_params.clone(),
-                                high_params.clone(),
-                            ) || self.disjoint_types(
-                                ctx,
-                                syms,
-                                a_high_params,
-                                low_params.clone(),
-                            ) || self.disjoint_types(
-                                ctx,
-                                syms,
-                                a_low_params.clone(),
-                                high_params,
-                            ) || self.disjoint_types(
-                                ctx,
-                                syms,
-                                a_low_params,
-                                low_params,
-                            );
-                            if !disjoint {
-                                let give_warning = if upcast {
-                                    self.give_warning(ctx, syms, a, b)
-                                } else {
-                                    self.give_warning(ctx, syms, b, a)
-                                };
-                                if give_warning {
-                                    warn.warn(crate::code::lint::LintCategory::UNCHECKED);
-                                }
-                                return true;
-                            }
-                        }
-                        if self.is_reifiable(ctx, syms, s) {
-                            return self.is_subtype_unchecked(ctx, syms, a, b);
-                        }
-                        // Java: isSubtypeUnchecked(a, b, warn) — the warn parameter
-                        // is registered with the Varargs (checkUnsafeVarargsConversion
-                        // is not ported yet); the boolean relation is unchanged.
-                        return self.is_subtype_unchecked(ctx, syms, a, b);
-                    }
-                    // Sidecast
-                    if tag == TypeTag::CLASS {
-                        let s_tsym = ctx.typ(s).tsym.expect("cast target symbol");
-                        let t_tsym = ctx.typ(t).tsym.expect("cast source symbol");
-                        let s_interface =
-                            (ctx.sym(s_tsym).flags_field & crate::code::flags::INTERFACE as i64)
-                                != 0;
-                        let t_interface =
-                            (ctx.sym(t_tsym).flags_field & crate::code::flags::INTERFACE as i64)
-                                != 0;
-                        let s_final =
-                            (ctx.sym(s_tsym).flags_field & crate::code::flags::FINAL as i64) != 0;
-                        let t_final =
-                            (ctx.sym(t_tsym).flags_field & crate::code::flags::FINAL as i64) != 0;
-                        if s_interface {
-                            return if !t_final {
-                                self.side_cast(ctx, syms, t, s, warn)
-                            } else {
-                                self.side_cast_final(ctx, syms, t, s, warn)
-                            };
-                        } else if t_interface {
-                            return if !s_final {
-                                self.side_cast(ctx, syms, t, s, warn)
-                            } else {
-                                self.side_cast_final(ctx, syms, t, s, warn)
-                            };
-                        }
-                        return false;
-                    }
-                }
                 false
             }
             TypeKindData::ErrorType { .. } => true,
@@ -4075,12 +2879,6 @@ impl Types {
             } else {
                 self.is_castable_with_warn(ctx, syms, c, s, &mut compound_warn)
             };
-            if !ok {
-                return false;
-            }
-        }
-        if compound_warn.has_lint(crate::code::lint::LintCategory::UNCHECKED) {
-            warn.warn(crate::code::lint::LintCategory::UNCHECKED);
         }
         true
     }
@@ -4097,34 +2895,8 @@ impl Types {
         let ss_type = ctx.sym(ss).ty.expect("class type");
         let ts_erasure = self.erasure(ctx, syms, ts_type);
         let ss_erasure = self.erasure(ctx, syms, ss_type);
-        if self.is_subtype(ctx, syms, ts_erasure, ss_erasure) {
-            return false;
-        }
         let ts_interface = symbol_is_interface(ctx, ts);
         let ss_interface = symbol_is_interface(ctx, ss);
-        if ts_interface == ss_interface && self.is_subtype(ctx, syms, ss_erasure, ts_erasure) {
-            return false;
-        }
-        if ts_interface && !ss_interface {
-            return self.are_disjoint(ctx, syms, ss, ts);
-        }
-        if !ts_interface && symbol_is_final(ctx, ts) {
-            return true;
-        }
-        if symbol_is_sealed(ctx, ts) || symbol_is_sealed(ctx, ss) {
-            let sealed_one = if symbol_is_sealed(ctx, ts) { ts } else { ss };
-            let other = if sealed_one == ts { ss } else { ts };
-            let permitted = match &ctx.sym(sealed_one).kind_data {
-                crate::code::symbol::SymbolKind::ClassSymbol { permitted, .. } => permitted.clone(),
-                _ => List::nil(),
-            };
-            for sub in permitted.iter() {
-                if !self.are_disjoint(ctx, syms, sub, other) {
-                    return false;
-                }
-            }
-            return true;
-        }
         false
     }
 }
@@ -4213,26 +2985,7 @@ pub(crate) fn get_type_arguments_completed(
         | TypeKindData::ErrorType { typarams_field, .. } => typarams_field.is_none(),
         _ => return List::nil(),
     };
-    if !needs_completion {
-        return get_type_arguments(ctx, t);
-    }
     // Complete the class symbol before the parameter list is read.
-    if let Some(tsym) = ctx.typ(t).tsym
-        && !ctx.is_symbol_completed(tsym)
-    {
-        match attr.as_deref_mut() {
-            Some(attr) => {
-                if let Err(failure) = ctx.complete_class_symbol_with_attr(syms, tsym, attr) {
-                    crate::code::symbol::throw_completion_failure(failure);
-                }
-            }
-            None => {
-                if let Err(failure) = ctx.complete_class_symbol(syms, tsym) {
-                    crate::code::symbol::throw_completion_failure(failure);
-                }
-            }
-        }
-    }
     // An absent parameter list is cached as the empty list.
     match &mut ctx.typ_mut(t).kind {
         TypeKindData::ClassType { typarams_field, .. }
@@ -4240,9 +2993,6 @@ pub(crate) fn get_type_arguments_completed(
         | TypeKindData::UnionClassType { typarams_field, .. }
         | TypeKindData::IntersectionClassType { typarams_field, .. }
         | TypeKindData::ErrorType { typarams_field, .. } => {
-            if typarams_field.is_none() {
-                *typarams_field = Some(List::nil());
-            }
             typarams_field.clone().unwrap_or_else(List::nil)
         }
         _ => List::nil(),
@@ -4459,9 +3209,7 @@ fn class_symbol_get_superclass(ctx: &CompilerContext, symbol: SymbolId) -> Optio
         | TypeKindData::ErasedClassType { supertype_field, .. }
         | TypeKindData::UnionClassType { supertype_field, .. }
         | TypeKindData::IntersectionClassType { supertype_field, .. } => {
-            if symbol_is_interface(ctx, symbol) {
-                None
-            } else {
+ else {
                 *supertype_field
             }
         }
@@ -4498,9 +3246,7 @@ fn class_bound(types: &Types, ctx: &mut CompilerContext, syms: &Symtab, t: TypeI
                 return t;
             };
             let outer1 = class_bound(types, ctx, syms, outer, attr.as_deref_mut());
-            if outer1 == outer {
-                t
-            } else {
+ else {
                 let args = get_type_arguments(ctx, t);
                 let tsym = ctx.typ(t).tsym;
                 new_class_type(ctx, Some(outer1), Some(args), tsym)
@@ -4543,24 +3289,14 @@ fn elemtype_of(
 /// (Types.java:2007) and the isCastable/disjointType relations (ported).
 #[allow(dead_code)]
 fn cvar_upper_bound(ctx: &CompilerContext, t: TypeId) -> TypeId {
-    if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
-        if ctx.typ(t).is_captured() {
-            let upper = ctx.typ(t).get_upper_bound().expect("captured type upper bound");
-            cvar_upper_bound(ctx, upper)
-        } else {
-            t
-        }
-    } else {
+ else {
         t
     }
 }
 
 /// Java: Types.cvarLowerBound(Type t)
 pub(crate) fn cvar_lower_bound(ctx: &CompilerContext, t: TypeId) -> TypeId {
-    if ctx.typ(t).has_tag(TypeTag::TYPEVAR) && ctx.typ(t).is_captured() {
-        let lower = ctx.typ(t).get_lower_bound().expect("captured type lower bound");
-        cvar_lower_bound(ctx, lower)
-    } else {
+ else {
         t
     }
 }
@@ -4703,32 +3439,6 @@ fn type_contains(
     t: TypeId,
     elem: TypeId,
 ) -> bool {
-    if type_equals_ignore_metadata(types, ctx, t, elem) {
-        return true;
-    }
-    if is_parameterized_type(ctx, t) {
-        if let Some(outer) = enclosing_of(ctx, t)
-            && type_contains(types, ctx, syms, outer, elem)
-        {
-            return true;
-        }
-        for arg in get_type_arguments(ctx, t).iter() {
-            if type_contains(types, ctx, syms, arg, elem) {
-                return true;
-            }
-        }
-    }
-    if types.is_compound(ctx, t) {
-        let sup = types.supertype(ctx, syms, t, None);
-        if type_contains(types, ctx, syms, sup, elem) {
-            return true;
-        }
-        for i in types.interfaces(ctx, syms, t).iter() {
-            if type_contains(types, ctx, syms, i, elem) {
-                return true;
-            }
-        }
-    }
     false
 }
 
@@ -4750,7 +3460,7 @@ fn type_is_interface(ctx: &CompilerContext, t: TypeId) -> bool {
 
 /// Java: Type.withTypeVar(Type t) (Type: return this; WildcardType: set bound).
 fn with_type_var(ctx: &mut CompilerContext, t: TypeId, tv: TypeId) -> TypeId {
-    if let TypeKindData::WildcardType { bound, .. } = &mut ctx.typ_mut(t).kind
+ = &mut ctx.typ_mut(t).kind
         && *bound != Some(tv)
     {
         *bound = Some(tv);
@@ -4762,17 +3472,11 @@ fn with_type_var(ctx: &mut CompilerContext, t: TypeId, tv: TypeId) -> TypeId {
 /// typarams) as used by the mapping classes: same length and same element
 /// identities.
 fn list_same(a: &List<TypeId>, b: &List<TypeId>) -> bool {
-    if a.length() != b.length() {
-        return false;
-    }
     let mut ai = a.iter();
     let mut bi = b.iter();
     loop {
         match (ai.next(), bi.next()) {
             (Some(a), Some(b)) => {
-                if a != b {
-                    return false;
-                }
             }
             (None, None) => return true,
             _ => return false,
@@ -4832,24 +3536,12 @@ impl Types {
         m: SymbolId,
     ) -> bool {
         let flags = ctx.sym(m).flags_field;
-        if (flags & crate::code::flags::NATIVE as i64) == 0 {
-            return false;
-        }
         let owner_ty = ctx.sym(m).owner.and_then(|o| ctx.sym(o).ty);
-        if owner_ty != Some(syms.method_handle_type) && owner_ty != Some(syms.var_handle_type) {
-            return false;
-        }
         let Some(ty) = ctx.sym(m).ty else {
             return false;
         };
         let argtypes = ctx.typ(ty).get_parameter_types(ctx);
-        if argtypes.length() != 1 {
-            return false;
-        }
         let head = *argtypes.head();
-        if !ctx.typ(head).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
-            return false;
-        }
         let elem = match &ctx.typ(head).kind {
             crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => *elemtype,
             _ => None,
@@ -4918,7 +3610,7 @@ impl Types {
         };
         ctx.sym_mut(bc).erasure_field = Some(erasure);
         let members = ctx.scope_create(Some(bc));
-        if let crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } =
+ =
             &mut ctx.sym_mut(bc).kind_data
         {
             *members_field = Some(members);
@@ -4942,7 +3634,7 @@ impl Types {
         } else {
             self.make_intersection_type(ctx, syms, names, bounds, all_interfaces)
         };
-        if let crate::code::type_::TypeKindData::TypeVar { bound, .. } =
+ =
             &mut ctx.typ_mut(tvar).kind
         {
             *bound = Some(upper);
@@ -4989,7 +3681,7 @@ impl Types {
         match &ctx.typ(t).kind {
             crate::code::type_::TypeKindData::ArrayType { .. } => {
                 let mut copy = ctx.typ(t).clone();
-                if let crate::code::type_::TypeKindData::ArrayType { varargs, .. } =
+ =
                     &mut copy.kind
                 {
                     *varargs = true;
@@ -5053,7 +3745,7 @@ impl Types {
         ctx.sym_mut(class).ty = Some(error_type);
         ctx.sym_mut(class).kind = crate::code::kinds::Kind::ERR;
         let scope = ctx.scope_create_error(Some(class));
-        if let crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } =
+ =
             &mut ctx.sym_mut(class).kind_data
         {
             *members_field = Some(scope);
@@ -5201,9 +3893,6 @@ impl Types {
         // Java: for each from entry replace to with the current mapping value.
         for (index, from_ty) in from.iter().enumerate() {
             let tsym = ctx.typ(*from_ty).tsym.expect("type variable symbol");
-            if let Some((_, value)) = mapping.iter().find(|(sym, _)| *sym == tsym) {
-                to[index] = *value;
-            }
         }
         Ok((from, to))
     }
@@ -5226,55 +3915,11 @@ impl Types {
             | TypeKindData::ErasedClassType { .. }
             | TypeKindData::UnionClassType { .. }
             | TypeKindData::IntersectionClassType { .. } => {
-                if ctx.typ(target).has_tag(TypeTag::CLASS) {
-                    let source_params = self.class_allparams(ctx, source);
-                    let target_params = self.class_allparams(ctx, target);
-                    self.adapt_recursive(
-                        ctx, syms, source_params, target_params, from, to, mapping, cache,
-                    )?;
-                }
             }
             TypeKindData::ArrayType { .. } => {
-                if ctx.typ(target).has_tag(TypeTag::ARRAY) {
-                    let source_elem = match &ctx.typ(source).kind {
-                        TypeKindData::ArrayType { elemtype, .. } => {
-                            elemtype.expect("array element")
-                        }
-                        _ => crate::util::assert::error(),
-                    };
-                    let target_elem = match &ctx.typ(target).kind {
-                        TypeKindData::ArrayType { elemtype, .. } => {
-                            elemtype.expect("array element")
-                        }
-                        _ => crate::util::assert::error(),
-                    };
-                    self.adapt_recursive(
-                        ctx,
-                        syms,
-                        List::of(source_elem),
-                        List::of(target_elem),
-                        from,
-                        to,
-                        mapping,
-                        cache,
-                    )?;
-                }
             }
             TypeKindData::WildcardType { .. } => {
-                if self.wildcard_is_extends_bound(ctx, source) {
-                    let source_upper = self.wild_upper_bound(ctx, syms, source);
-                    let target_upper = self.wild_upper_bound(ctx, syms, target);
-                    self.adapt_recursive(
-                        ctx,
-                        syms,
-                        List::of(source_upper),
-                        List::of(target_upper),
-                        from,
-                        to,
-                        mapping,
-                        cache,
-                    )?;
-                } else if self.wildcard_is_super_bound(ctx, source) {
+ else if self.wildcard_is_super_bound(ctx, source) {
                     let source_lower = self.wild_lower_bound(ctx, syms, source);
                     let target_lower = self.wild_lower_bound(ctx, syms, target);
                     self.adapt_recursive(
@@ -5299,26 +3944,10 @@ impl Types {
                     Some(value) => {
                         let value_super = self.wildcard_is_super_bound(ctx, value);
                         let target_super = self.wildcard_is_super_bound(ctx, target);
-                        if value_super && target_super {
-                            let value_lower = self.wild_lower_bound(ctx, syms, value);
-                            let target_lower = self.wild_lower_bound(ctx, syms, target);
-                            if self.is_subtype(ctx, syms, value_lower, target_lower) {
-                                target
-                            } else {
-                                value
-                            }
-                        } else {
+ else {
                             let value_extends = self.wildcard_is_extends_bound(ctx, value);
                             let target_extends = self.wildcard_is_extends_bound(ctx, target);
-                            if value_extends && target_extends {
-                                let value_upper = self.wild_upper_bound(ctx, syms, value);
-                                let target_upper = self.wild_upper_bound(ctx, syms, target);
-                                if self.is_subtype(ctx, syms, value_upper, target_upper) {
-                                    value
-                                } else {
-                                    target
-                                }
-                            } else if !self.is_same_type(ctx, syms, value, target) {
+ else if !self.is_same_type(ctx, syms, value, target) {
                                 return Err(AdaptFailure);
                             } else {
                                 value
@@ -5331,12 +3960,7 @@ impl Types {
                         target
                     }
                 };
-                if let Some(entry) = mapping
-                    .iter_mut()
-                    .find(|(sym, _)| *sym == source_tsym)
-                {
-                    entry.1 = value;
-                } else {
+ else {
                     mapping.push((source_tsym, value));
                 }
             }
@@ -5364,21 +3988,6 @@ impl Types {
             let source_head = *source_list.head();
             let target_head = *target_list.head();
             let pair = (source_head, target_head);
-            if !cache.contains(&pair) {
-                cache.push(pair);
-                let result = self.adapt_visit(
-                    ctx,
-                    syms,
-                    source_head,
-                    target_head,
-                    from,
-                    to,
-                    mapping,
-                    cache,
-                );
-                cache.pop();
-                result?;
-            }
             source_list = source_list.tail();
             target_list = target_list.tail();
         }
@@ -5408,28 +4017,12 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
     ) -> TypeId {
-        if !is_parameterized_type(ctx, t) {
-            return t;
-        }
         let (from, to) = self.adapt_self(ctx, syms, t);
-        if from.is_empty() {
-            return t;
-        }
         let mut rewrite: Vec<TypeId> = Vec::new();
         let mut changed = false;
         for orig in &to {
             let mut s = self.rewrite_supers(ctx, syms, *orig);
-            if self.wildcard_is_super_bound(ctx, s) && !self.wildcard_is_extends_bound(ctx, s) {
-                s = ctx.alloc_type(crate::code::type_::Type::new(
-                    TypeTag::WILDCARD,
-                    Some(syms.bound_class),
-                    TypeKindData::WildcardType {
-                        type_: Some(syms.object_type),
-                        kind: crate::code::bound_kind::BoundKind::UNBOUND,
-                        bound: None, is_printing_bound: std::cell::Cell::new(false), },
-                ));
-                changed = true;
-            } else if s != *orig {
+ else if s != *orig {
                 let upper = self.wild_upper_bound(ctx, syms, s);
                 s = ctx.alloc_type(crate::code::type_::Type::new(
                     TypeTag::WILDCARD,
@@ -5443,13 +4036,7 @@ impl Types {
             }
             rewrite.push(s);
         }
-        if changed {
-            let tsym = ctx.typ(t).tsym.expect("class type symbol");
-            let tsym_type = ctx.sym(tsym).ty.expect("class symbol type");
-            let from_list = List::from_iterable(from);
-            let to_list = List::from_iterable(rewrite);
-            self.subst_type(ctx, syms, tsym_type, &from_list, &to_list, None)
-        } else {
+ else {
             t
         }
     }
@@ -5476,17 +4063,7 @@ impl Types {
         cache: &mut Vec<(TypeId, TypeId)>,
     ) -> bool {
         let pair = (t, s);
-        if !cache.contains(&pair) {
-            cache.push(pair);
-            let result = self.contains_type_list(
-                ctx,
-                syms,
-                &type_arguments_list(ctx, t),
-                &type_arguments_list(ctx, s),
-            );
-            cache.pop();
-            result
-        } else {
+ else {
             let rewritten = self.rewrite_supers(ctx, syms, s);
             self.contains_type_list(
                 ctx,
@@ -5538,26 +4115,8 @@ impl Types {
         this_sym: SymbolId,
         that_sym: SymbolId,
     ) -> bool {
-        if this_sym == that_sym {
-            return false;
-        }
         let this_type = ctx.sym(this_sym).ty.expect("this type");
         let that_type = ctx.sym(that_sym).ty.expect("that type");
-        if ctx.typ(this_type).get_tag() == ctx.typ(that_type).get_tag() {
-            if ctx.typ(this_type).has_tag(TypeTag::CLASS) {
-                let that_rank = self.rank(ctx, syms, that_type);
-                let this_rank = self.rank(ctx, syms, this_type);
-                if that_rank != this_rank {
-                    return that_rank < this_rank;
-                }
-                return self
-                    .type_qualified_name(ctx, that_sym)
-                    .compare_to(&self.type_qualified_name(ctx, this_sym))
-                    < 0;
-            } else if ctx.typ(this_type).has_tag(TypeTag::TYPEVAR) {
-                return self.is_subtype(ctx, syms, this_type, that_type);
-            }
-        }
         ctx.typ(this_type).has_tag(TypeTag::TYPEVAR)
     }
 
@@ -5570,18 +4129,9 @@ impl Types {
         cl: List<TypeId>,
         t: TypeId,
     ) -> List<TypeId> {
-        if cl.is_empty() {
-            return cl.prepend(t);
-        }
         let head = *cl.head();
         let t_tsym = ctx.typ(t).tsym.expect("insert type symbol");
         let head_tsym = ctx.typ(head).tsym.expect("closure head symbol");
-        if t_tsym == head_tsym {
-            return cl;
-        }
-        if self.symbol_precedes(ctx, syms, t_tsym, head_tsym) {
-            return cl.prepend(t);
-        }
         self.closure_insert(ctx, syms, cl.tail(), t).prepend(head)
     }
 
@@ -5604,18 +4154,7 @@ impl Types {
         t: TypeId,
         should_skip: ClosureSkip,
     ) -> List<TypeId> {
-        if cl.is_empty() {
-            return cl.prepend(t);
-        }
         let head = *cl.head();
-        if self.closure_skip(ctx, syms, should_skip, t, head) {
-            return cl;
-        }
-        if let (Some(t_sym), Some(head_sym)) = (ctx.typ(t).tsym, ctx.typ(head).tsym)
-            && self.symbol_precedes(ctx, syms, t_sym, head_sym)
-        {
-            return cl.prepend(t);
-        }
         self.closure_insert_with(ctx, syms, cl.tail(), t, should_skip)
             .prepend(head)
     }
@@ -5630,26 +4169,8 @@ impl Types {
         cl2: List<TypeId>,
         should_skip: ClosureSkip,
     ) -> List<TypeId> {
-        if cl1.is_empty() {
-            return cl2;
-        }
-        if cl2.is_empty() {
-            return cl1;
-        }
         let head1 = *cl1.head();
         let head2 = *cl2.head();
-        if self.closure_skip(ctx, syms, should_skip, head1, head2) {
-            return self
-                .closure_union_with(ctx, syms, cl1.tail(), cl2.tail(), should_skip)
-                .prepend(head1);
-        }
-        if let (Some(head2_sym), Some(head1_sym)) = (ctx.typ(head2).tsym, ctx.typ(head1).tsym)
-            && self.symbol_precedes(ctx, syms, head2_sym, head1_sym)
-        {
-            return self
-                .closure_union_with(ctx, syms, cl1, cl2.tail(), should_skip)
-                .prepend(head2);
-        }
         self.closure_union_with(ctx, syms, cl1.tail(), cl2, should_skip)
             .prepend(head1)
     }
@@ -5661,26 +4182,10 @@ impl Types {
         cl1: List<TypeId>,
         cl2: List<TypeId>,
     ) -> List<TypeId> {
-        if cl1.is_empty() {
-            return cl2;
-        }
-        if cl2.is_empty() {
-            return cl1;
-        }
         let head1 = *cl1.head();
         let head2 = *cl2.head();
         let head1_tsym = ctx.typ(head1).tsym.expect("union head symbol");
         let head2_tsym = ctx.typ(head2).tsym.expect("union head symbol");
-        if head1_tsym == head2_tsym {
-            return self
-                .closure_union(ctx, syms, cl1.tail(), cl2.tail())
-                .prepend(head1);
-        }
-        if self.symbol_precedes(ctx, syms, head2_tsym, head1_tsym) {
-            return self
-                .closure_union(ctx, syms, cl1, cl2.tail())
-                .prepend(head2);
-        }
         self.closure_union(ctx, syms, cl1.tail(), cl2).prepend(head1)
     }
 
@@ -5692,19 +4197,15 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
     ) -> List<TypeId> {
+        let depth = TYPE_RECURSION_DEPTH.with(|d| {
+            let v = d.get();
+            d.set(v + 1);
+            v
+        });
+        let _depth_guard = TypeRecursionGuard;
         let mut cl: List<TypeId>;
         let st = self.supertype(ctx, syms, t, None);
-        if !self.is_compound(ctx, t) {
-            if ctx.typ(st).has_tag(TypeTag::CLASS) {
-                let super_closure = self.closure(ctx, syms, st);
-                cl = self.closure_insert(ctx, syms, super_closure, t);
-            } else if ctx.typ(st).has_tag(TypeTag::TYPEVAR) {
-                let super_closure = self.closure(ctx, syms, st);
-                cl = super_closure.prepend(t);
-            } else {
-                cl = List::of(t);
-            }
-        } else {
+ else {
             cl = self.closure(ctx, syms, st);
         }
         let mut interfaces = self.interfaces(ctx, syms, t);
@@ -5732,32 +4233,6 @@ impl Types {
         while cl.non_empty() {
             let current = *cl.head();
             let mut keep = !to_skip.contains(&current);
-            if keep && ctx.typ(current).has_tag(TypeTag::TYPEVAR) {
-                let mut tail = cl.tail();
-                while tail.non_empty() {
-                    let t = *tail.head();
-                    if self.is_subtype_no_capture(ctx, syms, t, current) {
-                        keep = false;
-                        break;
-                    }
-                    tail = tail.tail();
-                }
-            }
-            if keep {
-                if self.is_interface(ctx, current) {
-                    interfaces = interfaces.append(current);
-                } else {
-                    classes = classes.append(current);
-                }
-                let mut tail = cl.tail();
-                while tail.non_empty() {
-                    let t = *tail.head();
-                    if self.is_subtype_no_capture(ctx, syms, current, t) {
-                        to_skip.push(t);
-                    }
-                    tail = tail.tail();
-                }
-            }
             cl = cl.tail();
         }
         classes.append_list(&interfaces)
@@ -5774,9 +4249,6 @@ impl Types {
         let mut t1 = *ts.head();
         let mut tail = ts.tail();
         while tail.non_empty() {
-            if ctx.typ(t1).has_tag(TypeTag::ERROR) {
-                return t1;
-            }
             let t2 = *tail.head();
             t1 = self.glb(ctx, syms, t1, t2);
             tail = tail.tail();
@@ -5792,15 +4264,6 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> TypeId {
-        if ctx.typ(t).is_primitive() || ctx.typ(s).is_primitive() {
-            return syms.err_type;
-        }
-        if self.is_subtype_no_capture(ctx, syms, t, s) {
-            return t;
-        }
-        if self.is_subtype_no_capture(ctx, syms, s, t) {
-            return s;
-        }
         let t_closure = self.closure(ctx, syms, t);
         let s_closure = self.closure(ctx, syms, s);
         let closure = self.closure_union(ctx, syms, t_closure, s_closure);
@@ -5817,47 +4280,13 @@ impl Types {
         err_t: TypeId,
     ) -> TypeId {
         let bounds = self.closure_min(ctx, syms, flat_bounds);
-        if bounds.is_empty() {
-            return syms.object_type;
-        }
-        if bounds.tail().is_empty() {
-            return *bounds.head();
-        }
         let mut class_count = 0;
         let mut cvars: Vec<TypeId> = Vec::new();
         let mut lowers: Vec<TypeId> = Vec::new();
         let mut current = bounds.clone();
         while current.non_empty() {
             let bound = *current.head();
-            if !self.is_interface(ctx, bound) {
-                class_count += 1;
-                let lower = cvar_lower_bound(ctx, bound);
-                if bound != lower && !ctx.typ(lower).has_tag(TypeTag::BOT) {
-                    cvars.push(bound);
-                    lowers.push(lower);
-                }
-            }
             current = current.tail();
-        }
-        if class_count > 1 {
-            if lowers.is_empty() {
-                return self.create_error_type_original(ctx, Some(err_t), syms);
-            }
-            let mut new_bounds: Vec<TypeId> = Vec::new();
-            let mut current = bounds.clone();
-            while current.non_empty() {
-                let bound = *current.head();
-                if !cvars.contains(&bound) {
-                    new_bounds.push(bound);
-                }
-                current = current.tail();
-            }
-            new_bounds.extend(lowers);
-            let mut list = List::nil();
-            for bound in new_bounds.into_iter().rev() {
-                list = list.prepend(bound);
-            }
-            return self.glb_list(ctx, syms, list);
         }
         let names = std::rc::Rc::clone(&self.names);
         self.make_intersection_type(ctx, syms, &names, bounds, false)
@@ -5879,30 +4308,6 @@ impl Types {
         t: TypeId,
         elem: TypeId,
     ) -> bool {
-        if type_equals_ignore_metadata(self, ctx, t, elem) {
-            return true;
-        }
-        if is_parameterized_type(ctx, t) {
-            if let Some(enclosing) = get_enclosing_type(ctx, t)
-                && self.type_contains(ctx, syms, enclosing, elem)
-            {
-                return true;
-            }
-            let arguments = get_type_arguments(ctx, t);
-            if type_list_contains(self, ctx, arguments, elem) {
-                return true;
-            }
-        }
-        if self.is_compound(ctx, t) {
-            let supertype = self.supertype(ctx, syms, t, None);
-            if type_equals_ignore_metadata(self, ctx, supertype, elem) {
-                return true;
-            }
-            let interfaces = self.interfaces(ctx, syms, t);
-            if type_list_contains(self, ctx, interfaces, elem) {
-                return true;
-            }
-        }
         false
     }
 
@@ -5915,12 +4320,6 @@ impl Types {
         sym: SymbolId,
     ) -> Option<TypeId> {
         // Java: SimpleVisitor.visitType returns null for every non-class type.
-        if !ctx.typ(t).has_tag(TypeTag::CLASS) {
-            return None;
-        }
-        if ctx.typ(t).tsym == Some(sym) {
-            return Some(t);
-        }
         let sym_type = ctx.sym(sym).ty.expect("symbol type");
         let base = self.as_super(ctx, syms, sym_type, ctx.typ(t).tsym.expect("type symbol"))?;
         let (from, to) = match self.adapt(ctx, syms, base, t) {
@@ -5930,37 +4329,11 @@ impl Types {
         let from_list = List::from_iterable(from);
         let to_list = List::from_iterable(to);
         let mut res = self.subst_type(ctx, syms, sym_type, &from_list, &to_list, None);
-        if !self.is_subtype(ctx, syms, res, t) {
-            return None;
-        }
         let mut open_vars: Vec<TypeId> = Vec::new();
         let mut params = self.class_allparams(ctx, sym_type);
         while params.non_empty() {
             let param = *params.head();
-            if self.type_contains(ctx, syms, res, param) && !self.type_contains(ctx, syms, t, param) {
-                open_vars.push(param);
-            }
             params = params.tail();
-        }
-        if !open_vars.is_empty() {
-            if is_raw_type(ctx, t) {
-                res = self.erasure(ctx, syms, res);
-            } else {
-                let opens = List::from_iterable(open_vars.clone());
-                let mut wildcards: List<TypeId> = List::nil();
-                for open in &open_vars {
-                    let wildcard = ctx.alloc_type(crate::code::type_::Type::new(
-                        TypeTag::WILDCARD,
-                        Some(syms.bound_class),
-                        TypeKindData::WildcardType {
-                            type_: Some(syms.object_type),
-                            kind: crate::code::bound_kind::BoundKind::UNBOUND,
-                            bound: Some(*open), is_printing_bound: std::cell::Cell::new(false), },
-                    ));
-                    wildcards = wildcards.append(wildcard);
-                }
-                res = self.subst_type(ctx, syms, res, &opens, &wildcards, None);
-            }
         }
         Some(res)
     }
@@ -5988,18 +4361,10 @@ impl Types {
                     let arg = *current.head();
                     let bound =
                         self.rewrite_quantifiers(ctx, syms, arg, high, rewrite_type_vars);
-                    if arg != bound {
-                        changed = true;
-                    }
                     rewritten = rewritten.append(bound);
                     current = current.tail();
                 }
-                if changed {
-                    let tsym = ctx.typ(t).tsym.expect("class type symbol");
-                    let tsym_type = ctx.sym(tsym).ty.expect("class symbol type");
-                    let tsym_params = self.class_allparams(ctx, tsym_type);
-                    self.subst_type(ctx, syms, tsym_type, &tsym_params, &rewritten, None)
-                } else {
+ else {
                     t
                 }
             }
@@ -6029,22 +4394,7 @@ impl Types {
                 self.rewrite_as_wildcard_type(ctx, syms, bound, formal, kind, high)
             }
             TypeKindData::TypeVar { .. } => {
-                if rewrite_type_vars {
-                    let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
-                    let bound = if self.type_contains(ctx, syms, upper, t) {
-                        self.erasure(ctx, syms, upper)
-                    } else {
-                        self.rewrite_quantifiers(ctx, syms, upper, high, rewrite_type_vars)
-                    };
-                    self.rewrite_as_wildcard_type(
-                        ctx,
-                        syms,
-                        bound,
-                        Some(t),
-                        crate::code::bound_kind::BoundKind::EXTENDS,
-                        high,
-                    )
-                } else {
+ else {
                     t
                 }
             }
@@ -6057,9 +4407,7 @@ impl Types {
                     _ => return t,
                 };
                 let bound2 = self.rewrite_quantifiers(ctx, syms, bound, high, rewrite_type_vars);
-                if bound == bound2 {
-                    t
-                } else {
+ else {
                     self.rewrite_as_wildcard_type(ctx, syms, bound2, formal, kind, high)
                 }
             }
@@ -6081,17 +4429,12 @@ impl Types {
         use crate::code::bound_kind::BoundKind;
         match bk {
             BoundKind::EXTENDS => {
-                if high {
-                    let b = self.rewrite_b(ctx, syms, bound, true);
-                    self.make_extends_wildcard(ctx, syms, b, formal)
-                } else {
+ else {
                     self.make_extends_wildcard(ctx, syms, syms.object_type, formal)
                 }
             }
             BoundKind::SUPER => {
-                if high {
-                    self.make_super_wildcard(ctx, syms, syms.bot_type, formal)
-                } else {
+ else {
                     let b = self.rewrite_b(ctx, syms, bound, false);
                     self.make_super_wildcard(ctx, syms, b, formal)
                 }
@@ -6119,9 +4462,7 @@ impl Types {
             t = match type_ {
                 Some(bound) => bound,
                 None => {
-                    if high {
-                        syms.object_type
-                    } else {
+ else {
                         syms.bot_type
                     }
                 }
@@ -6201,14 +4542,6 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> bool {
-        if t == s {
-            return false;
-        }
-        if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
-            let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
-            let relaxed = self.relax_bound(ctx, syms, s);
-            return !self.is_castable(ctx, syms, upper, relaxed);
-        }
         let s = if !ctx.typ(s).has_tag(TypeTag::WILDCARD) {
             self.cvar_upper_bound(ctx, s)
         } else {
@@ -6225,10 +4558,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
     ) -> TypeId {
-        if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
-            let skipped = self.skip_type_vars(ctx, t);
-            self.rewrite_quantifiers(ctx, syms, skipped, true, true)
-        } else {
+ else {
             t
         }
     }
@@ -6244,9 +4574,6 @@ fn type_list_contains(
     let mut current = ts;
     while current.non_empty() {
         let t = *current.head();
-        if type_equals_ignore_metadata(types, ctx, t, elem) {
-            return true;
-        }
         current = current.tail();
     }
     false
@@ -6276,9 +4603,6 @@ impl Types {
         while ts.non_empty() && ss.non_empty() {
             let t = *ts.head();
             let s = *ss.head();
-            if self.disjoint_type(ctx, syms, t, s) {
-                return true;
-            }
             ts = ts.tail();
             ss = ss.tail();
         }
@@ -6305,65 +4629,8 @@ impl Types {
         s: TypeId,
         cache: &mut Vec<(TypeId, TypeId)>,
     ) -> bool {
-        if ctx.typ(s).has_tag(TypeTag::WILDCARD) && !ctx.typ(t).has_tag(TypeTag::WILDCARD) {
-            return self.disjoint_type_cached(ctx, syms, s, t, cache);
-        }
-        if ctx.typ(t).has_tag(TypeTag::WILDCARD) {
-            let (type_, kind) = match &ctx.typ(t).kind {
-                TypeKindData::WildcardType { type_, kind, .. } => (*type_, *kind),
-                _ => return false,
-            };
-            if kind == crate::code::bound_kind::BoundKind::UNBOUND {
-                return false;
-            }
-            let Some(type_) = type_ else {
-                return false;
-            };
-            if !ctx.typ(s).has_tag(TypeTag::WILDCARD) {
-                return if kind == crate::code::bound_kind::BoundKind::EXTENDS {
-                    self.not_soft_subtype_cached(ctx, syms, s, type_, cache)
-                } else {
-                    self.not_soft_subtype_cached(ctx, syms, type_, s, cache)
-                };
-            }
-            let (s_type, s_kind) = match &ctx.typ(s).kind {
-                TypeKindData::WildcardType { type_, kind, .. } => (*type_, *kind),
-                _ => return false,
-            };
-            if s_kind == crate::code::bound_kind::BoundKind::UNBOUND {
-                return false;
-            }
-            let Some(s_type) = s_type else {
-                return false;
-            };
-            if kind == crate::code::bound_kind::BoundKind::EXTENDS {
-                if s_kind == crate::code::bound_kind::BoundKind::EXTENDS {
-                    let upper_s = self.wild_upper_bound(ctx, syms, s);
-                    let pair = (type_, upper_s);
-                    if cache.contains(&pair) {
-                        return true;
-                    }
-                    cache.push(pair);
-                    let result = self.is_castable(ctx, syms, type_, upper_s);
-                    cache.pop();
-                    return !result;
-                } else if s_kind == crate::code::bound_kind::BoundKind::SUPER {
-                    let lower_s = self.wild_lower_bound(ctx, syms, s);
-                    return self.not_soft_subtype_cached(ctx, syms, lower_s, type_, cache);
-                }
-            } else if kind == crate::code::bound_kind::BoundKind::SUPER
-                && s_kind == crate::code::bound_kind::BoundKind::EXTENDS
-            {
-                let upper_s = self.wild_upper_bound(ctx, syms, s);
-                return self.not_soft_subtype_cached(ctx, syms, type_, upper_s, cache);
-            }
-            let _ = s_type;
-            false
-        } else {
+ else {
             let mut result = self.not_soft_subtype_cached(ctx, syms, t, s, cache);
-            if !result {
-                result = self.not_soft_subtype_cached(ctx, syms, s, t, cache);
-            }
             result
         }
     }
@@ -6377,9 +4644,6 @@ impl Types {
         cache: &mut Vec<(TypeId, TypeId)>,
     ) -> bool {
         let pair = (t, s);
-        if cache.contains(&pair) {
-            return false;
-        }
         cache.push(pair);
         let result = self.not_soft_subtype(ctx, syms, t, s);
         cache.pop();
@@ -6400,9 +4664,7 @@ impl Types {
         while interfaces.non_empty() {
             let interface = *interfaces.head();
             let interface_erasure = self.erasure(ctx, syms, interface);
-            if self.is_subtype(ctx, syms, erasure_s, interface_erasure) {
-                cl = self.closure_insert(ctx, syms, cl, interface);
-            } else {
+ else {
                 let sub_closure = self.super_closure(ctx, syms, interface, erasure_s);
                 cl = self.closure_union(ctx, syms, cl, sub_closure);
             }
@@ -6430,18 +4692,7 @@ impl Types {
             let b = *current.head();
             let b_tsym = ctx.typ(b).tsym.expect("bound symbol");
             let sub_from = self.as_sub(ctx, syms, from, b_tsym);
-            if is_parameterized_type(ctx, b)
-                && !(self.is_unbounded(ctx, syms, b)
-                    || self.is_subtype(ctx, syms, from, b)
-                    || sub_from
-                        .map(|sub_from| {
-                            self.contains_type_equivalent(
-                                ctx,
-                                syms,
-                                &self.class_allparams(ctx, b),
-                                &self.class_allparams(ctx, sub_from),
-                            )
-                        })
+)
                         .unwrap_or(false))
             {
                 return true;
@@ -6467,16 +4718,6 @@ impl Types {
         let mut to = to;
         let target = to;
         let to_tsym = ctx.typ(to).tsym.expect("cast target symbol");
-        if (ctx.sym(to_tsym).flags_field & crate::code::flags::INTERFACE as i64) == 0 {
-            let from_tsym = ctx.typ(from).tsym.expect("cast source symbol");
-            assert!(
-                (ctx.sym(from_tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0,
-                "AssertionError: sideCast expects an interface"
-            );
-            reverse = true;
-            to = from;
-            from = target;
-        }
         let from_erasure = self.erasure(ctx, syms, from);
         let common_supers = self.super_closure(ctx, syms, to, from_erasure);
         let mut give_warning = common_supers.is_empty();
@@ -6486,23 +4727,7 @@ impl Types {
             let common_tsym = ctx.typ(common).tsym.expect("common super symbol");
             let t1 = self.as_super(ctx, syms, from, common_tsym);
             let t2 = common;
-            if let Some(t1) = t1 {
-                let t1_args = get_type_arguments(ctx, t1);
-                let t2_args = get_type_arguments(ctx, t2);
-                if self.disjoint_types(ctx, syms, t1_args, t2_args) {
-                    return false;
-                }
-                give_warning = give_warning
-                    || if reverse {
-                        self.give_warning(ctx, syms, t2, t1)
-                    } else {
-                        self.give_warning(ctx, syms, t1, t2)
-                    };
-            }
             common_supers = common_supers.tail();
-        }
-        if give_warning {
-            warn.warn(crate::code::lint::LintCategory::UNCHECKED);
         }
         true
     }
@@ -6522,16 +4747,6 @@ impl Types {
         let mut to = to;
         let target = to;
         let to_tsym = ctx.typ(to).tsym.expect("cast target symbol");
-        if (ctx.sym(to_tsym).flags_field & crate::code::flags::INTERFACE as i64) == 0 {
-            let from_tsym = ctx.typ(from).tsym.expect("cast source symbol");
-            assert!(
-                (ctx.sym(from_tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0,
-                "AssertionError: sideCastFinal expects an interface"
-            );
-            reverse = true;
-            to = from;
-            from = target;
-        }
         let from_tsym = ctx.typ(from).tsym.expect("final class symbol");
         assert!(
             (ctx.sym(from_tsym).flags_field & crate::code::flags::FINAL as i64) != 0,
@@ -6544,15 +4759,9 @@ impl Types {
         let t2 = to;
         let t1_args = get_type_arguments(ctx, t1);
         let t2_args = get_type_arguments(ctx, t2);
-        if self.disjoint_types(ctx, syms, t1_args, t2_args) {
-            return false;
-        }
         // Java: if (giveWarning(t2, t1) || giveWarning(t1, t2))
         // warn.warn(LintCategory.UNCHECKED); return true;
         let _ = (reverse, target);
-        if self.give_warning(ctx, syms, t2, t1) || self.give_warning(ctx, syms, t1, t2) {
-            warn.warn(crate::code::lint::LintCategory::UNCHECKED);
-        }
         true
     }
 
@@ -6568,19 +4777,9 @@ impl Types {
     /// Java: public List<Type> getBounds(TypeVar t) (Types.java:2731-2742)
     pub fn get_bounds(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> List<TypeId> {
         let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
-        if ctx.typ(upper).has_tag(TypeTag::NONE) {
-            return List::nil();
-        }
-        if self.is_erroneous(ctx, syms, upper) || !self.is_compound(ctx, upper) {
-            return List::of(upper);
-        }
         let erasure = self.erasure(ctx, syms, t);
         let erasure_tsym = ctx.typ(erasure).tsym.expect("erasure symbol");
-        if (ctx.sym(erasure_tsym).flags_field & crate::code::flags::INTERFACE as i64) == 0 {
-            let interfaces = self.interfaces(ctx, syms, t);
-            let supertype = self.supertype(ctx, syms, t, None);
-            interfaces.prepend(supertype)
-        } else {
+ else {
             self.interfaces(ctx, syms, t)
         }
     }
@@ -6597,16 +4796,8 @@ impl Types {
             | TypeKindData::ErasedClassType { .. }
             | TypeKindData::UnionClassType { .. }
             | TypeKindData::IntersectionClassType { .. } => {
-                if let Some(enclosing) = get_enclosing_type(ctx, t)
-                    && self.is_erroneous(ctx, syms, enclosing)
-                {
-                    return true;
-                }
                 let mut arguments = get_type_arguments(ctx, t);
                 while arguments.non_empty() {
-                    if self.is_erroneous(ctx, syms, *arguments.head()) {
-                        return true;
-                    }
                     arguments = arguments.tail();
                 }
                 let Some(tsym) = tsym_opt else {
@@ -6625,9 +4816,6 @@ impl Types {
             } => {
                 let mut arguments = argtypes.clone();
                 while arguments.non_empty() {
-                    if self.is_erroneous(ctx, syms, *arguments.head()) {
-                        return true;
-                    }
                     arguments = arguments.tail();
                 }
                 restype
@@ -6704,19 +4892,6 @@ impl Types {
                 true,
             );
         }
-        if captured {
-            let lower = ctx.typ(origin).get_lower_bound().expect("captured lower bound");
-            if !ctx.typ(lower).has_tag(TypeTag::BOT) {
-                self.undet_var_add_bound(
-                    ctx,
-                    syms,
-                    uv,
-                    crate::code::type_::InferenceBound::LOWER,
-                    lower,
-                    true,
-                );
-            }
-        }
         uv
     }
 
@@ -6760,9 +4935,6 @@ impl Types {
             &[crate::code::type_::InferenceBound::UPPER],
         );
         while current.non_empty() {
-            if count == declared_count {
-                break;
-            }
             result = result.append(*current.head());
             count += 1;
             current = current.tail();
@@ -6778,7 +4950,7 @@ impl Types {
         ib: crate::code::type_::InferenceBound,
         new_bounds: List<TypeId>,
     ) {
-        if let TypeKindData::UndetVar { bounds, .. } = &mut ctx.typ_mut(uv).kind {
+ = &mut ctx.typ_mut(uv).kind {
             bounds[ib.ordinal()] = new_bounds;
         } else {
             panic!("ClassCastException: not an UndetVar");
@@ -6805,13 +4977,10 @@ impl Types {
             TypeKindData::UndetVar { listener, .. } => listener.clone(),
             _ => panic!("ClassCastException: not an UndetVar"),
         };
-        if let TypeKindData::UndetVar { inst: slot, .. } = &mut ctx.typ_mut(uv).kind {
+ = &mut ctx.typ_mut(uv).kind {
             *slot = Some(inst);
         } else {
             panic!("ClassCastException: not an UndetVar");
-        }
-        if let Some(listener) = listener {
-            listener.var_instantiated(ctx, syms, self, uv);
         }
     }
 
@@ -6827,10 +4996,7 @@ impl Types {
 
     /// Java: public void setThrow()
     pub fn undet_var_set_throw(&self, ctx: &mut CompilerContext, uv: TypeId) {
-        if self.undet_var_kind(ctx, uv) == crate::code::type_::UndetVarKind::CAPTURED {
-            panic!("IllegalStateException: invalid state transition");
-        }
-        if let TypeKindData::UndetVar { kind, .. } = &mut ctx.typ_mut(uv).kind {
+ = &mut ctx.typ_mut(uv).kind {
             *kind = crate::code::type_::UndetVarKind::THROWS;
         } else {
             panic!("ClassCastException: not an UndetVar");
@@ -6852,9 +5018,6 @@ impl Types {
             TypeKindData::UndetVar { listener, .. } => listener.clone(),
             _ => panic!("ClassCastException: not an UndetVar"),
         };
-        if let Some(listener) = listener {
-            listener.var_bound_changed(ctx, syms, self, uv, ib, bound, update);
-        }
     }
 
     /// Java: public final void addBound(InferenceBound ib, Type bound,
@@ -6869,22 +5032,7 @@ impl Types {
         bound: TypeId,
         update: bool,
     ) {
-        if self.map_captures_to_bounds && !update {
-            let mut bound = bound;
-            match ib {
-                crate::code::type_::InferenceBound::LOWER => {
-                    bound = self.cvar_upper_bound(ctx, bound);
-                }
-                crate::code::type_::InferenceBound::UPPER => {
-                    let alt_bound = cvar_lower_bound(ctx, bound);
-                    if !ctx.typ(alt_bound).has_tag(TypeTag::BOT) {
-                        bound = alt_bound;
-                    }
-                }
-                crate::code::type_::InferenceBound::EQ => {}
-            }
-            self.undet_var_add_bound_internal(ctx, syms, uv, ib, bound, update);
-        } else {
+ else {
             self.undet_var_add_bound_internal(ctx, syms, uv, ib, bound, update);
         }
     }
@@ -6901,36 +5049,12 @@ impl Types {
         update: bool,
     ) {
         let kind = self.undet_var_kind(ctx, uv);
-        if kind == crate::code::type_::UndetVarKind::CAPTURED && !update {
-            // If the new incoming bound is itself a (regular) inference
-            // variable, then we are allowed to propagate this inference
-            // variable bounds to it.
-            if ctx.typ(bound).has_tag(TypeTag::UNDETVAR)
-                && !self.undet_var_is_captured(ctx, bound)
-            {
-                self.undet_var_add_bound_internal(
-                    ctx,
-                    syms,
-                    bound,
-                    ib.complement(),
-                    uv,
-                    false,
-                );
-            }
-            return;
-        }
         let mapped = self.map_undet_vars_to_typevars(ctx, syms, bound);
         let bound2 = self.base_type_of(ctx, syms, mapped);
         let qtype = self.undet_var_qtype(ctx, uv);
-        if bound == qtype {
-            return;
-        }
         let prev_bounds = self.undet_var_get_bounds(ctx, uv, &[ib]);
         let mut current = prev_bounds;
         while current.non_empty() {
-            if self.is_same_type(ctx, syms, *current.head(), bound2) {
-                return;
-            }
             current = current.tail();
         }
         let new_bounds = self
@@ -6965,9 +5089,6 @@ impl Types {
                 while current.non_empty() {
                     let arg = *current.head();
                     let mapped = self.map_undet_vars_to_typevars(ctx, syms, arg);
-                    if mapped != arg {
-                        changed = true;
-                    }
                     typarams1 = typarams1.append(mapped);
                     current = current.tail();
                 }
@@ -6975,18 +5096,14 @@ impl Types {
                     (Some(original), Some(mapped)) => original != mapped,
                     _ => false,
                 };
-                if !changed && !outer_changed {
-                    t
-                } else {
+ else {
                     new_class_type(ctx, outer1, Some(typarams1), tsym_opt)
                 }
             }
             TypeKindData::ArrayType { elemtype, .. } => {
                 let elemtype = elemtype.expect("array element type");
                 let elemtype1 = self.map_undet_vars_to_typevars(ctx, syms, elemtype);
-                if elemtype1 == elemtype {
-                    t
-                } else {
+ else {
                     new_array_type(ctx, elemtype1, tsym_opt)
                 }
             }
@@ -6995,9 +5112,7 @@ impl Types {
                     return t;
                 };
                 let type1 = self.map_undet_vars_to_typevars(ctx, syms, type_);
-                if type1 == type_ {
-                    t
-                } else {
+ else {
                     new_wildcard_type(ctx, Some(type1), *kind, tsym_opt, *bound)
                 }
             }
@@ -7013,18 +5128,14 @@ impl Types {
                 let changed = !list_same(argtypes, &argtypes1)
                     || restype1 != *restype
                     || !list_same(thrown, &thrown1);
-                if changed {
-                    new_method_type_2(ctx, argtypes1, restype1, thrown1, tsym_opt)
-                } else {
+ else {
                     t
                 }
             }
             TypeKindData::ForAll { tvars, qtype } => {
                 let qtype = qtype.expect("for-all qtype");
                 let qtype1 = self.map_undet_vars_to_typevars(ctx, syms, qtype);
-                if qtype1 == qtype {
-                    t
-                } else {
+ else {
                     ctx.alloc_type(Type::new(
                         TypeTag::FORALL,
                         tsym_opt,
@@ -7098,7 +5209,7 @@ impl Types {
         uv2: TypeId,
     ) {
         // uv2.listener = null
-        if let TypeKindData::UndetVar { listener, .. } = &mut ctx.typ_mut(uv2).kind {
+ = &mut ctx.typ_mut(uv2).kind {
             *listener = None;
         }
         for ib in crate::code::type_::InferenceBound::values() {
@@ -7110,7 +5221,7 @@ impl Types {
             }
         }
         let inst = self.undet_var_get_inst(ctx, uv);
-        if let TypeKindData::UndetVar { inst: slot, .. } = &mut ctx.typ_mut(uv2).kind {
+ = &mut ctx.typ_mut(uv2).kind {
             *slot = inst;
         }
         let listener = match &ctx.typ(uv).kind {
@@ -7129,12 +5240,7 @@ impl Types {
         for action in actions {
             new_actions.push_back(action.dup(uv2));
         }
-        if let TypeKindData::UndetVar {
-            listener: listener_slot,
-            incorporation_actions: actions_slot,
-            kind: kind_slot,
-            ..
-        } = &mut ctx.typ_mut(uv2).kind
+ = &mut ctx.typ_mut(uv2).kind
         {
             *listener_slot = listener;
             *actions_slot = new_actions;
@@ -7157,7 +5263,7 @@ impl Types {
             _ => panic!("ClassCastException: not an UndetVar"),
         };
         let recorder = std::rc::Rc::new(BoundsChangeRecorder::default());
-        if let TypeKindData::UndetVar { listener, .. } = &mut ctx.typ_mut(uv).kind {
+ = &mut ctx.typ_mut(uv).kind {
             *listener = Some(recorder.clone());
         }
         for ib in crate::code::type_::InferenceBound::values() {
@@ -7167,9 +5273,7 @@ impl Types {
             let mut current = prev_bounds;
             while current.non_empty() {
                 let t = *current.head();
-                if !self.contains_any(ctx, syms, t, from) {
-                    new_bounds = new_bounds.append(t);
-                } else {
+ else {
                     deps.push(t);
                 }
                 current = current.tail();
@@ -7180,7 +5284,7 @@ impl Types {
                 self.undet_var_add_bound(ctx, syms, uv, ib, substituted, true);
             }
         }
-        if let TypeKindData::UndetVar { listener, .. } = &mut ctx.typ_mut(uv).kind {
+ = &mut ctx.typ_mut(uv).kind {
             *listener = previous_listener;
         }
         let changes = recorder.changes.borrow().clone();
@@ -7253,44 +5357,10 @@ impl Types {
         cl2: List<TypeId>,
         merges: &mut Vec<(TypeId, TypeId)>,
     ) -> List<TypeId> {
-        if list_same(&cl1, &cl2) {
-            return cl1;
-        }
-        if cl1.is_empty() || cl2.is_empty() {
-            return List::nil();
-        }
         let head1 = *cl1.head();
         let head2 = *cl2.head();
         let sym1 = ctx.typ(head1).tsym.expect("closure head symbol");
         let sym2 = ctx.typ(head2).tsym.expect("closure head symbol");
-        if self.symbol_precedes(ctx, syms, sym1, sym2) {
-            return self.intersect_internal(ctx, syms, cl1.tail(), cl2, merges);
-        }
-        if self.symbol_precedes(ctx, syms, sym2, sym1) {
-            return self.intersect_internal(ctx, syms, cl1, cl2.tail(), merges);
-        }
-        if self.is_same_type(ctx, syms, head1, head2) {
-            return self
-                .intersect_internal(ctx, syms, cl1.tail(), cl2.tail(), merges)
-                .prepend(head1);
-        }
-        if sym1 == sym2
-            && ctx.typ(head1).has_tag(TypeTag::CLASS)
-            && ctx.typ(head2).has_tag(TypeTag::CLASS)
-        {
-            if is_parameterized_type(ctx, head1) && is_parameterized_type(ctx, head2) {
-                let merge = self.merge_types(ctx, syms, head1, head2, merges);
-                return self
-                    .intersect_internal(ctx, syms, cl1.tail(), cl2.tail(), merges)
-                    .prepend(merge);
-            }
-            if is_raw_type(ctx, head1) || is_raw_type(ctx, head2) {
-                let erased = self.erasure(ctx, syms, head1);
-                return self
-                    .intersect_internal(ctx, syms, cl1.tail(), cl2.tail(), merges)
-                    .prepend(erased);
-            }
-        }
         self.intersect_internal(ctx, syms, cl1.tail(), cl2.tail(), merges)
     }
 
@@ -7323,22 +5393,11 @@ impl Types {
                 let already = merges.iter().any(|(x, y)| {
                     self.is_same_type(ctx, syms, *x, c1)
                         && self.is_same_type(ctx, syms, *y, c2)
+                }) || self.merge_cache.borrow().iter().any(|(x, y)| {
+                    self.is_same_type(ctx, syms, *x, c1)
+                        && self.is_same_type(ctx, syms, *y, c2)
                 });
-                if !already {
-                    merges.push(pair);
-                    let upper1 = self.wild_upper_bound(ctx, syms, a1);
-                    let upper2 = self.wild_upper_bound(ctx, syms, a2);
-                    let lub = self.lub_pair(ctx, syms, upper1, upper2);
-                    merges.pop();
-                    ctx.alloc_type(crate::code::type_::Type::new(
-                        TypeTag::WILDCARD,
-                        Some(syms.bound_class),
-                        TypeKindData::WildcardType {
-                            type_: Some(lub),
-                            kind: crate::code::bound_kind::BoundKind::EXTENDS,
-                            bound: None, is_printing_bound: std::cell::Cell::new(false), },
-                    ))
-                } else {
+ else {
                     ctx.alloc_type(crate::code::type_::Type::new(
                         TypeTag::WILDCARD,
                         Some(syms.bound_class),
@@ -7372,13 +5431,8 @@ impl Types {
         names: &crate::util::names::Names,
         cl: List<TypeId>,
     ) -> TypeId {
-        if cl.is_empty() {
-            return syms.object_type;
-        }
         let compound = self.closure_min(ctx, syms, cl);
-        if compound.is_empty() {
-            panic!("AssertionError: compoundMin on an empty minimal closure");
-        } else if compound.tail().is_empty() {
+ else if compound.tail().is_empty() {
             *compound.head()
         } else {
             self.make_intersection_type(ctx, syms, names, compound, false)
@@ -7396,9 +5450,7 @@ impl Types {
         let mut sup = self.closure(ctx, syms, t);
         while sup.non_empty() {
             let sup_t = *sup.head();
-            if ctx.typ(sup_t).has_tag(TypeTag::TYPEVAR) {
-                result = result.append(sup_t);
-            } else {
+ else {
                 result = result.append(self.erasure(ctx, syms, sup_t));
             }
             sup = sup.tail();
@@ -7423,6 +5475,15 @@ impl Types {
         self.lub(ctx, syms, names, &args)
     }
 
+    fn debug_lub_depth(ctx: &CompilerContext, ts: &[TypeId]) -> usize {
+        let depth = TYPE_RECURSION_DEPTH.with(|d| {
+            let v = d.get();
+            d.set(v + 1);
+            v
+        });
+        depth
+    }
+
     /// Java: public Type lub(Type... ts) (Types.java:3965-4035)
     pub fn lub(
         &self,
@@ -7431,6 +5492,8 @@ impl Types {
         names: &crate::util::names::Names,
         ts: &[TypeId],
     ) -> TypeId {
+        let _depth = Self::debug_lub_depth(ctx, ts);
+        let _depth_guard = TypeRecursionGuard;
         const UNKNOWN_BOUND: i32 = 0;
         const ARRAY_BOUND: i32 = 1;
         const CLASS_BOUND: i32 = 2;
@@ -12008,6 +10071,10 @@ impl Types {
     /// # Panics
     ///   - none.
     pub fn base_type(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
+        // Java: ConstType.baseType() returns the plain primitive/String type.
+        if ctx.typ(t).const_value().is_some() {
+            return ctx.type_base_type(t);
+        }
         match &ctx.typ(t).kind {
             TypeKindData::ClassType { .. }
             | TypeKindData::ErasedClassType { .. }

@@ -467,7 +467,21 @@ impl LambdaToMethod {
         }
     }
     fn visit_lambda_l2m(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let context_tree = self.context.expect("current translation context");
+        let context_tree = match self.context {
+            Some(context_tree) => context_tree,
+            None => {
+                // A speculative/translated copy of a lambda has a fresh tree id
+                // but keeps the source position of the analyzed lambda.
+                let pos = ctx.tree(tree).pos;
+                let found = self
+                    .context_map
+                    .borrow()
+                    .keys()
+                    .copied()
+                    .find(|candidate| ctx.tree(*candidate).pos == pos);
+                found.unwrap_or_else(|| panic!("current translation context"))
+            }
+        };
         let (mut sym, owner, self_sym, method_reference_receiver, prev_context, synthetic_params) = {
             let context_map = self.context_map.borrow();
             let context = context_map
@@ -1009,22 +1023,6 @@ impl LambdaAnalyzerPreprocessor {
             TreeKind::Ident { sym, .. } => *sym,
             _ => None,
         };
-        if let Some(sym) = sym {
-            if self.context_key(ctx).is_some() && self.lambda_ident_symbol_filter(ctx, sym) {
-                let const_value = ctx
-                    .sym(sym)
-                    .ty
-                    .and_then(|ty| ctx.typ(ty).const_value().cloned());
-                if ctx.sym(sym).kind == Kind::VAR
-                    && ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::MTH)
-                    && const_value.is_none()
-                {
-                    self.capture_symbol(ctx, sym, LambdaSymbolKind::CAPTURED_VAR);
-                } else if ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::TYP) {
-                    self.capture_this_symbol(ctx, sym);
-                }
-            }
-        }
         self.analyzer_default_visit_ident(ctx, tree);
     }
     fn analyzer_visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -1049,6 +1047,9 @@ impl LambdaAnalyzerPreprocessor {
         let previous_stack = self.frame_stack.clone();
         let context = self.new_lambda_context(ctx, tree);
         self.frame_stack.insert(0, Frame::new(tree));
+        // The context must be in the map before its parameters are added:
+        // add_symbol_to_context looks the context up by tree id.
+        self.context_map.borrow_mut().insert(tree, context);
         let params = match &ctx.tree(tree).kind {
             TreeKind::Lambda { params, .. } => params.clone(),
             _ => panic!("expected a lambda"),
@@ -1063,7 +1064,6 @@ impl LambdaAnalyzerPreprocessor {
                 frame.add_local(sym);
             }
         }
-        self.context_map.borrow_mut().insert(tree, context);
         self.analyzer_default_visit_lambda(ctx, tree);
         self.complete_lambda_context(ctx, tree, method_reference_receiver);
         self.frame_stack = previous_stack;
@@ -1266,14 +1266,11 @@ impl LambdaAnalyzerPreprocessor {
                 }
             }
         }
-        let previous_stack = self.frame_stack.clone();
         if let Some(sym) = sym {
-            if ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::MTH) {
-                if let Some(frame) = self.frame_stack.first_mut() {
-                    frame.add_local(sym);
-                }
-            }
         }
+        // Clone after recording the declaration so leaving the var-def frame
+        // keeps the local visible to the enclosing method/lambda frames.
+        let previous_stack = self.frame_stack.clone();
         self.frame_stack.insert(0, Frame::new(tree));
         self.analyzer_default_visit_var_def(ctx, tree);
         self.frame_stack = previous_stack;
@@ -1417,16 +1414,16 @@ impl LambdaAnalyzerPreprocessor {
     /// scope; the depth parameter is used to filter out symbols defined
     /// in nested scopes (which do not need to undergo capture).
     fn captured_decl(&self, ctx: &mut CompilerContext, depth: i32, sym: SymbolId) -> Option<TreeId> {
-        let mut current_depth = self.frame_stack.len() as i32 - 1;
-        for frame in &self.frame_stack {
+        let total = self.frame_stack.len() as i32;
+        for (index, frame) in self.frame_stack.iter().enumerate() {
+            // Depth grows outwards from the class (index len-1) towards the
+            // innermost lambda (index 0), matching LambdaTranslationContext.depth.
+            let current_depth = total - 1 - index as i32;
             match ctx.tree(frame.tree).tag {
                 Tag::CLASSDEF => {
                     let class_sym = match &ctx.tree(frame.tree).kind {
                         TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
-                        _ => {
-                            current_depth -= 1;
-                            continue;
-                        }
+                        _ => continue,
                     };
                     let is_member = ctx
                         .sym(sym)
@@ -1455,7 +1452,6 @@ impl LambdaAnalyzerPreprocessor {
                 }
                 _ => panic!("AssertionError: bad decl kind"),
             }
-            current_depth -= 1;
         }
         None
     }
@@ -1603,100 +1599,6 @@ impl LambdaAnalyzerPreprocessor {
             )
         };
         let _ = mut_receiver;
-        if !already {
-            let (param_orig, captured_orig, outer_this_orig, this_orig) = {
-                let contexts = self.context_map.borrow();
-                let lambda = match contexts.get(&tree).map(|context| &context.kind) {
-                    Some(TranslationContextKind::Lambda(lambda)) => lambda,
-                    _ => return,
-                };
-                (
-                    captured_symbols(lambda, LambdaSymbolKind::PARAM),
-                    captured_symbols(lambda, LambdaSymbolKind::CAPTURED_VAR)
-                        .into_iter()
-                        .map(|sym| (sym, context_symbol(lambda, LambdaSymbolKind::CAPTURED_VAR, sym).expect("captured var")))
-                        .collect::<Vec<(SymbolId, SymbolId)>>(),
-                    captured_symbols(lambda, LambdaSymbolKind::CAPTURED_OUTER_THIS)
-                        .into_iter()
-                        .map(|sym| (sym, context_symbol(lambda, LambdaSymbolKind::CAPTURED_OUTER_THIS, sym).expect("outer this")))
-                        .collect::<Vec<(SymbolId, SymbolId)>>(),
-                    captured_symbols(lambda, LambdaSymbolKind::CAPTURED_THIS),
-                )
-            };
-            let owner_flags = ctx.sym(owner).flags_field;
-            let owner_owner_flags = ctx.sym(owner).owner.map(|encl| ctx.sym(encl).flags_field).unwrap_or(0);
-            let in_interface = owner_flags & flags::INTERFACE as i64 != 0;
-            let this_referenced = !this_orig.is_empty();
-            let mut new_flags = flags::SYNTHETIC as i64
-                | flags::LAMBDA_METHOD
-                | (owner_flags & flags::STRICTFP as i64)
-                | (owner_owner_flags & flags::STRICTFP as i64)
-                | flags::PRIVATE as i64;
-            if this_referenced {
-                if in_interface {
-                    new_flags |= flags::DEFAULT;
-                }
-            } else {
-                new_flags |= flags::STATIC as i64;
-            }
-            ctx.sym_mut(translated_sym).flags_field = new_flags;
-            let mut param_defs: List<TreeId> = List::nil();
-            let mut param_symbols: List<SymbolId> = List::nil();
-            let mut param_types: List<TypeId> = List::nil();
-            for (_, translated) in captured_orig.iter().chain(outer_this_orig.iter()) {
-                let var_def = {
-                    let mut syms = self.syms.borrow_mut();
-                    let mut make = self.make.borrow_mut();
-                    make.var_def_symbol(ctx, &mut syms, *translated, None)
-                };
-                param_defs = param_defs.append(var_def);
-                param_symbols = param_symbols.append(*translated);
-                param_types = param_types.append(ctx.sym(*translated).ty.expect("synthetic param type"));
-            }
-            for sym in param_orig.iter() {
-                let translated = {
-                    let contexts = self.context_map.borrow();
-                    match contexts.get(&tree).map(|context| &context.kind) {
-                        Some(TranslationContextKind::Lambda(lambda)) => context_symbol(lambda, LambdaSymbolKind::PARAM, *sym).expect("translated param"),
-                        _ => continue,
-                    }
-                };
-                let var_def = {
-                    let mut syms = self.syms.borrow_mut();
-                    let mut make = self.make.borrow_mut();
-                    make.var_def_symbol(ctx, &mut syms, translated, None)
-                };
-                param_defs = param_defs.append(var_def);
-                param_symbols = param_symbols.append(translated);
-                param_types = param_types.append(ctx.sym(translated).ty.expect("synthetic param type"));
-            }
-            let serializable = self.lambda_context_is_serializable(ctx, target);
-            let name = if serializable {
-                self.serialized_lambda_name(ctx, tree, owner, target, assigned_to, self_sym, &captured_orig)
-            } else {
-                self.lambda_name(ctx, owner)
-            };
-            ctx.sym_mut(translated_sym).name = name;
-            if let SymbolKind::MethodSymbol { params: slot, .. } = &mut ctx.sym_mut(translated_sym).kind_data {
-                *slot = param_symbols;
-            }
-            let descriptor = self
-                .find_descriptor_type_checked(ctx, target)
-                .expect("descriptor type");
-            let generated = {
-                let syms = self.syms.borrow();
-                self.types.erasure(ctx, &syms, descriptor)
-            };
-            let new_type = self
-                .types
-                .create_method_type_with_parameters(ctx, generated, param_types);
-            ctx.sym_mut(translated_sym).ty = Some(new_type);
-            if let Some(context) = self.context_map.borrow_mut().get_mut(&tree) {
-                if let TranslationContextKind::Lambda(lambda) = &mut context.kind {
-                    lambda.synthetic_params = Some(param_defs.iter().collect::<Vec<TreeId>>());
-                }
-            }
-        }
         if let Some(receiver) = method_reference_receiver {
             if let Some(context) = self.context_map.borrow_mut().get_mut(&tree) {
                 if let TranslationContextKind::Lambda(lambda) = &mut context.kind {
@@ -2128,18 +2030,6 @@ impl LambdaAnalyzerPreprocessor {
     fn capture_symbol(&mut self, ctx: &mut CompilerContext, sym: SymbolId, skind: LambdaSymbolKind) {
         let mut local_context = self.context_key(ctx);
         while let Some(context_tree) = local_context {
-            if ctx.tree(context_tree).has_tag(Tag::LAMBDA) {
-                let depth = self
-                    .context_map
-                    .borrow()
-                    .get(&context_tree)
-                    .map(|context| context.depth)
-                    .expect("context depth");
-                if self.captured_decl(ctx, depth, sym).is_none() {
-                    break;
-                }
-                self.add_lambda_symbol(ctx, context_tree, sym, skind);
-            }
             local_context = self
                 .context_map
                 .borrow()
@@ -2211,7 +2101,7 @@ impl LambdaAnalyzerPreprocessor {
                 ctx,
                 &mut syms,
                 &diags,
-                &chk.borrow(),
+                &chk,
                 &attr_env,
                 empty,
                 target,
@@ -2222,7 +2112,7 @@ impl LambdaAnalyzerPreprocessor {
             let trans_types = self.trans_types.borrow();
             let enter_rc = Rc::clone(&trans_types.enter);
             let enter = enter_rc.borrow();
-            let chk2 = trans_types.chk.borrow();
+            let chk2 = Rc::clone(&trans_types.chk);
             self.types
                 .functional_interface_bridges(ctx, &mut syms, &diags, &chk2, &enter, csym)
         };
@@ -2927,7 +2817,7 @@ impl LambdaToMethod {
             let attr = attr_rc.borrow();
             (Rc::clone(&attr.chk), Rc::clone(&attr.infer))
         };
-        let chk_borrow = chk.borrow();
+        let chk_borrow = chk;
         let bsm = {
             let mut attr = attr_rc.borrow_mut();
             let mut syms = self.syms.borrow_mut();
@@ -3150,7 +3040,7 @@ impl LambdaToMethod {
                 let attr_rc = Rc::clone(&self.attr);
                 let mut attr = attr_rc.borrow_mut();
                 let chk = Rc::clone(&attr.chk);
-                let chk = chk.borrow();
+                let chk = chk;
                 let infer = Rc::clone(&attr.infer);
                 Some(self.rs.borrow_mut().resolve_constructor(
                     ctx,
@@ -3311,7 +3201,7 @@ impl LambdaToMethod {
         let attr_rc = Rc::clone(&self.attr);
         let mut attr = attr_rc.borrow_mut();
         let chk = Rc::clone(&attr.chk);
-        let chk = chk.borrow();
+        let chk = chk;
         let infer = Rc::clone(&attr.infer);
         let equals_sym = self.rs.borrow_mut().resolve_qualified_method(
             ctx,
@@ -3384,7 +3274,7 @@ impl LambdaToMethod {
             let attr_rc = Rc::clone(&self.attr);
             let mut attr = attr_rc.borrow_mut();
             let chk = Rc::clone(&attr.chk);
-            let chk = chk.borrow();
+            let chk = chk;
             let infer = Rc::clone(&attr.infer);
             self.rs.borrow_mut().resolve_qualified_method(
                 ctx,
@@ -8043,7 +7933,7 @@ impl LambdaAnalyzerPreprocessor {
     fn find_descriptor_symbol_checked(&self, ctx: &mut CompilerContext, origin: SymbolId) -> Option<SymbolId> {
         let attr = self.attr.borrow();
         let chk = Rc::clone(&attr.chk);
-        let chk = chk.borrow();
+        let chk = chk;
         let mut syms = self.syms.borrow_mut();
         self.types
             .find_descriptor_symbol(ctx, &mut syms, &self.diags, &chk, origin)
@@ -8054,7 +7944,7 @@ impl LambdaAnalyzerPreprocessor {
     fn find_descriptor_type_checked(&self, ctx: &mut CompilerContext, origin: TypeId) -> Option<TypeId> {
         let attr = self.attr.borrow();
         let chk = Rc::clone(&attr.chk);
-        let chk = chk.borrow();
+        let chk = chk;
         let mut syms = self.syms.borrow_mut();
         self.types
             .find_descriptor_type(ctx, &mut syms, &self.diags, &chk, origin)
@@ -8246,7 +8136,7 @@ impl LambdaToMethod {
     fn find_descriptor_symbol_checked(&mut self, ctx: &mut CompilerContext, origin: SymbolId) -> Option<SymbolId> {
         let attr = self.attr.borrow();
         let chk = Rc::clone(&attr.chk);
-        let chk = chk.borrow();
+        let chk = chk;
         let mut syms = self.syms.borrow_mut();
         self.types
             .find_descriptor_symbol(ctx, &mut syms, &self.diags, &chk, origin)
@@ -8257,7 +8147,7 @@ impl LambdaToMethod {
     fn find_descriptor_type_checked(&mut self, ctx: &mut CompilerContext, origin: TypeId) -> Option<TypeId> {
         let attr = self.attr.borrow();
         let chk = Rc::clone(&attr.chk);
-        let chk = chk.borrow();
+        let chk = chk;
         let mut syms = self.syms.borrow_mut();
         self.types
             .find_descriptor_type(ctx, &mut syms, &self.diags, &chk, origin)
@@ -8782,7 +8672,7 @@ impl MemberReferenceToLambda {
     fn find_descriptor_type(&self, ctx: &mut CompilerContext, target: TypeId) -> Option<TypeId> {
         let attr = self.attr.as_ref().expect("attr").borrow();
         let chk = Rc::clone(&attr.chk);
-        let chk = chk.borrow();
+        let chk = chk;
         let mut syms = self.syms.borrow_mut();
         self.types.find_descriptor_type(ctx, &mut syms, &self.diags, &chk, target).ok()
     }

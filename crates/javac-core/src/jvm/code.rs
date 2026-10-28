@@ -1169,9 +1169,44 @@ impl Code {
                 self.push(ctx, t);
             }
             ALOAD_1 => {
-                let t = ctx.sym(self.lvar[1].as_ref().expect("local 1").sym)
-                    .ty
-                    .expect("local type");
+                let Some(local) = self.lvar[1].as_ref() else {
+                    let method = ctx.sym(self.meth);
+                    let owner = method
+                        .owner
+                        .map(|owner| crate::comp::resolve::symbol_display_name(ctx, owner))
+                        .unwrap_or_default();
+                    let (p, ep, cl) = match &method.kind_data {
+                        crate::code::symbol::SymbolKind::MethodSymbol {
+                            params,
+                            extra_params,
+                            captured_locals,
+                            ..
+                        } => (params.length(), extra_params.length(), captured_locals.length()),
+                        _ => (-1, -1, -1),
+                    };
+                    let locals: Vec<String> = self
+                        .lvar
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, v)| {
+                            v.as_ref().map(|v| {
+                                format!(
+                                    "{i}:{}@{:?}",
+                                    ctx.sym(v.sym).name.to_java_string().to_string_lossy(),
+                                    ctx.sym(v.sym).local_adr()
+                                )
+                            })
+                        })
+                        .collect();
+                    panic!(
+                        "ALOAD_1 without local 1 in {}::{} nextreg={} lvars={} params={p} extra={ep} captured={cl} locals={locals:?}",
+                        owner,
+                        method.name.to_java_string().to_string_lossy(),
+                        self.nextreg,
+                        self.lvar.len(),
+                    );
+                };
+                let t = ctx.sym(local.sym).ty.expect("local type");
                 self.push(ctx, t);
             }
             ALOAD_2 => {

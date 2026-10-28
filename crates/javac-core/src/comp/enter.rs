@@ -56,7 +56,7 @@ pub struct Enter {
     pub log: Rc<RefCell<Log>>,
     pub names: Rc<Names>,
     pub diags: Rc<Factory>,
-    pub chk: Rc<RefCell<Check>>,
+    pub chk: Rc<Check>,
     pub types: Rc<crate::code::types::Types>,
     pub lint: Option<Rc<crate::code::lint::Lint>>,
     pub file_manager: Rc<dyn JavaFileManager>,
@@ -98,7 +98,7 @@ impl Enter {
         log: Rc<RefCell<Log>>,
         names: Rc<Names>,
         diags: Rc<Factory>,
-        chk: Rc<RefCell<Check>>,
+        chk: Rc<Check>,
         types: Rc<crate::code::types::Types>,
         lint: Option<Rc<crate::code::lint::Lint>>,
         file_manager: Rc<dyn JavaFileManager>,
@@ -274,10 +274,7 @@ impl Enter {
     /// Java: WriteableScope enterScope(Env<AttrContext> env)
     pub(crate) fn enter_scope(&self, ctx: &mut CompilerContext, env: &Rc<Env<AttrContext>>) -> ScopeId {
         let tree = env.tree.expect("env.tree");
-        if ctx.tree(tree).has_tag(Tag::CLASSDEF) {
-            let class = class_tree_symbol(ctx, tree).expect("class symbol");
-            class_members_scope(ctx, class).expect("class members_field")
-        } else {
+ else {
             env.info.borrow().scope.expect("env.info.scope")
         }
     }
@@ -325,7 +322,7 @@ impl Enter {
             Ok(()) => self.result.get(),
             Err(failure) => {
                 // Java: return chk.completionError(tree.pos(), ex);
-                Some(self.chk.borrow().completion_error(
+                Some(self.chk.completion_error(
                     ctx,
                     ctx.tree(tree).pos,
                     &failure,
@@ -352,9 +349,6 @@ impl Enter {
         let mut list = trees;
         while list.non_empty() {
             let tree = *list.head();
-            if let Some(ty) = self.class_enter(ctx, syms, tree, env.clone()) {
-                ts = ts.append(ty);
-            }
             list = list.tail();
         }
         ts
@@ -389,56 +383,9 @@ impl Enter {
         let is_pkg_info = sourcefile
             .is_name_compatible(&javac_strings::JavaString::from("package-info"), Kind::SOURCE);
         let module = compilation_unit_module(ctx, tree).expect("tree.modle");
-        if tree_info::is_module_info(ctx, tree) {
+ else {
             let pd = compilation_unit_package_decl(ctx, tree);
-            if let Some(pd) = pd {
-                self.log.borrow_mut().error_at(
-                    ctx.tree(pd).pos,
-                    JCDiagnosticError::from(errors::no_pkg_in_module_info_java()),
-                );
-            }
-            set_compilation_unit_package(ctx, tree, syms.root_package);
-            let top_env = self.top_level_env(ctx, tree);
-            self.class_enter_list(ctx, syms, compilation_unit_defs(ctx, tree), Some(top_env));
-            // Java: tree.modle.usesProvidesCompleter =
-            // modules.getUsesProvidesCompleter() (Enter.java:324).
-            if let Some(modules) = self.modules.borrow().clone() {
-                let completer = modules.get_uses_provides_completer();
-                if let crate::code::symbol::SymbolKind::ModuleSymbol {
-                    uses_provides_completer,
-                    ..
-                } = &mut ctx.sym_mut(module).kind_data
-                {
-                    *uses_provides_completer = Some(completer);
-                }
-            }
-        } else {
-            let pd = compilation_unit_package_decl(ctx, tree);
-            if let Some(pd) = pd {
-                let pid = package_decl_pid(ctx, pd).expect("PackageDecl.pid");
-                let package_name = tree_info::full_name(ctx, pid).expect("package name");
-                let packge = syms.enter_package(ctx, module, package_name);
-                set_compilation_unit_package(ctx, tree, packge);
-                set_package_decl_package(ctx, pd, packge);
-                self.set_package_symbols(ctx, pd, packge);
-                let annotations = package_decl_annotations(ctx, pd);
-                if !annotations.is_empty()
-                    || self.pkginfo_opt == crate::main::option::PkgInfo::ALWAYS
-                    || compilation_unit_doc_comments(ctx, tree)
-                {
-                    if is_pkg_info {
-                        add_env = true;
-                    } else if !annotations.is_empty() {
-                        let first = *annotations.head();
-                        self.log.borrow_mut().error_at(
-                            ctx.tree(first).pos,
-                            JCDiagnosticError::from(
-                                errors::pkg_annotations_sb_in_package_info_java(),
-                            ),
-                        );
-                    }
-                }
-            } else {
+ else {
                 let unnamed = module_unnamed_package(ctx, module).expect("unnamed package");
                 set_compilation_unit_package(ctx, tree, unnamed);
             }
@@ -466,22 +413,6 @@ impl Enter {
                         && visible_packages.get(&packge_fullname).copied()
                             == syms.get_package(*candidate, &packge_fullname)
                 });
-            if let Some(dependency) = dependency_with_package {
-                let pos = pd
-                    .map(|pd| ctx.tree(pd).pos)
-                    .unwrap_or(crate::util::position::NOPOS);
-                let name = ctx
-                    .sym(dependency)
-                    .name
-                    .to_java_string()
-                    .to_string_lossy();
-                self.log.borrow_mut().error_at(
-                    pos,
-                    JCDiagnosticError::from(errors::package_in_other_module(
-                        crate::resources::diagnostic_contract::SymbolArg::placeholder(name),
-                    )),
-                );
-            }
             let packge = compilation_unit_package(ctx, tree).expect("tree.packge");
             // Java: tree.packge.complete(); // Find all classes in package.
             ctx.complete_symbol(syms, packge)?;
@@ -492,73 +423,7 @@ impl Enter {
             } else {
                 None
             };
-            if is_pkg_info {
-                let package_env = package_env.clone().expect("package env");
-                let existing = self.type_envs.borrow().get(packge);
-                if let Some(env0) = existing {
-                    let tree0 = env0.toplevel.expect("toplevel");
-                    let file0 = compilation_unit_sourcefile(ctx, tree0).expect("sourcefile");
-                    if !self.file_manager.is_same_file(
-                        &(Rc::clone(&sourcefile) as javac_tools::tools::java_file_manager::FileObjectRef),
-                        &(Rc::clone(&file0) as javac_tools::tools::java_file_manager::FileObjectRef),
-                    ) {
-                        let pd = compilation_unit_package_decl(ctx, tree);
-                        let pos = pd
-                            .and_then(|pd| package_decl_pid(ctx, pd))
-                            .map(|pid| ctx.tree(pid).pos)
-                            .unwrap_or(ctx.tree(tree).pos);
-                        let warn = JCDiagnosticWarning::from(warnings::pkg_info_already_seen(
-                            SymbolArg::placeholder(ctx.sym(packge).name.to_java_string().to_string_lossy()),
-                        ));
-                        self.log.borrow_mut().warning_at(pos, warn);
-                    }
-                }
-                self.type_envs.borrow_mut().put(packge, package_env);
-                // Java: for (Symbol q = tree.packge; q != null && q.kind == PCK;
-                // q = q.owner) q.flags_field |= EXISTS;
-                let mut q = Some(packge);
-                while let Some(current) = q {
-                    if ctx.sym(current).kind != crate::code::kinds::Kind::PCK {
-                        break;
-                    }
-                    ctx.sym_mut(current).flags_field |= flags::EXISTS as i64;
-                    q = ctx.sym(current).owner;
-                }
-                let name = self.names.package_info.clone();
-                let c = syms.enter_class(ctx, module, name.clone(), Some(packge));
-                let flatname = self.names.from_string(&javac_strings::JavaString::from(
-                    format!("{}.{}", package_fullname(ctx, packge), name.to_java_string()).as_str(),
-                ));
-                if let SymbolKind::ClassSymbol { flatname: slot, .. } = &mut ctx.sym_mut(c).kind_data
-                {
-                    *slot = flatname;
-                }
-                if let SymbolKind::ClassSymbol { sourcefile: slot, .. } =
-                    &mut ctx.sym_mut(c).kind_data
-                {
-                    *slot = Some(Rc::clone(&sourcefile));
-                }
-                ctx.sym_mut(c).completer = None;
-                let scope = ctx.scope_create(Some(c));
-                if let SymbolKind::ClassSymbol { members_field, .. } = &mut ctx.sym_mut(c).kind_data {
-                    *members_field = Some(scope);
-                }
-                if let SymbolKind::PackageSymbol { package_info, .. } =
-                    &mut ctx.sym_mut(packge).kind_data
-                {
-                    *package_info = Some(c);
-                }
-                if let SymbolKind::PackageSymbol { sourcefile: slot, .. } =
-                    &mut ctx.sym_mut(packge).kind_data
-                {
-                    *slot = Some(Rc::clone(&sourcefile));
-                }
-            }
             self.class_enter_list(ctx, syms, compilation_unit_defs(ctx, tree), Some(top_env.clone()));
-            if add_env {
-                let package_env = package_env.clone().expect("package env");
-                self.todo.borrow_mut().append(ctx, package_env);
-            }
         }
         self.log.borrow_mut().use_source(prev_source);
         self.result.set(None);
@@ -568,9 +433,6 @@ impl Enter {
     /// Java: private final TreeScanner setPackageSymbols (visitPackageDef/
     /// visitSelect/visitIdent); expressed as a recursion (registered adapter).
     fn set_package_symbols(&self, ctx: &mut CompilerContext, pd: TreeId, packge: SymbolId) {
-        if let Some(pid) = package_decl_pid(ctx, pd) {
-            self.set_package_symbols_for(ctx, pid, packge);
-        }
     }
 
     fn set_package_symbols_for(&self, ctx: &mut CompilerContext, tree: TreeId, current: SymbolId) {
@@ -584,9 +446,6 @@ impl Enter {
         };
         set_tree_symbol_and_type(ctx, tree, current);
         let owner = ctx.sym(current).owner.expect("package owner");
-        if let Some(selected) = selected {
-            self.set_package_symbols_for(ctx, selected, owner);
-        }
     }
 
     /// Java: public void visitClassDef(JCClassDecl tree)
@@ -610,9 +469,6 @@ impl Enter {
             let packge = owner;
             let mut q = Some(packge);
             while let Some(current) = q {
-                if ctx.sym(current).kind != crate::code::kinds::Kind::PCK {
-                    break;
-                }
                 ctx.sym_mut(current).flags_field |= flags::EXISTS as i64;
                 q = ctx.sym(current).owner;
             }
@@ -620,31 +476,10 @@ impl Enter {
             let module = module.expect("toplevel module");
             let c = syms.enter_class(ctx, module, tree_name.clone(), Some(packge));
             // Java: packge.members().enterIfAbsent(c);
-            if let Some(members) = class_members_scope(ctx, packge) {
-                ctx.scope_enter_if_absent(members, c);
-            }
-            if (tree_flags & flags::PUBLIC as i64) != 0 && !self.class_name_matches_file_name(ctx, c, &env)
-            {
-                let top_element = if (tree_flags & flags::ENUM as i64) != 0 {
-                    KindName::ENUM
-                } else if (tree_flags & flags::INTERFACE as i64) != 0 {
-                    KindName::INTERFACE
-                } else {
-                    KindName::CLASS
-                };
-                self.log.borrow_mut().error_at(
-                    ctx.tree(tree).pos,
-                    JCDiagnosticError::from(errors::class_public_should_be_in_file(
-                        KindNameArg::from(top_element.name()),
-                        tree_name.clone(),
-                    )),
-                );
-            }
             c
         } else if !tree_name.is_empty()
             && !self
                 .chk
-                .borrow()
                 .check_unique_class_name(ctx, ctx.tree(tree).pos, &tree_name, scope)
         {
             self.result.set(None);
@@ -654,80 +489,28 @@ impl Enter {
             let module = env.toplevel.and_then(|top| compilation_unit_module(ctx, top));
             let module = module.expect("toplevel module");
             let c = syms.enter_class(ctx, module, tree_name.clone(), Some(owner));
-            if ctx.sym(c).owner != Some(owner) {
-                if ctx.sym(c).name.to_java_string() != tree_name.to_java_string() {
-                    self.log.borrow_mut().error_at(
-                        ctx.tree(tree).pos,
-                        JCDiagnosticError::from(errors::same_binary_name(
-                            ctx.sym(c).name.clone(),
-                            tree_name.clone(),
-                        )),
-                    );
-                    let err_type = self.types.create_error_type(
-                        ctx,
-                        tree_name.clone(),
-                        owner,
-                        None,
-                    );
-                    let tsym = ctx.typ(err_type).tsym.expect("error type symbol");
-                    set_class_tree_symbol(ctx, tree, tsym);
-                    self.result.set(Some(err_type));
-                    return Ok(());
-                }
-                // anonymous class loaded from a classfile may be recreated from
-                // source: fix the owner.
-                let c_owner = ctx.sym(c).owner.expect("class owner");
-                if let Some(cowner_members) = class_members_scope(ctx, c_owner) {
-                    ctx.scope_remove(cowner_members, c);
-                }
-                ctx.sym_mut(c).owner = Some(owner);
-            }
-            if (ctx.sym(owner).flags_field & flags::INTERFACE as i64) != 0 {
-                tree_flags |= (flags::PUBLIC | flags::STATIC) as i64;
-                set_modifiers_flags(ctx, tree_mods, tree_flags);
-            }
             c
         } else {
             // We are seeing a local class.
             let c = syms.define_class(ctx, tree_name.clone(), Some(owner));
-            let flatname = self.chk.borrow_mut().local_class_name(ctx, c);
-            if let SymbolKind::ClassSymbol { flatname: slot, .. } = &mut ctx.sym_mut(c).kind_data {
+            let flatname = self.chk.local_class_name(ctx, c);
+ = &mut ctx.sym_mut(c).kind_data {
                 *slot = flatname;
-            }
-            if !ctx.sym(c).name.is_empty() {
-                self.chk.borrow().check_transparent_class(ctx, ctx.tree(tree).pos, c, scope);
             }
             c
         };
         set_class_tree_symbol(ctx, tree, class);
         // Enter class into 'compiled' table and enclosing scope.
-        if self.chk.borrow().get_compiled(ctx, class).is_some() {
-            self.duplicate_class(ctx, tree, class);
-            let err_type = self.types.create_error_type(
-                ctx,
-                class_tree_name(ctx, tree),
-                owner,
-                None,
-            );
-            let tsym = ctx.typ(err_type).tsym.expect("error type symbol");
-            set_class_tree_symbol(ctx, tree, tsym);
-            self.result.set(Some(err_type));
-            return Ok(());
-        }
-        self.chk.borrow_mut().put_compiled(ctx, class);
+        let already_compiled = self.chk.get_compiled(ctx, class);
+        self.chk.put_compiled(ctx, class);
         ctx.scope_enter(scope, class);
         // Set up an environment for class block.
         let local_env = self.class_env(ctx, tree, &env);
         self.type_envs.borrow_mut().put(class, Rc::clone(&local_env));
         // Fill out class fields.
         ctx.sym_mut(class).completer = None;
-        let checked_flags = self.chk.borrow().check_flags(
-            ctx,
-            ctx.tree(tree).pos,
-            tree_flags,
-            class,
-            tree,
-        );
+        let tree_pos = ctx.tree(tree).pos;
+        let checked_flags = self.chk.check_flags(ctx, tree_pos, tree_flags, class, tree);
         ctx.sym_mut(class).flags_field = checked_flags;
         let class_sourcefile =
             compilation_unit_sourcefile(ctx, env.toplevel.expect("toplevel"));
@@ -842,7 +625,6 @@ impl Enter {
         let tsym = ctx.typ(tvar).tsym.expect("type var symbol");
         let unique = self
             .chk
-            .borrow()
             .check_unique(ctx, syms, ctx.tree(tree).pos, tsym, scope);
         if unique {
             ctx.scope_enter(scope, tsym);
@@ -942,7 +724,7 @@ impl Enter {
                     // null) clazz.complete(); else prevUncompleted.append(clazz);
                     if c.is_none() || c == Some(clazz) || prev_uncompleted.is_none() {
                         if let Err(failure) = ctx.complete_class_symbol(syms, clazz) {
-                            self.chk.borrow().completion_error(
+                            self.chk.completion_error(
                                 ctx,
                                 crate::util::position::NOPOS,
                                 &failure,
@@ -1037,9 +819,8 @@ impl Enter {
             // unchecked, nothing to clean up).
             if let Some(csym) = *sym {
                 self.type_envs.borrow_mut().remove(csym);
-                self.chk.borrow_mut().remove_compiled(ctx, csym);
+                self.chk.remove_compiled(ctx, csym);
                 self.chk
-                    .borrow_mut()
                     .clear_local_class_name_indexes(ctx, csym);
                 let flatname = ctx.sym(csym).flat_name();
                 syms.remove_class(module, &flatname);

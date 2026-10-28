@@ -754,7 +754,7 @@ impl Analyzer {
                 let Some(tsym) = ctx.typ(clazz_type).tsym else { return false; };
                 let attr_rc = self.attr_service();
                 let attr = attr_rc.borrow();
-                let chk = attr.chk.borrow();
+                let chk = Rc::clone(&attr.chk);
                 let diags = Rc::clone(&attr.diags);
                 let is_fi = self.types.is_functional_interface(ctx, syms, &diags, &chk, tsym);
                 drop(chk);

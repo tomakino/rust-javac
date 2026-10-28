@@ -504,7 +504,7 @@ pub struct Flow {
     pub log: Rc<RefCell<Log>>,
     pub syms: Rc<RefCell<Symtab>>,
     pub types: Rc<Types>,
-    pub chk: Rc<RefCell<Check>>,
+    pub chk: Rc<Check>,
     pub rs: Rc<RefCell<Resolve>>,
     pub diags: Rc<Factory>,
     pub lint: Rc<Lint>,
@@ -525,7 +525,7 @@ impl Flow {
         log: Rc<RefCell<Log>>,
         syms: Rc<RefCell<Symtab>>,
         types: Rc<Types>,
-        chk: Rc<RefCell<Check>>,
+        chk: Rc<Check>,
         rs: Rc<RefCell<Resolve>>,
         diags: Rc<Factory>,
         lint: Rc<Lint>,
@@ -2665,13 +2665,11 @@ impl<'a> FlowAnalyzer<'a> {
         if !self
             .flow
             .chk
-            .borrow()
             .is_unchecked_pos(ctx, &syms, pos, exc)
         {
             if !self
                 .flow
                 .chk
-                .borrow()
                 .is_handled(ctx, &syms, exc, &self.caught)
             {
                 self.pending_exits = self
@@ -2682,7 +2680,6 @@ impl<'a> FlowAnalyzer<'a> {
             self.thrown = self
                 .flow
                 .chk
-                .borrow()
                 .incl(ctx, &syms, exc, &self.thrown);
         }
     }
@@ -2698,7 +2695,7 @@ impl<'a> FlowAnalyzer<'a> {
         caught_in_try: &List<TypeId>,
     ) {
         let syms = self.syms;
-        let chk = self.flow.chk.borrow();
+        let chk = Rc::clone(&self.flow.chk);
         if chk.subset(ctx, &syms, exc, caught_in_try) {
             self.flow
                 .error(pos, errors::except_already_caught(type_place(ctx, exc)));
@@ -2809,7 +2806,6 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                         self.caught =
                             self.flow
                                 .chk
-                                .borrow()
                                 .intersect(ctx, &syms, &mthrown, &self.caught);
                     }
                 }
@@ -2861,7 +2857,6 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             self.caught = self
                 .flow
                 .chk
-                .borrow()
                 .union(ctx, &syms, &self.caught, &mthrown);
         } else if (ctx.sym(method_sym).flags_field
             & (flags::BLOCK as i64 | flags::STATIC as i64))
@@ -3125,7 +3120,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                 let mut caught = self.caught.clone();
                 {
                     let syms = self.syms;
-                    let chk = self.flow.chk.borrow();
+                    let chk = Rc::clone(&self.flow.chk);
                     for ty in thrown_types_of(ctx, constructor_signature).iter() {
                         caught = chk.incl(ctx, &syms, ty, &caught);
                     }
@@ -3175,7 +3170,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
         };
         let descriptor = {
             let syms = self.syms;
-            let chk = self.flow.chk.borrow();
+            let chk = Rc::clone(&self.flow.chk);
             self.flow
                 .types
                 .find_descriptor_type(
@@ -3300,7 +3295,6 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                 self.caught = self
                     .flow
                     .chk
-                    .borrow()
                     .incl(ctx, &syms, clause_type, &self.caught);
             }
         }
@@ -3364,7 +3358,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                             .expect("AssertionError: the Attr service is not installed on Flow");
                         let mut attr = attr_rc.borrow_mut();
                         let chk_rc = Rc::clone(&self.flow.chk);
-                        let chk = chk_rc.borrow();
+                        let chk = Rc::clone(&chk_rc);
                         let infer = Rc::clone(&attr.infer);
                         let env = {
                             let env = self.flow.attr_env.borrow().clone();
@@ -3420,12 +3414,10 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
         let mut thrown_in_try = self
             .flow
             .chk
-            .borrow()
             .union(ctx, &syms, &self.thrown, &List::of(syms.runtime_exception_type));
         thrown_in_try = self
             .flow
             .chk
-            .borrow()
             .incl(ctx, &syms, syms.error_type, &thrown_in_try);
         self.thrown = prev_thrown.clone();
         self.caught = prev_caught.clone();
@@ -3440,7 +3432,6 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             let rethrown_types = self
                 .flow
                 .chk
-                .borrow()
                 .diff(ctx, &syms, &thrown_in_try, &caught_in_try);
             for clause in sub_clauses.iter() {
                 let exc = ctx.tree(clause).ty.expect("catch type");
@@ -3462,7 +3453,6 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                     caught_in_try =
                         self.flow
                             .chk
-                            .borrow()
                             .incl(ctx, &syms, exc, &caught_in_try);
                 }
             }
@@ -3472,7 +3462,6 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                     let precise =
                         self.flow
                             .chk
-                            .borrow()
                             .intersect(ctx, &syms, &ctypes, &rethrown_types);
                     self.precise_rethrow_types.insert(param_sym, precise);
                 }
@@ -3503,24 +3492,20 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                 let combined =
                     self.flow
                         .chk
-                        .borrow()
                         .union(ctx, &syms, &self.thrown, &saved_thrown);
                 self.thrown = combined;
             } else {
                 let uncaught_in_try =
                     self.flow
                         .chk
-                        .borrow()
                         .diff(ctx, &syms, &thrown_in_try, &caught_in_try);
                 let with_uncaught =
                     self.flow
                         .chk
-                        .borrow()
                         .union(ctx, &syms, &self.thrown, &uncaught_in_try);
                 self.thrown =
                     self.flow
                         .chk
-                        .borrow()
                         .union(ctx, &syms, &with_uncaught, &saved_thrown);
                 let mut current = exits;
                 while current.non_empty() {
@@ -3532,12 +3517,10 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
             let uncaught_in_try = self
                 .flow
                 .chk
-                .borrow()
                 .diff(ctx, &syms, &thrown_in_try, &caught_in_try);
             self.thrown =
                 self.flow
                     .chk
-                    .borrow()
                     .union(ctx, &syms, &self.thrown, &uncaught_in_try);
             let exits = std::mem::replace(&mut self.pending_exits, prev_pending);
             let mut current = exits;

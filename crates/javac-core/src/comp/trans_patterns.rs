@@ -913,7 +913,7 @@ impl TransPatterns {
             let mut attr = attr_rc.borrow_mut();
             let chk = Rc::clone(&attr.chk);
             let infer = Rc::clone(&attr.infer);
-            let chk_borrow = chk.borrow();
+            let chk_borrow = chk;
             let syms = self.syms.borrow_mut();
             let diag_pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
                 Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos)));

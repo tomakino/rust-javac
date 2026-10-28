@@ -449,7 +449,7 @@ pub struct AnnotateServices {
     pub log: Rc<std::cell::RefCell<Log>>,
     pub syms: Rc<std::cell::RefCell<Symtab>>,
     pub types: Rc<crate::code::types::Types>,
-    pub chk: Rc<std::cell::RefCell<Check>>,
+    pub chk: Rc<Check>,
     pub attr: Rc<std::cell::RefCell<Attr>>,
     pub cfolder: Rc<ConstFold>,
     pub deferred_lint_handler: Rc<std::cell::RefCell<DeferredLintHandler>>,
@@ -489,7 +489,7 @@ impl Annotate {
         log: Rc<std::cell::RefCell<Log>>,
         syms: Rc<std::cell::RefCell<Symtab>>,
         types: Rc<crate::code::types::Types>,
-        chk: Rc<std::cell::RefCell<Check>>,
+        chk: Rc<Check>,
         attr: Rc<std::cell::RefCell<Attr>>,
         cfolder: Rc<ConstFold>,
         deferred_lint_handler: Rc<std::cell::RefCell<DeferredLintHandler>>,
@@ -775,7 +775,7 @@ impl Annotate {
                     None => None,
                 }
             };
-            let result = services.chk.borrow().validate_annotations(
+            let result = services.chk.validate_annotations(
                 ctx,
                 syms,
                 &annotations_validate,
@@ -827,7 +827,6 @@ impl Annotate {
             let prev = services_validate.log.borrow_mut().use_source(source);
             services_validate
                 .chk
-                .borrow()
                 .validate_annotation_tree(ctx, syms, default_value, Some(_attr));
             services_validate.log.borrow_mut().use_source(prev);
             Ok(())
@@ -865,7 +864,7 @@ impl AnnotateServices {
         let prev_lint = if defer_pos.is_some() {
             None
         } else {
-            Some(self.chk.borrow_mut().set_lint(Rc::clone(&self.lint)))
+            Some(self.chk.set_lint(Rc::clone(&self.lint)))
         };
         let result = (|| -> Result<(), CompletionFailure> {
             if ctx.sym(s).has_annotations() && annotations.non_empty() {
@@ -886,7 +885,7 @@ impl AnnotateServices {
             self.annotate_now(ctx, syms, s, annotations, local_env, false, false, attr)
         })();
         if let Some(prev_lint) = prev_lint {
-            self.chk.borrow_mut().set_lint(prev_lint);
+            self.chk.set_lint(prev_lint);
         }
         self.deferred_lint_handler
             .borrow_mut()
@@ -1164,7 +1163,7 @@ impl AnnotateServices {
             }
         };
         let checked = {
-            let chk = self.chk.borrow();
+            let chk = Rc::clone(&self.chk);
             chk.check_type_basic(ctx, syms, ctx.tree(annotation_type_tree).pos, at, expected)
         };
         ctx.tree_mut(a).ty = Some(checked);
@@ -1287,7 +1286,7 @@ impl AnnotateServices {
         };
         let method = {
             let resolve = self.resolve.borrow();
-            let chk = self.chk.borrow();
+            let chk = Rc::clone(&self.chk);
             let infer = Rc::clone(&self.infer);
             let location = env
                 .encl_class
@@ -1762,7 +1761,7 @@ impl AnnotateServices {
                 make.translate_attribute(ctx, syms, at)
             };
             let defer_ok = {
-                let chk = self.chk.borrow();
+                let chk = Rc::clone(&self.chk);
                 chk.validate_annotation_defer_errors(ctx, syms, anno_tree)?
             };
             if !defer_ok {
@@ -1801,7 +1800,7 @@ impl AnnotateServices {
                 .map(|encl| ctx.sym(encl).is_record())
                 .unwrap_or(false);
         let applicable = {
-            let chk = self.chk.borrow();
+            let chk = Rc::clone(&self.chk);
             chk.annotation_applicable(ctx, syms, anno_tree, on, Some(&mut *attr))?
         };
         let suppress = is_record_member && (ctx.sym(on).flags_field & flags::GENERATED_MEMBER as i64) != 0;
@@ -1819,7 +1818,7 @@ impl AnnotateServices {
             );
         }
         let defer_ok = {
-            let chk = self.chk.borrow();
+            let chk = Rc::clone(&self.chk);
             chk.validate_annotation_defer_errors(ctx, syms, anno_tree)?
         };
         if !defer_ok {
@@ -2316,7 +2315,7 @@ impl TreeScannerVisitor for AnnotationTypeVisitor<'_> {
                 };
                 let annotation_type = syms.annotation_type;
                 let checked = {
-                    let chk = services.chk.borrow();
+                    let chk = Rc::clone(&services.chk);
                     chk.check_type_basic(ctx, syms, ctx.tree(annotation_type_tree).pos, attributed, annotation_type)
                 };
                 ctx.tree_mut(annotation_type_tree).ty = Some(checked);

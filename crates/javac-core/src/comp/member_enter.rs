@@ -60,7 +60,7 @@ use crate::util::name::Name;
 pub struct MemberEnter {
     pub enter: Rc<RefCell<Enter>>,
     pub log: Rc<RefCell<Log>>,
-    pub chk: Rc<RefCell<Check>>,
+    pub chk: Rc<Check>,
     pub types: Rc<Types>,
     pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
     /// Java: protected Env<AttrContext> env;
@@ -80,7 +80,7 @@ impl MemberEnter {
     pub fn new(
         enter: Rc<RefCell<Enter>>,
         log: Rc<RefCell<Log>>,
-        chk: Rc<RefCell<Check>>,
+        chk: Rc<Check>,
         types: Rc<Types>,
         deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
         annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
@@ -157,7 +157,6 @@ impl MemberEnter {
             if !ctx.typ(exc).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
                 exc = self
                     .chk
-                    .borrow()
                     .check_class_type(ctx, syms, ctx.tree(thrown_tree).pos, exc);
             } else if ctx
                 .typ(exc)
@@ -256,7 +255,7 @@ impl MemberEnter {
         let result = self.visit(ctx, syms, tree, attr);
         if let Err(failure) = result {
             // Java: chk.completionError(tree.pos(), ex)
-            let _ = self.chk.borrow().completion_error(
+            let _ = self.chk.completion_error(
                 ctx,
                 ctx.tree(tree).pos,
                 &failure,
@@ -325,7 +324,7 @@ impl MemberEnter {
             },
         ));
         let mods_flags = method_decl_mods_flags(ctx, tree);
-        let checked = self.chk.borrow().check_flags(
+        let checked = self.chk.check_flags(
             ctx,
             ctx.tree(tree).pos,
             mods_flags,
@@ -380,7 +379,7 @@ impl MemberEnter {
         // localEnv.info.scope.leave();
         let local_scope = local_env.info.borrow().scope.expect("local scope");
         let _ = ctx.scope_leave(local_scope);
-        let unique = self.chk.borrow().check_unique(
+        let unique = self.chk.check_unique(
             ctx,
             syms,
             ctx.tree(tree).pos,
@@ -445,7 +444,7 @@ impl MemberEnter {
             // KindSelector.VAL, tree.sym.type.getReturnType());
             // (MemberEnter.java:242-246)
             let return_type = ctx.typ(method_ty).get_return_type(ctx);
-            let basic_handler = self.chk.borrow().basic_handler.clone();
+            let basic_handler = self.chk.basic_handler.clone();
             info.return_result = Some(crate::comp::attr::ResultInfo::new(
                 crate::code::kinds::KindSelector::VAL,
                 return_type,
@@ -558,7 +557,7 @@ impl MemberEnter {
                 data: None,
             },
         ));
-        let checked = self.chk.borrow().check_flags(
+        let checked = self.chk.check_flags(
             ctx,
             ctx.tree(tree).pos,
             mods_flags,
@@ -588,11 +587,9 @@ impl MemberEnter {
         }
         let unique = self
             .chk
-            .borrow()
             .check_unique(ctx, syms, ctx.tree(tree).pos, v, encl_scope);
         if unique {
             self.chk
-                .borrow()
                 .check_transparent_var(ctx, ctx.tree(tree).pos, v, encl_scope);
             ctx.scope_enter(encl_scope, v);
         } else if ctx.sym(v).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::MTH)

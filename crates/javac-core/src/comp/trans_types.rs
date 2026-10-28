@@ -62,7 +62,7 @@ pub struct TransTypes {
     /// Adapter: the diagnostic factory (needed by Types.findDescriptorType adapter).
     pub diags: Rc<Factory>,
     /// Adapter: the check service (needed by Types.findDescriptorType adapter).
-    pub chk: Rc<RefCell<crate::comp::check::Check>>,
+    pub chk: Rc<crate::comp::check::Check>,
     /// Java: private final boolean allowGraphInference
     pub allow_graph_inference: bool,
     /// Java: private final boolean allowInterfaceBridges
@@ -105,7 +105,7 @@ impl TransTypes {
         resolve: Rc<RefCell<Resolve>>,
         compile_states: Rc<RefCell<crate::comp::compile_states::CompileStates>>,
         diags: Rc<Factory>,
-        chk: Rc<RefCell<crate::comp::check::Check>>,
+        chk: Rc<crate::comp::check::Check>,
         allow_graph_inference: bool,
         allow_interface_bridges: bool,
     ) -> TransTypes {
@@ -1163,7 +1163,7 @@ impl TreeVisitor for TransTypes {
         let descriptor = {
             let diags = Rc::clone(&self.diags);
             let chk = Rc::clone(&self.chk);
-            let chk = chk.borrow();
+            let chk = chk;
             let syms = self.syms.borrow_mut();
             self.types
                 .lambda_descriptor_type(ctx, &syms, &diags, &chk, target)
@@ -1188,7 +1188,7 @@ impl TreeVisitor for TransTypes {
                     let desc = {
                         let diags = Rc::clone(&self.diags);
                         let chk = Rc::clone(&self.chk);
-                        let chk = chk.borrow();
+                        let chk = chk;
                         let syms = self.syms.borrow_mut();
                         self.types
                             .find_descriptor_symbol(ctx, &syms, &diags, &chk, tsym)
@@ -1513,12 +1513,58 @@ impl TreeVisitor for TransTypes {
         if is_enum_init {
             argtypes = argtypes.tail().tail();
         }
+        // Attr normally stores the varargs element while checking applicability.
+        // A deferred/ speculative attribution can leave it unset; the resolved
+        // symbol still tells us that a trailing array parameter is consumed
+        // variadically.
+        let mut varargs_element = varargs_element;
+        if varargs_element.is_none()
+            && (ctx.sym(meth_sym).flags_field & crate::code::flags::VARARGS as i64) != 0
+            && args.length() > argtypes.length()
+            && !argtypes.is_empty()
+            && ctx.typ(argtypes.last().expect("last parameter")).has_tag(TypeTag::ARRAY)
+        {
+            let last = argtypes.last().expect("last parameter");
+            let elem = {
+                let syms_guard = self.syms.borrow();
+                self.types.elemtype(ctx, &syms_guard, last)
+            };
+            varargs_element = Some(self.erasure(ctx, elem));
+        }
         let varargs_element = varargs_element.map(|ty| self.erasure(ctx, ty));
         if varargs_element.is_none() {
             let args_len = args.length();
             let argtypes_len = argtypes.length();
             if args_len != argtypes_len {
-                panic!("Incorrect number of arguments; expected {argtypes_len}, found {args_len}");
+                let file = self
+                    .env
+                    .clone()
+                    .and_then(|env| env.toplevel)
+                    .and_then(|unit| match &ctx.tree(unit).kind {
+                        crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => {
+                            sourcefile.clone()
+                        }
+                        _ => None,
+                    })
+                    .map(|source| source.get_name().to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let pos = ctx.tree(tree).pos;
+                let method_name = crate::comp::resolve::symbol_display_name(ctx, meth_sym);
+                let arg_ty_ids: Vec<_> = args
+                    .iter()
+                    .map(|arg| ctx.tree(arg).ty.unwrap_or_else(|| crate::code::symtab::no_type_id(ctx)))
+                    .collect();
+                let arg_display: Vec<String> = arg_ty_ids
+                    .iter()
+                    .map(|ty| crate::comp::attr::type_display_of(ctx, *ty))
+                    .collect();
+                let argtype_display: Vec<String> = argtypes
+                    .iter()
+                    .map(|ty| crate::comp::attr::type_display_of(ctx, ty))
+                    .collect();
+                panic!(
+                    "Incorrect number of arguments; expected {argtypes_len}, found {args_len} at {file}:{pos} method={method_name} args={arg_display:?} argtypes={argtype_display:?}",
+                );
             }
         }
         let args = self.translate_args(ctx, args, argtypes, varargs_element);
@@ -1940,7 +1986,7 @@ impl TreeVisitor for TransTypes {
                     let desc = {
                         let diags = Rc::clone(&self.diags);
                         let chk = Rc::clone(&self.chk);
-                        let chk = chk.borrow();
+                        let chk = chk;
                         let syms = self.syms.borrow_mut();
                         self.types
                             .find_descriptor_symbol(ctx, &syms, &diags, &chk, tsym)

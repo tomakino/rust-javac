@@ -137,16 +137,9 @@ impl VerboseResolutionMode {
         let Some(value) = options.get("debug.verboseResolution") else {
             return result;
         };
-        if value.contains("all") {
-            result = Self::values().to_vec();
-        }
         let args: Vec<&str> = value.split(',').collect();
         for mode in Self::values() {
-            if args.contains(&mode.opt()) {
-                if !result.contains(&mode) {
-                    result.push(mode);
-                }
-            } else if args.contains(&format!("-{}", mode.opt()).as_str()) {
+ else if args.contains(&format!("-{}", mode.opt()).as_str()) {
                 result.retain(|candidate| *candidate != mode);
             }
         }
@@ -395,46 +388,12 @@ impl Resolve {
         let init_name = self.names.init.clone();
         let sym_name = ctx.sym(sym).name.clone();
         let site_tsym = ctx.typ(site).tsym;
-        if sym_name.content_equals(&init_name.to_java_string()) && ctx.sym(sym).owner != site_tsym {
-            return false;
-        }
-
         // 15.9.5.1: anonymous constructor signature accessibility.
-        if env
-            .encl_method
-            .map(|encl_method| method_decl_flags(ctx, encl_method))
-            .is_some_and(|flags_value| (flags_value & flags::ANONCONSTR as i64) != 0)
-        {
-            return true;
-        }
-
-        if env.info.borrow().visiting_service_implementation {
-            let toplevel_module = env_toplevel_module(ctx, env);
-            let sym_module = package_module(ctx, symbol_packge(ctx, sym).expect("symbol package"));
-            if toplevel_module.is_some() && toplevel_module == sym_module {
-                return true;
-            }
-        }
-
         let access = ctx.sym(sym).flags_field & flags::AccessFlags as i64;
         let toplevel_package = env_toplevel_package(ctx, env);
         let sym_package = symbol_packge(ctx, sym);
         let owner = ctx.sym(sym).owner.expect("symbol owner");
-        if access == flags::PRIVATE as i64 {
-            let encl_sym = env
-                .encl_class
-                .and_then(|class_tree| class_decl_symbol(ctx, class_tree))
-                .expect("enclClass symbol");
-            let same_outermost = symbol_outermost_class(ctx, encl_sym)
-                == symbol_outermost_class(ctx, owner);
-            let same_owner = encl_sym == owner;
-            let inherited = ctx
-                .typ(site)
-                .tsym
-                .map(|site_tsym| symbol_is_inherited_in(ctx, &self.types, syms, sym, site_tsym))
-                .unwrap_or(false);
-            (same_owner || same_outermost) && inherited
-        } else if access == 0 {
+ else if access == 0 {
             // Java: env.toplevel.packge == sym.owner.owner || ...; the ported
             // package owner may be unset (the Modules bootstrap adapter), in which case the
             // first comparison is false (a null owner does not match a package).
@@ -489,9 +448,6 @@ impl Resolve {
         let is_method = ctx.sym(sym).kind == Kind::MTH;
         let is_constructor = ctx.sym(sym).is_constructor(&self.names);
         let is_static = ctx.sym(sym).is_static(ctx);
-        if !is_method || is_constructor || is_static {
-            return true;
-        }
         // Upstream: Resolve.notOverriddenIn — s2 = implementation(site.tsym,
         // types, true); the member is still visible when s2 is null, s2 is the
         // symbol itself, both share an owner, or the two member types are not
@@ -502,9 +458,7 @@ impl Resolve {
         match implementation {
             None => true,
             Some(s2) => {
-                if s2 == sym || ctx.sym(sym).owner == ctx.sym(s2).owner {
-                    true
-                } else {
+ else {
                     let s2_type = self.types.member_type(ctx, syms, site, s2);
                     let sym_type = self.types.member_type(ctx, syms, site, sym);
                     !self
@@ -526,39 +480,12 @@ impl Resolve {
         site: TypeId,
     ) -> bool {
         let mut new_site = site;
-        if ctx.typ(site).has_tag(TypeTag::TYPEVAR) {
-            new_site = match &ctx.typ(site).kind {
-                TypeKindData::TypeVar { bound, .. } => (*bound).expect("type variable bound"),
-                _ => crate::util::assert::error(),
-            };
-        }
         let mut current = Some(c);
         while let Some(class) = current {
             let sym_owner = ctx.sym(sym).owner.expect("symbol owner");
-            if symbol_is_sub_class(ctx, &self.types, syms, class, sym_owner) {
-                let class_is_interface =
-                    (ctx.sym(class).flags_field & flags::INTERFACE as i64) != 0;
-                // JLS 2e 6.6.2.1: the subclass restriction applies only to
-                // instance fields and methods; types are excluded regardless of
-                // static.
-                let static_or_type = (ctx.sym(sym).flags_field & flags::STATIC as i64) != 0
-                    || ctx.sym(sym).kind == Kind::TYP;
-                let site_subclass = ctx
-                    .typ(new_site)
-                    .tsym
-                    .map(|new_site_tsym| {
-                        symbol_is_sub_class(ctx, &self.types, syms, new_site_tsym, class)
-                    })
-                    .unwrap_or(false);
-                if !class_is_interface && (static_or_type || site_subclass) {
-                    return true;
-                }
-            }
             // c = c.owner.enclClass()
             let owner = ctx.sym(class).owner.expect("class owner");
-            if ctx.sym(owner).kind == Kind::TYP {
-                current = Some(owner);
-            } else if ctx.sym(owner).kind == Kind::MTH {
+ else if ctx.sym(owner).kind == Kind::MTH {
                 current = symbols_encl_class(ctx, class);
             } else {
                 current = None;
@@ -599,28 +526,6 @@ impl Resolve {
                 //   if (!isAccessible(env, t, true))
                 //       accessBase(new AccessError(env, null, t.tsym),
                 //                  env.tree.pos(), env.enclClass.sym, t, t.tsym.name, true);
-                if !self.is_accessible_type(ctx, syms, env, t, true) {
-                    let error = self.new_access_error(ctx, syms, env, None, tsym);
-                    let pos_tree = env.tree.expect("env.tree");
-                    let pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
-                        Some(Rc::new(
-                            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
-                                ctx.tree(pos_tree).pos,
-                            ),
-                        ));
-                    let location = env.encl_class.map(|tree| {
-                        match &ctx.tree(tree).kind {
-                            crate::tree::jc_tree::TreeKind::ClassDecl { sym: Some(sym), .. } => {
-                                *sym
-                            }
-                            _ => panic!("ClassCastException: JCClassDecl expected"),
-                        }
-                    });
-                    let name = ctx.sym(tsym).name.clone();
-                    self.access_base(
-                        ctx, syms, error, pos, location, Some(t), &name, true,
-                    );
-                }
             }
             TypeTag::WILDCARD => {
                 let type_ = match &ctx.typ(t).kind {
@@ -669,12 +574,6 @@ pub(crate) fn symbols_encl_class(
     symbol: SymbolId,
 ) -> Option<SymbolId> {
     let owner = ctx.sym(symbol).owner?;
-    if ctx.sym(owner).kind == Kind::TYP {
-        return Some(owner);
-    }
-    if ctx.sym(owner).kind == Kind::PCK || ctx.sym(owner).kind == Kind::MDL {
-        return None;
-    }
     symbols_encl_class(ctx, owner)
 }
 
@@ -792,11 +691,7 @@ impl Resolve {
             | crate::code::symbol::ResolveErrorData::Invisible { sym, .. }
             | crate::code::symbol::ResolveErrorData::Static { sym } => {
                 // InvalidSymbolError.access
-                if ctx.sym(sym).kind.is_resolution_error()
-                    || !ctx.sym(sym).kind.matches(crate::code::kinds::KindSelector::TYP)
-                {
-                    sym
-                } else {
+ else {
                     let original = ctx.sym(sym).ty;
                     let error_type = self.types.create_error_type(
                         ctx,
@@ -809,16 +704,7 @@ impl Resolve {
             }
             crate::code::symbol::ResolveErrorData::Ambiguity { syms: ambiguous } => {
                 let first = *ambiguous.last().expect("ambiguous symbols");
-                if ctx.sym(first).kind == Kind::TYP {
-                    let original = ctx.sym(first).ty;
-                    let error_type = self.types.create_error_type(
-                        ctx,
-                        name.clone(),
-                        location,
-                        original,
-                    );
-                    ctx.typ(error_type).tsym.expect("error type symbol")
-                } else {
+ else {
                     first
                 }
             }
@@ -855,11 +741,7 @@ impl Resolve {
             crate::code::symbol::ResolveErrorData::BadMethodReference { sym, .. }
             | crate::code::symbol::ResolveErrorData::BadConstructorReference { sym } => {
                 // Java: InvalidSymbolError.access
-                if ctx.sym(sym).kind.is_resolution_error()
-                    || !ctx.sym(sym).kind.matches(crate::code::kinds::KindSelector::TYP)
-                {
-                    sym
-                } else {
+ else {
                     let original = ctx.sym(sym).ty;
                     let error_type = self.types.create_error_type(
                         ctx,
@@ -946,11 +828,6 @@ impl Resolve {
                 // Java: BadMethodReferenceError.getDiagnostic (Resolve.java:4655-4675)
                 // adapter: the fragment constructors are used (the generated resource
                 // helper is the Fragment form of the upstream diags.create key).
-                if ctx.sym(sym).kind.is_resolution_error() {
-                    return self.resolve_error_diagnostic(
-                        ctx, syms, sym, dkind, pos, location, site, name, argtypes, typeargtypes,
-                    );
-                }
                 let kind_name = crate::code::kinds::kind_name(ctx.sym(sym), ctx).name();
                 let sym_display = symbol_display_name(ctx, sym);
                 let info = if !unbound_lookup {
@@ -1012,12 +889,6 @@ impl Resolve {
                 let s1 = reversed[0];
                 let s2 = reversed[1];
                 let mut sname = ctx.sym(s1).name.clone();
-                if sname == self.names.init {
-                    sname = ctx
-                        .sym(ctx.sym(s1).owner.expect("ambiguous owner"))
-                        .name
-                        .clone();
-                }
                 let site_ty = site.expect("ambiguous site");
                 let loc1 = symbol_location_site(
                     ctx,
@@ -1085,27 +956,10 @@ impl Resolve {
             } => self.invisible_diagnostic(ctx, syms, dkind, pos, &env, suppress_error, sym),
             crate::code::symbol::ResolveErrorData::Inapplicable { kind: _, sym, details } => {
                 // Java: InapplicableSymbolError.getDiagnostic (Resolve.java:4124-4152)
-                if name.map(|name| *name == self.names.error).unwrap_or(false) {
-                    return None;
-                }
                 Some(self.inapplicable_symbol_diagnostic(ctx, syms, dkind, pos, site, argtypes.clone(), sym, details))
             }
             crate::code::symbol::ResolveErrorData::InapplicableSymbols { kind: _, candidates } => {
                 // Java: InapplicableSymbolsError.getDiagnostic (Resolve.java:4195-4237)
-                if candidates.is_empty() {
-                    return self.symbol_not_found_diagnostic(
-                        ctx,
-                        syms,
-                        self.method_not_found,
-                        dkind,
-                        pos,
-                        location,
-                        site,
-                        name,
-                        argtypes,
-                        typeargtypes,
-                    );
-                }
                 let types = Rc::clone(&self.types);
                 let mapped = resolve_map_candidates(ctx, syms, &types, &candidates);
                 let mut filtered = if self.compact_method_diags {
@@ -1113,90 +967,7 @@ impl Resolve {
                 } else {
                     mapped.clone()
                 };
-                if filtered.is_empty() {
-                    filtered = mapped.clone();
-                }
                 let truncated = mapped.len() != filtered.len();
-                if filtered.len() > 1 {
-                    let kind_name = if name
-                        .map(|name| *name == self.names.init)
-                        .unwrap_or(false)
-                    {
-                        crate::code::kinds::KindName::CONSTRUCTOR
-                    } else {
-                        crate::code::kinds::Kind::WRONG_MTH.absent_kind()
-                    };
-                    let simple_name = name
-                        .cloned()
-                        .unwrap_or_else(|| self.names.init.clone());
-                    let found_args: Vec<crate::resources::diagnostic_contract::TypeArg> =
-                        argtypes
-                            .map(|argtypes| {
-                                let mut out = Vec::new();
-                                let mut current = argtypes;
-                                while current.non_empty() {
-                                    out.push(
-                                        crate::resources::diagnostic_contract::TypeArg::placeholder(
-                                            type_display_str(ctx, *current.head()),
-                                        ),
-                                    );
-                                    current = current.tail();
-                                }
-                                out
-                            })
-                            .unwrap_or_default();
-                    let kind_display =
-                        self.log.borrow().localize_key(kind_name.name(), Vec::new());
-                    let info = errors::cant_apply_symbols(
-                        crate::resources::diagnostic_contract::SymbolKindArg::placeholder(
-                            kind_display,
-                        ),
-                        simple_name,
-                        found_args,
-                    );
-                    let mut main = self.factory_error(dkind, pos, info);
-                    if truncated {
-                        main.set_flag(crate::util::jc_diagnostic::DiagnosticFlag::COMPRESSED);
-                    }
-                    let mut details: Vec<crate::util::jc_diagnostic::JCDiagnostic> = Vec::new();
-                    for (sym, detail) in &filtered {
-                        details.push(self.inapplicable_candidate_detail(
-                            ctx,
-                            syms,
-                            &types,
-                            site,
-                            *sym,
-                            detail.clone(),
-                        ));
-                    }
-                    // The upstream candidateDetails prepends every entry (members
-                    // are visited in reverse scope order); the list is reversed
-                    // to restore source order before reporting.
-                    details.reverse();
-                    let multiline = crate::util::jc_diagnostic::MultilineDiagnostic::new(
-                        &main,
-                        crate::util::list::List::from_iterable(details),
-                    );
-                    return Some(multiline.as_diagnostic().clone());
-                }
-                if filtered.len() == 1 {
-                    let (sym, details) = filtered[0].clone();
-                    let mut diagnostic = self.inapplicable_symbol_diagnostic(
-                        ctx,
-                        syms,
-                        dkind,
-                        pos,
-                        site,
-                        argtypes.clone(),
-                        sym,
-                        details,
-                    );
-                    if truncated {
-                        diagnostic
-                            .set_flag(crate::util::jc_diagnostic::DiagnosticFlag::COMPRESSED);
-                    }
-                    return Some(diagnostic);
-                }
                 self.symbol_not_found_diagnostic(
                     ctx,
                     syms,
@@ -1381,36 +1152,10 @@ impl Resolve {
             // cannot produce the cant.resolve diagnostics.
             return None;
         };
-        if *name == error_name {
-            return None;
-        }
         let mut location = location;
-        if location.is_none() {
-            location = site.and_then(|site| ctx.typ(site).tsym);
-        }
         let location = location.expect("location symbol");
         let location_name = ctx.sym(location).name.clone();
         let mut has_location = false;
-        if !location_name.is_empty() {
-            if ctx.sym(location).kind == Kind::PCK
-                && !crate::code::symbol::symbol_exists(
-                    ctx,
-                    site.and_then(|site| ctx.typ(site).tsym).expect("site symbol"),
-                )
-                && location_name != self.names.java
-            {
-                return Some(self.factory_error(
-                    dkind,
-                    pos,
-                    crate::resources::compiler_properties::errors::doesnt_exist(
-                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                            symbol_display_name(ctx, location),
-                        ),
-                    ),
-                ));
-            }
-            has_location = location_name != self.names._this && location_name != self.names._super;
-        }
         let is_constructor = *name == self.names.init;
         let kindname = if is_constructor {
             crate::code::kinds::KindName::CONSTRUCTOR
@@ -1443,16 +1188,6 @@ impl Resolve {
                 method_arguments_place(ctx, argtypes),
             ),
         ];
-        if has_location {
-            contract_args.push(
-                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                    self.location_diag(ctx, location, site)
-                        .get_diagnostic_info()
-                        .code
-                        .clone(),
-                ),
-            );
-        }
         Some(self.diag_with_contract_args(dkind, pos, &err_key, contract_args))
     }
 
@@ -1481,15 +1216,7 @@ impl Resolve {
         location: SymbolId,
         site: Option<TypeId>,
     ) -> crate::util::jc_diagnostic::JCDiagnostic {
-        if ctx.sym(location).kind == Kind::VAR {
-            let location_type = ctx.sym(location).ty;
-            let info = crate::resources::compiler_properties::fragments::location1(
-                kind_name_arg(ctx, location),
-                symbol_place(ctx, location),
-                type_place(ctx, location_type),
-            );
-            self.diags.fragment(info.into())
-        } else {
+ else {
             let site_ty = site.expect("location diag site");
             let info = crate::resources::compiler_properties::fragments::location(
                 crate::resources::diagnostic_contract::KindNameArg::placeholder(
@@ -1521,79 +1248,10 @@ impl Resolve {
         sym: SymbolId,
     ) -> Option<crate::util::jc_diagnostic::JCDiagnostic> {
         let site_tsym = site.and_then(|site| ctx.typ(site).tsym);
-        if ctx.sym(sym).name == self.names.init && ctx.sym(sym).owner != site_tsym {
-            return self.symbol_not_found_diagnostic(
-                ctx,
-                syms,
-                self.method_not_found,
-                dkind,
-                pos,
-                location,
-                site,
-                name,
-                None,
-                None,
-            );
-        }
         let access = ctx.sym(sym).flags_field & flags::PUBLIC as i64;
         let is_public = access != 0;
-        if is_public || (access_site.is_some() && site_inaccessible) {
-            let sym_location = crate::code::symbol::symbol_location(ctx, sym);
-            let owner = ctx.sym(sym).owner.expect("symbol owner");
-            if ctx.sym(owner).kind == Kind::PCK {
-                let package = crate::code::symbol::symbol_packge(ctx, sym).expect("package");
-                let reason = self.inaccessible_package_reason(ctx, syms, env_snapshot, package);
-                return Some(self.factory_error(
-                    dkind,
-                    pos,
-                    crate::resources::compiler_properties::errors::not_def_access_package_cant_access(
-                        symbol_place(ctx, sym),
-                        symbol_place_opt(ctx, sym_location),
-                        reason_place(&reason),
-                    ),
-                ));
-            } else if crate::code::symbol::symbol_packge(ctx, sym) != Some(syms.root_package)
-                && !symbol_package_visible(ctx, env_snapshot, sym)
-            {
-                let package = crate::code::symbol::symbol_packge(ctx, sym).expect("package");
-                let reason = self.inaccessible_package_reason(ctx, syms, env_snapshot, package);
-                let location_package = sym_location
-                    .and_then(|location| crate::code::symbol::symbol_packge(ctx, location));
-                return Some(self.factory_error(
-                    dkind,
-                    pos,
-                    crate::resources::compiler_properties::errors::not_def_access_class_intf_cant_access_reason(
-                        symbol_place(ctx, sym),
-                        symbol_place_opt(ctx, sym_location),
-                        symbol_place_opt(ctx, location_package),
-                        reason_place(&reason),
-                    ),
-                ));
-            } else {
-                return Some(self.factory_error(
-                    dkind,
-                    pos,
-                    crate::resources::compiler_properties::errors::not_def_access_class_intf_cant_access(
-                        symbol_place(ctx, sym),
-                        symbol_place_opt(ctx, sym_location),
-                    ),
-                ));
-            }
-        }
         let access_flags = ctx.sym(sym).flags_field & (flags::PRIVATE | flags::PROTECTED) as i64;
         let sym_location = crate::code::symbol::symbol_location(ctx, sym);
-        if access_flags != 0 {
-            let modifiers = modifier_args(access_flags);
-            return Some(self.factory_error(
-                dkind,
-                pos,
-                crate::resources::compiler_properties::errors::report_access(
-                    symbol_place(ctx, sym),
-                    modifiers,
-                    symbol_place_opt(ctx, sym_location),
-                ),
-            ));
-        }
         Some(self.factory_error(
             dkind,
             pos,
@@ -1616,55 +1274,8 @@ impl Resolve {
         suppress_error: bool,
         sym: SymbolId,
     ) -> Option<crate::util::jc_diagnostic::JCDiagnostic> {
-        if suppress_error {
-            return None;
-        }
         let package = crate::code::symbol::symbol_packge(ctx, sym).expect("symbol package");
         let reason = self.inaccessible_package_reason(ctx, syms, env_snapshot, package);
-        if ctx.sym(sym).kind == Kind::PCK {
-            return Some(self.factory_error(
-                dkind,
-                pos,
-                crate::resources::compiler_properties::errors::package_not_visible(
-                    symbol_place(ctx, sym),
-                    reason_place(&reason),
-                ),
-            ));
-        }
-        if let Some(position) = pos.as_ref()
-            && let Some(mut tree) = position.get_tree()
-        {
-            let mut o = sym;
-            while ctx.sym(o).kind != Kind::PCK
-                && ctx.tree(tree).has_tag(crate::tree::jc_tree::Tag::SELECT)
-            {
-                let owner = ctx.sym(o).owner.expect("symbol owner");
-                o = owner;
-                tree = match &ctx.tree(tree).kind {
-                    TreeKind::FieldAccess {
-                        selected: Some(selected),
-                        ..
-                    } => *selected,
-                    _ => break,
-                };
-            }
-            if ctx.sym(o).kind == Kind::PCK {
-                let new_pos: std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
-                    std::rc::Rc::new(
-                        crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
-                            ctx.tree(tree).pos,
-                        ),
-                    );
-                return Some(self.factory_error(
-                    dkind,
-                    Some(new_pos),
-                    crate::resources::compiler_properties::errors::package_not_visible(
-                        symbol_place(ctx, o),
-                        reason_place(&reason),
-                    ),
-                ));
-            }
-        }
         Some(self.factory_error(
             dkind,
             pos,
@@ -1690,42 +1301,9 @@ impl Resolve {
         let package_module = crate::code::symbol::package_module(ctx, package)
             .expect("package module");
         let env_reads = module_read_modules(ctx, env_module);
-        if !env_reads.contains(&package_module) {
-            if package_module != syms.unnamed_module {
-                if env_module != syms.unnamed_module {
-                    fragments::not_def_access_does_not_read(
-                        symbol_place(ctx, env_module),
-                        symbol_place(ctx, package),
-                        symbol_place(ctx, package_module),
-                    )
-                } else {
-                    fragments::not_def_access_does_not_read_from_unnamed(
-                        symbol_place(ctx, package),
-                        symbol_place(ctx, package_module),
-                    )
-                }
-            } else {
-                fragments::not_def_access_does_not_read_unnamed(
-                    symbol_place(ctx, package),
-                    symbol_place(ctx, env_module),
-                )
-            }
-        } else {
+ else {
             let exported = module_exports_package(ctx, package_module, package);
-            if exported {
-                if env_module != syms.unnamed_module {
-                    fragments::not_def_access_not_exported_to_module(
-                        symbol_place(ctx, package),
-                        symbol_place(ctx, package_module),
-                        symbol_place(ctx, env_module),
-                    )
-                } else {
-                    fragments::not_def_access_not_exported_to_module_from_unnamed(
-                        symbol_place(ctx, package),
-                        symbol_place(ctx, package_module),
-                    )
-                }
-            } else if env_module != syms.unnamed_module {
+ else if env_module != syms.unnamed_module {
                 fragments::not_def_access_not_exported(
                     symbol_place(ctx, package),
                     symbol_place(ctx, package_module),
@@ -1775,9 +1353,7 @@ pub enum RecoveryLoadClass {
 
 /// Java: private static Symbol bestOf(Symbol s1, Symbol s2) (Resolve.java:174)
 fn best_of(ctx: &crate::compiler_context::CompilerContext, s1: SymbolId, s2: SymbolId) -> SymbolId {
-    if ctx.sym(s1).kind.better_than(ctx.sym(s2).kind) {
-        s1
-    } else {
+ else {
         s2
     }
 }
@@ -1809,9 +1385,6 @@ impl Resolve {
         // while (c.type.hasTag(TYPEVAR)) c = c.type.getUpperBound().tsym;
         loop {
             let c_ty = ctx.sym(c).ty.expect("type symbol type");
-            if !ctx.typ(c_ty).has_tag(TypeTag::TYPEVAR) {
-                break;
-            }
             let bound = match &ctx.typ(c_ty).kind {
                 TypeKindData::TypeVar { bound, .. } => *bound,
                 _ => None,
@@ -1822,47 +1395,14 @@ impl Resolve {
         let mut best_so_far = self.var_not_found;
         let c_type = ctx.sym(c).ty.expect("type symbol type");
         let members = self.member_scope(ctx, syms, c);
-        if let Some(members) = members {
-            let candidates = ctx.scope_get_symbols_by_name_full(
-                members,
-                name,
-                crate::code::scope::LookupKind::RECURSIVE,
-                &|_| true,
-                &self.types,
-                syms,
-                None,
-            );
-
-            for candidate in candidates {
-                if ctx.sym(candidate).kind == Kind::VAR
-                    && (ctx.sym(candidate).flags_field & flags::SYNTHETIC as i64) == 0
-                {
-                    return if self.is_accessible_member(ctx, syms, env, site, candidate, false) {
-                        candidate
-                    } else {
-                        self.new_access_error(ctx, syms, env, Some(site), candidate)
-                    };
-                }
-            }
-        }
         let st = self.types.supertype(ctx, syms, c_type, None);
-        if ctx.typ(st).has_tag(TypeTag::CLASS) || ctx.typ(st).has_tag(TypeTag::TYPEVAR) {
-            let st_tsym = ctx.typ(st).tsym.expect("supertype symbol");
-            let sym = self.find_field(ctx, syms, env, site, name, st_tsym);
-            best_so_far = best_of(ctx, best_so_far, sym);
-        }
         let interfaces = self.types.interfaces(ctx, syms, c_type);
         let mut current = interfaces;
         while ctx.sym(best_so_far).kind != Kind::AMBIGUOUS && current.non_empty() {
             let interface = *current.head();
             let interface_tsym = ctx.typ(interface).tsym.expect("interface symbol");
             let sym = self.find_field(ctx, syms, env, site, name, interface_tsym);
-            if crate::code::symbol::symbol_exists(ctx, best_so_far)
-                && crate::code::symbol::symbol_exists(ctx, sym)
-                && ctx.sym(sym).owner != ctx.sym(best_so_far).owner
-            {
-                best_so_far = self.new_ambiguity_error(ctx, best_so_far, sym);
-            } else {
+ else {
                 best_so_far = best_of(ctx, best_so_far, sym);
             }
             current = current.tail();
@@ -1882,37 +1422,8 @@ impl Resolve {
         let mut env1 = Rc::clone(env);
         let mut static_only = false;
         loop {
-            if env1.outer.is_none() {
-                break;
-            }
             let mut sym: Option<SymbolId> = None;
             let scope = env1.info.borrow().scope;
-            if let Some(scope) = scope {
-                let candidates = ctx.scope_get_symbols_by_name_full(
-                    scope,
-                    name,
-                    crate::code::scope::LookupKind::RECURSIVE,
-                    &|_| true,
-                    &self.types,
-                    syms,
-                    None,
-                );
-
-                for candidate in candidates {
-                    if ctx.sym(candidate).kind == Kind::VAR
-                        && (ctx.sym(candidate).flags_field & flags::SYNTHETIC as i64) == 0
-                    {
-                        if static_only {
-                            return self.new_static_error(ctx, candidate);
-                        }
-                        sym = Some(candidate);
-                        break;
-                    }
-                }
-            }
-            if self.is_static(&env1) {
-                static_only = true;
-            }
             let encl_class = env1.encl_class.expect("enclClass");
             let encl_sym = class_decl_symbol(ctx, encl_class).expect("enclClass symbol");
             let encl_type = ctx.sym(encl_sym).ty.expect("enclClass type");
@@ -1920,20 +1431,7 @@ impl Resolve {
                 Some(sym) => sym,
                 None => self.find_field(ctx, syms, &env1, encl_type, name, encl_sym),
             };
-            if crate::code::symbol::symbol_exists(ctx, sym) {
-                if static_only
-                    && ctx.sym(sym).kind == Kind::VAR
-                    && ctx.sym(ctx.sym(sym).owner.expect("owner")).kind == Kind::TYP
-                    && (ctx.sym(sym).flags_field & flags::STATIC as i64) == 0
-                {
-                    return self.new_static_error(ctx, sym);
-                }
-                return sym;
-            }
             best_so_far = best_of(ctx, best_so_far, sym);
-            if (ctx.sym(encl_sym).flags_field & flags::STATIC as i64) != 0 {
-                static_only = true;
-            }
             let outer = env1.outer.clone().expect("env.outer");
             env1 = outer;
         }
@@ -1941,13 +1439,6 @@ impl Resolve {
         let predef_class = syms.predef_class;
         let predef_type = ctx.sym(predef_class).ty.expect("predefClass type");
         let sym = self.find_field(ctx, syms, env, predef_type, name, predef_class);
-        if crate::code::symbol::symbol_exists(ctx, sym) {
-            return sym;
-        }
-        if crate::code::symbol::symbol_exists(ctx, best_so_far) {
-            return best_so_far;
-        }
-
         let mut origin: Option<SymbolId> = None;
         let toplevel = env.toplevel.expect("env.toplevel");
         let (named_import_scope, star_import_scope) = match &ctx.tree(toplevel).kind {
@@ -1972,14 +1463,7 @@ impl Resolve {
                 None,
             );
             for current_symbol in candidates {
-                if ctx.sym(current_symbol).kind != Kind::VAR {
-                    continue;
-                }
-                if !ctx.sym(best_so_far).kind.is_resolution_error()
-                    && ctx.sym(current_symbol).owner != ctx.sym(best_so_far).owner
-                {
-                    return self.new_ambiguity_error(ctx, best_so_far, current_symbol);
-                } else if !ctx.sym(best_so_far).kind.better_than(Kind::VAR) {
+ else if !ctx.sym(best_so_far).kind.better_than(Kind::VAR) {
                     let import_scope_snapshot = ctx.scope(import_scope).clone();
                     let origin_scope = import_scope_snapshot.get_origin_full(
                         import_scope,
@@ -1994,25 +1478,10 @@ impl Resolve {
                     origin = Some(origin_symbol);
                     let origin_type = ctx.sym(origin_symbol).ty.expect("origin type");
                     best_so_far =
-                        if self.is_accessible_member(ctx, syms, env, origin_type, current_symbol, false)
-                        {
-                            current_symbol
-                        } else {
+ else {
                             self.new_access_error(ctx, syms, env, Some(origin_type), current_symbol)
                         };
                 }
-            }
-            if crate::code::symbol::symbol_exists(ctx, best_so_far) {
-                break;
-            }
-        }
-        if ctx.sym(best_so_far).kind == Kind::VAR {
-            let best_owner = ctx.sym(best_so_far).owner.expect("best owner");
-            let origin = origin.expect("import origin");
-            let best_owner_type = ctx.sym(best_owner).ty;
-            let origin_type = ctx.sym(origin).ty;
-            if best_owner_type != origin_type {
-                return self.clone_symbol_with_owner(ctx, best_so_far, origin);
             }
         }
         best_so_far
@@ -2032,26 +1501,6 @@ impl Resolve {
         c: SymbolId,
     ) -> SymbolId {
         let members = self.member_scope(ctx, syms, c);
-        if let Some(members) = members {
-            let candidates = ctx.scope_get_symbols_by_name_full(
-                members,
-                name,
-                crate::code::scope::LookupKind::RECURSIVE,
-                &|_| true,
-                &self.types,
-                syms,
-                None,
-            );
-            for candidate in candidates {
-                if ctx.sym(candidate).kind == Kind::TYP {
-                    return if self.is_accessible_member(ctx, syms, env, site, candidate, false) {
-                        candidate
-                    } else {
-                        self.new_access_error(ctx, syms, env, Some(site), candidate)
-                    };
-                }
-            }
-        }
         self.type_not_found
     }
 
@@ -2069,23 +1518,13 @@ impl Resolve {
         let mut best_so_far = self.type_not_found;
         let c_type = ctx.sym(c).ty.expect("type symbol type");
         let st = self.types.supertype(ctx, syms, c_type, attr.as_deref_mut());
-        if ctx.typ(st).has_tag(TypeTag::CLASS) {
-            let st_tsym = ctx.typ(st).tsym.expect("supertype symbol");
-            let sym = self.find_member_type(ctx, syms, env, site, name, st_tsym, attr.as_deref_mut());
-            best_so_far = best_of(ctx, best_so_far, sym);
-        }
         let interfaces = self.types.interfaces(ctx, syms, c_type);
         let mut current = interfaces;
         while ctx.sym(best_so_far).kind != Kind::AMBIGUOUS && current.non_empty() {
             let interface = *current.head();
             let interface_tsym = ctx.typ(interface).tsym.expect("interface symbol");
             let sym = self.find_member_type(ctx, syms, env, site, name, interface_tsym, attr.as_deref_mut());
-            if !ctx.sym(best_so_far).kind.is_resolution_error()
-                && !ctx.sym(sym).kind.is_resolution_error()
-                && ctx.sym(sym).owner != ctx.sym(best_so_far).owner
-            {
-                best_so_far = self.new_ambiguity_error(ctx, best_so_far, sym);
-            } else {
+ else {
                 best_so_far = best_of(ctx, best_so_far, sym);
             }
             current = current.tail();
@@ -2105,9 +1544,6 @@ impl Resolve {
         attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         let sym = self.find_immediate_member_type(ctx, syms, env, site, name, c);
-        if sym != self.type_not_found {
-            return sym;
-        }
         self.find_inherited_member_type(ctx, syms, env, site, name, c, attr)
     }
 
@@ -2138,12 +1574,6 @@ impl Resolve {
         for candidate in candidates {
             let flat_name = symbol_flat_name(ctx, candidate);
             let sym = self.load_class(ctx, syms, env, &flat_name, recovery);
-            if ctx.sym(best_so_far).kind == Kind::TYP
-                && ctx.sym(sym).kind == Kind::TYP
-                && best_so_far != sym
-            {
-                return self.new_ambiguity_error(ctx, best_so_far, sym);
-            }
             best_so_far = best_of(ctx, best_so_far, sym);
         }
         best_so_far
@@ -2169,17 +1599,6 @@ impl Resolve {
             &|_| true,
         );
         for candidate in candidates {
-            if ctx.sym(candidate).kind == Kind::TYP {
-                let candidate_type = ctx.sym(candidate).ty.expect("type symbol type");
-                let candidate_owner = ctx.sym(candidate).owner.expect("type symbol owner");
-                if ctx.typ(candidate_type).has_tag(TypeTag::TYPEVAR)
-                    && (static_only
-                        || (self.is_static(env) && ctx.sym(candidate_owner).kind == Kind::TYP))
-                {
-                    return self.new_static_error(ctx, candidate);
-                }
-                return candidate;
-            }
         }
         self.type_not_found
     }
@@ -2194,55 +1613,16 @@ impl Resolve {
         mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> SymbolId {
         let empty = &self.names.empty;
-        if name == empty {
-            return self.type_not_found;
-        }
         let mut best_so_far = self.type_not_found;
         let mut static_only = false;
         let mut env1 = Rc::clone(env);
         loop {
-            if env1.outer.is_none() {
-                break;
-            }
             let tyvar = self.find_type_var(ctx, &env1, name, static_only);
-            if self.is_static(&env1) {
-                static_only = true;
-            }
             let encl_class = env1.encl_class.expect("enclClass");
             let encl_sym = class_decl_symbol(ctx, encl_class).expect("enclClass symbol");
             let encl_type = ctx.sym(encl_sym).ty.expect("enclClass type");
             let mut sym =
                 self.find_immediate_member_type(ctx, syms, &env1, encl_type, name, encl_sym);
-            if tyvar != self.type_not_found {
-                let tyvar_kind = ctx.sym(tyvar).kind;
-                let tyvar_owner = ctx.sym(tyvar).owner.expect("tyvar owner");
-                if env.base_clause
-                    || sym == self.type_not_found
-                    || (tyvar_kind == Kind::TYP
-                        && crate::code::symbol::symbol_exists(ctx, tyvar)
-                        && ctx.sym(tyvar_owner).kind == Kind::MTH)
-                {
-                    return tyvar;
-                }
-            }
-            if sym == self.type_not_found {
-                sym = self.find_inherited_member_type(ctx, syms, &env1, encl_type, name, encl_sym, attr.as_deref_mut());
-            }
-            if static_only && ctx.sym(sym).kind == Kind::TYP {
-                let sym_type = ctx.sym(sym).ty.expect("type symbol");
-                let no_type = crate::code::symtab::no_type_id(ctx);
-                let sym_enclosing = ctx.typ(sym_type).get_enclosing_type().unwrap_or(no_type);
-                if ctx.typ(sym_type).has_tag(TypeTag::CLASS)
-                    && ctx.typ(sym_enclosing).has_tag(TypeTag::CLASS)
-                    && type_is_parameterized(ctx, &self.types, syms, encl_type)
-                    && type_is_parameterized(ctx, &self.types, syms, sym_enclosing)
-                {
-                    return self.new_static_error(ctx, sym);
-                }
-            }
-            if crate::code::symbol::symbol_exists(ctx, sym) {
-                return sym;
-            }
             best_so_far = best_of(ctx, best_so_far, sym);
             let encl = if env1.base_clause {
                 env1.tree.expect("env.tree")
@@ -2250,9 +1630,6 @@ impl Resolve {
                 env1.encl_class.expect("env.enclClass")
             };
             let encl_sym = class_decl_symbol(ctx, encl).expect("enclosing class symbol");
-            if (ctx.sym(encl_sym).flags_field & flags::STATIC as i64) != 0 {
-                static_only = true;
-            }
             let outer = env1.outer.clone().expect("env.outer");
             env1 = outer;
         }
@@ -2261,75 +1638,6 @@ impl Resolve {
             .tree
             .map(|tree| ctx.tree(tree).has_tag(crate::tree::jc_tree::Tag::IMPORT))
             .unwrap_or(false);
-        if !tree_is_import {
-            let (named_scope, toplevel_scope, package_members, star_scope) =
-                match &ctx.tree(toplevel).kind {
-                    TreeKind::CompilationUnit {
-                        named_import_scope,
-                        toplevel_scope,
-                        packge,
-                        star_import_scope,
-                        ..
-                    } => {
-                        let package_members = packge.and_then(|p| ctx.sym(p).members());
-                        (
-                            *named_import_scope,
-                            *toplevel_scope,
-                            package_members,
-                            *star_import_scope,
-                        )
-                    }
-                    _ => (None, None, None, None),
-                };
-            let sym = self.find_global_type(
-                ctx,
-                syms,
-                env,
-                named_scope,
-                name,
-                RecoveryLoadClass::NamedImportScopeRecovery,
-            );
-            if crate::code::symbol::symbol_exists(ctx, sym) {
-                return sym;
-            }
-            best_so_far = best_of(ctx, best_so_far, sym);
-            let sym = self.find_global_type(
-                ctx,
-                syms,
-                env,
-                toplevel_scope,
-                name,
-                RecoveryLoadClass::NoRecovery,
-            );
-            if crate::code::symbol::symbol_exists(ctx, sym) {
-                return sym;
-            }
-            best_so_far = best_of(ctx, best_so_far, sym);
-            let sym = self.find_global_type(
-                ctx,
-                syms,
-                env,
-                package_members,
-                name,
-                RecoveryLoadClass::NoRecovery,
-            );
-            if crate::code::symbol::symbol_exists(ctx, sym) {
-                return sym;
-            }
-            best_so_far = best_of(ctx, best_so_far, sym);
-            let sym = self.find_global_type(
-                ctx,
-                syms,
-                env,
-                star_scope,
-                name,
-                RecoveryLoadClass::StarImportScopeRecovery,
-            );
-            if crate::code::symbol::symbol_exists(ctx, sym) {
-                return sym;
-            }
-            best_so_far = best_of(ctx, best_so_far, sym);
-        }
         best_so_far
     }
 }
@@ -2424,12 +1732,7 @@ fn flatten_ambiguous(
     ctx: &crate::compiler_context::CompilerContext,
     sym: SymbolId,
 ) -> Vec<SymbolId> {
-    if ctx.sym(sym).kind == Kind::AMBIGUOUS {
-        match crate::code::symbol::symbol_resolve_error_data(ctx, sym) {
-            Some(crate::code::symbol::ResolveErrorData::Ambiguity { syms }) => syms.clone(),
-            _ => panic!("ambiguity error symbol expected"),
-        }
-    } else {
+ else {
         vec![sym]
     }
 }
@@ -2461,9 +1764,6 @@ pub(crate) fn type_list_is_erroneous(
     let mut current = types;
     while current.non_empty() {
         let t = *current.head();
-        if ctx.typ(t).has_tag(TypeTag::ERROR) {
-            return true;
-        }
         current = current.tail();
     }
     false
@@ -2524,9 +1824,7 @@ impl Resolve {
         let module = env_toplevel_module(ctx, env).expect("toplevel module");
         match finder.load_class(ctx, syms, module, name.clone()) {
             Ok(c) => {
-                if self.class_accessible(ctx, syms, env, c) {
-                    c
-                } else {
+ else {
                     self.new_access_error(ctx, syms, env, None, c)
                 }
             }
@@ -2600,9 +1898,6 @@ impl Resolve {
                         _name: &crate::util::name::Name|
         -> Option<SymbolId> {
             for candidate in &candidate_names {
-                if let Ok(found) = finder.load_class(ctx, syms, module, candidate.clone()) {
-                    return Some(found);
-                }
             }
             None
         };
@@ -2670,9 +1965,6 @@ impl Resolve {
         // modules, or may exist in a module on which this module does not depend.
         let candidates = get(syms, name);
         for sym in candidates {
-            if validate(ctx, syms, sym) {
-                return self.create_invisible_symbol_error(ctx, syms, env, sym);
-            }
         }
         let env_module = env_toplevel_module(ctx, env).expect("toplevel module");
         let mut recoverable_modules = syms.get_all_modules();
@@ -2681,26 +1973,7 @@ impl Resolve {
         for original in recoverable_modules {
             // avoid overly eager completing classes from source-based modules, as
             // those may not be completable with the current compiler settings:
-            if resolve_module_source_location(ctx, original).is_some() {
-                continue;
-            }
             let mut module = original;
-            if resolve_module_class_location(ctx, module).is_none() {
-                let finder = Rc::clone(
-                    self.module_finder
-                        .borrow()
-                        .as_ref()
-                        .expect("AssertionError: ModuleFinder service is not installed"),
-                );
-                module = finder.borrow_mut().find_module(ctx, syms, module);
-            }
-            if ctx.sym(module).kind != Kind::ERR {
-                if let Some(sym) = load(ctx, syms, module, name) {
-                    if validate(ctx, syms, sym) {
-                        return self.create_invisible_symbol_error(ctx, syms, env, sym);
-                    }
-                }
-            }
         }
         default_result
     }
@@ -2715,9 +1988,7 @@ impl Resolve {
         sym: SymbolId,
     ) -> SymbolId {
         let snapshot = resolve_env_snapshot(ctx, env);
-        if symbol_package_visible(ctx, &snapshot, sym) {
-            self.new_access_error(ctx, syms, env, None, sym)
-        } else {
+ else {
             crate::code::symbol::symbol_new_resolve_error(
                 ctx,
                 Kind::HIDDEN,
@@ -2767,20 +2038,6 @@ impl Resolve {
             None,
         );
         for existing in candidates {
-            if ctx.sym(existing).kind == Kind::TYP && symbol_flat_name(ctx, existing) == *name {
-                let snapshot = resolve_env_snapshot(ctx, env);
-                return crate::code::symbol::symbol_new_resolve_error(
-                    ctx,
-                    Kind::HIDDEN,
-                    self.names.empty.clone(),
-                    "invisible class error",
-                    crate::code::symbol::ResolveErrorData::Invisible {
-                        env: snapshot,
-                        suppress_error: true,
-                        sym: existing,
-                    },
-                );
-            }
         }
         self.type_not_found
     }
@@ -2795,64 +2052,6 @@ impl Resolve {
     ) -> SymbolId {
         let module = env_toplevel_module(ctx, env).expect("toplevel module");
         let pack = syms.lookup_package(ctx, module, name);
-        if self.allow_modules && self.import_on_demand(ctx, env, name) {
-            // Port adapter: upstream PackageSymbol members are materialized by
-            // the package completer; the ported members() accessor does not
-            // complete, so complete the package before deciding whether it is
-            // an invisible symbol.
-            let _ = ctx.complete_symbol(syms, pack);
-            let members_empty = ctx.sym(pack).members().is_none()
-                || ctx
-                    .sym(pack)
-                    .members()
-                    .map(|scope| ctx.scope_get_symbols(scope, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true).is_empty())
-                    .unwrap_or(true);
-            if members_empty {
-                // Java: return lookupInvisibleSymbol(env, name,
-                //     syms::getPackagesForName, syms::enterPackage, sym -> {
-                //         sym.complete(); return !sym.members().isEmpty(); }, pack)
-                //     (Resolve.java:2127-2130).
-                let get = |syms: &Symtab, name: &crate::util::name::Name| {
-                    syms.get_packages_for_name(name)
-                };
-                let mut load = |ctx: &mut crate::compiler_context::CompilerContext,
-                                syms: &Symtab,
-                                module: SymbolId,
-                                name: &crate::util::name::Name|
-                -> Option<SymbolId> { Some(syms.enter_package(ctx, module, name.clone())) };
-                let mut validate = |ctx: &mut crate::compiler_context::CompilerContext,
-                                    syms: &Symtab,
-                                    sym: SymbolId|
-                -> bool {
-                    // Java: sym.complete(); return !sym.members().isEmpty();
-                    let _ = ctx.complete_symbol(syms, sym);
-                    let members_empty = ctx.sym(sym).members().is_none()
-                        || ctx
-                            .sym(sym)
-                            .members()
-                            .map(|scope| {
-                                ctx.scope_get_symbols(
-                                    scope,
-                                    crate::code::scope::LookupKind::NON_RECURSIVE,
-                                    &|_| true,
-                                )
-                                .is_empty()
-                            })
-                            .unwrap_or(true);
-                    !members_empty
-                };
-                return self.lookup_invisible_symbol(
-                    ctx,
-                    syms,
-                    env,
-                    name,
-                    &get,
-                    &mut load,
-                    &mut validate,
-                    pack,
-                );
-            }
-        }
         pack
     }
 
@@ -2866,9 +2065,6 @@ impl Resolve {
         let Some(tree) = env.tree else {
             return false;
         };
-        if !ctx.tree(tree).has_tag(crate::tree::jc_tree::Tag::IMPORT) {
-            return false;
-        }
         let qualid = match &ctx.tree(tree).kind {
             TreeKind::Import { qualid, .. } => *qualid,
             _ => return false,
@@ -2876,13 +2072,7 @@ impl Resolve {
         let Some(qualid) = qualid else {
             return false;
         };
-        if !ctx.tree(qualid).has_tag(crate::tree::jc_tree::Tag::SELECT) {
-            return false;
-        }
         let tree_name = crate::tree::tree_info::name(ctx, qualid);
-        if tree_name != Some(self.names.asterisk.clone()) {
-            return false;
-        }
         let selected = match &ctx.tree(qualid).kind {
             TreeKind::FieldAccess { selected, .. } => *selected,
             _ => return false,
@@ -2905,44 +2095,6 @@ impl Resolve {
     ) -> SymbolId {
         use crate::util::mandatory_warning_handler::MandatoryWarningLog;
         let kind = ctx.sym(best_so_far).kind;
-        if kind == Kind::TYP || kind == Kind::ABSENT_TYP {
-            if self.allow_local_variable_type_inference && *name == self.names.var {
-                best_so_far = crate::code::symbol::symbol_new_resolve_error(
-                    ctx,
-                    Kind::BAD_RESTRICTED_TYPE,
-                    self.names.empty.clone(),
-                    "bad var use",
-                    crate::code::symbol::ResolveErrorData::BadRestrictedType {
-                        type_name: self.names.var.clone(),
-                    },
-                );
-            } else if *name == self.names.r#yield {
-                if self.allow_yield_statement {
-                    best_so_far = crate::code::symbol::symbol_new_resolve_error(
-                        ctx,
-                        Kind::BAD_RESTRICTED_TYPE,
-                        self.names.empty.clone(),
-                        "bad var use",
-                        crate::code::symbol::ResolveErrorData::BadRestrictedType {
-                            type_name: self.names.r#yield.clone(),
-                        },
-                    );
-                } else if let Some(pos) = pos {
-                    // Java: Resolve.java:2503-2505
-                    //   else if (pos != null)
-                    //       log.warning(pos, Warnings.IllegalRefToRestrictedType(names.yield));
-                    let info =
-                        crate::resources::compiler_properties::warnings::illegal_ref_to_restricted_type(
-                            self.names.r#yield.clone(),
-                        );
-                    self.log.borrow_mut().warning(
-                        None,
-                        Some(pos),
-                        crate::comp::check::warning_from_info(info),
-                    );
-                }
-            }
-        }
         best_so_far
     }
 }
@@ -2977,23 +2129,7 @@ impl Resolve {
     ) -> SymbolId {
         use crate::code::kinds::KindSelector;
         let mut best_so_far = self.type_not_found;
-        if kind.contains(KindSelector::VAL) {
-            let sym = self.find_var(ctx, syms, env, name);
-            if crate::code::symbol::symbol_exists(ctx, sym) {
-                return sym;
-            }
-            best_so_far = best_of(ctx, best_so_far, sym);
-        }
-        if kind.contains(KindSelector::TYP) {
-            let sym = self.find_type(ctx, syms, env, name, attr);
-            if crate::code::symbol::symbol_exists(ctx, sym) {
-                return sym;
-            }
-            best_so_far = best_of(ctx, best_so_far, sym);
-        }
-        if kind.contains(KindSelector::PCK) {
-            self.lookup_package(ctx, syms, env, name)
-        } else {
+ else {
             best_so_far
         }
     }
@@ -3030,30 +2166,6 @@ impl Resolve {
         use crate::code::kinds::KindSelector;
         let fullname = form_full_name(ctx, name, pck);
         let mut best_so_far = self.type_not_found;
-        if kind.contains(KindSelector::TYP) {
-            let speculative = env.info.borrow().attribution_mode.is_speculative();
-            let recovery = if self.allow_modules
-                && !kind.contains(KindSelector::PCK)
-                && !crate::code::symbol::symbol_exists(ctx, pck)
-                && !speculative
-            {
-                RecoveryLoadClass::DoRecoveryLoadClass
-            } else {
-                RecoveryLoadClass::NoRecovery
-            };
-            let sym = self.load_class(ctx, syms, env, &fullname, recovery);
-            if crate::code::symbol::symbol_exists(ctx, sym) {
-                // don't allow programs to use flatnames
-                if ctx.sym(sym).name == *name {
-                    return sym;
-                }
-            } else {
-                best_so_far = best_of(ctx, best_so_far, sym);
-            }
-        }
-        if kind.contains(KindSelector::PCK) {
-            return self.lookup_package(ctx, syms, env, &fullname);
-        }
         best_so_far
     }
 
@@ -3088,22 +2200,6 @@ impl Resolve {
     ) -> SymbolId {
         use crate::code::kinds::KindSelector;
         let mut best_so_far = self.type_not_found;
-        if kind.contains(KindSelector::VAL) {
-            let site_tsym = ctx.typ(site).tsym.expect("site symbol");
-            let sym = self.find_field(ctx, syms, env, site, name, site_tsym);
-            if crate::code::symbol::symbol_exists(ctx, sym) {
-                return sym;
-            }
-            best_so_far = best_of(ctx, best_so_far, sym);
-        }
-        if kind.contains(KindSelector::TYP) {
-            let site_tsym = ctx.typ(site).tsym.expect("site symbol");
-            let sym = self.find_member_type(ctx, syms, env, site, name, site_tsym, None);
-            if crate::code::symbol::symbol_exists(ctx, sym) {
-                return sym;
-            }
-            best_so_far = best_of(ctx, best_so_far, sym);
-        }
         best_so_far
     }
 }
@@ -3115,10 +2211,7 @@ pub(crate) fn form_full_name(
     name: &crate::util::name::Name,
     owner: SymbolId,
 ) -> crate::util::name::Name {
-    if ctx.sym(owner).kind == Kind::PCK && !name.is_empty() {
-        let owner_flat = symbol_flat_name(ctx, owner);
-        owner_flat.append_char(b'.', name)
-    } else {
+ else {
         name.clone()
     }
 }
@@ -3179,79 +2272,6 @@ impl Resolve {
         log_resolve_helper: LogResolveHelper,
     ) -> SymbolId {
 
-        if ctx.sym(sym).kind.is_resolution_error() {
-            let err_sym = sym;
-            let access_location = if qualified {
-                site.and_then(|site| ctx.typ(site).tsym).expect("qualified site symbol")
-            } else {
-                // syms.noSymbol
-                syms.no_symbol
-            };
-            let sym = self.resolve_error_access(ctx, syms, err_sym, name, access_location);
-            let _ = sym;
-            // Java: argtypes = logResolveHelper.getArgumentTypes(errSym, sym,
-            // name, argtypes)
-            if log_resolve_helper == LogResolveHelper::Method {
-                // Java: argtypes = logResolveHelper.getArgumentTypes(errSym, sym,
-                // name, argtypes) with methodLogResolveHelper mapping each argument
-                // through new ResolveDeferredRecoveryMap(SPECULATIVE, accessedSym,
-                // currentResolutionContext.step) (Resolve.java:2615-2636).
-                if let Some(current_argtypes) = argtypes.clone() {
-                    let step = self
-                        .current_resolution_step
-                        .get()
-                        .expect("AssertionError: currentResolutionContext is null");
-                    // The caller may already hold the mutable Attr borrow (the
-                    // attribution pass); otherwise the installed service cell is
-                    // used (Resolve.DeferredAttr is a Context service upstream).
-                    let mapped = if let Some(attr) = attr {
-                        attr.map_resolve_deferred_argtypes(
-                            ctx,
-                            syms,
-                            current_argtypes,
-                            Some(sym),
-                            step,
-                        )
-                    } else {
-                        let attr_rc = Rc::clone(
-                            self.attr_cell
-                                .borrow()
-                                .as_ref()
-                                .expect("AssertionError: Attr service must be installed"),
-                        );
-                        
-                        attr_rc.borrow_mut().map_resolve_deferred_argtypes(
-                            ctx,
-                            syms,
-                            current_argtypes,
-                            Some(sym),
-                            step,
-                        )
-                    };
-                    argtypes = Some(mapped);
-                }
-            }
-            if self.resolve_diagnostic_needed(
-                ctx,
-                log_resolve_helper,
-                site,
-                argtypes.clone(),
-                typeargtypes.clone(),
-            ) {
-                self.log_resolve_error(
-                    ctx,
-                    syms,
-                    err_sym,
-                    pos,
-                    location,
-                    site,
-                    name,
-                    argtypes,
-                    typeargtypes,
-                );
-            }
-            return sym;
-        }
         sym
     }
 
@@ -3282,12 +2302,6 @@ impl Resolve {
             argtypes,
             typeargtypes,
         );
-        if let Some(mut diagnostic) = diagnostic {
-            diagnostic.set_flag(crate::util::jc_diagnostic::DiagnosticFlag::RESOLVE_ERROR);
-            // Java: log.report(d)
-            let log = std::rc::Rc::clone(&self.log);
-            log.borrow_mut().report(diagnostic);
-        }
     }
 
     /// Java: Symbol accessMethod(sym, pos, location, site, name, qualified,
@@ -3368,18 +2382,6 @@ fn symbol_not_found_error_key(
 ) -> String {
     let key = "cant.resolve";
     let mut suffix = String::new();
-    if has_location {
-        suffix.push_str(".location");
-    }
-    if matches!(
-        kindname,
-        crate::code::kinds::KindName::METHOD | crate::code::kinds::KindName::CONSTRUCTOR
-    ) {
-        suffix.push_str(".args");
-        if has_type_args {
-            suffix.push_str(".params");
-        }
-    }
     format!("{key}{suffix}")
 }
 
@@ -3391,9 +2393,6 @@ fn type_args_place(
     let Some(typeargs) = typeargs else {
         return String::new();
     };
-    if typeargs.is_empty() {
-        return String::new();
-    }
     let mut parts = Vec::new();
     let mut current = typeargs;
     while current.non_empty() {
@@ -3414,9 +2413,6 @@ fn method_arguments_place(
     let Some(argtypes) = argtypes else {
         return "compiler.misc.no.args".to_string();
     };
-    if argtypes.is_empty() {
-        return "compiler.misc.no.args".to_string();
-    }
     let mut parts = Vec::new();
     let mut current = argtypes;
     while current.non_empty() {
@@ -3447,9 +2443,6 @@ fn type_place_text(
     let Some(ty) = ty else {
         return String::new();
     };
-    if let Some(tsym) = ctx.typ(ty).tsym {
-        return symbol_display_name(ctx, tsym);
-    }
     format!("{:?}", ctx.typ(ty).get_tag())
 }
 
@@ -3491,16 +2484,6 @@ fn modifier_args(
     access_flags: i64,
 ) -> Vec<crate::resources::diagnostic_contract::ModifierArg> {
     let mut result = Vec::new();
-    if (access_flags & flags::PRIVATE as i64) != 0 {
-        result.push(
-            crate::resources::diagnostic_contract::ModifierArg::placeholder("private"),
-        );
-    }
-    if (access_flags & flags::PROTECTED as i64) != 0 {
-        result.push(
-            crate::resources::diagnostic_contract::ModifierArg::placeholder("protected"),
-        );
-    }
     result
 }
 
@@ -3656,9 +2639,6 @@ impl MethodResolutionPhase {
         prev: SymbolId,
         sym: SymbolId,
     ) -> SymbolId {
-        if self != MethodResolutionPhase::VARARITY {
-            return sym;
-        }
         let prev_kind = ctx.sym(prev).kind;
         let sym_kind = ctx.sym(sym).kind;
         // Java: Assert.check(bestSoFar.kind.isResolutionError() &&
@@ -3667,16 +2647,10 @@ impl MethodResolutionPhase {
             prev_kind.is_resolution_error() && prev_kind != Kind::AMBIGUOUS,
             "AssertionError: mergeResults invariant"
         );
-        if !sym_kind.is_resolution_error() {
-            // varargs resolution successful
-            return sym;
-        }
         match prev_kind {
             Kind::WRONG_MTH | Kind::WRONG_MTHS => match sym_kind {
                 Kind::WRONG_MTH => {
-                    if prev_kind == Kind::WRONG_MTHS {
-                        prev
-                    } else {
+ else {
                         sym
                     }
                 }
@@ -3886,14 +2860,7 @@ pub fn catch_inapplicable_method_exception<R>(
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
         Ok(value) => Ok(value),
         Err(payload) => {
-            if payload.is::<InapplicableMethodExceptionPayload>() {
-                let diagnostic = INAPPLICABLE_DIAGNOSTICS
-                    .with(|stack| stack.borrow_mut().pop())
-                    .expect("inapplicable diagnostic payload");
-                Err(MethodCheckFailure::Inapplicable(
-                    InapplicableMethodException::new(diagnostic),
-                ))
-            } else {
+ else {
                 std::panic::resume_unwind(payload)
             }
         }
@@ -3908,12 +2875,7 @@ pub fn catch_inference_exception<R>(
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
         Ok(value) => Ok(value),
         Err(payload) => {
-            if payload.is::<InferenceExceptionPayload>() {
-                let exception = INFERENCE_EXCEPTIONS
-                    .with(|stack| stack.borrow_mut().pop())
-                    .expect("inference exception payload");
-                Err(exception)
-            } else {
+ else {
                 std::panic::resume_unwind(payload)
             }
         }
@@ -4107,9 +3069,7 @@ fn formals_head_is_not_varargs(
     formals: &crate::util::list::List<TypeId>,
     varargs_formal: Option<TypeId>,
 ) -> bool {
-    if formals.is_empty() {
-        varargs_formal.is_some()
-    } else {
+ else {
         Some(*formals.head()) != varargs_formal
     }
 }
@@ -4148,25 +3108,6 @@ pub fn abstract_method_check_arguments_acceptable(
     let mut formals = formals;
     // Java: if (varargsFormal == null && argtypes.size() != formals.size())
     //     reportMC(callTree, MethodCheckDiag.ARITY_MISMATCH, inferenceContext);
-    if varargs_formal.is_none() {
-        let mut arg_count = 0usize;
-        let mut current = argtypes.clone();
-        while current.non_empty() {
-            arg_count += 1;
-            current = current.tail();
-        }
-        let mut formal_count = 0usize;
-        let mut current = formals.clone();
-        while current.non_empty() {
-            formal_count += 1;
-            current = current.tail();
-        }
-        if arg_count != formal_count {
-            return Err(MethodCheckFailure::Inapplicable(
-                InapplicableMethodException::new(Some(method_check_diag(diags, "arity mismatch"))),
-            ));
-        }
-    }
     // Java: formals.head (null for the empty list) != varargsFormal.
     while argtypes.non_empty() && formals_head_is_not_varargs(&formals, varargs_formal) {
         let pos = if trees.non_empty() {
@@ -4189,41 +3130,6 @@ pub fn abstract_method_check_arguments_acceptable(
         )?;
         argtypes = argtypes.tail();
         formals = formals.tail();
-        if trees.non_empty() {
-            trees = trees.tail();
-        }
-    }
-    if formals_head_is_not_varargs(&formals, varargs_formal) {
-        return Err(MethodCheckFailure::Inapplicable(InapplicableMethodException::new(
-            Some(method_check_diag(diags, "arity mismatch")),
-        )));
-    }
-    if use_varargs {
-        let elt = types.elemtype(ctx, syms, varargs_formal.expect("varargs formal"));
-        while argtypes.non_empty() {
-            let pos = if trees.non_empty() {
-                Some(*trees.head())
-            } else {
-                None
-            };
-            this.check_arg(
-                ctx,
-                syms,
-                types,
-                attr,
-                chk,
-                pos,
-                true,
-                *argtypes.head(),
-                elt,
-                Rc::clone(&deferred_attr_context),
-                warn,
-            )?;
-            argtypes = argtypes.tail();
-            if trees.non_empty() {
-                trees = trees.tail();
-            }
-        }
     }
     let _ = warn;
     Ok(())
@@ -4270,23 +3176,13 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
     ) -> bool {
         let mut found = found;
         let mut req = req;
-        if let Some(pending) = &self.pending_inference {
-            // Java: found = pendingInferenceContext.asUndetVar(found);
-            found = pending.as_undet_var(ctx, syms, types, found);
-            // Java: if (found.hasTag(UNDETVAR) && req.isPrimitive()) req = boxedClass(req).type;
-            if ctx.typ(found).has_tag(crate::code::type_tag::TypeTag::UNDETVAR)
-                && ctx.typ(req).is_primitive()
-            {
-                let boxed = types.boxed_class_ro(ctx, syms, req);
-                req = ctx.sym(boxed).ty.expect("boxed type");
-            }
-        }
+        // Occurs-check guard: Bar<T> <: T must not add the self-referential
+        // lower bound T <- Bar<T>.  Java's inference avoids this through its
+        // free-variable handling (Infer.checkBounds).
         let inference_context = &self.deferred_attr_context.inference_context;
         let found = inference_context.as_undet_var(ctx, syms, types, found);
         let req = inference_context.as_undet_var(ctx, syms, types, req);
-        if self.strict {
-            types.is_subtype_unchecked_with_warn(ctx, syms, found, req, warn)
-        } else {
+ else {
             types.is_convertible_with_warn(ctx, syms, found, req, warn)
         }
     }
@@ -4350,29 +3246,6 @@ impl MethodResultInfo {
         warn: &mut crate::util::warner::Warner,
     ) -> Result<TypeId, MethodCheckFailure> {
         let _ = chk;
-        if ctx.typ(found).has_tag(crate::code::type_tag::TypeTag::DEFERRED) {
-            let result_info = crate::comp::attr::ResultInfo::new(
-                crate::code::kinds::KindSelector::VAL,
-                Some(self.pt),
-                Rc::clone(&self.check_context),
-            );
-            return crate::comp::deferred_attr::deferred_type_check(
-                ctx, syms, types, attr, found, &result_info,
-            )
-            .map_err(|failure| match failure {
-                crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => {
-                    MethodCheckFailure::Inference(ex)
-                }
-                crate::comp::deferred_attr::DeferredAttrFailure::Completion(_) => {
-                    // Java: CompletionFailure propagates out of check; the
-                    // ported method-check path only reports inference failures
-                    // (the CompletionFailure path is Attr, registered).
-                    MethodCheckFailure::Inapplicable(InapplicableMethodException::new(
-                        Some(method_check_diag(diags, "completion failure")),
-                    ))
-                }
-            });
-        }
         let u_result = if found == self.pt {
             found
         } else {
@@ -4385,11 +3258,6 @@ impl MethodResultInfo {
                 .inference_context()
                 .cached_capture(ctx, syms, types, tree, u_result, true),
         };
-        if !self.check_context.compatible(ctx, syms, types, captured_type, self.pt, warn) {
-            return Err(MethodCheckFailure::Inapplicable(
-                InapplicableMethodException::new(Some(method_check_diag(diags, "no conforming assignment"))),
-            ));
-        }
         // Java: super.check(pos, chk.checkNonVoid(pos, capturedType)) — the
         // checkType compatibility re-check is performed above; checkNonVoid is
         // registered (Check).
@@ -4539,12 +3407,7 @@ impl Resolve {
         let mut mt = types.member_type(ctx, syms, site, m);
         let mut tvars: crate::util::list::List<TypeId> = crate::util::list::List::nil();
         let typeargtypes = typeargtypes.unwrap_or_else(crate::util::list::List::nil);
-        if !ctx.typ(mt).has_tag(crate::code::type_tag::TypeTag::FORALL)
-            && typeargtypes.non_empty()
-        {
-            // This is not a polymorphic method, but typeargs are supplied
-            // which is fine, see JLS 15.12.2.1
-        } else if ctx.typ(mt).has_tag(crate::code::type_tag::TypeTag::FORALL)
+ else if ctx.typ(mt).has_tag(crate::code::type_tag::TypeTag::FORALL)
             && typeargtypes.non_empty()
         {
             let (pmt_tvars, pmt_qtype) = match &ctx.typ(mt).kind {
@@ -4553,20 +3416,6 @@ impl Resolve {
                 }
                 _ => crate::util::assert::error(),
             };
-            if typeargtypes.length() != pmt_tvars.length() {
-                let diag = self.diags.fragment(
-                    crate::resources::compiler_properties::fragments::wrong_number_type_args(
-                        {
-                            let length = pmt_tvars.length().to_string();
-                            crate::util::java_string::JavaString::from(length.as_str())
-                        },
-                    )
-                    .into(),
-                );
-                return Err(MethodCheckFailure::Inapplicable(
-                    InapplicableMethodException::new(Some(diag)),
-                ));
-            }
             let mut formals = pmt_tvars.clone();
             let mut actuals = typeargtypes.clone();
             while formals.non_empty() && actuals.non_empty() {
@@ -4575,18 +3424,6 @@ impl Resolve {
                 let bounds = types.subst(ctx, syms, &declared_bounds, &pmt_tvars, &typeargtypes);
                 let mut bounds = bounds;
                 while bounds.non_empty() {
-                    if !types.is_subtype_unchecked(ctx, syms, *actuals.head(), *bounds.head()) {
-                        let diag = self.diags.fragment(
-                            crate::resources::compiler_properties::fragments::explicit_param_do_not_conform_to_bounds(
-                                crate::resources::diagnostic_contract::TypeArg::placeholder("type"),
-                                vec![crate::resources::diagnostic_contract::TypeArg::placeholder("type")],
-                            )
-                            .into(),
-                        );
-                        return Err(MethodCheckFailure::Inapplicable(
-                            InapplicableMethodException::new(Some(diag)),
-                        ));
-                    }
                     bounds = bounds.tail();
                 }
                 formals = formals.tail();
@@ -4614,34 +3451,7 @@ impl Resolve {
         let mut inst_needed = !tvars.is_empty();
         let mut current = argtypes.clone();
         while current.non_empty() {
-            if ctx
-                .typ(*current.head())
-                .has_tag(crate::code::type_tag::TypeTag::FORALL)
-            {
-                inst_needed = true;
-            }
             current = current.tail();
-        }
-        if inst_needed {
-            return infer
-                .instantiate_method(
-                    ctx,
-                    syms,
-                    types,
-                    attr,
-                    chk,
-                    env,
-                    tvars,
-                    mt,
-                    result_info,
-                    m,
-                    argtypes,
-                    allow_boxing,
-                    use_varargs,
-                    resolve_context,
-                    warn,
-                )
-                .map_err(MethodCheckFailure::Inference);
         }
         let deferred_context = Rc::new(resolve_context.deferred_attr_context(
             m,
@@ -4715,18 +3525,6 @@ impl Resolve {
         } else {
             crate::comp::deferred_attr::AttrMode::CHECK
         };
-        if let Some(tree) = env.tree {
-            if ctx.tree(tree).has_tag(crate::tree::jc_tree::Tag::REFERENCE) {
-                resolution_context.method_check = Some(Rc::new(RefCell::new(
-                    MethodReferenceCheck {
-                        pending_inference_context: Rc::clone(
-                            result_info.check_context.inference_context(),
-                        ),
-                        diags: Rc::clone(&self.diags),
-                    },
-                )));
-            }
-        }
         let step = env
             .info
             .borrow()
@@ -4879,16 +3677,8 @@ impl Resolve {
             }
             None => true,
         };
-        if ctx.sym(sym).kind == crate::code::kinds::Kind::ERR
-            || !inherited_ok
-            || !self.not_overridden_in(ctx, syms, site, sym)
-        {
-            return best_so_far;
-        } else if use_varargs && (ctx.sym(sym).flags_field & crate::code::flags::VARARGS) == 0 {
-            if ctx.sym(best_so_far).kind.is_resolution_error() {
-                let base = base_symbol_id(ctx, best_so_far);
-                return self.new_bad_varargs_method(ctx, base);
-            } else {
+ else if use_varargs && (ctx.sym(sym).flags_field & crate::code::flags::VARARGS) == 0 {
+ else {
                 return best_so_far;
             }
         }
@@ -4955,27 +3745,6 @@ impl Resolve {
                             }
                             _ => None,
                         };
-                        if let Some(access_sym) = access_sym {
-                            let previous_diagnostic = self.resolve_error_diagnostic(
-                                ctx,
-                                syms,
-                                best_so_far,
-                                crate::util::jc_diagnostic::DiagnosticType::FRAGMENT,
-                                None,
-                                None,
-                                Some(site),
-                                None,
-                                Some(argtypes.clone()),
-                                typeargtypes.clone(),
-                            );
-                            resolve_context
-                                .add_inapplicable_candidate(access_sym, previous_diagnostic);
-                            return self.new_inapplicable_symbols_error(
-                                ctx,
-                                resolve_context,
-                                crate::code::kinds::Kind::WRONG_MTHS,
-                            );
-                        }
                         return best_so_far;
                     }
                     crate::code::kinds::Kind::WRONG_MTH => {
@@ -4989,77 +3758,7 @@ impl Resolve {
                 }
             }
         }
-        if !self.is_accessible(ctx, syms, types, env, site, sym) {
-            let access_error = self.new_access_error(ctx, syms, env, Some(site), sym);
-            let cur_diagnostic = self.resolve_error_diagnostic(
-                ctx,
-                syms,
-                access_error,
-                crate::util::jc_diagnostic::DiagnosticType::FRAGMENT,
-                None,
-                None,
-                Some(site),
-                None,
-                Some(argtypes.clone()),
-                typeargtypes.clone(),
-            );
-            // Currently, an AccessError occurs. (Resolve.java:1638-1665)
-            match ctx.sym(best_so_far).kind {
-                crate::code::kinds::Kind::ABSENT_MTH => {
-                    best_so_far = access_error;
-                }
-                crate::code::kinds::Kind::WRONG_MTH => {
-                    resolve_context
-                        .add_inapplicable_candidate(sym, cur_diagnostic.clone());
-                    best_so_far = self.new_inapplicable_symbols_error(
-                        ctx,
-                        resolve_context,
-                        crate::code::kinds::Kind::WRONG_MTHS,
-                    );
-                }
-                crate::code::kinds::Kind::WRONG_MTHS => {
-                    resolve_context.add_inapplicable_candidate(sym, cur_diagnostic);
-                }
-                crate::code::kinds::Kind::HIDDEN => {
-                    let prev = crate::code::symbol::symbol_resolve_error_data(ctx, best_so_far);
-                    let access_sym = match prev {
-                        Some(crate::code::symbol::ResolveErrorData::Access { sym, .. }) => {
-                            Some(*sym)
-                        }
-                        _ => None,
-                    };
-                    if let Some(access_sym) = access_sym {
-                        let previous_diagnostic = self.resolve_error_diagnostic(
-                            ctx,
-                            syms,
-                            best_so_far,
-                            crate::util::jc_diagnostic::DiagnosticType::FRAGMENT,
-                            None,
-                            None,
-                            Some(site),
-                            None,
-                            Some(argtypes.clone()),
-                            typeargtypes.clone(),
-                        );
-                        resolve_context
-                            .add_inapplicable_candidate(access_sym, previous_diagnostic);
-                        resolve_context.add_inapplicable_candidate(sym, cur_diagnostic);
-                        best_so_far = self.new_inapplicable_symbols_error(
-                            ctx,
-                            resolve_context,
-                            crate::code::kinds::Kind::WRONG_MTHS,
-                        );
-                    }
-                }
-                _ => {}
-            }
-            return best_so_far;
-        }
-        if ctx.sym(best_so_far).kind.is_resolution_error()
-            && ctx.sym(best_so_far).kind != crate::code::kinds::Kind::AMBIGUOUS
-        {
-            sym
-        } else {
+ else {
             let mut note_warner = crate::util::warner::Warner::new(None);
             self.most_specific(
                 ctx,
@@ -5120,9 +3819,6 @@ impl Resolve {
         let m2_kind = ctx.sym(m2).kind;
         match m2_kind {
             crate::code::kinds::Kind::MTH => {
-                if m1 == m2 {
-                    return m1;
-                }
                 let m1_signature_more_specific = self.signature_more_specific(
                     ctx, syms, types, attr, chk, infer, env, site, argtypes.clone(), m1, m2,
                     use_varargs, note_warner,
@@ -5131,86 +3827,13 @@ impl Resolve {
                     ctx, syms, types, attr, chk, infer, env, site, argtypes.clone(), m2, m1,
                     use_varargs, note_warner,
                 );
-                if m1_signature_more_specific && m2_signature_more_specific {
-                    // Java: Resolve.java:1664-1705.
-                    let mt1 = types.member_type(ctx, syms, site, m1);
-                    let mt2 = types.member_type(ctx, syms, site, m2);
-                    if !types.override_equivalent(ctx, syms, mt1, mt2) {
-                        return self.ambiguity_error(ctx, m1, m2);
-                    }
-                    let m1_flags = ctx.sym(m1).flags_field;
-                    let m2_flags = ctx.sym(m2).flags_field;
-                    let m1_bridge = (m1_flags & crate::code::flags::BRIDGE) != 0;
-                    let m2_bridge = (m2_flags & crate::code::flags::BRIDGE) != 0;
-                    if m1_bridge != m2_bridge {
-                        return if m1_bridge { m2 } else { m1 };
-                    }
-                    if crate::code::symbol::base_symbol(ctx, m1)
-                        == crate::code::symbol::base_symbol(ctx, m2)
-                    {
-                        return m1;
-                    }
-                    let m1_owner = ctx.sym(m1).owner.expect("method owner");
-                    let m2_owner = ctx.sym(m2).owner.expect("method owner");
-                    if m1_owner != m2_owner {
-                        let m1_owner_ty = ctx.sym(m1_owner).ty.expect("owner type");
-                        let m2_owner_ty = ctx.sym(m2_owner).ty.expect("owner type");
-                        let m1_owner_interface =
-                            (ctx.sym(m1_owner).flags_field
-                                & crate::code::flags::INTERFACE as i64)
-                                != 0;
-                        let m2_owner_interface =
-                            (ctx.sym(m2_owner).flags_field
-                                & crate::code::flags::INTERFACE as i64)
-                                != 0;
-                        if types
-                            .as_super(ctx, syms, m1_owner_ty, m2_owner)
-                            .is_some()
-                            && (!m1_owner_interface || m2_owner_interface)
-                            && crate::code::symbol::overrides(
-                                ctx, syms, types, m1, m2, m1_owner, false,
-                            )
-                        {
-                            return m1;
-                        }
-                        if types
-                            .as_super(ctx, syms, m2_owner_ty, m1_owner)
-                            .is_some()
-                            && (!m2_owner_interface || m1_owner_interface)
-                            && crate::code::symbol::overrides(
-                                ctx, syms, types, m2, m1, m2_owner, false,
-                            )
-                        {
-                            return m2;
-                        }
-                    }
-                    let m1_abstract =
-                        (m1_flags & crate::code::flags::ABSTRACT as i64) != 0;
-                    let m2_abstract =
-                        (m2_flags & crate::code::flags::ABSTRACT as i64) != 0;
-                    if m1_abstract && !m2_abstract {
-                        return m2;
-                    }
-                    if m2_abstract && !m1_abstract {
-                        return m1;
-                    }
-                    return self.ambiguity_error(ctx, m1, m2);
-                }
-                if m1_signature_more_specific {
-                    return m1;
-                }
-                if m2_signature_more_specific {
-                    return m2;
-                }
                 self.ambiguity_error(ctx, m1, m2)
             }
             crate::code::kinds::Kind::AMBIGUOUS => {
                 // compare m1 to ambiguous methods in m2
                 let ambiguous = crate::code::symbol::symbol_resolve_error_data(ctx, m2);
                 let mut ambiguous_syms: Vec<SymbolId> = Vec::new();
-                if let Some(crate::code::symbol::ResolveErrorData::Ambiguity {
-                    syms: syms_list,
-                }) = ambiguous
+) = ambiguous
                 {
                     ambiguous_syms = syms_list.clone();
                 }
@@ -5235,24 +3858,9 @@ impl Resolve {
                     m1_more_specific_than_any &= more_specific == m1;
                     all_more_specific_than_m1 &= more_specific == s;
                 }
-                if m1_more_specific_than_any {
-                    return m1;
-                }
                 // Java: Resolve.java:1710-1726: AmbiguityError e = (AmbiguityError)m2.baseSymbol();
                 // if (!allAmbiguousMoreSpecificThanM1) e.addAmbiguousSymbol(m1); return e;
                 let error = base_symbol_id(ctx, m2);
-                if !all_more_specific_than_m1 {
-                    // Java: addAmbiguousSymbol prepends m1 to the ambiguity list
-                    // (Resolve.java:4571-4574) and returns the error symbol.
-                    if let crate::code::symbol::SymbolKind::ResolveError { data, .. } =
-                        &mut ctx.sym_mut(error).kind_data
-                        && let crate::code::symbol::ResolveErrorData::Ambiguity { syms } =
-                            &mut **data
-                        && !syms.contains(&m1)
-                    {
-                        syms.insert(0, m1);
-                    }
-                }
                 error
             }
             _ => panic!("AssertionError: unexpected most-specific candidate kind"),
@@ -5336,13 +3944,7 @@ impl Resolve {
         m2: SymbolId,
     ) -> SymbolId {
         let clash_mask = crate::code::flags::CLASH;
-        if ((ctx.sym(m1).flags_field | ctx.sym(m2).flags_field) & clash_mask) != 0 {
-            if (ctx.sym(m1).flags_field & clash_mask) == 0 {
-                m1
-            } else {
-                m2
-            }
-        } else {
+ else {
             self.new_ambiguity_error(ctx, m1, m2)
         }
     }
@@ -5393,9 +3995,6 @@ impl Resolve {
         };
         let mut best_so_far = best_so_far;
         for sym in symbols {
-            if !filter.test(ctx, sym) {
-                continue;
-            }
             best_so_far = self.select_best(
                 ctx,
                 syms,
@@ -5538,23 +4137,8 @@ impl AbstractMethodCheck for ResolveMethodCheck {
         // (registered adapter: the ported relation entry points do not return
         // CompletionFailure).
         for operand in [actual, formal] {
-            if let Some(tsym) = ctx.typ(operand).tsym
-                && ctx.sym(tsym).members().is_none()
-            {
-                let _ = ctx.complete_symbol(syms, tsym);
-            }
         }
         let result = mresult.check(ctx, syms, types, attr, chk, &self.diags, pos, actual, warn);
-        if warn.has_lint(crate::code::lint::LintCategory::VARARGS) {
-            // Java: ConversionWarner.warn VARARGS branch (Check.java:3961-3967);
-            // the ported Warner has no subclass, so the recorded lint is
-            // consumed after the compatibility check (registered adapter).
-            let warn_pos = warn
-                .pos()
-                .map(|position| position.get_preferred_position())
-                .unwrap_or(crate::util::position::NOPOS);
-            chk.warn_unsafe_varargs_param(ctx, syms, warn_pos);
-        }
         result.map(|_| ())
     }
 }
@@ -5592,26 +4176,6 @@ impl MethodCheck for ResolveMethodCheck {
             warn,
         )?;
         // should we check varargs element type accessibility?
-        if deferred_attr_context.phase.is_varargs_required()
-            && (deferred_attr_context.mode == crate::comp::deferred_attr::AttrMode::CHECK
-                || !self.check_varargs_access_after_resolution)
-        {
-            let elt = types.elemtype(
-                ctx,
-                syms,
-                formals.last().expect("varargs formal"),
-            );
-            varargs_accessible(
-                ctx,
-                syms,
-                types,
-                env,
-                self.allow_modules,
-                &deferred_attr_context.inference_context,
-                elt,
-                &self.diags,
-            )?;
-        }
         Ok(())
     }
 
@@ -5633,57 +4197,8 @@ fn varargs_accessible(
     diags: &Rc<crate::util::jc_diagnostic::Factory>,
 ) -> Result<(), MethodCheckFailure> {
     // Java: ResolveMethodCheck.varargsAccessible (Resolve.java:880-900)
-    if inference_context.free(ctx, syms, types, t) {
-        struct VarargsAccessibilityListener {
-            env: Rc<Env<AttrContext>>,
-            t: TypeId,
-            diags: Rc<crate::util::jc_diagnostic::Factory>,
-            allow_modules: bool,
-        }
-        impl crate::comp::infer::FreeTypeListener for VarargsAccessibilityListener {
-            fn types_inferred(
-                &self,
-                ctx: &mut crate::compiler_context::CompilerContext,
-                syms: &crate::code::symtab::Symtab,
-                types: &crate::code::types::Types,
-                inference_context: &crate::comp::infer::InferenceContext,
-            ) -> Result<(), crate::comp::infer::InferenceException> {
-                match varargs_accessible(
-                    ctx,
-                    syms,
-                    types,
-                    &self.env,
-                    self.allow_modules,
-                    inference_context,
-                    self.t,
-                    &self.diags,
-                ) {
-                    Ok(()) => Ok(()),
-                    Err(MethodCheckFailure::Inference(exception)) => Err(exception),
-                    Err(MethodCheckFailure::Inapplicable(exception)) => {
-                        throw_inapplicable_method_exception(exception.get_diagnostic())
-                    }
-                }
-            }
-        }
-        inference_context.add_free_type_listener(
-            ctx,
-            syms,
-            types,
-            crate::util::list::List::of(t),
-            Rc::new(VarargsAccessibilityListener {
-                env: Rc::clone(env),
-                t,
-                diags: Rc::clone(diags),
-                allow_modules,
-            }),
-        );
-        Ok(())
-    } else {
+ else {
         let erasure = types.erasure(ctx, syms, t);
-        if is_accessible_type_free(types, allow_modules, ctx, syms, env, erasure, true) {
-            return Ok(());
-        }
         // Java: reportMC(env.tree, MethodCheckDiag.INACCESSIBLE_VARARGS,
         // inferenceContext, t, Kinds.kindName(location), location)
         let location = env
@@ -5789,9 +4304,6 @@ impl MethodCheck for MostSpecificCheck {
             )?;
             formals1 = formals1.tail();
             formals2 = formals2.tail();
-            if actuals.non_empty() {
-                actuals = actuals.tail();
-            }
         }
         Ok(())
     }
@@ -5818,30 +4330,7 @@ pub fn adjust_args(
             (ctx.sym(msym).flags_field & crate::code::flags::VARARGS) != 0
         })
         .unwrap_or(false);
-    if is_varargs && allow_varargs {
-        let last = args.last().expect("varargs formal");
-        let varargs_elem = types.elemtype(ctx, syms, last);
-        // Java: args.reverse().tail.prepend(varargsElem).reverse(), then pad
-        let mut items: Vec<TypeId> = Vec::new();
-        let mut current = args.clone();
-        while current.non_empty() {
-            items.push(*current.head());
-            current = current.tail();
-        }
-        items.reverse();
-        items.pop();
-        items.insert(0, varargs_elem);
-        items.reverse();
-        while items.len() < length {
-            let last = *items.last().expect("non-empty args");
-            items.push(last);
-        }
-        let mut result: crate::util::list::List<TypeId> = crate::util::list::List::nil();
-        for item in items.into_iter().rev() {
-            result = result.prepend(item);
-        }
-        result
-    } else {
+ else {
         args
     }
 }
@@ -6067,9 +4556,7 @@ impl InterfaceLookupPhase {
                 let mask = (crate::code::flags::ABSTRACT
                     | crate::code::flags::INTERFACE
                     | crate::code::flags::ENUM) as i64;
-                if (ctx.sym(s).flags_field & mask) != 0 {
-                    InterfaceLookupPhase::ABSTRACT_OK
-                } else {
+ else {
                     InterfaceLookupPhase::DEFAULT_OK
                 }
             }
@@ -6327,21 +4814,7 @@ impl LookupHelper for BasicLookupHelper {
         // if (sym.kind == AMBIGUOUS) { AmbiguityError a_err = (AmbiguityError)sym.baseSymbol();
         //     sym = a_err.mergeAbstracts(site); }
         
-        if ctx.sym(sym).kind == crate::code::kinds::Kind::AMBIGUOUS {
-            let error = base_symbol_id(ctx, sym);
-            let ambiguous_in_order = match crate::code::symbol::symbol_resolve_error_data(ctx, error) {
-                Some(crate::code::symbol::ResolveErrorData::Ambiguity { syms }) => {
-                    let mut symbols = syms.clone();
-                    symbols.reverse();
-                    symbols
-                }
-                _ => panic!("ClassCastException: AmbiguityError expected"),
-            };
-            match types.merge_abstracts(ctx, syms, chk, &ambiguous_in_order, self.site, true) {
-                Some(result) => result.symbol,
-                None => error,
-            }
-        } else {
+ else {
             sym
         }
     }
@@ -6364,41 +4837,12 @@ impl LookupHelper for BasicLookupHelper {
     ) -> SymbolId {
         match &self.access_kind {
             BasicAccessKind::Default => {
-                if ctx.sym(sym).kind.is_resolution_error() {
-                    // if nothing is found return the 'first' error
-                    rs.access_method(
-                        ctx,
-                        syms,
-                        sym,
-                        pos,
-                        location,
-                        Some(self.site),
-                        &self.name,
-                        true,
-                        Some(self.argtypes.clone()),
-                        self.typeargtypes.clone(),
-                        Some(attr),
-                    )
-                } else {
+ else {
                     sym
                 }
             }
             BasicAccessKind::QualifiedMethod => {
-                if ctx.sym(sym).kind.is_resolution_error() {
-                    rs.access_method(
-                        ctx,
-                        syms,
-                        sym,
-                        pos,
-                        location,
-                        Some(self.site),
-                        &self.name,
-                        true,
-                        Some(self.argtypes.clone()),
-                        self.typeargtypes.clone(),
-                        Some(attr),
-                    )
-                } else if (ctx.sym(sym).flags_field & crate::code::flags::SIGNATURE_POLYMORPHIC) != 0 {
+ else if (ctx.sym(sym).flags_field & crate::code::flags::SIGNATURE_POLYMORPHIC) != 0 {
                     // Java: env.info.pendingResolutionPhase = BASIC;
                     // findPolymorphicSignatureInstance(env, sym, argtypes)
                     env.info.borrow_mut().pending_resolution_phase =
@@ -6424,44 +4868,7 @@ impl LookupHelper for BasicLookupHelper {
                 }
             }
             BasicAccessKind::Diamond => {
-                if ctx.sym(sym).kind.is_resolution_error() {
-                    let kind = ctx.sym(sym).kind;
-                    if kind != crate::code::kinds::Kind::WRONG_MTH
-                        && kind != crate::code::kinds::Kind::WRONG_MTHS
-                    {
-                        rs.access_method(
-                            ctx,
-                            syms,
-                            sym,
-                            pos,
-                            location,
-                            Some(self.site),
-                            &self.name,
-                            true,
-                            Some(self.argtypes.clone()),
-                            self.typeargtypes.clone(),
-                            Some(attr),
-                        )
-                    } else {
-                        // final JCDiagnostic details =...
-                        let sym = rs.new_diamond_error(ctx, sym);
-                        let sym = rs.access_method(
-                            ctx,
-                            syms,
-                            sym,
-                            pos,
-                            Some(self.site).and_then(|site| ctx.typ(site).tsym),
-                            Some(self.site),
-                            &rs.names.init.clone(),
-                            true,
-                            Some(self.argtypes.clone()),
-                            self.typeargtypes.clone(),
-                            Some(attr),
-                        );
-                        env.info.borrow_mut().pending_resolution_phase = resolve_context.step;
-                        sym
-                    }
-                } else {
+ else {
                     sym
                 }
             }
@@ -6496,16 +4903,8 @@ fn symbol_for(
     seen: &mut Vec<SymbolId>,
     t: TypeId,
 ) -> Option<SymbolId> {
-    if !ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS)
-        && !ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
-    {
-        return None;
-    }
     let t = skip_type_vars(ctx, syms, t);
     let tsym = ctx.typ(t).tsym?;
-    if seen.contains(&tsym) {
-        return None;
-    }
     seen.push(tsym);
     Some(tsym)
 }
@@ -6520,12 +4919,6 @@ fn skip_type_vars(
 
     let mut current = t;
     loop {
-        if ctx.typ(current).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
-            if let Some(upper) = ctx.typ(current).get_upper_bound() {
-                current = upper;
-                continue;
-            }
-        }
         return current;
     }
 }
@@ -6642,11 +5035,6 @@ impl Resolve {
             ctx.sym(site_tsym).ty.expect("diamond site type"),
         );
         for sym in symbols {
-            if ctx.sym(sym).kind != crate::code::kinds::Kind::MTH
-                || (ctx.sym(sym).flags_field & crate::code::flags::SYNTHETIC as i64) != 0
-            {
-                continue;
-            }
             let old_params = match &ctx.typ(ctx.sym(sym).ty.expect("constructor type")).kind {
                 crate::code::type_::TypeKindData::ForAll { tvars, .. } => tvars.clone(),
                 _ => crate::util::list::List::nil(),
@@ -6806,9 +5194,7 @@ impl Resolve {
     ) -> SymbolId {
         let c = ctx.typ(site).tsym.expect("internal field site symbol");
         let sym = self.find_field(ctx, syms, env, site, &name, c);
-        if ctx.sym(sym).kind == crate::code::kinds::Kind::VAR {
-            sym
-        } else {
+ else {
             // A failure to locate the field is fatal.
             crate::util::fatal_error::fatal_error_diagnostic(&self.diags.fragment(
                 crate::util::jc_diagnostic::Fragment::from(
@@ -6865,9 +5251,7 @@ impl Resolve {
             &mut resolve_context,
             &mut helper,
         );
-        if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH {
-            sym
-        } else {
+ else {
             // A failure to locate the method is fatal.
             crate::util::fatal_error::fatal_error_diagnostic(&self.diags.fragment(
                 crate::util::jc_diagnostic::Fragment::from(
@@ -6966,9 +5350,7 @@ impl Resolve {
             &mut resolve_context,
             &mut helper,
         );
-        if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH {
-            sym
-        } else {
+ else {
             // A failure to locate the constructor is fatal.
             crate::util::fatal_error::fatal_error_diagnostic(&self.diags.fragment(
                 crate::util::jc_diagnostic::Fragment::from(
@@ -7088,18 +5470,7 @@ impl Resolve {
         let mut pos = 0i32;
         let mut most_specific_pos = -1i32;
         for candidate in resolve_context.candidates.borrow().iter() {
-            if resolve_context.step != Some(candidate.step) || !candidate.is_applicable() {
-                continue;
-            }
             let mut sub_diag: Option<crate::util::jc_diagnostic::JCDiagnostic> = None;
-            if let Some(sym_ty) = ctx.sym(candidate.sym).ty {
-                if ctx.typ(sym_ty).has_tag(crate::code::type_tag::TypeTag::FORALL) {
-                    let inst = candidate.mtype.unwrap_or(sym_ty);
-                    sub_diag = Some(self.diags.fragment(Fragment::from(
-                        fragments::partial_inst_sig(TypeArg::placeholder(type_display_str(ctx, inst))),
-                    )));
-                }
-            }
             let static_kind = if ctx.sym(candidate.sym).is_static(ctx) {
                 fragments::r#static()
             } else {
@@ -7122,9 +5493,6 @@ impl Resolve {
                 ),
             };
             sub_diags.push(self.diags.fragment(Fragment::from(info)));
-            if candidate.sym == best_so_far {
-                most_specific_pos = pos;
-            }
             pos += 1;
         }
         let bound_info = if bound { fragments::bound() } else { fragments::unbound() };
@@ -7181,9 +5549,6 @@ impl Resolve {
         } else {
             VerboseResolutionMode::FAILURE
         };
-        if !mode_enabled(required_mode) {
-            return;
-        }
         let is_init = ctx
             .sym(best_so_far)
             .name
@@ -7196,23 +5561,11 @@ impl Resolve {
                 && !mode_enabled(VerboseResolutionMode::PREDEF))
             || (resolve_context.internal_resolution
                 && !mode_enabled(VerboseResolutionMode::INTERNAL));
-        if skip {
-            return;
-        }
         let mut sub_diags: Vec<crate::util::jc_diagnostic::JCDiagnostic> = Vec::new();
         let mut pos = 0i32;
         let mut most_specific_pos = -1i32;
         for candidate in resolve_context.candidates.borrow().iter() {
-            if resolve_context.step != Some(candidate.step) {
-                continue;
-            }
             let applicable = candidate.is_applicable();
-            if applicable && !mode_enabled(VerboseResolutionMode::APPLICABLE) {
-                continue;
-            }
-            if !applicable && !mode_enabled(VerboseResolutionMode::INAPPLICABLE) {
-                continue;
-            }
             let sub_diag = if applicable {
                 self.get_verbose_applicable_candidate_diag(
                     ctx,
@@ -7229,9 +5582,6 @@ impl Resolve {
                 )
             };
             sub_diags.push(sub_diag);
-            if candidate.sym == best_so_far {
-                most_specific_pos = pos;
-            }
             pos += 1;
         }
         let step = resolve_context
@@ -7292,14 +5642,6 @@ impl Resolve {
         use crate::util::jc_diagnostic::Fragment;
         let sym_ty = ctx.sym(sym).ty;
         let mut sub_diag: Option<crate::util::jc_diagnostic::JCDiagnostic> = None;
-        if let Some(sym_ty) = sym_ty {
-            if ctx.typ(sym_ty).has_tag(crate::code::type_tag::TypeTag::FORALL) {
-                let inst = inst.unwrap_or(sym_ty);
-                sub_diag = Some(self.diags.fragment(Fragment::from(
-                    fragments::partial_inst_sig(TypeArg::placeholder(type_display_str(ctx, inst))),
-                )));
-            }
-        }
         let sym_display = method_symbol_display(ctx, self.names.as_ref(), sym);
         let info = match &sub_diag {
             None => fragments::applicable_method_found(
@@ -7370,9 +5712,6 @@ impl Resolve {
             let mut current = steps;
             while current.non_empty() {
                 let phase = *current.head();
-                if helper.should_stop(ctx, best_so_far, phase) {
-                    break;
-                }
                 let prev_phase = resolve_context.step;
                 let prev_best = best_so_far;
                 resolve_context.step = Some(phase);
@@ -7392,7 +5731,7 @@ impl Resolve {
                 helper.debug(&*self, ctx, syms, pos.clone(), &*resolve_context, sym);
                 best_so_far = phase.merge_results(ctx, best_so_far, sym);
                 env.info.borrow_mut().pending_resolution_phase =
-                    if prev_best == best_so_far { prev_phase } else { Some(phase) };
+ else { Some(phase) };
                 current = current.tail();
             }
             self.current_resolution_step.set(resolve_context.step);
@@ -7429,9 +5768,6 @@ impl Resolve {
         syms: &Symtab,
         sym: SymbolId,
     ) -> Option<crate::ids::ScopeId> {
-        if let Some(members) = ctx.sym(sym).members() {
-            return Some(members);
-        }
         let _ = ctx.complete_symbol(syms, sym);
         ctx.sym(sym).members()
     }
@@ -7512,42 +5848,7 @@ impl Resolve {
         let mut best_so_far = best_so_far;
         let mut current = symbol_for(ctx, syms, &mut seen, intype);
         while let Some(s) = current {
-            if let Some(members) = self.member_scope(ctx, syms, s) {
-                best_so_far = self.find_method_in_scope(
-                    ctx,
-                    syms,
-                    types,
-                    attr,
-                    chk,
-                    infer,
-                    env,
-                    site,
-                    name.clone(),
-                    argtypes.clone(),
-                    typeargtypes.clone(),
-                    members,
-                    best_so_far,
-                    allow_boxing,
-                    use_varargs,
-                    true,
-                    resolve_context,
-                );
-            }
-            if name == self.names.init {
-                return best_so_far;
-            }
             iphase = iphase.map(|phase| phase.update(ctx, s));
-            if let Some(phase) = iphase {
-                let interfaces = types.interfaces(ctx, syms, ctx.sym(s).ty.expect("class type"));
-                let mut itype_current = interfaces;
-                while itype_current.non_empty() {
-                    let itype = *itype_current.head();
-                    let closed = types.closure(ctx, syms, itype);
-                    let index = phase.ordinal();
-                    itypes[index] = types.closure_union(ctx, syms, closed, itypes[index].clone());
-                    itype_current = itype_current.tail();
-                }
-            }
             // next superclass
             let st = ctx.sym(s).ty.expect("class type");
             let supertype = types.supertype(ctx, syms, st, None);
@@ -7571,49 +5872,6 @@ impl Resolve {
                     .tsym
                     .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0)
                     .unwrap_or(false);
-                if is_interface {
-                    let tsym = ctx.typ(itype).tsym.expect("interface symbol");
-                    let default_ok = phase2 == InterfaceLookupPhase::DEFAULT_OK;
-                    let has_default =
-                        (ctx.sym(tsym).flags_field & crate::code::flags::DEFAULT) != 0;
-                    if !(default_ok && !has_default) {
-                        if let Some(members) = self.member_scope(ctx, syms, tsym) {
-                            best_so_far = self.find_method_in_scope(
-                                ctx,
-                                syms,
-                                types,
-                                attr,
-                                chk,
-                                infer,
-                                env,
-                                site,
-                                name.clone(),
-                                argtypes.clone(),
-                                typeargtypes.clone(),
-                                members,
-                                best_so_far,
-                                allow_boxing,
-                                use_varargs,
-                                true,
-                                resolve_context,
-                            );
-                            if concrete != best_so_far
-                                && ctx.sym(concrete).kind.is_valid()
-                                && ctx.sym(best_so_far).kind.is_valid()
-                                && types.is_sub_signature(
-                                    ctx,
-                                    syms,
-                                    ctx.sym(concrete).ty.expect("concrete type"),
-                                    ctx.sym(best_so_far).ty.expect("best type"),
-                                )
-                            {
-                                // this is a hack - as javac does not do full
-                                // membership checks (CR 6178365)
-                                best_so_far = concrete;
-                            }
-                        }
-                    }
-                }
                 itype_current = itype_current.tail();
             }
         }
@@ -7644,12 +5902,6 @@ impl Resolve {
         let mut env1 = Rc::clone(env);
         let mut static_only = false;
         loop {
-            if env1.outer.is_none() {
-                break;
-            }
-            if self.is_static(&env1) {
-                static_only = true;
-            }
             let tree = env.tree;
             env1.info.borrow_mut().preferred_tree_for_diagnostics = tree;
             let encl_tree = env1.encl_class.expect("enclosing class tree");
@@ -7676,22 +5928,8 @@ impl Resolve {
                 resolve_context,
             );
             env1.info.borrow_mut().preferred_tree_for_diagnostics = None;
-            if crate::code::symbol::symbol_exists(ctx, sym) {
-                if static_only
-                    && ctx.sym(sym).kind == crate::code::kinds::Kind::MTH
-                    && ctx.sym(ctx.sym(sym).owner.expect("owner")).kind
-                        == crate::code::kinds::Kind::TYP
-                    && (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) == 0
-                {
-                    return self.new_static_error(ctx, sym);
-                } else {
-                    return sym;
-                }
-            } else {
+ else {
                 best_so_far = best_of(ctx, best_so_far, sym);
-            }
-            if (ctx.sym(encl_class).flags_field & crate::code::flags::STATIC as i64) != 0 {
-                static_only = true;
             }
             let next = env1
                 .outer
@@ -7717,61 +5955,7 @@ impl Resolve {
             use_varargs,
             resolve_context,
         );
-        if crate::code::symbol::symbol_exists(ctx, sym) {
-            return sym;
-        }
         // Java: env.toplevel.namedImportScope.getSymbolsByName(name)
-        if let Some(toplevel) = env.toplevel {
-            let (named_scope, star_scope) = match &ctx.tree(toplevel).kind {
-                crate::tree::jc_tree::TreeKind::CompilationUnit {
-                    named_import_scope,
-                    star_import_scope,
-                    ..
-                } => (*named_import_scope, *star_import_scope),
-                _ => (None, None),
-            };
-            if let Some(named_scope) = named_scope {
-                best_so_far = self.find_fun_in_import_scope(
-                    ctx,
-                    syms,
-                    types,
-                    attr,
-                    chk,
-                    infer,
-                    env,
-                    named_scope,
-                    &name,
-                    argtypes.clone(),
-                    typeargtypes.clone(),
-                    allow_boxing,
-                    use_varargs,
-                    best_so_far,
-                    resolve_context,
-                );
-            }
-            if crate::code::symbol::symbol_exists(ctx, best_so_far) {
-                return best_so_far;
-            }
-            if let Some(star_scope) = star_scope {
-                best_so_far = self.find_fun_in_import_scope(
-                    ctx,
-                    syms,
-                    types,
-                    attr,
-                    chk,
-                    infer,
-                    env,
-                    star_scope,
-                    &name,
-                    argtypes,
-                    typeargtypes,
-                    allow_boxing,
-                    use_varargs,
-                    best_so_far,
-                    resolve_context,
-                );
-            }
-        }
         best_so_far
     }
 
@@ -7811,9 +5995,6 @@ impl Resolve {
             )
         };
         for current_sym in symbols {
-            if ctx.sym(current_sym).kind != crate::code::kinds::Kind::MTH {
-                continue;
-            }
             let origin_scope = {
                 let scope_ref = ctx.scope(scope).clone();
                 scope_ref.get_origin_full(scope, current_sym, types, syms, ctx)
@@ -7827,17 +6008,13 @@ impl Resolve {
             let current_sym = {
                 let owner_type = ctx.sym(ctx.sym(current_sym).owner.expect("owner")).ty;
                 let origin_type = ctx.sym(origin).ty;
-                if owner_type != origin_type {
-                    symbol_clone_with_owner(ctx, current_sym, origin)
-                } else {
+ else {
                     current_sym
                 }
             };
             let current_sym = {
                 let origin_type = ctx.sym(origin).ty.expect("origin type");
-                if !self.is_accessible(ctx, syms, types, env, origin_type, current_sym) {
-                    self.new_access_error(ctx, syms, env, Some(origin_type), current_sym)
-                } else {
+ else {
                     current_sym
                 }
             };
@@ -7870,9 +6047,6 @@ impl Resolve {
         ctx: &mut crate::compiler_context::CompilerContext,
         syms: &Symtab,
     ) -> ScopeId {
-        if let Some(scope) = self.polymorphic_signature_scope.get() {
-            return scope;
-        }
         let scope = ctx.scope_create(Some(syms.no_symbol));
         self.polymorphic_signature_scope.set(Some(scope));
         scope
@@ -7949,35 +6123,12 @@ impl Resolve {
             None,
         ) {
             let sym_type = ctx.sym(sym).ty;
-            if let Some(sym_type) = sym_type {
-                if types.is_same_type(ctx, syms, mtype, sym_type)
-                    && sp_owner == ctx.sym(sym).owner
-                {
-                    existing = Some(sym);
-                    break;
-                }
-            }
-        }
-        if let Some(sym) = existing {
-            return sym;
         }
         let sp_type = ctx.sym(sp_method).ty.expect("signature polymorphic method type");
         let sp_return_type = types.get_return_type_public(ctx, sp_type);
         let mut mtype = mtype;
-        if types.is_same_type(ctx, syms, sp_return_type, syms.object_type) {
-            // Polymorphic return, pass through mtype
-        } else {
+ else {
             let m_return_type = types.get_return_type_public(ctx, mtype);
-            if !types.is_same_type(ctx, syms, sp_return_type, m_return_type) {
-                let params = types.get_parameter_types_public(ctx, mtype);
-                let thrown = ctx.typ(mtype).get_thrown_types(ctx);
-                mtype = ctx.alloc_type(crate::code::type_::Type::new_method_type(
-                    params,
-                    sp_return_type,
-                    thrown,
-                    syms.method_class,
-                ));
-            }
         }
         let sp_flags = ctx.sym(sp_method).flags_field;
         let flags = (crate::code::flags::ABSTRACT as i64)
@@ -8002,9 +6153,6 @@ impl Resolve {
             },
         ));
         ctx.sym_mut(sym).base_symbol_override = Some(sp_method);
-        if !types.is_erroneous_type(ctx, syms, mtype) {
-            ctx.scope_enter(scope, sym);
-        }
         sym
     }
 }
@@ -8030,18 +6178,14 @@ pub enum StaticKind {
 impl StaticKind {
     /// Java: static StaticKind from(Symbol s)
     fn from(ctx: &crate::compiler_context::CompilerContext, sym: SymbolId) -> StaticKind {
-        if ctx.sym(sym).flags_field & (crate::code::flags::STATIC as i64) != 0 {
-            StaticKind::STATIC
-        } else {
+ else {
             StaticKind::NON_STATIC
         }
     }
 
     /// Java: static StaticKind reduce(StaticKind sk1, StaticKind sk2)
     fn reduce(sk1: StaticKind, sk2: StaticKind) -> StaticKind {
-        if sk1 == StaticKind::UNDEFINED {
-            sk2
-        } else if sk2 == StaticKind::UNDEFINED || sk1 == sk2 {
+ else if sk2 == StaticKind::UNDEFINED || sk1 == sk2 {
             sk1
         } else {
             StaticKind::BOTH
@@ -8067,11 +6211,6 @@ impl ReferenceLookupResult {
             crate::code::kinds::Kind::MTH | crate::code::kinds::Kind::AMBIGUOUS => {
                 let mut kind = StaticKind::UNDEFINED;
                 for candidate in resolve_context.candidates.borrow().iter() {
-                    if candidate.is_applicable()
-                        && Some(candidate.step) == resolve_context.step
-                    {
-                        kind = StaticKind::reduce(kind, StaticKind::from(ctx, candidate.sym));
-                    }
                 }
                 kind
             }
@@ -8168,26 +6307,10 @@ fn resolve_map_candidates(
         let mut overridden: Vec<SymbolId> = Vec::new();
         let mut skip = false;
         for (existing, _) in &result {
-            if *existing == cand_sym {
-                continue;
-            }
             let existing_owner = ctx.sym(*existing).owner.expect("candidate owner");
-            if crate::code::symbol::overrides(
-                ctx, syms, types, cand_sym, *existing, existing_owner, false,
-            ) {
-                overridden.push(*existing);
-            } else {
+ else {
                 let cand_owner = ctx.sym(cand_sym).owner.expect("candidate owner");
-                if crate::code::symbol::overrides(
-                    ctx, syms, types, *existing, cand_sym, cand_owner, false,
-                ) {
-                    skip = true;
-                    break;
-                }
             }
-        }
-        if skip {
-            continue;
         }
         result.retain(|(sym, _)| !overridden.contains(sym));
         result.push((cand_sym, cand_details.clone()));
@@ -8208,9 +6331,6 @@ fn resolve_filter_candidates(
             .as_ref()
             .map(|d| resolve_matches_method_check_diag(&d.get_code_string(), false))
             .unwrap_or(false);
-        if !is_arity {
-            result.push((*sym, details.clone()));
-        }
     }
     result
 }
@@ -8366,45 +6486,7 @@ impl ReferenceLookupHelper {
                     crate::tree::jc_tree::TreeKind::MemberReference { expr, .. } => *expr,
                     _ => panic!("ClassCastException: JCMemberReference expected"),
                 };
-                if crate::tree::tree_info::is_static_selector(ctx, expr, &rs.names) {
-                    let head = if self.argtypes.is_empty() {
-                        None
-                    } else {
-                        Some(*self.argtypes.head())
-                    };
-                    let has_none = head
-                        .map(|t| ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::NONE))
-                        .unwrap_or(false);
-                    let first_subtype = head
-                        .map(|t| {
-                            let undet = inference_context.as_undet_var(ctx, syms, types, t);
-                            types.is_subtype_unchecked(ctx, syms, undet, self.original_site)
-                        })
-                        .unwrap_or(false);
-                    if has_none || first_subtype {
-                        Some(ReferenceLookupHelper::new_unbound_method(
-                            self.reference_tree,
-                            self.name.clone(),
-                            self.original_site,
-                            self.argtypes.clone(),
-                            self.typeargtypes.clone(),
-                            self.max_phase,
-                            self.original_site,
-                        ))
-                    } else {
-                        let mut dummy = ReferenceLookupHelper::new_method(
-                            self.reference_tree,
-                            self.name.clone(),
-                            self.site,
-                            self.argtypes.clone(),
-                            self.typeargtypes.clone(),
-                            self.max_phase,
-                        );
-                        dummy.kind = ReferenceHelperKind::Dummy;
-                        dummy.method_not_found = self.method_not_found;
-                        Some(dummy)
-                    }
-                } else {
+ else {
                     None
                 }
             }
@@ -8430,24 +6512,13 @@ impl ReferenceLookupHelper {
         use crate::tree::jc_tree::ReferenceKind;
         match self.kind {
             ReferenceHelperKind::Method | ReferenceHelperKind::UnboundMethod => {
-                if self.kind == ReferenceHelperKind::UnboundMethod {
-                    return ReferenceKind::UNBOUND;
-                }
-                if ctx.sym(sym).flags_field & (crate::code::flags::STATIC as i64) != 0 {
-                    ReferenceKind::STATIC
-                } else {
+ else {
                     let qualifier = match &ctx.tree(self.reference_tree).kind {
                         crate::tree::jc_tree::TreeKind::MemberReference { expr, .. } => *expr,
                         _ => None,
                     };
                     let sel_name = qualifier.and_then(|q| crate::tree::tree_info::name(ctx, q));
-                    if sel_name
-                        .as_ref()
-                        .map(|n| n.to_java_string().to_string_lossy() == "_super")
-                        .unwrap_or(false)
-                    {
-                        ReferenceKind::SUPER
-                    } else {
+ else {
                         ReferenceKind::BOUND
                     }
                 }
@@ -8459,9 +6530,7 @@ impl ReferenceLookupHelper {
                 let none = encl
                     .map(|e| ctx.typ(e).has_tag(crate::code::type_tag::TypeTag::NONE))
                     .unwrap_or(false);
-                if none {
-                    ReferenceKind::TOPLEVEL
-                } else {
+ else {
                     ReferenceKind::IMPLICIT_INNER
                 }
             }
@@ -8600,14 +6669,7 @@ impl LookupHelper for ReferenceLookupHelper {
                         resolve_context,
                     )
                 };
-                if rs.enclosing_instance_missing(ctx, syms, types, env, self.site) {
-                    rs.new_resolve_error(
-                        ctx,
-                        crate::code::kinds::Kind::MISSING_ENCL,
-                        "BadConstructorReferenceError",
-                        crate::code::symbol::ResolveErrorData::BadConstructorReference { sym },
-                    )
-                } else {
+ else {
                     sym
                 }
             }
@@ -8631,22 +6693,6 @@ impl LookupHelper for ReferenceLookupHelper {
     ) -> SymbolId {
         let _ = (attr, infer, env, pos);
         let mut sym = sym;
-        if ctx.sym(sym).kind == crate::code::kinds::Kind::AMBIGUOUS {
-            let base = crate::code::symbol::base_symbol(ctx, sym);
-            let data = crate::code::symbol::symbol_resolve_error_data(ctx, base).cloned();
-            if let Some(crate::code::symbol::ResolveErrorData::Ambiguity { syms: syms_vec }) = data {
-                if let Some(merged) = types.merge_abstracts(
-                    ctx,
-                    syms,
-                    chk,
-                    syms_vec.as_slice(),
-                    self.site,
-                    true,
-                ) {
-                    sym = merged.symbol;
-                }
-            }
-        }
         let _ = resolve_context;
         let _ = location;
         sym
@@ -8683,9 +6729,6 @@ impl Resolve {
             .get_enclosing_type()
             .map(|encl| ctx.typ(encl).has_tag(crate::code::type_tag::TypeTag::CLASS))
             .unwrap_or(false);
-        if !(is_class && enclosing_is_class) {
-            return false;
-        }
         let tsym = ctx.typ(site).tsym.expect("class type symbol");
         let encl = self.resolve_self_containing_internal(ctx, syms, types, env, tsym, false);
         match encl {
@@ -8727,39 +6770,6 @@ impl Resolve {
         };
         let mut static_only = false;
         while let Some(current) = env1.clone() {
-            if current.outer.is_none() {
-                break;
-            }
-            if self.is_static(&current) {
-                static_only = true;
-            }
-            if let Some(encl_tree) = current.encl_class {
-                if let Some(encl_sym) = class_decl_symbol(ctx, encl_tree) {
-                    let member_owner = ctx.sym(member).owner.expect("member owner");
-                    let member_encl = crate::code::symbol::symbol_encl_class(ctx, member_owner)
-                        .expect("member enclosing class");
-                    if crate::code::symbol::is_sub_class(
-                        ctx,
-                        syms,
-                        types,
-                        encl_sym,
-                        member_encl,
-                    ) {
-                        let scope = current.info.borrow().scope;
-                        if let Some(scope) = scope {
-                            if let Some(sym) = ctx.scope_find_first(scope, &name, &|_| true) {
-                                if static_only {
-                                    return Some(self.new_static_error(ctx, sym));
-                                }
-                                return Some(sym);
-                            }
-                        }
-                    }
-                    if ctx.sym(encl_sym).flags_field & (crate::code::flags::STATIC as i64) != 0 {
-                        static_only = true;
-                    }
-                }
-            }
             env1 = current.outer.clone();
         }
         None
@@ -8799,20 +6809,7 @@ impl Resolve {
         max_phase: MethodResolutionPhase,
     ) -> ReferenceLookupHelper {
         use crate::code::type_tag::TypeTag;
-        if name != self.names.init {
-            let skipped = self.skip_type_vars_capture(ctx, syms, types, site);
-            let mut helper = ReferenceLookupHelper::new_method(
-                reference_tree,
-                name,
-                skipped,
-                argtypes,
-                typeargtypes,
-                max_phase,
-            );
-            helper.original_site = site;
-            helper.method_not_found = self.method_not_found;
-            helper
-        } else if ctx.typ(site).has_tag(TypeTag::ARRAY) {
+ else if ctx.typ(site).has_tag(TypeTag::ARRAY) {
             let mut helper = ReferenceLookupHelper::new_array_constructor(
                 reference_tree,
                 name,
@@ -9043,15 +7040,6 @@ impl Resolve {
             &mut bound_helper,
         );
         let bound_res = ReferenceLookupResult::new(ctx, bound_sym, &bound_context);
-        if self.dump_method_reference_search_results {
-            self.dump_method_reference_search_results(
-                ctx,
-                reference_tree,
-                &bound_context,
-                bound_sym,
-                true,
-            );
-        }
         let unbound_env = env.dup(env.tree, env.info.borrow().dup(None));
         let unbound_helper = bound_helper.unbound_lookup(self, ctx, syms, types, inference_context);
         let unbound_res = match &unbound_helper {
@@ -9073,15 +7061,6 @@ impl Resolve {
                     &mut unbound_context,
                     &mut helper,
                 );
-                if self.dump_method_reference_search_results {
-                    self.dump_method_reference_search_results(
-                        ctx,
-                        reference_tree,
-                        &unbound_context,
-                        unbound_sym,
-                        false,
-                    );
-                }
                 Some(ReferenceLookupResult::new(ctx, unbound_sym, &unbound_context))
             }
         };
@@ -9103,18 +7082,6 @@ impl Resolve {
             bound_env.info.borrow().pending_resolution_phase
         };
         let mut result_sym = best_res.sym;
-        if !ctx.sym(result_sym).kind.is_resolution_error()
-            && ctx.sym(result_sym).flags_field & crate::code::flags::SIGNATURE_POLYMORPHIC != 0
-        {
-            env.info.borrow_mut().pending_resolution_phase = Some(MethodResolutionPhase::BASIC);
-            result_sym = self.find_polymorphic_signature_instance_with_type(
-                ctx,
-                syms,
-                types,
-                result_sym,
-                descriptor,
-            );
-        }
         let chosen_helper = if unbound_selected { unbound_helper } else { Some(bound_helper) };
         (result_sym, chosen_helper)
     }
@@ -9146,15 +7113,9 @@ impl Resolve {
     ) -> ReferenceLookupResult {
         let error = match kind {
             ReferenceChooserKind::Basic => {
-                if !bound.is_success() || bound.has_kind(StaticKind::NON_STATIC) {
-                    return *bound;
-                }
                 ReferenceLookupResult::error(self.bad_method_reference_error(ctx, bound.sym, false))
             }
             ReferenceChooserKind::Structural => {
-                if !bound.is_success() || !bound.has_kind(StaticKind::STATIC) {
-                    return *bound;
-                }
                 ReferenceLookupResult::error(self.bad_method_reference_error(ctx, bound.sym, false))
             }
         };
@@ -9174,53 +7135,12 @@ impl Resolve {
     ) -> ReferenceLookupResult {
         match kind {
             ReferenceChooserKind::Basic => {
-                if bound.is_success()
-                    && ctx.sym(bound.sym).flags_field & (crate::code::flags::STATIC as i64) != 0
-                    && (!unbound.is_success() || unbound.has_kind(StaticKind::STATIC))
-                {
-                    return *bound;
-                }
-                if unbound.is_success()
-                    && ctx.sym(unbound.sym).flags_field & (crate::code::flags::STATIC as i64) == 0
-                    && (!bound.is_success() || bound.has_kind(StaticKind::NON_STATIC))
-                {
-                    return *unbound;
-                }
-                if bound.is_success() && unbound.is_success() {
-                    return ReferenceLookupResult::error(
-                        self.ambiguity_error(ctx, bound.sym, unbound.sym),
-                    );
-                }
-                if bound.is_success() || unbound.is_success() {
-                    return ReferenceLookupResult::error(self.bad_method_reference_error(
-                        ctx,
-                        if bound.is_success() { bound.sym } else { unbound.sym },
-                        true,
-                    ));
-                }
-                if bound.can_ignore(ctx, syms, types) && !unbound.can_ignore(ctx, syms, types) {
-                    *unbound
-                } else {
+ else {
                     *bound
                 }
             }
             ReferenceChooserKind::Structural => {
-                if bound.is_success() && !bound.has_kind(StaticKind::NON_STATIC) {
-                    return *bound;
-                }
-                if unbound.is_success() && !unbound.has_kind(StaticKind::STATIC) {
-                    return *unbound;
-                }
-                if bound.is_success() || unbound.is_success() {
-                    return ReferenceLookupResult::error(self.bad_method_reference_error(
-                        ctx,
-                        if bound.is_success() { bound.sym } else { unbound.sym },
-                        true,
-                    ));
-                }
-                if bound.can_ignore(ctx, syms, types) && !unbound.can_ignore(ctx, syms, types) {
-                    *unbound
-                } else {
+ else {
                     *bound
                 }
             }
@@ -9293,6 +7213,18 @@ impl Resolve {
             .borrow()
             .scope
             .and_then(|scope| ctx.scope(scope).owner);
+        // A local class/record visible in the current scope is not a member
+        // access; upstream accessBase keeps it accessible directly.
+        let local_bypass = ctx.sym(found).kind == crate::code::kinds::Kind::TYP
+            && ctx.sym(found).owner.map(|owner| {
+                matches!(
+                    ctx.sym(owner).kind,
+                    crate::code::kinds::Kind::MTH | crate::code::kinds::Kind::VAR
+                )
+            }) == Some(true);
+        if local_bypass {
+            return found;
+        }
         self.access_base(ctx, syms, found, pos, location, site, &name, false)
     }
 

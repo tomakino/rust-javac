@@ -77,7 +77,7 @@ pub struct TypeEnter {
     pub enter: Rc<RefCell<Enter>>,
     pub member_enter: Rc<RefCell<MemberEnter>>,
     pub log: Rc<RefCell<Log>>,
-    pub chk: Rc<RefCell<Check>>,
+    pub chk: Rc<Check>,
     pub types: Rc<Types>,
     /// The shared symbol table (needed by the import-scope queries;
     /// registered adapter: the Java import scopes read the Context services).
@@ -133,7 +133,7 @@ impl TypeEnter {
         enter: Rc<RefCell<Enter>>,
         member_enter: Rc<RefCell<MemberEnter>>,
         log: Rc<RefCell<Log>>,
-        chk: Rc<RefCell<Check>>,
+        chk: Rc<Check>,
         types: Rc<Types>,
         syms: Rc<std::cell::RefCell<crate::code::symtab::Symtab>>,
         make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
@@ -345,7 +345,6 @@ impl TypeEnter {
                 Ok(()) => {}
                 Err(failure) => {
                     self.chk
-                        .borrow()
                         .completion_error(ctx, ctx.tree(tree).pos, &failure, syms);
                 }
             }
@@ -417,7 +416,6 @@ impl TypeEnter {
             let origin_owner = ctx.scope(origin).owner;
             ctx.sym(sym).is_static(ctx)
                 && chk_for_static
-                    .borrow()
                     .import_accessible(ctx, syms, sym, packge_symbol)
                 && origin_owner
                     .map(|owner| {
@@ -436,7 +434,6 @@ impl TypeEnter {
         *self.type_import_filter.borrow_mut() = Some(Rc::new(move |ctx, syms, _origin, sym| {
             ctx.sym(sym).kind == crate::code::kinds::Kind::TYP
                 && chk_for_type
-                    .borrow()
                     .import_accessible(ctx, syms, sym, packge_symbol)
         }));
         // Import-on-demand java.lang.
@@ -444,7 +441,7 @@ impl TypeEnter {
         // Java: javaLang.members() completes the package before listing it.
         if let Err(failure) = ctx.complete_symbol_with_attr(syms, java_lang, Some(attr)) {
             let chk_rc = Rc::clone(&self.chk);
-            let chk = chk_rc.borrow();
+            let chk = Rc::clone(&chk_rc);
             chk.completion_error(ctx, ctx.tree(tree).pos, &failure, syms);
             return;
         }
@@ -526,7 +523,7 @@ impl TypeEnter {
                     if let Some(owner) = owner {
                         // Java: p.owner.complete(); enter all class members of p
                         if let Err(failure) = ctx.complete_symbol_with_attr(syms, owner, Some(attr)) {
-                            self.chk.borrow().completion_error(
+                            self.chk.completion_error(
                                 ctx,
                                 ctx.tree(toplevel(env)).pos,
                                 &failure,
@@ -612,7 +609,7 @@ impl TypeEnter {
         if name.to_java_string() == self.names.asterisk.to_java_string() {
             // Import on demand.
             if let Some(selected) = selected {
-                self.chk.borrow().check_canonical(ctx, selected);
+                self.chk.check_canonical(ctx, selected);
             }
             if import_static_import(ctx, tree) {
                 self.import_static_all(ctx, syms, tree, p, &env, attr);
@@ -623,7 +620,7 @@ impl TypeEnter {
             // Named static import.
             self.import_named_static(ctx, syms, tree, p, name, &local_env, attr);
             if let Some(selected) = selected {
-                self.chk.borrow().check_canonical(ctx, selected);
+                self.chk.check_canonical(ctx, selected);
             }
         } else {
             // Named type import.
@@ -654,7 +651,7 @@ impl TypeEnter {
         // Java: Assert.check(completionEnabled);
         let base_lint = match &self.lint {
             Some(lint) => Rc::clone(lint),
-            None => self.chk.borrow().lint.clone(),
+            None => Rc::clone(&self.chk.lint.borrow()),
         };
         let lint = if self.allow_deprecation_on_import {
             crate::code::lint::Lint::new_from(&base_lint)
@@ -665,12 +662,12 @@ impl TypeEnter {
                 LintCategory::PREVIEW,
             ])
         };
-        let prev_lint = self.chk.borrow_mut().set_lint(Rc::new(lint));
+        let prev_lint = self.chk.set_lint(Rc::new(lint));
         let prev_completion = self.completion_enabled.get();
         self.completion_enabled.set(false);
         let result = { attr.attrib_type(ctx, syms, tree, env) };
         self.completion_enabled.set(prev_completion);
-        self.chk.borrow_mut().set_lint(prev_lint);
+        self.chk.set_lint(prev_lint);
         result
     }
 
@@ -700,7 +697,7 @@ impl TypeEnter {
         // Java: Symbol.members() completes the symbol (Symbol.java:870-873);
         // the port performs the completion explicitly.
         if let Err(failure) = ctx.complete_symbol_with_attr(syms, tsym, Some(attr)) {
-            self.chk.borrow().completion_error(
+            self.chk.completion_error(
                 ctx,
                 ctx.tree(_tree).pos,
                 &failure,
@@ -738,7 +735,7 @@ impl TypeEnter {
     ) {
         // Java: TypeSymbol.members() completes the symbol (Symbol.java:870-873).
         if let Err(failure) = ctx.complete_symbol_with_attr(syms, tsym, Some(attr)) {
-            self.chk.borrow().completion_error(
+            self.chk.completion_error(
                 ctx,
                 ctx.tree(tree).pos,
                 &failure,
@@ -859,7 +856,6 @@ impl TypeEnter {
         attr: Option<&mut crate::comp::attr::Attr>,
     ) {
         self.chk
-            .borrow()
             .check_imports_unique(ctx, syms, toplevel, attr);
     }
 
@@ -870,12 +866,12 @@ impl TypeEnter {
         syms: &Symtab,
         toplevel: TreeId,
     ) {
-        self.chk.borrow().check_imports_resolvable(ctx, syms, toplevel);
+        self.chk.check_imports_resolvable(ctx, syms, toplevel);
     }
 
     /// Java: Check.checkImportedPackagesObservable(toplevel) (Check.java:4026-4039).
     fn check_imported_packages_observable(&self, ctx: &mut CompilerContext, toplevel: TreeId) {
-        self.chk.borrow().check_imported_packages_observable(ctx, toplevel);
+        self.chk.check_imported_packages_observable(ctx, toplevel);
     }
 
     /// Java: public void markDeprecated(Symbol sym, List<JCAnnotation>
@@ -1122,7 +1118,7 @@ impl TypeEnter {
                 };
                 if let Some(supertype_field) = supertype_field {
                     let chk_rc = Rc::clone(&self.chk);
-                    let chk = chk_rc.borrow();
+                    let chk = Rc::clone(&chk_rc);
                     chk.check_non_cyclic(ctx, syms, Some(ctx.tree(extending).pos), supertype_field);
                     if let crate::code::type_::TypeKindData::ClassType {
                         supertype_field, ..
@@ -1143,7 +1139,7 @@ impl TypeEnter {
                     && interfaces.non_empty()
                 {
                     let chk_rc = Rc::clone(&self.chk);
-                    let chk = chk_rc.borrow();
+                    let chk = Rc::clone(&chk_rc);
                     chk.check_non_cyclic(ctx, syms, Some(ctx.tree(first).pos), *interfaces.head());
                 }
                 if let crate::code::type_::TypeKindData::ClassType {
@@ -1158,7 +1154,7 @@ impl TypeEnter {
         self.mark_deprecated(ctx, syms, sym, annotations, &base_env, attr);
         {
             let chk_rc = Rc::clone(&self.chk);
-            let chk = chk_rc.borrow();
+            let chk = Rc::clone(&chk_rc);
             chk.check_non_cyclic_decl(ctx, syms, tree);
         }
     }
@@ -1476,7 +1472,7 @@ impl TypeEnter {
                     types.erasure(ctx, syms_borrow, it)
                 };
                 let chk_rc = Rc::clone(&self.chk);
-                let chk = chk_rc.borrow();
+                let chk = Rc::clone(&chk_rc);
                 chk.check_not_repeated(ctx.tree(interface).pos, erased, &mut interfaces_seen);
             }
         }
@@ -1721,7 +1717,7 @@ impl TypeEnter {
         if let Some(mut helper) = helper {
             {
                 let chk_rc = Rc::clone(&self.chk);
-                let chk = chk_rc.borrow();
+                let chk = Rc::clone(&chk_rc);
                 chk.check_default_constructor(ctx, ctx.tree(tree).pos, sym);
             }
             let dc = self.default_constructor(ctx, syms, tree, helper.as_mut());
@@ -1744,7 +1740,7 @@ impl TypeEnter {
             params = params.tail();
             if let Some(tvar_ty) = ctx.tree(param).ty {
                 let chk_rc = Rc::clone(&self.chk);
-                let chk = chk_rc.borrow();
+                let chk = Rc::clone(&chk_rc);
                 chk.check_non_cyclic(ctx, syms, Some(ctx.tree(param).pos), tvar_ty);
             }
         }

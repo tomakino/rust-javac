@@ -78,7 +78,7 @@ pub struct ClassWriter {
     /// Type relations.
     pub types: Rc<Types>,
     /// The check service.
-    pub check: Rc<RefCell<Check>>,
+    pub check: Rc<Check>,
     /// The compiler options.
     pub options: Rc<Options>,
     /// The code generation target.
@@ -144,7 +144,7 @@ impl ClassWriter {
         names: Rc<Names>,
         syms: Rc<RefCell<crate::code::symtab::Symtab>>,
         types: Rc<Types>,
-        check: Rc<RefCell<Check>>,
+        check: Rc<Check>,
         options: Rc<Options>,
         target: Target,
         source: Option<Source>,
@@ -1645,7 +1645,7 @@ impl ClassWriter {
         !self
             .types
             .is_same_type(ctx, &syms.borrow(), t, erased)
-            && self.check.borrow().check_denotable(ctx, t)
+            && self.check.check_denotable(ctx, t)
     }
 
     /// Write the StackMap attribute of a method.

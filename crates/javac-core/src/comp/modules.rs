@@ -83,7 +83,7 @@ pub struct Modules {
     log: Rc<RefCell<Log>>,
     names: Rc<Names>,
     attr: Rc<RefCell<Attr>>,
-    chk: Rc<RefCell<Check>>,
+    chk: Rc<Check>,
     deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
     type_envs: Rc<RefCell<TypeEnvs>>,
     types: Rc<crate::code::types::Types>,
@@ -140,7 +140,7 @@ impl Modules {
         log: Rc<RefCell<Log>>,
         names: Rc<Names>,
         attr: Rc<RefCell<Attr>>,
-        chk: Rc<RefCell<Check>>,
+        chk: Rc<Check>,
         deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
         type_envs: Rc<RefCell<TypeEnvs>>,
         types: Rc<crate::code::types::Types>,
@@ -293,7 +293,7 @@ impl Modules {
         })();
         self.depth.set(self.depth.get() - 1);
         if let Err(failure) = result {
-            let chk = self.chk.borrow();
+            let chk = Rc::clone(&self.chk);
             chk.completion_error(ctx, crate::util::position::NOPOS, &failure, syms);
         }
         self.log.borrow().nerrors == start_errors
@@ -712,7 +712,7 @@ impl Modules {
                     {
                         Ok(default) => default,
                         Err(failure) => {
-                            let chk = self.chk.borrow();
+                            let chk = Rc::clone(&self.chk);
                             chk.completion_error(
                                 ctx,
                                 crate::util::position::NOPOS,
@@ -1093,7 +1093,7 @@ impl Modules {
                     Ok(true) => enabled_root.push(sym),
                     Ok(false) => {}
                     Err(failure) => {
-                        let chk = self.chk.borrow();
+                        let chk = Rc::clone(&self.chk);
                         chk.completion_error(
                             ctx,
                             crate::util::position::NOPOS,
@@ -1236,7 +1236,7 @@ impl Modules {
             }
             result.push(current);
             if let Err(failure) = ctx.complete_symbol(syms, current) {
-                let chk = self.chk.borrow();
+                let chk = Rc::clone(&self.chk);
                 chk.completion_error(ctx, crate::util::position::NOPOS, &failure, syms);
                 continue;
             }
@@ -2262,7 +2262,7 @@ impl<'a> ModuleVisitor<'a> {
             for n in module_names.iter() {
                 let msym = self.lookup_module(n);
                 {
-                    let chk = self.modules.chk.borrow();
+                    let chk = Rc::clone(&self.modules.chk);
                     chk.check_module_exists(self.ctx, self.ctx.tree(n).pos, msym);
                 }
                 for d in &exports_for_package {
@@ -2323,7 +2323,7 @@ impl<'a> ModuleVisitor<'a> {
             for n in module_names.iter() {
                 let msym = self.lookup_module(n);
                 {
-                    let chk = self.modules.chk.borrow();
+                    let chk = Rc::clone(&self.modules.chk);
                     chk.check_module_exists(self.ctx, self.ctx.tree(n).pos, msym);
                 }
                 for d in &opens_for_package {
@@ -3000,7 +3000,7 @@ impl<'a> UsesProvidesVisitor<'a> {
         };
         let pos = self.ctx.tree(qualid).pos;
         {
-            let chk = self.modules.chk.borrow();
+            let chk = Rc::clone(&self.modules.chk);
             chk.check_package_exists_for_opens(self.ctx, pos, packge);
         }
         let directives = module_directives(self.ctx, self.msym);
@@ -3250,7 +3250,7 @@ impl<'a> UsesProvidesVisitor<'a> {
         if self.modules.all_modules().contains(&module) {
             let pos = module_name.map(|n| self.ctx.tree(n).pos).unwrap_or(0);
             {
-                let chk = self.modules.chk.borrow();
+                let chk = Rc::clone(&self.modules.chk);
                 chk.check_deprecated(self.ctx, pos, self.msym, module);
                 chk.check_preview(self.ctx, pos, self.msym, module);
                 chk.check_module_requires(self.ctx, pos, directive);

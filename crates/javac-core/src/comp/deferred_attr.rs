@@ -838,7 +838,7 @@ pub fn deferred_type_check(
         || deferred_attr_context.inside_overload_phase()
     {
         let chk_rc = Rc::clone(&attr.chk);
-        let chk = chk_rc.borrow();
+        let chk = Rc::clone(&chk_rc);
         Rc::new(overload_stuck_policy_new(
             ctx,
             syms,
@@ -850,7 +850,7 @@ pub fn deferred_type_check(
         ))
     } else {
         let chk_rc = Rc::clone(&attr.chk);
-        let chk = chk_rc.borrow();
+        let chk = Rc::clone(&chk_rc);
         Rc::new(check_stuck_policy_new(
             ctx,
             syms,
@@ -2732,7 +2732,7 @@ impl DeferredAttrService {
         // must be a functional descriptor
         let descriptor_type = {
             let chk_rc = Rc::clone(&attr.chk);
-            let chk = chk_rc.borrow();
+            let chk = Rc::clone(&chk_rc);
             match self
                 .types
                 .find_descriptor_type(ctx, syms, &self.diags, &chk, pt)
@@ -2857,7 +2857,7 @@ impl DeferredAttrService {
         }
         let descriptor = {
             let chk_rc = Rc::clone(&attr.chk);
-            let chk = chk_rc.borrow();
+            let chk = Rc::clone(&chk_rc);
             match self
                 .types
                 .find_descriptor_type(ctx, syms, &self.diags, &chk, pt)
@@ -2910,7 +2910,7 @@ impl DeferredAttrService {
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
         let rs = rs_rc.borrow();
         let chk_rc = Rc::clone(&attr.chk);
-        let chk = chk_rc.borrow();
+        let chk = Rc::clone(&chk_rc);
         let types_rc = Rc::clone(&attr.types);
         let infer_rc = Rc::clone(&attr.infer);
         let arity_check: Rc<RefCell<dyn crate::comp::resolve::MethodCheck>> =
@@ -3034,7 +3034,7 @@ impl DeferredAttrService {
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
         let rs = rs_rc.borrow();
         let chk_rc = Rc::clone(&attr.chk);
-        let chk = chk_rc.borrow();
+        let chk = Rc::clone(&chk_rc);
         let diags = Rc::clone(&attr.diags);
         let flow_rc = attr
             .argument_attr
