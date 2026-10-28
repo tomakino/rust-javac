@@ -975,8 +975,24 @@ impl Scope {
     // simultaneously.
     // ------------------------------------------------------------------
 
-    /// Java: public Iterable<Symbol> getSymbols(Predicate<Symbol> sf,
-    /// LookupKind lookupKind)
+    /// Returns Symbols that match the given filter. Symbols from outward Scopes
+    /// are included iff lookupKind == RECURSIVE.
+    ///
+    /// # Arguments
+    ///   - self_id: the receiver's arena ID (entry ownership and recursive walk);
+    ///   - lookup_kind: whether outward scopes are inspected;
+    ///   - filter: the symbol predicate;
+    ///   - types/syms: the shared type and symbol services used by the import filter;
+    ///   - ctx: the compiler context;
+    ///   - attr: the enclosing Attr when the query runs during attribution; an
+    ///     import-scope completion reuses it instead of re-entering the Attr
+    ///     cell (Port adapter: upstream reads the Attr field directly).
+    ///
+    /// # Returns
+    ///   - the matching symbols.
+    ///
+    /// # Panics
+    ///   - a FilterImportScope has no import filter.
     #[allow(clippy::too_many_arguments)]
     pub fn get_symbols_full(
         &self,
@@ -986,6 +1002,7 @@ impl Scope {
         types: &crate::code::types::Types,
         syms: &crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Vec<SymbolId> {
         if !matches!(&self.data, ScopeData::FilterImportScope { .. }) {
             return self.get_symbols(self_id, lookup_kind, filter, ctx);
@@ -1048,7 +1065,7 @@ impl Scope {
                 while current.non_empty() {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
-                    result.extend(snapshot.get_symbols_full(sub_scope, lookup_kind, filter, types, syms, ctx));
+                    result.extend(snapshot.get_symbols_full(sub_scope, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()));
                     current = current.tail();
                 }
                 result
@@ -1079,6 +1096,7 @@ impl Scope {
                         types,
                         syms,
                         ctx,
+                        attr.as_deref_mut(),
                     ),
                     None => query_filter_import_scope_members(
                         origin,
@@ -1090,14 +1108,32 @@ impl Scope {
                         types,
                         syms,
                         ctx,
+                        attr,
                     ),
                 }
             }
         }
     }
 
-    /// Java: public Iterable<Symbol> getSymbolsByName(Name name,
-    /// Predicate<Symbol> sf, LookupKind lookupKind)
+    /// Returns Symbols with the given name that match the given filter.
+    /// Symbols from outward Scopes are included iff lookupKind == RECURSIVE.
+    ///
+    /// # Arguments
+    ///   - self_id: the receiver's arena ID (entry ownership and recursive walk);
+    ///   - name: the symbol name;
+    ///   - lookup_kind: whether outward scopes are inspected;
+    ///   - filter: the symbol predicate;
+    ///   - types/syms: the shared type and symbol services used by the import filter;
+    ///   - ctx: the compiler context;
+    ///   - attr: the enclosing Attr when the query runs during attribution; an
+    ///     import-scope completion reuses it instead of re-entering the Attr
+    ///     cell (Port adapter: upstream reads the Attr field directly).
+    ///
+    /// # Returns
+    ///   - the matching symbols.
+    ///
+    /// # Panics
+    ///   - a FilterImportScope has no import filter.
     #[allow(clippy::too_many_arguments)]
     pub fn get_symbols_by_name_full(
         &self,
@@ -1108,6 +1144,7 @@ impl Scope {
         types: &crate::code::types::Types,
         syms: &crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Vec<SymbolId> {
         match &self.data {
             ScopeData::ScopeImpl { .. } => {
@@ -1168,7 +1205,7 @@ impl Scope {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
                     result.extend(
-                        snapshot.get_symbols_by_name_full(sub_scope, name, lookup_kind, filter, types, syms, ctx),
+                        snapshot.get_symbols_by_name_full(sub_scope, name, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()),
                     );
                     current = current.tail();
                 }
@@ -1183,7 +1220,7 @@ impl Scope {
                 for sub_scope in scopes {
                     let snapshot = ctx.scope(sub_scope).clone();
                     result.extend(
-                        snapshot.get_symbols_by_name_full(sub_scope, name, lookup_kind, filter, types, syms, ctx),
+                        snapshot.get_symbols_by_name_full(sub_scope, name, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()),
                     );
                 }
                 result
@@ -1196,7 +1233,7 @@ impl Scope {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
                     result.extend(
-                        snapshot.get_symbols_by_name_full(sub_scope, name, lookup_kind, filter, types, syms, ctx),
+                        snapshot.get_symbols_by_name_full(sub_scope, name, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()),
                     );
                     current = current.tail();
                 }
@@ -1240,6 +1277,7 @@ impl Scope {
                     types,
                     syms,
                     ctx,
+                    attr,
                 )
             }
         }
@@ -1439,8 +1477,22 @@ impl Scope {
         }
     }
 
-    /// Java: public boolean includes(Symbol c) — the Scope default
-    /// implementation: getSymbolsByName(name, null, NON_RECURSIVE) contains c.
+    /// Returns true iff the given Symbol is in this scope.
+    ///
+    /// Port adapter: the ported lookup is NON_RECURSIVE, because the callers
+    /// only test the scope's own entries.
+    ///
+    /// # Arguments
+    ///   - self_id: the receiver's arena ID;
+    ///   - sym: the symbol to test;
+    ///   - types/syms: the shared type and symbol services;
+    ///   - ctx: the compiler context.
+    ///
+    /// # Returns
+    ///   - true when the non-recursive named lookup contains the symbol.
+    ///
+    /// # Panics
+    ///   - a FilterImportScope has no import filter.
     pub fn includes_full(
         &self,
         self_id: ScopeId,
@@ -1458,6 +1510,7 @@ impl Scope {
             types,
             syms,
             ctx,
+            None,
         );
         !found.is_empty()
     }
@@ -1608,9 +1661,26 @@ pub(crate) fn probe_index(
 
 
 
-/// Java: FilterImportScope's anonymous SymbolImporter.importFrom(TypeSymbol,
-/// List<Iterable<Symbol>>) (Scope.java:999-1019). processed is the upstream
-/// LinkedHashSet<Symbol> (identity semantics).
+/// Imports the members of an imported type, recursively walking its supertypes
+/// when the import is static.
+///
+/// # Arguments
+///   - ctx/types/syms: the compiler context and the shared services;
+///   - inspect_super_types: whether inherited names are imported (static imports);
+///   - by_name: the optional name filter;
+///   - sf: the symbol predicate;
+///   - lookup_kind: whether outward scopes are inspected;
+///   - processed: the upstream LinkedHashSet (identity semantics);
+///   - results: the accumulated per-type member groups;
+///   - tsym: the imported type symbol;
+///   - attr: the enclosing Attr when the import scope completes during
+///     attribution (Port adapter: the completion reuses it).
+///
+/// # Returns
+///   - none.
+///
+/// # Panics
+///   - an imported type has no symbol type.
 #[allow(clippy::too_many_arguments)]
 fn symbol_importer_import_from(
     ctx: &mut crate::compiler_context::CompilerContext,
@@ -1623,6 +1693,7 @@ fn symbol_importer_import_from(
     processed: &mut Vec<SymbolId>,
     results: &mut Vec<Vec<SymbolId>>,
     tsym: Option<SymbolId>,
+    mut attr: Option<&mut crate::comp::attr::Attr>,
 ) {
     let Some(tsym) = tsym else {
         return;
@@ -1633,7 +1704,7 @@ fn symbol_importer_import_from(
     processed.push(tsym);
     if inspect_super_types {
         let tsym_type = ctx.sym(tsym).ty.expect("type symbol type");
-        let super_type = types.supertype(ctx, syms, tsym_type, None);
+        let super_type = types.supertype(ctx, syms, tsym_type, attr.as_deref_mut());
         let super_tsym = ctx.typ(super_type).tsym;
         symbol_importer_import_from(
             ctx,
@@ -1646,6 +1717,7 @@ fn symbol_importer_import_from(
             processed,
             results,
             super_tsym,
+            attr.as_deref_mut(),
         );
         let interfaces = types.interfaces(ctx, syms, tsym_type);
         let mut current = interfaces;
@@ -1663,6 +1735,7 @@ fn symbol_importer_import_from(
                 processed,
                 results,
                 interface_tsym,
+                attr.as_deref_mut(),
             );
             current = current.tail();
         }
@@ -1675,15 +1748,33 @@ fn symbol_importer_import_from(
     let members_snapshot = ctx.scope(members).clone();
     let found = match by_name {
         Some(name) => {
-            members_snapshot.get_symbols_by_name_full(members, name, lookup_kind, sf, types, syms, ctx)
+            members_snapshot.get_symbols_by_name_full(members, name, lookup_kind, sf, types, syms, ctx, attr)
         }
-        None => members_snapshot.get_symbols_full(members, lookup_kind, sf, types, syms, ctx),
+        None => members_snapshot.get_symbols_full(members, lookup_kind, sf, types, syms, ctx, attr),
     };
     results.insert(0, found);
 }
 
-/// Java: FilterImportScope.getSymbols/getSymbolsByName + SymbolImporter +
-/// filter.accepts(origin, s) (Scope.java:908-1019).
+/// Answers a query on a filter import scope by importing the origin members
+/// through the import filter.
+///
+/// # Arguments
+///   - origin: the import origin scope;
+///   - static_import: whether inherited names are imported;
+///   - import_filter: the import filter predicate;
+///   - by_name: the optional name filter;
+///   - sf: the symbol predicate;
+///   - lookup_kind: whether outward scopes are inspected;
+///   - types/syms: the shared services;
+///   - ctx: the compiler context;
+///   - attr: the enclosing Attr when the query runs during attribution (Port
+///     adapter: the import-scope completion reuses it).
+///
+/// # Returns
+///   - the symbols accepted by the import filter.
+///
+/// # Panics
+///   - the origin scope has no owner, or a FilterImportScope has no filter.
 #[allow(clippy::too_many_arguments)]
 fn query_filter_import_scope_members(
     origin: ScopeId,
@@ -1695,6 +1786,7 @@ fn query_filter_import_scope_members(
     types: &crate::code::types::Types,
     syms: &crate::code::symtab::Symtab,
     ctx: &mut crate::compiler_context::CompilerContext,
+    attr: Option<&mut crate::comp::attr::Attr>,
 ) -> Vec<SymbolId> {
     let origin_owner = ctx.scope(origin).owner.expect("import origin owner");
     let mut processed: Vec<SymbolId> = Vec::new();
@@ -1710,6 +1802,7 @@ fn query_filter_import_scope_members(
         &mut processed,
         &mut results,
         Some(origin_owner),
+        attr,
     );
     let mut output = Vec::new();
     for group in results {
@@ -2253,6 +2346,7 @@ mod tests {
             &|_| true,
             &types,
             &symtab,
+            None,
         );
         assert!(all.is_empty());
         let by_name = ctx.scope_get_symbols_by_name_ctx(
@@ -2262,6 +2356,7 @@ mod tests {
             &|_| true,
             &types,
             &symtab,
+            None,
         );
         assert!(by_name.is_empty());
         // Java: FilterImportScope.getSymbolsByName (Scope.java:954-976): a
@@ -2283,6 +2378,7 @@ mod tests {
             &|_| true,
             &types,
             &symtab,
+            None,
         );
         assert!(named.is_empty());
     }

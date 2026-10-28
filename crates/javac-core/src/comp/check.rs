@@ -7366,25 +7366,29 @@ impl Check {
         }
     }
 
-    /// Java: void checkImportsUnique(JCCompilationUnit toplevel) (Check.java:3793-3820).
+    /// Check that types imported through the ordinary imports don't clash with
+    /// types imported by other (static or ordinary) imports. Note that two
+    /// static imports may import two clashing types without an error on the
+    /// imports.
     ///
     /// # Arguments
     ///   - ctx: the compiler context;
     ///   - syms: the symbol table;
-    ///   - toplevel: the compilation unit.
+    ///   - toplevel: the compilation unit to check;
+    ///   - attr: the enclosing Attr when the check runs inside attribution
+    ///     (Port adapter: the import-scope completion reuses it).
     ///
     /// # Returns
     ///   - none.
     ///
     /// # Panics
     ///   - none.
-    ///
-    /// Upstream: Check.java:3793-3820.
     pub fn check_imports_unique(
         &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         toplevel: TreeId,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) {
         let (defs, packge, top_level_scope) = match &ctx.tree(toplevel).kind {
             TreeKind::CompilationUnit {
@@ -7420,6 +7424,7 @@ impl Check {
                 &|_| true,
                 &self.types,
                 syms,
+                attr.as_deref_mut(),
             );
             let symbols: Vec<SymbolId> = candidates
                 .into_iter()
@@ -10985,6 +10990,29 @@ mod diagnostics_tests {
             &[
                 ("p/C.java", "package p; public class C {}\n"),
                 ("q/D.java", "package q; import p.C; class D { C c; }\n"),
+            ],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    }
+
+    #[test]
+    fn cross_package_static_import_scope_completes_with_attr() {
+        // Regression: checkImportsUnique queries the static-import
+        // FilterImportScope, whose SymbolImporter inspects the origin super
+        // types and therefore completes the imported class while the enclosing
+        // Attr is already borrowed. Compiling the importer first keeps the
+        // imported class uncompiled, so the scope query must forward the Attr
+        // instead of re-entering the TypeEnter Attr RefCell.
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[
+                ("q/D.java", "package q; import static p.Sub.X; class D { int x = X; }
+"),
+                ("p/Base.java", "package p; public class Base {}
+"),
+                ("p/Sub.java", "package p; public class Sub extends Base { public static int X = 1; }
+"),
             ],
             |_options| {},
         );

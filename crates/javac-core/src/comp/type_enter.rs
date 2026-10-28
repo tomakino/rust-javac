@@ -217,15 +217,15 @@ impl TypeEnter {
         if let Some(env) = resolve {
             self.resolve_imports(ctx, syms, toplevel, env, attr);
         }
-        self.check_imports_unique(ctx, syms, toplevel);
+        self.check_imports_unique(ctx, syms, toplevel, Some(&mut *attr));
         self.check_imports_resolvable(ctx, syms, toplevel);
         self.check_imported_packages_observable(ctx, toplevel);
         let types = Rc::clone(&self.types);
         if let Some(scope) = compilation_unit_named_import_scope(ctx, toplevel) {
-            ctx.scope_finalize(scope, &types, syms);
+            ctx.scope_finalize(scope, &types, syms, Some(&mut *attr));
         }
         if let Some(scope) = compilation_unit_star_import_scope(ctx, toplevel) {
-            ctx.scope_finalize(scope, &types, syms);
+            ctx.scope_finalize(scope, &types, syms, Some(&mut *attr));
         }
         self.log.borrow_mut().use_source(prev);
     }
@@ -849,14 +849,18 @@ impl TypeEnter {
         };
         self.import_all(ctx, syms, imp, java_lang, env, attr);
     }
-    /// Java: Check.checkImportsUnique(toplevel) (Check.java:3793-3820).
+    /// Delegates the unique-import check to the Check service, forwarding the
+    /// enclosing Attr for the import-scope completion.
     fn check_imports_unique(
         &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         toplevel: TreeId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) {
-        self.chk.borrow().check_imports_unique(ctx, syms, toplevel);
+        self.chk
+            .borrow()
+            .check_imports_unique(ctx, syms, toplevel, attr);
     }
 
     /// Java: Check.checkImportsResolvable(toplevel) (Check.java:4002-4024).

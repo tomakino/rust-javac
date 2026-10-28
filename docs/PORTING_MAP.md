@@ -88,3 +88,14 @@ Status: template only; entries are appended by the executing agent and reviewed 
 |---|---|---|
 | `code/types.rs::Types::supertype` (+`class_bound`/`subst_type`/`subst_visit`) | `Types.supertype` | optional `&mut Attr` for the reentrant completion point; None keeps the Attr-less entry points |
 | `comp/resolve.rs::Resolve::find_member_type` / `find_inherited_member_type` / `find_type` / `find_ident` / `find_ident_internal` / `resolve_ident` / `find_member_type_pub` | `Resolve.find*` | optional `&mut Attr`, `Some(self)` from Attr-inside callers |
+
+## A3g import-scope Attr threading
+
+| Local symbol | Upstream location | Notes |
+|---|---|---|
+| `code/scope.rs::Scope::get_symbols_full` / `get_symbols_by_name_full` / `includes_full` | `Scope.getSymbols` / `Scope.getSymbolsByName` / `Scope.includes` | optional `&mut Attr` for the FilterImportScope completion; `None` keeps the Attr-less behaviour |
+| `code/scope.rs::symbol_importer_import_from` / `query_filter_import_scope_members` | `FilterImportScope.SymbolImporter.importFrom` / `FilterImportScope.getSymbols*` | forwards the Attr into the supertype completion |
+| `compiler_context.rs::CompilerContext::scope_get_symbols_ctx` / `scope_get_symbols_by_name_full` / `scope_get_symbols_by_name_ctx` / `scope_finalize` | `Scope.getSymbols*` / `ImportScope.finalizeScope` | optional Attr parameter, threaded from `finish_imports` |
+| `comp/check.rs::Check::check_imports_unique` | `Check.checkImportsUnique` | optional Attr; the static-import FilterImportScope query completes the imported class |
+| `comp/type_enter.rs::TypeEnter::check_imports_unique` | `TypeEnter.finishImports` completion path | forwards `Some(attr)`; the normal entry keeps the Attr from `finish_imports` |
+| `comp/check.rs::diagnostics_tests::cross_package_static_import_scope_completes_with_attr` | — | regression: a cross-package static import triggers the scope query and the Attr-aware class completion |

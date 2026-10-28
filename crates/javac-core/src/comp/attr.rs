@@ -704,6 +704,7 @@ impl Attr {
                 types,
                 syms,
                 ctx,
+                Some(self),
             )
         };
         let owner = ctx.scope(scope_id).owner;

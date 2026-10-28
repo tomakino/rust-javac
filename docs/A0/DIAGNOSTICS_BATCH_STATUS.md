@@ -150,3 +150,11 @@
 - 测试:新增 `cross_package_import_compiles`(`package p; public class C{}` + `package q; import p.C; class D{C c;}`) 与 `nested_class_import_compiles`(`import p.Outer.Inner;`) 通过;diagnostics 测试辅助支持嵌套子目录。
 - 验收:1151 passed / 0 failed;clippy 0/205;unimplemented 0;2 files changed, 35 insertions(+), 4 deletions(-)。
 - gson 80 文件:前进到 `TypeEnter::complete`(type_enter.rs:247 `attr.borrow_mut()`),栈 complete_symbol←complete_class_symbol←scope_get_symbols_ctx(FilterImportScope completion)←check_imports_unique;即 check_imports_unique 在 Attr 借用期触发无 Attr 完成,登记 A3g(需把 finish_imports 的 Attr 传进 check_imports_unique/scope_get_symbols_ctx),按指令停手。
+
+### A3g import scope 的 Attr 穿透(完成;gson 越过 check_imports_unique 的 Attr 重入,停在 isSameType)
+- `Scope::get_symbols_full`/`get_symbols_by_name_full` 增加 `Option<&mut Attr>`,沿子 scope 递归、FilterImportScope 分派、`symbol_importer_import_from` 的 supertype 完成链完整传递;`includes_full` 传 `None`(无 Attr 路径语义不变);`Attr::copy_scope` 的 scope 拷贝传 `Some(self)`。
+- `CompilerContext::scope_get_symbols_ctx`/`scope_get_symbols_by_name_ctx`/`scope_get_symbols_by_name_full`/`scope_finalize` 增加可选 Attr;`Check::check_imports_unique` 与 `TypeEnter::check_imports_unique` 接收可选 Attr,`finish_imports` 传 `Some(attr)`;`Types::supertype` 的完成点按 attr 选择 `complete_class_symbol_with_attr`(A3a 已有)。Resolve/tree_maker 的既有查询按编译错误传 `None`,保持无 Attr 入口语义。
+- 测试:新增 `cross_package_static_import_scope_completes_with_attr`(q/D.java 先编译,static import p.Sub.X 触发 FilterImportScope;临时探针确认 query attr=true、supertype completion attr=true 3 次后删除探针);1153 passed / 0 failed / 3 ignored;clippy errors=0(javac-core lib 176 / lib test 203 warnings);unimplemented/unreachable=0。
+- gson:无 SOURCE_PATH、79 源 + generated GsonBuildConfig(共 80 文件,跳过 module-info)时 A3g panic 消失,前进到 `types.rs:923` `NullPointerException: null enclosing type in isSameType`,栈 Enter::complete←MemberEnter::visit_method_def←Check::check_unique←is_same_type_enclosing(与 Attr/服务重入无关),按指令停手;带 SOURCE_PATH 时 Modules 在 `gson/src/main/java/module-info.java` 报 `compiler.err.cant.access`("file does not contain module declaration"),0 classes(模块支持缺口)。
+- 未提交 `crates/javac-core/tests/gson_real_project.rs`(opt-in,禁止提交);gson 源码/构建文件未改。
+- 偏差:`scope_finalize` 也加可选 Attr(超出任务点名清单,与 finish_imports 的 finalize 链一致);Resolve 侧查询仍传 None(本批不扩展)。

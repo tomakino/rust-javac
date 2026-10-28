@@ -1814,6 +1814,7 @@ impl Resolve {
                 &|_| true,
                 &self.types,
                 syms,
+                None,
             );
             for candidate in candidates {
                 if ctx.sym(candidate).kind == Kind::VAR
@@ -1877,6 +1878,7 @@ impl Resolve {
                     &|_| true,
                     &self.types,
                     syms,
+                    None,
                 );
                 for candidate in candidates {
                     if ctx.sym(candidate).kind == Kind::VAR
@@ -1949,6 +1951,7 @@ impl Resolve {
                 &|_| true,
                 &self.types,
                 syms,
+                None,
             );
             for current_symbol in candidates {
                 if ctx.sym(current_symbol).kind != Kind::VAR {
@@ -2019,6 +2022,7 @@ impl Resolve {
                 &|_| true,
                 &self.types,
                 syms,
+                None,
             );
             for candidate in candidates {
                 if ctx.sym(candidate).kind == Kind::TYP {
@@ -2111,6 +2115,7 @@ impl Resolve {
             &|_| true,
             &self.types,
             syms,
+            None,
         );
         for candidate in candidates {
             let flat_name = symbol_flat_name(ctx, candidate);
@@ -2741,6 +2746,7 @@ impl Resolve {
             &|_| true,
             &self.types,
             _syms,
+            None,
         );
         for existing in candidates {
             if ctx.sym(existing).kind == Kind::TYP && symbol_flat_name(ctx, existing) == *name {
@@ -5342,6 +5348,7 @@ Err(MethodCheckFailure::Inference(exception)) => {
                 types,
                 syms,
                 ctx,
+                None,
             )
         };
         let mut best_so_far = best_so_far;
@@ -6587,6 +6594,7 @@ impl Resolve {
                 types,
                 syms,
                 ctx,
+                None,
             )
         };
         let site_type_args = types.get_type_arguments_public(
@@ -7753,6 +7761,7 @@ impl Resolve {
                 types,
                 syms,
                 ctx,
+                None,
             )
         };
         for current_sym in symbols {
@@ -7891,6 +7900,7 @@ impl Resolve {
             &|_| true,
             &self.types,
             syms,
+            None,
         ) {
             let sym_type = ctx.sym(sym).ty;
             if let Some(sym_type) = sym_type {

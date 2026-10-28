@@ -2442,6 +2442,7 @@ impl TreeMaker {
                     &|_| true,
                     &types,
                     syms,
+                    None,
                 );
                 if candidates.is_empty() {
                     return None;

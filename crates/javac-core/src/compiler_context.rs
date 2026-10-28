@@ -307,9 +307,25 @@ impl CompilerContext {
         snapshot.get_symbols_by_name(scope, name, lookup_kind, filter, self)
     }
 
-    /// Java: Scope.getSymbolsByName(Name, Predicate<Symbol>, LookupKind) with
-    /// the Types service needed by the import filter (the FilterImportScope
-    /// holder adapter; see the Scope import filter registration).
+    /// Returns Symbols with the given name that match the given filter.
+    /// Symbols from outward Scopes are included iff lookupKind == RECURSIVE.
+    ///
+    /// # Arguments
+    ///   - scope: the scope to query;
+    ///   - name: the symbol name;
+    ///   - lookup_kind: whether outward scopes are inspected;
+    ///   - filter: the symbol predicate;
+    ///   - types/syms: the shared type and symbol services used by the import filter;
+    ///   - attr: the enclosing Attr when the query runs during attribution; an
+    ///     import-scope completion reuses it (Port adapter: upstream reads the
+    ///     Attr field directly).
+    ///
+    /// # Returns
+    ///   - the matching symbols.
+    ///
+    /// # Panics
+    ///   - a FilterImportScope has no import filter.
+    #[allow(clippy::too_many_arguments)]
     pub fn scope_get_symbols_by_name_full(
         &mut self,
         scope: ScopeId,
@@ -318,32 +334,33 @@ impl CompilerContext {
         filter: &dyn Fn(SymbolId) -> bool,
         types: &crate::code::types::Types,
         syms: &crate::code::symtab::Symtab,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Vec<SymbolId> {
         let snapshot = self.scope(scope).clone();
-        snapshot.get_symbols_by_name_full(scope, name, lookup_kind, filter, types, syms, self)
+        snapshot.get_symbols_by_name_full(scope, name, lookup_kind, filter, types, syms, self, attr)
     }
 
-    /// Prototype of the context-level scope query (the S2d borrow split): the
-    /// query takes the mutable context together with the read-only arena
-    /// snapshots (cloned per scope) and the Types/Symtab services, instead of a
-    /// separately borrowed symbols-arena argument. Java: the Scope query reads
-    /// the Context services (Scope.java:908-1016).
+    /// Returns Symbols that match the given filter. Symbols from outward Scopes
+    /// are included iff lookupKind == RECURSIVE.
+    ///
+    /// The query takes the mutable context together with cloned per-scope
+    /// snapshots, so the immutable scope data and the mutable context do not
+    /// borrow simultaneously (Port adapter).
     ///
     /// # Arguments
     ///   - scope: the scope to query;
-    ///   - lookup_kind: the lookup kind;
+    ///   - lookup_kind: whether outward scopes are inspected;
     ///   - filter: the symbol predicate;
-    ///   - types/syms: the shared type/symbol services (import filter);
-    ///   - ctx: the compiler context.
+    ///   - types/syms: the shared type and symbol services used by the import filter;
+    ///   - attr: the enclosing Attr when the query runs during attribution; an
+    ///     import-scope completion reuses it (Port adapter: upstream reads the
+    ///     Attr field directly).
     ///
     /// # Returns
     ///   - the matching symbols.
     ///
     /// # Panics
-    ///   - none.
-    ///
-    /// Upstream: Scope.getSymbols (Scope.java:550-620) with the FilterImportScope
-    /// dispatch of Scope.java:932-952.
+    ///   - a FilterImportScope has no import filter.
     pub fn scope_get_symbols_ctx(
         &mut self,
         scope: ScopeId,
@@ -351,31 +368,31 @@ impl CompilerContext {
         filter: &dyn Fn(SymbolId) -> bool,
         types: &crate::code::types::Types,
         syms: &crate::code::symtab::Symtab,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Vec<SymbolId> {
         let snapshot = self.scope(scope).clone();
-        snapshot.get_symbols_full(scope, lookup_kind, filter, types, syms, self)
+        snapshot.get_symbols_full(scope, lookup_kind, filter, types, syms, self, attr)
     }
 
-    /// The by-name counterpart of scope_get_symbols_ctx (prototype of the S2d
-    /// borrow split). Java: Scope.getSymbolsByName(Name, Predicate, LookupKind)
-    /// (Scope.java:620-700) with the FilterImportScope dispatch of
-    /// Scope.java:954-976.
+    /// Returns Symbols with the given name that match the given filter.
+    /// Symbols from outward Scopes are included iff lookupKind == RECURSIVE.
     ///
     /// # Arguments
     ///   - scope: the scope to query;
     ///   - name: the symbol name;
-    ///   - lookup_kind: the lookup kind;
+    ///   - lookup_kind: whether outward scopes are inspected;
     ///   - filter: the symbol predicate;
-    ///   - types/syms: the shared type/symbol services (import filter);
-    ///   - ctx: the compiler context.
+    ///   - types/syms: the shared type and symbol services used by the import filter;
+    ///   - attr: the enclosing Attr when the query runs during attribution; an
+    ///     import-scope completion reuses it (Port adapter: upstream reads the
+    ///     Attr field directly).
     ///
     /// # Returns
     ///   - the matching symbols.
     ///
     /// # Panics
-    ///   - none.
-    ///
-    /// Upstream: Scope.getSymbolsByName (Scope.java:620-700).
+    ///   - a FilterImportScope has no import filter.
+    #[allow(clippy::too_many_arguments)]
     pub fn scope_get_symbols_by_name_ctx(
         &mut self,
         scope: ScopeId,
@@ -384,9 +401,10 @@ impl CompilerContext {
         filter: &dyn Fn(SymbolId) -> bool,
         types: &crate::code::types::Types,
         syms: &crate::code::symtab::Symtab,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Vec<SymbolId> {
         let snapshot = self.scope(scope).clone();
-        snapshot.get_symbols_by_name_full(scope, name, lookup_kind, filter, types, syms, self)
+        snapshot.get_symbols_by_name_full(scope, name, lookup_kind, filter, types, syms, self, attr)
     }
 
     /// Java: Scope.isEmpty()
@@ -577,13 +595,15 @@ impl CompilerContext {
         self.scope_prepend_sub_scope(star_scope, new_scope);
     }
 
-    /// Java: ImportScope.finalizeScope() (Scope.java:749-785) and
-    /// NamedImportScope.finalizeScope() (Scope.java:830-844).
+    /// Finalize the content of the ImportScope to speed-up future lookups.
+    /// No further changes to class hierarchy or class content will be reflected.
     ///
     /// # Arguments
     ///   - scope: the import scope;
-    ///   - types: the type relations (for the FilterImportScope query);
-    ///   - syms: the symbol table (for the FilterImportScope query).
+    ///   - types/syms: the shared services used by the FilterImportScope query;
+    ///   - attr: the enclosing Attr when imports are finalized during
+    ///     attribution; an import-scope completion reuses it (Port adapter:
+    ///     upstream reads the Attr field directly).
     ///
     /// # Returns
     ///   - none.
@@ -596,6 +616,7 @@ impl CompilerContext {
         scope: ScopeId,
         types: &crate::code::types::Types,
         syms: &crate::code::symtab::Symtab,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) {
         let (sub_scopes, _name2_scopes) = match &self.scope(scope).data {
             crate::code::scope::ScopeData::ImportScope { sub_scopes, .. } => {
@@ -614,7 +635,7 @@ impl CompilerContext {
         let mut finalized: Vec<(ScopeId, ScopeId)> = Vec::new();
         let mut out: Vec<ScopeId> = Vec::new();
         for sub in sub_scopes.iter() {
-            let result = self.finalize_single_scope(sub, types, syms);
+            let result = self.finalize_single_scope(sub, types, syms, attr.as_deref_mut());
             finalized.push((sub, result));
             out.push(result);
         }
@@ -652,12 +673,27 @@ impl CompilerContext {
         }
     }
 
-    /// Java: ImportScope.finalizeSingleScope(Scope) (Scope.java:760-785).
+    /// Finalizes one filter import scope by materializing its statically
+    /// imported symbols into a writable scope.
+    ///
+    /// # Arguments
+    ///   - scope: the sub-scope to finalize;
+    ///   - types/syms: the shared services used by the FilterImportScope query;
+    ///   - attr: the enclosing Attr when imports are finalized during
+    ///     attribution; an import-scope completion reuses it (Port adapter:
+    ///     upstream reads the Attr field directly).
+    ///
+    /// # Returns
+    ///   - the writable scope for a static import, otherwise the input scope.
+    ///
+    /// # Panics
+    ///   - none.
     fn finalize_single_scope(
         &mut self,
         scope: ScopeId,
         types: &crate::code::types::Types,
         syms: &crate::code::symtab::Symtab,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> ScopeId {
         let (owner, statically_imported) = match &self.scope(scope).data {
             crate::code::scope::ScopeData::FilterImportScope {
@@ -682,6 +718,7 @@ impl CompilerContext {
             types,
             syms,
             self,
+            attr,
         );
         let finalized = self.scope_create(Some(owner));
         for sym in symbols {
@@ -1273,6 +1310,7 @@ mod tests {
             &|_| true,
             &types,
             &syms,
+            None,
         );
         assert_eq!(all.len(), 2);
         let by_name = ctx.scope_get_symbols_by_name_ctx(
@@ -1282,6 +1320,7 @@ mod tests {
             &|_| true,
             &types,
             &syms,
+            None,
         );
         assert_eq!(by_name, vec![sym_b, sym_a]);
     }
