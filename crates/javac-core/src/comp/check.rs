@@ -10950,6 +10950,15 @@ mod diagnostics_tests {
         assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
     }
     #[test]
+    fn nested_member_class_completion_compiles() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T { class A<X> { X v; } A<String> f; }\n")],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    }
+    #[test]
     fn package_declaration_compiles() {
         let (_compiler, diagnostics) = compile_with_diagnostics(
             &[("X.java", "package com.google.gson; interface X {}\n")],

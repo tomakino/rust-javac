@@ -1102,6 +1102,19 @@ pub trait Completer {
         sym: SymbolId,
     ) -> Result<(), CompletionFailure>;
 
+    /// Complete the symbol with the enclosing Attr reference (Port adapter:
+    /// upstream completes the same object graph while Attr is on the stack; the
+    /// default ignores the reference and delegates to complete()).
+    fn complete_with_attr(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        sym: SymbolId,
+        _attr: &mut crate::comp::attr::Attr,
+    ) -> Result<(), CompletionFailure> {
+        self.complete(ctx, syms, sym)
+    }
+
     /// Java: default boolean isTerminal() { return false; }
     fn is_terminal(&self) -> bool {
         false

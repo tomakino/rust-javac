@@ -919,7 +919,7 @@ impl Enter {
             .type_enter
             .borrow()
             .as_ref()
-            .map(|type_enter| type_enter.borrow().completion_enabled)
+            .map(|type_enter| type_enter.borrow().completion_enabled.get())
             .unwrap_or(false);
         if completion_enabled {
             *self.uncompleted.borrow_mut() = Some(Vec::new());
@@ -1312,7 +1312,19 @@ impl crate::code::symbol::Completer for TypeEnterCompleter {
         syms: &Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
-        self.type_enter.borrow_mut().complete(ctx, syms, sym)
+        self.type_enter.borrow().complete(ctx, syms, sym)
+    }
+
+    fn complete_with_attr(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: SymbolId,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> Result<(), CompletionFailure> {
+        self.type_enter
+            .borrow()
+            .complete_with_attr(ctx, syms, sym, attr)
     }
 }
 

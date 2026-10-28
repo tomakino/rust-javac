@@ -92,14 +92,14 @@ pub struct TypeEnter {
     /// Java: boolean allowDeprecationOnImport
     pub allow_deprecation_on_import: bool,
     /// Java: boolean completionEnabled = true
-    pub completion_enabled: bool,
+    pub completion_enabled: std::cell::Cell<bool>,
     /// Java: private final ImportsPhase completeClass = new ImportsPhase()
     /// (expressed as phase state; registered adapter for Java inner classes).
-    pub top_level_phase: Option<Phase>,
+    pub top_level_phase: std::cell::Cell<Option<Phase>>,
     /// ImportsPhase state (Java: inner class fields).
-    pub imports_env: Option<Rc<Env<AttrContext>>>,
-    pub static_import_filter: Option<crate::code::scope::FilterImportFn>,
-    pub type_import_filter: Option<crate::code::scope::FilterImportFn>,
+    pub imports_env: std::cell::RefCell<Option<Rc<Env<AttrContext>>>>,
+    pub static_import_filter: std::cell::RefCell<Option<crate::code::scope::FilterImportFn>>,
+    pub type_import_filter: std::cell::RefCell<Option<crate::code::scope::FilterImportFn>>,
     /// Java: private final Annotate annotate = Annotate.instance(context) —
     /// explicit injection adapter (ADR 0001; Rc cycle broken by a cell, see
     /// MemberEnter.annotate).
@@ -159,11 +159,11 @@ impl TypeEnter {
             dependencies,
             allow_type_annos: true,
             allow_deprecation_on_import: true,
-            completion_enabled: true,
-            top_level_phase: None,
-            imports_env: None,
-            static_import_filter: None,
-            type_import_filter: None,
+            completion_enabled: std::cell::Cell::new(true),
+            top_level_phase: std::cell::Cell::new(None),
+            imports_env: std::cell::RefCell::new(None),
+            static_import_filter: std::cell::RefCell::new(None),
+            type_import_filter: std::cell::RefCell::new(None),
             annotate,
             todo,
             attr: RefCell::new(None),
@@ -174,7 +174,7 @@ impl TypeEnter {
 
     /// Java: protected void ensureImportsChecked(List<JCCompilationUnit> trees)
     pub fn ensure_imports_checked(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         trees: List<TreeId>,
@@ -204,7 +204,7 @@ impl TypeEnter {
 
     /// Java: void finishImports(JCCompilationUnit toplevel, Runnable resolve)
     pub fn finish_imports(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         toplevel: TreeId,
@@ -234,7 +234,7 @@ impl TypeEnter {
     /// normal entry obtains the Attr service and delegates to the explicit-attr
     /// variant (the Attr-inside call site passes its own reference instead).
     pub fn complete(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
@@ -251,14 +251,14 @@ impl TypeEnter {
     /// Java: public void complete(Symbol sym) with the enclosing &mut Attr
     /// injected (upstream TypeEnter.attr field is called directly).
     pub fn complete_with_attr(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
         attr: &mut crate::comp::attr::Attr,
     ) -> Result<(), CompletionFailure> {
         // Suppress some (recursive) MemberEnter invocations
-        if !self.completion_enabled {
+        if !self.completion_enabled.get() {
             // Re-install same completer for next time around and return.
             // Java: Assert.check((sym.flags() & Flags.COMPOUND) == 0);
             // sym.completer = this;
@@ -321,7 +321,7 @@ impl TypeEnter {
     // ------------------------------------------------------------------
 
     fn phase_imports_complete_envs(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         envs: Vec<Rc<Env<AttrContext>>>,
@@ -358,7 +358,7 @@ impl TypeEnter {
 
     /// Java: ImportsPhase.runPhase(Env<AttrContext> env)
     fn run_imports_phase(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -376,7 +376,7 @@ impl TypeEnter {
         }
         if ctx.sym(owner).kind == Kind::TYP {
             // Java: sym.owner.complete();
-            ctx.complete_symbol(syms, owner)?;
+            ctx.complete_symbol_with_attr(syms, owner, Some(attr))?;
         }
         Ok(())
     }
@@ -384,7 +384,7 @@ impl TypeEnter {
     /// Java: ImportsPhase.resolveImports(JCCompilationUnit tree,
     /// Env<AttrContext> env)
     fn resolve_imports(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -398,22 +398,22 @@ impl TypeEnter {
             // we must have already processed this toplevel
             return;
         }
-        let prev_static = self.static_import_filter.clone();
-        let prev_type = self.type_import_filter.clone();
+        let prev_static = self.static_import_filter.borrow().clone();
+        let prev_type = self.type_import_filter.borrow().clone();
         let prev_lint_pos = self
             .deferred_lint_handler
             .borrow_mut()
             .immediate();
         // TODO(Lint): Lint prevLint = chk.setLint(lint);
-        let prev_env = self.imports_env.clone();
-        self.imports_env = Some(Rc::clone(env));
+        let prev_env = self.imports_env.borrow().clone();
+        *self.imports_env.borrow_mut() = Some(Rc::clone(env));
         let packge = compilation_unit_package(ctx, tree);
         let chk = Rc::clone(&self.chk);
         let types = Rc::clone(&self.types);
         let packge_symbol = packge.expect("package symbol");
         let chk_for_static = Rc::clone(&chk);
         let types_for_static = Rc::clone(&types);
-        self.static_import_filter = Some(Rc::new(move |ctx, syms, origin, sym| {
+        *self.static_import_filter.borrow_mut() = Some(Rc::new(move |ctx, syms, origin, sym| {
             let origin_owner = ctx.scope(origin).owner;
             ctx.sym(sym).is_static(ctx)
                 && chk_for_static
@@ -433,7 +433,7 @@ impl TypeEnter {
                     .unwrap_or(false)
         }));
         let chk_for_type = Rc::clone(&chk);
-        self.type_import_filter = Some(Rc::new(move |ctx, syms, _origin, sym| {
+        *self.type_import_filter.borrow_mut() = Some(Rc::new(move |ctx, syms, _origin, sym| {
             ctx.sym(sym).kind == crate::code::kinds::Kind::TYP
                 && chk_for_type
                     .borrow()
@@ -442,7 +442,7 @@ impl TypeEnter {
         // Import-on-demand java.lang.
         let java_lang = syms.enter_package(ctx, syms.java_base, self.names.java_lang.clone());
         // Java: javaLang.members() completes the package before listing it.
-        if let Err(failure) = ctx.complete_symbol(syms, java_lang) {
+        if let Err(failure) = ctx.complete_symbol_with_attr(syms, java_lang, Some(attr)) {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
             chk.completion_error(ctx, ctx.tree(tree).pos, &failure, syms);
@@ -461,11 +461,11 @@ impl TypeEnter {
             crate::util::fatal_error::fatal_error(format!("{:?}", fragment.info().key()));
         }
         // Java: importAll(make.at(tree.pos()).Import(make.QualIdent(javaLang), false), javaLang, env);
-        self.import_all_java_lang(ctx, syms, tree, java_lang, env);
+        self.import_all_java_lang(ctx, syms, tree, java_lang, env, attr);
         let has_module_decl = compilation_unit_module_decl(ctx, tree).is_some();
         // Process the package def and all import clauses.
         if compilation_unit_package_decl(ctx, tree).is_some() && !has_module_decl {
-            self.check_class_package_clash(ctx, syms, env);
+            self.check_class_package_clash(ctx, syms, env, attr);
         }
         let mut imports = compilation_unit_imports(ctx, tree);
         while imports.non_empty() {
@@ -497,19 +497,20 @@ impl TypeEnter {
                 );
             }
         }
-        self.imports_env = prev_env;
+        *self.imports_env.borrow_mut() = prev_env;
         // TODO(Lint): chk.setLint(prevLint);
         self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint_pos);
-        self.static_import_filter = prev_static;
-        self.type_import_filter = prev_type;
+        *self.static_import_filter.borrow_mut() = prev_static;
+        *self.type_import_filter.borrow_mut() = prev_type;
     }
 
     /// Java: ImportsPhase.checkClassPackageClash(JCPackageDecl tree)
     fn check_class_package_clash(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         // check that no class exists with same fully qualified name as toplevel
         // package
@@ -524,7 +525,7 @@ impl TypeEnter {
                     }
                     if let Some(owner) = owner {
                         // Java: p.owner.complete(); enter all class members of p
-                        if let Err(failure) = ctx.complete_symbol(syms, owner) {
+                        if let Err(failure) = ctx.complete_symbol_with_attr(syms, owner, Some(attr)) {
                             self.chk.borrow().completion_error(
                                 ctx,
                                 ctx.tree(toplevel(env)).pos,
@@ -590,7 +591,7 @@ impl TypeEnter {
 
     /// Java: ImportsPhase.doImport(JCImport tree)
     fn do_import(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -602,7 +603,7 @@ impl TypeEnter {
             _ => panic!("ClassCastException: JCFieldAccess expected"),
         };
         let (selected, name) = field_access;
-        let env = self.imports_env.clone().expect("imports env");
+        let env = self.imports_env.borrow().clone().expect("imports env");
         // Create a local environment pointing to this tree to disable effects of
         // other imports in Resolve.findGlobalType
         let local_env = Env::dup_shared(&env, Some(tree));
@@ -614,13 +615,13 @@ impl TypeEnter {
                 self.chk.borrow().check_canonical(ctx, selected);
             }
             if import_static_import(ctx, tree) {
-                self.import_static_all(ctx, syms, tree, p, &env);
+                self.import_static_all(ctx, syms, tree, p, &env, attr);
             } else {
-                self.import_all(ctx, syms, tree, p, &env);
+                self.import_all(ctx, syms, tree, p, &env, attr);
             }
         } else if import_static_import(ctx, tree) {
             // Named static import.
-            self.import_named_static(ctx, syms, tree, p, name, &local_env);
+            self.import_named_static(ctx, syms, tree, p, name, &local_env, attr);
             if let Some(selected) = selected {
                 self.chk.borrow().check_canonical(ctx, selected);
             }
@@ -635,14 +636,14 @@ impl TypeEnter {
             };
             // TODO(Check): chk.checkCanonical(imp);
             if let Some(c) = c {
-                self.import_named(ctx, syms, ctx.tree(tree).pos, c, &env, tree);
+                self.import_named(ctx, syms, ctx.tree(tree).pos, c, &env, tree, attr);
             }
         }
     }
 
     /// Java: ImportsPhase.attribImportType(JCTree tree, Env<AttrContext> env)
     fn attrib_import_type(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -665,16 +666,16 @@ impl TypeEnter {
             ])
         };
         let prev_lint = self.chk.borrow_mut().set_lint(Rc::new(lint));
-        let prev_completion = self.completion_enabled;
-        self.completion_enabled = false;
+        let prev_completion = self.completion_enabled.get();
+        self.completion_enabled.set(false);
         let result = { attr.attrib_type(ctx, syms, tree, env) };
-        self.completion_enabled = prev_completion;
+        self.completion_enabled.set(prev_completion);
         self.chk.borrow_mut().set_lint(prev_lint);
         result
     }
 
     fn attrib_import_qualifier(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -688,16 +689,17 @@ impl TypeEnter {
     /// Java: ImportsPhase.importAll(JCImport imp, TypeSymbol tsym,
     /// Env<AttrContext> env)
     fn import_all(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         _tree: TreeId,
         tsym: SymbolId,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         // Java: Symbol.members() completes the symbol (Symbol.java:870-873);
         // the port performs the completion explicitly.
-        if let Err(failure) = ctx.complete_symbol(syms, tsym) {
+        if let Err(failure) = ctx.complete_symbol_with_attr(syms, tsym, Some(attr)) {
             self.chk.borrow().completion_error(
                 ctx,
                 ctx.tree(_tree).pos,
@@ -710,7 +712,7 @@ impl TypeEnter {
         let origin = ctx.sym(tsym).members().expect("type members");
         // Java: toplevel(&env).starImportScope.importAll(types, tsym.members(),
         // typeImportFilter, imp, cfHandler);
-        let type_filter = self.type_import_filter.clone();
+        let type_filter = self.type_import_filter.borrow().clone();
         ctx.scope_import_all(
             star_scope,
             origin,
@@ -724,16 +726,18 @@ impl TypeEnter {
 
     /// Java: ImportsPhase.importStaticAll(JCImport imp, TypeSymbol tsym,
     /// Env<AttrContext> env)
+    #[allow(clippy::too_many_arguments)]
     fn import_static_all(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
         tsym: SymbolId,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         // Java: TypeSymbol.members() completes the symbol (Symbol.java:870-873).
-        if let Err(failure) = ctx.complete_symbol(syms, tsym) {
+        if let Err(failure) = ctx.complete_symbol_with_attr(syms, tsym, Some(attr)) {
             self.chk.borrow().completion_error(
                 ctx,
                 ctx.tree(tree).pos,
@@ -743,7 +747,7 @@ impl TypeEnter {
         }
         let star_scope = compilation_unit_star_import_scope(ctx, toplevel(env)).expect("star scope");
         let origin = class_members_scope(ctx, tsym).expect("type members");
-        let filter = self.static_import_filter.clone();
+        let filter = self.static_import_filter.borrow().clone();
         ctx.scope_import_all(
             star_scope,
             origin,
@@ -757,14 +761,16 @@ impl TypeEnter {
 
     /// Java: ImportsPhase.importNamedStatic(JCImport imp, TypeSymbol tsym,
     /// Name name, Env<AttrContext> env)
+    #[allow(clippy::too_many_arguments)]
     fn import_named_static(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         _syms: &Symtab,
         tree: TreeId,
         tsym: SymbolId,
         name: crate::util::name::Name,
         env: &Rc<Env<AttrContext>>,
+        _attr: &mut crate::comp::attr::Attr,
     ) {
         if ctx.sym(tsym).kind != Kind::TYP {
             // Java: log.error(DiagnosticFlag.RECOVERABLE, imp.pos(),
@@ -780,7 +786,7 @@ impl TypeEnter {
         let named_scope =
             compilation_unit_named_import_scope(ctx, toplevel(env)).expect("named scope");
         let origin = class_members_scope(ctx, tsym).expect("type members");
-        let filter = self.static_import_filter.clone();
+        let filter = self.static_import_filter.borrow().clone();
         let new_scope = ctx.scope_import_by_name(
             named_scope,
             origin,
@@ -796,14 +802,16 @@ impl TypeEnter {
 
     /// Java: ImportsPhase.importNamed(DiagnosticPosition pos, Symbol tsym,
     /// Env<AttrContext> env, JCImport imp)
+    #[allow(clippy::too_many_arguments)]
     fn import_named(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         _syms: &Symtab,
         _pos: i32,
         tsym: SymbolId,
         env: &Rc<Env<AttrContext>>,
         tree: TreeId,
+        _attr: &mut crate::comp::attr::Attr,
     ) {
         if ctx.sym(tsym).kind == Kind::TYP {
             let named_scope =
@@ -821,12 +829,13 @@ impl TypeEnter {
     /// Java: importAll(make.at(tree.pos()).Import(make.QualIdent(javaLang), false),
     /// javaLang, env) — the java.lang import-on-demand.
     fn import_all_java_lang(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
         java_lang: SymbolId,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         let pos = ctx.tree(tree).pos;
         let imp = {
@@ -835,11 +844,11 @@ impl TypeEnter {
             let qual = make.qual_ident(ctx, syms, java_lang);
             make.import(ctx, qual, false)
         };
-        self.import_all(ctx, syms, imp, java_lang, env);
+        self.import_all(ctx, syms, imp, java_lang, env, attr);
     }
     /// Java: Check.checkImportsUnique(toplevel) (Check.java:3793-3820).
     fn check_imports_unique(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         toplevel: TreeId,
@@ -849,7 +858,7 @@ impl TypeEnter {
 
     /// Java: Check.checkImportsResolvable(toplevel) (Check.java:4002-4024).
     fn check_imports_resolvable(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         toplevel: TreeId,
@@ -858,14 +867,14 @@ impl TypeEnter {
     }
 
     /// Java: Check.checkImportedPackagesObservable(toplevel) (Check.java:4026-4039).
-    fn check_imported_packages_observable(&mut self, ctx: &mut CompilerContext, toplevel: TreeId) {
+    fn check_imported_packages_observable(&self, ctx: &mut CompilerContext, toplevel: TreeId) {
         self.chk.borrow().check_imported_packages_observable(ctx, toplevel);
     }
 
     /// Java: public void markDeprecated(Symbol sym, List<JCAnnotation>
     /// annotations, Env<AttrContext> env)
     pub fn mark_deprecated(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
@@ -894,7 +903,7 @@ impl TypeEnter {
     /// # Panics
     ///   - the Attr service is not injected.
     fn attrib_annotation_types(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         annotations: List<TreeId>,
@@ -914,7 +923,7 @@ impl TypeEnter {
     /// Java: private void handleDeprecatedAnnotations(List<JCAnnotation>
     /// annotations, Symbol sym)
     fn handle_deprecated_annotations(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         annotations: List<TreeId>,
@@ -951,7 +960,7 @@ impl TypeEnter {
     /// Java: private void setFlagIfAttributeTrue(JCAnnotation a, Symbol sym,
     /// Name attribute, long flag)
     fn set_flag_if_attribute_true(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         annotation: TreeId,
         sym: SymbolId,
@@ -990,7 +999,7 @@ impl TypeEnter {
     /// Java: protected Env<AttrContext> baseEnv(JCClassDecl tree,
     /// Env<AttrContext> env)
     fn base_env(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
@@ -1040,7 +1049,7 @@ impl TypeEnter {
 
     /// Java: protected JCExpression enumBase(int pos, ClassSymbol c)
     fn enum_base(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         pos: i32,
@@ -1057,7 +1066,7 @@ impl TypeEnter {
     /// Java: protected Type modelMissingTypes(Env<AttrContext> env, Type t,
     /// JCExpression tree, boolean interfaceExpected)
     fn model_missing_types(
-        &mut self,
+        &self,
         _ctx: &mut CompilerContext,
         _env: &Rc<Env<AttrContext>>,
         t: crate::ids::TypeId,
@@ -1077,7 +1086,7 @@ impl TypeEnter {
 
     /// Java: HierarchyPhase.runPhase(Env<AttrContext> env)
     fn hierarchy_phase_run(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -1161,7 +1170,7 @@ impl TypeEnter {
     /// # Panics
     ///   - a class symbol invariant is violated.
     fn attrib_super_types(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -1324,7 +1333,7 @@ impl TypeEnter {
     /// # Panics
     ///   - none.
     fn clear_type_params_base(
-        &mut self,
+        &self,
         _ctx: &mut CompilerContext,
         super_type: TreeId,
     ) -> TreeId {
@@ -1334,7 +1343,7 @@ impl TypeEnter {
 
 
     /// Java: HeaderPhase.clearTypeParams (HierarchyPhase override).
-    fn clear_type_params(&mut self, _ctx: &mut CompilerContext, super_type: TreeId) -> TreeId {
+    fn clear_type_params(&self, _ctx: &mut CompilerContext, super_type: TreeId) -> TreeId {
         // Java: case TYPEAPPLY: return ((JCTypeApply) superType).clazz; else
         // return superType.
         if ctx_tree_has_tag(_ctx, super_type, Tag::TYPEAPPLY) {
@@ -1350,7 +1359,7 @@ impl TypeEnter {
 
     /// Java: PermitsPhase.runPhase(Env<AttrContext> env)
     fn permits_phase_run(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -1401,7 +1410,7 @@ impl TypeEnter {
 
     /// Java: HeaderPhase.runPhase(Env<AttrContext> env)
     fn header_phase_run(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -1542,7 +1551,7 @@ impl TypeEnter {
     /// Java: AbstractMembersPhase.enterThisAndSuper(ClassSymbol sym,
     /// Env<AttrContext> env)
     fn enter_this_and_super(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         sym: SymbolId,
         env: &Rc<Env<AttrContext>>,
@@ -1588,7 +1597,7 @@ impl TypeEnter {
     /// # Panics
     ///   - a record invariant is violated.
     fn record_phase_run(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -1694,7 +1703,7 @@ impl TypeEnter {
 
     /// Java: MembersPhase.runPhase(Env<AttrContext> env)
     fn members_phase_run(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
@@ -1764,7 +1773,7 @@ impl TypeEnter {
     /// # Panics
     ///   - a class invariant is violated.
     fn finish_class(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -1871,7 +1880,7 @@ impl TypeEnter {
     /// # Panics
     ///   - a record invariant is violated.
     fn add_accessor(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -2015,7 +2024,7 @@ impl TypeEnter {
     /// # Panics
     ///   - an enum invariant is violated.
     fn add_enum_members(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -2102,7 +2111,7 @@ impl TypeEnter {
     /// # Panics
     ///   - a record invariant is violated.
     fn add_record_members_if_needed(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -2111,7 +2120,7 @@ impl TypeEnter {
     ) {
         use crate::code::flags;
         let sym = class_tree_symbol(ctx, tree).expect("record symbol");
-        let make_no_arg = |this: &mut TypeEnter, ctx: &mut CompilerContext, syms: &Symtab, name: crate::util::name::Name, ret: TypeId| {
+        let make_no_arg = |this: &TypeEnter, ctx: &mut CompilerContext, syms: &Symtab, name: crate::util::name::Name, ret: TypeId| {
             let mut make = this.make.borrow_mut();
             make.at(ctx.tree(tree).pos);
             let ret_tree = make.type_expr(ctx, syms, ret);
@@ -2263,7 +2272,7 @@ impl TypeEnter {
     /// # Panics
     ///   - a record invariant is violated.
     fn get_canonical_constructor_decl(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -2364,7 +2373,7 @@ impl TypeEnter {
     /// # Panics
     ///   - none.
     fn lookup_method(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         c: SymbolId,
@@ -2409,7 +2418,7 @@ impl TypeEnter {
     /// # Panics
     ///   - the helper services are not initialized.
     fn default_constructor(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -2485,7 +2494,7 @@ impl TypeEnter {
     /// # Panics
     ///   - a class invariant is violated.
     fn get_default_constructor_helper(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,

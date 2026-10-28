@@ -698,9 +698,26 @@ impl CompilerContext {
         syms: &crate::code::symtab::Symtab,
         symbol: SymbolId,
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        self.complete_symbol_with_attr(syms, symbol, None)
+    }
+
+    /// Completion entry point with an optional enclosing Attr reference. The
+    /// Attr-inside callers (MemberEnter/Attr/TypeEnter/Annotate) pass their
+    /// current Attr so the completer can keep using the same Attr object
+    /// (upstream completes while Attr is on the stack); the Attr-less entry
+    /// points pass None and keep the existing behaviour.
+    pub fn complete_symbol_with_attr(
+        &mut self,
+        syms: &crate::code::symtab::Symtab,
+        symbol: SymbolId,
+        attr: Option<&mut crate::comp::attr::Attr>,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let completer = self.sym_mut(symbol).completer.take();
         if let Some(completer) = completer {
-            completer.borrow_mut().complete(self, syms, symbol)?;
+            match attr {
+                Some(attr) => completer.borrow_mut().complete_with_attr(self, syms, symbol, attr)?,
+                None => completer.borrow_mut().complete(self, syms, symbol)?,
+            }
         }
         Ok(())
     }
@@ -743,6 +760,32 @@ impl CompilerContext {
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let orig_completer = self.sym(symbol).completer.clone();
         match self.complete_symbol(syms, symbol) {
+            Ok(()) => Ok(()),
+            Err(failure) => {
+                if let (Some(dcfh), Some(orig)) = (failure.dcfh.clone(), orig_completer) {
+                    dcfh.class_symbol_complete_failed(self, symbol, orig);
+                }
+                // quiet error recovery
+                self.sym_mut(symbol).flags_field |= (crate::code::flags::PUBLIC
+                    | crate::code::flags::STATIC) as i64;
+                self.sym_mut(symbol).ty =
+                    Some(crate::code::symtab::new_error_type_for_class(self, symbol));
+                Err(failure)
+            }
+        }
+    }
+
+    /// Java: ClassSymbol.complete() with the enclosing Attr reference (Port
+    /// adapter for the reentrant completion chain); failure recovery is the
+    /// same as complete_class_symbol.
+    pub fn complete_class_symbol_with_attr(
+        &mut self,
+        syms: &crate::code::symtab::Symtab,
+        symbol: SymbolId,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        let orig_completer = self.sym(symbol).completer.clone();
+        match self.complete_symbol_with_attr(syms, symbol, Some(attr)) {
             Ok(()) => Ok(()),
             Err(failure) => {
                 if let (Some(dcfh), Some(orig)) = (failure.dcfh.clone(), orig_completer) {

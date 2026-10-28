@@ -120,3 +120,9 @@
 - 测试:member_inner_class_field_initializer_compiles(`class T { class In { int v; } In i = new In(); }`)、member_inner_class_method_new_compiles(`In make() { return new In(); }`)、outer_inner_qualification_compiles(`class Outer {...} class Use { Outer.Inner f; }`)全部通过;JDK17 javac oracle(T1/T2/Outer.java)`javac_exit=0`;D3b 的 local/anonymous e2e 保留。
 - 二审修复:撤销 `check_non_abstract` 的 `AbstractCantBeAccessedDirectly` 第一个 SymbolArg 误改(D3b 调试时全局替换误伤,已恢复 `ctx.sym(sym).name`);codegen 证据化(见上,仅忽略 ClassDecl,其余仍 panic)。
 - 验证:workspace 1142 passed / 0 failed(gson 临时测试已由 Lead 移出);clippy errors=0/warnings=208;unimplemented 0;debug grep 0。
+
+### D3f TypeEnter 重入(A+A2)
+- A:TypeEnter 的 `completion_enabled`→Cell<bool>、`top_level_phase`→Cell<Option<Phase>>、`imports_env`/`static_import_filter`/`type_import_filter`→RefCell,全部短借;39 个方法 `&mut self`→`&self`;`TypeEnterCompleter` 改 `borrow()`;服务句柄不变。
+- A2:`Completer` 增加 `complete_with_attr`(默认回退 complete);`CompilerContext` 增加 `complete_symbol_with_attr`/`complete_class_symbol_with_attr`(同一失败恢复);`TypeEnterCompleter` override 用外层 `&mut Attr`;imports 链(check_class_package_clash/do_import/import_all/import_static_all/import_named_static/import_named/import_all_java_lang)与 Annotate 的 Attr 内完成点改为传当前 Attr。
+- 测试:新增 `nested_member_class_completion_compiles`(`class T { class A<X> { X v; } A<String> f; }`)通过;1147 passed / 0 failed;clippy 0/208;unimplemented 0。
+- gson 80 文件仍触发未覆盖路径(A3):`Types::supertype`→`complete_class_symbol`(无 Attr)→`complete_symbol`→`TypeEnterCompleter::complete`→`TypeEnter::complete`(type_enter.rs:247 `attr.borrow_mut()`),Attr 已借;按批准范围 ①-④ 停手,Check/ClassFinder/Types/Enter/Modules 的无 Attr 完成路径登记 A3(需给这些调用点注入 Attr 或延后完成)。

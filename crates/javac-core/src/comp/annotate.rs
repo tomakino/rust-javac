@@ -1322,7 +1322,7 @@ impl AnnotateServices {
             .tsym;
         let completion_error = match expected_sym {
             Some(sym) if ctx.sym(sym).completer.is_some() => {
-                ctx.complete_symbol(syms, sym).err()
+                ctx.complete_symbol_with_attr(syms, sym, Some(attr)).err()
             }
             _ => None,
         };

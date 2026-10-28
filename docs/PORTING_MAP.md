@@ -73,3 +73,11 @@ Status: template only; entries are appended by the executing agent and reviewed 
 | `comp/attr.rs::Attr::complete_local_class` | `ClassSymbol.complete` from Attr | passes the Attr reference into TypeEnter (Port adapter for the RefCell model) |
 | `comp/type_enter.rs::TypeEnter::finish_imports` | `TypeEnter.finishImports` | explicit &mut Attr (upstream TypeEnter.attr field) |
 | `comp/check.rs::diagnostics_tests::complete_wrapper_propagates_completion_failure` | — | completion-failure propagation/recovery test (D3b second review) |
+
+## D3f TypeEnter reentrancy (A + A2)
+
+| Local symbol | Upstream location | Notes |
+|---|---|---|
+| `code/symbol.rs::Completer::complete_with_attr` | `Completer.complete` call sites inside Attr | default falls back to complete; TypeEnterCompleter overrides with the enclosing Attr |
+| `compiler_context.rs::CompilerContext::complete_symbol_with_attr` | `Symbol.complete` | optional Attr context for the reentrant completion chain |
+| `compiler_context.rs::CompilerContext::complete_class_symbol_with_attr` | `ClassSymbol.complete` | same failure recovery as complete_class_symbol |
