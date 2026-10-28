@@ -8006,6 +8006,9 @@ impl<'a> crate::tree::tree_scanner::TreeScannerVisitor for FreeVarCollector<'a> 
         let constructor = constructor.expect("attributed constructor");
         let c = ctx.sym(constructor).owner.expect("constructor owner");
         self.add_free_vars(ctx, c);
+        // The enclosing instance of a qualified new (p.new Child()) is an
+        // ordinary free-variable reference of the class being created.
+        self.scan(ctx, encl);
         if encl.is_none()
             && ctx.sym(c).has_outer_instance(ctx)
             && let Some(head) = self.outer_this_stack.first().copied()
