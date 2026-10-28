@@ -97,3 +97,19 @@
 - lintClassfile:Lint 服务未移植(TODO(Lint));`Options::lint_enabled` 解析 -Xlint/-Xlint:all/-Xlint:none/逗号列表(Port adapter);测试用 -Xlint:all 触发(不写死 Xlint:classfile)。
 - 真实 fixture 用例 2 条(真实 javac class 字节+字节补丁):A_nomethod.class+C.class(annotation.method.not.found;source C.class,args A/value);E.class(enter)+C2_bad.class(unknown.enum.constant;source 无,args E.class/E/Z)。deproxy 由 pending 注解值手动驱动(构造 Annotate 需 17 依赖,登记)。
 - oracle 原始命令/输出(JDK17 17.0.19):javac -J-Duser.language=en -XDrawDiagnostics -Xlint:classfile -cp <dir> -d <dir> Use.java;case1 raw "C.class:-:-: compiler.warn.annotation.method.not.found: A, value"(普通 "... C.class: warning: Cannot find annotation method 'value()' in type 'A'");case2 raw "- compiler.warn.unknown.enum.constant: E.class, E, Z"(普通 "warning: unknown enum constant E.Z")。
+
+### D3b inner-class 借用专项(方案 A:整链 &mut Attr 注入)
+- Attr 的 local-class 完成改为 `complete_local_class(ctx,syms,sym)`:调用 `TypeEnter::complete_with_attr(..., self)` 并保留上游失败恢复;不再在 Attr 借用内 `complete_class_symbol` 重借。
+- TypeEnter:`complete_with_attr` + phase(imports/hierarchy/header/record/members)与 helper(attrib_super_types/attrib_import_*/attrib_annotation_types/attrib_type_variables/add_accessor/add_enum/add_record/finish_class)接收 `&mut Attr`;正常入口 `complete` 包装 borrow 一次(self.attr.borrow_mut 仅 1 处)。
+- MemberEnter:member_enter/member_enter_list/visit_method_def/visit_var_def/signature/attrib_* 接收 `&mut Attr`;删除 attr_service(重借 0 处)。
+- Annotate:AnnotateRunnable/flush/unblock 增加 `&mut Attr`;队列闭包、TypeAnnotations.validate、AnnotateServices(attribute_annotation*/get_annotation_*/annotation_value_info/process_repeated/make_container)显式传 attr;TypeAnnotate 持 `&mut Attr`;正常路径 wrapper borrow 一次。
+- 审计(真实计数,二审修正):type_enter=3——complete 包装 `attr_rc.borrow_mut()`(正常入口,Attr 内走 complete_with_attr)、ensure_imports_checked `attr_rc.borrow_mut()`(正常 Enter 入口,不在 complete_with_attr 链)、setter `self.attr.borrow_mut() = Some(attr)`(wiring 注入,非 attrib 路径);member_enter=0;annotate=2——flush 包装(正常入口,Attr 内走 flush_with_attr)、AnnotationTypeCompleter 的 `self.services.attr.borrow_mut()`(ClassReader 注解类型 completer 正常路径)。TypeEnter/MemberEnter 的 Attr 内路径均不二次借用;finish_imports 已改为接收 `&mut Attr`(complete_with_attr 链传现有 attr,ensure_imports_checked 正常入口 borrow 一次)。
+- 测试:局部类(inner_class_effectively_final_uses_inner_cls_fragment)通过——诊断 code `compiler.err.cant.ref.non.effectively.final.var`、文本与 JDK17 oracle 一致、含 `compiler.misc.inner.cls` fragment;匿名类(anonymous_class_compiles)通过(T+T$1,2 个编译类)。
+- 阻塞(失败停手,未提交半成品):成员内部类实例化(`class T { class In {} In i = new In(); }`)panic 于既有 `Resolve::resolve_self_containing` 的 "enclClass sym"(`env.enclClass` 的 tree.sym 为 None,backtrace resolve.rs:9503);该测试已移除并登记,待 Resolve/Enter 批次修复;D3b 的 Attr/Annotate 链由局部类/匿名类 e2e 验证。
+- 验证:1138 passed / clippy 0/208 / unimplemented 0;git 7 files 329 insertions(+),196 deletions(-)(未提交,待 Lead 审核)。
+
+#### D3b 二审修复
+- complete 包装不再吞错:`pub fn complete` 返回 `Result<(), CompletionFailure>`(上游 throws 语义),`TypeEnterCompleter::complete` 直接传播;新增 `complete_wrapper_propagates_completion_failure`(mock Completer 返回 Err → `complete_class_symbol` 返回 Err 且恢复为 error type,诊断 supplier 未被使用)。
+- finish_imports 改为接收 `&mut Attr`(`complete_with_attr` 链传现有 attr;`ensure_imports_checked` 正常入口 borrow 一次),Attrs 内路径无二次借用。
+- 成员内部类 panic 归属:在 HEAD bc5d915(D3b stash 后)复现 `class T { class In { int v; } In i = new In(); }` 仍 panic 于 `resolve.rs:9499` `resolve_self_containing` 的 "enclClass sym" → 既有缺口,D3b 未引入;登记 D3c(Resolve/Enter 专项),测试不入库。
+- 验证:1139 passed(含新增完成失败用例) / clippy 0/208 / unimplemented 0。

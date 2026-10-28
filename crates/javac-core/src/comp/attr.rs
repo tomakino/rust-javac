@@ -2557,7 +2557,7 @@ impl Attr {
         annotate
             .services
             .queue_scan_tree_and_type_annotate(init, env, sym, ctx.tree(tree).pos);
-        annotate.flush(ctx, syms).expect("annotation flush");
+        annotate.flush_with_attr(ctx, syms, self).expect("annotation flush");
     }
 
     /// Java: public Object attribLazyConstantValue(Env<AttrContext> env,
@@ -7795,7 +7795,7 @@ impl Attr {
                     fake_owner,
                     crate::util::position::NOPOS,
                 );
-                let _ = annotate_rc.flush(ctx, syms);
+                let _ = annotate_rc.flush_with_attr(ctx, syms, self);
             }
             self.attrib_stats(ctx, syms, stats, &local_env);
             // Store init and clinit type annotations with the ClassSymbol.
@@ -8760,7 +8760,7 @@ impl Attr {
                 binding,
                 ctx.tree(var).pos,
             );
-            let _ = annotate_rc.flush(ctx, syms);
+            let _ = annotate_rc.flush_with_attr(ctx, syms, self);
         }
         // Java: chk.validate(tree.var.vartype, env, true);
         {
@@ -12036,7 +12036,7 @@ impl Attr {
             .borrow()
             .clone()
             .expect("AssertionError: annotate service must be installed");
-        if let Err(failure) = annotate_rc.flush(ctx, syms) {
+        if let Err(failure) = annotate_rc.flush_with_attr(ctx, syms, self) {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
             chk.completion_error(ctx, pos, &failure, syms);
@@ -12091,7 +12091,7 @@ impl Attr {
             .borrow()
             .clone()
             .expect("AssertionError: annotate service must be installed");
-        if let Err(failure) = annotate_rc.flush(ctx, syms) {
+        if let Err(failure) = annotate_rc.flush_with_attr(ctx, syms, self) {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
             chk.completion_error(ctx, pos, &failure, syms);
@@ -12124,7 +12124,7 @@ impl Attr {
             .borrow()
             .clone()
             .expect("AssertionError: annotate service must be installed");
-        if let Err(failure) = annotate_rc.flush(ctx, syms) {
+        if let Err(failure) = annotate_rc.flush_with_attr(ctx, syms, self) {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
             chk.completion_error(ctx, pos, &failure, syms);
@@ -13996,6 +13996,49 @@ impl Attr {
         result
     }
 
+    /// Completes a local/anonymous class symbol while this Attr reference is
+    /// borrowed (the upstream TypeEnter calls its Attr field directly).
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - syms: the symbol table;
+    ///   - sym: the class symbol to complete.
+    ///
+    /// # Returns
+    ///   - the completion result (with the upstream quiet error recovery).
+    ///
+    /// # Panics
+    ///   - a class invariant is violated.
+    fn complete_local_class(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: SymbolId,
+    ) -> Result<(), CompletionFailure> {
+        let orig_completer = ctx.sym(sym).completer.clone();
+        let completer = ctx.sym_mut(sym).completer.take();
+        if completer.is_none() {
+            return Ok(());
+        }
+        let type_enter = Rc::clone(&self.type_enter);
+        let result = type_enter
+            .borrow_mut()
+            .complete_with_attr(ctx, syms, sym, self);
+        match result {
+            Ok(()) => Ok(()),
+            Err(failure) => {
+                if let (Some(dcfh), Some(orig)) = (failure.dcfh.clone(), orig_completer) {
+                    dcfh.class_symbol_complete_failed(ctx, sym, orig);
+                }
+                ctx.sym_mut(sym).flags_field |= (crate::code::flags::PUBLIC
+                    | crate::code::flags::STATIC) as i64;
+                ctx.sym_mut(sym).ty =
+                    Some(crate::code::symtab::new_error_type_for_class(ctx, sym));
+                Err(failure)
+            }
+        }
+    }
+
     /// The body of Attr.visitClassDef (Attr.java:952-987), split out for the
     /// try/finally leave above.
     fn visit_class_def_body(
@@ -14044,8 +14087,9 @@ impl Attr {
                 return Ok(self.no_type(ctx));
             }
         };
-        // make sure class has been completed:
-        ctx.complete_class_symbol(syms, class_symbol)?;
+        // make sure class has been completed (the local-class TypeEnter gets
+        // this Attr reference; the upstream TypeEnter holds the Attr field).
+        self.complete_local_class(ctx, syms, class_symbol)?;
         // If this class appears as an anonymous class
         // in a superclass constructor call disable implicit outer instance
         // from being passed. (This would be an illegal access to "this before super").
@@ -14451,7 +14495,7 @@ impl Attr {
                     m,
                     crate::util::position::NOPOS,
                 );
-                annotate.flush(ctx, syms).expect("annotation flush");
+                annotate.flush_with_attr(ctx, syms, self).expect("annotation flush");
             }
             self.attrib_stat(ctx, syms, body, &local_env);
         }
@@ -14924,7 +14968,7 @@ impl Attr {
                     let member_enter = Rc::clone(&self.member_enter);
                     member_enter
                         .borrow_mut()
-                        .member_enter(ctx, syms, tree, &env);
+                        .member_enter(ctx, syms, tree, &env, self);
                     // Java: memberEnter stores the new VarSymbol in tree.sym;
                     // the port keeps the tree slot as the shared location.
                     sym_opt = match &ctx.tree(tree).kind {
@@ -14939,7 +14983,7 @@ impl Attr {
                         .clone()
                         .expect("Attr.annotate must be injected");
                     annotate
-                        .unblock_annotations(ctx, syms)
+                        .unblock_annotations_with_attr(ctx, syms, self)
                         .expect("unblockAnnotations flush");
                 }
             }

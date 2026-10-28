@@ -188,7 +188,15 @@ impl TypeEnter {
                 .unwrap_or(false);
             if !filled {
                 let top_env = self.enter.borrow().get_top_level_env(ctx, tree);
-                self.finish_imports(ctx, syms, tree, Some(&top_env));
+                {
+                    let attr_rc = self
+                        .attr
+                        .borrow()
+                        .clone()
+                        .expect("TypeEnter.attr must be injected");
+                    let mut attr = attr_rc.borrow_mut();
+                    self.finish_imports(ctx, syms, tree, Some(&top_env), &mut attr);
+                }
             }
             current = current.tail();
         }
@@ -201,12 +209,13 @@ impl TypeEnter {
         syms: &Symtab,
         toplevel: TreeId,
         resolve: Option<&Rc<Env<AttrContext>>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         let sourcefile = compilation_unit_sourcefile(ctx, toplevel);
         let prev = self.log.borrow_mut().use_source(sourcefile);
         // Java: resolve.run() (the completeClass.resolveImports closure)
         if let Some(env) = resolve {
-            self.resolve_imports(ctx, syms, toplevel, env);
+            self.resolve_imports(ctx, syms, toplevel, env, attr);
         }
         self.check_imports_unique(ctx, syms, toplevel);
         self.check_imports_resolvable(ctx, syms, toplevel);
@@ -221,13 +230,33 @@ impl TypeEnter {
         self.log.borrow_mut().use_source(prev);
     }
 
-    /// Java: public void complete(Symbol sym) throws CompletionFailure
+    /// Java: public void complete(Symbol sym) throws CompletionFailure — the
+    /// normal entry obtains the Attr service and delegates to the explicit-attr
+    /// variant (the Attr-inside call site passes its own reference instead).
     pub fn complete(
         &mut self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         sym: SymbolId,
-    ) {
+    ) -> Result<(), CompletionFailure> {
+        let attr_rc = self
+            .attr
+            .borrow()
+            .clone()
+            .expect("TypeEnter.attr must be injected");
+        let mut attr = attr_rc.borrow_mut();
+        self.complete_with_attr(ctx, syms, sym, &mut attr)
+    }
+
+    /// Java: public void complete(Symbol sym) with the enclosing &mut Attr
+    /// injected (upstream TypeEnter.attr field is called directly).
+    pub fn complete_with_attr(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: SymbolId,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> Result<(), CompletionFailure> {
         // Suppress some (recursive) MemberEnter invocations
         if !self.completion_enabled {
             // Re-install same completer for next time around and return.
@@ -236,7 +265,7 @@ impl TypeEnter {
             // TODO(TypeEnter/Completer): the completer registration is an
             // adapter concern (the local completion is driven by the caller's
             // complete_symbol); registered.
-            return;
+            return Ok(());
         }
         let annotate = self
             .annotate
@@ -254,13 +283,13 @@ impl TypeEnter {
         };
         let queue = match env {
             Some(env) => {
-                let queue = self.phase_imports_complete_envs(ctx, syms, vec![env]);
+                let queue = self.phase_imports_complete_envs(ctx, syms, vec![env], attr);
                 for queued_env in &queue {
-                    self.hierarchy_phase_run(ctx, syms, queued_env);
+                    self.hierarchy_phase_run(ctx, syms, queued_env, attr);
                     self.permits_phase_run(ctx, syms, queued_env);
-                    self.header_phase_run(ctx, syms, queued_env);
-                    self.record_phase_run(ctx, syms, queued_env);
-                    self.members_phase_run(ctx, syms, queued_env);
+                    self.header_phase_run(ctx, syms, queued_env, attr);
+                    self.record_phase_run(ctx, syms, queued_env, attr);
+                    self.members_phase_run(ctx, syms, queued_env, attr);
                 }
                 queue
             }
@@ -276,13 +305,14 @@ impl TypeEnter {
                     .map(|class| compilation_unit_defs(ctx, toplevel).iter().any(|d| d == class))
                     .unwrap_or(false);
                 if in_defs && seen.insert(toplevel) {
-                    self.finish_imports(ctx, syms, toplevel, None);
+                    self.finish_imports(ctx, syms, toplevel, None, attr);
                 }
             }
         }
         annotate
-            .unblock_annotations(ctx, syms)
+            .unblock_annotations_with_attr(ctx, syms, attr)
             .expect("unblockAnnotations flush");
+        Ok(())
     }
 
     // ------------------------------------------------------------------
@@ -295,6 +325,7 @@ impl TypeEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         envs: Vec<Rc<Env<AttrContext>>>,
+        attr: &mut crate::comp::attr::Attr,
     ) -> Vec<Rc<Env<AttrContext>>> {
         let mut queue = Vec::new();
         for env in envs {
@@ -310,7 +341,7 @@ impl TypeEnter {
             self.dependencies
                 .borrow_mut()
                 .push(ctx, sym, CompletionCause::IMPORTS_PHASE);
-            match self.run_imports_phase(ctx, syms, &env) {
+            match self.run_imports_phase(ctx, syms, &env, attr) {
                 Ok(()) => {}
                 Err(failure) => {
                     self.chk
@@ -331,6 +362,7 @@ impl TypeEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) -> Result<(), CompletionFailure> {
         let tree = env.encl_class.expect("class tree");
         let sym = class_tree_symbol(ctx, tree).expect("class symbol");
@@ -339,7 +371,7 @@ impl TypeEnter {
         // source file have been seen.
         if ctx.sym(owner).kind == Kind::PCK {
             let top = self.enter.borrow().get_top_level_env(ctx, toplevel(env));
-            self.resolve_imports(ctx, syms, toplevel(env), &top);
+            self.resolve_imports(ctx, syms, toplevel(env), &top, attr);
             self.todo.borrow_mut().append(ctx, Rc::clone(env));
         }
         if ctx.sym(owner).kind == Kind::TYP {
@@ -357,6 +389,7 @@ impl TypeEnter {
         syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         if compilation_unit_star_import_scope(ctx, tree)
             .map(|scope| ctx.scope_is_filled(scope))
@@ -437,7 +470,7 @@ impl TypeEnter {
         let mut imports = compilation_unit_imports(ctx, tree);
         while imports.non_empty() {
             let imp = *imports.head();
-            self.do_import(ctx, syms, imp);
+            self.do_import(ctx, syms, imp, attr);
             imports = imports.tail();
         }
         if let Some(decl) = compilation_unit_module_decl(ctx, tree) {
@@ -445,7 +478,7 @@ impl TypeEnter {
             let annotations = module_decl_annotations(ctx, decl);
             let sym = module_decl_symbol(ctx, decl);
             if let Some(sym) = sym {
-                self.mark_deprecated(ctx, syms, sym, annotations, env);
+                self.mark_deprecated(ctx, syms, sym, annotations, env, attr);
             }
             // process module annotations
             let annotate = self
@@ -561,6 +594,7 @@ impl TypeEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         let qualid = import_qualid(ctx, tree).expect("import qualid");
         let field_access = match &ctx.tree(qualid).kind {
@@ -573,7 +607,7 @@ impl TypeEnter {
         // other imports in Resolve.findGlobalType
         let local_env = Env::dup_shared(&env, Some(tree));
         // Java: TypeSymbol p = attr.attribImportQualifier(tree, localEnv).tsym;
-        let p = self.attrib_import_qualifier(ctx, syms, tree, &local_env);
+        let p = self.attrib_import_qualifier(ctx, syms, tree, &local_env, attr);
         if name.to_java_string() == self.names.asterisk.to_java_string() {
             // Import on demand.
             if let Some(selected) = selected {
@@ -592,7 +626,7 @@ impl TypeEnter {
             }
         } else {
             // Named type import.
-            let imported_type = self.attrib_import_type(ctx, syms, qualid, &local_env);
+            let imported_type = self.attrib_import_type(ctx, syms, qualid, &local_env, attr);
             let original_type = original_type(ctx, imported_type);
             let c = if ctx.typ(original_type).has_tag(TypeTag::CLASS) {
                 ctx.typ(original_type).tsym
@@ -613,6 +647,7 @@ impl TypeEnter {
         syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) -> crate::ids::TypeId {
         use crate::code::lint::LintCategory;
         // Java: Assert.check(completionEnabled);
@@ -632,14 +667,7 @@ impl TypeEnter {
         let prev_lint = self.chk.borrow_mut().set_lint(Rc::new(lint));
         let prev_completion = self.completion_enabled;
         self.completion_enabled = false;
-        let result = {
-            let attr = self
-                .attr
-                .borrow()
-                .clone()
-                .expect("TypeEnter.attr must be injected");
-            attr.borrow_mut().attrib_type(ctx, syms, tree, env)
-        };
+        let result = { attr.attrib_type(ctx, syms, tree, env) };
         self.completion_enabled = prev_completion;
         self.chk.borrow_mut().set_lint(prev_lint);
         result
@@ -651,15 +679,9 @@ impl TypeEnter {
         syms: &Symtab,
         tree: TreeId,
         local_env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) -> SymbolId {
-        let attr = self
-            .attr
-            .borrow()
-            .clone()
-            .expect("TypeEnter.attr must be injected");
-        let imported = attr
-            .borrow_mut()
-            .attrib_import_qualifier(ctx, syms, tree, local_env);
+        let imported = attr.attrib_import_qualifier(ctx, syms, tree, local_env);
         ctx.typ(imported).tsym.expect("import qualifier symbol")
     }
 
@@ -849,11 +871,12 @@ impl TypeEnter {
         sym: SymbolId,
         annotations: List<TreeId>,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         // In general, we cannot fully process annotations yet, but we can
         // attribute the annotation types and then check to see if the
         // @Deprecated annotation is present.
-        self.attrib_annotation_types(ctx, syms, annotations.clone(), env);
+        self.attrib_annotation_types(ctx, syms, annotations.clone(), env, attr);
         self.handle_deprecated_annotations(ctx, syms, annotations, sym);
     }
 
@@ -876,19 +899,14 @@ impl TypeEnter {
         syms: &Symtab,
         annotations: List<TreeId>,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
-        let attr = self
-            .attr
-            .borrow()
-            .clone()
-            .expect("TypeEnter.attr must be injected");
         let mut current = annotations;
         while current.non_empty() {
             let annotation = *current.head();
             current = current.tail();
             if let Some(annotation_type) = annotation_type(ctx, annotation) {
-                attr.borrow_mut()
-                    .attrib_type(ctx, syms, annotation_type, env);
+                attr.attrib_type(ctx, syms, annotation_type, env);
             }
         }
     }
@@ -1063,12 +1081,13 @@ impl TypeEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         let tree = env.encl_class.expect("class tree");
         let sym = class_tree_symbol(ctx, tree).expect("class symbol");
         let sym_ty = ctx.sym(sym).ty.expect("class type");
         let base_env = self.base_env(ctx, tree, env);
-        self.attrib_super_types(ctx, syms, env, &base_env);
+        self.attrib_super_types(ctx, syms, env, attr, &base_env);
         if class_fullname(ctx, sym) == Some(self.names.java_lang_Object.clone()) {
             let (extending, implementing) = match &ctx.tree(tree).kind {
                 TreeKind::ClassDecl {
@@ -1120,7 +1139,7 @@ impl TypeEnter {
             }
         }
         let annotations = class_tree_annotations(ctx, tree);
-        self.mark_deprecated(ctx, syms, sym, annotations, &base_env);
+        self.mark_deprecated(ctx, syms, sym, annotations, &base_env, attr);
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
@@ -1146,6 +1165,7 @@ impl TypeEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
         base_env: &Rc<Env<AttrContext>>,
     ) {
         use crate::code::flags;
@@ -1157,8 +1177,7 @@ impl TypeEnter {
         let supertype = if let Some(extending_tree) = extending_tree {
             let cleared = self.clear_type_params_base(ctx, extending_tree);
             extending = Some(cleared);
-            let attr = self.attr.borrow().clone().expect("TypeEnter.attr must be injected");
-            let supertype = attr.borrow_mut().attrib_base(
+            let supertype = attr.attrib_base(
                 ctx,
                 syms,
                 cleared,
@@ -1182,8 +1201,7 @@ impl TypeEnter {
         } else if (class_tree_mods_flags(ctx, tree) & flags::ENUM as i64) != 0 {
             let pos = ctx.tree(tree).pos;
             let enum_tree = self.enum_base(ctx, syms, pos, sym);
-            let attr = self.attr.borrow().clone().expect("TypeEnter.attr must be injected");
-            attr.borrow_mut().attrib_base(
+            attr.attrib_base(
                 ctx,
                 syms,
                 enum_tree,
@@ -1209,8 +1227,7 @@ impl TypeEnter {
             let iface = *iface_trees.head();
             iface_trees = iface_trees.tail();
             let cleared = self.clear_type_params_base(ctx, iface);
-            let attr = self.attr.borrow().clone().expect("TypeEnter.attr must be injected");
-            let it = attr.borrow_mut().attrib_base(
+            let it = attr.attrib_base(
                 ctx,
                 syms,
                 cleared,
@@ -1240,8 +1257,7 @@ impl TypeEnter {
         while permitted_trees.non_empty() {
             let permitted = *permitted_trees.head();
             permitted_trees = permitted_trees.tail();
-            let attr = self.attr.borrow().clone().expect("TypeEnter.attr must be injected");
-            let pt = attr.borrow_mut().attrib_base(
+            let pt = attr.attrib_base(
                 ctx,
                 syms,
                 permitted,
@@ -1389,6 +1405,7 @@ impl TypeEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         use crate::code::flags;
         let tree = env.encl_class.expect("class tree");
@@ -1426,8 +1443,8 @@ impl TypeEnter {
                 ctx.tree(tree).pos,
             );
         }
-        annotate.flush(ctx, syms).expect("annotation flush");
-        self.attrib_super_types(ctx, syms, env, &base_env);
+        annotate.flush_with_attr(ctx, syms, attr).expect("annotation flush");
+        self.attrib_super_types(ctx, syms, env, attr, &base_env);
         let mut interfaces_seen: std::collections::HashSet<TypeId> =
             std::collections::HashSet::new();
         let mut impls = implementing.clone();
@@ -1454,9 +1471,7 @@ impl TypeEnter {
             _ => List::nil(),
         };
         {
-            let attr = self.attr.borrow().clone().expect("TypeEnter.attr must be injected");
-            attr.borrow_mut()
-                .attrib_type_variables(ctx, syms, typarams.clone(), &base_env, false);
+            attr.attrib_type_variables(ctx, syms, typarams.clone(), &base_env, false);
         }
         let mut params = typarams;
         while params.non_empty() {
@@ -1577,6 +1592,7 @@ impl TypeEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         use crate::code::flags;
         let tree = env.encl_class.expect("class tree");
@@ -1628,7 +1644,7 @@ impl TypeEnter {
                 let member_enter = Rc::clone(&self.member_enter);
                 member_enter
                     .borrow_mut()
-                    .member_enter(ctx, syms, field, env);
+                    .member_enter(ctx, syms, field, env, attr);
             }
             let field_sym = match &ctx.tree(field).kind {
                 TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
@@ -1671,7 +1687,7 @@ impl TypeEnter {
                 let member_enter = Rc::clone(&self.member_enter);
                 member_enter
                     .borrow_mut()
-                    .member_enter(ctx, syms, def, env);
+                    .member_enter(ctx, syms, def, env, attr);
             }
         }
     }
@@ -1682,6 +1698,7 @@ impl TypeEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         let tree = env.encl_class.expect("class tree");
         let sym = class_tree_symbol(ctx, tree).expect("class symbol");
@@ -1717,7 +1734,7 @@ impl TypeEnter {
                 chk.check_non_cyclic(ctx, syms, Some(ctx.tree(param).pos), tvar_ty);
             }
         }
-        self.finish_class(ctx, syms, tree, default_constructor, env);
+        self.finish_class(ctx, syms, tree, default_constructor, env, attr);
         if self.allow_type_annos {
             let type_annotations = self.type_annotations.borrow().clone();
             if let Some(type_annotations) = type_annotations {
@@ -1753,6 +1770,7 @@ impl TypeEnter {
         tree: TreeId,
         default_constructor: Option<TreeId>,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         use crate::code::flags;
         let sym = class_tree_symbol(ctx, tree).expect("class symbol");
@@ -1768,7 +1786,7 @@ impl TypeEnter {
             if let Some(super_tsym) = ctx.typ(supertype).tsym
                 && (ctx.sym(super_tsym).flags_field & flags::ENUM as i64) == 0
             {
-                self.add_enum_members(ctx, syms, tree, env);
+                self.add_enum_members(ctx, syms, tree, env, attr);
             }
         }
         let is_record = (ctx.sym(sym).flags_field & flags::RECORD) != 0;
@@ -1817,10 +1835,10 @@ impl TypeEnter {
             let member_enter = Rc::clone(&self.member_enter);
             member_enter
                 .borrow_mut()
-                .member_enter_list(ctx, syms, defs_to_enter, env);
+                .member_enter_list(ctx, syms, defs_to_enter, env, attr);
         }
         if is_record {
-            self.add_record_members_if_needed(ctx, syms, tree, env);
+            self.add_record_members_if_needed(ctx, syms, tree, env, attr);
         }
         if ctx.sym(sym).is_annotation_type() {
             let annotate = self
@@ -1858,6 +1876,7 @@ impl TypeEnter {
         syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         use crate::code::flags;
         let (name, field_sym) = match &ctx.tree(tree).kind {
@@ -1956,7 +1975,7 @@ impl TypeEnter {
                 let member_enter = Rc::clone(&self.member_enter);
                 member_enter
                     .borrow_mut()
-                    .member_enter(ctx, syms, getter, env);
+                    .member_enter(ctx, syms, getter, env, attr);
             }
             let getter_sym = match &ctx.tree(getter).kind {
                 TreeKind::MethodDecl {
@@ -2001,6 +2020,7 @@ impl TypeEnter {
         syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         use crate::code::flags;
         let sym = class_tree_symbol(ctx, tree).expect("enum symbol");
@@ -2028,7 +2048,7 @@ impl TypeEnter {
             let member_enter = Rc::clone(&self.member_enter);
             member_enter
                 .borrow_mut()
-                .member_enter(ctx, syms, values, env);
+                .member_enter(ctx, syms, values, env, attr);
         }
         let value_of = {
             let mut make = self.make.borrow_mut();
@@ -2064,7 +2084,7 @@ impl TypeEnter {
             let member_enter = Rc::clone(&self.member_enter);
             member_enter
                 .borrow_mut()
-                .member_enter(ctx, syms, value_of, env);
+                .member_enter(ctx, syms, value_of, env, attr);
         }
     }
 
@@ -2087,6 +2107,7 @@ impl TypeEnter {
         syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         use crate::code::flags;
         let sym = class_tree_symbol(ctx, tree).expect("record symbol");
@@ -2128,7 +2149,7 @@ impl TypeEnter {
             let member_enter = Rc::clone(&self.member_enter);
             member_enter
                 .borrow_mut()
-                .member_enter(ctx, syms, to_string, env);
+                .member_enter(ctx, syms, to_string, env, attr);
         }
         if self
             .lookup_method(ctx, syms, sym, self.names.hashCode.clone(), List::nil())
@@ -2144,7 +2165,7 @@ impl TypeEnter {
             let member_enter = Rc::clone(&self.member_enter);
             member_enter
                 .borrow_mut()
-                .member_enter(ctx, syms, hash_code, env);
+                .member_enter(ctx, syms, hash_code, env, attr);
         }
         if self
             .lookup_method(ctx, syms, sym, self.names.equals.clone(), List::of(syms.object_type))
@@ -2186,7 +2207,7 @@ impl TypeEnter {
             let member_enter = Rc::clone(&self.member_enter);
             member_enter
                 .borrow_mut()
-                .member_enter(ctx, syms, equals, env);
+                .member_enter(ctx, syms, equals, env, attr);
         }
         // fields can't be varargs: clear the flag.
         let record_fields = tree_info::record_fields(ctx, tree);
@@ -2223,7 +2244,7 @@ impl TypeEnter {
                 .lookup_method(ctx, syms, object_sym, name, List::nil())
                 .is_none()
             {
-                self.add_accessor(ctx, syms, field, env);
+                self.add_accessor(ctx, syms, field, env, attr);
             }
         }
     }

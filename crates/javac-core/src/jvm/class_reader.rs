@@ -2443,7 +2443,7 @@ impl ClassReader {
                 let class_file = self.current_class_file.clone();
                 let reader_handle = self.reader_handle.clone();
                 let lint_classfile = self.lint_classfile;
-                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab| {
+                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                         let mut reader_guard =
@@ -2518,7 +2518,7 @@ impl ClassReader {
                 let reader_handle = self.reader_handle.clone();
                 let attach_type_annotations = self.add_type_annotations_to_symbol;
                 let lint_classfile = self.lint_classfile;
-                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab| {
+                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                         let mut reader_guard =
@@ -2686,7 +2686,7 @@ impl ClassReader {
                 let class_file = self.current_class_file.clone();
                 let reader_handle = self.reader_handle.clone();
                 let lint_classfile = self.lint_classfile;
-                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab| {
+                annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
                     let prev_source = services.log.borrow_mut().use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                         let mut reader_guard =

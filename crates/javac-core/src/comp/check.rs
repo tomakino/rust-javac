@@ -10857,6 +10857,92 @@ mod diagnostics_tests {
         }
     }
     #[test]
+    fn inner_class_effectively_final_uses_inner_cls_fragment() {
+        let source = "class T { void f(){ int x=0; x=1; class Local { int g(){ return x; } } } }\n";
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", source)],
+            |options| {
+                options.put("should-stop.ifNoError", "FLOW");
+            },
+        );
+        let error = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.get_code_string() == "compiler.err.cant.ref.non.effectively.final.var")
+            .expect("cant.ref.non.effectively.final.var");
+        assert_eq!(
+            error.get_message(None).to_string_lossy(),
+            "local variables referenced from an inner class must be final or effectively final"
+        );
+        let mut codes = Vec::new();
+        for diagnostic in &diagnostics {
+            collect_diagnostic_codes(diagnostic, &mut codes);
+        }
+        assert!(
+            codes.iter().any(|code| code == "compiler.misc.inner.cls"),
+            "expected inner.cls fragment in {:?}",
+            codes
+        );
+    }
+
+    #[test]
+    fn anonymous_class_compiles() {
+        let (compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T { Runnable r = new Runnable(){ public void run(){} }; }\n")],
+            |_options| {},
+        );
+        assert!(diagnostics.is_empty(), "{:?}", diagnostics.iter().map(|d| d.get_code_string()).collect::<Vec<_>>());
+        // T plus the anonymous class T$1.
+        assert_eq!(compiler.last_compiled_classes.len(), 2);
+    }
+    #[test]
+    fn complete_wrapper_propagates_completion_failure() {
+        struct FailingCompleter;
+        impl crate::code::symbol::Completer for FailingCompleter {
+            fn complete(
+                &mut self,
+                _ctx: &mut crate::compiler_context::CompilerContext,
+                _syms: &crate::code::symtab::Symtab,
+                _sym: crate::ids::SymbolId,
+            ) -> Result<(), crate::code::symbol::CompletionFailure> {
+                Err(crate::code::symbol::CompletionFailure::new(
+                    None,
+                    Box::new(|| panic!("diagnostic supplier must not be used")),
+                    None,
+                ))
+            }
+        }
+        let out = std::env::temp_dir().join(format!(
+            "rust-javac-complete-wrapper-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&out).expect("out");
+        let mut compiler =
+            crate::main::mini_compiler::MiniCompiler::new_with_options(&out, |_options| {});
+        let sym = {
+            let syms = std::rc::Rc::clone(&compiler.syms);
+            let syms = syms.borrow();
+            syms.define_class(&mut compiler.ctx, compiler.names._this.clone(), None)
+        };
+        compiler.ctx.sym_mut(sym).completer = Some(std::rc::Rc::new(std::cell::RefCell::new(
+            FailingCompleter,
+        )));
+        let syms_rc = std::rc::Rc::clone(&compiler.syms);
+        let result = {
+            let syms = syms_rc.borrow();
+            compiler.ctx.complete_class_symbol(&syms, sym)
+        };
+        assert!(result.is_err(), "completion failure must propagate");
+        let error_ty = compiler.ctx.sym(sym).ty.expect("recovered symbol type");
+        assert!(
+            compiler.ctx.typ(error_ty).has_tag(crate::code::type_tag::TypeTag::ERROR),
+            "completion failure recovery must install the error type"
+        );
+    }
+    #[test]
     fn verbose_resolution_reports_success_note() {
         let (compiler, diagnostics) = compile_with_diagnostics(
             &[(

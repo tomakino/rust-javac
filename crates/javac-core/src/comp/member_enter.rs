@@ -112,6 +112,7 @@ impl MemberEnter {
         recvparam: Option<TreeId>,
         thrown: List<TreeId>,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) -> TypeId {
         // Enter and attribute type parameters.
         let tvars = self.enter.borrow().class_enter_list(
@@ -120,14 +121,14 @@ impl MemberEnter {
             typarams.clone(),
             Some(Rc::clone(env)),
         );
-        self.attrib_type_variables(ctx, syms, typarams, env);
+        self.attrib_type_variables(ctx, syms, typarams, env, attr);
 
         // Enter and attribute value parameters.
         let mut argbuf: List<TypeId> = List::nil();
         let mut current = params;
         while current.non_empty() {
             let param = *current.head();
-            self.member_enter(ctx, syms, param, env);
+            self.member_enter(ctx, syms, param, env, attr);
             argbuf = argbuf.append(var_decl_type(ctx, param).expect("parameter type"));
             current = current.tail();
         }
@@ -135,14 +136,14 @@ impl MemberEnter {
         // Attribute result type, if one is given.
         let restype = match res {
             None => syms.void_type,
-            Some(res) => self.attrib_type(ctx, syms, res, env),
+            Some(res) => self.attrib_type(ctx, syms, res, env, attr),
         };
 
         // Attribute receiver type, if one is given.
         let recvtype = match recvparam {
             None => None,
             Some(recvparam) => {
-                self.member_enter(ctx, syms, recvparam, env);
+                self.member_enter(ctx, syms, recvparam, env, attr);
                 var_decl_type(ctx, recvparam)
             }
         };
@@ -152,7 +153,7 @@ impl MemberEnter {
         let mut current = thrown;
         while current.non_empty() {
             let thrown_tree = *current.head();
-            let mut exc = self.attrib_type(ctx, syms, thrown_tree, env);
+            let mut exc = self.attrib_type(ctx, syms, thrown_tree, env, attr);
             if !ctx.typ(exc).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
                 exc = self
                     .chk
@@ -190,14 +191,6 @@ impl MemberEnter {
         }
     }
 
-    /// The Java service handle (Attr attr = Attr.instance(context)).
-    fn attr_service(&self) -> Rc<RefCell<crate::comp::attr::Attr>> {
-        self.attr
-            .borrow()
-            .clone()
-            .expect("AssertionError: the Attr service must be installed")
-    }
-
     /// Java: attr.attribTypeVariables(typarams, env, true)
     /// (MemberEnter.java:106; Attr.java:811-836).
     fn attrib_type_variables(
@@ -206,11 +199,9 @@ impl MemberEnter {
         syms: &Symtab,
         typarams: List<TreeId>,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
-        let attr_rc = self.attr_service();
-        attr_rc
-            .borrow_mut()
-            .attrib_type_variables(ctx, syms, typarams, env, true);
+        attr.attrib_type_variables(ctx, syms, typarams, env, true);
     }
 
     /// Java: attr.attribType(tree, env) (MemberEnter.java:120).
@@ -220,14 +211,8 @@ impl MemberEnter {
         syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) -> TypeId {
-        let attr_rc = self.attr_service();
-        let mut attr = match attr_rc.try_borrow_mut() {
-            Ok(attr) => attr,
-            Err(_) => {
-                panic!("attr borrowed");
-            }
-        };
         attr.attrib_type_public(ctx, syms, tree, env)
     }
 
@@ -238,10 +223,10 @@ impl MemberEnter {
         syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) -> TypeId {
-        let attr_rc = self.attr_service();
-        let info = attr_rc.borrow().unknown_expr_info.clone();
-        attr_rc.borrow_mut().attrib_tree_public(ctx, syms, tree, env, info)
+        let info = attr.unknown_expr_info.clone();
+        attr.attrib_tree_public(ctx, syms, tree, env, info)
     }
 
     /// Java: attr.attribIdentAsEnumType(localEnv, (JCIdent) tree.vartype)
@@ -252,11 +237,9 @@ impl MemberEnter {
         syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
-        let attr_rc = self.attr_service();
-        attr_rc
-            .borrow_mut()
-            .attrib_ident_as_enum_type(ctx, syms, env, tree);
+        attr.attrib_ident_as_enum_type(ctx, syms, env, tree);
     }
 
     /// Java: protected void memberEnter(JCTree tree, Env<AttrContext> env)
@@ -266,10 +249,11 @@ impl MemberEnter {
         syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         let prev_env = self.env.clone();
         self.env = Some(Rc::clone(env));
-        let result = self.visit(ctx, syms, tree);
+        let result = self.visit(ctx, syms, tree, attr);
         if let Err(failure) = result {
             // Java: chk.completionError(tree.pos(), ex)
             let _ = self.chk.borrow().completion_error(
@@ -289,11 +273,12 @@ impl MemberEnter {
         syms: &Symtab,
         trees: List<TreeId>,
         env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         let mut current = trees;
         while current.non_empty() {
             let tree = *current.head();
-            self.member_enter(ctx, syms, tree, env);
+            self.member_enter(ctx, syms, tree, env, attr);
             current = current.tail();
         }
     }
@@ -303,11 +288,12 @@ impl MemberEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
+        attr: &mut crate::comp::attr::Attr,
     ) -> Result<(), CompletionFailure> {
         match ctx.tree(tree).tag {
-            Tag::METHODDEF => self.visit_method_def(ctx, syms, tree),
-            Tag::VARDEF => self.visit_var_def(ctx, syms, tree),
-            Tag::ERRONEOUS => self.visit_erroneous(ctx, syms, tree),
+            Tag::METHODDEF => self.visit_method_def(ctx, syms, tree, attr),
+            Tag::VARDEF => self.visit_var_def(ctx, syms, tree, attr),
+            Tag::ERRONEOUS => self.visit_erroneous(ctx, syms, tree, attr),
             _ => self.visit_tree(),
         }
     }
@@ -318,6 +304,7 @@ impl MemberEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
+        attr: &mut crate::comp::attr::Attr,
     ) -> Result<(), CompletionFailure> {
         let env = self.env.clone().expect("env");
         let encl_scope = self.enter.borrow().enter_scope(ctx, &env);
@@ -365,6 +352,7 @@ impl MemberEnter {
             method_decl_recvparam(ctx, tree),
             method_decl_thrown(ctx, tree),
             &local_env,
+            attr,
         );
         self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint);
         ctx.sym_mut(m).ty = Some(signature);
@@ -487,6 +475,7 @@ impl MemberEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
+        attr: &mut crate::comp::attr::Attr,
     ) -> Result<(), CompletionFailure> {
         let env = self.env.clone().expect("env");
         let mods_flags = var_decl_mods_flags(ctx, tree);
@@ -515,7 +504,7 @@ impl MemberEnter {
         {
             if tree_info::is_enum_init(ctx, tree) {
                 let vartype = var_decl_vartype(ctx, tree).expect("enum init vartype");
-                self.attrib_ident_as_enum_type(ctx, syms, vartype, &local_env);
+                self.attrib_ident_as_enum_type(ctx, syms, vartype, &local_env, attr);
             } else if !is_implicitly_typed(ctx, tree) {
                 let vartype = var_decl_vartype(ctx, tree).expect("variable type");
                 // Port note: when the enclosing Attr pass already attributed the
@@ -524,14 +513,14 @@ impl MemberEnter {
                 let ty = match ctx.tree(vartype).ty {
                     Some(ty) => ty,
                     None => {
-                        let ty = self.attrib_type(ctx, syms, vartype, &local_env);
+                        let ty = self.attrib_type(ctx, syms, vartype, &local_env, attr);
                         set_tree_type(ctx, vartype, ty);
                         ty
                     }
                 };
                 let _ = ty;
                 if tree_info::is_receiver_param(ctx, tree) {
-                    self.check_receiver(ctx, syms, tree, &local_env);
+                    self.check_receiver(ctx, syms, tree, &local_env, attr);
                 }
             }
         }
@@ -678,9 +667,10 @@ impl MemberEnter {
         syms: &Symtab,
         tree: TreeId,
         local_env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         if let Some(nameexpr) = var_decl_nameexpr(ctx, tree) {
-            let _ = self.attrib_expr(ctx, syms, nameexpr, local_env);
+            let _ = self.attrib_expr(ctx, syms, nameexpr, local_env, attr);
         }
         let encl_method = local_env.encl_method.expect("enclosing method");
         let m = method_decl_symbol(ctx, encl_method).expect("method symbol");
@@ -874,6 +864,7 @@ impl MemberEnter {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
+        attr: &mut crate::comp::attr::Attr,
     ) -> Result<(), CompletionFailure> {
         let errs = match &ctx.tree(tree).kind {
             TreeKind::Erroneous { errs } => errs.clone(),
@@ -881,7 +872,7 @@ impl MemberEnter {
         };
         if !errs.is_empty() {
             let env = self.env.clone().expect("env");
-            self.member_enter_list(ctx, syms, errs, &env);
+            self.member_enter_list(ctx, syms, errs, &env, attr);
         }
         Ok(())
     }

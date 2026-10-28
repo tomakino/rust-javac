@@ -1312,8 +1312,7 @@ impl crate::code::symbol::Completer for TypeEnterCompleter {
         syms: &Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
-        self.type_enter.borrow_mut().complete(ctx, syms, sym);
-        Ok(())
+        self.type_enter.borrow_mut().complete(ctx, syms, sym)
     }
 }
 

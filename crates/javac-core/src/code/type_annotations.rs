@@ -368,7 +368,8 @@ impl TypeAnnotations {
         let env = Rc::clone(env);
         self.annotate.after_types(Box::new(
             move |ctx: &mut crate::compiler_context::CompilerContext,
-                  syms: &crate::code::symtab::Symtab| {
+                  syms: &crate::code::symtab::Symtab,
+                  _attr: &mut crate::comp::attr::Attr| {
                 let toplevel = env.toplevel.expect("env toplevel");
                 let sourcefile = match &ctx.tree(toplevel).kind {
                     crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => {
@@ -421,7 +422,8 @@ impl TypeAnnotations {
         let env = Rc::clone(env);
         self.annotate.validate(Box::new(
             move |ctx: &mut crate::compiler_context::CompilerContext,
-                  syms: &crate::code::symtab::Symtab| {
+                  syms: &crate::code::symtab::Symtab,
+                  attr: &mut crate::comp::attr::Attr| {
                 let toplevel = env.toplevel.expect("env toplevel");
                 let sourcefile = match &ctx.tree(toplevel).kind {
                     crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => {
@@ -434,7 +436,6 @@ impl TypeAnnotations {
                     sourcefile,
                 );
                 {
-                    let attr = ta.attr.borrow();
                     attr.validate_type_annotations(ctx, syms, tree, true);
                 }
                 crate::util::abstract_log::AbstractLog::use_source(

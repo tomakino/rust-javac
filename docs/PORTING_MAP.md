@@ -64,3 +64,12 @@ Status: template only; entries are appended by the executing agent and reviewed 
 | `jvm/class_reader.rs::add_type_annotations_to_symbol` catch | `ClassReader.java:2212-2223` | cant.attach.type.annotations |
 | `jvm/class_reader.rs::DeproxyContext` | `ClassReader.AnnotationDeproxy` | explicit log/lintClassfile/currentClassFile (Port adapter) |
 | `util/options.rs::Options::lint_enabled` | `Lint.isEnabled(LintCategory)` | Port adapter (Lint service not ported): parses -Xlint/-Xlint:all/-Xlint:none/comma lists |
+
+## D3b inner-class Attr injection
+
+| Local symbol | Upstream location | Notes |
+|---|---|---|
+| `comp/type_enter.rs::TypeEnter::complete_with_attr` | `TypeEnter.complete` | explicit &mut Attr (upstream TypeEnter.attr field) |
+| `comp/attr.rs::Attr::complete_local_class` | `ClassSymbol.complete` from Attr | passes the Attr reference into TypeEnter (Port adapter for the RefCell model) |
+| `comp/type_enter.rs::TypeEnter::finish_imports` | `TypeEnter.finishImports` | explicit &mut Attr (upstream TypeEnter.attr field) |
+| `comp/check.rs::diagnostics_tests::complete_wrapper_propagates_completion_failure` | — | completion-failure propagation/recovery test (D3b second review) |
