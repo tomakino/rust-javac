@@ -433,6 +433,20 @@ fn tokens_lookup_and_scanner_helpers() {
     scanner.next_token();
     assert_eq!(scanner.token().kind, TokenKind::IDENTIFIER);
 
+    // D3e: split() of '>>' returns the right half (GT) and prevToken = GT.
+    let mut scanner = factory.new_scanner(&JavaString::from("a >> b"), true);
+    scanner.next_token();
+    assert_eq!(scanner.token().kind, TokenKind::IDENTIFIER);
+    scanner.next_token();
+    assert_eq!(scanner.token().kind, TokenKind::GTGT);
+    let split = scanner.split();
+    assert_eq!(split.kind, TokenKind::GT);
+    assert_eq!(split.pos, 3);
+    assert_eq!(split.end_pos, 4);
+    assert_eq!(scanner.token().kind, TokenKind::GT);
+    assert_eq!(scanner.prev_token().kind, TokenKind::GT);
+    assert_eq!(scanner.prev_token().pos, 2);
+    assert_eq!(scanner.prev_token().end_pos, 3);
     // D3e: the closing run of a nested generic after an identifier.
     let mut scanner = factory.new_scanner(&JavaString::from("A<B<C<String>>> f;"), true);
     for _ in 0..8 {
@@ -453,15 +467,21 @@ fn tokens_lookup_and_scanner_helpers() {
         scanner.next_token();
         assert_eq!(scanner.token().kind, expected, "{text}");
     }
-    // split() of '>>>'/'>>='.
+    // split() of '>>>'/'>>=': Java Scanner.split() returns the new current
+    // token (the right half); the left half becomes prevToken.
     let mut scanner = factory.new_scanner(&JavaString::from("a >>> b"), true);
     scanner.next_token();
     assert_eq!(scanner.token().kind, TokenKind::IDENTIFIER);
     scanner.next_token();
     assert_eq!(scanner.token().kind, TokenKind::GTGTGT);
     let split = scanner.split();
-    assert_eq!(split.kind, TokenKind::GT);
+    assert_eq!(split.kind, TokenKind::GTGT);
+    assert_eq!(split.pos, 3);
+    assert_eq!(split.end_pos, 5);
     assert_eq!(scanner.token().kind, TokenKind::GTGT);
+    assert_eq!(scanner.prev_token().kind, TokenKind::GT);
+    assert_eq!(scanner.prev_token().pos, 2);
+    assert_eq!(scanner.prev_token().end_pos, 3);
 }
 
 #[test]

@@ -84,7 +84,10 @@ impl Lexer for Scanner {
         let split_tokens = self.token.split(&self.tokens);
         self.prev_token = split_tokens[0].clone();
         self.token = split_tokens[1].clone();
-        self.prev_token.clone()
+        // Java: Scanner.split() returns the new current token (the right half);
+        // the left half becomes prevToken (upstream: token = token.split();
+        // return token).
+        self.token.clone()
     }
 
     fn err_pos(&self) -> i32 {
