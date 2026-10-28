@@ -987,7 +987,10 @@ pub fn full_name(ctx: &CompilerContext, tree: TreeId) -> Option<Name> {
         TreeKind::FieldAccess { selected, .. } => {
             let selected_name = full_name(ctx, (*selected)?)?;
             let name = name(ctx, tree)?;
-            Some(selected_name.append(&name))
+            // Upstream TreeInfo.fullName appends the selected name with a dot
+            // separator (Name.append('.', name)); a plain append would collapse
+            // com.google.gson into a single package name.
+            Some(selected_name.append_char(b'.', &name))
         }
         _ => None,
     }

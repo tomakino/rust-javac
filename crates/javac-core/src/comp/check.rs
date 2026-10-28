@@ -10918,6 +10918,15 @@ mod diagnostics_tests {
         assert_eq!(compiler.last_compiled_classes.len(), 3);
     }
     #[test]
+    fn package_declaration_compiles() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("X.java", "package com.google.gson; interface X {}\n")],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    }
+    #[test]
     fn anonymous_class_compiles() {
         let (compiler, diagnostics) = compile_with_diagnostics(
             &[("T.java", "class T { Runnable r = new Runnable(){ public void run(){} }; }\n")],
