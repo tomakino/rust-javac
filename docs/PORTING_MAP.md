@@ -108,3 +108,11 @@ Status: template only; entries are appended by the executing agent and reviewed 
 | `code/types.rs::Types::hash_class_type` | `Types.HashCodeVisitor.visitClassType` | hashes the no-type value for a top-level class instead of panicking |
 | `code/types.rs::get_enclosing_type` / `enclosing_of` | `Type.getEnclosingType` | documentation clarification: `None` is the local `Type.noType`, not null |
 | `code/types.rs::tests::is_same_type_handles_absent_enclosing_type_as_no_type` | — | regression: top-level class equality, noType/class inequality, hash path |
+
+## A3i annotation-type metadata single completion
+
+| Local symbol | Upstream location | Notes |
+|---|---|---|
+| `code/symtab.rs::Symtab::enter_class` | `Symtab.enterClass` | installs the initial completer only for a newly created symbol; an existing symbol keeps its completer, so a completed class is not re-read by a later package scan |
+| `code/symtab.rs::tests::enter_class_keeps_the_completer_of_an_existing_symbol` | — | regression: re-entering an existing symbol does not re-arm its completer |
+| `comp/check.rs::diagnostics_tests::annotation_type_target_metadata_compiles` | — | classfile annotation `@Deprecated` exercises the `@Target` metadata path (`AnnotationTypeMetadata::getTarget`) |

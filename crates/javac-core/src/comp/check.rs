@@ -11021,6 +11021,25 @@ mod diagnostics_tests {
     }
 
     #[test]
+    fn annotation_type_target_metadata_compiles() {
+        // @Deprecated is a classfile annotation type: validating its use reads
+        // the @Target metadata through AnnotationTypeMetadata::getTarget.
+        // The classfile deproxy currently reports unknown.enum.constant
+        // warnings for the @Target(ElementType...) values (existing gap); this
+        // test guards the metadata completion path against errors and panics.
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("B.java", "@Deprecated class B {}\n")],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        let errors: Vec<&String> = codes
+            .iter()
+            .filter(|code| code.starts_with("compiler.err."))
+            .collect();
+        assert!(errors.is_empty(), "unexpected errors: {errors:?} (all: {codes:?})");
+    }
+
+    #[test]
     fn nested_class_import_compiles() {
         let (_compiler, diagnostics) = compile_with_diagnostics(
             &[

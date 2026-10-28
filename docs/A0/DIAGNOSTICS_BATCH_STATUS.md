@@ -167,3 +167,11 @@
 - gson 80 文件(79 源 + generated GsonBuildConfig,跳过 module-info,无 SOURCE_PATH):isSameType panic 消失,前进到 annotate.rs:315 `AssertionError: target already set`;栈 Annotate::enter_done←flush_with_attr←Check::validate_annotations←validate_annotation←get_applicable_targets←get_attribute_target_attribute←AnnotationTypeMetadata::get_target_shared←complete_shared←CompleterDeproxy::complete←set_target;与 A3h 无关,按指令停手;backtrace 在 target/gson-a3h-run1.txt。
 - 注:opt-in gson 测试文件现由 58e8fe8 跟踪(本批未修改该文件);gson 源码/构建文件未改。
 - 未提交;工作树只有 types.rs 与两份 docs 修改。
+
+### A3i 注解类型 metadata 单次完成(本批目标完成;gson 前进到 161 诊断)
+- 根因:`Symtab::enter_class` 对已存在类无条件重装 initial completer;gson 完成 `Documented` 时,owner 包 `java.lang.annotation` 的完成触发 `ClassFinder::fill_in_package` 再次 `enter_class(Documented)`,把 `complete_symbol` 已取走的 completer 重新装上。`AnnotationTypeMetadata::complete_shared` 捕获的 M1 的 CompleterDeproxy 完成时把 target 写入新的 M2;随后 M2 的 completer 再次完成同一 metadata → `set_target` 二次断言。探针证据:首次 install 时 completer=true;二次 install 的 backtrace 为 fill_in_package→enter_class(Documented);M1/M2 指针序列与两次 set_target 见 target/gson-a3i-probe3.txt。上游 `Symtab.enterClass` 只在 `defineClass` 新建时安装 initialCompleter(Symtab.java:643-668)。
+- 修复:`Symtab::enter_class` 仅 `!existed` 时安装 completer;已存在符号保留原 completer。
+- 测试:新增 `enter_class_keeps_the_completer_of_an_existing_symbol`(新建装、sentinel 替换后再次 enter 不重装)与 `annotation_type_target_metadata_compiles`(`@Deprecated class B {}` 触发 classfile `@Target` 的 getTarget;当前有既有 `unknown.enum.constant` warnings,断言无 error);1155 passed / 0 failed / 3 ignored;clippy errors=0(javac-core lib 176 / lib test 203);unimplemented/unreachable=0。
+- gson 80 文件(79 源 + generated,跳过 module-info,无 SOURCE_PATH):A3i panic 消失;`gson files=80 result_ok=true diagnostics=161 classes=0`,首条 `wrong.number.type.args`、`type java.lang.Enum does not take parameters`、`cannot find Boolean/Integer`、`already.defined` 等,按指令停手;输出 target/gson-a3i-run4.txt。
+- 旁路发现:源码注解 `@Target(...)` 的验证触发 annotate.rs:2262 `RefCell already borrowed`(AnnotationTypeVisitor 的 attr 重入),本批未修,已将测试缩小为 classfile `@Deprecated`;建议登记下一批。
+- 未提交;gson 源码未改;临时 gson 测试已删除。

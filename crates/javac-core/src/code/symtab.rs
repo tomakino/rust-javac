@@ -1830,8 +1830,25 @@ impl Symtab {
         define_class(ctx, &self.names, name, owner)
     }
 
-    /// Java: public ClassSymbol enterClass(ModuleSymbol msym, Name name,
-    /// TypeSymbol owner)
+    /// Create a new toplevel or member class symbol with the given name and
+    /// owner, and enter it in the class maps unless it is already there.
+    ///
+    /// Port adapter: the initial completer is installed only for a newly
+    /// created symbol (the upstream definition installs it in defineClass); an
+    /// existing symbol keeps its completer, so a completed class is never
+    /// re-read by a later package scan.
+    ///
+    /// # Arguments
+    ///   - ctx: the compiler context;
+    ///   - msym: the module symbol;
+    ///   - name: the class name;
+    ///   - owner: the owner type symbol.
+    ///
+    /// # Returns
+    ///   - the entered class symbol.
+    ///
+    /// # Panics
+    ///   - none.
     pub fn enter_class(
         &self,
         ctx: &mut CompilerContext,
@@ -1839,11 +1856,18 @@ impl Symtab {
         name: Name,
         owner: Option<SymbolId>,
     ) -> SymbolId {
+        let flatname = form_flat_name(ctx, &name, owner);
+        let existed = {
+            let maps = self.maps.borrow();
+            get_class_in(&maps, msym, &flatname).is_some()
+        };
         let class = {
             let mut maps = self.maps.borrow_mut();
             enter_class_full(ctx, &self.names, &mut maps, msym, name, owner)
         };
-        if let Some(factory) = &self.initial_completer {
+        if !existed
+            && let Some(factory) = &self.initial_completer
+        {
             ctx.sym_mut(class).completer = Some(factory());
         }
         class
@@ -2128,6 +2152,29 @@ mod tests {
         let names = Rc::new(Names::new(false));
         let symtab = Symtab::new(&mut ctx, names, Target::DEFAULT, Source::JDK17);
         (ctx, symtab)
+    }
+
+    #[test]
+    fn enter_class_keeps_the_completer_of_an_existing_symbol() {
+        let (mut ctx, mut symtab) = build();
+        let factory: CompleterFactory =
+            Rc::new(|| Rc::new(std::cell::RefCell::new(crate::code::symbol::NullCompleter)));
+        symtab.set_initial_completer(&mut ctx, factory);
+        let table: Rc<crate::util::name::NameTableHandle> =
+            crate::util::name::NameTableHandle::unshared();
+        let units: Vec<u16> = "C".encode_utf16().collect();
+        let class_name = table.from_chars(&units, 0, units.len() as i32);
+        let first = symtab.enter_class(&mut ctx, symtab.java_base, class_name.clone(), None);
+        let sentinel: crate::code::symbol::CompleterRef =
+            Rc::new(std::cell::RefCell::new(crate::code::symbol::NullCompleter));
+        ctx.sym_mut(first).completer = Some(Rc::clone(&sentinel));
+        let second = symtab.enter_class(&mut ctx, symtab.java_base, class_name, None);
+        assert_eq!(first, second);
+        let current = ctx.sym(second).completer.as_ref().expect("completer");
+        assert!(
+            Rc::ptr_eq(current, &sentinel),
+            "enter_class must not re-arm the completer of an existing symbol"
+        );
     }
 
     #[test]
