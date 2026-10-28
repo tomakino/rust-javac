@@ -10885,6 +10885,39 @@ mod diagnostics_tests {
     }
 
     #[test]
+    fn member_inner_class_field_initializer_compiles() {
+        let (compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T { class In { int v; } In i = new In(); }\n")],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+        assert_eq!(compiler.last_compiled_classes.len(), 2);
+    }
+
+    #[test]
+    fn member_inner_class_method_new_compiles() {
+        let (_compiler, diagnostics) = compile_with_diagnostics(
+            &[("T.java", "class T { class In { int v; } In make() { return new In(); } }\n")],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    }
+    #[test]
+    fn outer_inner_qualification_compiles() {
+        let (compiler, diagnostics) = compile_with_diagnostics(
+            &[(
+                "Outer.java",
+                "class Outer { class Inner { int v; } Inner make() { return new Inner(); } }\nclass Use { Outer.Inner f; }\n",
+            )],
+            |_options| {},
+        );
+        let codes: Vec<String> = diagnostics.iter().map(|d| d.get_code_string().to_string()).collect();
+        assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+        assert_eq!(compiler.last_compiled_classes.len(), 3);
+    }
+    #[test]
     fn anonymous_class_compiles() {
         let (compiler, diagnostics) = compile_with_diagnostics(
             &[("T.java", "class T { Runnable r = new Runnable(){ public void run(){} }; }\n")],

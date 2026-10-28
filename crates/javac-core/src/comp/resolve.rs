@@ -9280,7 +9280,7 @@ impl Resolve {
                                 } else {
                                     sym
                                 };
-                                let encl_sym = crate::tree::tree_info::symbol(ctx, env.encl_class.expect("enclClass"))
+                                let encl_sym = crate::tree::tree_info::symbol_for(ctx, env.encl_class.expect("enclClass"))
                                     .expect("enclClass sym");
                                 let encl_type = ctx.sym(encl_sym).ty;
                                 return self.access_base(
@@ -9296,7 +9296,7 @@ impl Resolve {
             }
             env1 = Rc::clone(env1.outer.as_ref().expect("env outer"));
         }
-        let encl_class = crate::tree::tree_info::symbol(ctx, env.encl_class.expect("enclClass"))
+        let encl_class = crate::tree::tree_info::symbol_for(ctx, env.encl_class.expect("enclClass"))
             .expect("enclClass sym");
         let is_interface = ctx.sym(c).flags_field & (crate::code::flags::INTERFACE as i64) != 0;
         if is_interface
@@ -9495,7 +9495,7 @@ impl Resolve {
             );
             return syms.err_symbol;
         };
-        let encl_sym = crate::tree::tree_info::symbol(ctx, env.encl_class.expect("enclClass"))
+        let encl_sym = crate::tree::tree_info::symbol_for(ctx, env.encl_class.expect("enclClass"))
             .expect("enclClass sym");
         let encl_type = ctx.sym(encl_sym).ty;
         let name = ctx.sym(sym).name.clone();
@@ -9542,7 +9542,7 @@ impl Resolve {
             self.resolve_self_containing(ctx, syms, types, pos.clone(), env, t_tsym, is_super_call)
         };
         let this_type = ctx.sym(this_sym).ty.expect("this type");
-        let encl_sym = crate::tree::tree_info::symbol(ctx, env.encl_class.expect("enclClass"))
+        let encl_sym = crate::tree::tree_info::symbol_for(ctx, env.encl_class.expect("enclClass"))
             .expect("enclClass sym");
         if env.info.borrow().is_self_call
             && ctx.typ(this_type).tsym == Some(encl_sym)

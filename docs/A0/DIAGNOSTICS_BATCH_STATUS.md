@@ -113,3 +113,10 @@
 - finish_imports 改为接收 `&mut Attr`(`complete_with_attr` 链传现有 attr;`ensure_imports_checked` 正常入口 borrow 一次),Attrs 内路径无二次借用。
 - 成员内部类 panic 归属:在 HEAD bc5d915(D3b stash 后)复现 `class T { class In { int v; } In i = new In(); }` 仍 panic 于 `resolve.rs:9499` `resolve_self_containing` 的 "enclClass sym" → 既有缺口,D3b 未引入;登记 D3c(Resolve/Enter 专项),测试不入库。
 - 验证:1139 passed(含新增完成失败用例) / clippy 0/208 / unimplemented 0。
+
+### D3c 成员内部类 resolve/生成缺口(修复)
+- 根因:`Resolve::resolve_self_containing`/`resolve_self` 用 `tree_info::symbol`(上游 TreeInfo.symbol,仅处理 Ident/FieldAccess/TypeApply/AnnotatedType/MemberReference)读取 `env.enclClass` 的 ClassDecl 符号 → 恒为 None → panic "enclClass sym";上游读 `env.enclClass.sym`(TreeInfo.symbolFor 对 CLASSDEF 有效)。修复:4 处改用 `tree_info::symbol_for`(上游 TreeInfo.symbolFor),无 dummy sym/无绕过。
+- 次生:Codegen 遍历 class defs 时对嵌套类(ClassDecl)触发 `panic!("unexpected class member")`;上游 `Gen.normalizeDefs`(JDK17 Gen.java:421-476)只接受 BLOCK/METHODDEF/VARDEF 并对其它 tag `Assert.error()`,故嵌套类不会进入 genClass 的 defs 循环(Gen.java:2419-2421;每个嵌套类由独立 genClass 生成)→ 本地仅忽略 `ClassDecl`,其余 tag 仍 panic(不掩盖未实现分支)。
+- 测试:member_inner_class_field_initializer_compiles(`class T { class In { int v; } In i = new In(); }`)、member_inner_class_method_new_compiles(`In make() { return new In(); }`)、outer_inner_qualification_compiles(`class Outer {...} class Use { Outer.Inner f; }`)全部通过;JDK17 javac oracle(T1/T2/Outer.java)`javac_exit=0`;D3b 的 local/anonymous e2e 保留。
+- 二审修复:撤销 `check_non_abstract` 的 `AbstractCantBeAccessedDirectly` 第一个 SymbolArg 误改(D3b 调试时全局替换误伤,已恢复 `ctx.sym(sym).name`);codegen 证据化(见上,仅忽略 ClassDecl,其余仍 panic)。
+- 验证:workspace 1142 passed / 0 failed(gson 临时测试已由 Lead 移出);clippy errors=0/warnings=208;unimplemented 0;debug grep 0。
