@@ -1,0 +1,50 @@
+# 项目底线（每轮派发必须全文附给执行者）
+
+## 一、最高原则
+1. 1:1 移植 javac 17（jdk17u@982d53c，17.0.19+10），行为与官方一致。
+2. 禁止简化、替代、近似、偏离官方；上游每个实现必须有对应位置。
+3. unimplemented! / unreachable! / todo!() 全项目为 0；§31 例外必须注册，不能用 panic 顶替。
+4. 禁止以预算、上下文、轮次为理由降低质量、跳过验证或交付半成品。
+5. 禁止删除/放宽测试、禁止虚报、禁止 clippy --fix、禁止未批准补丁、禁止新增 unsafe（仅已批准 2 处）。
+6. 禁止修改 gson 源码/构建文件；只允许官方模板生成 GsonBuildConfig.java。
+
+## 二、批次与验收
+1. 每批必须完整关闭一个明确根因，并配真实触发测试；不接受“先登记下一批”当交付。
+2. 只有真正范围外（APT/launcher，引 PLAN 条款）或外部依赖未具备才可登记；必须附上游证据、关闭批次、Lead 审核，不能无限挂账。
+3. 每批提交门槛：Lead 亲自读关键 diff；cargo test --workspace --all-targets 全绿；clippy errors=0；unimplemented/unreachable=0；真实 oracle/对照结果；工作树干净，无临时 probe、无机器路径测试、无未跟踪测试。
+4. “阶段完成”“无 panic”“测试通过”都不等于完成；只有目标验收项通过才算。
+
+## 三、注释与文档（§35）
+1. 文件头：// Origin: <上游路径> @ 982d53c (jdk-17.0.19-ga) + 上游 javadoc 原文 + //! Port notes:（≤8 行）。
+2. 类型/字段/方法：保留上游 javadoc 原文；无则一句英文职责；禁止 Java: 签名、文件名、行号、(File.java:line)、Upstream comment: none；重命名写 Port note: upstream <Name>；适配写 Port adapter: 原因；字段一一对应且无额外语义则不写注释。
+3. 位置映射只进 docs/PORTING_MAP.md；源码注释不放位置/行号。
+4. 每批报告附“注释执行清单”：文件数、保留 javadoc 数、噪音清理数、PORTING_MAP 新增条目；违规即返工，触及的旧代码同步整改。
+5. 审计/状态/债务文档统计必须与代码一致，不得保留过期数字；TODO/“未移植”必须登记并写明关闭批次。
+
+## 四、gson 真实项目验收
+1. 80 个源文件（79 原码 + 官方模板生成类，跳过 module-info），源码原样。
+2. javac 基线：exit 0 / 207 class / 1 条 AccessController warning。
+3. 本项目目标：0 error、classes 数与 207 可解释一致，并与 javac 的 exit/诊断条数/类数交叉验证。
+4. 真实项目测试必须做成 opt-in（GSON_SRC，缺失跳过，源码不入库）；跑通后才允许入库。
+5. 不能再用 classes=0 / 13 诊断当终点；必须修根因，不能靠登记 A3x 过关。
+
+## 五、范围与债务
+最终验收前必须关闭：
+1. A3k：get_type_arguments 惰性完成、AbstractMap/Map 层次替换、InferenceException 捕获 → gson 0 error/207 classes。
+2. gson 残余：enum 5 诊断、源码 @Target RefCell、Symbol.setAnnotationTypeMetadata 断言；module-info 按 PLAN 判定。
+3. D5 三条 CompletionFailure 诊断。
+4. D4 的 printAnnotations、typed-arg P4、symbol-level printer（明确 P4 批次，不是永久豁免）。
+5. D6 Locations 8（含 warn && false 登记不接）。
+6. D7 其余 67 条待接线，每条真实触发测试。
+7. D8/D9：范围外/依赖/无上游触发登记；审计表 v3 必须项未接线=0。
+8. 历史注释/审计文档收口。
+
+## 六、流程
+1. Lead 负责审核、提交、把关；执行者负责实现。
+2. 每批派发必须附完整 §35 与硬规则，以及本文件全文。
+3. 不允许两个执行者同时改同一工作树；未经负责人同意，不中断正在工作的执行者。
+4. 报告不可信，只认 Lead 本地复跑与读代码。
+5. 未提交前工作树必须可构建；失败即报告、回滚，不交半成品。
+
+## 七、验收结论
+不再用“登记/阶段/无 panic”换交付；要么 1:1 修完并通过真实验收，要么明确阻塞等负责人裁决。
