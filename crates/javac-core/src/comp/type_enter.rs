@@ -1651,8 +1651,7 @@ impl TypeEnter {
             }
             {
                 let member_enter = Rc::clone(&self.member_enter);
-                member_enter
-                    .borrow_mut()
+                member_enter.borrow()
                     .member_enter(ctx, syms, field, env, attr);
             }
             let field_sym = match &ctx.tree(field).kind {
@@ -1694,8 +1693,7 @@ impl TypeEnter {
             current = current.tail();
             if tree_info::is_constructor(ctx, def) {
                 let member_enter = Rc::clone(&self.member_enter);
-                member_enter
-                    .borrow_mut()
+                member_enter.borrow()
                     .member_enter(ctx, syms, def, env, attr);
             }
         }
@@ -1842,8 +1840,7 @@ impl TypeEnter {
         };
         {
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter
-                .borrow_mut()
+            member_enter.borrow()
                 .member_enter_list(ctx, syms, defs_to_enter, env, attr);
         }
         if is_record {
@@ -1982,8 +1979,7 @@ impl TypeEnter {
             };
             {
                 let member_enter = Rc::clone(&self.member_enter);
-                member_enter
-                    .borrow_mut()
+                member_enter.borrow()
                     .member_enter(ctx, syms, getter, env, attr);
             }
             let getter_sym = match &ctx.tree(getter).kind {
@@ -2055,8 +2051,7 @@ impl TypeEnter {
         };
         {
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter
-                .borrow_mut()
+            member_enter.borrow()
                 .member_enter(ctx, syms, values, env, attr);
         }
         let value_of = {
@@ -2091,8 +2086,7 @@ impl TypeEnter {
         };
         {
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter
-                .borrow_mut()
+            member_enter.borrow()
                 .member_enter(ctx, syms, value_of, env, attr);
         }
     }
@@ -2156,8 +2150,7 @@ impl TypeEnter {
                 syms.string_type,
             );
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter
-                .borrow_mut()
+            member_enter.borrow()
                 .member_enter(ctx, syms, to_string, env, attr);
         }
         if self
@@ -2172,8 +2165,7 @@ impl TypeEnter {
                 syms.int_type,
             );
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter
-                .borrow_mut()
+            member_enter.borrow()
                 .member_enter(ctx, syms, hash_code, env, attr);
         }
         if self
@@ -2214,8 +2206,7 @@ impl TypeEnter {
                 )
             };
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter
-                .borrow_mut()
+            member_enter.borrow()
                 .member_enter(ctx, syms, equals, env, attr);
         }
         // fields can't be varargs: clear the flag.

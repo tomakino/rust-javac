@@ -14249,7 +14249,7 @@ impl Attr {
         }
         let local_env = {
             let member_enter = Rc::clone(&self.member_enter);
-            member_enter.borrow_mut().method_env(ctx, tree, &env)
+            member_enter.borrow().method_env(ctx, tree, &env)
         };
         local_env.info.borrow_mut().lint = Some(Rc::clone(&lint_rc));
         self.attrib_stats(ctx, syms, typarams.clone(), &local_env);
@@ -14348,7 +14348,7 @@ impl Attr {
         if let Some(recvparam) = recvparam {
             let new_env = {
                 let member_enter = Rc::clone(&self.member_enter);
-                member_enter.borrow_mut().method_env(ctx, tree, &env)
+                member_enter.borrow().method_env(ctx, tree, &env)
             };
             self.attrib_type(ctx, syms, recvparam, &new_env);
             let chk_rc = Rc::clone(&self.chk);
@@ -14971,8 +14971,7 @@ impl Attr {
                     }
                 {
                     let member_enter = Rc::clone(&self.member_enter);
-                    member_enter
-                        .borrow_mut()
+                    member_enter.borrow()
                         .member_enter(ctx, syms, tree, &env, self);
                     // Java: memberEnter stores the new VarSymbol in tree.sym;
                     // the port keeps the tree slot as the shared location.
@@ -15049,7 +15048,7 @@ impl Attr {
         {
             let init_env = {
                 let member_enter = Rc::clone(&self.member_enter);
-                member_enter.borrow_mut().init_env(ctx, tree, &env)
+                member_enter.borrow().init_env(ctx, tree, &env)
             };
             init_env.info.borrow_mut().lint = Some(Rc::clone(&lint_rc));
             init_env.info.borrow_mut().encl_var = Some(v);

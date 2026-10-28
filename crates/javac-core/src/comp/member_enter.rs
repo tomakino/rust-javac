@@ -64,7 +64,7 @@ pub struct MemberEnter {
     pub types: Rc<Types>,
     pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
     /// Java: protected Env<AttrContext> env;
-    pub env: Option<Rc<Env<AttrContext>>>,
+    pub env: std::cell::RefCell<Option<Rc<Env<AttrContext>>>>,
     /// Java: Annotate annotate = Annotate.instance(context) — explicit
     /// injection adapter (ADR 0001): the cell is filled after Annotate is
     /// constructed (Rc cycle MemberEnter/TypeEnter -> Annotate -> Attr ->
@@ -91,7 +91,7 @@ impl MemberEnter {
             chk,
             types,
             deferred_lint_handler,
-            env: None,
+            env: std::cell::RefCell::new(None),
             annotate,
             attr: Rc::new(RefCell::new(None)),
         }
@@ -102,7 +102,7 @@ impl MemberEnter {
     /// List<JCExpression> thrown, Env<AttrContext> env)
     #[allow(clippy::too_many_arguments)]
     pub fn signature(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         msym: SymbolId,
@@ -244,15 +244,15 @@ impl MemberEnter {
 
     /// Java: protected void memberEnter(JCTree tree, Env<AttrContext> env)
     pub fn member_enter(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
         attr: &mut crate::comp::attr::Attr,
     ) {
-        let prev_env = self.env.clone();
-        self.env = Some(Rc::clone(env));
+        let prev_env = self.env.borrow().clone();
+        *self.env.borrow_mut() = Some(Rc::clone(env));
         let result = self.visit(ctx, syms, tree, attr);
         if let Err(failure) = result {
             // Java: chk.completionError(tree.pos(), ex)
@@ -263,12 +263,12 @@ impl MemberEnter {
                 syms,
             );
         }
-        self.env = prev_env;
+        *self.env.borrow_mut() = prev_env;
     }
 
     /// Java: void memberEnter(List<? extends JCTree> trees, Env<AttrContext> env)
     pub fn member_enter_list(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         trees: List<TreeId>,
@@ -284,7 +284,7 @@ impl MemberEnter {
     }
 
     fn visit(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -300,13 +300,13 @@ impl MemberEnter {
 
     /// Java: public void visitMethodDef(JCMethodDecl tree)
     pub fn visit_method_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
         attr: &mut crate::comp::attr::Attr,
     ) -> Result<(), CompletionFailure> {
-        let env = self.env.clone().expect("env");
+        let env = self.env.borrow().clone().expect("env");
         let encl_scope = self.enter.borrow().enter_scope(ctx, &env);
         let owner = ctx.scope(encl_scope).owner.expect("enclosing scope owner");
         let name = method_decl_name(ctx, tree);
@@ -431,7 +431,7 @@ impl MemberEnter {
 
     /// Java: Env<AttrContext> methodEnv(JCMethodDecl tree, Env<AttrContext> env)
     pub fn method_env(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
@@ -471,13 +471,13 @@ impl MemberEnter {
 
     /// Java: public void visitVarDef(JCVariableDecl tree)
     pub fn visit_var_def(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
         attr: &mut crate::comp::attr::Attr,
     ) -> Result<(), CompletionFailure> {
-        let env = self.env.clone().expect("env");
+        let env = self.env.borrow().clone().expect("env");
         let mods_flags = var_decl_mods_flags(ctx, tree);
         let scope_owner = env.info.borrow().scope.expect("scope");
         let owner = ctx.scope(scope_owner).owner.expect("scope owner");
@@ -662,7 +662,7 @@ impl MemberEnter {
 
     /// Java: void checkReceiver(JCVariableDecl tree, Env<AttrContext> localEnv)
     fn check_receiver(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -792,7 +792,7 @@ impl MemberEnter {
     /// # Panics
     ///   - the enclosing class environment has no scope owner.
     pub fn init_env(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
@@ -854,13 +854,13 @@ impl MemberEnter {
     }
 
     /// Java: public void visitTree(JCTree tree) { }
-    fn visit_tree(&mut self) -> Result<(), CompletionFailure> {
+    fn visit_tree(&self) -> Result<(), CompletionFailure> {
         Ok(())
     }
 
     /// Java: public void visitErroneous(JCErroneous tree)
     fn visit_erroneous(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         tree: TreeId,
@@ -871,7 +871,7 @@ impl MemberEnter {
             _ => List::nil(),
         };
         if !errs.is_empty() {
-            let env = self.env.clone().expect("env");
+            let env = self.env.borrow().clone().expect("env");
             self.member_enter_list(ctx, syms, errs, &env, attr);
         }
         Ok(())
@@ -880,7 +880,7 @@ impl MemberEnter {
     /// Java: public Env<AttrContext> getMethodEnv(JCMethodDecl tree,
     /// Env<AttrContext> env)
     pub fn get_method_env(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
@@ -910,7 +910,7 @@ impl MemberEnter {
     /// Java: public Env<AttrContext> getInitEnv(JCVariableDecl tree,
     /// Env<AttrContext> env)
     pub fn get_init_env(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,

@@ -138,3 +138,8 @@
 - 步骤2:所有 `rs_rc.borrow_mut()`/`self.resolve.borrow_mut()`→`borrow()`;`&mut rs`→`&rs`;check.rs set_resolve 保留 borrow_mut(安装点);1149/0、clippy 0/205、unimplemented 0。
 - 最小用例 `nested_resolve_completion_compiles`(`class T { class A { B f; } class B { int x; } }`)通过。
 - gson 80 文件仍 panic,新栈:`TypeEnter::finish_class`(type_enter.rs:1846 `self.member_enter.borrow_mut()`,MemberEnter 已借)→ members_phase_run→complete_with_attr→TypeEnterCompleter;即 Resolve 借用已解决后暴露 MemberEnter 服务 `Rc<RefCell<MemberEnter>>` 不可重入,登记 A3e(同类字段内部可变/显式 &mut MemberEnter 链)。按指令停手报告,不硬改;gson opt-in 测试暂不入库。
+
+### A3e MemberEnter 服务重入(完成;gson 前进到 A3f imports owner members)
+- `MemberEnter.env: Option<Rc<Env>>` → `RefCell<Option<Rc<Env>>>`;读 `borrow().clone()`、写 `borrow_mut()`,短借;成员方法 `&mut self`→`&self`(12 处 + visit_tree);全仓 `member_enter.borrow_mut()`→`borrow()`(含跨行 2 处)。
+- 测试:1149 passed / 0 failed(一次并发 flaky `guard_effectively_final_uses_guard_fragment` 重跑通过并如实记录);clippy 0/205;unimplemented 0;3 files changed, 34 insertions(+), 44 deletions(-)。
+- gson:MemberEnter 重入已解除,新 panic `type_enter.rs:823` `import_named` 的 `class_members_scope(ctx, tsym).expect("type members")`(owner.members 未建立),栈 import_named←do_import←resolve_imports←run_imports_phase;登记 A3f(imports 阶段需完成 owner 的 members/等价处理),按指令停手,opt-in gson 测试暂不入库。
