@@ -132,3 +132,9 @@
 - 测试:1148 passed / 0 failed;clippy 0/208;unimplemented 0;最小 `nested_supertype_completion_compiles` 通过。
 - gson 80 文件:仍 panic,新栈 `Attr::visit_ident`(attr.rs:1375 `self.rs.borrow_mut()`,Resolve 已借)→ `Resolve::resolve_ident`;这是 Resolve 服务本身 `Rc<RefCell<Resolve>>` 不可重入(A3d),不是无 Attr 完成;按“停手报告、不扩大范围”登记 A3d。
 - 偏离说明:批准设计写“新增 supertype_with_attr 及 helper”,实际实现选择给 supertype/class_bound/subst_type/subst_visit 加 `Option<&mut Attr>`(避免复制约 300 行、保持单一实现);调用点全量 `None` 编译驱动;若需改回新增方法请裁决。
+
+### A3d-a Resolve 服务重入(两步完成;gson 前进到 A3e MemberEnter 重入)
+- 步骤1:Resolve 的 current_resolution_step→Cell、polymorphic_signature_scope→Cell、current_method_check→RefCell、candidates→RefCell;121 处 `&mut self`→`&self`;LookupHelper lookup/access 的 rs 参数改 &Resolve。1148/0。
+- 步骤2:所有 `rs_rc.borrow_mut()`/`self.resolve.borrow_mut()`→`borrow()`;`&mut rs`→`&rs`;check.rs set_resolve 保留 borrow_mut(安装点);1149/0、clippy 0/205、unimplemented 0。
+- 最小用例 `nested_resolve_completion_compiles`(`class T { class A { B f; } class B { int x; } }`)通过。
+- gson 80 文件仍 panic,新栈:`TypeEnter::finish_class`(type_enter.rs:1846 `self.member_enter.borrow_mut()`,MemberEnter 已借)→ members_phase_run→complete_with_attr→TypeEnterCompleter;即 Resolve 借用已解决后暴露 MemberEnter 服务 `Rc<RefCell<MemberEnter>>` 不可重入,登记 A3e(同类字段内部可变/显式 &mut MemberEnter 链)。按指令停手报告,不硬改;gson opt-in 测试暂不入库。

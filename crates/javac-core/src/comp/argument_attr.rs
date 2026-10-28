@@ -685,7 +685,7 @@ impl ArgumentAttr {
         local_env.info.borrow_mut().select_super = is_super;
         let expr_type = ctx.tree(expr_tree).ty.expect("qualifier type");
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
-        let rs = rs_rc.borrow_mut();
+        let rs = rs_rc.borrow();
         let chk_rc = Rc::clone(&attr.chk);
         let chk = chk_rc.borrow();
         let types_rc = Rc::clone(&attr.types);
@@ -813,7 +813,7 @@ impl ArgumentAttr {
         let attr_recover_rc = attr.attr_recover.borrow().clone().expect("attr recover service");
         let mut attr_recover = attr_recover_rc.borrow_mut();
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
-        let mut rs = rs_rc.borrow_mut();
+        let rs = rs_rc.borrow();
         let chk_rc = Rc::clone(&attr.chk);
         let chk = chk_rc.borrow();
         let diags = Rc::clone(&attr.diags);
@@ -825,7 +825,7 @@ impl ArgumentAttr {
                 syms,
                 attr,
                 &mut attr_recover,
-                &mut rs,
+                &rs,
                 &chk,
                 &diags,
                 &flow_rc,

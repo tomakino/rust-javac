@@ -1340,7 +1340,7 @@ impl Attr {
             let argtypes = self.types.get_parameter_types_public(ctx, pt);
             let typeargtypes = self.types.get_type_arguments_public(ctx, pt);
             let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-            let rs = rs_rc.borrow_mut();
+            let rs = rs_rc.borrow();
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
             let infer_rc = Rc::clone(&self.infer);
@@ -1365,14 +1365,14 @@ impl Attr {
             } else {
                 // Java: sym = rs.resolveIdent(tree.pos(), env, tree.name, pkind());
                 let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                let rs = rs_rc.borrow_mut();
+                let rs = rs_rc.borrow();
                 let pos = simple_diag_pos(ctx.tree(tree).pos);
                 sym = rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind(), Some(self));
             }
         } else {
             // Java: sym = rs.resolveIdent(tree.pos(), env, tree.name, pkind());
             let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-            let rs = rs_rc.borrow_mut();
+            let rs = rs_rc.borrow();
             let pos = simple_diag_pos(ctx.tree(tree).pos);
             sym = rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind(), Some(self));
         }
@@ -1451,7 +1451,7 @@ impl Attr {
                 let encl1_sym = class_tree_symbol(ctx, encl1).expect("env1 enclClass sym");
                 let site1 = ctx.sym(encl1_sym).ty.expect("env1 enclClass type");
                 let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                let rs = rs_rc.borrow_mut();
+                let rs = rs_rc.borrow();
                 if rs.is_accessible_member(ctx, syms, &env, site1, sym, false) {
                     break;
                 }
@@ -1730,7 +1730,7 @@ impl Attr {
                     .borrow()
                     .clone()
                     .expect("AssertionError: rs service must be installed");
-                let mut rs = rs_rc.borrow_mut();
+                let rs = rs_rc.borrow();
                 let infer_rc = Rc::clone(&self.infer);
                 let argtrees = env
                     .tree
@@ -1738,7 +1738,7 @@ impl Attr {
                 let value = self.check_method(
                     ctx,
                     syms,
-                    &mut rs,
+                    &rs,
                     &infer_rc,
                     site,
                     sym,
@@ -1924,12 +1924,12 @@ impl Attr {
         let recover = recover_rc.borrow();
         let rs_rc = self.rs.borrow().clone();
         let Some(rs_rc) = rs_rc else { return; };
-        let mut rs = rs_rc.borrow_mut();
+        let rs = rs_rc.borrow();
         let chk_rc = Rc::clone(&self.chk);
         let chk = chk_rc.borrow();
         let infer_rc = Rc::clone(&self.infer);
         let diags = Rc::clone(&self.diags);
-        recover.do_recovery(ctx, syms, self, &mut rs, &infer_rc, &chk, &diags);
+        recover.do_recovery(ctx, syms, self, &rs, &infer_rc, &chk, &diags);
     }
 
     /// Java: <T extends JCTree> void attribStats(List<T> trees,
@@ -2912,7 +2912,7 @@ impl Attr {
                         .borrow()
                         .clone()
                         .expect("AssertionError: rs service must be installed");
-                    let rs = rs_rc.borrow_mut();
+                    let rs = rs_rc.borrow();
                     return rs.find_ident_in_package(
                         ctx,
                         syms,
@@ -2936,7 +2936,7 @@ impl Attr {
                     .borrow()
                     .clone()
                     .expect("AssertionError: rs service must be installed");
-                let rs = rs_rc.borrow_mut();
+                let rs = rs_rc.borrow();
                 rs.find_member_type_pub(ctx, syms, env, site_type, &name, site, Some(self))
             }
             Tag::IDENT => {
@@ -2946,7 +2946,7 @@ impl Attr {
                     .borrow()
                     .clone()
                     .expect("AssertionError: rs service must be installed");
-                let rs = rs_rc.borrow_mut();
+                let rs = rs_rc.borrow();
                 rs.find_ident(
                     ctx,
                     syms,
@@ -4533,7 +4533,7 @@ impl Attr {
         &mut self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
-        rs: &mut crate::comp::resolve::Resolve,
+        rs: &crate::comp::resolve::Resolve,
         infer: &Rc<crate::comp::infer::Infer>,
         site: TypeId,
         sym: SymbolId,
@@ -5033,7 +5033,7 @@ impl Attr {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr_recover: &mut crate::comp::attr_recover::AttrRecover,
-        rs: &mut crate::comp::resolve::Resolve,
+        rs: &crate::comp::resolve::Resolve,
         infer: &Rc<crate::comp::infer::Infer>,
         chk: &crate::comp::check::Check,
         diags: &crate::util::jc_diagnostic::Factory,
@@ -5550,7 +5550,7 @@ impl Attr {
         let encl_class = env.encl_class.expect("AssertionError: enclClass");
         let encl_sym = class_tree_symbol(ctx, encl_class).expect("AssertionError: enclClass sym");
         let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-        let rs = rs_rc.borrow_mut();
+        let rs = rs_rc.borrow();
         let types_rc = Rc::clone(&self.types);
         rs.resolve_self(
             ctx,
@@ -5908,7 +5908,7 @@ impl Attr {
                         // qualifier omitted; check for existence of an appropriate
                         // implicit qualifier.
                         let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                        let rs = rs_rc.borrow_mut();
+                        let rs = rs_rc.borrow();
                         let types_rc = Rc::clone(&self.types);
                         rs.resolve_implicit_this(
                             ctx,
@@ -5952,7 +5952,7 @@ impl Attr {
                 local_env.info.borrow_mut().select_super = true;
                 local_env.info.borrow_mut().pending_resolution_phase = None;
                 let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                let rs = rs_rc.borrow_mut();
+                let rs = rs_rc.borrow();
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = chk_rc.borrow();
                 let infer_rc = Rc::clone(&self.infer);
@@ -6317,13 +6317,13 @@ impl Attr {
                 {
                     let static_error = {
                         let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                        let rs = rs_rc.borrow_mut();
+                        let rs = rs_rc.borrow();
                         rs.new_static_error_pub(ctx, sym)
                     };
                     let pos = simple_diag_pos(ctx.tree(tree).pos);
                     let site_opt = Some(site);
                     let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                    let rs = rs_rc.borrow_mut();
+                    let rs = rs_rc.borrow();
                     let sym_name = ctx.sym(sym).name.clone();
                     rs.access_base(
                         ctx,
@@ -6364,7 +6364,7 @@ impl Attr {
         if env.info.borrow().select_super && (ctx.sym(sym).flags_field & (flags::STATIC as i64)) == 0 {
             // Check that super-qualified symbols are not abstract (JLS)
             let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-            let rs = rs_rc.borrow_mut();
+            let rs = rs_rc.borrow();
             rs.check_non_abstract(ctx, simple_diag_pos(ctx.tree(tree).pos), sym);
             drop(rs);
             if self.types.is_raw_type_public(ctx, site) {
@@ -6427,7 +6427,7 @@ impl Attr {
             TypeTag::PACKAGE => {
                 let site_tsym = ctx.typ(site).tsym.expect("package symbol");
                 let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                let rs = rs_rc.borrow_mut();
+                let rs = rs_rc.borrow();
                 let found = rs.find_ident_in_package(
                     ctx,
                     syms,
@@ -6452,7 +6452,7 @@ impl Attr {
                     let argtypes = self.types.get_parameter_types_public(ctx, pt);
                     let typeargtypes = self.types.get_type_arguments_public(ctx, pt);
                     let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                    let rs = rs_rc.borrow_mut();
+                    let rs = rs_rc.borrow();
                     let types_rc = Rc::clone(&self.types);
                     let chk_rc = Rc::clone(&self.chk);
                     let chk = chk_rc.borrow();
@@ -6475,7 +6475,7 @@ impl Attr {
                 } else if name == self.names._this || name == self.names._super {
                     let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
                     let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                    let rs = rs_rc.borrow_mut();
+                    let rs = rs_rc.borrow();
                     let types_rc = Rc::clone(&self.types);
                     rs.resolve_self(ctx, syms, &types_rc, pos, env, site_tsym, name)
                 } else if name == self.names._class {
@@ -6485,11 +6485,11 @@ impl Attr {
                 } else {
                     let found = {
                         let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                        let rs = rs_rc.borrow_mut();
+                        let rs = rs_rc.borrow();
                         rs.find_ident_in_type(ctx, syms, pos.clone(), env, site, &name, result_info.pkind)
                     };
                     let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                    let rs = rs_rc.borrow_mut();
+                    let rs = rs_rc.borrow();
                     rs.access_base(ctx, syms, found, pos, location, Some(site), &name, true)
                 }
             }
@@ -6513,7 +6513,7 @@ impl Attr {
                     let env_snapshot = crate::comp::resolve::resolve_env_snapshot(ctx, env);
                     let access_error = {
                         let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                        let rs = rs_rc.borrow_mut();
+                        let rs = rs_rc.borrow();
                         let data = crate::code::symbol::ResolveErrorData::Access {
                             env: env_snapshot,
                             site: Some(site),
@@ -6530,7 +6530,7 @@ impl Attr {
                     sym = access_error;
                 }
                 let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-                let rs = rs_rc.borrow_mut();
+                let rs = rs_rc.borrow();
                 rs.access_base(ctx, syms, sym, pos, location, Some(site), &name, true);
                 sym
             }
@@ -7653,12 +7653,12 @@ impl Attr {
             let rs_rc = self.rs.borrow().clone();
             let chk_rc = Rc::clone(&self.chk);
             if let (Some(rs_rc), Some(recover_rc)) = (rs_rc, recover_rc) {
-                let mut rs = rs_rc.borrow_mut();
+                let rs = rs_rc.borrow();
                 let mut recover = recover_rc.borrow_mut();
                 let chk = chk_rc.borrow();
                 let infer_rc = Rc::clone(&self.infer);
                 let diags = Rc::clone(&self.diags);
-                self.pre_flow(ctx, syms, &mut recover, &mut rs, &infer_rc, &chk, &diags, &env, thenpart);
+                self.pre_flow(ctx, syms, &mut recover, &rs, &infer_rc, &chk, &diags, &env, thenpart);
             }
         }
         let alive_after_then = {
@@ -7686,12 +7686,12 @@ impl Attr {
                 let rs_rc = self.rs.borrow().clone();
                 let chk_rc = Rc::clone(&self.chk);
                 if let (Some(rs_rc), Some(recover_rc)) = (rs_rc, recover_rc) {
-                    let mut rs = rs_rc.borrow_mut();
+                    let rs = rs_rc.borrow();
                     let mut recover = recover_rc.borrow_mut();
                     let chk = chk_rc.borrow();
                     let infer_rc = Rc::clone(&self.infer);
                     let diags = Rc::clone(&self.diags);
-                    self.pre_flow(ctx, syms, &mut recover, &mut rs, &infer_rc, &chk, &diags, &env, elsepart);
+                    self.pre_flow(ctx, syms, &mut recover, &rs, &infer_rc, &chk, &diags, &env, elsepart);
                 }
             }
             let flow_rc = self
@@ -8232,7 +8232,7 @@ impl Attr {
         };
         let close_sym = {
             let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
-            let rs = rs_rc.borrow_mut();
+            let rs = rs_rc.borrow();
             let types_rc = Rc::clone(&self.types);
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
@@ -8426,7 +8426,7 @@ impl Attr {
                             .borrow()
                             .clone()
                             .expect("AssertionError: rs service must be installed");
-                        let rs = rs_rc.borrow_mut();
+                        let rs = rs_rc.borrow();
                         let types_rc = Rc::clone(&self.types);
                         let chk_rc = Rc::clone(&self.chk);
                         let chk = chk_rc.borrow();
@@ -9780,7 +9780,7 @@ impl Attr {
             while current.non_empty() {
                 let t = *current.head();
                 if let Some(rs_rc) = self.rs.borrow().clone() {
-                    let rs = rs_rc.borrow_mut();
+                    let rs = rs_rc.borrow();
                     rs.check_accessible_type(ctx, syms, env, t);
                 }
                 current = current.tail();
@@ -10189,12 +10189,12 @@ impl Attr {
             let recover_rc = self.attr_recover.borrow().clone();
             let chk_rc = Rc::clone(&self.chk);
             if let (Some(rs_rc), Some(recover_rc)) = (rs_rc, recover_rc) {
-                let mut rs = rs_rc.borrow_mut();
+                let rs = rs_rc.borrow();
                 let mut recover = recover_rc.borrow_mut();
                 let chk = chk_rc.borrow();
                 let infer_rc = Rc::clone(&self.infer);
                 let diags = Rc::clone(&self.diags);
-                self.pre_flow(ctx, syms, &mut recover, &mut rs, &infer_rc, &chk, &diags, &env, that);
+                self.pre_flow(ctx, syms, &mut recover, &rs, &infer_rc, &chk, &diags, &env, that);
             }
         }
         {
@@ -10586,7 +10586,7 @@ impl Attr {
         };
         let saved_undet = inference_context.save(ctx, syms, &self.types);
         let (ref_sym, helper) = {
-            let rs = rs_rc.borrow_mut();
+            let rs = rs_rc.borrow();
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
             let infer_rc = Rc::clone(&self.infer);
@@ -10623,8 +10623,8 @@ impl Attr {
                 _ => panic!("AssertionError: unexpected result kind"),
             };
             let details = {
-                let mut rs = rs_rc.borrow_mut();
-                rs_error_diagnostic(&mut rs, ctx, syms, ref_sym, ctx.tree(that).pos, Some(expr_type), &name, &argtypes, &typeargtypes)
+                let rs = rs_rc.borrow();
+                rs_error_diagnostic(&rs, ctx, syms, ref_sym, ctx.tree(that).pos, Some(expr_type), &name, &argtypes, &typeargtypes)
             };
             if let Some(details) = details {
                 let kind = crate::code::kinds::kind_name(ctx.sym(ctx.typ(expr_type).tsym.expect("expr type symbol")), ctx);
@@ -10669,7 +10669,7 @@ impl Attr {
             let accessible = match enclosing {
                 Some(enclosing) => {
                     let encl_type = ctx.sym(enclosing).ty.expect("enclosing class type");
-                    let rs = rs_rc.borrow_mut();
+                    let rs = rs_rc.borrow();
                     let types_rc = Rc::clone(&self.types);
                     rs.is_accessible_pub(ctx, syms, &types_rc, &local_env, encl_type, that_sym)
                 }
@@ -10851,7 +10851,7 @@ impl Attr {
 /// (the resolve-error diagnostic channel).
 #[allow(clippy::too_many_arguments)]
 fn rs_error_diagnostic(
-    rs: &mut crate::comp::resolve::Resolve,
+    rs: &crate::comp::resolve::Resolve,
     ctx: &mut CompilerContext,
     syms: &Symtab,
     error: SymbolId,
@@ -13089,7 +13089,7 @@ impl Attr {
                 .unwrap_or(false);
             if !is_interface && encl_has_class {
                 let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
-                let rs = rs_rc.borrow_mut();
+                let rs = rs_rc.borrow();
                 let types_rc = Rc::clone(&self.types);
                 rs.resolve_implicit_this(
                     ctx,
@@ -13206,7 +13206,7 @@ impl Attr {
                 diamond_env.info.borrow_mut().pending_resolution_phase = None;
                 let (constructor, constructor_base) = {
                     let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
-                    let rs = rs_rc.borrow_mut();
+                    let rs = rs_rc.borrow();
                     let chk_rc = Rc::clone(&self.chk);
                     let chk = chk_rc.borrow();
                     let infer_rc = Rc::clone(&self.infer);
@@ -13290,7 +13290,7 @@ impl Attr {
                 }
                 let constructor = {
                     let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
-                    let rs = rs_rc.borrow_mut();
+                    let rs = rs_rc.borrow();
                     let chk_rc = Rc::clone(&self.chk);
                     let chk = chk_rc.borrow();
                     let infer_rc = Rc::clone(&self.infer);
@@ -13522,7 +13522,7 @@ impl Attr {
                 let argument = *arguments_current.head();
                 arguments_current = arguments_current.tail();
                 let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
-                let rs = rs_rc.borrow_mut();
+                let rs = rs_rc.borrow();
                 let env_rc = self.env.clone().expect("env");
                 rs.check_accessible_type(ctx, syms, &env_rc, argument);
             }
@@ -13597,7 +13597,7 @@ impl Attr {
         };
         let constructor = {
             let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
-            let rs = rs_rc.borrow_mut();
+            let rs = rs_rc.borrow();
             let chk_rc = Rc::clone(&self.chk);
             let chk = chk_rc.borrow();
             let infer_rc = Rc::clone(&self.infer);

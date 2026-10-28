@@ -140,7 +140,7 @@ impl AttrRecover {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: &mut Attr,
-        rs: &mut crate::comp::resolve::Resolve,
+        rs: &crate::comp::resolve::Resolve,
         infer: &Rc<crate::comp::infer::Infer>,
         chk: &crate::comp::check::Check,
         diags: &crate::util::jc_diagnostic::Factory,

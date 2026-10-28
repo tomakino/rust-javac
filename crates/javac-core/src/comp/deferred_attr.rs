@@ -2527,7 +2527,7 @@ impl DeferredAttrService {
         syms: &Symtab,
         attr: &mut Attr,
         attr_recover: &mut crate::comp::attr_recover::AttrRecover,
-        rs: &mut crate::comp::resolve::Resolve,
+        rs: &crate::comp::resolve::Resolve,
         chk: &crate::comp::check::Check,
         diags: &crate::util::jc_diagnostic::Factory,
         flow: &crate::comp::flow::Flow,
@@ -2904,7 +2904,7 @@ impl DeferredAttrService {
         let expr_type = ctx.tree(expr_tree).ty.expect("qualifier type");
         let site = ctx.typ(expr_type).tsym.expect("qualifier type symbol");
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
-        let rs = rs_rc.borrow_mut();
+        let rs = rs_rc.borrow();
         let chk_rc = Rc::clone(&attr.chk);
         let chk = chk_rc.borrow();
         let types_rc = Rc::clone(&attr.types);
@@ -3028,7 +3028,7 @@ impl DeferredAttrService {
             .expect("attr recover service");
         let mut attr_recover = attr_recover_rc.borrow_mut();
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
-        let mut rs = rs_rc.borrow_mut();
+        let rs = rs_rc.borrow();
         let chk_rc = Rc::clone(&attr.chk);
         let chk = chk_rc.borrow();
         let diags = Rc::clone(&attr.diags);
@@ -3043,7 +3043,7 @@ impl DeferredAttrService {
             syms,
             attr,
             &mut attr_recover,
-            &mut rs,
+            &rs,
             &chk,
             &diags,
             &flow_rc,
