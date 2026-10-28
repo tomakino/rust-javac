@@ -95,6 +95,9 @@ fn add_classpath_packages_to_unnamed_module(compiler: &mut MiniCompiler) {
     };
     let unnamed = compiler.syms.borrow().unnamed_module;
     for root in paths {
+        if !root.is_dir() {
+            continue;
+        }
         let mut package_dirs = Vec::new();
         collect_package_dirs(&root, &root, &mut package_dirs);
         for package in package_dirs {
@@ -105,7 +108,9 @@ fn add_classpath_packages_to_unnamed_module(compiler: &mut MiniCompiler) {
                 let syms = compiler.syms.borrow();
                 syms.enter_package(&mut compiler.ctx, unnamed, name.clone())
             };
- = &mut compiler.ctx.sym_mut(unnamed).kind_data
+            if let crate::code::symbol::SymbolKind::ModuleSymbol {
+                visible_packages, ..
+            } = &mut compiler.ctx.sym_mut(unnamed).kind_data
             {
                 visible_packages.insert(name, package_symbol);
             }
@@ -119,6 +124,9 @@ fn collect_package_dirs(root: &Path, dir: &Path, out: &mut Vec<String>) {
     };
     for entry in entries.flatten() {
         let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
         let Ok(relative) = path.strip_prefix(root) else {
             continue;
         };
@@ -130,6 +138,9 @@ fn collect_package_dirs(root: &Path, dir: &Path, out: &mut Vec<String>) {
             })
             .collect::<Vec<_>>()
             .join(".");
+        if !package.is_empty() {
+            out.push(package);
+        }
         collect_package_dirs(root, &path, out);
     }
 }
@@ -299,6 +310,19 @@ impl MiniCompiler {
             .expect("cannot set CLASS_OUTPUT");
         // Java: JavaCompiler sets the CLASS_PATH location from -class-path before
         // entering symbols; without this the ClassFinder cannot see test jars.
+        if let Some(class_path) = options.get_option(crate::main::option::Option::CLASS_PATH) {
+            let paths: Vec<PathBuf> = class_path
+                .split(';')
+                .filter(|part| !part.is_empty())
+                .map(PathBuf::from)
+                .collect();
+            if !paths.is_empty() {
+                let class_path_location = StandardLocation::location_for(&js("CLASS_PATH"));
+                file_manager
+                    .set_location(&*class_path_location, Some(&paths))
+                    .expect("cannot set CLASS_PATH");
+            }
+        }
         let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
         let reader = Rc::new(RefCell::new(ClassReader::new(
             Rc::clone(&log),
@@ -401,7 +425,7 @@ impl MiniCompiler {
                 (def, ctx.sym(predef).ty)
             };
             ctx.tree_mut(def).ty = predef_ty;
- = &mut ctx.tree_mut(def).kind {
+            if let TreeKind::ClassDecl { sym, .. } = &mut ctx.tree_mut(def).kind {
                 *sym = Some(predef);
             }
             enter.borrow_mut().set_predef_class(def);
@@ -730,14 +754,21 @@ impl MiniCompiler {
             .file_manager
             .get_location_for_module(&*system_modules, &js("java.base"));
 
- = &mut self.ctx.sym_mut(java_base).kind_data
+        if let Ok(module_location) = module_location_result
+            && let crate::code::symbol::SymbolKind::ModuleSymbol {
+                class_location, ..
+            } = &mut self.ctx.sym_mut(java_base).kind_data
         {
             *class_location = Some(module_location);
         }
 
         let source_path = StandardLocation::location_for(&js("SOURCE_PATH"));
         let class_path = StandardLocation::location_for(&js("CLASS_PATH"));
- = &mut self.ctx.sym_mut(unnamed).kind_data
+        if let crate::code::symbol::SymbolKind::ModuleSymbol {
+            source_location,
+            class_location,
+            ..
+        } = &mut self.ctx.sym_mut(unnamed).kind_data
         {
             *source_location = Some(source_path);
             *class_location = Some(class_path);
@@ -746,6 +777,31 @@ impl MiniCompiler {
         // the system modules it reads; for the minimal non-modular compilation
         // the java.base packages are entered and mapped (Modules.java:440-500).
         let modules_file = self.java_home.join("lib").join("modules");
+        if let Ok(image) = javac_jimage::JImage::open(&modules_file) {
+            let packages_result = image.packages_of_module("java.base");            if let Ok(packages) = packages_result {
+                for package in packages {
+                    let name = self
+                        .names
+                        .from_string(&javac_strings::JavaString::from(package.as_str()));
+                    let package_symbol = self
+                        .syms
+                        .borrow_mut()
+                        .enter_package(&mut self.ctx, java_base, name);
+                    // Java: Modules bootstrap records every module package in the
+                    // module's visiblePackages (the module reads its own packages).
+                    self.syms.borrow_mut().add_visible_package(
+                        &mut self.ctx,
+                        java_base,
+                        package_symbol,
+                    );
+                    self.syms.borrow_mut().add_visible_package(
+                        &mut self.ctx,
+                        unnamed,
+                        package_symbol,
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -765,8 +821,20 @@ fn java_home() -> FsPath {
     fn is_jdk_home(home: &Path) -> bool {
         home.join("lib").join("modules").is_file() || home.join("jmods").is_dir()
     }
+    if let Some(home) = std::env::var_os("JAVA_HOME") {
+        let home = PathBuf::from(home);
+        if is_jdk_home(&home) {
+            return FsPath::from_path_buf(home);
+        }
+    }
+    if let Some(home) = java_home_from_path() {
+        return FsPath::from_path_buf(home);
+    }
     let baseline =
         PathBuf::from(r"C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot");
+    if is_jdk_home(&baseline) {
+        return FsPath::from_path_buf(baseline);
+    }
     panic!("no JDK home with lib/modules or jmods found; set JAVA_HOME");
 }
 
@@ -779,9 +847,18 @@ fn java_home_from_path() -> Option<PathBuf> {
                 "{launcher}{}",
                 std::env::consts::EXE_SUFFIX
             ));
+            if !candidate.is_file() {
+                continue;
+            }
+            if directory.file_name().is_none_or(|name| name != "bin") {
+                continue;
+            }
             let Some(home) = directory.parent() else {
                 continue;
             };
+            if home.join("lib").join("modules").is_file() || home.join("jmods").is_dir() {
+                return Some(home.to_path_buf());
+            }
         }
     }
     None
@@ -862,11 +939,19 @@ impl MiniCompiler {
         source_paths: &[PathBuf],
     ) -> Result<Vec<CompiledClass>, String> {
         // JavaCompiler.parseFiles: if (!force && shouldStop(PARSE)) return List.nil().
+        if self.should_stop(crate::comp::compile_states::CompileState::PARSE) {
+            self.last_compiled_classes = Vec::new();
+            return Ok(Vec::new());
+        }
         let mut roots: Vec<TreeId> = Vec::new();
         for path in source_paths {
             roots.push(self.parse_file(path)?);
         }
         // JavaCompiler.compile2: stopIfError(CompileState.ENTER, initModules(...)).
+        if self.should_stop(crate::comp::compile_states::CompileState::ENTER) {
+            self.last_compiled_classes = Vec::new();
+            return Ok(Vec::new());
+        }
         // JavaCompiler.initModules (JavaCompiler.java:1020-1026).
         {
             let syms_rc = Rc::clone(&self.syms);
@@ -878,11 +963,27 @@ impl MiniCompiler {
 
         // JavaCompiler.compile2: the second stopIfError(ENTER, ...) guards
         // enterTrees.
+        if self.should_stop(crate::comp::compile_states::CompileState::ENTER) {
+            self.last_compiled_classes = Vec::new();
+            return Ok(Vec::new());
+        }
         // JavaCompiler.enterTrees -> enter.main (JavaCompiler.java:1033-1044).
         let root_list = List::from_iterable(roots.iter().copied());
         {
             let syms_rc = Rc::clone(&self.syms);
             let mut syms = syms_rc.borrow_mut();
+            if let Err(failure) = self
+                .enter
+                .borrow()
+                .main(&mut self.ctx, &mut syms, root_list.clone())
+            {
+                self.chk.completion_error(
+                    &mut self.ctx,
+                    crate::util::position::NOPOS,
+                    &failure,
+                    &mut syms,
+                );
+            }
         }
         // JavaCompiler.enterDone (JavaCompiler.java:1042-1044): release the
         // initial annotation-processing block and flush the queued annotations.
@@ -895,10 +996,18 @@ impl MiniCompiler {
         }
         self.enter_done = true;
         // JavaCompiler.processAnnotations: if (shouldStop(PROCESS)) return.
+        if self.should_stop(crate::comp::compile_states::CompileState::PROCESS) {
+            self.last_compiled_classes = Vec::new();
+            return Ok(Vec::new());
+        }
         // JavaCompiler.compile2: the attr/flow/desugar/generate chain runs only
         // when the no-error policy does not stop after ATTR.
         {
             let (_, policy_if_no_error) = self.should_stop_policies();
+            if crate::comp::compile_states::CompileState::ATTR.is_after(policy_if_no_error) {
+                self.last_compiled_classes = Vec::new();
+                return Ok(Vec::new());
+            }
         }
         // JavaCompiler.attribute(todo)
         let mut envs: Vec<Rc<Env<AttrContext>>> = Vec::new();
@@ -910,10 +1019,41 @@ impl MiniCompiler {
             }
         }
         for env in &envs {
+            if std::env::var_os("DSH_DEBUG_ENV").is_some() {
+                let sf = env
+                    .toplevel
+                    .and_then(|top| match &self.ctx.tree(top).kind {
+                        crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => sourcefile
+                            .as_ref()
+                            .map(|f| f.get_name().to_string_lossy().to_string()),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                eprintln!("[ENV-ATTR] {}", sf);
+            }
             self.attribute(env)?;
+        }
+        if self.should_stop(crate::comp::compile_states::CompileState::FLOW) {
+            self.last_compiled_classes = Vec::new();
+            return Ok(Vec::new());
+        }
+        if self.error_count() > 0 {
+            return Err(self.error_message());
         }
         // JavaCompiler.flow(envs)
         for env in &envs {
+                        if std::env::var_os("DSH_DEBUG_ENV").is_some() {
+                let sf = env
+                    .toplevel
+                    .and_then(|top| match &self.ctx.tree(top).kind {
+                        crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => sourcefile
+                            .as_ref()
+                            .map(|f| f.get_name().to_string_lossy().to_string()),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                eprintln!("[ENV-FLOW] {}", sf);
+            }
             let make = Rc::clone(&self.make);
             let syms_guard = self.syms.borrow();
             self.flow
@@ -928,10 +1068,29 @@ impl MiniCompiler {
             // JavaCompiler.flow: the second shouldStop(FLOW) check runs after
             // the flow analysis and the compile-state update (JavaCompiler.java:
             // 1383-1384).
+            if self.should_stop(crate::comp::compile_states::CompileState::FLOW) {
+                self.last_compiled_classes = Vec::new();
+                return Ok(Vec::new());
+            }
+        }
+        if self.error_count() > 0 {
+            return Err(self.error_message());
         }
         // JavaCompiler.desugar(envs): TransTypes then Lower.
         let mut classes: Vec<CompiledClass> = Vec::new();
         for env in envs {
+                        if std::env::var_os("DSH_DEBUG_ENV").is_some() {
+                let sf = env
+                    .toplevel
+                    .and_then(|top| match &self.ctx.tree(top).kind {
+                        crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => sourcefile
+                            .as_ref()
+                            .map(|f| f.get_name().to_string_lossy().to_string()),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                eprintln!("[ENV-DESUGAR] {}", sf);
+            }
             // JavaCompiler.desugar: desugar starts with shouldStop(TRANSTYPES).
             if self.should_stop(crate::comp::compile_states::CompileState::TRANSTYPES) {
                 self.last_compiled_classes = Vec::new();

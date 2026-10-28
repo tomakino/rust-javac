@@ -232,6 +232,9 @@ impl LocalCacheContext {
     ///
     /// Upstream: ArgumentAttr.java:226-230.
     pub fn leave(&mut self, argument_attr: &ArgumentAttr) {
+        if let Some(prev) = self.prev_cache.take() {
+            *argument_attr.argument_type_cache.borrow_mut() = prev;
+        }
     }
 }
 
@@ -293,6 +296,11 @@ impl ArgumentAttr {
                     == crate::comp::deferred_attr::AttributionMode::SPECULATIVE
             })
             .unwrap_or(false);
+        if speculative {
+            // if we are in a speculative branch we can save the type in the tree
+            // itself as there is no risk of polluting the original tree.
+            ctx.tree_mut(tree).ty = Some(ty);
+        }
     }
 
     /// Java: Type checkSpeculative(DiagnosticPosition pos, Type t,
@@ -319,7 +327,16 @@ impl ArgumentAttr {
         t: TypeId,
         result_info: &ResultInfo,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
- else {
+        if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::DEFERRED) {
+            // ((DeferredType)t).check(resultInfo)
+            let checked = crate::comp::deferred_attr::deferred_type_check(
+                ctx, syms, types, attr, t, result_info,
+            );
+            match checked {
+                Ok(ty) => Ok(Some(ty)),
+                Err(failure) => Err(deferred_failure_to_completion(failure)),
+            }
+        } else {
             let chk_rc = Rc::clone(&attr.chk);
             let chk = Rc::clone(&chk_rc);
             Ok(Some(result_info.check(ctx, syms, &chk, 0, t)))
@@ -538,7 +555,18 @@ impl ArgumentAttr {
             crate::tree::jc_tree::TreeKind::MethodInvocation { typeargs, .. } => typeargs.is_empty(),
             _ => panic!("ClassCastException: JCMethodInvocation expected"),
         };
- else {
+        if typeargs_empty {
+            self.process_arg_with_speculation(ctx, syms, attr, log, tree, |speculative_tree| {
+                ArgumentTypeData {
+                    kind: ArgumentKind::ResolvedMethod,
+                    speculative_tree,
+                    speculative_types: Vec::new(),
+                    yield_expressions: None,
+                    argtypes: None,
+                    return_expressions: None,
+                }
+            })
+        } else {
             // not a poly expression, just call Attr
             let result = attr.attrib_tree(
                 ctx,
@@ -561,7 +589,18 @@ impl ArgumentAttr {
         log: &Rc<RefCell<crate::util::log::Log>>,
         tree: TreeId,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
- else {
+        if crate::tree::tree_info::is_diamond(ctx, tree) {
+            self.process_arg_with_speculation(ctx, syms, attr, log, tree, |speculative_tree| {
+                ArgumentTypeData {
+                    kind: ArgumentKind::ResolvedConstructor,
+                    speculative_tree,
+                    speculative_types: Vec::new(),
+                    yield_expressions: None,
+                    argtypes: None,
+                    return_expressions: None,
+                }
+            })
+        } else {
             // not a poly expression, just call Attr
             let result = attr.attrib_tree(
                 ctx,
@@ -590,7 +629,9 @@ impl ArgumentAttr {
             }
             _ => panic!("ClassCastException: JCLambda expected"),
         };
- else {
+        if explicit {
+            self.process_arg_with_lambda_speculation(ctx, syms, attr, log, tree)
+        } else {
             // otherwise just use a deferred type
             let env = self.env.clone().expect("env");
             let deferred_type = self.new_plain_deferred(ctx, syms, attr, tree, &env);
@@ -638,7 +679,7 @@ impl ArgumentAttr {
             let copier = crate::tree::tree_copier::TreeCopier::new(Rc::clone(&attr.make));
             copier.copy(ctx, Some(tree)).expect("copied member reference")
         };
- =
+        if let crate::tree::jc_tree::TreeKind::MemberReference { expr: mref_expr, .. } =
             &mut ctx.tree_mut(mref2).kind
         {
             *mref_expr = Some(expr_tree);
@@ -670,7 +711,8 @@ impl ArgumentAttr {
         );
         drop(chk);
         drop(rs);
- =
+        if !ctx.sym(res).kind.is_resolution_error()
+            && let crate::tree::jc_tree::TreeKind::MemberReference { sym, .. } =
                 &mut ctx.tree_mut(tree).kind
         {
             *sym = Some(res);
@@ -688,13 +730,15 @@ impl ArgumentAttr {
             );
             let raw_type = utils_is_raw_type(ctx, &attr.types, expr_type);
             let is_array = ctx.typ(expr_type).has_tag(crate::code::type_tag::TypeTag::ARRAY);
- else if forall || varargs || (static_selector && raw_type && !is_array) {
+            if ctx.sym(res).kind.is_resolution_target_error() {
+                crate::tree::jc_tree::OverloadKind::ERROR
+            } else if forall || varargs || (static_selector && raw_type && !is_array) {
                 crate::tree::jc_tree::OverloadKind::OVERLOADED
             } else {
                 crate::tree::jc_tree::OverloadKind::UNOVERLOADED
             }
         };
- =
+        if let crate::tree::jc_tree::TreeKind::MemberReference { overload_kind: ok, .. } =
             &mut ctx.tree_mut(tree).kind
         {
             *ok = Some(overload_kind);
@@ -729,6 +773,9 @@ impl ArgumentAttr {
         factory: impl FnOnce(TreeId) -> ArgumentTypeData,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         let pos = UniquePos::new(ctx, &log.borrow(), tree);
+        if let Some(finished) = self.process_arg_cached(ctx, syms, attr, tree, pos.clone())? {
+            return Ok(Some(finished));
+        }
         let result_info = self.argument_result_info(attr, ctx, log, tree);
         let env = self.env.clone().expect("argument attr env");
         let deferred = self.deferred.borrow().clone().expect("deferred attr service");
@@ -765,6 +812,9 @@ impl ArgumentAttr {
         tree: TreeId,
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         let pos = UniquePos::new(ctx, &log.borrow(), tree);
+        if let Some(finished) = self.process_arg_cached(ctx, syms, attr, tree, pos.clone())? {
+            return Ok(Some(finished));
+        }
         let result_info = attr.method_attr_info.clone();
         let env = self.env.clone().expect("argument attr env");
         let deferred = self.deferred.borrow().clone().expect("deferred attr service");
@@ -821,7 +871,21 @@ impl ArgumentAttr {
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         let env = self.env.clone().expect("argument attr env");
         let cached_entry = self.argument_type_cache.borrow().get(&pos).cloned();
- else {
+        if let Some(cached) = cached_entry {
+            let cached = cached.borrow();
+            let data = ArgumentTypeData {
+                kind: cached.kind,
+                speculative_tree: cached.speculative_tree,
+                speculative_types: cached.speculative_types.clone(),
+                yield_expressions: cached.yield_expressions.clone(),
+                argtypes: cached.argtypes.clone(),
+                return_expressions: cached.return_expressions.clone(),
+            };
+            drop(cached);
+            let deferred_type = self.new_argument_deferred(ctx, syms, attr, tree, &env, data);
+            self.set_result(ctx, tree, deferred_type);
+            Ok(Some(deferred_type))
+        } else {
             Ok(None)
         }
     }
@@ -871,7 +935,7 @@ impl ArgumentAttr {
             tree,
             env,
         );
- =
+        if let crate::code::type_::TypeKindData::Deferred { argument, .. } =
             &mut ctx.typ_mut(deferred_type).kind
         {
             *argument = Some(Rc::new(RefCell::new(data)));
@@ -918,11 +982,35 @@ impl ArgumentAttr {
         result_info: &ResultInfo,
         deferred_attr_context: &crate::comp::deferred_attr::DeferredAttrContext,
     ) -> Result<TypeId, crate::code::symbol::CompletionFailure> {
- else {
+        if deferred_attr_context.mode == crate::comp::deferred_attr::AttrMode::SPECULATIVE {
+            // Port adapter (A3k): use the caller's Symtab borrow; attr.syms is
+            // already mutably borrowed by the enclosing attribution.
+            let recovery_type = syms.recovery_type;
+            let tt = if result_info.pt == Some(recovery_type) {
+                crate::comp::deferred_attr::deferred_type_complete_base(
+                    ctx,
+                    syms,
+                    attr,
+                    t,
+                    result_info,
+                    deferred_attr_context,
+                )?
+            } else {
+                self.overload_check(ctx, syms, attr, data, result_info, deferred_attr_context)?
+            };
+            data.borrow_mut().speculative_types.push((Rc::new(result_info.clone()), tt));
+            Ok(tt)
+        } else {
             let env = match &ctx.typ(t).kind {
                 crate::code::type_::TypeKindData::Deferred { env, .. } => Rc::clone(env),
                 _ => panic!("ClassCastException: DeferredType expected"),
             };
+            if !env.info.borrow().attribution_mode.is_speculative() {
+                let log = attr.log.borrow();
+                let pos = UniquePos::new(ctx, &log, data.borrow().speculative_tree);
+                drop(log);
+                self.argument_type_cache.borrow_mut().remove(&pos);
+            }
             crate::comp::deferred_attr::deferred_type_complete_base(
                 ctx,
                 syms,
@@ -964,8 +1052,24 @@ impl ArgumentAttr {
             } => not_pertinent.clone(),
             _ => Vec::new(),
         };
+        if msym.map(|msym| not_pertinent.contains(&msym)).unwrap_or(false) {
+            // Java: super.speculativeType(msym, phase)
+            let cache = match &ctx.typ(t).kind {
+                crate::code::type_::TypeKindData::Deferred {
+                    speculative_cache, ..
+                } => Rc::clone(speculative_cache),
+                _ => return None,
+            };
+            let entry = cache.borrow().get(msym, phase)?;
+            return ctx.tree(entry.speculative_tree).ty;
+        }
         for (result_info, ty) in &data.speculative_types {
             let deferred_attr_context = result_info.check_context.deferred_attr_context();
+            if deferred_attr_context.phase == phase
+                && deferred_attr_context.msym == msym
+            {
+                return Some(*ty);
+            }
         }
         Some(crate::code::symtab::no_type_id(ctx))
     }
@@ -999,6 +1103,23 @@ impl ArgumentAttr {
             } => not_pertinent.clone(),
             _ => Vec::new(),
         };
+        if deferred_attr_context
+            .msym
+            .map(|msym| not_pertinent.contains(&msym))
+            .unwrap_or(false)
+        {
+            // Java: super.speculativeTree(deferredAttrContext)
+            let cache = match &ctx.typ(t).kind {
+                crate::code::type_::TypeKindData::Deferred {
+                    speculative_cache, ..
+                } => Rc::clone(speculative_cache),
+                _ => return None,
+            };
+            return cache
+                .borrow()
+                .get(deferred_attr_context.msym, deferred_attr_context.phase)
+                .map(|entry| entry.speculative_tree);
+        }
         Some(data.speculative_tree)
     }
 
@@ -1044,8 +1165,27 @@ impl ArgumentAttr {
                     ),
                     _ => panic!("ClassCastException: JCConditional expected"),
                 };
+                if is_standalone {
+                    let ty = ctx.tree(speculative_tree).ty.unwrap_or_else(|| no_type_of(ctx));
+                    return Ok(local_info.check(ctx, syms, &attr.chk, 0, ty));
+                }
                 let pt = result_info.pt.unwrap_or_else(|| no_type_of(ctx));
+                if ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::VOID) {
+                    // this means we are returning a poly conditional from
+                    // void-compatible lambda expression
+                    let diag = attr.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::conditional_target_cant_be_void(),
+                    ));
+                    result_info.check_context.report(ctx, 0, &diag);
+                    return Ok(types_rc.create_error_type_original(ctx, Some(pt), syms));
+                }
                 // poly
+                if let Some(truepart) = truepart {
+                    self.check_speculative(ctx, syms, &types_rc, attr, truepart, &local_info)?;
+                }
+                if let Some(falsepart) = falsepart {
+                    self.check_speculative(ctx, syms, &types_rc, attr, falsepart, &local_info)?;
+                }
                 Ok(local_info.pt.unwrap_or_else(|| no_type_of(ctx)))
             }
             ArgumentKind::SwitchExpression => {
@@ -1053,6 +1193,13 @@ impl ArgumentAttr {
                 let cond_ctx = attr.conditional_context(Rc::clone(&result_info.check_context));
                 let local_info = result_info.dup_context(Rc::clone(&cond_ctx));
                 let pt = result_info.pt.unwrap_or_else(|| no_type_of(ctx));
+                if ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::VOID) {
+                    let diag = attr.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::switch_expression_target_cant_be_void(),
+                    ));
+                    result_info.check_context.report(ctx, 0, &diag);
+                    return Ok(types_rc.create_error_type_original(ctx, Some(pt), syms));
+                }
                 let yields = self.switch_expression_yields(ctx, data, speculative_tree);
                 let mut yield_list = yields;
                 while yield_list.non_empty() {
@@ -1062,6 +1209,9 @@ impl ArgumentAttr {
                         crate::tree::jc_tree::TreeKind::Yield { value, .. } => *value,
                         _ => panic!("ClassCastException: JCYield expected"),
                     };
+                    if let Some(value) = value {
+                        self.check_speculative(ctx, syms, &types_rc, attr, value, result_info)?;
+                    }
                 }
                 Ok(local_info.pt.unwrap_or_else(|| no_type_of(ctx)))
             }
@@ -1069,6 +1219,22 @@ impl ArgumentAttr {
                 // Java: ExplicitLambdaType.overloadCheck (ArgumentAttr.java:645-675)
                 let argtypes = {
                     let mut data_mut = data.borrow_mut();
+                    if data_mut.argtypes.is_none() {
+                        let params = match &ctx.tree(speculative_tree).kind {
+                            crate::tree::jc_tree::TreeKind::Lambda { params, .. } => params.clone(),
+                            _ => panic!("ClassCastException: JCLambda expected"),
+                        };
+                        let mut result: List<TypeId> = List::nil();
+                        let mut current = params;
+                        while current.non_empty() {
+                            let param = *current.head();
+                            if let Some(ty) = ctx.tree(param).ty {
+                                result = result.append(ty);
+                            }
+                            current = current.tail();
+                        }
+                        data_mut.argtypes = Some(result);
+                    }
                     data_mut.argtypes.clone().expect("argtypes")
                 };
                 let target_info = attr.
@@ -1078,6 +1244,9 @@ impl ArgumentAttr {
                     Err(error) => {
                         // Java: resultInfo.checkContext.report(null,
                         // ex.getDiagnostic()); return null;
+                        if let Some(diagnostic) = error.get_diagnostic() {
+                            result_info.check_context.report(ctx, 0, diagnostic);
+                        }
                         return Ok(no_type_of(ctx));
                     }
                 };
@@ -1093,7 +1262,23 @@ impl ArgumentAttr {
                     }
                     _ => panic!("ClassCastException: JCLambda expected"),
                 };
- else {
+                if body_is_expression {
+                    let body = match &ctx.tree(speculative_tree).kind {
+                        crate::tree::jc_tree::TreeKind::Lambda { body, .. } => {
+                            body.expect("lambda body")
+                        }
+                        _ => crate::util::assert::error(),
+                    };
+                    let body_ty = ctx.tree(body).ty.unwrap_or_else(|| no_type_of(ctx));
+                    self.check_speculative_type(
+                        ctx,
+                        syms,
+                        &types_rc,
+                        attr,
+                        body_ty,
+                        &body_result_info,
+                    )?;
+                } else {
                     let returns = self.lambda_return_expressions(ctx, data, speculative_tree);
                     let mut return_list = returns;
                     while return_list.non_empty() {
@@ -1136,7 +1321,13 @@ impl ArgumentAttr {
                         _ => panic!("ClassCastException: JCNewClass expected"),
                     },
                 };
-)
+                if kind == ArgumentKind::ResolvedConstructor
+                    && mtype
+                        .map(|m| {
+                            let tag = ctx.typ(m).get_tag();
+                            tag == crate::code::type_tag::TypeTag::ERROR
+                                || tag == crate::code::type_tag::TypeTag::NONE
+                        })
                         .unwrap_or(true)
                 {
                     // The speculative diamond inference against this candidate's
@@ -1157,7 +1348,10 @@ impl ArgumentAttr {
                         let tsym = ctx.typ(clazz_type).tsym.expect("clazz type symbol");
                         let mut local_info =
                             result_info.dup_context(attr.diamond_context(clazz, tsym));
-) == Some(true)
+                        if local_info.pt.map(|pt| {
+                            ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
+                                || ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::UNDETVAR)
+                        }) == Some(true)
                         {
                             local_info.pt = Some(crate::code::symtab::no_type_id(ctx));
                         }
@@ -1166,7 +1360,11 @@ impl ArgumentAttr {
                 };
                 let t = match mtype {
                     Some(mtype)
- && ctx.typ(mtype).is_partial() =>
+                        if {
+                            let tag = ctx.typ(mtype).get_tag();
+                            tag == crate::code::type_tag::TypeTag::METHOD
+                                || tag == crate::code::type_tag::TypeTag::FORALL
+                        } && ctx.typ(mtype).is_partial() =>
                     {
                         // Java: ((PartiallyInferredMethodType) mtype).check(localInfo)
                         let chk_rc = Rc::clone(&attr.chk);
@@ -1212,6 +1410,23 @@ impl ArgumentAttr {
                         )
                     }
                 };
+                if kind == ArgumentKind::ResolvedConstructor
+                    && ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::ERROR)
+                {
+                    crate::comp::resolve::throw_inapplicable_method_exception(None);
+                }
+                if std::env::var_os("DSH_DEBUG_OVERLOAD").is_some()
+                    && kind == ArgumentKind::ResolvedConstructor
+                {
+                    let mtype_tag = mtype.map(|m| ctx.typ(m).get_tag());
+                    let target_display = local_info
+                        .pt
+                        .map(|pt| crate::comp::attr::type_display_of(ctx, pt));
+                    let t_display = crate::comp::attr::type_display_of(ctx, t);
+                    eprintln!(
+                        "[DIAMOND-CHECK] target={target_display:?} t={t_display} mtype={mtype_tag:?}",
+                    );
+                }
                 let local_info = Rc::new(local_info);
                 data.borrow_mut().speculative_types.push((local_info, t));
                 Ok(t)

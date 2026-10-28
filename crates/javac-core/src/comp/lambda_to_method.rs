@@ -467,6 +467,18 @@ impl LambdaToMethod {
         }
     }
     fn visit_lambda_l2m(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        if self.context.is_none()
+            && std::env::var_os("DSH_DEBUG_L2M").is_some()
+        {
+            let pos = ctx.tree(tree).pos;
+            let keys: Vec<(i32, u32)> = self
+                .context_map
+                .borrow()
+                .keys()
+                .map(|t| (ctx.tree(*t).pos, t.index()))
+                .collect();
+            eprintln!("[L2M-NOCTX] lambda_pos={pos} contexts={keys:?}");
+        }
         let context_tree = match self.context {
             Some(context_tree) => context_tree,
             None => {
@@ -1023,6 +1035,33 @@ impl LambdaAnalyzerPreprocessor {
             TreeKind::Ident { sym, .. } => *sym,
             _ => None,
         };
+        if let Some(sym) = sym {
+            if std::env::var_os("DSH_DEBUG_L2M").is_some()
+                && ctx.sym(sym).name.to_java_string().to_string_lossy() == "gson"
+            {
+                eprintln!(
+                    "[CAP] name=gson key={:?} filter={} owner={:?} flags={}",
+                    self.context_key(ctx),
+                    self.lambda_ident_symbol_filter(ctx, sym),
+                    ctx.sym(sym).owner.map(|o| ctx.sym(o).kind),
+                    ctx.sym(sym).flags_field,
+                );
+            }
+            if self.context_key(ctx).is_some() && self.lambda_ident_symbol_filter(ctx, sym) {
+                let const_value = ctx
+                    .sym(sym)
+                    .ty
+                    .and_then(|ty| ctx.typ(ty).const_value().cloned());
+                if ctx.sym(sym).kind == Kind::VAR
+                    && ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::MTH)
+                    && const_value.is_none()
+                {
+                    self.capture_symbol(ctx, sym, LambdaSymbolKind::CAPTURED_VAR);
+                } else if ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::TYP) {
+                    self.capture_this_symbol(ctx, sym);
+                }
+            }
+        }
         self.analyzer_default_visit_ident(ctx, tree);
     }
     fn analyzer_visit_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -1267,6 +1306,22 @@ impl LambdaAnalyzerPreprocessor {
             }
         }
         if let Some(sym) = sym {
+            if ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind) == Some(Kind::MTH) {
+                if std::env::var_os("DSH_DEBUG_L2M").is_some()
+                    && ctx.sym(sym).name.to_java_string().to_string_lossy() == "gson"
+                {
+                    eprintln!(
+                        "[VARDEF] gson frames={:?}",
+                        self.frame_stack
+                            .iter()
+                            .map(|f| ctx.tree(f.tree).tag)
+                            .collect::<Vec<_>>(),
+                    );
+                }
+                if let Some(frame) = self.frame_stack.first_mut() {
+                    frame.add_local(sym);
+                }
+            }
         }
         // Clone after recording the declaration so leaving the var-def frame
         // keeps the local visible to the enclosing method/lambda frames.
@@ -1599,6 +1654,109 @@ impl LambdaAnalyzerPreprocessor {
             )
         };
         let _ = mut_receiver;
+        if !already {
+            let (param_orig, captured_orig, outer_this_orig, this_orig) = {
+                let contexts = self.context_map.borrow();
+                let lambda = match contexts.get(&tree).map(|context| &context.kind) {
+                    Some(TranslationContextKind::Lambda(lambda)) => lambda,
+                    _ => return,
+                };
+                (
+                    captured_symbols(lambda, LambdaSymbolKind::PARAM),
+                    captured_symbols(lambda, LambdaSymbolKind::CAPTURED_VAR)
+                        .into_iter()
+                        .map(|sym| (sym, context_symbol(lambda, LambdaSymbolKind::CAPTURED_VAR, sym).expect("captured var")))
+                        .collect::<Vec<(SymbolId, SymbolId)>>(),
+                    captured_symbols(lambda, LambdaSymbolKind::CAPTURED_OUTER_THIS)
+                        .into_iter()
+                        .map(|sym| (sym, context_symbol(lambda, LambdaSymbolKind::CAPTURED_OUTER_THIS, sym).expect("outer this")))
+                        .collect::<Vec<(SymbolId, SymbolId)>>(),
+                    captured_symbols(lambda, LambdaSymbolKind::CAPTURED_THIS),
+                )
+            };
+            if std::env::var_os("DSH_DEBUG_L2M").is_some() {
+                eprintln!(
+                    "[COMPLETE] tree={tree:?} params={} captured={} outer_this={} this={}",
+                    param_orig.len(),
+                    captured_orig.len(),
+                    outer_this_orig.len(),
+                    this_orig.len(),
+                );
+            }
+            let owner_flags = ctx.sym(owner).flags_field;
+            let owner_owner_flags = ctx.sym(owner).owner.map(|encl| ctx.sym(encl).flags_field).unwrap_or(0);
+            let in_interface = owner_flags & flags::INTERFACE as i64 != 0;
+            let this_referenced = !this_orig.is_empty();
+            let mut new_flags = flags::SYNTHETIC as i64
+                | flags::LAMBDA_METHOD
+                | (owner_flags & flags::STRICTFP as i64)
+                | (owner_owner_flags & flags::STRICTFP as i64)
+                | flags::PRIVATE as i64;
+            if this_referenced {
+                if in_interface {
+                    new_flags |= flags::DEFAULT;
+                }
+            } else {
+                new_flags |= flags::STATIC as i64;
+            }
+            ctx.sym_mut(translated_sym).flags_field = new_flags;
+            let mut param_defs: List<TreeId> = List::nil();
+            let mut param_symbols: List<SymbolId> = List::nil();
+            let mut param_types: List<TypeId> = List::nil();
+            for (_, translated) in captured_orig.iter().chain(outer_this_orig.iter()) {
+                let var_def = {
+                    let mut syms = self.syms.borrow_mut();
+                    let mut make = self.make.borrow_mut();
+                    make.var_def_symbol(ctx, &mut syms, *translated, None)
+                };
+                param_defs = param_defs.append(var_def);
+                param_symbols = param_symbols.append(*translated);
+                param_types = param_types.append(ctx.sym(*translated).ty.expect("synthetic param type"));
+            }
+            for sym in param_orig.iter() {
+                let translated = {
+                    let contexts = self.context_map.borrow();
+                    match contexts.get(&tree).map(|context| &context.kind) {
+                        Some(TranslationContextKind::Lambda(lambda)) => context_symbol(lambda, LambdaSymbolKind::PARAM, *sym).expect("translated param"),
+                        _ => continue,
+                    }
+                };
+                let var_def = {
+                    let mut syms = self.syms.borrow_mut();
+                    let mut make = self.make.borrow_mut();
+                    make.var_def_symbol(ctx, &mut syms, translated, None)
+                };
+                param_defs = param_defs.append(var_def);
+                param_symbols = param_symbols.append(translated);
+                param_types = param_types.append(ctx.sym(translated).ty.expect("synthetic param type"));
+            }
+            let serializable = self.lambda_context_is_serializable(ctx, target);
+            let name = if serializable {
+                self.serialized_lambda_name(ctx, tree, owner, target, assigned_to, self_sym, &captured_orig)
+            } else {
+                self.lambda_name(ctx, owner)
+            };
+            ctx.sym_mut(translated_sym).name = name;
+            if let SymbolKind::MethodSymbol { params: slot, .. } = &mut ctx.sym_mut(translated_sym).kind_data {
+                *slot = param_symbols;
+            }
+            let descriptor = self
+                .find_descriptor_type_checked(ctx, target)
+                .expect("descriptor type");
+            let generated = {
+                let syms = self.syms.borrow();
+                self.types.erasure(ctx, &syms, descriptor)
+            };
+            let new_type = self
+                .types
+                .create_method_type_with_parameters(ctx, generated, param_types);
+            ctx.sym_mut(translated_sym).ty = Some(new_type);
+            if let Some(context) = self.context_map.borrow_mut().get_mut(&tree) {
+                if let TranslationContextKind::Lambda(lambda) = &mut context.kind {
+                    lambda.synthetic_params = Some(param_defs.iter().collect::<Vec<TreeId>>());
+                }
+            }
+        }
         if let Some(receiver) = method_reference_receiver {
             if let Some(context) = self.context_map.borrow_mut().get_mut(&tree) {
                 if let TranslationContextKind::Lambda(lambda) = &mut context.kind {
@@ -2030,6 +2188,30 @@ impl LambdaAnalyzerPreprocessor {
     fn capture_symbol(&mut self, ctx: &mut CompilerContext, sym: SymbolId, skind: LambdaSymbolKind) {
         let mut local_context = self.context_key(ctx);
         while let Some(context_tree) = local_context {
+            if ctx.tree(context_tree).has_tag(Tag::LAMBDA) {
+                let depth = self
+                    .context_map
+                    .borrow()
+                    .get(&context_tree)
+                    .map(|context| context.depth)
+                    .expect("context depth");
+                if std::env::var_os("DSH_DEBUG_L2M").is_some() {
+                    eprintln!(
+                        "[CAPSYM] tree={} depth={} decl={:?} frames={:?}",
+                        ctx.sym(sym).name.to_java_string().to_string_lossy(),
+                        depth,
+                        self.captured_decl(ctx, depth, sym),
+                        self.frame_stack
+                            .iter()
+                            .map(|f| (ctx.tree(f.tree).tag, f.contains(sym)))
+                            .collect::<Vec<_>>(),
+                    );
+                }
+                if self.captured_decl(ctx, depth, sym).is_none() {
+                    break;
+                }
+                self.add_lambda_symbol(ctx, context_tree, sym, skind);
+            }
             local_context = self
                 .context_map
                 .borrow()

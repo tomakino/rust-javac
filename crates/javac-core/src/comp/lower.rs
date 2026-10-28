@@ -385,7 +385,9 @@ impl Lower {
                 None,
             )
         };
- = &mut ctx.tree_mut(tree).kind
+        if let TreeKind::NewClass {
+            constructor: slot, ..
+        } = &mut ctx.tree_mut(tree).kind
         {
             *slot = Some(constructor);
         }
@@ -408,7 +410,7 @@ impl Lower {
         let tree = self.make.borrow_mut().unary(ctx, optag, arg);
         let operator_ty = ctx.sym(operator).ty.expect("operator type");
         let restype = ctx.typ(operator_ty).get_return_type(ctx);
- = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::Unary { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(operator);
         }
         ctx.tree_mut(tree).ty = restype;
@@ -437,7 +439,7 @@ impl Lower {
         let tree = self.make.borrow_mut().binary(ctx, optag, lhs, rhs);
         let operator_ty = ctx.sym(operator).ty.expect("operator type");
         let restype = ctx.typ(operator_ty).get_return_type(ctx);
- = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::Binary { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(operator);
         }
         ctx.tree_mut(tree).ty = restype;
@@ -465,7 +467,7 @@ impl Lower {
             operators.resolve_binary(ctx, &mut syms, &self.types, pos, binary_tag, lhs_type, rhs_type)
         };
         let tree = self.make.borrow_mut().assignop(ctx, optag, lhs, rhs);
- = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::AssignOp { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(operator);
         }
         ctx.tree_mut(tree).ty = Some(lhs_type);
@@ -479,6 +481,9 @@ impl Lower {
     /// string concatenation is built entirely out of reference operations.
     fn make_string(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         let ty = ctx.tree(tree).ty.expect("attributed string operand");
+        if !ctx.typ(ty).is_primitive_or_void() {
+            return tree;
+        }
         let pos = ctx.tree(tree).pos;
         let diagnostic_pos = Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
         let string_type = self.syms.borrow().string_type;
@@ -534,6 +539,9 @@ impl Lower {
                 self.target.synthetic_name_char() as u8,
                 &self.names.empty,
             );
+            if self.lookup_synthetic(ctx, &name, scope).is_none() {
+                return name;
+            }
         }
     }
 
@@ -590,6 +598,22 @@ impl Lower {
     /// outermost member or class definition is scanned to fill the cache, as
     /// the upstream classDef helper does.
     fn class_def(&mut self, ctx: &mut CompilerContext, c: SymbolId) -> Option<TreeId> {
+        if let Some(def) = self.classdefs.get(&c) {
+            return Some(*def);
+        }
+        if let Some(member) = self.outermost_member_def {
+            let mut map = ClassMap::new();
+            crate::tree::jc_tree::accept(ctx, member, &mut map);
+            self.classdefs.extend(map.classdefs);
+            if let Some(def) = self.classdefs.get(&c) {
+                return Some(*def);
+            }
+        }
+        if let Some(outer) = self.outermost_class_def {
+            let mut map = ClassMap::new();
+            crate::tree::jc_tree::accept(ctx, outer, &mut map);
+            self.classdefs.extend(map.classdefs);
+        }
         self.classdefs.get(&c).copied()
     }
 
@@ -620,7 +644,12 @@ impl Lower {
             _ => panic!("ClassCastException: class symbol expected"),
         };
         let members = ctx.alloc_scope(crate::code::scope::Scope::new_scope_impl(Some(c)));
- = &mut ctx.sym_mut(c).kind_data
+        if let SymbolKind::ClassSymbol {
+            flatname: flat_slot,
+            sourcefile: source_slot,
+            members_field,
+            ..
+        } = &mut ctx.sym_mut(c).kind_data
         {
             *flat_slot = flat;
             *source_slot = sourcefile;
@@ -629,7 +658,11 @@ impl Lower {
         ctx.sym_mut(c).flags_field = flags;
         let ctype = ctx.sym(c).ty.expect("class type");
         let object_type = self.syms.borrow().object_type;
- = &mut ctx.typ_mut(ctype).kind
+        if let TypeKindData::ClassType {
+            supertype_field,
+            interfaces_field,
+            ..
+        } = &mut ctx.typ_mut(ctype).kind
         {
             *supertype_field = Some(object_type);
             *interfaces_field = Some(List::nil());
@@ -652,12 +685,13 @@ impl Lower {
             List::nil(),
             List::nil(),
         );
- = &mut ctx.tree_mut(cdef).kind {
+        if let TreeKind::ClassDecl { sym: sym_slot, .. } = &mut ctx.tree_mut(cdef).kind {
             *sym_slot = Some(c);
         }
         ctx.tree_mut(cdef).ty = Some(ctype);
         ctx.tree_mut(cdef).pos = odef_pos;
- = &mut ctx.tree_mut(odef).kind
+        if add_to_defs
+            && let TreeKind::ClassDecl { defs, .. } = &mut ctx.tree_mut(odef).kind
         {
             let new_defs = defs.prepend(cdef);
             *defs = new_defs;
@@ -684,6 +718,12 @@ impl Lower {
             ctx,
         );
         for sym in symbols {
+            if ctx.sym(sym).kind == Kind::TYP
+                && ctx.sym(sym).name == self.names.empty
+                && (ctx.sym(sym).flags_field & crate::code::flags::INTERFACE as i64) == 0
+            {
+                return sym;
+            }
         }
         let flags =
             (crate::code::flags::STATIC | crate::code::flags::SYNTHETIC) as i64;
@@ -705,6 +745,9 @@ impl Lower {
         pos: Option<Rc<dyn DiagnosticPosition>>,
         enum_class: SymbolId,
     ) -> Rc<RefCell<EnumMapping>> {
+        if let Some(map) = self.enum_switch_map.get(&enum_class) {
+            return Rc::clone(map);
+        }
         let map = Rc::new(RefCell::new(EnumMapping::new(self, ctx, pos, enum_class)));
         self.enum_switch_map
             .insert(enum_class, Rc::clone(&map));
@@ -724,8 +767,18 @@ impl Lower {
         ctx: &mut CompilerContext,
         c: SymbolId,
     ) -> Option<List<SymbolId>> {
+        if let Some(fvs) = self.freevar_cache.get(&c) {
+            return Some(fvs.clone());
+        }
         let owner = ctx.sym(c).owner.expect("local class owner");
- else if let Some(copy_owner) = self.owner_to_copy_free_vars_from(ctx, c) {
+        if ctx.sym(owner).kind.matches(crate::code::kinds::KindSelector::VAL_MTH) {
+            let class_tree = self.class_def(ctx, c).expect("local class definition");
+            let mut collector = FreeVarCollector::new(self, c, owner);
+            collector.scan(ctx, Some(class_tree));
+            let fvs = collector.fvs.clone();
+            self.freevar_cache.insert(c, fvs.clone());
+            Some(fvs)
+        } else if let Some(copy_owner) = self.owner_to_copy_free_vars_from(ctx, c) {
             let fvs = self.freevar_cache.get(&copy_owner).cloned();
             self.freevar_cache.insert(c, fvs.clone().unwrap_or_else(List::nil));
             fvs
@@ -745,8 +798,20 @@ impl Lower {
         ctx: &mut CompilerContext,
         c: SymbolId,
     ) -> Option<SymbolId> {
+        if !Symbol::is_directly_or_indirectly_local(ctx, c) {
+            return None;
+        }
         let mut current_owner = ctx.sym(c).owner.expect("class owner");
         while let Some(owner_of_owner) = ctx.sym(current_owner).owner {
+            if !ctx.sym(owner_of_owner)
+                .kind
+                .matches(crate::code::kinds::KindSelector::TYP)
+            {
+                break;
+            }
+            if !Symbol::is_directly_or_indirectly_local(ctx, current_owner) {
+                break;
+            }
             current_owner = owner_of_owner;
         }
         let outer_owner = ctx.sym(current_owner).owner?;
@@ -754,7 +819,13 @@ impl Lower {
             let syms = self.syms.borrow();
             crate::code::symbol::symbol_is_sub_class(ctx, &self.types, &syms, c, current_owner)
         };
- else {
+        if ctx.sym(outer_owner)
+            .kind
+            .matches(crate::code::kinds::KindSelector::VAL_MTH)
+            && is_sub
+        {
+            Some(current_owner)
+        } else {
             None
         }
     }
@@ -771,10 +842,26 @@ impl Lower {
             return crate::code::symbol::AccessCode::DEREF.code();
         };
         let encl_tag = ctx.tree(encl_op).get_tag();
- = &ctx.tree(encl_op).kind
+        if encl_tag == Tag::ASSIGN
+            && let TreeKind::Assign { lhs: Some(lhs), .. } = &ctx.tree(encl_op).kind
             && tree == tree_info::skip_parens(ctx, *lhs)
         {
             return crate::code::symbol::AccessCode::ASSIGN.code();
+        }
+        if (encl_tag.is_inc_or_dec_unary_op() || encl_tag.is_assignop())
+            && let Some(operand) = Self::operator_operand_left(ctx, encl_op)
+            && tree == tree_info::skip_parens(ctx, operand)
+        {
+            let operator = match &ctx.tree(encl_op).kind {
+                TreeKind::Unary { operator, .. } | TreeKind::AssignOp { operator, .. } => {
+                    *operator
+                }
+                _ => None,
+            };
+            if let Some(operator) = operator {
+                let mut operator_symbol = ctx.sym(operator).clone();
+                return operator_symbol.get_access_code(encl_tag);
+            }
         }
         crate::code::symbol::AccessCode::DEREF.code()
     }
@@ -937,7 +1024,9 @@ impl Lower {
                         SymbolKind::OperatorSymbol { opcode, .. } => *opcode,
                         _ => panic!("AssertionError: operator symbol expected"),
                     };
- else {
+                    if opcode == crate::jvm::byte_codes::STRING_ADD {
+                        List::of(self.syms.borrow().object_type)
+                    } else {
                         let operator_ty = ctx.sym(operator).ty.expect("operator type");
                         let params = self.types.get_parameter_types_public(ctx, operator_ty);
                         params.tail()
@@ -962,10 +1051,29 @@ impl Lower {
             }
             _ => panic!("AssertionError: unexpected access symbol kind"),
         };
+        if prot_access && ref_super {
+            acode += 1;
+        }
         let mut argtypes = argtypes;
+        if (ctx.sym(vsym).flags_field & crate::code::flags::STATIC as i64) == 0 {
+            let owner = ctx.sym(vsym).owner.expect("access symbol owner");
+            let owner_ty = ctx.sym(owner).ty.expect("access symbol owner type");
+            let owner_erasure = self.types.erasure(ctx, &self.syms.borrow(), owner_ty);
+            argtypes = argtypes.prepend(owner_erasure);
+        }
         let index = acode as usize;
+        if let Some(cached) = self
+            .access_syms
+            .get(&vsym)
+            .and_then(|accessors| accessors.get(index).copied().flatten())
+        {
+            return cached;
+        }
         let acc_owner_interface = ctx.sym(acc_owner).is_interface();
         let mut flags = crate::code::flags::STATIC | crate::code::flags::SYNTHETIC;
+        if acc_owner_interface {
+            flags |= crate::code::flags::PUBLIC;
+        }
         let name = self.access_name(anum, acode);
         let method_class = self.syms.borrow().method_class;
         let method_ty = ctx.alloc_type(Type::new(
@@ -980,6 +1088,9 @@ impl Lower {
         ));
         let accessor_symbol = Symbol::new_method_symbol(flags as i64, name, method_ty, acc_owner);
         let accessor = ctx.alloc_symbol(accessor_symbol);
+        if let Some(accessors) = self.access_syms.get_mut(&vsym) {
+            accessors[index] = Some(accessor);
+        }
         let members = ctx.sym(acc_owner).members().expect("access owner members");
         self.enter_synthetic(ctx, accessor, members);
         accessor
@@ -997,7 +1108,52 @@ impl Lower {
         prot_access: bool,
         tree: TreeId,
     ) -> SymbolId {
- else {
+        if prot_access {
+            let mut c = self.current_class.expect("current class");
+            if ctx.tree(tree).has_tag(Tag::SELECT)
+                && (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) == 0
+            {
+                let qualifier = match &ctx.tree(tree).kind {
+                    TreeKind::FieldAccess {
+                        selected: Some(selected),
+                        ..
+                    } => ctx
+                        .tree(*selected)
+                        .ty
+                        .and_then(|ty| ctx.typ(ty).tsym)
+                        .expect("qualifier symbol"),
+                    _ => panic!("AssertionError: qualified access expected"),
+                };
+                loop {
+                    let is_sub = {
+                        let syms = self.syms.borrow();
+                        crate::code::symbol::symbol_is_sub_class(
+                            ctx, &self.types, &syms, qualifier, c,
+                        )
+                    };
+                    if is_sub {
+                        return c;
+                    }
+                    let owner = ctx.sym(c).owner.expect("class owner");
+                    c = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+                }
+            } else {
+                let sym_owner = ctx.sym(sym).owner.expect("symbol owner");
+                loop {
+                    let is_sub = {
+                        let syms = self.syms.borrow();
+                        crate::code::symbol::symbol_is_sub_class(
+                            ctx, &self.types, &syms, c, sym_owner,
+                        )
+                    };
+                    if is_sub {
+                        return c;
+                    }
+                    let owner = ctx.sym(c).owner.expect("class owner");
+                    c = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+                }
+            }
+        } else {
             let owner = ctx.sym(sym).owner.expect("symbol owner");
             crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class")
         }
@@ -1022,8 +1178,26 @@ impl Lower {
         let mut tree = tree;
         let current_class = self.current_class.expect("current class");
         loop {
+            if ctx.sym(sym).kind != Kind::VAR {
+                break;
+            }
             let owner = ctx.sym(sym).owner.expect("free variable owner");
+            if ctx.sym(owner).kind != Kind::MTH {
+                break;
+            }
             let owner_encl = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+            if Some(owner_encl) == Some(current_class) {
+                break;
+            }
+            if let Some(constant) = ctx.sym(sym).get_const_value() {
+                let sym_ty = ctx.sym(sym).ty.expect("variable type");
+                return self.make_lit(ctx, sym_ty, &constant);
+            }
+            if let Some(translation) = &self.lambda_translation_map
+                && let Some(translated) = translation.get(&sym).copied()
+            {
+                return self.make.borrow_mut().ident_symbol(ctx, translated);
+            }
             let proxy = match self.proxies.get(&sym) {
                 Some(proxy) => *proxy,
                 None => break,
@@ -1043,14 +1217,113 @@ impl Lower {
         match sym_kind {
             Kind::TYP => {
                 let owner = ctx.sym(sym).owner.expect("type owner");
+                if ctx.sym(owner).kind != Kind::PCK {
+                    let flatname = ctx.sym(sym).flat_name();
+                    let shortname = crate::util::convert::short_name(&flatname);
+                    let mut base = base;
+                    while let Some(current_base) = base {
+                        if let Some(base_sym) = tree_info::symbol(ctx, current_base)
+                            && ctx.sym(base_sym).kind != Kind::PCK
+                        {
+                            base = match &ctx.tree(current_base).kind {
+                                TreeKind::FieldAccess { selected, .. } => *selected,
+                                _ => None,
+                            };
+                        } else {
+                            break;
+                        }
+                    }
+                    match &mut ctx.tree_mut(tree).kind {
+                        TreeKind::Ident { name, .. } => {
+                            *name = shortname;
+                        }
+                        TreeKind::FieldAccess { name, .. } => {
+                            *name = shortname;
+                        }
+                        _ => {
+                            if base.is_none() {
+                                tree = self.make.borrow_mut().ident_symbol(ctx, sym);
+                                if let TreeKind::Ident { name, .. } = &mut ctx.tree_mut(tree).kind {
+                                    *name = shortname;
+                                }
+                            } else if let Some(base) = base
+                                && let TreeKind::FieldAccess { selected, name, .. } =
+                                    &mut ctx.tree_mut(tree).kind
+                            {
+                                *selected = Some(base);
+                                *name = shortname;
+                            }
+                        }
+                    }
+                }
                 tree
             }
             Kind::MTH | Kind::VAR => {
                 let owner = ctx.sym(sym).owner.expect("member owner");
- else if ctx.sym(owner).kind == Kind::MTH
+                if ctx.sym(owner).kind == Kind::TYP {
+                    let prot_access = (ref_super && !self.needs_private_access(ctx, sym))
+                        || self.needs_protected_access(ctx, sym, tree);
+                    let acc_req = prot_access || self.needs_private_access(ctx, sym);
+                    let predef_class = self.syms.borrow().predef_class;
+                    let base_req = base.is_none()
+                        && Some(owner) != Some(predef_class)
+                        && !{
+                            let syms = self.syms.borrow();
+                            crate::code::symbol::symbol_is_member_of(
+                                ctx, &self.types, &syms, sym, current_class,
+                            )
+                        };
+                    if acc_req || base_req {
+                        if ctx.sym(sym).kind == Kind::VAR
+                            && let Some(constant) = ctx.sym(sym).get_const_value()
+                        {
+                            self.add_pruned_info(tree);
+                            let sym_ty = ctx.sym(sym).ty.expect("variable type");
+                            return self.make_lit(ctx, sym_ty, &constant);
+                        }
+                        if acc_req {
+                            let mut args = List::nil();
+                            let mut base = base;
+                            if (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) == 0 {
+                                if base.is_none() {
+                                    base = Some(self.make_owner_this(ctx, ctx.tree(tree).pos, sym, true));
+                                }
+                                args = args.prepend(base.expect("access base"));
+                                base = None;
+                            }
+                            let access = self.access_symbol(
+                                ctx, sym, tree, encl_op, prot_access, ref_super,
+                            );
+                            let access_owner = ctx.sym(access).owner.expect("access owner");
+                            let receiver = if let Some(base) = base {
+                                self.select_symbol(ctx, base, access)
+                            } else {
+                                let qual = {
+                                    self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), access_owner)
+                                };
+                                self.select_symbol(ctx, qual, access)
+                            };
+                            return self.make.borrow_mut().app_with_args(ctx, receiver, args);
+                        } else if base_req {
+                            let tree_pos = ctx.tree(tree).pos;
+                            let pos: Rc<dyn DiagnosticPosition> = Rc::new(
+                                crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(tree_pos),
+                            );
+                            let base = self.access_base(ctx, &pos, sym);
+                            let selected = self.select_symbol(ctx, base, sym);
+                            if let Some(ty) = ctx.tree(tree).ty {
+                                ctx.tree_mut(selected).ty = Some(ty);
+                            }
+                            return selected;
+                        }
+                    }
+                } else if ctx.sym(owner).kind == Kind::MTH
                     && let Some(translation) = &self.lambda_translation_map
                 {
                     let base_sym = crate::code::symbol::base_symbol(ctx, sym);
+                    if let Some(translated) = translation.get(&base_sym).copied() {
+                        tree = self.make.borrow_mut().ident_symbol(ctx, translated);
+                    }
                 }
                 tree
             }
@@ -1068,7 +1341,16 @@ impl Lower {
         pos: &Rc<dyn DiagnosticPosition>,
         sym: SymbolId,
     ) -> TreeId {
- else {
+        if (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) != 0 {
+            let owner = ctx.sym(sym).owner.expect("symbol owner");
+            let qual = {
+                self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), owner)
+            };
+            // Java: access(make.QualIdent(sym.owner)) — the single-argument
+            // access reads the symbol from the qualifier tree (the owner), not
+            // the accessed member.
+            self.access(ctx, owner, qual, None, false)
+        } else {
             self.make_owner_this_diag(ctx, pos, sym, true)
         }
     }
@@ -1079,24 +1361,56 @@ impl Lower {
     /// the current class and private constructors of directly or indirectly
     /// local classes are relaxed to package access and do not need one either.
     fn needs_private_access(&mut self, ctx: &mut CompilerContext, sym: SymbolId) -> bool {
+        if self.target.has_nestmate_access() {
+            return false;
+        }
         let current_class = self.current_class.expect("current class");
+        if (ctx.sym(sym).flags_field & crate::code::flags::PRIVATE as i64) == 0
+            || ctx.sym(sym).owner == Some(current_class)
+        {
+            return false;
+        }
         let is_init = ctx.sym(sym).name == self.names.init;
         let owner = ctx.sym(sym).owner.expect("symbol owner");
+        if is_init && Symbol::is_directly_or_indirectly_local(ctx, owner) {
+            ctx.sym_mut(sym).flags_field &= !(crate::code::flags::PRIVATE as i64);
+            return false;
+        }
         true
     }
 
     /// Determine whether a symbol needs an access method for protected access
     /// from another package.
     fn needs_protected_access(&mut self, ctx: &mut CompilerContext, sym: SymbolId, tree: TreeId) -> bool {
+        if self.disable_protected_accessors {
+            return false;
+        }
+        if (ctx.sym(sym).flags_field & crate::code::flags::PROTECTED as i64) == 0 {
+            return false;
+        }
         let current_class = self.current_class.expect("current class");
         let owner = ctx.sym(sym).owner.expect("symbol owner");
         let current_owner = ctx.sym(current_class).owner;
+        if ctx.sym(owner).owner == current_owner {
+            return false;
+        }
         let sym_packge = crate::code::symbol::packge(ctx, sym);
         let current_packge = crate::code::symbol::packge(ctx, current_class);
+        if sym_packge == current_packge {
+            return false;
+        }
         let is_sub = {
             let syms = self.syms.borrow();
             crate::code::symbol::symbol_is_sub_class(ctx, &self.types, &syms, current_class, owner)
         };
+        if !is_sub {
+            return true;
+        }
+        if (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) != 0
+            || !ctx.tree(tree).has_tag(Tag::SELECT)
+        {
+            return false;
+        }
         let selected = match &ctx.tree(tree).kind {
             TreeKind::FieldAccess {
                 selected: Some(selected),
@@ -1104,6 +1418,9 @@ impl Lower {
             } => *selected,
             _ => return false,
         };
+        if tree_info::name(ctx, selected) == Some(self.names._super.clone()) {
+            return false;
+        }
         let selected_tsym = ctx
             .tree(selected)
             .ty
@@ -1130,7 +1447,14 @@ impl Lower {
         pos: &Rc<dyn DiagnosticPosition>,
         c: SymbolId,
     ) -> TreeId {
- else {
+        if self.current_class == Some(c) {
+            let c_ty = ctx.sym(c).ty.expect("qualifier type");
+            let erasure = {
+                let syms = self.syms.borrow();
+                self.types.erasure(ctx, &syms, c_ty)
+            };
+            self.make.borrow_mut().this_expr(ctx, erasure)
+        } else {
             self.make_outer_this(ctx, pos, c)
         }
     }
@@ -1148,6 +1472,10 @@ impl Lower {
         c: SymbolId,
     ) -> TreeId {
         let mut ots = self.outer_this_stack.clone();
+        if ots.is_empty() {
+            self.report_no_outer_instance(ctx, pos, c);
+            panic!("AssertionError: no outer instance in scope");
+        }
         let mut ot = ots[0];
         let ident = self.make.borrow_mut().ident_symbol(ctx, ot);
         let mut tree = self.access(ctx, ot, ident, None, false);
@@ -1159,9 +1487,25 @@ impl Lower {
         while otc != c {
             loop {
                 ots.remove(0);
+                if ots.is_empty() {
+                    self.report_no_outer_instance(ctx, pos, c);
+                    return tree;
+                }
                 ot = ots[0];
+                if ctx.sym(ot).owner == Some(otc) {
+                    break;
+                }
             }
             let owner_kind = ctx.sym(otc).owner.map(|owner| ctx.sym(owner).kind);
+            if owner_kind != Some(Kind::PCK) && !ctx.sym(otc).has_outer_instance(ctx) {
+                self.chk.early_ref_error(
+                    ctx,
+                    &self.log,
+                    pos.get_preferred_position(),
+                    c,
+                );
+                panic!("AssertionError: class has no outer instance");
+            }
             let select = self.select_symbol(ctx, tree, ot);
             tree = self.access(ctx, ot, select, None, false);
             otc = ctx
@@ -1207,7 +1551,14 @@ impl Lower {
                 ctx, &self.types, &syms, current_class, sym_owner,
             )
         };
- else {
+        if matches {
+            let owner_ty = ctx.sym(sym_owner).ty.expect("symbol owner type");
+            let erasure = {
+                let syms = self.syms.borrow();
+                self.types.erasure(ctx, &syms, owner_ty)
+            };
+            self.make.borrow_mut().this_expr(ctx, erasure)
+        } else {
             self.make_owner_this_n(ctx, pos, sym, precise_match)
         }
     }
@@ -1226,6 +1577,10 @@ impl Lower {
     ) -> TreeId {
         let sym_owner = ctx.sym(sym).owner.expect("symbol owner");
         let mut ots = self.outer_this_stack.clone();
+        if ots.is_empty() {
+            self.report_no_outer_instance(ctx, pos, sym_owner);
+            panic!("AssertionError: no outer instance in scope");
+        }
         let mut ot = ots[0];
         let ident = self.make.borrow_mut().ident_symbol(ctx, ot);
         let mut tree = self.access(ctx, ot, ident, None, false);
@@ -1244,9 +1599,19 @@ impl Lower {
                     ctx, &self.types, &syms, otc, sym_owner,
                 )
             };
+            if matched {
+                return tree;
+            }
             loop {
                 ots.remove(0);
+                if ots.is_empty() {
+                    self.report_no_outer_instance(ctx, pos, sym_owner);
+                    return tree;
+                }
                 ot = ots[0];
+                if ctx.sym(ot).owner == Some(otc) {
+                    break;
+                }
             }
             let select = self.select_symbol(ctx, tree, ot);
             tree = self.access(ctx, ot, select, None, false);
@@ -1309,7 +1674,7 @@ impl Lower {
             Some(type_tree),
             init,
         );
- = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::VariableDecl { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(sym);
         }
         ctx.tree_mut(tree).ty = Some(vartype);
@@ -1424,7 +1789,7 @@ impl Lower {
             body,
             None,
         );
- = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::MethodDecl { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(m);
         }
         ctx.tree_mut(tree).ty = Some(mtype);
@@ -1493,6 +1858,12 @@ impl Lower {
                 TreeKind::VariableDecl { vartype, .. } => *vartype,
                 _ => None,
             };
+            if let Some(vartype) = vartype {
+                let accessed = self.access(ctx, v, vartype, None, false);
+                if let TreeKind::VariableDecl { vartype, .. } = &mut ctx.tree_mut(vd).kind {
+                    *vartype = Some(accessed);
+                }
+            }
             defs = defs.prepend(vd);
             current = current.tail();
         }
@@ -1508,7 +1879,10 @@ impl Lower {
         let mut current = ctx.typ(ty).get_enclosing_type();
         let mut nesting_level = 0;
         while let Some(enclosing) = current {
- else {
+            if ctx.typ(enclosing).has_tag(TypeTag::CLASS) {
+                current = ctx.typ(enclosing).get_enclosing_type();
+                nesting_level += 1;
+            } else {
                 break;
             }
         }
@@ -1523,6 +1897,9 @@ impl Lower {
                 .scope(members)
                 .find_first(&result, &|_| true, arena)
                 .is_some();
+            if !found {
+                break;
+            }
             let next = format!("{}{}", result.to_java_string(), self.target.synthetic_name_char());
             result = self
                 .names
@@ -1572,6 +1949,13 @@ impl Lower {
             TreeKind::VariableDecl { vartype, .. } => *vartype,
             _ => None,
         };
+        if let Some(vartype) = vartype {
+            let owner = ctx.sym(sym).owner.expect("outer this owner");
+            let accessed = self.access(ctx, owner, vartype, None, false);
+            if let TreeKind::VariableDecl { vartype, .. } = &mut ctx.tree_mut(vd).kind {
+                *vartype = Some(accessed);
+            }
+        }
         vd
     }
 
@@ -1603,7 +1987,8 @@ impl Lower {
                 crate::code::flags::SYNTHETIC as i64
             };
         let outer_this = self.make_outer_this_var_symbol(ctx, owner, flags);
- = &mut ctx.sym_mut(owner).kind_data
+        if owner_is_method
+            && let SymbolKind::MethodSymbol { extra_params, .. } = &mut ctx.sym_mut(owner).kind_data
         {
             *extra_params = extra_params.prepend(outer_this);
         }
@@ -1679,10 +2064,21 @@ impl Lower {
         _pos: &Rc<dyn DiagnosticPosition>,
         constr: SymbolId,
     ) -> SymbolId {
+        if !self.needs_private_access(ctx, constr) {
+            return constr;
+        }
         let owner = ctx.sym(constr).owner.expect("constructor owner");
         let acc_owner = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+        if let Some(access) = self.access_constrs.get(&constr) {
+            return *access;
+        }
         let constr_ty = ctx.sym(constr).ty.expect("constructor type");
         let mut argtypes = self.types.get_parameter_types_public(ctx, constr_ty);
+        if (ctx.sym(acc_owner).flags_field & crate::code::flags::ENUM as i64) != 0 {
+            let string_type = self.syms.borrow().string_type;
+            let int_type = self.syms.borrow().int_type;
+            argtypes = argtypes.prepend(int_type).prepend(string_type);
+        }
         let tag = self.access_constructor_tag(ctx);
         let tag_erasure = {
             let syms = self.syms.borrow();
@@ -1748,6 +2144,10 @@ impl Lower {
                     }
                 }
                 Some(ctag) => {
+                    if !ctx.sym(ctag).is_anonymous() {
+                        i += 1;
+                        continue;
+                    }
                     ctag
                 }
             };
@@ -1763,6 +2163,9 @@ impl Lower {
     fn check_access_constructor_tags(&mut self, ctx: &mut CompilerContext) {
         let tags = self.access_constr_tags.clone();
         for c in tags {
+            if self.is_translated_class_available(ctx, c) {
+                continue;
+            }
             let outer = crate::code::symbol::symbol_outermost_class(ctx, c).expect("outermost class");
             let flatname = match &ctx.sym(c).kind_data {
                 SymbolKind::ClassSymbol { flatname, .. } => flatname.clone(),
@@ -1782,7 +2185,8 @@ impl Lower {
     /// Check whether a translated class declaration for the symbol exists.
     fn is_translated_class_available(&self, ctx: &CompilerContext, c: SymbolId) -> bool {
         for tree in &self.translated {
- = &ctx.tree(*tree).kind
+            if ctx.tree(*tree).has_tag(Tag::CLASSDEF)
+                && let TreeKind::ClassDecl { sym: Some(sym), .. } = &ctx.tree(*tree).kind
                 && *sym == c
             {
                 return true;
@@ -1803,6 +2207,9 @@ impl Lower {
             let params = self.types.get_parameter_types_public(ctx, constr_ty);
             let first = *params.head();
             let first_tsym = ctx.typ(first).tsym;
+            if first_tsym != Some(old_ctag) {
+                continue;
+            }
             let new_erasure = {
                 let syms = self.syms.borrow();
                 let new_ty = ctx.sym(new_ctag).ty.expect("tag type");
@@ -1825,8 +2232,28 @@ impl Lower {
         let cdef = self.class_def(ctx, encl).expect("class definition");
         let cdef_pos = ctx.tree(cdef).pos;
         let is_init = ctx.sym(sym).name == self.names.init;
- else {
+        if is_init {
+            let accessor = self.access_constrs.get(&sym).copied();
+            if let Some(accessor) = accessor {
+                let def = self.access_constructor_def(ctx, cdef_pos, sym, accessor);
+                if let TreeKind::ClassDecl { defs, .. } = &mut ctx.tree_mut(cdef).kind {
+                    let new_defs = defs.prepend(def);
+                    *defs = new_defs;
+                }
+            }
+        } else {
             let accessors = self.access_syms.get(&sym).cloned();
+            if let Some(accessors) = accessors {
+                for (i, accessor) in accessors.iter().enumerate() {
+                    if let Some(accessor) = accessor {
+                        let def = self.access_def(ctx, cdef_pos, sym, *accessor, i as i32);
+                        if let TreeKind::ClassDecl { defs, .. } = &mut ctx.tree_mut(cdef).kind {
+                            let new_defs = defs.prepend(def);
+                            *defs = new_defs;
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1863,6 +2290,20 @@ impl Lower {
             let first = *params.head();
             let first_sym = Self::param_sym(ctx, first);
             let site = self.make.borrow_mut().ident_symbol(ctx, first_sym);
+            if acode % 2 != 0 {
+                let owner = ctx.sym(vsym).owner.expect("access owner");
+                let encl = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+                let encl_ty = ctx.sym(encl).ty.expect("enclosing type");
+                let super_ty = {
+                    let syms = self.syms.borrow();
+                    self.types.supertype(ctx, &syms, encl_ty, None)
+                };
+                let erasure = {
+                    let syms = self.syms.borrow();
+                    self.types.erasure(ctx, &syms, super_ty)
+                };
+                ctx.tree_mut(site).ty = Some(erasure);
+            }
             let reference = self.select_symbol(ctx, site, sym);
             let tail = params.tail();
             let args = self.make.borrow_mut().idents(ctx, tail);
@@ -1891,7 +2332,7 @@ impl Lower {
                     let tree_tag = Self::tree_tag(operator, ctx);
                     let rhs = *args.head();
                     let expr = self.make_assignop(ctx, tree_tag, reference, rhs);
- = &mut ctx.tree_mut(expr).kind {
+                    if let TreeKind::AssignOp { operator: slot, .. } = &mut ctx.tree_mut(expr).kind {
                         *slot = Some(operator);
                     }
                     expr
@@ -1905,7 +2346,7 @@ impl Lower {
             self.make.borrow_mut().call_statement(ctx, apply)
         };
         let body = self.make.borrow_mut().block(ctx, 0, List::of(stat));
- = &mut ctx.tree_mut(md).kind {
+        if let TreeKind::MethodDecl { body: body_slot, .. } = &mut ctx.tree_mut(md).kind {
             *body_slot = Some(body);
         }
         let params = match &ctx.tree(md).kind {
@@ -1919,6 +2360,13 @@ impl Lower {
                 TreeKind::VariableDecl { vartype, .. } => *vartype,
                 _ => None,
             };
+            if let Some(vartype) = vartype {
+                let param_sym = Self::param_sym(ctx, param);
+                let accessed = self.access(ctx, param_sym, vartype, None, false);
+                if let TreeKind::VariableDecl { vartype, .. } = &mut ctx.tree_mut(param).kind {
+                    *vartype = Some(accessed);
+                }
+            }
             current = current.tail();
         }
         {
@@ -1926,6 +2374,13 @@ impl Lower {
                 TreeKind::MethodDecl { restype, .. } => *restype,
                 _ => None,
             };
+            if let Some(restype) = restype {
+                let owner = ctx.sym(accessor).owner.expect("accessor owner");
+                let accessed = self.access(ctx, owner, restype, None, false);
+                if let TreeKind::MethodDecl { restype, .. } = &mut ctx.tree_mut(md).kind {
+                    *restype = Some(accessed);
+                }
+            }
         }
         {
             let thrown = match &ctx.tree(md).kind {
@@ -1941,7 +2396,7 @@ impl Lower {
                 new_thrown = new_thrown.append(accessed);
                 current = current.tail();
             }
- = &mut ctx.tree_mut(md).kind {
+            if let TreeKind::MethodDecl { thrown, .. } = &mut ctx.tree_mut(md).kind {
                 *thrown = new_thrown;
             }
         }
@@ -1979,7 +2434,10 @@ impl Lower {
         };
         let this_name = self.names._this.clone();
         let callee = self.make.borrow_mut().ident(ctx, this_name);
- = &mut ctx.tree_mut(callee).kind
+        if let TreeKind::Ident {
+            sym: sym_slot,
+            ..
+        } = &mut ctx.tree_mut(callee).kind
         {
             *sym_slot = Some(constr);
         }
@@ -1990,7 +2448,7 @@ impl Lower {
         let apply = self.make.borrow_mut().app_with_args(ctx, callee, args);
         let call = self.make.borrow_mut().call_statement(ctx, apply);
         let body = self.make.borrow_mut().block(ctx, 0, List::of(call));
- = &mut ctx.tree_mut(md).kind {
+        if let TreeKind::MethodDecl { body: body_slot, .. } = &mut ctx.tree_mut(md).kind {
             *body_slot = Some(body);
         }
         md
@@ -2110,6 +2568,9 @@ impl Lower {
     /// Report one synthetic name conflict diagnostic.
     fn synthetic_error(&mut self, ctx: &mut CompilerContext, tree: TreeId, sym: SymbolId) {
         let sym_ty = ctx.sym(sym).ty.expect("symbol type");
+        if ctx.typ(sym_ty).has_tag(TypeTag::ERROR) {
+            return;
+        }
         let location = ctx
             .sym(sym)
             .get_qualified_name()
@@ -2215,7 +2676,8 @@ impl Lower {
 
     /// Replace the flags of a modifiers tree.
     fn set_mods_flags(ctx: &mut CompilerContext, mods: Option<TreeId>, flags: i64) {
- = &mut ctx.tree_mut(mods).kind
+        if let Some(mods) = mods
+            && let TreeKind::Modifiers { flags: slot, .. } = &mut ctx.tree_mut(mods).kind
         {
             *slot = flags;
         }
@@ -2231,8 +2693,11 @@ impl Lower {
         let mut current = params;
         while current.non_empty() {
             let vd = *current.head();
- = &ctx.tree(vd).kind {
+            if let TreeKind::VariableDecl { sym: Some(p), .. } = &ctx.tree(vd).kind {
                 let base = crate::code::symbol::base_symbol(ctx, *p);
+                if base != *p {
+                    translation_map.insert(base, *p);
+                }
             }
             current = current.tail();
         }
@@ -2278,16 +2743,32 @@ impl Lower {
             .tsym
             .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::ENUM as i64) != 0)
             .unwrap_or(false);
+        if (flags & crate::code::flags::ENUM as i64) != 0 && !super_is_enum {
+            self.visit_enum_def(ctx, tree);
+        }
+        if (flags & crate::code::flags::RECORD) != 0 {
+            self.visit_record_def(ctx, tree);
+        }
         let mut outer_this_def: Option<TreeId> = None;
+        if ctx.sym(tree_sym).has_outer_instance(ctx) {
+            outer_this_def = Some(self.outer_this_def(ctx, pos, tree_sym));
+        }
         let freevars = self.freevars(ctx, tree_sym).unwrap_or_else(List::nil);
         let freevar_defs = self.freevar_defs(ctx, pos, freevars, tree_sym, 0);
         let extending = self.translate(ctx, extending);
         let implementing = self.translate_list(ctx, implementing);
- = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::ClassDecl { extending: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = extending;
         }
- = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::ClassDecl { implementing: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = implementing;
+        }
+        if Symbol::is_directly_or_indirectly_local(ctx, tree_sym) {
+            let owner = ctx.sym(tree_sym).owner.expect("class owner");
+            let encl = crate::code::symbol::symbol_encl_class(ctx, owner).expect("enclosing class");
+            if let SymbolKind::ClassSymbol { trans_local, .. } = &mut ctx.sym_mut(encl).kind_data {
+                *trans_local = trans_local.prepend(tree_sym);
+            }
         }
         // Translate the members, re-reading the definition list because the
         // translation may prepend synthetic members to it.
@@ -2299,10 +2780,16 @@ impl Lower {
             };
             let total = defs.length();
             let new_count = total - seen_len;
+            if new_count <= 0 {
+                break;
+            }
             let mut current = defs;
             let previous_outermost_member = self.outermost_member_def;
             for index in 0..new_count {
                 let member = *current.head();
+                if index == 0 && previous_outermost_member.is_none() {
+                    self.outermost_member_def = Some(member);
+                }
                 self.translate(ctx, Some(member));
                 current = current.tail();
             }
@@ -2311,24 +2798,37 @@ impl Lower {
         }
         // Convert the protected modifier to public and mask class flags.
         let mut mods_flags = Self::mods_flags(ctx, mods);
+        if (mods_flags & crate::code::flags::PROTECTED as i64) != 0 {
+            mods_flags |= crate::code::flags::PUBLIC as i64;
+        }
         mods_flags &= crate::code::flags::ClassFlags as i64;
         Self::set_mods_flags(ctx, mods, mods_flags);
         let flatname = ctx.sym(tree_sym).flat_name();
         let shortname = crate::util::convert::short_name(&flatname);
- = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::ClassDecl { name, .. } = &mut ctx.tree_mut(tree).kind {
             *name = shortname;
         }
         let members = ctx.sym(tree_sym).members().expect("class members");
         let mut current_fv = freevar_defs;
         while current_fv.non_empty() {
             let def = *current_fv.head();
- = &mut ctx.tree_mut(tree).kind {
+            if let TreeKind::ClassDecl { defs, .. } = &mut ctx.tree_mut(tree).kind {
                 let new_defs = defs.prepend(def);
                 *defs = new_defs;
             }
             let def_sym = Self::param_sym(ctx, def);
             self.enter_synthetic(ctx, def_sym, members);
             current_fv = current_fv.tail();
+        }
+        if ctx.sym(tree_sym).has_outer_instance(ctx)
+            && let Some(outer_this_def) = outer_this_def
+        {
+            if let TreeKind::ClassDecl { defs, .. } = &mut ctx.tree_mut(tree).kind {
+                let new_defs = defs.prepend(outer_this_def);
+                *defs = new_defs;
+            }
+            let def_sym = Self::param_sym(ctx, outer_this_def);
+            self.enter_synthetic(ctx, def_sym, members);
         }
         self.proxies = prev_proxies;
         self.outer_this_stack = prev_outer_this_stack;
@@ -2350,6 +2850,66 @@ impl Lower {
             _ => panic!("expected a method declaration"),
         };
         let current_class = self.current_class.expect("current class");
+        if name == self.names.init
+            && (ctx.sym(current_class).flags_field & crate::code::flags::ENUM as i64) != 0
+        {
+            let tree_sym = sym.expect("method symbol");
+            let pos = ctx.tree(tree).pos;
+            let synthetic_char = self.target.synthetic_name_char();
+            let name_text = format!("{}enum{}name", synthetic_char, synthetic_char);
+            let ordinal_text = format!("{}enum{}ordinal", synthetic_char, synthetic_char);
+            let name_param = self.make_named_param(ctx, pos, &name_text, true, tree_sym);
+            let ord_param = self.make_named_param(ctx, pos, &ordinal_text, false, tree_sym);
+            let name_param_mods = match &ctx.tree(name_param).kind {
+                TreeKind::VariableDecl { mods, .. } => *mods,
+                _ => None,
+            };
+            let name_param_sym = Self::param_sym(ctx, name_param);
+            let mut flags = Self::mods_flags(ctx, name_param_mods);
+            flags |= crate::code::flags::SYNTHETIC as i64;
+            Self::set_mods_flags(ctx, name_param_mods, flags);
+            ctx.sym_mut(name_param_sym).flags_field |= crate::code::flags::SYNTHETIC as i64;
+            let ord_param_mods = match &ctx.tree(ord_param).kind {
+                TreeKind::VariableDecl { mods, .. } => *mods,
+                _ => None,
+            };
+            let ord_param_sym = Self::param_sym(ctx, ord_param);
+            let mut flags = Self::mods_flags(ctx, ord_param_mods);
+            flags |= crate::code::flags::SYNTHETIC as i64;
+            Self::set_mods_flags(ctx, ord_param_mods, flags);
+            ctx.sym_mut(ord_param_sym).flags_field |= crate::code::flags::SYNTHETIC as i64;
+            let new_params = params.prepend(ord_param).prepend(name_param);
+            if let TreeKind::MethodDecl { params: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                *slot = new_params;
+            }
+            let name_sym = Self::param_sym(ctx, name_param);
+            let ord_sym = Self::param_sym(ctx, ord_param);
+            if let SymbolKind::MethodSymbol { extra_params, .. } = &mut ctx.sym_mut(tree_sym).kind_data {
+                *extra_params = extra_params.prepend(ord_sym).prepend(name_sym);
+            }
+            let old_erasure = {
+                let method_ty = ctx.sym(tree_sym).ty.expect("method type");
+                let syms = self.syms.borrow();
+                self.types.erasure(ctx, &syms, method_ty)
+            };
+            let string_type = self.syms.borrow().string_type;
+            let int_type = self.syms.borrow().int_type;
+            let params = self.types.get_parameter_types_public(ctx, old_erasure);
+            let restype = self.types.get_return_type_public(ctx, old_erasure);
+            let thrown = ctx.typ(old_erasure).get_thrown_types(ctx);
+            let method_class = self.syms.borrow().method_class;
+            let new_erasure = ctx.alloc_type(Type::new(
+                TypeTag::METHOD,
+                Some(method_class),
+                TypeKindData::MethodType {
+                    argtypes: params.prepend(int_type).prepend(string_type),
+                    restype: Some(restype),
+                    thrown,
+                    recvtype: None,
+                },
+            ));
+            ctx.sym_mut(tree_sym).ty = Some(new_erasure);
+        }
         let prev_method_def = self.current_method_def;
         let prev_method_sym = self.current_method_sym;
         self.current_method_def = Some(tree);
@@ -2401,12 +2961,141 @@ impl Lower {
         let sym = sym.expect("method symbol");
         let is_inner = ctx.sym(current_class).has_outer_instance(ctx)
             || Symbol::is_directly_or_indirectly_local(ctx, current_class);
- else {
+        if is_ctor && is_inner {
+            let pos = ctx.tree(tree).pos;
+            let prev_proxies = std::mem::take(&mut self.proxies);
+            self.proxies = prev_proxies.clone();
+            let prev_outer_this_stack = std::mem::take(&mut self.outer_this_stack);
+            self.outer_this_stack = prev_outer_this_stack.clone();
+            let freevars = self.freevars(ctx, current_class).unwrap_or_else(List::nil);
+            let mut outer_this_def: Option<TreeId> = None;
+            if ctx.sym(current_class).has_outer_instance(ctx) {
+                outer_this_def = Some(self.outer_this_def(ctx, pos, sym));
+            }
+            let flags = crate::code::flags::PARAMETER;
+            let freevar_defs = self.freevar_defs(ctx, pos, freevars.clone(), sym, flags);
+            let restype = match &ctx.tree(tree).kind {
+                TreeKind::MethodDecl { restype, .. } => *restype,
+                _ => None,
+            };
+            let restype = self.translate(ctx, restype);
+            let params = self.translate_list(ctx, params);
+            let thrown = match &ctx.tree(tree).kind {
+                TreeKind::MethodDecl { thrown, .. } => thrown.clone(),
+                _ => List::nil(),
+            };
+            let thrown = self.translate_list(ctx, thrown);
+            if let TreeKind::MethodDecl {
+                restype: r, params: p, thrown: t, ..
+            } = &mut ctx.tree_mut(tree).kind
+            {
+                *r = restype;
+                *p = params.clone();
+                *t = thrown;
+            }
+            let Some(body) = body else {
+                self.result = Some(tree);
+                return;
+            };
+            let mut new_params = params.append_list(&freevar_defs);
+            if ctx.sym(current_class).has_outer_instance(ctx)
+                && let Some(outer_this_def) = outer_this_def
+            {
+                new_params = new_params.prepend(outer_this_def);
+            }
+            let body_stats = match &ctx.tree(body).kind {
+                TreeKind::Block { stats, .. } => stats.clone(),
+                _ => panic!("expected a block"),
+            };
+            let self_call = self
+                .translate(ctx, Some(*body_stats.head()))
+                .expect("translated super call");
+            let mut added: List<TreeId> = List::nil();
+            let is_initial_ctor = tree_info::is_initial_constructor(ctx, tree);
+            if freevars.non_empty() {
+                let mut added_argtypes: List<TypeId> = List::nil();
+                let mut current = freevars;
+                while current.non_empty() {
+                    let v = *current.head();
+                    let proxy = self.proxies.get(&v).copied().expect("proxy");
+                    if let SymbolKind::MethodSymbol { captured_locals, .. } =
+                        &mut ctx.sym_mut(sym).kind_data
+                    {
+                        *captured_locals = captured_locals.prepend(proxy);
+                    }
+                    if is_initial_ctor {
+                        let prev_proxy = prev_proxies.get(&v).copied().expect("previous proxy");
+                        let init = self.init_field(ctx, ctx.tree(body).pos, proxy, prev_proxy);
+                        added = added.prepend(init);
+                    }
+                    let v_ty = ctx.sym(v).ty.expect("free variable type");
+                    let erasure = {
+                        let syms = self.syms.borrow();
+                        self.types.erasure(ctx, &syms, v_ty)
+                    };
+                    added_argtypes = added_argtypes.prepend(erasure);
+                    current = current.tail();
+                }
+                let old_erasure = {
+                    let method_ty = ctx.sym(sym).ty.expect("method type");
+                    let syms = self.syms.borrow();
+                    self.types.erasure(ctx, &syms, method_ty)
+                };
+                let params = self.types.get_parameter_types_public(ctx, old_erasure);
+                let restype = self.types.get_return_type_public(ctx, old_erasure);
+                let thrown = ctx.typ(old_erasure).get_thrown_types(ctx);
+                let method_class = self.syms.borrow().method_class;
+                let new_erasure = ctx.alloc_type(Type::new(
+                    TypeTag::METHOD,
+                    Some(method_class),
+                    TypeKindData::MethodType {
+                        argtypes: params.append_list(&added_argtypes),
+                        restype: Some(restype),
+                        thrown,
+                        recvtype: None,
+                    },
+                ));
+                ctx.sym_mut(sym).ty = Some(new_erasure);
+            }
+            if ctx.sym(current_class).has_outer_instance(ctx) && is_initial_ctor {
+                let init = self.init_outer_this(ctx, ctx.tree(body).pos);
+                added = added.prepend(init);
+            }
+            self.proxies = prev_proxies;
+            let stats = self.translate_list(ctx, body_stats.tail());
+            let mut new_stats = stats.prepend(self_call);
+            let mut added_rev = added;
+            let mut accumulated: List<TreeId> = new_stats;
+            let mut added_vec: Vec<TreeId> = Vec::new();
+            while added_rev.non_empty() {
+                added_vec.push(*added_rev.head());
+                added_rev = added_rev.tail();
+            }
+            for def in added_vec.into_iter().rev() {
+                accumulated = accumulated.prepend(def);
+            }
+            new_stats = accumulated;
+            if let TreeKind::Block { stats: slot, .. } = &mut ctx.tree_mut(body).kind {
+                *slot = new_stats;
+            }
+            if let TreeKind::MethodDecl { params: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                *slot = new_params;
+            }
+            self.outer_this_stack = prev_outer_this_stack;
+        } else {
             let prev_lambda_map = self.lambda_translation_map.take();
             let is_synthetic = (ctx.sym(sym).flags_field & crate::code::flags::SYNTHETIC as i64) != 0;
             let is_lambda = is_synthetic && ctx.sym(sym).name.starts_with(&self.names.lambda);
+            if is_lambda {
+                self.lambda_translation_map = Some(self.make_translation_map(ctx, tree));
+            }
             self.visit_method_def_default(ctx, tree);
             self.lambda_translation_map = prev_lambda_map;
+        }
+        if name == self.names.init
+            && (ctx.sym(sym).flags_field & crate::code::flags::COMPACT_RECORD_CONSTRUCTOR) != 0
+        {
+            self.lower_compact_record_ctor(ctx, tree);
         }
         self.result = Some(tree);
     }
@@ -2421,7 +3110,36 @@ impl Lower {
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
         let have_primitive = ctx.typ(tree_ty).is_primitive();
         let want_primitive = ctx.typ(ty).is_primitive();
- else {
+        if have_primitive == want_primitive {
+            return tree;
+        }
+        if have_primitive {
+            let unboxed = {
+                let syms = self.syms.borrow();
+                self.types.unboxed_type_ro(ctx, &syms, ty)
+            };
+            if !ctx.typ(unboxed).has_tag(TypeTag::NONE) {
+                let is_sub = {
+                    let syms = self.syms.borrow();
+                    self.types.is_subtype(ctx, &syms, tree_ty, unboxed)
+                };
+                if !is_sub {
+                    let const_value = ctx.typ(tree_ty).const_value().cloned();
+                    if let Some(const_value) = const_value {
+                        let new_ty = ctx.typ(unboxed).const_type(const_value);
+                        let new_ty = ctx.alloc_type(new_ty);
+                        ctx.tree_mut(tree).ty = Some(new_ty);
+                    }
+                }
+                let wrapper = {
+                    let syms = self.syms.borrow();
+                    self.types.erasure(ctx, &syms, ty)
+                };
+                self.box_primitive(ctx, tree, wrapper)
+            } else {
+                self.box_primitive_auto(ctx, tree)
+            }
+        } else {
             self.unbox(ctx, tree, ty)
         }
     }
@@ -2466,11 +3184,33 @@ impl Lower {
             self.types.unboxed_type_ro(ctx, &syms, tree_ty)
         };
         let mut tree = tree;
- else {
+        if ctx.typ(unboxed).has_tag(TypeTag::NONE) {
+            unboxed = primitive;
+            if !ctx.typ(unboxed).is_primitive() {
+                panic!("AssertionError: unboxed type is not primitive");
+            }
+            let boxed = {
+                let mut syms = self.syms.borrow_mut();
+                self.types.boxed_class(ctx, &mut syms, unboxed)
+            };
+            let boxed_ty = ctx.sym(boxed).ty.expect("boxed type");
+            let pos = ctx.tree(tree).pos;
+            self.make.borrow_mut().at(pos);
+            let clazz = self.type_tree(ctx, boxed_ty);
+            tree = self.make.borrow_mut().type_cast(ctx, clazz, tree);
+            // Java: Attr.visitTypeCast sets tree.type = tree.clazz.type; the
+            // synthetic cast is built after Attr, so set it here.
+            ctx.tree_mut(tree).ty = Some(boxed_ty);
+            let tree_ty = ctx.tree(tree).ty.expect("tree type");
+            let _ = tree_ty;
+        } else {
             let is_sub = {
                 let syms = self.syms.borrow();
                 self.types.is_subtype(ctx, &syms, unboxed, primitive)
             };
+            if !is_sub {
+                panic!("AssertionError: unboxed type is not a subtype of the primitive");
+            }
         }
         let pos = ctx.tree(tree).pos;
         self.make.borrow_mut().at(pos);
@@ -2520,7 +3260,17 @@ impl Lower {
         let thrown = self.translate_list(ctx, thrown);
         let default_value = self.translate(ctx, default_value);
         let body = self.translate(ctx, body);
- = &mut ctx.tree_mut(tree).kind
+        if let TreeKind::MethodDecl {
+            mods: m,
+            restype: r,
+            typarams: t,
+            recvparam: rv,
+            params: p,
+            thrown: th,
+            default_value: d,
+            body: b,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
         {
             *m = mods;
             *r = restype;
@@ -2547,6 +3297,13 @@ impl Lower {
             .from_string(&javac_strings::JavaString::from(text.as_str()));
         loop {
             let arena = ctx.symbols_arena();
+            if ctx
+                .scope(members)
+                .find_first(&name, &|_| true, arena)
+                .is_none()
+            {
+                return name;
+            }
             let next = format!("{}{}", name.to_java_string(), self.target.synthetic_name_char());
             name = self
                 .names
@@ -2579,7 +3336,7 @@ impl Lower {
         let name_const = crate::util::constants::ConstantValue::String(name.to_java_string());
         let name_lit = self.make_lit(ctx, string_type, &name_const);
         let new_args = args.prepend(ordinal_lit).prepend(name_lit);
- = &mut ctx.tree_mut(init).kind {
+        if let TreeKind::NewClass { args: slot, .. } = &mut ctx.tree_mut(init).kind {
             *slot = new_args;
         }
     }
@@ -2626,7 +3383,7 @@ impl Lower {
                 self.type_tree(ctx, super_ty)
             }
         };
- = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::ClassDecl { extending: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(extending);
         }
         let class_ty = self.class_of_type(ctx, tree_ty, pos);
@@ -2650,7 +3407,21 @@ impl Lower {
                     };
                     (Self::mods_flags(ctx, mods) & crate::code::flags::ENUM as i64) != 0
                 };
- else {
+            if is_enum_constant {
+                self.visit_enum_constant_def(ctx, def, next_ordinal);
+                next_ordinal += 1;
+                let def_sym = match &ctx.tree(def).kind {
+                    TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
+                    _ => panic!("expected an enum constant symbol"),
+                };
+                let value_ident = {
+                    self.make
+                        .borrow_mut()
+                        .qual_ident(ctx, &mut self.syms.borrow_mut(), def_sym)
+                };
+                values = values.append(value_ident);
+                enum_defs = enum_defs.append(def);
+            } else {
                 other_defs = other_defs.append(def);
             }
             current = current.tail();
@@ -2711,7 +3482,7 @@ impl Lower {
         let values_app = self.make.borrow_mut().app(ctx, values_ident);
         let values_var_def = {
             let old = values_var_def;
- = &mut ctx.tree_mut(old).kind {
+            if let TreeKind::VariableDecl { init, .. } = &mut ctx.tree_mut(old).kind {
                 *init = Some(values_app);
             }
             old
@@ -2807,7 +3578,7 @@ impl Lower {
             all_defs = all_defs.append(*others.head());
             others = others.tail();
         }
- = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::ClassDecl { defs: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = all_defs;
         }
     }
@@ -2815,6 +3586,9 @@ impl Lower {
     /// Return the cached System.arraycopy method symbol, creating it on first
     /// use.
     fn system_arraycopy_method(&mut self, ctx: &mut CompilerContext) -> SymbolId {
+        if let Some(method) = self.system_arraycopy_method {
+            return method;
+        }
         let object_type = self.syms.borrow().object_type;
         let int_type = self.syms.borrow().int_type;
         let void_type = self.syms.borrow().void_type;
@@ -2846,6 +3620,28 @@ impl Lower {
         let mut vars: List<SymbolId> = List::nil();
         let mut current_t = t;
         while !ctx.typ(current_t).has_tag(TypeTag::NONE) {
+            if ctx.typ(current_t).has_tag(TypeTag::CLASS)
+                && let Some(tsym) = ctx.typ(current_t).tsym
+                && let Some(members) = ctx.sym(tsym).members()
+            {
+                let scope_snapshot = ctx.scope(members).clone();
+                let candidates = scope_snapshot.get_symbols(
+                    members,
+                    crate::code::scope::LookupKind::NON_RECURSIVE,
+                    &|_| true,
+                    ctx,
+                );
+                let symbols: Vec<SymbolId> = candidates
+                    .into_iter()
+                    .filter(|sym| {
+                        ctx.sym(*sym).kind == Kind::VAR
+                            && (ctx.sym(*sym).flags_field & crate::code::flags::RECORD) != 0
+                    })
+                    .collect();
+                for sym in symbols {
+                    vars = vars.prepend(sym);
+                }
+            }
             let syms = self.syms.borrow();
             current_t = self.types.supertype(ctx, &syms, current_t, None);
         }
@@ -2873,6 +3669,36 @@ impl Lower {
                 }
                 _ => (None, ctx.sym(rc_sym).name.clone()),
             };
+            if let Some(accessor) = accessor
+                && (ctx.sym(accessor).flags_field & crate::code::flags::GENERATED_MEMBER as i64) != 0
+            {
+                    let mut field_tree: Option<TreeId> = None;
+                    let mut fields_current = fields.clone();
+                    while fields_current.non_empty() {
+                        let field = *fields_current.head();
+                        if let TreeKind::VariableDecl { name, .. } = &ctx.tree(field).kind
+                            && name == &rc_name
+                        {
+                            field_tree = Some(field);
+                            break;
+                        }
+                        fields_current = fields_current.tail();
+                    }
+                    if let Some(field) = field_tree {
+                        let pos = ctx.tree(tree).pos;
+                        self.make.borrow_mut().at(pos);
+                        let field_sym = match &ctx.tree(field).kind {
+                            TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
+                            _ => panic!("expected a record field symbol"),
+                        };
+                        let field_ident = self.make.borrow_mut().ident_symbol(ctx, field_sym);
+                        let ret = self.make.borrow_mut().return_(ctx, Some(field_ident));
+                        let block = self.make.borrow_mut().block(ctx, 0, List::of(ret));
+                        let accessor_ty = ctx.sym(accessor).ty.expect("accessor type");
+                        let def = self.method_def_for_symbol(ctx, accessor, accessor_ty, Some(block));
+                        result = result.append(def);
+                    }
+            }
             current = current.tail();
         }
         result
@@ -2893,6 +3719,11 @@ impl Lower {
         let mut current = vars.clone();
         while current.non_empty() {
             let mut var = *current.head();
+            if ctx.sym(var).owner != Some(tree_sym) {
+                let mut cloned = ctx.sym(var).clone();
+                cloned.owner = Some(tree_sym);
+                var = ctx.alloc_symbol(cloned);
+            }
             let handle = crate::code::symbol::as_method_handle(ctx, var, true);
             handles.push(handle);
             current = current.tail();
@@ -2916,7 +3747,7 @@ impl Lower {
             let method = self.generate_record_method(ctx, tree, name, vars.clone(), handles.clone());
             defs = defs.append(method);
         }
- = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::ClassDecl { defs: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = defs;
         }
     }
@@ -2947,6 +3778,9 @@ impl Lower {
         };
         let _ = object_sym;
         let msym = self.lookup_method(ctx, None, name.clone(), tree_ty, argtypes);
+        if (ctx.sym(msym).flags_field & crate::code::flags::RECORD) == 0 {
+            return self.make.borrow_mut().block(ctx, crate::code::flags::SYNTHETIC as i64, List::nil());
+        }
         let bootstrap_name = self.names.bootstrap.clone();
         let mut static_args: Vec<crate::jvm::pool_constant::LoadableConstantRef> = Vec::new();
         static_args.push(crate::jvm::pool_constant::LoadableConstantRef::Class(tree_ty));
@@ -2955,6 +3789,9 @@ impl Lower {
         let mut first_name = true;
         while vars_current.non_empty() {
             let var = *vars_current.head();
+            if !first_name {
+                concat.push(';');
+            }
             first_name = false;
             concat.push_str(&ctx.sym(var).name.to_java_string().to_string_lossy());
             vars_current = vars_current.tail();
@@ -3013,7 +3850,7 @@ impl Lower {
                 SymbolKind::MethodSymbol { params, .. } => *params.head(),
                 _ => panic!("expected a method symbol"),
             };
- = &mut ctx.sym_mut(first_param).kind_data {
+            if let SymbolKind::VarSymbol { adr, .. } = &mut ctx.sym_mut(first_param).kind_data {
                 *adr = 0;
             }
             let param_ident = self.make.borrow_mut().ident_symbol(ctx, first_param);
@@ -3067,6 +3904,14 @@ impl Lower {
         } = &ctx.typ(msym_ty).kind
         {
             let mut new_argtypes = argtypes.clone();
+            if !is_static {
+                let tree_sym = match &ctx.tree(tree).kind {
+                    TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
+                    _ => panic!("expected a class declaration"),
+                };
+                let tree_ty = ctx.sym(tree_sym).ty.expect("class type");
+                new_argtypes = new_argtypes.prepend(tree_ty);
+            }
             let method_class = self.syms.borrow().method_class;
             ctx.alloc_type(Type::new(
                 TypeTag::METHOD,
@@ -3102,7 +3947,7 @@ impl Lower {
                 .borrow_mut()
                 .select(ctx, site_qual, arg_name)
         };
- = &mut ctx.tree_mut(qualifier).kind {
+        if let TreeKind::FieldAccess { sym: sym_slot, .. } = &mut ctx.tree_mut(qualifier).kind {
             *sym_slot = Some(dynamic_sym);
         }
         // Java: qualifier.type = msym.type.asMethodType().restype
@@ -3165,6 +4010,9 @@ impl Lower {
                         true,
                     )
                 };
+                if ctx.sym(type_sym).kind == Kind::VAR {
+                    let _ = ctx.sym(type_sym).get_const_value();
+                }
                 self.make
                     .borrow_mut()
                     .qual_ident(ctx, &mut self.syms.borrow_mut(), type_sym)
@@ -3205,6 +4053,14 @@ impl Lower {
         );
         let mut record_fields: Vec<SymbolId> = Vec::new();
         for field in fields {
+            if ctx.sym(field).kind == Kind::VAR
+                && (ctx.sym(field).flags_field & crate::code::flags::RECORD) != 0
+                && (ctx.sym(field).flags_field
+                    & crate::code::flags::UNINITIALIZED_FIELD)
+                    != 0
+            {
+                record_fields.push(field);
+            }
         }
         let params = match &ctx.tree(tree).kind {
             TreeKind::MethodDecl { params, .. } => params.clone(),
@@ -3221,7 +4077,7 @@ impl Lower {
             let mut current = params.clone();
             while current.non_empty() {
                 let param = *current.head();
- = &ctx.tree(param).kind
+                if let TreeKind::VariableDecl { sym: Some(sym), .. } = &ctx.tree(param).kind
                     && ctx.sym(*sym).name == field_name
                 {
                     param_sym = Some(*sym);
@@ -3248,7 +4104,7 @@ impl Lower {
             };
             ctx.tree_mut(assign).ty = Some(field_erasure);
             let exec = self.make.borrow_mut().exec(ctx, assign);
- = &mut ctx.tree_mut(body).kind {
+            if let TreeKind::Block { stats, .. } = &mut ctx.tree_mut(body).kind {
                 *stats = stats.append(exec);
             }
             ctx.sym_mut(field).flags_field &= !(crate::code::flags::UNINITIALIZED_FIELD);
@@ -3259,6 +4115,9 @@ impl Lower {
     /// Return true when a constant expression is known to be true.
     fn is_true(&mut self, ctx: &mut CompilerContext, exp: TreeId) -> bool {
         let ty = ctx.tree(exp).ty;
+        if let Some(ty) = ty && ctx.typ(ty).is_true() {
+            return true;
+        }
         let value = self.exp_value(ctx, exp);
         value.unwrap_or(false)
     }
@@ -3266,6 +4125,9 @@ impl Lower {
     /// Return true when a constant expression is known to be false.
     fn is_false(&mut self, ctx: &mut CompilerContext, exp: TreeId) -> bool {
         let ty = ctx.tree(exp).ty;
+        if let Some(ty) = ty && ctx.typ(ty).is_false() {
+            return true;
+        }
         let value = self.exp_value(ctx, exp);
         value.map(|value| !value).unwrap_or(false)
     }
@@ -3293,18 +4155,33 @@ impl Lower {
             _ => return None,
         };
         let lhs_ty = ctx.tree(lhs).ty;
+        if let Some(lhs_ty) = lhs_ty && ctx.typ(lhs_ty).has_tag(TypeTag::BOT) {
+            return self.exp_value_is_null(ctx, eq, rhs);
+        }
         let rhs_ty = ctx.tree(rhs).ty;
+        if let Some(rhs_ty) = rhs_ty && ctx.typ(rhs_ty).has_tag(TypeTag::BOT) {
+            return self.exp_value_is_null(ctx, eq, lhs);
+        }
         None
     }
 
     /// Evaluate a nullable equality expression operand.
     fn exp_value_is_null(&mut self, ctx: &mut CompilerContext, eq: bool, t: TreeId) -> Option<bool> {
+        if let Some(ty) = ctx.tree(t).ty && ctx.typ(ty).has_tag(TypeTag::BOT) {
+            return Some(eq);
+        }
+        if ctx.tree(t).has_tag(Tag::LITERAL) {
+            return Some(!eq);
+        }
         None
     }
 
     /// Convert a tree to the prototype type with a cast when needed.
     fn convert(&mut self, ctx: &mut CompilerContext, tree: TreeId, pt: TypeId) -> TreeId {
         let tree_ty = ctx.tree(tree).ty.expect("tree type");
+        if tree_ty == pt || ctx.typ(tree_ty).has_tag(TypeTag::BOT) {
+            return tree;
+        }
         let pos = ctx.tree(tree).pos;
         self.make.borrow_mut().at(pos);
         let pt_tree = self.type_tree(ctx, pt);
@@ -3331,6 +4208,9 @@ impl Lower {
     ) -> List<TreeId> {
         let original_args = args.clone();
         let mut args = args;
+        if parameters.is_empty() {
+            return args;
+        }
         let mut any_changes = false;
         let mut result: List<TreeId> = List::nil();
         while parameters.tail().non_empty() {
@@ -3345,7 +4225,36 @@ impl Lower {
             args = args.tail();
         }
         let parameter = *parameters.head();
- else {
+        if let Some(varargs_element) = varargs_element {
+            any_changes = true;
+            let mut elems: List<TreeId> = List::nil();
+            while args.non_empty() {
+                let arg = *args.head();
+                let translated = self
+                    .translate_with_type(ctx, Some(arg), varargs_element)
+                    .expect("translated varargs argument");
+                elems = elems.append(translated);
+                args = args.tail();
+            }
+            let elem_tree = self.type_tree(ctx, varargs_element);
+            let boxed_args = self.make.borrow_mut().new_array(
+                ctx,
+                Some(elem_tree),
+                List::nil(),
+                Some(elems),
+            );
+            let array_class = self.syms.borrow().array_class;
+            let boxed_ty = ctx.alloc_type(Type::new(
+                TypeTag::ARRAY,
+                Some(array_class),
+                TypeKindData::ArrayType {
+                    elemtype: Some(varargs_element),
+                    varargs: false,
+                },
+            ));
+            ctx.tree_mut(boxed_args).ty = Some(boxed_ty);
+            result = result.append(boxed_args);
+        } else {
             // Java: if (args.length() != 1) throw new AssertionError(args);
             assert!(
                 args.length() == 1,
@@ -3357,6 +4266,11 @@ impl Lower {
                 .expect("translated argument");
             any_changes |= translated != arg;
             result = result.append(translated);
+            if !any_changes {
+                // Java: if (!anyChanges) return _args; (the original argument
+                // list, not the tail consumed by the loop).
+                return original_args;
+            }
         }
         let _ = any_changes;
         result
@@ -3409,6 +4323,9 @@ impl Lower {
         block: TreeId,
         depth: i32,
     ) -> TreeId {
+        if resources.is_empty() {
+            return block;
+        }
         let mut stats: List<TreeId> = List::nil();
         let resource = *resources.head();
         let (resource_use, resource_non_null) = if ctx.tree(resource).has_tag(Tag::VARDEF) {
@@ -3422,6 +4339,9 @@ impl Lower {
             };
             let ident = self.make.borrow_mut().ident_symbol(ctx, var.0);
             let ident_ty = ctx.tree(resource).ty;
+            if let Some(ident_ty) = ident_ty {
+                ctx.tree_mut(ident).ty = Some(ident_ty);
+            }
             let non_null = var.1.is_some()
                 && match var.1 {
                     Some(init) => ctx
@@ -3458,6 +4378,10 @@ impl Lower {
         let block_end = tree_info::end_pos(ctx, block);
         self.make.borrow_mut().at(block_end);
         let mut body_close = self.make_resource_close_invocation(ctx, resource_use);
+        if !resource_non_null {
+            let null_check = self.make_non_null_check(ctx, resource_use);
+            body_close = self.make.borrow_mut().if_(ctx, null_check, body_close, None);
+        }
         let body_only_finalize = crate::code::flags::BODY_ONLY_FINALIZE;
         let finally_clause = self
             .make
@@ -3514,11 +4438,18 @@ impl Lower {
             List::of(catch_suppressed),
             None,
         );
- = &mut ctx.tree_mut(close_resource_try).kind
+        if let TreeKind::Try {
+            finally_can_complete_normally,
+            ..
+        } = &mut ctx.tree_mut(close_resource_try).kind
         {
             *finally_can_complete_normally = true;
         }
         let mut exceptional_close = close_resource_try;
+        if !resource_non_null {
+            let null_check = self.make_non_null_check(ctx, resource_use);
+            exceptional_close = self.make.borrow_mut().if_(ctx, null_check, exceptional_close, None);
+        }
         let primary_ident2 = self.make.borrow_mut().ident_symbol(ctx, primary_exception);
         let rethrow = self.make.borrow_mut().throw_(ctx, primary_ident2);
         let exceptional_block = self
@@ -3536,7 +4467,10 @@ impl Lower {
             List::of(exceptional_catch),
             Some(finally_clause),
         );
- = &mut ctx.tree_mut(outer_try).kind
+        if let TreeKind::Try {
+            finally_can_complete_normally,
+            ..
+        } = &mut ctx.tree_mut(outer_try).kind
         {
             *finally_can_complete_normally = true;
         }
@@ -3554,6 +4488,9 @@ impl Lower {
             let auto_tsym = ctx.typ(auto_closeable).tsym.expect("auto closeable symbol");
             self.types.as_super(ctx, &syms, resource_ty, auto_tsym)
         };
+        if as_super.is_none() {
+            resource = self.convert(ctx, resource, auto_closeable);
+        }
         let close_name = self.names.close.clone();
         let close_call = self.make_call(ctx, resource, close_name, List::nil());
         self.make.borrow_mut().exec(ctx, close_call)
@@ -3583,7 +4520,7 @@ impl Lower {
         match ctx.tree(rval).get_tag() {
             Tag::LITERAL => return builder.build(self, ctx, rval),
             Tag::IDENT => {
- = &ctx.tree(rval).kind
+                if let TreeKind::Ident { sym: Some(sym), .. } = &ctx.tree(rval).kind
                     && (ctx.sym(*sym).flags_field & crate::code::flags::FINAL as i64) != 0
                     && ctx
                         .sym(*sym)
@@ -3595,6 +4532,11 @@ impl Lower {
                 }
             }
             _ => {}
+        }
+        if let Some(name) = tree_info::name(ctx, rval)
+            && (name == self.names._super || name == self.names._this)
+        {
+            return builder.build(self, ctx, rval);
         }
         let current_method_sym = self.current_method_sym.expect("current method symbol");
         let name_text = format!("{}{}", self.target.synthetic_name_char(), rval.index());
@@ -3649,6 +4591,11 @@ impl Lower {
                     _ => panic!("expected a field access"),
                 };
                 let lid = tree_info::symbol(ctx, selected);
+                if let Some(lid) = lid
+                    && ctx.sym(lid).kind == Kind::TYP
+                {
+                    return builder.build(self, ctx, lval);
+                }
                 let mut select_builder = SelectBuilder {
                     inner: builder,
                     field_sym: field_sym.expect("field symbol"),
@@ -3722,11 +4669,38 @@ impl Lower {
             .translate_with_type(ctx, Some(cond), bool_type)
             .expect("translated condition");
         let tree_ty = ctx.tree(tree).ty.expect("conditional type");
- = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::Conditional { cond: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(cond);
         }
         let cond_true = self.is_true(ctx, cond);
         let cond_false = self.is_false(ctx, cond);
+        if std::env::var_os("DSH_DEBUG_COND").is_some() {
+            let file = self
+                .attr_env
+                .as_ref()
+                .and_then(|env| env.toplevel)
+                .and_then(|unit| match &ctx.tree(unit).kind {
+                    crate::tree::jc_tree::TreeKind::CompilationUnit { sourcefile, .. } => {
+                        sourcefile.clone()
+                    }
+                    _ => None,
+                })
+                .map(|source| source.get_name().to_string_lossy().to_string())
+                .unwrap_or_default();
+            if file.contains("JsonReader.java") {
+                let cond_ty = ctx.tree(cond).ty.map(|ty| {
+                    (
+                        ctx.typ(ty).const_value().cloned(),
+                        crate::comp::attr::type_display_of(ctx, ty),
+                    )
+                });
+                eprintln!(
+                    "[COND] pos={} true={cond_true} false={cond_false} ty={cond_ty:?} tag={:?}",
+                    ctx.tree(tree).pos,
+                    ctx.tree(cond).get_tag(),
+                );
+            }
+        }
         if cond_true {
             let translated = self
                 .translate_with_type(ctx, truepart, tree_ty)
@@ -7032,9 +8006,6 @@ impl<'a> crate::tree::tree_scanner::TreeScannerVisitor for FreeVarCollector<'a> 
         let constructor = constructor.expect("attributed constructor");
         let c = ctx.sym(constructor).owner.expect("constructor owner");
         self.add_free_vars(ctx, c);
-        // The enclosing instance of a qualified new (p.new Child()) is an
-        // ordinary free-variable reference of the class being created.
-        self.scan(ctx, encl);
         if encl.is_none()
             && ctx.sym(c).has_outer_instance(ctx)
             && let Some(head) = self.outer_this_stack.first().copied()
