@@ -83,9 +83,11 @@
 //!     elements are still skipped/added as upstream, only the warning is missing;
 //!   - non .jar/.zip class path files are skipped without the upstream zip readability
 //!     probe (java.nio FileSystem); TODO(S3c);
-//!   - module path scanning (jar/jmod/exploded module names) needs Manifest and the
-//!     javac-zip/javac-jmod adapters: getLocationForModule/listLocationsForModules for
-//!     MODULE_PATH/UPGRADE_MODULE_PATH are TODO panics; the path bookkeeping is ported;
+//!   - module path scanning for MODULE_PATH/UPGRADE_MODULE_PATH is implemented with
+//!     javac-fs + javac-zip: exploded modules, directories of modules, jar modules
+//!     (module-info.class, Automatic-Module-Name, automatic name derivation) and jmod
+//!     archives; the jmod entry path resolves through the archive adapter (ModuleLocation
+//!     carries the jmod file itself, see module_path_infer_module_name);
 //!   - --module-source-path pattern forms (wildcard/brace expansion) need java.util.regex
 //!     and the upstream expansion; only the module=path form is ported;
 //!   - --patch-module accepts the NUL-separated module=path form only (upstream invalid

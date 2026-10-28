@@ -207,7 +207,12 @@ impl PoolWriter {
             ConstantValue::Long(v) => BasicConstant::long(*v),
             ConstantValue::Double(v) => BasicConstant::double(*v),
             ConstantValue::String(v) => BasicConstant::string(v.clone()),
-            other => panic!("AssertionError: unexpected constant: {:?}", other),
+            // The JVM pool stores byte/short/char/boolean as a CONSTANT_Integer
+            // (JVMS 4.4.4); the Java primitive wrapper values are widened here.
+            ConstantValue::Byte(v) => BasicConstant::int(*v as i32),
+            ConstantValue::Short(v) => BasicConstant::int(*v as i32),
+            ConstantValue::Character(v) => BasicConstant::int(*v as i32),
+            ConstantValue::Boolean(v) => BasicConstant::int(i32::from(*v)),
         };
         self.put_constant(ctx, syms, PoolConstantRef::Basic(constant))
     }

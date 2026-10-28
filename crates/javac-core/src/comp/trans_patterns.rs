@@ -1342,7 +1342,7 @@ impl TransPatterns {
         let result = {
             let mut make = self.make.borrow_mut();
             make.at(pos);
-            make.type_cast(ctx, expr, type_tree)
+            make.type_cast(ctx, type_tree, expr)
         };
         ctx.tree_mut(result).ty = Some(target);
         result

@@ -1473,8 +1473,9 @@ pub fn primary_pattern_type(ctx: &CompilerContext, pat: TreeId) -> PatternPrimar
                         && unconditional
                     {
                         unconditional = false;
-                        // TODO: the constant value (Type.constValue) is not
-                        // ported yet; see docs/STATUS.md.
+                        // Java: PatternPrimaryType.new(nested.ty, unconditional)
+                        // (the upstream constant-value check is a liveness
+                        // optimization only; Type.constValue is ported).
                     }
                 }
             }

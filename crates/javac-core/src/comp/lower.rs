@@ -669,7 +669,10 @@ impl Lower {
         }
         let odef = self.class_def(ctx, owner).expect("owner class definition");
         let odef_pos = ctx.tree(odef).pos;
-        self.enter_synthetic(ctx, c, members);
+        // Java: enterSynthetic(owner, c): the synthetic class is entered in the
+        // owner class scope, not in its own (empty) member scope.
+        let owner_members = ctx.sym(owner).members().expect("owner class members");
+        self.enter_synthetic(ctx, c, owner_members);
         self.chk.borrow_mut().put_compiled(ctx, c);
         let mods = self.make.borrow_mut().modifiers(ctx, flags);
         let empty_name = self.names.empty.clone();
@@ -3195,6 +3198,9 @@ impl Lower {
             self.make.borrow_mut().at(pos);
             let clazz = self.type_tree(ctx, boxed_ty);
             tree = self.make.borrow_mut().type_cast(ctx, clazz, tree);
+            // Java: Attr.visitTypeCast sets tree.type = tree.clazz.type; the
+            // synthetic cast is built after Attr, so set it here.
+            ctx.tree_mut(tree).ty = Some(boxed_ty);
             let tree_ty = ctx.tree(tree).ty.expect("tree type");
             let _ = tree_ty;
         } else {
@@ -5099,8 +5105,22 @@ impl Lower {
         if let TreeKind::TypeCast { clazz: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = clazz;
         }
-        let tree_ty = ctx.tree(tree).ty.expect("cast type");
         let clazz_ty = ctx.tree(clazz.expect("cast clazz")).ty.expect("cast clazz type");
+        // Upstream: Lower.visitTypeCast uses tree.type, which Attr always sets.
+        // The lowerer also synthesizes casts (coerce/boxing/unboxing helpers) whose
+        // trees never pass through Attr; for those the cast's result type is the
+        // cast type itself.
+        let tree_ty = match ctx.tree(tree).ty {
+            Some(ty) => ty,
+            None => {
+                // Upstream: Lower.visitTypeCast uses tree.type, which Attr always
+                // sets. The lowerer also synthesizes casts (coerce/boxing helpers)
+                // whose trees never pass through Attr; record the cast target type
+                // so later passes (code generation) see a typed expression.
+                ctx.tree_mut(tree).ty = Some(clazz_ty);
+                clazz_ty
+            }
+        };
         let expr_ty = ctx.tree(expr).ty.expect("cast expression type");
         let expr = if ctx.typ(clazz_ty).is_primitive() != ctx.typ(expr_ty).is_primitive() {
             self.translate_with_type(ctx, Some(expr), tree_ty)
@@ -6605,6 +6625,10 @@ impl Lower {
                 self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), map_var)
             };
             let indexed = self.make.borrow_mut().indexed(ctx, map_ident, ordinal_app);
+            // Java: Lower.visitSwitch synthesizes the map access with the map's
+            // element type; the synthetic tree has no Attr pass to set it.
+            let indexed_elem = self.syms.borrow().int_type;
+            ctx.tree_mut(indexed).ty = Some(indexed_elem);
             let dollar_ident2 = self.make.borrow_mut().ident_symbol(ctx, dollar_s);
             let null = self.make_null(ctx);
             let ne = self.make_binary(ctx, Tag::NE, dollar_ident2, null);
@@ -6621,7 +6645,11 @@ impl Lower {
             let map_ident = {
                 self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), map_var)
             };
-            self.make.borrow_mut().indexed(ctx, map_ident, ordinal_app)
+            let indexed = self.make.borrow_mut().indexed(ctx, map_ident, ordinal_app);
+            // Java: the switch map access carries the map's element type.
+            let indexed_elem = self.syms.borrow().int_type;
+            ctx.tree_mut(indexed).ty = Some(indexed_elem);
+            indexed
         };
         let mut new_cases: List<TreeId> = List::nil();
         let mut current = cases;
@@ -7157,7 +7185,23 @@ impl Lower {
             }
             TreeKind::Return { expr } => {
                 let inner = *expr;
-                let inner = self.translate(ctx, inner);
+                // Java: Lower.visitReturn: tree.expr = translate(tree.expr,
+                // erasure(currentMethodDef.restype.type)); translate(tree, type)
+                // boxes/unboxes to the erased return type (Lower.java visitReturn).
+                let return_ty = self
+                    .current_method_sym
+                    .and_then(|sym| ctx.sym(sym).ty)
+                    .map(|ty| {
+                        let syms = self.syms.borrow();
+                        self.types.erasure(ctx, &syms, ty)
+                    })
+                    .and_then(|erased| ctx.typ(erased).get_return_type(ctx));
+                let inner = match (inner, return_ty) {
+                    (Some(inner), Some(ret)) => {
+                        self.translate_with_type(ctx, Some(inner), ret)
+                    }
+                    _ => self.translate(ctx, inner),
+                };
                 if let TreeKind::Return { expr } = &mut ctx.tree_mut(tree).kind {
                     *expr = inner;
                 }
@@ -7382,7 +7426,13 @@ impl Lower {
             let sym = ctx.alloc_symbol(symbol);
             self.current_method_sym = Some(sym);
         }
-        let tree_ty = ctx.tree(tree).ty.expect("variable type");
+        // Java: Lower.visitVarDef translates the initializer against the
+        // variable symbol's type; lowerer-synthesized declarations (for
+        // example switch/TWR temporaries) carry the symbol type only.
+        let tree_ty = match var_sym.and_then(|sym| ctx.sym(sym).ty) {
+            Some(ty) => ty,
+            None => ctx.tree(tree).ty.expect("variable type"),
+        };
         if init.is_some() {
             init = self.translate_with_type(ctx, init, tree_ty);
         }
@@ -7555,10 +7605,9 @@ impl EnumMapping {
                 value
             }
         };
-        lower
-            .make
-            .borrow_mut()
-            .literal(ctx, TypeTag::INT, Some(crate::tree::jc_tree::LiteralValue::Integer(result)))
+        // Java: make.Literal(value) — the Object overload, which sets the
+        // literal type to syms.intType.constType(value).
+        lower.make_int_literal(ctx, result)
     }
 
 
@@ -7643,10 +7692,15 @@ impl EnumMapping {
                 lower.make.borrow_mut().qual_ident(ctx, &mut lower.syms.borrow_mut(), self.map_var)
             };
             let indexed = lower.make.borrow_mut().indexed(ctx, map_var_ident, ordinal_app);
+            // Java: the switch map access carries the map's element type.
+            ctx.tree_mut(indexed).ty = Some(int_type);
             let literal = lower
                 .make
                 .borrow_mut()
                 .literal(ctx, TypeTag::INT, Some(crate::tree::jc_tree::LiteralValue::Integer(mapped_value)));
+            // Java: TreeMaker.Literal sets the literal type; the synthesized
+            // switch map literal is not attributed again.
+            ctx.tree_mut(literal).ty = Some(int_type);
             let assign = lower.make.borrow_mut().assign(ctx, indexed, literal);
             ctx.tree_mut(assign).ty = Some(int_type);
             let exec = lower.make.borrow_mut().exec(ctx, assign);

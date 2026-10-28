@@ -19,19 +19,17 @@
 //! - the upstream constructor takes Options (SimpleConfiguration(Options,
 //!   parts)); Options are not ported yet, so only the option-less construction
 //!   is provided (TODO(Options));
-//! - NOT PORTED IN THIS STEP (dependencies are not ported yet; no substitute
-//!   logic):
-//!   * the source-name branches need file/PathFileObject (getShortName /
-//!     getSimpleName), so the raw format of a positioned diagnostic (or a class
-//!     file diagnostic) panics with a TODO message; the position-less raw
-//!     format (dash + code + arguments) is fully ported;
-//!   * RawDiagnosticPosHelper (positions of JCExpression arguments) needs the
-//!     tree arena context: JCExpression arguments are TreeId values in the port
-//!     and a formatter has no CompilerContext yet (TODO);
-//!   * the Formattable argument branch uses Java Object.toString() (no Rust
-//!     equivalent for an unknown Formattable object) - the Abstract
-//!     formatArgument branch is used instead (registered);
-//!   * the Source.DEFAULT normalization branch needs code/Source (not ported);
+//! - the source-name branches use AbstractDiagnosticFormatter::formatSource
+//!   (the ported PathFileObject short/simple name is the last name component,
+//!   registered adapter); a diagnostic without a source throws the upstream
+//!   IllegalArgumentException (a Rust panic, registered section 6/9);
+//! - RawDiagnosticPosHelper (positions of JCExpression arguments) is not
+//!   ported: JCExpression arguments are TreeId values and a formatter has no
+//!   CompilerContext, so those arguments use the Abstract position (registered);
+//! - the Formattable argument branch uses Java Object.toString() (no Rust
+//!   equivalent for an unknown Formattable object) - the Abstract
+//!   formatArgument branch is used instead (registered);
+//! - the Source.DEFAULT normalization branch needs code/Source (not ported);
 //! - the upstream catch (Exception) -> null in formatDiagnostic is dropped: in
 //!   Rust the exceptional paths panic (registered section 6/9).
 

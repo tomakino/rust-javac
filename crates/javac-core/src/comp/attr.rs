@@ -13338,9 +13338,18 @@ impl Attr {
                     let constructor_ret = self.types.get_return_type_public(ctx, constructor_type);
                     ctx.tree_mut(clazz).ty = Some(constructor_ret);
                     let void_ty = syms.void_type;
-                    let constructor_type_void = self
-                        .types
-                        .create_method_type_with_return(ctx, constructor_type, void_ty);
+                    // Upstream: Attr.visitNewClass stores the void-returning
+                    // constructor type. A partially inferred method type keeps its
+                    // inference context so ArgumentAttr.overloadCheck can re-run
+                    // the inference against each candidate target (Infer's
+                    // PartiallyInferredMethodType.check); wrapping it in a plain
+                    // MethodType would lose that context.
+                    let constructor_type_void = if ctx.typ(constructor_type).is_partial() {
+                        constructor_type
+                    } else {
+                        self.types
+                            .create_method_type_with_return(ctx, constructor_type, void_ty)
+                    };
                     if let TreeKind::NewClass { constructor_type: slot, .. } = &mut ctx.tree_mut(tree).kind {
                         *slot = Some(constructor_type_void);
                     }

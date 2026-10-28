@@ -451,7 +451,7 @@ pub trait TreeFactory {
         lhs: TreeId,
         rhs: TreeId,
     ) -> TreeId;
-    fn type_cast(&mut self, ctx: &mut CompilerContext, expr: TreeId, type_: TreeId) -> TreeId;
+    fn type_cast(&mut self, ctx: &mut CompilerContext, type_: TreeId, expr: TreeId) -> TreeId;
     fn type_test(&mut self, ctx: &mut CompilerContext, expr: TreeId, clazz: TreeId) -> TreeId;
     fn binding_pattern(&mut self, ctx: &mut CompilerContext, var: TreeId) -> TreeId;
     fn default_case_label(&mut self, ctx: &mut CompilerContext) -> TreeId;
@@ -1237,7 +1237,8 @@ impl TreeFactory for TreeMaker {
         )
     }
 
-    fn type_cast(&mut self, ctx: &mut CompilerContext, expr: TreeId, type_: TreeId) -> TreeId {
+    /// Upstream: TreeMaker.TypeCast(Type type, JCExpression expr).
+    fn type_cast(&mut self, ctx: &mut CompilerContext, type_: TreeId, expr: TreeId) -> TreeId {
         self.make(
             ctx,
             Tag::TYPECAST,

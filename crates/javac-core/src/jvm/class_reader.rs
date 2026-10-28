@@ -273,6 +273,10 @@ impl ClassReader {
         let verbose = options.is_set_option(crate::main::option::Option::VERBOSE);
         let save_parameter_names =
             options.is_set_option(crate::main::option::Option::PARAMETERS);
+        // Java: Types.instance(context) — the reader shares the compiler's Names
+        // service; a separate table would make Name identity differ from the
+        // compiler's symbols (the ported Types carries Names explicitly).
+        let types = crate::code::types::Types::with_names(Rc::clone(&names));
         let mut reader = ClassReader {
             verbose,
             allow_modules: Feature::MODULES.allowed_in_source(source),
@@ -303,7 +307,7 @@ impl ClassReader {
             signature_buffer: vec![0u8; ClassReader::INITIAL_BUFFER_SIZE as usize],
             sbp: 0,
             reading_class_attr: false,
-            types: crate::code::types::Types::new(),
+            types,
             signature: Vec::new(),
             sigp: 0,
             siglimit: 0,
@@ -985,11 +989,10 @@ impl ClassReader {
             .into_iter()
             .filter(|sym| ctx.sym(*sym).kind == crate::code::kinds::Kind::MTH)
             .collect::<Vec<SymbolId>>();
-        let types = crate::code::types::Types::new();
         for candidate in candidates {
             let ty = ctx.sym(candidate).ty.expect("method type");
             let params = ctx.typ(ty).get_parameter_types(ctx);
-            if types.is_same_types(ctx, syms, &params, &argtypes) {
+            if self.types.is_same_types(ctx, syms, &params, &argtypes) {
                 return Some(candidate);
             }
         }

@@ -2825,7 +2825,7 @@ impl JavacParser {
                             self.accept(ctx, TokenKind::RPAREN);
                             self.select_expr_mode();
                             let t1 = self.term3(ctx);
-                            return self.F.at(pos).type_cast(ctx, t1, cast_type);
+                            return self.F.at(pos).type_cast(ctx, cast_type, t1);
                         }
                         ParensResult::ImplicitLambda | ParensResult::ExplicitLambda => {
                             // Java: t = lambdaExpressionOrStatement(true,

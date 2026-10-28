@@ -185,3 +185,29 @@ Status: template only; entries are appended by the executing agent and reviewed 
 | `comp/resolve.rs::not_overridden_in` | `Resolve.notOverriddenIn` (Resolve.java:467-474) | full upstream condition: s2 == null || s2 == sym || sym.owner == s2.owner || !isSubSignature(memberType(site, s2), memberType(site, sym)) |
 | `comp/trans_types.rs::add_bridge` | `TransTypes.addBridge` (TransTypes.java) | Port adapter: the cloned bridge symbol restores its arena id before setAttributes writes metadata (Symbol::clone clears it) |
 | `comp/attr.rs::visit_new_class` constructor resolution | `Attr.visitNewClass` (Attr.java:2844-2854) | resolveConstructor/checkId run in the duplicated env whose selectSuper = cdef != null; protected super constructors are then accessible from anonymous subclasses |
+
+## A3m entries: diamond inference, codegen casts, Names service and debt batch
+
+| Local symbol | Upstream location | Notes |
+|---|---|---|
+| `code/types.rs::Types::new` / `with_names` | `Types.java:94, Types.instance(context)` | Port adapter: the ported Types carries the Names service; the non-injected constructors share the thread-local DEFAULT_NAMES table (single-threaded compiler), so no Names-less path remains |
+| `code/types.rs::lub_pair` | `Types.lub(Type, Type)` (Types.java) | the two-argument wrapper uses the stored Names service (the former expect panic is gone) |
+| `comp/infer.rs::InferenceStep::solve` LOWER branch | `Infer.java:1425-1531 (lub of lower bounds)` | uses `Infer.names` directly (Rc, no Option) |
+| `comp/attr.rs::visit_new_class` diamond constructor type | `Attr.visitNewClass` (Attr.java:2818-2840) + `Infer.PartiallyInferredMethodType.check` (Infer.java:286-357) | a partially inferred constructor type is stored unchanged (not wrapped by createMethodTypeWithReturn) so ArgumentAttr.overloadCheck re-infers it against each candidate target |
+| `comp/resolve.rs::find_diamond` synthetic constructor | `Resolve.findDiamond` (anonymous MethodSymbol) | Port adapter: `base_symbol_override` mirrors the upstream `baseSymbol()` override; `tree.constructor` is the original void-returning constructor for code generation |
+| `tree/tree_maker.rs::Make::type_cast` | `TreeMaker.TypeCast(Type, JCExpression)` | parameter order follows upstream (type, expr); the parser/lambda/trans_patterns/trans_types call sites were aligned |
+| `comp/lower.rs::lower_type_cast` | `Lower.visitTypeCast` (Lower.java) | Port adapter: a lowerer-synthesized cast tree never passes through Attr, so the cast target type is recorded on the tree before code generation |
+| `jvm/codegen.rs::Gen::new` concat field | `Gen.java:110 StringConcat.instance(context)` | the string-concat lowering is constructed with the Gen services (formerly initialized to None, which panicked on any string concatenation) |
+| `parser/doc_comment_parser.rs::reference_required` | `DocCommentParser.reference(boolean)` (DocCommentParser.java:413-478) | Port adapter: an empty reference (upstream null DCReference) is represented by a DCReference with an empty signature because the DC tree fields are non-optional |
+| `file/locations.rs::module_path_init_locations` / ModulePathIterator | `Locations.java:1226-1502` | module-path scanning was already ported (exploded modules, directories of modules, jar/jmod); only the stale TODO-panic file-header note was corrected |
+| `code/types.rs::cvar_upper_bound` | `Types.cvarUpperBound` (Types.java) | loops through TypeVar upper bounds (previously non-captured type variables were returned unchanged, so T[] element checks used T) |
+| `comp/resolve.rs::is_accessible_class_free` unnamed module | `Modules.computeVisiblePackages` (Modules.java) | Port adapter: visiblePackages completion is not ported; the unnamed module's visibility is derived from the package module's exports |
+| `comp/resolve.rs::is_accessible_class_free` array class | `Resolve.isAccessible(Env, Type)` (Resolve.java:383-394) | the array class pseudo-symbol (Symtab.arrayClass) has no package; arrays are checked through their element type |
+| `jvm/codegen.rs::gen_unary` PREINC/PREDEC | `Gen.visitUnary` (Gen.java) | the AssignItem wraps the original item (od), not the loaded stack value |
+| `comp/lower.rs::handle_switch` map access | `Lower.visitSwitch` (Lower.java) | synthesized Indexed/literal trees carry the map element type (they never pass Attr) |
+| `jvm/pool_writer.rs::put_constant_value` | `PoolWriter.putConstantValue` (PoolWriter.java) | byte/short/char/boolean widen to CONSTANT_Integer (JVMS 4.4.4) |
+| `comp/lower.rs::lower_var_def` | `Lower.visitVarDef` (Lower.java) | initializer is translated against the symbol type; synthesized declarations carry no tree type |
+| `comp/lower.rs::make_empty_class` enterSynthetic | `Lower.makeEmptyClass` (Lower.java) | Java: enterSynthetic(owner, c) enters the synthetic class in the owner class scope; previously it was entered in its own (empty) member scope, creating a self reference that recursed in listNested |
+| `comp/lower.rs::EnumMapping::for_constant` | `Lower.EnumMapping.forConstant` (Lower.java) | Java: make.Literal(value) (the Object overload) sets intType.constType(value); a raw TypeTag literal left the enum case label without a type |
+| `jvm/codegen.rs::gen_labelled` | `Gen.visitLabelled` (Gen.java) | the labeled statement environment is installed while generating the body (the dup env was unused, so break-to-label unwinding could not find the labeled env) |
+| `comp/lower.rs` unbox cast | `Lower.unbox` (Lower.java) | Port adapter: the synthetic TypeCast gets tree.type = clazz.type because it is built after Attr (Attr.visitTypeCast sets it upstream) |

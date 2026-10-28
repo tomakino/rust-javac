@@ -1022,6 +1022,11 @@ impl Code {
         self.pop_n(argsize);
         if Code::symbol_is_constructor(ctx, member) {
             let old = self.peek();
+            if !matches!(
+                &ctx.typ(old).kind,
+                crate::code::type_::TypeKindData::UninitializedType { .. }
+            ) {
+            }
             self.mark_initialized(ctx, old);
         }
         self.pop_n(1);

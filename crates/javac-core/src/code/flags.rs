@@ -13,8 +13,8 @@
 //! Java constant names with #[allow(non_camel_case_types)]. The Java
 //! ConcurrentHashMap modifier-set cache is a pure performance detail with no
 //! observable behavior and is not reproduced.
-//! TODO(P3): isStatic/isEnum/isConstant need Symbol/Symbol.VarSymbol and are
-//! added when code/Symbol.rs is ported.
+//! Java: isStatic/isEnum/isConstant are ported at the end of this file
+//! (flags::is_static/is_enum/is_constant).
 
 use javac_strings::JavaString;
 use javac_tools::lang::model::element::modifier::Modifier;
@@ -368,8 +368,8 @@ pub fn as_modifier_set(flags: i64) -> Vec<Modifier> {
     modifiers
 }
 
-// TODO(P3): isStatic(Symbol), isEnum(Symbol), isConstant(Symbol.VarSymbol) are
-// ported together with code/Symbol.rs.
+// Java: isStatic(Symbol), isEnum(Symbol), isConstant(Symbol.VarSymbol)
+// are ported at the end of this file.
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

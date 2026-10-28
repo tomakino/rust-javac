@@ -3234,7 +3234,7 @@ impl LambdaToMethod {
             };
             let cast = {
                 let mut make = self.make.borrow_mut();
-                make.type_cast(ctx, getter, type_expr)
+                make.type_cast(ctx, type_expr, getter)
             };
             ser_args.push(cast);
             index += 1;
@@ -8874,7 +8874,7 @@ impl MemberReferenceToLambda {
             };
             let cast = {
                 let mut make = self.make.borrow_mut();
-                make.type_cast(ctx, ident, type_tree)
+                make.type_cast(ctx, type_tree, ident)
             };
             ctx.tree_mut(cast).ty = Some(rcvr_type);
             return cast;

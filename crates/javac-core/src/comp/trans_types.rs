@@ -317,7 +317,7 @@ impl TransTypes {
         let cast_tree = {
             let mut make = self.make.borrow_mut();
             make.at(pos);
-            make.type_cast(ctx, tree, clazz_tree)
+            make.type_cast(ctx, clazz_tree, tree)
         };
         ctx.tree_mut(cast_tree).ty = Some(target);
         cast_tree

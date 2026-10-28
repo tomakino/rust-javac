@@ -524,7 +524,7 @@ pub struct Infer {
     pub diags: Rc<Factory>,
     /// Java: final Names names (upstream from the constructor; needed by
     /// makeIntersectionType in instantiateAsUninferredVars)
-    pub names: Option<Rc<Names>>,
+    pub names: Rc<Names>,
     /// Java: public static final Type anyPoly = new JCNoType()
     /// (Infer.java:132; a dedicated NONE instance compared by identity)
     pub any_poly: TypeId,
@@ -547,7 +547,7 @@ impl Infer {
         Rc::new(Infer {
             allow_graph_inference,
             diags,
-            names: Some(names),
+            names,
             any_poly,
         })
     }
@@ -641,7 +641,7 @@ impl Infer {
         t: TypeId,
         s: TypeId,
     ) -> List<Pair<TypeId, TypeId>> {
-        let names = self.names.clone().expect("Infer names");
+        let names = Rc::clone(&self.names);
         let lub_result = types.lub(ctx, syms, &names, &[t, s]);
         if lub_result == syms.err_type || lub_result == syms.bot_type {
             return List::nil();
@@ -709,7 +709,7 @@ impl Infer {
                 let qtype_name = ctx.sym(qtype_tsym).name.clone();
                 let owner = ctx.sym(qtype_tsym).owner.expect("qtype owner");
                 let fresh_tvar = new_type_variable_symbol(ctx, syms, qtype_name, owner);
-                let names = self.names.clone().expect("Infer names");
+                let names = Rc::clone(&self.names);
                 let intersection = types.make_intersection_type(
                     ctx,
                     syms,
@@ -1865,10 +1865,7 @@ impl InferenceStep {
                 let owntype = if lobounds.tail().is_empty() {
                     *lobounds.head()
                 } else {
-                    let names = infer
-                        .names
-                        .clone()
-                        .expect("TODO(Types batch): lub needs the Names service");
+                    let names = Rc::clone(&infer.names);
                     types.lub_list(ctx, syms, &names, lobounds)
                 };
                 if ctx.typ(owntype).is_primitive() || ctx.typ(owntype).has_tag(TypeTag::ERROR) {
@@ -3437,7 +3434,7 @@ impl Infer {
         Infer {
             allow_graph_inference: self.allow_graph_inference,
             diags: Rc::clone(&self.diags),
-            names: self.names.clone(),
+            names: Rc::clone(&self.names),
             any_poly: self.any_poly,
         }
     }
@@ -3695,7 +3692,7 @@ impl Infer {
             let to_tsym = ctx.typ(to).tsym.expect("parameterized type symbol");
             for t in bounds.iter() {
                 if let Some(sup) = types.as_super(ctx, syms, t, to_tsym) {
-                    if is_raw_type_public(ctx, sup) {
+                    if is_raw_type_public(types, ctx, sup) {
                         return true;
                     }
                 }
@@ -3775,8 +3772,7 @@ impl Infer {
 }
 
 /// Helper: is_raw public view (Types.isRaw is private free function).
-fn is_raw_type_public(ctx: &CompilerContext, t: TypeId) -> bool {
-    let types = crate::code::types::Types::new();
+fn is_raw_type_public(types: &Types, ctx: &CompilerContext, t: TypeId) -> bool {
     types.is_raw_type_public(ctx, t)
 }
 

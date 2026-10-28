@@ -177,10 +177,12 @@ fn flat_name_of(ctx: &CompilerContext, symbol: SymbolId) -> Name {
 /// PORTING_RULES: the Java instance fields (syms/...) are not stored; the
 /// ported methods take them as parameters. The Names service is stored (the
 /// captured-name creation of capture() needs it, Types.java:94/101/122).
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Types {
-    /// Java: final Names names (None until the service construction wires it).
-    names: Option<std::rc::Rc<crate::util::names::Names>>,
+    /// Java: final Names names (the injected table is registered in the file
+    /// header, and the non-injected constructors share the thread-local
+    /// DEFAULT_NAMES table).
+    names: std::rc::Rc<crate::util::names::Names>,
     /// Java: final boolean mapCapturesToBounds (Types.java:97; set from
     /// Feature.MAP_CAPTURES_TO_BOUNDS for the configured source level).
     map_captures_to_bounds: bool,
@@ -466,11 +468,14 @@ thread_local! {
 }
 
 impl Types {
-    /// Get the Types instance for this context.
+    /// Get a Types instance whose Names service is the shared thread-local
+    /// default table.
     ///
-    /// PORTING_RULES: the Java Types instance is registered in the Context; the
-    /// Rust Types keeps only the Names service (wired by the services that
-    /// need capture(); see with_names).
+    /// PORTING_RULES: upstream always reads `Names.instance(context)`, i.e. one
+    /// table per compiler context. Runtime services that can compare Name
+    /// identity against compiler symbols MUST use `with_names` with the
+    /// compiler's table instead; `new` is reserved for tests and for helpers
+    /// that never perform Name-based comparisons (registered adapter).
     pub fn new() -> Types {
         let (
             descriptor_cache,
@@ -481,7 +486,7 @@ impl Types {
             is_derived_raw_cache,
         ) = init_new_types_fields();
         Types {
-            names: None,
+            names: DEFAULT_NAMES.with(std::rc::Rc::clone),
             map_captures_to_bounds: false,
             descriptor_cache,
             implementation_cache,
@@ -504,7 +509,7 @@ impl Types {
             is_derived_raw_cache,
         ) = init_new_types_fields();
         Types {
-            names: Some(names),
+            names,
             map_captures_to_bounds: false,
             descriptor_cache,
             implementation_cache,
@@ -531,7 +536,7 @@ impl Types {
             is_derived_raw_cache,
         ) = init_new_types_fields();
         Types {
-            names: Some(names),
+            names,
             map_captures_to_bounds:
                 crate::code::source::Feature::MAP_CAPTURES_TO_BOUNDS.allowed_in_source(source),
             descriptor_cache,
@@ -551,16 +556,9 @@ impl Types {
     /// The Names service: the injected one, or the shared thread-local table
     /// for the constructors that cannot inject it (registered adapter; upstream
     /// Types always reads Names.instance(context)).
-    fn names_or_default(&self) -> std::rc::Rc<crate::util::names::Names> {
-        match &self.names {
-            Some(names) => std::rc::Rc::clone(names),
-            None => DEFAULT_NAMES.with(std::rc::Rc::clone),
-        }
-    }
-
     /// The captured type variable name (Types.java:122).
     fn captured_name(&self) -> crate::util::name::Name {
-        let names = self.names_or_default();
+        let names = std::rc::Rc::clone(&self.names);
         names.from_utf(b"<captured wildcard>")
     }
 
@@ -1460,7 +1458,7 @@ impl Types {
             }
             let supertype = supertype_opt.unwrap_or_else(|| no_type_of(ctx, syms));
             let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
-            let class_bound_type = class_bound(ctx, syms, t, attr.as_deref_mut());
+            let class_bound_type = class_bound(self, ctx, syms, t, attr.as_deref_mut());
             // The actual type arguments of the class bound and the formal
             // type parameters of the class symbol.
             // Port adapter: allparams() calls getTypeArguments(), whose upstream
@@ -1592,7 +1590,7 @@ impl Types {
             let mut from = from.clone();
             let mut to = to.clone();
             while from.non_empty() {
-                if type_equals_ignore_metadata(ctx, t, *from.head()) {
+                if type_equals_ignore_metadata(self, ctx, t, *from.head()) {
                     return with_type_var(ctx, *to.head(), t);
                 }
                 from = from.tail();
@@ -1762,7 +1760,7 @@ impl Types {
             if st == supertype && list_same(&interfaces, &is) {
                 return t;
             }
-        let names = self.names_or_default();
+        let names = std::rc::Rc::clone(&self.names);
             return self.make_intersection_type(ctx, syms, &names, is.prepend(st), false);
         }
         t
@@ -2768,7 +2766,7 @@ impl Types {
         s: TypeId,
         capture: bool,
     ) -> bool {
-        if type_equals_ignore_metadata(ctx, t, s) {
+        if type_equals_ignore_metadata(self, ctx, t, s) {
             return true;
         }
         if ctx.typ(s).is_partial() {
@@ -3181,19 +3179,18 @@ impl Types {
     }
 
     pub fn cvar_upper_bound(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
-        if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
-            let captured = ctx.typ(t).is_captured();
-            if captured {
-                let bound = match &ctx.typ(t).kind {
-                    crate::code::type_::TypeKindData::TypeVar { bound, .. } => *bound,
-                    _ => None,
+        // Java: Types.cvarUpperBound: while (t.hasTag(TYPEVAR)) t = t.getUpperBound();
+        // Captured types expose their wildcard bound through the same field.
+        let mut result = t;
+        while ctx.typ(result).has_tag(TypeTag::TYPEVAR) {
+            result = match &ctx.typ(result).kind {
+                crate::code::type_::TypeKindData::TypeVar { bound, .. } => {
+                    bound.expect("type variable bound")
                 }
-                .expect("type variable bound");
-                return self.cvar_upper_bound(ctx, bound);
-            }
-            return t;
+                _ => break,
+            };
         }
-        t
+        result
     }
 
     /// Java: public Type elemtype(Type t) (Types.java)
@@ -3676,7 +3673,7 @@ impl Types {
         syms: &Symtab,
         t: TypeId,
     ) -> TypeId {
-        elemtype_of(ctx, syms, t).unwrap_or(t)
+        elemtype_of(self, ctx, syms, t).unwrap_or(t)
     }
 
     /// Java: private boolean isSubtypeUncheckedInternal(Type t, Type s, boolean
@@ -3696,8 +3693,8 @@ impl Types {
         if ctx.typ(t).has_tag(TypeTag::ARRAY) && ctx.typ(s).has_tag(TypeTag::ARRAY) {
             // Java: isSameType(elemtype(t), elemtype(s)) /
             // isSubtypeUncheckedInternal(elemtype(t), elemtype(s), false, warn)
-            let t_elem = elemtype_of(ctx, syms, t).expect("array element type");
-            let s_elem = elemtype_of(ctx, syms, s).expect("array element type");
+            let t_elem = elemtype_of(self, ctx, syms, t).expect("array element type");
+            let s_elem = elemtype_of(self, ctx, syms, s).expect("array element type");
             if ctx.typ(t_elem).is_primitive() {
                 return self.is_same_type(ctx, syms, t_elem, s_elem);
             }
@@ -4479,7 +4476,7 @@ fn class_symbol_get_interfaces(ctx: &CompilerContext, symbol: SymbolId) -> List<
 }
 
 /// Java: Types.classBound(Type t)
-fn class_bound(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, mut attr: Option<&mut crate::comp::attr::Attr>) -> TypeId {
+fn class_bound(types: &Types, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, mut attr: Option<&mut crate::comp::attr::Attr>) -> TypeId {
     match &ctx.typ(t).kind {
         TypeKindData::ClassType { outer_field, .. }
         | TypeKindData::ErasedClassType { outer_field, .. }
@@ -4489,7 +4486,7 @@ fn class_bound(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, mut attr: Op
             let Some(outer) = *outer_field else {
                 return t;
             };
-            let outer1 = class_bound(ctx, syms, outer, attr.as_deref_mut());
+            let outer1 = class_bound(types, ctx, syms, outer, attr.as_deref_mut());
             if outer1 == outer {
                 t
             } else {
@@ -4499,8 +4496,8 @@ fn class_bound(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, mut attr: Op
             }
         }
         TypeKindData::TypeVar { .. } => {
-            let sup = Types::new().supertype(ctx, syms, t, attr);
-            class_bound(ctx, syms, sup, None)
+            let sup = types.supertype(ctx, syms, t, attr);
+            class_bound(types, ctx, syms, sup, None)
         }
         _ => t,
     }
@@ -4508,19 +4505,20 @@ fn class_bound(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, mut attr: Op
 
 /// Java: Types.elemtype(Type t)
 fn elemtype_of(
+    types: &Types,
     ctx: &CompilerContext,
     syms: &Symtab,
     t: TypeId,
 ) -> Option<TypeId> {
     match &ctx.typ(t).kind {
         TypeKindData::WildcardType { .. } => {
-            let upper = Types::new().wild_upper_bound(ctx, syms, t);
-            elemtype_of(ctx, syms, upper)
+            let upper = types.wild_upper_bound(ctx, syms, t);
+            elemtype_of(types, ctx, syms, upper)
         }
         TypeKindData::ArrayType { elemtype, .. } => *elemtype,
         TypeKindData::ForAll { qtype, .. } => {
             let qtype = (*qtype).expect("for-all qtype");
-            elemtype_of(ctx, syms, qtype)
+            elemtype_of(types, ctx, syms, qtype)
         }
         TypeKindData::ErrorType { .. } => Some(t),
         // Java: Types.elemtype default case returns null (Types.java:2078-2079).
@@ -4672,8 +4670,13 @@ fn new_captured_type(
 }
 
 /// Java: Type.equalsIgnoreMetadata -> Type.equals (identity except ArrayType).
-fn type_equals_ignore_metadata(ctx: &CompilerContext, t: TypeId, s: TypeId) -> bool {
-    Types::new().equals_ignore_metadata(ctx, t, s)
+fn type_equals_ignore_metadata(
+    types: &Types,
+    ctx: &CompilerContext,
+    t: TypeId,
+    s: TypeId,
+) -> bool {
+    types.equals_ignore_metadata(ctx, t, s)
 }
 
 /// Java: Type.contains(elem) (Type.java:1148/1408/1504/1854 overrides; the
@@ -4682,29 +4685,35 @@ fn type_equals_ignore_metadata(ctx: &CompilerContext, t: TypeId, s: TypeId) -> b
 /// TODO(Attr/Type.contains): not wired yet. Keep until that wires
 /// it; do not delete.
 #[allow(dead_code)]
-fn type_contains(ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, elem: TypeId) -> bool {
-    if type_equals_ignore_metadata(ctx, t, elem) {
+fn type_contains(
+    types: &Types,
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    t: TypeId,
+    elem: TypeId,
+) -> bool {
+    if type_equals_ignore_metadata(types, ctx, t, elem) {
         return true;
     }
     if is_parameterized_type(ctx, t) {
         if let Some(outer) = enclosing_of(ctx, t)
-            && type_contains(ctx, syms, outer, elem)
+            && type_contains(types, ctx, syms, outer, elem)
         {
             return true;
         }
         for arg in get_type_arguments(ctx, t).iter() {
-            if type_contains(ctx, syms, arg, elem) {
+            if type_contains(types, ctx, syms, arg, elem) {
                 return true;
             }
         }
     }
-    if Types::new().is_compound(ctx, t) {
-        let sup = Types::new().supertype(ctx, syms, t, None);
-        if type_contains(ctx, syms, sup, elem) {
+    if types.is_compound(ctx, t) {
+        let sup = types.supertype(ctx, syms, t, None);
+        if type_contains(types, ctx, syms, sup, elem) {
             return true;
         }
-        for i in Types::new().interfaces(ctx, syms, t).iter() {
-            if type_contains(ctx, syms, i, elem) {
+        for i in types.interfaces(ctx, syms, t).iter() {
+            if type_contains(types, ctx, syms, i, elem) {
                 return true;
             }
         }
@@ -5839,7 +5848,7 @@ impl Types {
             }
             return self.glb_list(ctx, syms, list);
         }
-        let names = self.names_or_default();
+        let names = std::rc::Rc::clone(&self.names);
         self.make_intersection_type(ctx, syms, &names, bounds, false)
     }
 }
@@ -5859,7 +5868,7 @@ impl Types {
         t: TypeId,
         elem: TypeId,
     ) -> bool {
-        if type_equals_ignore_metadata(ctx, t, elem) {
+        if type_equals_ignore_metadata(self, ctx, t, elem) {
             return true;
         }
         if is_parameterized_type(ctx, t) {
@@ -5869,17 +5878,17 @@ impl Types {
                 return true;
             }
             let arguments = get_type_arguments(ctx, t);
-            if type_list_contains(ctx, arguments, elem) {
+            if type_list_contains(self, ctx, arguments, elem) {
                 return true;
             }
         }
         if self.is_compound(ctx, t) {
             let supertype = self.supertype(ctx, syms, t, None);
-            if type_equals_ignore_metadata(ctx, supertype, elem) {
+            if type_equals_ignore_metadata(self, ctx, supertype, elem) {
                 return true;
             }
             let interfaces = self.interfaces(ctx, syms, t);
-            if type_list_contains(ctx, interfaces, elem) {
+            if type_list_contains(self, ctx, interfaces, elem) {
                 return true;
             }
         }
@@ -6167,7 +6176,7 @@ impl Types {
         ctx: &mut CompilerContext,
         syms: &Symtab,
     ) -> TypeId {
-        let names = self.names_or_default();
+        let names = std::rc::Rc::clone(&self.names);
         let bounds = List::of(syms.serializable_type).append(syms.cloneable_type);
         self.make_intersection_type(ctx, syms, &names, bounds, true)
     }
@@ -6216,6 +6225,7 @@ impl Types {
 
 /// Java: contains(List<Type> ts, Type elem) helper for ClassType.contains.
 fn type_list_contains(
+    types: &Types,
     ctx: &mut CompilerContext,
     ts: List<TypeId>,
     elem: TypeId,
@@ -6223,7 +6233,7 @@ fn type_list_contains(
     let mut current = ts;
     while current.non_empty() {
         let t = *current.head();
-        if type_equals_ignore_metadata(ctx, t, elem) {
+        if type_equals_ignore_metadata(types, ctx, t, elem) {
             return true;
         }
         current = current.tail();
@@ -7452,7 +7462,7 @@ impl Types {
                 // calculate lub(A[], B[])
                 let mut elements: Vec<TypeId> = Vec::new();
                 for t in ts {
-                    let elem = elemtype_of(ctx, syms, *t).expect("array element type");
+                    let elem = elemtype_of(self, ctx, syms, *t).expect("array element type");
                     if ctx.typ(elem).is_primitive() {
                         let first = ts[0];
                         for other in &ts[1..] {
@@ -7548,10 +7558,7 @@ impl Types {
         t: TypeId,
         s: TypeId,
     ) -> TypeId {
-        let names = self
-            .names
-            .clone()
-            .expect("TODO(Types batch): lub needs the Names service (Types::with_names)");
+        let names = std::rc::Rc::clone(&self.names);
         self.lub(ctx, syms, &names, &[t, s])
     }
 }
@@ -9232,8 +9239,8 @@ impl Types {
         warn: &mut crate::util::warner::Warner,
     ) -> bool {
         if ctx.typ(t).has_tag(TypeTag::ARRAY) && ctx.typ(s).has_tag(TypeTag::ARRAY) {
-            let t_elem = elemtype_of(ctx, syms, t).expect("array element type");
-            let s_elem = elemtype_of(ctx, syms, s).expect("array element type");
+            let t_elem = elemtype_of(self, ctx, syms, t).expect("array element type");
+            let s_elem = elemtype_of(self, ctx, syms, s).expect("array element type");
             if ctx.typ(t_elem).is_primitive() {
                 return self.is_same_type(ctx, syms, t_elem, s_elem);
             }
@@ -9546,11 +9553,8 @@ impl Types {
                     if !changed {
                         return t;
                     }
-                    let names = self
-                        .names
-                        .as_ref()
-                        .expect("Types::with_names must be used for intersection projection");
-                    return self.make_intersection_type(ctx, syms, names, projected, false);
+                    let names = std::rc::Rc::clone(&self.names);
+                    return self.make_intersection_type(ctx, syms, &names, projected, false);
                 }
                 let outer = outer_field;
                 let outer1 = outer.map(|outer| self.projection(ctx, syms, outer, vars, pkind, seen));
@@ -10026,7 +10030,7 @@ impl Types {
             Some(attribute) => attribute,
             None => return vis,
         };
-        let names = self.names.as_ref().expect("Types names").clone();
+        let names = std::rc::Rc::clone(&self.names);
         let values = match &ctx.attr(compound).kind {
             crate::code::attribute::AttributeKind::Compound { values, .. } => values.clone(),
             _ => return vis,
@@ -10478,13 +10482,7 @@ pub trait SignatureGenerator {
         let outer_allparams = crate::code::types::allparams_of(ctx, outer);
         if !outer_allparams.is_empty() {
             let owner = ctx.sym(tsym).owner.expect("class owner");
-            let empty_name = self
-                .types()
-                .names
-                .as_ref()
-                .expect("Types.names")
-                .empty
-                .to_java_string();
+            let empty_name = self.types().names.empty.to_java_string();
             let raw_outer = ctx.sym(owner).kind == crate::code::kinds::Kind::MTH
                 || ctx.sym(tsym).name.content_equals(&empty_name);
             let outer_sig_type = if raw_outer {
@@ -11014,9 +11012,10 @@ mod tests {
     #[test]
     fn elemtype_of_unwraps_arrays_and_wildcards() {
         let (mut ctx, symtab) = build();
+        let types = Types::new();
         let int_array = new_array_type(&mut ctx, symtab.int_type, Some(symtab.array_class));
         assert_eq!(
-            elemtype_of(&ctx, &symtab, int_array).expect("array element type"),
+            elemtype_of(&types, &ctx, &symtab, int_array).expect("array element type"),
             symtab.int_type
         );
         // Java: WildcardType.type is the (upper) bound; kind=EXTENDS.
@@ -11028,7 +11027,7 @@ mod tests {
             None,
         );
         assert_eq!(
-            elemtype_of(&ctx, &symtab, wildcard).expect("array element type"),
+            elemtype_of(&types, &ctx, &symtab, wildcard).expect("array element type"),
             symtab.int_type
         );
     }
@@ -11096,6 +11095,7 @@ mod tests {
     #[test]
     fn type_contains_recognizes_parameterized_arguments() {
         let (mut ctx, symtab) = build();
+        let types = Types::new();
         let list_tsym = ctx.typ(symtab.list_type).tsym.expect("list symbol");
         let parameterized = class_type(
             &mut ctx,
@@ -11103,18 +11103,21 @@ mod tests {
             &[symtab.string_type, symtab.int_type],
         );
         assert!(type_contains(
+            &types,
             &mut ctx,
             &symtab,
             parameterized,
             symtab.string_type
         ));
         assert!(!type_contains(
+            &types,
             &mut ctx,
             &symtab,
             parameterized,
             symtab.long_type
         ));
         assert!(type_contains(
+            &types,
             &mut ctx,
             &symtab,
             parameterized,
@@ -11187,23 +11190,23 @@ mod tests {
                         "int[]" => {
                             assert_eq!(ctx.typ(erased).get_tag(), TypeTag::ARRAY);
                             assert_eq!(
-                                elemtype_of(&ctx, &symtab, erased).expect("array element type"),
+                                elemtype_of(&types, &ctx, &symtab, erased).expect("array element type"),
                                 symtab.int_type
                             );
                         }
                         "java.lang.String[]" => {
                             assert_eq!(ctx.typ(erased).get_tag(), TypeTag::ARRAY);
                             assert_eq!(
-                                elemtype_of(&ctx, &symtab, erased).expect("array element type"),
+                                elemtype_of(&types, &ctx, &symtab, erased).expect("array element type"),
                                 symtab.string_type
                             );
                         }
                         "long[][]" => {
                             assert_eq!(ctx.typ(erased).get_tag(), TypeTag::ARRAY);
-                            let elem = elemtype_of(&ctx, &symtab, erased).expect("array element type");
+                            let elem = elemtype_of(&types, &ctx, &symtab, erased).expect("array element type");
                             assert_eq!(ctx.typ(elem).get_tag(), TypeTag::ARRAY);
                             assert_eq!(
-                                elemtype_of(&ctx, &symtab, elem).expect("array element type"),
+                                elemtype_of(&types, &ctx, &symtab, elem).expect("array element type"),
                                 symtab.long_type
                             );
                         }

@@ -202,3 +202,13 @@
 - 验证：`cargo test --workspace --all-targets` 29 套件全 ok（lib 828 passed / 0 failed）；clippy Finished errors=0；unimplemented/unreachable/todo=0；gson_probe 断言（errors==0）仍失败，如实记录。
 - 剩余 10 条全部是 diamond 目标类型推断（GsonBuilder 4、DefaultDateTypeAdapter 4、TypeToken 2）：`new HashMap<>(m)` 在方法实参上下文的 speculative 树类型仍为 `HashMap<K,V>`；`Infer.instantiateMethod` 的 shouldPropagate 返回 `HashMap<K?,V?>` 后外层 check 未通过 `minContext.dupTo`/free 延迟，立即 compatible 失败。下一步按 Infer.java:194-233 对齐传播；属 A3k 未关闭项。
 - 未提交；临时探针打印与 tests/a3k_probe.rs 已删除（grep=0）。
+### A3k 后续与前置债务批次（2026-10-28 20:20，执行者）
+- diamond 10 条关闭（Attr 阶段 0 errors）：修复 `visit_new_class` 保留 PartiallyInferredMethodType、`find_diamond` 的 base_symbol_override、`TreeMaker.type_cast` 参数顺序与调用点、Lower 合成 cast 类型回退（详见 `docs/A0/A3L_PLAN.md` §8）。
+- gson 当前仍 FAILED：修掉 Lower 合成 cast 类型记录与 Gen.concat 初始化后，阻塞是 `stack sim error on read`（某 read 方法生成后栈非 0，body pos=19398），0 classes；阻塞从 Attr 推断转到 CodeGen 栈模拟。
+- 前置债务：Types/Infer 的 Names 缺失消除（`Types::new` 用共享 DEFAULT_NAMES，names 非 Option，删除 lub/intersection/retention 的 expect）；locations MODULE_PATH 注释修正（实际已实现）；`reference_required` 空引用改空 DCReference（adapter）；flags/tree_info/raw formatter 过期 TODO 清理；AUDIT_FINDINGS F16/F22、KEYWORD_AUDIT 更新；新增 `docs/A0/TODO_CLASSIFICATION.md`（81 条无标签 TODO 分类）。
+- 验证：`cargo test --workspace --all-targets` 828 passed / 0 failed；clippy errors=0；unimplemented/todo=0；`tests/zz_scratch_a3l.rs` 已删除；未提交。
+### A3m 续（2026-10-28 21:10，执行者）
+- gson 不再 panic：`gson files=80 errors=8 classes=0`；8 条是 TransTypes `logAccessErrorInternal` 对 JDK 符号的误判（`Array` owner=root/flags INTERFACE|PUBLIC；`AssertionError.<init>` flags=2 PRIVATE），需下一轮定位 ClassReader/ClassFinder 的符号 owner/flags 完成路径。未达 0/207。
+- 本轮修掉 9 个 CodeGen 移植缺口：方法 env（visitMethodDef 的 localEnv）、block/loop env 安装、try/sync env 安装、Lower 合成 var def 的 sym.ty、StringConcat eager 判定、常量池 Byte/Short/Char/Boolean、return boxing、Lower 合成 cast 类型、Gen.concat 初始化（详见 A3L_PLAN §9）。
+- 验证：828 passed / 0 failed；clippy Finished errors=0；临时探针已清理（grep=0）；未提交。
+

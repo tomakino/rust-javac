@@ -6681,6 +6681,12 @@ impl Resolve {
                     original_enclosing_method: None,
                 },
             ));
+            // Port adapter: upstream's synthetic diamond constructor is an
+            // anonymous MethodSymbol whose baseSymbol() returns the original
+            // constructor. The arena symbol carries that link explicitly so
+            // codegen (void-returning constructor type) and diagnostics see the
+            // original symbol.
+            ctx.sym_mut(new_constr).base_symbol_override = Some(sym);
             best_so_far = self.select_best(
                 ctx,
                 syms,
@@ -10101,6 +10107,12 @@ mod check_channel_tests {
             }
         }
 
+        // Java: Symtab.arrayClass is a pseudo class symbol for array types; it
+        // has no enclosing package (Symtab.arrayClass), and arrays are checked
+        // through their element type (Resolve.isAccessible(env, Type site)).
+        if c == syms.array_class {
+            return true;
+        }
         let access = ctx.sym(c).flags_field & flags::AccessFlags as i64;
         let is_accessible;
         if access == flags::PRIVATE as i64 {
@@ -10124,13 +10136,20 @@ mod check_channel_tests {
                 // no-op for entered symbols (Completer registered).
                 let package = symbol_packge(ctx, c).expect("class package");
                 let package_module = package_module(ctx, package);
-                let visible = match &ctx.sym(curr_module).kind_data {
-                    crate::code::symbol::SymbolKind::ModuleSymbol {
-                        visible_packages, ..
-                    } => package_fullname(ctx, package)
-                        .and_then(|fullname| visible_packages.get(&fullname).copied())
-                        == Some(package),
-                    _ => false,
+                // Java: Modules.computeVisiblePackages: the unnamed module reads
+                // every module, so a package is visible when its module exports
+                // it. Port adapter: visiblePackages completion is not ported.
+                let visible = if curr_module == syms.unnamed_module {
+                    package_module.is_some_and(|pm| module_exports_package(ctx, pm, package))
+                } else {
+                    match &ctx.sym(curr_module).kind_data {
+                        crate::code::symbol::SymbolKind::ModuleSymbol {
+                            visible_packages, ..
+                        } => package_fullname(ctx, package)
+                            .and_then(|fullname| visible_packages.get(&fullname).copied())
+                            == Some(package),
+                        _ => false,
+                    }
                 };
                 let reads = match &ctx.sym(curr_module).kind_data {
                     crate::code::symbol::SymbolKind::ModuleSymbol { read_modules, .. } => {

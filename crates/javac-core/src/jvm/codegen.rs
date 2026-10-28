@@ -38,6 +38,7 @@ use crate::tree::jc_tree::{Tag, TreeKind, TreeVisitor};
 use crate::tree::tree_info::{self, PosKind};
 use crate::tree::tree_scanner::TreeScannerVisitor;
 use crate::tree::tree_maker::{TreeFactory, TreeMaker};
+
 use crate::util::jc_diagnostic::{DiagnosticPosition, Error};
 use crate::util::list::List;
 use crate::util::log::Log;
@@ -249,6 +250,15 @@ impl Gen {
         let debug_code = options.is_set("debug.code");
         let disable_virtualized_private_invoke =
             options.is_set("disableVirtualizedPrivateInvoke");
+        // Java: concat = StringConcat.instance(context) (Gen constructor initialization)
+        let concat = Some(crate::jvm::string_concat::make_concat(
+            Rc::clone(&syms),
+            Rc::clone(&names),
+            Rc::clone(&make),
+            Rc::clone(&types),
+            options.get("stringConcat"),
+            &target,
+        ));
         Gen {
             log,
             syms,
@@ -263,7 +273,7 @@ impl Gen {
             annotate,
             attr,
             infer,
-            concat: None,
+            concat,
             stack_map: StackMapFormat::JSR202,
             method_type,
             pool_writer,
@@ -1610,12 +1620,23 @@ impl Gen {
             );
             self.nerrs += 1;
         } else if let Some(body) = body {
-            // Java: the method body is generated with the method environment
-            // installed as Gen.env (Gen.genDef sets this.env; the ported
-            // genMethod derives the environment explicitly).
+            // Java: Gen.visitMethodDef creates the method environment
+            // (localEnv = env.dup(tree); localEnv.enclMethod = tree) and installs
+            // it as Gen.env before genMethod runs.  Unwinding a return/break
+            // walks that chain until the method tree (Gen.unwind).
+            let method_env = Rc::new(crate::comp::env::Env {
+                next: Some(Rc::clone(env)),
+                outer: env.outer.clone(),
+                tree: Some(tree),
+                toplevel: env.toplevel,
+                encl_class: env.encl_class,
+                encl_method: Some(tree),
+                info: Rc::new(std::cell::RefCell::new(GenContext::new())),
+                base_clause: env.base_clause,
+            });
             let prev_env = self.env.clone();
-            self.env = Some(Rc::clone(env));
-            let startpc_crt = self.init_code(ctx, tree, env, fatcode);
+            self.env = Some(Rc::clone(&method_env));
+            let startpc_crt = self.init_code(ctx, tree, &method_env, fatcode);
             self.gen_stat_crt(ctx, body, CRT_BLOCK);
             if self.get_code().borrow().state.stacksize != 0 {
                 let info = errors::stack_sim_error(
@@ -1627,6 +1648,20 @@ impl Gen {
                     &mut *self.log.borrow_mut(),
                     ctx.tree(body).pos,
                     Error::from(info),
+                );
+                let cls = crate::code::symbol::symbol_encl_class(ctx, meth)
+                    .map(|c| ctx.sym(c).name.to_java_string().to_string_lossy().to_string())
+                    .unwrap_or_default();
+                eprintln!(
+                    "[STACK] method={} class={} body_pos={} file={}",
+                    ctx.sym(meth).name.to_java_string().to_string_lossy(),
+                    cls,
+                    ctx.tree(body).pos,
+                    self.log
+                        .borrow()
+                        .current_source_file()
+                        .map(|f| f.get_name())
+                        .unwrap_or_default()
                 );
                 panic!("AssertionError: stack size not zero");
             }
@@ -1858,7 +1893,12 @@ impl Gen {
             TreeKind::Block { stats, .. } => stats.clone(),
             _ => panic!("AssertionError: block expected"),
         };
+        // Java: Gen.visitBlock: genStats(tree.stats, localEnv); the ported
+        // genStats reads Gen.env, so install the block environment.
+        let prev_env = self.env.clone();
+        self.env = Some(Rc::clone(&local_env));
         self.gen_stats_crt(ctx, stats, 0);
+        self.env = prev_env;
         // End the scope of all block-local variables in the variable info.
         let env = self.env.clone().expect("generation environment");
         let env_tree = env.tree.expect("generation environment tree");
@@ -1871,7 +1911,6 @@ impl Gen {
             self.get_code().borrow_mut().end_scopes(ctx, limit);
             self.get_code().borrow_mut().pending_stat_pos = NOPOS;
         }
-        let _ = local_env;
     }
 }
 
@@ -1902,6 +1941,10 @@ impl Gen {
         test_first: bool,
     ) {
         let loop_env = self.dup_env(Some(loop_tree), GenContext::new());
+        // Java: Gen.visitForLoop/visitWhileLoop: the body/cond/step are
+        // generated with loopEnv installed (break/continue unwind to it).
+        let prev_env = self.env.clone();
+        self.env = Some(Rc::clone(&loop_env));
         let startpc = self.get_code().borrow_mut().entry_point(ctx);
         if test_first {
             // while or for loop
@@ -1963,6 +2006,7 @@ impl Gen {
             let nextreg = self.get_code().borrow().nextreg;
             exclude_from(&mut loop_env.info.borrow_mut().exit, nextreg);
         }
+        self.env = prev_env;
     }
 
     /// Generate code for a do-while loop.
@@ -2018,7 +2062,10 @@ impl Gen {
             TreeKind::LabeledStatement { body: Some(body), .. } => *body,
             _ => panic!("AssertionError: labeled statement expected"),
         };
+        let prev_env = self.env.clone();
+        self.env = Some(Rc::clone(&local_env));
         self.gen_stat_crt(ctx, body, CRT_STATEMENT);
+        self.env = prev_env;
         let exit = local_env.info.borrow().exit.clone();
         if let Some(exit) = exit {
             self.get_code().borrow_mut().resolve_pending_chain(ctx, Some(exit));
@@ -2204,6 +2251,12 @@ impl Gen {
                     let label_ty = ctx.tree(*case_labels.head()).ty.expect("label type");
                     let val = match ctx.typ(label_ty).const_value() {
                         Some(crate::util::constants::ConstantValue::Integer(v)) => *v,
+                        // Port adapter: the port keeps the Character/Byte/Short
+                        // constant wrappers, while the upstream constant value
+                        // is already the widened Integer; widen here.
+                        Some(crate::util::constants::ConstantValue::Character(c)) => *c as i32,
+                        Some(crate::util::constants::ConstantValue::Byte(v)) => *v as i32,
+                        Some(crate::util::constants::ConstantValue::Short(v)) => *v as i32,
                         Some(other) => panic!("AssertionError: integer case label expected: {:?}", other),
                         None => panic!("AssertionError: constant case label expected"),
                     };
@@ -2524,7 +2577,12 @@ impl Gen {
             TreeKind::Synchronized { body: Some(body), .. } => *body,
             _ => panic!("AssertionError: synchronized body expected"),
         };
+        // Java: visitSynchronized generates the body inside syncEnv so that a
+        // return/break unwinds through the finalizer (monitorexit).
+        let prev_env = self.env.clone();
+        self.env = Some(Rc::clone(&sync_env));
         self.gen_try(ctx, body, List::nil(), &sync_env);
+        self.env = prev_env;
         self.get_code().borrow_mut().end_scopes(ctx, limit);
     }
 
@@ -2562,7 +2620,11 @@ impl Gen {
             } => (*body, catchers.clone()),
             _ => panic!("AssertionError: try statement expected"),
         };
+        // Java: genTry generates the body inside the try environment so that a
+        // return/break unwinds through the finally block.
+        self.env = Some(Rc::clone(&try_env));
         self.gen_try(ctx, body, catchers, &try_env);
+        self.env = Some(old_env);
     }
 
     /// Generate code for a try or synchronized statement.
@@ -3591,8 +3653,10 @@ impl Gen {
                             .borrow_mut()
                             .emitop0(ctx, INT2BYTE + od.typecode - BYTE_CODE);
                     }
+                    // Java: Gen.visitUnary PREINC/PREDEC wraps the original
+                    // item (od), not the loaded stack value, in an AssignItem.
                     let items = self.get_items();
-                    self.result = Some(items.borrow().make_assign_item(loaded));
+                    self.result = Some(items.borrow().make_assign_item(od.clone()));
                 }
             }
             Tag::POSTINC | Tag::POSTDEC => {
