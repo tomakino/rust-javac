@@ -1933,7 +1933,9 @@ impl ClassWriter {
             if (flags_value & flags::PROTECTED) != 0 {
                 flags_value |= flags::PUBLIC;
             }
-            flags_value &= flags::StandardFlags & !flags::STRICTFP;
+            // Java: flags = flags & ClassFlags & ~STRICTFP (ClassWriter.java:
+            // 1539-1542); ClassFlags includes ANNOTATION, StandardFlags does not.
+            flags_value &= flags::ClassFlags & !flags::STRICTFP;
             if (flags_value & flags::INTERFACE) == 0 {
                 flags_value |= flags::ACC_SUPER;
             }
