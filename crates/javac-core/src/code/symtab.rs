@@ -55,7 +55,7 @@
 //!   profileType) are therefore Option<TypeId> = None;
 //! - Types: the minimal prefix ported in types.rs (hashCode/isSameType/
 //!   erasure/boxedClass) is used by classFields/getClassField; the remaining
-//!   Types methods are NOT PORTED (TODO Types; see types.rs).
+//!   Types methods are NOT PORTED (REGISTERED Types; see types.rs).
 //! - the anonymous noSymbol.accept override (Symtab.java:445-450) remains not
 //!   ported (Symbol/Element visitor dispatch; see the gap registration).
 
@@ -607,6 +607,8 @@ pub(crate) fn new_error_type_for_class(ctx: &mut CompilerContext, tsym: SymbolId
             all_interfaces_field: None,
             original_type: Some(no_type),
             candidate_symbol: None,
+            model_type: None,
+            model_type_provider: None,
         },
     ))
 }
@@ -1173,6 +1175,8 @@ impl Symtab {
                 all_interfaces_field: None,
                 original_type: Some(no_type),
                 candidate_symbol: None,
+                model_type: None,
+                model_type_provider: None,
             },
         ));
         let unknown_symbol = new_class_symbol_with_type(
@@ -2140,7 +2144,7 @@ impl Symtab {
         types: &Types,
         t: TypeId,
     ) -> SymbolId {
-        let hash = types.hash_code(ctx, t);
+        let hash = types.hash_code(ctx, self, t);
         let bucket: Vec<(TypeId, SymbolId)> = {
             let class_fields = self.class_fields.borrow();
             class_fields.get(&hash).cloned().unwrap_or_default()

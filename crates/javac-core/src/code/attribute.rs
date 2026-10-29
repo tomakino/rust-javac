@@ -641,7 +641,8 @@ mod tests {
         };
         assert_eq!(class_type, syms.int_type);
         let attribute_type = attribute.ty.expect("attribute type");
-        let arguments = ctx.typ(attribute_type).get_type_arguments();
+        let arguments =
+            crate::code::types::get_type_arguments_completed(&mut ctx, &syms, attribute_type, None);
         assert_eq!(arguments.length(), 1);
         let boxed = types.boxed_class(&mut ctx, &syms, int_type);
         assert_eq!(

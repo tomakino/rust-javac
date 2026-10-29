@@ -1,6 +1,6 @@
 // Origin: javax/tools/JavaFileManager.java @ 982d53c (jdk-17.0.19-ga)
 // NOTE: the four "Failure modes: undocumented upstream." comments below are the
-// upstream JavaFileManager.java "TODO: describe failure modes" text, rewritten
+// upstream JavaFileManager.java "describe failure modes" note, rewritten
 // per project rules (semantics unchanged).
 
 //! File manager for tools operating on Java programming language

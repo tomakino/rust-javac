@@ -190,7 +190,7 @@ impl JavaString {
 
     /// Decode UTF-8 bytes to a JavaString with replacement of malformed input.
     ///
-    /// TODO(P2): match java.nio.charset.StandardCharsets.UTF_8 CharsetDecoder
+    /// REGISTERED(P2): match java.nio.charset.StandardCharsets.UTF_8 CharsetDecoder
     /// REPLACE semantics byte-for-byte (Java emits U+FFFD with its own malformed
     /// sequence boundaries); Rust from_utf8_lossy is used until the file layer
     /// differential tests can compare against javac.

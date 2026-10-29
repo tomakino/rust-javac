@@ -278,7 +278,7 @@ impl AttrRecover {
                     Rc::clone(&todo.result_info.check_context),
                     todo.result_info.check_mode,
                 );
-                let typeargs = self.types.get_type_arguments_public(ctx, pt);
+                let typeargs = self.types.get_type_arguments_public(ctx, syms, pt);
                 let owntype = attr.check_method(
                     ctx,
                     syms,
@@ -559,6 +559,8 @@ impl AttrRecover {
                 all_interfaces_field: all_interfaces,
                 original_type,
                 candidate_symbol: Some(candidate),
+                model_type: None,
+                model_type_provider: None,
             },
         ))
     }
@@ -817,6 +819,8 @@ mod tests {
                 all_interfaces_field: None,
                 original_type: None,
                 candidate_symbol: None,
+                model_type: None,
+                model_type_provider: None,
             },
         ))
     }

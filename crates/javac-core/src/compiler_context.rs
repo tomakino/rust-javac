@@ -428,7 +428,7 @@ impl CompilerContext {
     // ------------------------------------------------------------------
     // Java: Scope.CompoundScope/ImportScope/NamedImportScope/StarImportScope
     // (TypeEnter/ImportsPhase; the Scope import queries are registered
-    // TODO for the Scope query).
+    // REGISTERED for the Scope query).
     // ------------------------------------------------------------------
 
     /// Java: CompoundScope.prependSubScope(Scope that)

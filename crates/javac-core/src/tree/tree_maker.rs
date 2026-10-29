@@ -2116,9 +2116,7 @@ impl TreeMaker {
         } else {
             None
         };
-        let typarams = ctx
-            .typ(mtype)
-            .get_type_arguments()
+        let typarams = crate::code::types::get_type_arguments_completed(ctx, syms, mtype, None)
             .iter()
             .map(|tvar| {
                 let name = ctx
@@ -2921,7 +2919,8 @@ impl TreeMaker {
                     }
                     _ => self.qual_ident(ctx, syms, tsym),
                 };
-                let args = ctx.typ(t).get_type_arguments();
+                let args =
+            crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
                 if args.is_empty() {
                     clazz
                 } else {

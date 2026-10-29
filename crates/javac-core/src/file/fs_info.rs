@@ -142,8 +142,42 @@ impl FSInfo {
         Ok(list)
     }
 
-    // REGISTERED: getJarFSProvider() (FileSystemProvider lookup) is unavailable;
+    /// Java: getJarFSProvider() — the java.nio FileSystemProvider cannot be
+    /// represented; the equivalent capability is this archive service.
+    pub fn get_jar_fs_provider(&self) -> Option<std::rc::Rc<JarFSProvider>> {
+        Some(std::rc::Rc::new(JarFSProvider))
+    }
+
     // java.net.URL is replaced by the ported try_resolve_file string/uri adapter.
+}
+
+/// Equivalent of FSInfo.getJarFSProvider(): jar archive entry access without a
+/// java.nio FileSystem object.
+pub struct JarFSProvider;
+
+impl JarFSProvider {
+    /// Whether the file is a jar/zip archive.
+    pub fn is_jar_file(&self, file: &FsPath) -> bool {
+        Files::is_regular_file(file)
+            && file
+                .file_name()
+                .map(|name| {
+                    let name = name.to_java_string().to_lowercase();
+                    name.ends_with(".jar") || name.ends_with(".zip")
+                })
+                .unwrap_or(false)
+    }
+
+    /// Looks up an entry (zip entry name) in the archive.
+    pub fn get_entry(&self, archive: &FsPath, entry: &str) -> Option<Vec<u8>> {
+        let archive = javac_zip::ZipArchive::open(&archive.as_path()).ok()?;
+        archive.get_entry(entry)
+    }
+
+    /// Whether the archive contains the entry.
+    pub fn contains(&self, archive: &FsPath, entry: &str) -> bool {
+        self.get_entry(archive, entry).is_some()
+    }
 }
 
 impl Default for FSInfo {

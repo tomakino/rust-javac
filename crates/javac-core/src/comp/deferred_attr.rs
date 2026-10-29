@@ -9,7 +9,7 @@
 // attribSpeculativeLambda/DeferredAttrDiagHandler) is ported; the
 // ArgumentAttr.LocalCacheContext parameter is wired (Analyzer/Attr pass
 // argumentAttr.withLocalCacheContext()). The DeferredAttr service construction
-// remains an ADR 0001 explicit-context TODO. Historical dependency list:
+// remains an ADR 0001 explicit-context REGISTERED. Historical dependency list:
 // Attr.copyEnv/TreeCopier/ArgumentAttr.LocalCacheContext/Flow.analyzeLambda/
 // Log.DeferredDiagnosticHandler/Annotate.Queues/DeferredCompletionFailureHandler;
 // DeferredAttrNode.StructuralStuckChecker (needs Types.findDescriptorType/
@@ -19,7 +19,7 @@
 //); RecoveryDeferredTypeMap.recover (needs Attr.RecoveryInfo and
 // Check.checkNonVoid); DeferredAttr.CannotInfer errors live in Resolve (Resolve B
 //). The DeferredAttr service construction is an ADR 0001 explicit-context
-// TODO.
+// REGISTERED.
 
 #![allow(non_camel_case_types)]
 

@@ -781,6 +781,16 @@ pub enum TypeKindData {
         /// ErrorType subclass is expressed by this field; None for plain error
         /// types).
         candidate_symbol: Option<SymbolId>,
+        /// Java: ErrorType.modelType (lazily synthesized model type; null until
+        /// Types.getModelType evaluates the provider).
+        model_type: Option<TypeId>,
+        /// The lazy provider equivalent of the upstream anonymous
+        /// ErrorType.getModelType override (TypeEnter.java:555-569).
+        model_type_provider: Option<
+            std::rc::Rc<
+                dyn Fn(&mut crate::compiler_context::CompilerContext, &crate::code::symtab::Symtab, &crate::code::types::Types) -> TypeId,
+            >,
+        >,
     },
     /// Java: Infer.PartiallyInferredMethodType (a MethodType that can be
     /// checked against several targets; tag METHOD, isPartial=true)
@@ -1686,6 +1696,8 @@ mod tests {
                     all_interfaces_field: None,
                     original_type: None,
                     candidate_symbol: None,
+                    model_type: None,
+                    model_type_provider: None,
                 },
             )
             .is_reference()
@@ -1915,6 +1927,8 @@ mod tests {
                 all_interfaces_field: None,
                 original_type: Some(TypeId::new(1)),
                 candidate_symbol: None,
+                model_type: None,
+                model_type_provider: None,
             },
         );
         assert!(error.is_partial());

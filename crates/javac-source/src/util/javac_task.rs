@@ -6,7 +6,7 @@
 //! implementation is provided by the P6 API layer (javac-core).  Notes:
 //! * the static `instance(ProcessingEnvironment)` factory depends on
 //!   javax.annotation.processing (not ported) and on the internal
-//!   BasicJavacTask/Context; it is deferred to P6 (TODO(P6)).
+//!   BasicJavacTask/Context; it is deferred to P6 (REGISTERED(P6)).
 //! * `getElements()/getTypes()` return the javax.lang.model.util utility types
 //!   that are deferred to P6 in javac-tools; they are left out of this trait
 //!   until that port lands (documented P6 dependency).

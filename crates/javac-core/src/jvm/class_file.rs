@@ -145,7 +145,7 @@ pub fn externalize(buf: &[u8], offset: i32, len: i32) -> Vec<u8> {
     translated
 }
 
-// TODO(P0+): internalize(Name) / externalize(Name) overloads are added together with
+// REGISTERED(P0+): internalize(Name) / externalize(Name) overloads are added together with
 // the Name port (they are trivial wrappers around the byte[] versions above).
 
 

@@ -18,7 +18,7 @@
 //!   AbstractDiagnosticFormatter trait;
 //! - the upstream constructor takes Options (SimpleConfiguration(Options,
 //!   parts)); Options are not ported yet, so only the option-less construction
-//!   is provided (TODO(Options));
+//!   is provided (REGISTERED(Options));
 //! - the source-name branches use AbstractDiagnosticFormatter::formatSource
 //!   (the ported PathFileObject short/simple name is the last name component,
 //!   registered adapter); a diagnostic without a source throws the upstream

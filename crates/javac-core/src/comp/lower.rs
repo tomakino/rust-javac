@@ -6001,7 +6001,12 @@ impl Lower {
             Some(iterable_type) => iterable_type,
             None => expr_ty,
         };
-        let type_args = ctx.typ(iterable_type).get_type_arguments();
+        let type_args = crate::code::types::get_type_arguments_completed(
+            ctx,
+            &self.syms.borrow(),
+            iterable_type,
+            None,
+        );
         if !type_args.is_empty() {
             let head = *type_args.head();
             let syms = self.syms.borrow();

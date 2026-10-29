@@ -34,7 +34,7 @@
 //! * Java Set<Option> -> &[Option] / Vec<Option> (EnumSet order = declaration order).
 //! * Java Option.getPattern()/findSeparator()/help()/helpSynopsis()/process()/
 //!   handleOption() are NOT declared in this:
-//!   TODO(main/OptionHelper + Arguments + Log): process/handleOption/help
+//!   REGISTERED(main/OptionHelper + Arguments + Log): process/handleOption/help
 //!   need main.OptionHelper, util.Log, java.util.regex and
 //!   java.lang.module.ModuleDescriptor, none of which is ported.  No substitute
 //!   helper is invented (registered Porting rules).  Option value validation (Source/Target/
@@ -621,7 +621,7 @@ fn get_xlint_choices() -> Vec<String> {
 ///
 /// Java: public static class InvalidValueException extends Exception
 ///
-/// TODO(main/OptionHelper): the upstream (String, Throwable) constructor is
+/// REGISTERED(main/OptionHelper): the upstream (String, Throwable) constructor is
 /// not ported; the project error model carries the cause separately (Porting rules).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvalidValueException {

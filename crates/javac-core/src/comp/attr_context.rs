@@ -7,7 +7,7 @@
 //! - Scope.WriteableScope -> ScopeId; Symbol -> SymbolId; Type -> TypeId;
 //!   JCTree -> TreeId; Lint object reference -> Rc<Lint>;
 //! - Attr.ResultInfo (returnResult/yieldResult) is not ported (Attr): the
-//!   fields are omitted and dup() skips them; registered TODO, no substitute;
+//!   fields are omitted and dup() skips them; registered REGISTERED, no substitute;
 //! - DeferredAttr.AttributionMode / Resolve.MethodResolutionPhase are ported as
 //!   standalone enums in comp/deferred_attr.rs and comp/resolve.rs.
 

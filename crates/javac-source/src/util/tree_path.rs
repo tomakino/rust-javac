@@ -11,7 +11,7 @@
 //! struct keeps the root as `Rc<dyn Tree>` and exposes the compilation unit
 //! through the object-conversion accessor (§13), because a concrete
 //! `Rc<dyn CompilationUnitTree>` cannot be recovered from `&dyn Tree`; the two
-//! static getPath searches rely on TreePathScanner (next batch) and are TODO(P1).
+//! static getPath searches rely on TreePathScanner (next batch) and are REGISTERED(P1).
 
 use crate::tree::compilation_unit_tree::CompilationUnitTree;
 use crate::tree::tree::{Kind, Tree};
@@ -39,7 +39,7 @@ impl TreePath {
     /// @param target the node to locate
     /// @return the tree path
     ///
-    /// PORTING_RULES: TODO(P1) — the Java implementation searches with a
+    /// PORTING_RULES: REGISTERED(P1) — the Java implementation searches with a
     /// TreePathScanner; it is filled in with the TreeScanner batch.
     pub fn get_path(
         unit: Rc<dyn CompilationUnitTree>,

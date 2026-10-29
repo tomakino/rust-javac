@@ -19,13 +19,13 @@
 //! All text is a Java String (`javac_strings::JavaString`): the URI string, the
 //! scheme and the decoded path are Java Strings in the JDK.
 //!
-//! REGISTERED P2: this is not the complete `java.net.URI` port.
-//! `normalize()`, `resolve()`, `relativize()`, `toURL()`, component-wise
-//! validation and component-wise equality are added together with
-//! `com.sun.tools.javac.file`, which is the first package that observes them.
-//! Until then `PartialEq`/`Hash` compare the URI string form, whereas
-//! `java.net.URI.equals` normalizes percent-encoding and the case of the
-//! scheme/host components — registered as a known limitation of this adapter.
+//! Implemented in addition: `normalize()`, `resolve()`, `relativize()` and
+//! `to_url()` (the latter returns the URL string; javac-tools has no separate
+//! java.net.URL type).
+//! REGISTERED P2: component-level validation (IPv6 authority brackets) and
+//! component-wise equals/hashCode are not part of this adapter; PartialEq/Hash
+//! compare the URI string form. The remaining java.net.URI surface is added
+//! with the file package, which is the first consumer.
 
 use javac_strings::JavaString;
 use std::fmt;
@@ -80,6 +80,126 @@ impl URI {
     /// Java: `URI.toString()`.
     pub fn to_uri_string(&self) -> JavaString {
         self.raw.clone()
+    }
+
+    /// Java: URI.normalize() — remove "." and ".." path segments (opaque URIs
+    /// are returned unchanged).
+    pub fn normalize(&self) -> URI {
+        if self.opaque {
+            return self.clone();
+        }
+        let (prefix, authority, path, suffix) = self.parts();
+        let normalized = normalize_path(&path);
+        URI::create(&JavaString::from(format!("{prefix}{authority}{normalized}{suffix}").as_str()))
+    }
+
+    /// Java: URI.resolve(URI) — RFC 2396 reference resolution, followed by
+    /// normalize().
+    pub fn resolve(&self, other: &URI) -> URI {
+        if other.is_absolute() {
+            return other.normalize();
+        }
+        let other_raw = other.raw.to_string_lossy().to_string();
+        if other_raw.is_empty() {
+            return self.clone();
+        }
+        // Use the raw path component from the input string (never the decoded
+        // getPath()) so %xx escapes and component casing round-trip exactly.
+        let (prefix, authority, raw_path, _suffix) = self.parts();
+        let resolved = if other_raw.starts_with("//") {
+            format!("{prefix}{other_raw}")
+        } else if other_raw.starts_with('/') {
+            format!("{prefix}{authority}{other_raw}")
+        } else if other_raw.starts_with('#') 
+            || other_raw.starts_with('?') {
+            format!("{}{}{}{}", prefix, authority, raw_path, other_raw)
+        } else {
+            let base_dir = match raw_path.rfind('/') {
+                Some(index) => &raw_path[..=index],
+                None => "",
+            };
+            format!("{prefix}{authority}{base_dir}{other_raw}")
+        };
+        URI::create(&JavaString::from(resolved.as_str())).normalize()
+    }
+
+    /// Java: URI.relativize(URI) — the JDK contract:
+    /// * opaque this: if other is opaque and equals, the empty URI, else other;
+    /// * non-absolute this or opaque other: other;
+    /// * scheme/authority mismatch (scheme case-insensitive) or this.path not a
+    ///   prefix of other.path: other unchanged.
+    /// Only a relativizable target is rebuilt from the raw path remainder +
+    /// query/fragment (no panic).
+    pub fn relativize(&self, other: &URI) -> URI {
+        if self.opaque {
+            if other.opaque && self.raw == other.raw {
+                return URI::create(&JavaString::from(""));
+            }
+            return other.clone();
+        }
+        if !self.is_absolute() || other.opaque {
+            return other.clone();
+        }
+        let Some(self_scheme) = self.scheme.as_ref() else {
+            return other.clone();
+        };
+        let Some(other_scheme) = other.scheme.as_ref() else {
+            return other.clone();
+        };
+        if !self_scheme
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&other_scheme.to_string_lossy())
+        {
+            return other.clone();
+        }
+        let (_, self_authority, self_path, _) = self.parts();
+        let (_, other_authority, other_path, suffix) = other.parts();
+        if !self_authority.eq_ignore_ascii_case(&other_authority) {
+            return other.clone();
+        }
+        let Some(relative) = other_path.strip_prefix(&self_path) else {
+            return other.clone();
+        };
+        URI::create(&JavaString::from(format!("{relative}{suffix}").as_str()))
+    }
+
+    /// Java: URI.toURL() — java.net.URL is not a separate ported type; the URL
+    /// string form is returned (the type mapping is registered in lib.rs).
+    pub fn to_url(&self) -> JavaString {
+        self.raw.clone()
+    }
+
+    /// Splits raw into (scheme prefix incl ':', authority incl '//', raw path, '?query#fragment').
+    fn parts(&self) -> (String, String, String, String) {
+        let raw = self.raw.to_string_lossy().to_string();
+        let rest_start = self
+            .scheme
+            .as_ref()
+            .map(|scheme| scheme.len() + 1)
+            .unwrap_or(0);
+        let rest = &raw[rest_start..];
+        let prefix = raw[..rest_start].to_string();
+        if self.opaque {
+            return (prefix, String::new(), rest.to_string(), String::new());
+        }
+        let (authority, after_authority) = if let Some(stripped) = rest.strip_prefix("//") {
+            match stripped.find(['/', '?', '#']) {
+                Some(index) => (
+                    format!("//{}", &stripped[..index]),
+                    &stripped[index..],
+                ),
+                None => (format!("//{stripped}"), ""),
+            }
+        } else {
+            (String::new(), rest)
+        };
+        let path_end = after_authority.find(['?', '#']).unwrap_or(after_authority.len());
+        (
+            prefix,
+            authority,
+            after_authority[..path_end].to_string(),
+            after_authority[path_end..].to_string(),
+        )
     }
 }
 
@@ -264,6 +384,34 @@ fn decode(s: &JavaString) -> JavaString {
         }
     }
     JavaString::from_utf8_lossy(&decoded)
+}
+
+/// Removes "." and ".." segments (RFC 2396 normalize).
+fn normalize_path(path: &str) -> String {
+    if path.is_empty() {
+        return String::new();
+    }
+    let absolute = path.starts_with('/');
+    let trailing = path.ends_with('/') || path.ends_with("/.") || path.ends_with("/..");
+    let mut segments: Vec<&str> = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            other => segments.push(other),
+        }
+    }
+    let mut result = if absolute { String::from("/") } else { String::new() };
+    result.push_str(&segments.join("/"));
+    if trailing && !result.ends_with('/') {
+        result.push('/');
+    }
+    if result.is_empty() && absolute {
+        result.push('/');
+    }
+    result
 }
 
 fn hex_value(b: u16) -> Option<u8> {

@@ -5,7 +5,7 @@
 //! PORTING_RULES:
 //! - the upstream class only uses java.lang.Module (a JDK platform class that
 //!   exists only in a running VM and is not part of the javac reference tree);
-//!   addExports(Module, Module) is therefore NOT PORTED (TODO, no substitute
+//!   addExports(Module, Module) is therefore NOT PORTED (REGISTERED, no substitute
 //!   API is introduced; registered in PORTING_RULES section 9);
 //! - the private javacInternalPackages constant array is fully ported and
 //!   exposed as javac_internal_packages() for the module-layer integration

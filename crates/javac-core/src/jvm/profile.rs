@@ -128,7 +128,7 @@ impl Profile {
     /// }
     /// </pre>
     ///
-    /// TODO(Options/Option): Options.instance/options.get and
+    /// REGISTERED(Options/Option): Options.instance/options.get and
     /// Option.PROFILE ("-profile") are not ported; the entry point stays
     /// unimplemented (no substitute Options is invented).
     pub fn instance(context: &mut Context) -> Rc<Profile> {

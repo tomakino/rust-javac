@@ -1645,7 +1645,7 @@ impl ClassWriter {
         !self
             .types
             .is_same_type(ctx, &syms.borrow(), t, erased)
-            && self.check.check_denotable(ctx, t)
+            && self.check.check_denotable(ctx, &syms.borrow(), t)
     }
 
     /// Write the StackMap attribute of a method.
@@ -1921,7 +1921,8 @@ impl ClassWriter {
         let syms = Rc::clone(&self.syms);
         let supertype = self.types.supertype(ctx, &syms.borrow(), c_ty, None);
         let interfaces = self.types.interfaces(ctx, &syms.borrow(), c_ty);
-        let typarams = ctx.typ(c_ty).get_type_arguments();
+        let typarams =
+            crate::code::types::get_type_arguments_completed(ctx, &syms.borrow(), c_ty, None);
         let owner = ctx.sym(c).owner.expect("class owner");
         let owner_kind = ctx.sym(owner).kind;
         let c_flags = ctx.sym(c).flags();

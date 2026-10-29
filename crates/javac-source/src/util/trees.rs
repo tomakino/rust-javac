@@ -7,7 +7,7 @@
 //!   P6 API layer (com.sun.tools.javac.api.JavacTrees).
 //! * the two static `instance` factories use reflection over the internal
 //!   JavacTrees class and ProcessingEnvironment; they are deferred to P6
-//!   (TODO(P6), not expressible without the javax.annotation.processing port).
+//!   (REGISTERED(P6), not expressible without the javax.annotation.processing port).
 //! * Java overloads of getTree/getPath/isAccessible become distinct Rust method
 //!   names (documented per method; §14 overload rule).
 //! * nullable returns -> Option; `String getDocComment` -> Option<JavaString>;

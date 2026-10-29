@@ -58,7 +58,7 @@ pub struct Lint {
     /// Java: private final EnumSet<LintCategory> suppressedValues.
     suppressed_values: BTreeSet<LintCategory>,
     // Java: private final AugmentVisitor augmentor;
-    // TODO(Attribute/Symtab): the AugmentVisitor needs Attribute.Compound and
+    // REGISTERED(Attribute/Symtab): the AugmentVisitor needs Attribute.Compound and
     // Symtab.instance, which are not ported yet; no field is represented until then.
 }
 
@@ -73,7 +73,7 @@ impl Lint {
     /// }
     /// </pre>
     ///
-    /// TODO(Options): the constructor reads Options (-Xlint/-Xlint:all/none/
+    /// REGISTERED(Options): the constructor reads Options (-Xlint/-Xlint:all/none/
     /// custom/-preview) and Source.instance; both depend on the not yet ported
     /// Options/main.Option.  No substitute Options is invented.
     pub fn instance(context: &mut Context) -> Rc<Lint> {

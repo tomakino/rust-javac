@@ -6,9 +6,9 @@
 //! * Java abstract class DocTrees extends Trees -> Rust trait DocTrees: Trees;
 //!   the implementation is provided by the P6 API layer.
 //! * the static instance factories use reflection / ProcessingEnvironment and
-//!   are deferred to P6 (TODO(P6)).
+//!   are deferred to P6 (REGISTERED(P6)).
 //! * `java.text.BreakIterator` (getBreakIterator/setBreakIterator) is outside
-//!   the ported surface (java.text) — omitted, registered (TODO(P6/P2)).
+//!   the ported surface (java.text) — omitted, registered (REGISTERED(P6/P2)).
 //! * `getDocTreeFactory()` returns the ported `Rc<dyn DocTreeFactory>`; the P6
 //!   API layer provides the implementation together with the rest of DocTrees.
 //! * Java overloads of getDocCommentTree are distinct Rust names (documented);

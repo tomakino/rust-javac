@@ -1347,7 +1347,11 @@ impl ArgumentAttr {
                         let clazz_type = ctx.tree(clazz).ty.expect("new class clazz type");
                         let tsym = ctx.typ(clazz_type).tsym.expect("clazz type symbol");
                         let mut local_info =
-                            result_info.dup_context(attr.diamond_context(clazz, tsym));
+                            result_info.dup_context(attr.diamond_context(
+                            clazz,
+                            tsym,
+                            Rc::clone(&result_info.check_context),
+                        ));
                         if local_info.pt.map(|pt| {
                             ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
                                 || ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::UNDETVAR)

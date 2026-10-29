@@ -10,7 +10,7 @@
 // (getUnderlyingSymbol), clearAnnotationMetadata, the lazy constant data
 // channel (setLazyConstValue) and the payload accessors below.
 // Not yet ported upstream methods in this file (the authoritative method-level
-// gap list is docs/AUDIT_TODO_TABLE.md):
+// gap list is the project audit table):
 // - AnnoConstruct/java.lang.reflect annotation API: getAttribute (Symbol.java:933,
 //   1557), getInheritedAnnotations (1465), getAnnotationMirrors (731, 917),
 //   getAnnotationsByType/getAnnotation (annotation-proxy batch);

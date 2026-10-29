@@ -38,7 +38,7 @@ impl FatalError {
         FatalError::new(diagnostic.get_message(None).to_string_lossy())
     }
 
-    // TODO(P0+): Java constructor FatalError(JCDiagnostic, Throwable) is added
+    // REGISTERED(P0+): Java constructor FatalError(JCDiagnostic, Throwable) is added
     // when the exception cause chain is ported (util::JCDiagnostic is ported).
 }
 

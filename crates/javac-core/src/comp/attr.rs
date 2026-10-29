@@ -1410,7 +1410,7 @@ impl Attr {
             env.info.borrow_mut().pending_resolution_phase = None;
             let pt = pt.expect("method prototype");
             let argtypes = self.types.get_parameter_types_public(ctx, pt);
-            let typeargtypes = self.types.get_type_arguments_public(ctx, pt);
+            let typeargtypes = self.types.get_type_arguments_public(ctx, syms, pt);
             let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
             let rs = rs_rc.borrow();
             let chk_rc = Rc::clone(&self.chk);
@@ -1794,7 +1794,7 @@ impl Attr {
                 let pt = result_info.pt.expect("method result type");
                 let restype = self.types.get_return_type_public(ctx, pt);
                 let argtypes = self.types.get_parameter_types_public(ctx, pt);
-                let targs = self.types.get_type_arguments_public(ctx, pt);
+                let targs = self.types.get_type_arguments_public(ctx, syms, pt);
                 let new_ri = ResultInfo::new_with_mode(
                     result_info.pkind,
                     Some(restype),
@@ -1916,7 +1916,7 @@ impl Attr {
     // Attr B (first group): statement visitors + the entry points that
     // do not need the Analyzer/Flow machinery (Attr.java:1420-1600, 1871-2470,
     // 3922-4182). Methods whose upstream body needs a not-yet-ported service are
-    // registered with a not-yet-ported marker + TODO at the exact call site.
+    // registered with a not-yet-ported marker + REGISTERED at the exact call site.
     // ------------------------------------------------------------------
 
     /// Java: log.error(DiagnosticPosition, JCDiagnostic.Error) helper — the
@@ -3582,9 +3582,10 @@ impl Attr {
         &self,
         clazz: TreeId,
         tsym: SymbolId,
+        enclosing: Rc<dyn crate::comp::check::CheckContext>,
     ) -> Rc<dyn crate::comp::check::CheckContext> {
         Rc::new(DiamondCheckContext {
-            enclosing: Rc::clone(&self.basic_handler),
+            enclosing,
             diags: Rc::clone(&self.diags),
             clazz,
             tsym,
@@ -6587,7 +6588,7 @@ impl Attr {
                 if pt_is_method {
                     let pt = result_info.pt.expect("method prototype");
                     let argtypes = self.types.get_parameter_types_public(ctx, pt);
-                    let typeargtypes = self.types.get_type_arguments_public(ctx, pt);
+                    let typeargtypes = self.types.get_type_arguments_public(ctx, syms, pt);
                     let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
                     let rs = rs_rc.borrow();
                     let types_rc = Rc::clone(&self.types);
@@ -10970,7 +10971,8 @@ impl Attr {
             }
             let static_ref = ctx.sym(that_sym).flags_field & (crate::code::flags::STATIC as i64) != 0;
             if static_ref && is_static_selector {
-                let expr_args = ctx.typ(expr_type).get_type_arguments();
+                let expr_args =
+                crate::code::types::get_type_arguments_completed(ctx, syms, expr_type, None);
                 if !expr_args.is_empty() {
                     let kind = crate::code::kinds::kind_name(ctx.sym(ctx.typ(expr_type).tsym.expect("expr symbol")), ctx);
                     let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
@@ -12087,12 +12089,17 @@ impl Attr {
                 let mut repeat = true;
                 while repeat {
                     if ctx.tree(encl_tr).tag == Tag::TYPEAPPLY {
-                        let (tyargs, trargs, clazz) = match &ctx.tree(encl_tr).kind {
+                        let (tyargs, trargs, clazz) = match ctx.tree(encl_tr).kind.clone() {
                             TreeKind::TypeApply { clazz, arguments } => {
-                                let tyargs = encl_ty
-                                    .map(|encl_ty| crate::code::types::get_type_arguments(ctx, encl_ty))
-                                    .unwrap_or_else(List::nil);
-                                (tyargs, arguments.clone(), *clazz)
+                                let tyargs = match encl_ty {
+                                    Some(encl_ty) => {
+                                        crate::code::types::get_type_arguments_completed(
+                                            ctx, self.syms, encl_ty, None,
+                                        )
+                                    }
+                                    None => List::nil(),
+                                };
+                                (tyargs, arguments, clazz)
                             }
                             _ => (List::nil(), List::nil(), None),
                         };
@@ -13441,7 +13448,8 @@ impl Attr {
                 let site = {
                     let outer = ctx.typ(clazztype).get_enclosing_type();
                     let tsym_ty = ctx.sym(clazztype_tsym).ty.expect("diamond class symbol type");
-                    let typarams = crate::code::types::get_type_arguments(ctx, tsym_ty);
+                    let typarams =
+                        crate::code::types::get_type_arguments_completed(ctx, syms, tsym_ty, None);
                     let metadata = ctx.typ(clazztype).get_metadata().cloned();
                     let mut new_type = crate::code::type_::Type::new_class_type(
                         outer,
@@ -13492,8 +13500,7 @@ impl Attr {
                         ctx.typ(pt).get_tag()
                     );
                 }
-                let pt_for_template = if pt == self.infer.any_poly
-                    || ctx.typ(pt).has_tag(TypeTag::UNDETVAR)
+                let pt_for_template = if ctx.typ(pt).has_tag(TypeTag::UNDETVAR)
                     || ctx.typ(pt).has_tag(TypeTag::TYPEVAR)
                 {
                     self.no_type(ctx)
@@ -13785,7 +13792,7 @@ impl Attr {
             let invalid = {
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = Rc::clone(&chk_rc);
-                chk.check_diamond_denotable(ctx, clazztype)
+                chk.check_diamond_denotable_cached(ctx, clazztype)
             };
             if !ctx.typ(clazztype).has_tag(TypeTag::ERROR) && !invalid.is_empty() {
                 let clazztype_tsym = ctx.typ(clazztype).tsym.expect("diamond class symbol");
@@ -13832,7 +13839,8 @@ impl Attr {
                 );
             }
             // For <>(){}, inferred types must also be accessible.
-            let clazz_arguments = crate::code::types::get_type_arguments(ctx, clazztype);
+            let clazz_arguments =
+                crate::code::types::get_type_arguments_completed(ctx, syms, clazztype, None);
             let mut arguments_current = clazz_arguments;
             while arguments_current.non_empty() {
                 let argument = *arguments_current.head();

@@ -28,7 +28,7 @@
 //!   preserving arguments land with P4), so it is passed by its diagnostic key.
 //! * toSourceVersion -> Option<SourceVersion> (Java null -> None);
 //!   javax.lang.model.SourceVersion is the javac-tools enum (RELEASE_2..RELEASE_17).
-//! * TODO(Options/Option): `instance(Context)` uses the not yet ported
+//! * REGISTERED(Options/Option): `instance(Context)` uses the not yet ported
 //!   Options.instance and Option.SOURCE ("--source -source"); left as a single
 //!   unimplemented entry point (no stand-in for Options).
 

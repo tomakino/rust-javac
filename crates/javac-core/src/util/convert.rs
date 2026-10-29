@@ -15,7 +15,7 @@
 //! PORTING_RULES: Java overloads map to distinct Rust function names
 //! (utf2chars / utf2chars_into / utf2chars_range, chars2utf / chars2utf_into /
 //!  chars2utf_range, quote / quote_char, short_name / short_name_str, ...).
-//! TODO(P1): Unicode digits in Character.digit; the parser only feeds ASCII
+//! REGISTERED(P1): Unicode digits in Character.digit; the parser only feeds ASCII
 //! literals, but command line parsing may accept Unicode digits in javac.
 
 use crate::util::java_string::JavaString;
@@ -127,7 +127,7 @@ fn parse_long(s: &JavaString, radix: i32) -> Result<i64, NumberFormatException> 
     Ok(if negative { result } else { -result })
 }
 
-/// Java: Character.digit(char, radix); ASCII-only for now (see TODO above).
+/// Java: Character.digit(char, radix); ASCII-only for now (see REGISTERED above).
 fn digit(c: u16, radix: i32) -> i32 {
     if (c >= b'0' as u16) && (c <= b'9' as u16) {
         let d = (c - b'0' as u16) as i32;

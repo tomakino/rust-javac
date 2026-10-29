@@ -111,7 +111,7 @@
 //! JavacMessages, JCDiagnostic.Factory, Warner) is NOT stored in the Rust Types
 //! (which is a stateless service): the methods that need it take the ported
 //! Symtab explicitly (registered section 9; no Rc/RefCell is introduced). The
-//! The former method-level TODO list (isSubtype / isCastable / containsType /
+//! The former method-level list (historical): isSubtype / isCastable / containsType /
 //! asSuper / memberType / subst / capture / supertype / interfaces / lub / glb /
 //! isReifiable / rank) is implemented in this file; see the audit at the top.
 //! Remaining dependencies are needsStripping, TypeVar.rank_field reset and lub
@@ -577,13 +577,19 @@ impl Types {
     /// Compute a hash code on a type.
     ///
     /// Java: public int hashCode(Type t) { return hashCode(t, false); }
-    pub fn hash_code(&self, ctx: &mut CompilerContext, t: TypeId) -> i32 {
-        self.hash_code_impl(ctx, t, false)
+    pub fn hash_code(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> i32 {
+        self.hash_code_impl(ctx, syms, t, false)
     }
 
     /// Java: public int hashCode(Type t, boolean strict)
-    pub fn hash_code_with_strict(&self, ctx: &mut CompilerContext, t: TypeId, strict: bool) -> i32 {
-        self.hash_code_impl(ctx, t, strict)
+    pub fn hash_code_with_strict(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+        strict: bool,
+    ) -> i32 {
+        self.hash_code_impl(ctx, syms, t, strict)
     }
 
     // The upstream hashCode(t, strict) has two visitors whose only difference is
@@ -593,7 +599,7 @@ impl Types {
     // currently changes nothing for the ported branches (the port keeps the
     // parameter for the 1:1 signature, registered).
     #[allow(clippy::only_used_in_recursion)]
-    fn hash_code_impl(&self, ctx: &mut CompilerContext, t: TypeId, strict: bool) -> i32 {
+    fn hash_code_impl(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId, strict: bool) -> i32 {
         // Java: HashCodeVisitor.visit(t): the visitor dispatches on the concrete
         // type class; ErrorType overrides visitErrorType, TypeVar/CapturedType
         // use identityHashCode (strict mode also uses identityHashCode for
@@ -603,19 +609,19 @@ impl Types {
             TypeKindData::ClassType { .. }
             | TypeKindData::ErasedClassType { .. }
             | TypeKindData::UnionClassType { .. }
-            | TypeKindData::IntersectionClassType { .. } => self.hash_class_type(ctx, t),
+            | TypeKindData::IntersectionClassType { .. } => self.hash_class_type(ctx, syms, t),
             TypeKindData::WildcardType { kind, type_, .. } => {
                 let mut result = bound_kind_ordinal(*kind);
                 if let Some(type_) = type_ {
                     result = result
                         .wrapping_mul(127)
-                        .wrapping_add(self.hash_code_impl(ctx, *type_, strict));
+                        .wrapping_add(self.hash_code_impl(ctx, syms, *type_, strict));
                 }
                 result
             }
             TypeKindData::ArrayType { elemtype, .. } => {
                 let elemtype = elemtype.expect("array element type");
-                self.hash_code_impl(ctx, elemtype, strict).wrapping_add(12)
+                self.hash_code_impl(ctx, syms, elemtype, strict).wrapping_add(12)
             }
             TypeKindData::MethodType {
                 argtypes, restype, ..
@@ -628,9 +634,9 @@ impl Types {
                 // - every argument but the last.
                 let last = argtypes.length() - 1;
                 for index in 0..last {
-                    h = (h << 5).wrapping_add(self.hash_code_impl(ctx, argtypes.get(index), strict));
+                    h = (h << 5).wrapping_add(self.hash_code_impl(ctx, syms, argtypes.get(index), strict));
                 }
-                (h << 5).wrapping_add(self.hash_code_impl(ctx, restype, strict))
+                (h << 5).wrapping_add(self.hash_code_impl(ctx, syms, restype, strict))
             }
             TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
                 // Java: System.identityHashCode(t) (strict and non-strict).
@@ -643,7 +649,7 @@ impl Types {
             TypeKindData::ForAll { qtype, .. } => {
                 // Java: SimpleVisitor.visitForAll -> visit(qtype).
                 let qtype = qtype.expect("for-all qtype");
-                self.hash_code_impl(ctx, qtype, strict)
+                self.hash_code_impl(ctx, syms, qtype, strict)
             }
             _ => tag_ordinal(ctx.typ(t).get_tag()),
         }
@@ -665,16 +671,16 @@ impl Types {
     ///
     /// # Panics
     ///   - none.
-    fn hash_class_type(&self, ctx: &mut CompilerContext, t: TypeId) -> i32 {
+    fn hash_class_type(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> i32 {
         let enclosing = get_enclosing_type(ctx, t)
             .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
-        let mut result = self.hash_code_impl(ctx, enclosing, false);
+        let mut result = self.hash_code_impl(ctx, syms, enclosing, false);
         result = result.wrapping_mul(127);
         let tsym = ctx.typ(t).tsym.expect("class type symbol");
         result = result.wrapping_add(name_hash(&flat_name_of(ctx, tsym)));
-        for argument in get_type_arguments(ctx, t).iter() {
+        for argument in get_type_arguments_completed(ctx, syms, t, None).iter() {
             result = result.wrapping_mul(127);
-            result = result.wrapping_add(self.hash_code_impl(ctx, argument, false));
+            result = result.wrapping_add(self.hash_code_impl(ctx, syms, argument, false));
         }
         result
     }
@@ -746,9 +752,24 @@ impl Types {
             return false;
         }
         let qtype = self.undet_var_qtype(ctx, t);
-        if t == s
-            || qtype == s
-            || ctx.typ(s).has_tag(TypeTag::ERROR)
+        if t == s {
+            return true;
+        }
+        if qtype == s {
+            // Two distinct undet vars that are already linked by qtype still
+            // need the EQ bound recorded in this inference context
+            // (Infer.isSameType on undet vars).
+            self.undet_var_add_bound(
+                ctx,
+                syms,
+                t,
+                crate::code::type_::InferenceBound::EQ,
+                s,
+                false,
+            );
+            return true;
+        }
+        if ctx.typ(s).has_tag(TypeTag::ERROR)
             || ctx.typ(s).has_tag(TypeTag::UNKNOWN)
         {
             return true;
@@ -915,19 +936,17 @@ impl Types {
             }
             return t_map.is_empty();
         }
-        ctx.typ(t).tsym == ctx.typ(s).tsym
-            && self.is_same_type_enclosing(
-                ctx,
-                syms,
-                get_enclosing_type(ctx, t),
-                get_enclosing_type(ctx, s),
-            )
-            && self.contains_type_equivalent(
-                ctx,
-                syms,
-                &get_type_arguments(ctx, t),
-                &get_type_arguments(ctx, s),
-            )
+        if ctx.typ(t).tsym != ctx.typ(s).tsym {
+            return false;
+        }
+        let t_enclosing = get_enclosing_type(ctx, t);
+        let s_enclosing = get_enclosing_type(ctx, s);
+        if !self.is_same_type_enclosing(ctx, syms, t_enclosing, s_enclosing) {
+            return false;
+        }
+        let t_args = get_type_arguments_completed(ctx, syms, t, None);
+        let s_args = get_type_arguments_completed(ctx, syms, s, None);
+        self.contains_type_equivalent(ctx, syms, &t_args, &s_args)
     }
 
     /// Compares the enclosing types of two class types in the class-type case
@@ -2402,8 +2421,8 @@ impl Types {
                 let tsym = ctx.typ(t).tsym.expect("class type symbol");
                 let type1 = self.member_type(ctx, syms, captured_encl, tsym);
                 let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
-                let formals = get_type_arguments(ctx, tsym_type);
-                let actuals = get_type_arguments(ctx, t);
+                let formals = get_type_arguments_completed(ctx, syms, tsym_type, None);
+                let actuals = get_type_arguments_completed(ctx, syms, t, None);
                 return self.subst_type(ctx, syms, type1, &formals, &actuals, None);
             }
         }
@@ -2424,8 +2443,8 @@ impl Types {
             crate::code::symbol::throw_completion_failure(failure);
         }
         let tsym_type = ctx.sym(tsym).ty.expect("class symbol type");
-        let a_list = get_type_arguments(ctx, tsym_type);
-        let t_list = get_type_arguments(ctx, cls);
+        let a_list = get_type_arguments_completed(ctx, syms, tsym_type, None);
+        let t_list = get_type_arguments_completed(ctx, syms, cls, None);
         let s_list = self.fresh_type_variables(ctx, syms, t_list.clone());
         let mut current_a = a_list.clone();
         let mut current_t = t_list;
@@ -3368,7 +3387,7 @@ impl Types {
                     {
                         return true;
                     }
-                    let mut args = get_type_arguments(ctx, t);
+                    let mut args = get_type_arguments_completed(ctx, syms, t, None);
                     while args.non_empty() {
                         if self.contains(ctx, syms, *args.head(), s) {
                             return true;
@@ -4232,6 +4251,11 @@ pub(crate) fn get_type_arguments_completed(
     t: TypeId,
     mut attr: Option<&mut crate::comp::attr::Attr>,
 ) -> List<TypeId> {
+    // ForAll overrides Type.getTypeArguments() with its method type variables;
+    // it is not a class type and must not be completed (Type.java ForAll).
+    if let TypeKindData::ForAll { tvars, .. } = &ctx.typ(t).kind {
+        return tvars.clone();
+    }
     let needs_completion = match &ctx.typ(t).kind {
         TypeKindData::ClassType { typarams_field, .. }
         | TypeKindData::ErasedClassType { typarams_field, .. }
@@ -4526,7 +4550,7 @@ fn class_bound(types: &Types, ctx: &mut CompilerContext, syms: &Symtab, t: TypeI
             if outer1 == outer {
                 t
             } else {
-                let args = get_type_arguments(ctx, t);
+                let args = get_type_arguments_completed(ctx, syms, t, None);
                 let tsym = ctx.typ(t).tsym;
                 new_class_type(ctx, Some(outer1), Some(args), tsym)
             }
@@ -4735,7 +4759,7 @@ fn type_contains(
         {
             return true;
         }
-        for arg in get_type_arguments(ctx, t).iter() {
+        for arg in get_type_arguments_completed(ctx, syms, t, None).iter() {
             if type_contains(types, ctx, syms, arg, elem) {
                 return true;
             }
@@ -5047,6 +5071,8 @@ impl Types {
                 all_interfaces_field: None,
                 original_type: Some(original),
                 candidate_symbol: None,
+                model_type: None,
+                model_type_provider: None,
             },
         ))
     }
@@ -5071,6 +5097,8 @@ impl Types {
                 all_interfaces_field: None,
                 original_type: Some(original_type.unwrap_or(no_type)),
                 candidate_symbol: None,
+                model_type: None,
+                model_type_provider: None,
             },
         ));
         ctx.sym_mut(class).ty = Some(error_type);
@@ -5082,6 +5110,35 @@ impl Types {
             *members_field = Some(scope);
         }
         error_type
+    }
+
+    /// Java: Type.getModelType() (Type.java:1100-1110 / ErrorType anonymous
+    /// override in TypeEnter.java:555-569): evaluates the lazy provider once and
+    /// caches the synthesized model type. Returns None when the type is not an
+    /// ErrorType or has no provider.
+    pub fn get_model_type(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        t: TypeId,
+    ) -> Option<TypeId> {
+        let (cached, provider) = match &mut ctx.typ_mut(t).kind {
+            TypeKindData::ErrorType {
+                model_type,
+                model_type_provider,
+                ..
+            } => (*model_type, model_type_provider.clone()),
+            _ => return None,
+        };
+        if cached.is_some() {
+            return cached;
+        }
+        let provider = provider?;
+        let model = provider(ctx, syms, self);
+        if let TypeKindData::ErrorType { model_type, .. } = &mut ctx.typ_mut(t).kind {
+            *model_type = Some(model);
+        }
+        Some(model)
     }
 
     /// Java: public Type createErrorType(Name name, TypeSymbol container,
@@ -5925,7 +5982,7 @@ impl Types {
             {
                 return true;
             }
-            let arguments = get_type_arguments(ctx, t);
+            let arguments = get_type_arguments_completed(ctx, syms, t, None);
             if type_list_contains(self, ctx, arguments, elem) {
                 return true;
             }
@@ -6524,8 +6581,8 @@ impl Types {
             let t1 = self.as_super(ctx, syms, from, common_tsym);
             let t2 = common;
             if let Some(t1) = t1 {
-                let t1_args = get_type_arguments(ctx, t1);
-                let t2_args = get_type_arguments(ctx, t2);
+                let t1_args = get_type_arguments_completed(ctx, syms, t1, None);
+                let t2_args = get_type_arguments_completed(ctx, syms, t2, None);
                 if self.disjoint_types(ctx, syms, t1_args, t2_args) {
                     return false;
                 }
@@ -6579,8 +6636,8 @@ impl Types {
             return false;
         };
         let t2 = to;
-        let t1_args = get_type_arguments(ctx, t1);
-        let t2_args = get_type_arguments(ctx, t2);
+        let t1_args = get_type_arguments_completed(ctx, syms, t1, None);
+        let t2_args = get_type_arguments_completed(ctx, syms, t2, None);
         if self.disjoint_types(ctx, syms, t1_args, t2_args) {
             return false;
         }
@@ -6639,7 +6696,7 @@ impl Types {
                 {
                     return true;
                 }
-                let mut arguments = get_type_arguments(ctx, t);
+                let mut arguments = get_type_arguments_completed(ctx, syms, t, None);
                 while arguments.non_empty() {
                     if self.is_erroneous(ctx, syms, *arguments.head()) {
                         return true;
@@ -6923,7 +6980,7 @@ impl Types {
             let head: Vec<&str> = bt.lines().take(22).collect();
             eprintln!(
                 "[ADDBOUND] uv=V bound=Map args={:?}\n{}",
-                get_type_arguments(ctx, bound)
+                get_type_arguments_completed(ctx, syms, bound, None)
                     .iter()
                     .map(|t| ctx.typ(t).get_tag())
                     .collect::<Vec<_>>(),
@@ -7019,7 +7076,7 @@ impl Types {
             | TypeKindData::IntersectionClassType { .. } => {
                 let outer = get_enclosing_type(ctx, t);
                 let outer1 = outer.map(|outer| self.map_undet_vars_to_typevars(ctx, syms, outer));
-                let typarams = get_type_arguments(ctx, t);
+                let typarams = get_type_arguments_completed(ctx, syms, t, None);
                 let mut typarams1: List<TypeId> = List::nil();
                 let mut changed = false;
                 let mut current = typarams.clone();
@@ -7364,11 +7421,11 @@ impl Types {
         c2: TypeId,
         merges: &mut Vec<(TypeId, TypeId)>,
     ) -> TypeId {
-        let act1 = get_type_arguments(ctx, c1);
-        let act2 = get_type_arguments(ctx, c2);
+        let act1 = get_type_arguments_completed(ctx, syms, c1, None);
+        let act2 = get_type_arguments_completed(ctx, syms, c2, None);
         let c1_tsym = ctx.typ(c1).tsym.expect("class type symbol");
         let typarams_type = ctx.sym(c1_tsym).ty.expect("class symbol type");
-        let mut typarams = get_type_arguments(ctx, typarams_type);
+        let mut typarams = get_type_arguments_completed(ctx, syms, typarams_type, None);
         let mut merged: List<TypeId> = List::nil();
         let mut act1 = act1;
         let mut act2 = act2;
@@ -7741,7 +7798,8 @@ impl Types {
     /// Java: Type.getTypeArguments() view used by Infer's ReachabilityVisitor.
     pub fn get_type_arguments_public(
         &self,
-        ctx: &CompilerContext,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
         t: TypeId,
     ) -> List<TypeId> {
         // Java: DelegatedType.getTypeArguments() delegates to qtype; ForAll
@@ -7749,7 +7807,7 @@ impl Types {
         if let TypeKindData::ForAll { tvars, .. } = &ctx.typ(t).kind {
             return tvars.clone();
         }
-        get_type_arguments(ctx, t)
+        get_type_arguments_completed(ctx, syms, t, None)
     }
 
     /// Java: Type.isErroneous() view used by Infer.instantiateAsUninferredVars.
@@ -7990,8 +8048,8 @@ impl Types {
         s: TypeId,
         warner: &mut crate::util::warner::Warner,
     ) -> bool {
-        let tvars = crate::code::types::get_type_arguments(ctx, t);
-        let svars = crate::code::types::get_type_arguments(ctx, s);
+        let tvars = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
+        let svars = crate::code::types::get_type_arguments_completed(ctx, syms, s, None);
         let tres = method_return_type(ctx, t);
         let sres_full = method_return_type(ctx, s);
         let sres = {
@@ -8578,8 +8636,8 @@ impl MostSpecificReturnCheck {
     ) -> bool {
         match self {
             MostSpecificReturnCheck::BASIC => {
-                let tvars = crate::code::types::get_type_arguments(ctx, mt1);
-                let svars = crate::code::types::get_type_arguments(ctx, mt2);
+                let tvars = crate::code::types::get_type_arguments_completed(ctx, syms, mt1, None);
+                let svars = crate::code::types::get_type_arguments_completed(ctx, syms, mt2, None);
                 let t = method_return_type(ctx, mt1);
                 let sres = method_return_type(ctx, mt2);
                 let s = {
@@ -8702,8 +8760,8 @@ impl Types {
                                     .has_tag(crate::code::type_tag::TypeTag::FORALL),
                                 "AssertionError: generic merge"
                             );
-                            let mt2_args = crate::code::types::get_type_arguments(ctx, mt2);
-                            let mt_args = crate::code::types::get_type_arguments(ctx, mt);
+                            let mt2_args = crate::code::types::get_type_arguments_completed(ctx, syms, mt2, None);
+                            let mt_args = crate::code::types::get_type_arguments_completed(ctx, syms, mt, None);
                             thrown2 = self.subst(ctx, syms, &thrown2, &mt2_args, &mt_args);
                         }
                         all_thrown = chk.intersect(ctx, syms, &all_thrown, &thrown2);
@@ -9033,7 +9091,7 @@ impl Types {
         syms: &Symtab,
         site: TypeId,
     ) -> TypeId {
-        let actuals = crate::code::types::get_type_arguments(ctx, site);
+        let actuals = crate::code::types::get_type_arguments_completed(ctx, syms, site, None);
         let wildcard_tag = crate::code::type_tag::TypeTag::WILDCARD;
         let has_wildcard = actuals
             .iter()
@@ -9043,7 +9101,7 @@ impl Types {
         }
         let site_tsym = ctx.typ(site).tsym.expect("site symbol");
         let site_tsym_ty = ctx.sym(site_tsym).ty.expect("site symbol type");
-        let formals = crate::code::types::get_type_arguments(ctx, site_tsym_ty);
+        let formals = crate::code::types::get_type_arguments_completed(ctx, syms, site_tsym_ty, None);
         let mut args: List<TypeId> = List::nil();
         let mut current = actuals;
         let mut formals_iter = formals.clone();
@@ -9723,7 +9781,8 @@ impl Types {
                 let typarams = typarams_field.unwrap_or_else(List::nil);
                 let tsym = ctx.typ(t).tsym.expect("class type symbol");
                 let formals_type = ctx.sym(tsym).ty.expect("class symbol type");
-                let mut formals = ctx.typ(formals_type).get_type_arguments();
+                let mut formals =
+                    crate::code::types::get_type_arguments_completed(ctx, syms, formals_type, None);
                 let mut typarams1: List<TypeId> = List::nil();
                 let mut changed = false;
                 let mut current = typarams.clone();
@@ -9888,7 +9947,8 @@ impl Types {
         let lower = self.projection(ctx, syms, t, vars, ProjectionKind::DOWNWARDS, seen);
         let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
         let formals_type = ctx.sym(site_tsym).ty.expect("site symbol type");
-        let formals = ctx.typ(formals_type).get_type_arguments();
+        let formals =
+            crate::code::types::get_type_arguments_completed(ctx, syms, formals_type, None);
         let object = syms.object_type;
         let (bound, bk) = if !self.is_same_type(ctx, syms, upper, object)
             && (self.contains_any(ctx, syms, declared_bound, &formals)
@@ -10671,7 +10731,7 @@ pub trait SignatureGenerator {
             let external = crate::jvm::class_file::externalize_name(&flatname);
             self.append_bytes(&external);
         }
-        let args = ctx.typ(t).get_type_arguments();
+        let args = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
         if !args.is_empty() {
             self.append_char('<');
             self.assemble_sig_list(ctx, syms, args)?;
@@ -10860,6 +10920,32 @@ mod tests {
     use crate::util::names::Names;
     use std::rc::Rc;
 
+    #[test]
+    fn error_type_model_type_provider_is_lazy_and_cached() {
+        let (mut ctx, syms) = build();
+        let names = Rc::new(Names::new(false));
+        let types = Types::with_names(names);
+        let err_ty = syms.err_type;
+        let error = ctx.alloc_type(Type::new(
+            TypeTag::ERROR,
+            None,
+            crate::code::type_::TypeKindData::ErrorType {
+                outer_field: None,
+                typarams_field: None,
+                allparams_field: None,
+                supertype_field: None,
+                interfaces_field: None,
+                all_interfaces_field: None,
+                original_type: None,
+                candidate_symbol: None,
+                model_type: None,
+                model_type_provider: Some(Rc::new(move |_ctx, _syms, _types| err_ty)),
+            },
+        ));
+        assert_eq!(types.get_model_type(&mut ctx, &syms, error), Some(err_ty));
+        assert_eq!(types.get_model_type(&mut ctx, &syms, error), Some(err_ty));
+    }
+
     fn build() -> (CompilerContext, Symtab) {
         let mut ctx = CompilerContext::new();
         let names = Rc::new(Names::new(false));
@@ -10953,20 +11039,20 @@ mod tests {
     fn hash_code_matches_the_java_tag_hash_for_primitives() {
         let (mut ctx, symtab) = build();
         let types = Types::new();
-        assert_eq!(types.hash_code(&mut ctx, symtab.int_type), 5);
-        assert_eq!(types.hash_code(&mut ctx, symtab.byte_type), 0);
-        assert_eq!(types.hash_code(&mut ctx, symtab.char_type), 1);
-        assert_eq!(types.hash_code(&mut ctx, symtab.short_type), 2);
-        assert_eq!(types.hash_code(&mut ctx, symtab.long_type), 3);
-        assert_eq!(types.hash_code(&mut ctx, symtab.float_type), 4);
-        assert_eq!(types.hash_code(&mut ctx, symtab.double_type), 6);
-        assert_eq!(types.hash_code(&mut ctx, symtab.boolean_type), 7);
-        assert_eq!(types.hash_code(&mut ctx, symtab.void_type), 8);
-        assert_eq!(types.hash_code(&mut ctx, symtab.bot_type), 18);
-        assert_eq!(types.hash_code(&mut ctx, symtab.err_type), 0);
-        assert_eq!(types.hash_code(&mut ctx, symtab.unknown_type), 21);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, symtab.int_type), 5);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, symtab.byte_type), 0);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, symtab.char_type), 1);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, symtab.short_type), 2);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, symtab.long_type), 3);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, symtab.float_type), 4);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, symtab.double_type), 6);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, symtab.boolean_type), 7);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, symtab.void_type), 8);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, symtab.bot_type), 18);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, symtab.err_type), 0);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, symtab.unknown_type), 21);
         let no_type = ctx.sym(symtab.no_symbol).ty.expect("no type");
-        assert_eq!(types.hash_code(&mut ctx, no_type), 19);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, no_type), 19);
     }
 
     #[test]
@@ -10981,7 +11067,7 @@ mod tests {
                 varargs: false,
             },
         ));
-        assert_eq!(types.hash_code(&mut ctx, int_array), 5 + 12);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, int_array), 5 + 12);
         let int_array_2d = ctx.alloc_type(Type::new(
             TypeTag::ARRAY,
             Some(symtab.array_class),
@@ -10990,7 +11076,7 @@ mod tests {
                 varargs: false,
             },
         ));
-        assert_eq!(types.hash_code(&mut ctx, int_array_2d), 5 + 12 + 12);
+        assert_eq!(types.hash_code(&mut ctx, &symtab, int_array_2d), 5 + 12 + 12);
     }
 
     #[test]
@@ -11066,8 +11152,8 @@ mod tests {
         assert!(!types.is_same_type(&mut ctx, &symtab, no_type, first));
         // The class-type hash uses the same noType adapter instead of panicking.
         assert_eq!(
-            types.hash_code(&mut ctx, first),
-            types.hash_code(&mut ctx, second)
+            types.hash_code(&mut ctx, &symtab, first),
+            types.hash_code(&mut ctx, &symtab, second)
         );
     }
 
@@ -11089,6 +11175,61 @@ mod tests {
             },
         ));
         assert_eq!(types.erasure(&mut ctx, &symtab, int_array), int_array);
+    }
+
+    struct CountingCompleter(std::rc::Rc<std::cell::Cell<usize>>);
+
+    impl crate::code::symbol::Completer for CountingCompleter {
+        fn complete(
+            &mut self,
+            ctx: &mut CompilerContext,
+            _syms: &Symtab,
+            sym: crate::ids::SymbolId,
+        ) -> Result<(), crate::code::symbol::CompletionFailure> {
+            self.0.set(self.0.get() + 1);
+            if let Some(ty) = ctx.sym(sym).ty
+                && let crate::code::type_::TypeKindData::ClassType {
+                    typarams_field, ..
+                } = &mut ctx.typ_mut(ty).kind
+            {
+                *typarams_field = Some(List::nil());
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn completed_reads_call_the_completer_only_once() {
+        let (mut ctx, syms) = build();
+        let names = crate::util::names::Names::new(false);
+        let no_type = ctx.no_type_id();
+        let class = crate::code::symtab::new_class_symbol(
+            &mut ctx,
+            0,
+            names.from_utf(b"Missing"),
+            None,
+            no_type,
+        );
+        let class_type = ctx.sym(class).ty.expect("class type");
+        let calls = Rc::new(std::cell::Cell::new(0));
+        ctx.sym_mut(class).completer = Some(Rc::new(std::cell::RefCell::new(CountingCompleter(
+            Rc::clone(&calls),
+        ))));
+        let first = get_type_arguments_completed(&mut ctx, &syms, class_type, None);
+        let second = get_type_arguments_completed(&mut ctx, &syms, class_type, None);
+        assert_eq!(calls.get(), 1);
+        assert!(first.is_empty() && second.is_empty());
+    }
+
+    #[test]
+    fn completed_get_type_arguments_does_not_reenter_completion() {
+        let (mut ctx, symtab) = build();
+        let list_tsym = ctx.typ(symtab.list_type).tsym.expect("List symbol");
+        let list_string = class_type(&mut ctx, list_tsym, &[symtab.string_type]);
+        // typarams_field is Some, so the completed helper must take the cache
+        // branch and never call itself (the former fallback self-recursion).
+        let args = get_type_arguments_completed(&mut ctx, &symtab, list_string, None);
+        assert_eq!(args.length(), 1);
     }
 
     #[test]
@@ -12090,8 +12231,13 @@ impl UniqueType {
     }
 
     /// Return the hash code of the wrapped type.
-    pub fn hash_code(&self, ctx: &mut CompilerContext, types: &Types) -> i32 {
-        types.hash_code(ctx, self.type_)
+    pub fn hash_code(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+    ) -> i32 {
+        types.hash_code(ctx, syms, self.type_)
     }
 
     /// Return whether the wrapped type equals the other wrapped type.

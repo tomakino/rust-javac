@@ -744,7 +744,13 @@ impl Infer {
                 .undet_var_get_inst(ctx, uv)
                 .expect("fresh tvar instance");
             let ct_upper = ctx.typ(inst).get_upper_bound().expect("tvar upper bound");
-            let bounds = types.get_bounds_of_type(ctx, syms, inst);
+            // Java: types.getBounds(ct) (Infer.java:541). Keep compound
+            // components; fall back to the upper bound only when the local
+            // bound list is empty (glb(nil) otherwise).
+            let mut bounds = types.get_bounds_of_type(ctx, syms, inst);
+            if bounds.is_empty() {
+                bounds = crate::util::list::List::of(ct_upper);
+            }
             let as_inst = inference_context.as_inst_types(ctx, syms, types, bounds);
             let glb = types.glb_list(ctx, syms, as_inst);
             if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(inst).kind {
@@ -2563,6 +2569,7 @@ impl InferenceGraph {
 /// Java: class ReachabilityVisitor extends Types.UnaryVisitor<Void>
 /// (InferenceContext.java:406-484)
 pub struct ReachabilityVisitor {
+    pub context: Rc<InferenceContext>,
     pub equiv: Vec<TypeId>,
     pub min: Vec<TypeId>,
     pub min_map: Vec<(TypeId, Vec<TypeId>)>,
@@ -2576,8 +2583,9 @@ impl ReachabilityVisitor {
 ///
 /// Upstream: Infer.java:1450-1470.
 ///
-    pub fn new(_context: &InferenceContext) -> ReachabilityVisitor {
+    pub fn new(context: &Rc<InferenceContext>) -> ReachabilityVisitor {
         ReachabilityVisitor {
+            context: Rc::clone(context),
             equiv: Vec::new(),
             min: Vec::new(),
             min_map: Vec::new(),
@@ -2615,9 +2623,15 @@ impl ReachabilityVisitor {
                     self.visit(ctx, syms, types, *type_)
                 }
                 TypeKindData::TypeVar { .. } => {
-                    // Java: visitTypeVar -> asUndetVar; the ported visitor is
-                    // called with UndetVar nodes only from the graph roots.
-                    Ok(())
+                    // Java: visitTypeVar -> asUndetVar; roots may contain
+                    // TypeVars (constructor return CHM<K,V>), which must be
+                    // mapped to their undet vars for reachability.
+                    let und = self.context.as_undet_var(ctx, syms, types, t);
+                    if und == t {
+                        Ok(())
+                    } else {
+                        self.visit(ctx, syms, types, und)
+                    }
                 }
                 TypeKindData::ArrayType { elemtype: Some(elem), .. } => {
                     self.visit(ctx, syms, types, *elem)
@@ -2639,7 +2653,7 @@ impl ReachabilityVisitor {
                     } {
                         self.visit(ctx, syms, types, enclosing)?;
                     }
-                    let mut args = types.get_type_arguments_public(ctx, t);
+                    let mut args = types.get_type_arguments_public(ctx, syms, t);
                     while args.non_empty() {
                         self.visit(ctx, syms, types, *args.head())?;
                         args = args.tail();
@@ -3296,7 +3310,7 @@ impl Infer {
             shared: Rc::clone(&warn_shared),
         };
         let inference_context =
-            InferenceContext::new(Rc::new(self.clone_shallow()), ctx, syms, types, tvars);
+            InferenceContext::new(Rc::new(self.clone_shallow()), ctx, syms, types, tvars.clone());
         let defer_context = resolve_context.deferred_attr_context(
             msym,
             Rc::clone(&inference_context),
@@ -3643,7 +3657,7 @@ impl Infer {
             && !Rc::ptr_eq(&rs_context, &crate::comp::infer::empty_context())
         {
             from = types.capture(ctx, syms, from);
-            let args = types.get_type_arguments_public(ctx, from);
+            let args = types.get_type_arguments_public(ctx, syms, from);
             for t in args.iter() {
                 if ctx.typ(t).has_tag(TypeTag::TYPEVAR) && ctx.typ(t).is_captured() {
                     inference_context.add_var(ctx, syms, types, t);
@@ -4094,7 +4108,8 @@ impl Infer {
         }
         let tsym = ctx.typ(func_interface).tsym.expect("funcInterface tsym");
         let formal_interface = ctx.sym(tsym).ty.expect("funcInterface tsym type");
-        let typeargs = crate::code::types::get_type_arguments(ctx, formal_interface);
+        let typeargs =
+            crate::code::types::get_type_arguments_completed(ctx, syms, formal_interface, None);
         let func_interface_context = crate::comp::infer::InferenceContext::new(
             Rc::clone(self),
             ctx,
@@ -4131,8 +4146,10 @@ impl Infer {
             }
             param_types = param_types.tail();
         }
-        let mut actual_typeargs = crate::code::types::get_type_arguments(ctx, func_interface);
-        let formal_typeargs = crate::code::types::get_type_arguments(ctx, formal_interface);
+        let mut actual_typeargs =
+            crate::code::types::get_type_arguments_completed(ctx, syms, func_interface, None);
+        let formal_typeargs =
+            crate::code::types::get_type_arguments_completed(ctx, syms, formal_interface, None);
         let undetvars = {
             let state = func_interface_context.inner.borrow();
             state.undetvars.clone()

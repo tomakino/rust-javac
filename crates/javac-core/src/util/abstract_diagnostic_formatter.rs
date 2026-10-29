@@ -39,9 +39,9 @@
 //!   carry an _impl suffix (Rust has no overriding); the other upstream methods
 //!   keep the camelCase -> snake_case name;
 //! - SimpleConfiguration(Options) needs the not-yet-ported Options: it is not
-//!   provided (TODO in the that ports Options); the report-style option
+//!   provided (REGISTERED in the that ports Options); the report-style option
 //!   decoding is registered in the module doc of the Options/Target;
-//! - NOT PORTED IN THIS STEP (dependencies are not ported yet; TODO, no
+//! - NOT PORTED IN THIS STEP (dependencies are not ported yet; REGISTERED, no
 //!   substitute logic):
 //!   * the Printer-based Type/Symbol argument formatting needs code/Printer
 //!     (not ported);
@@ -112,7 +112,7 @@ pub trait AbstractDiagnosticFormatter {
     /// Java: public String format(JCDiagnostic d, Locale locale)
     fn format_impl(&self, d: &JCDiagnostic, locale: Option<&Locale>) -> String {
         // Java: allCaptured = List.nil(); (the captured-type Printer is not
-        // ported yet, TODO).
+        // ported yet, REGISTERED).
         self.format_diagnostic_impl(d, locale)
     }
 

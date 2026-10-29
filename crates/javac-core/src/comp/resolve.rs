@@ -43,7 +43,7 @@
 //!   checks, isAccessible union alternatives, currModule.complete, and the
 //!   in-query LookupFilter (Resolve.java:345/390-392/1787/2054/2896-2897).
 //!
-//! NOT YET PORTED IN THIS FILE (registered; each with a not-yet-ported marker + TODO):
+//! NOT YET PORTED IN THIS FILE (registered; each with a not-yet-ported marker + REGISTERED):
 //! - member-reference resolution: makeReferenceLookupHelper/
 //!   MethodReferenceLookupHelper/UnboundMethodReferenceLookupHelper/
 //!   ArrayConstructorReferenceLookupHelper/ConstructorReferenceLookupHelper/
@@ -1796,7 +1796,7 @@ pub(crate) fn symbol_display_name(
 
 // ---------------------------------------------------------------------------
 // Resolve A: name lookup (Resolve.java:1432-2530). Each method follows the
-// upstream body; unimplemented dependencies are explicit TODO registrations.
+// upstream body; unimplemented dependencies are explicit REGISTERED registrations.
 // ---------------------------------------------------------------------------
 
 /// Java: interface Resolve.RecoveryLoadClass (Resolve.java:2067)
@@ -4994,6 +4994,7 @@ impl Resolve {
 /// non-abstract methods unless abstractok.
 pub struct LookupFilter {
     pub abstractok: bool,
+    pub allow_static: bool,
 }
 
 impl LookupFilter {
@@ -5009,6 +5010,7 @@ impl LookupFilter {
         let flags = symbol.flags_field;
         symbol.kind == crate::code::kinds::Kind::MTH
             && (flags & crate::code::flags::SYNTHETIC as i64) == 0
+            && (self.allow_static || (flags & crate::code::flags::STATIC as i64) == 0)
             && (self.abstractok
                 || (flags & crate::code::flags::DEFAULT as i64) != 0
                 || (flags & crate::code::flags::ABSTRACT as i64) == 0)
@@ -5541,9 +5543,10 @@ impl Resolve {
         allow_boxing: bool,
         use_varargs: bool,
         abstractok: bool,
+        allow_static: bool,
         resolve_context: &mut MethodResolutionContext,
     ) -> SymbolId {
-        let filter = LookupFilter { abstractok };
+        let filter = LookupFilter { abstractok, allow_static };
         // Java: for (Symbol s : sc.getSymbolsByName(name, new LookupFilter(abstractok)))
         // (Resolve.java:1787). The filter is applied by the scope query itself
         // (including the import-scope branches), matching Scope.getSymbolsByName.
@@ -6819,6 +6822,7 @@ impl Resolve {
         };
         let site_type_args = types.get_type_arguments_public(
             ctx,
+            syms,
             ctx.sym(site_tsym).ty.expect("diamond site type"),
         );
         for sym in symbols {
@@ -7729,6 +7733,7 @@ impl Resolve {
                     allow_boxing,
                     use_varargs,
                     true,
+                    true,
                     resolve_context,
                 );
             }
@@ -7794,6 +7799,7 @@ impl Resolve {
                                 allow_boxing,
                                 use_varargs,
                                 true,
+                                false,
                                 resolve_context,
                             );
                             if concrete != best_so_far
@@ -8508,8 +8514,16 @@ impl ReferenceLookupHelper {
         ReferenceLookupHelper {
             kind: ReferenceHelperKind::UnboundMethod,
             original_site,
+            // Java: UnboundMethodReferenceLookupHelper calls super(...,
+            // argtypes.tail, ...) (Resolve.java:3596-3598): the first
+            // descriptor argument is the receiver type, not a method parameter.
             ..ReferenceLookupHelper::new_method(
-                reference_tree, name, site, argtypes, typeargtypes, max_phase,
+                reference_tree,
+                name,
+                site,
+                argtypes.tail(),
+                typeargtypes,
+                max_phase,
             )
         }
     }
@@ -8761,6 +8775,7 @@ impl LookupHelper for ReferenceLookupHelper {
                     phase.is_boxing_required(),
                     phase.is_varargs_required(),
                     false,
+                    true,
                     resolve_context,
                 )
             }
@@ -9038,7 +9053,7 @@ impl Resolve {
                             == 0
                 });
                 let type_args = if !(inner.unwrap_or(false) && enclosing_is_raw) {
-                    types.get_type_arguments_public(ctx, tsym_type)
+                    types.get_type_arguments_public(ctx, syms, tsym_type)
                 } else {
                     crate::util::list::List::nil()
                 };
@@ -10267,10 +10282,10 @@ mod tests {
                 original_enclosing_method: None,
             },
         ));
-        let strict = LookupFilter { abstractok: false };
+        let strict = LookupFilter { abstractok: false, allow_static: true };
         assert!(!strict.test(&ctx, abstract_sym));
         assert!(strict.test(&ctx, concrete_sym));
-        let lenient = LookupFilter { abstractok: true };
+        let lenient = LookupFilter { abstractok: true, allow_static: true };
         assert!(lenient.test(&ctx, abstract_sym));
         assert!(lenient.test(&ctx, concrete_sym));
     }

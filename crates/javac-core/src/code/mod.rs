@@ -17,6 +17,7 @@ pub mod preview;
 pub mod scope;
 pub mod source;
 pub mod symbol;
+pub mod symbol_element;
 pub mod symbol_metadata;
 pub mod symtab;
 pub mod target_type;

@@ -57,7 +57,8 @@
 //!
 //! REGISTERED P0: register the adapter files `error.rs`, `uri.rs`, `java_io.rs`,
 //! `jdk.rs` in docs/PORTING_RULES.md §9 and docs/STATUS.md (Lead).
-//! REGISTERED P2: `java.net.URI` is a minimal mapping; the remaining
+//! P2: `java.net.URI` implements create/path/normalize/resolve/relativize/to_url;
+//! REGISTERED: component-level validation and the remaining
 //! `java.net.URI` semantics are added with the `file` package, which is the
 //! first consumer.
 //! REGISTERED P6: annotation processing is out of scope (docs/PLAN.md §3.1);

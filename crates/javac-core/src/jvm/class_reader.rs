@@ -286,7 +286,7 @@ impl ClassReader {
             allow_records: Feature::RECORDS.allowed_in_source(source),
             // Java: lintClassfile = Lint.instance(context).isEnabled(LintCategory.CLASSFILE);
             // Port adapter: the Lint service is not ported yet (registered
-            // TODO(Lint)); the -Xlint:classfile option is read directly.
+            // REGISTERED(Lint)); the -Xlint:classfile option is read directly.
             lint_classfile: options.lint_enabled("classfile"),
             save_parameter_names,
             add_type_annotations_to_symbol: options.get_boolean("addTypeAnnotationsToSymbol"),
@@ -1002,22 +1002,23 @@ impl ClassReader {
     fn enter_typevars(
         &mut self,
         ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         sym: SymbolId,
         t: TypeId,
     ) {
         if let Some(enclosing) = ctx.typ(t).get_enclosing_type() {
             if !ctx.typ(enclosing).has_tag(crate::code::type_tag::TypeTag::NONE) {
                 let owner = ctx.sym(sym).owner.expect("symbol owner");
-                self.enter_typevars(ctx, owner, enclosing);
+                self.enter_typevars(ctx, syms, owner, enclosing);
             }
         } else if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH
             && !ctx.sym(sym).is_static(ctx)
         {
             let owner = ctx.sym(sym).owner.expect("symbol owner");
             let owner_type = ctx.sym(owner).ty.expect("owner type");
-            self.enter_typevars(ctx, owner, owner_type);
+            self.enter_typevars(ctx, syms, owner, owner_type);
         }
-        let mut xs = ctx.typ(t).get_type_arguments();
+        let mut xs = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
         let typevars = self.typevars.expect("typevars scope");
         while xs.non_empty() {
             let head = *xs.head();
@@ -1465,7 +1466,7 @@ impl ClassReader {
         {
             let enclosing = ctx.typ(ct).get_enclosing_type().expect("enclosing");
             let owner = ctx.sym(c).owner.expect("class owner");
-            self.enter_typevars(ctx, owner, enclosing);
+            self.enter_typevars(ctx, syms, owner, enclosing);
         }
 
         // read flags, or skip if this is an inner class
@@ -1749,7 +1750,7 @@ impl ClassReader {
             }
         }
         let method = ctx.alloc_symbol(crate::code::symbol::Symbol::new_method_symbol(
-            flags, name, ty, owner,
+            flags, name.clone(), ty, owner,
         ));
         if self.types.is_signature_polymorphic(ctx, syms, method) {
             ctx.sym_mut(method).flags_field |= crate::code::flags::SIGNATURE_POLYMORPHIC;
@@ -3507,7 +3508,7 @@ impl ClassReader {
             let no_type = self.no_type(ctx);
             ctx.typ_mut(self_ty).set_enclosing_type(Some(no_type));
         }
-        self.enter_typevars(ctx, self_class, self_ty);
+        self.enter_typevars(ctx, syms, self_class, self_ty);
         if !self.missing_type_variables.is_empty() {
             let mut found = List::nil();
             let missing = self.missing_type_variables.clone();
@@ -3712,10 +3713,22 @@ impl ClassReader {
             ctx.sym_mut(sym).ty = Some(new_ty);
             if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH
                 && ctx.typ(new_ty).get_thrown_types(ctx).is_empty()
-                && let crate::code::type_::TypeKindData::MethodType { thrown: slot, .. } =
-                    &mut ctx.typ_mut(new_ty).kind
             {
-                *slot = thrown;
+                match &mut ctx.typ_mut(new_ty).kind {
+                    crate::code::type_::TypeKindData::MethodType { thrown: slot, .. } => {
+                        *slot = thrown;
+                    }
+                    crate::code::type_::TypeKindData::ForAll { qtype: Some(qtype), .. } => {
+                        let qtype = *qtype;
+                        if let crate::code::type_::TypeKindData::MethodType {
+                            thrown: slot, ..
+                        } = &mut ctx.typ_mut(qtype).kind
+                        {
+                            *slot = thrown;
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
         Ok(())
@@ -4188,6 +4201,15 @@ fn visit_method_symbol_type_annotations(
         recvtype: new_recvtype,
     };
     let new_method_ty = ctx.alloc_type(new_method);
+    // Constructors have no method type parameters of their own: their
+    // MethodType must stay plain (ClassReader.java:2539-2554). Wrapping the
+    // class tvars here would duplicate them when findDiamond prepends the
+    // site's class tvars.
+    let tvars = if ctx.sym(sym).name.to_java_string() == syms.names().init.to_java_string() {
+        None
+    } else {
+        tvars
+    };
     let final_ty = if let Some(tvars) = tvars {
         let new_tvars = rewrite_type_parameters(
             ctx,

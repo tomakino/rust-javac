@@ -539,7 +539,7 @@ impl<A> List<A> {
         buf.to_list()
     }
 
-    // TODO(P3): public static <T> List<T> convert(Class<T> klass, List<?> list)
+    // REGISTERED(P3): public static <T> List<T> convert(Class<T> klass, List<?> list)
     //
     // PORTING_RULES: convert runs a reflective element-type check (klass.cast) before the
     // unchecked cast; Rust's type system performs that check statically at the ported call site

@@ -27,7 +27,7 @@
 // JCTree.Visitor-based Synthesizer (TypeEnter.java:555-569/571+) are not ported.
 // ClassSymbol/TreeInfo/RecordComponent helpers are ported where their call
 // sites use them; any remaining per-method registrations are stated at the
-// method, not as a blanket TODO list.
+// method, not as a blanket list.
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -1100,23 +1100,45 @@ impl TypeEnter {
     /// JCExpression tree, boolean interfaceExpected)
     fn model_missing_types(
         &self,
-        _ctx: &mut CompilerContext,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
         _env: &Rc<Env<AttrContext>>,
         t: crate::ids::TypeId,
-        _tree: TreeId,
-        _interface_expected: bool,
+        tree: TreeId,
+        interface_expected: bool,
     ) -> crate::ids::TypeId {
-        // Java: if (!t.hasTag(ERROR)) return t; else return new ErrorType(
-        //     t.getOriginalType(), t.tsym) { getModelType() ->
-        //     new Synthesizer(env.toplevel.modle, getOriginalType(),
-        //     interfaceExpected).visit(tree) }; (TypeEnter.java:555-569;
-        // Synthesizer: TypeEnter.java:571-*).
-        // REGISTERED dependency: the anonymous ErrorType getModelType hook and
-        // the Synthesizer JCTree.Visitor (TypeEnter.java:555-569, 571+) are not
-        // ported; the local Type has no lazy modelType callback. Upstream returns
-        // an ErrorType that models the missing type lazily; the port returns the
-        // original error type unchanged (no synthesized model).
-        t
+        // Java: TypeEnter.java:555-569: if (!t.hasTag(ERROR)) return t; else
+        // return new ErrorType(t.getOriginalType(), t.tsym) { getModelType() ->
+        // new Synthesizer(env.toplevel.modle, getOriginalType(),
+        // interfaceExpected).visit(tree) }.
+        if !ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::ERROR) {
+            return t;
+        }
+        let tsym = ctx.typ(t).tsym;
+        let original = match &ctx.typ(t).kind {
+            crate::code::type_::TypeKindData::ErrorType { original_type, .. } => {
+                original_type.unwrap_or(t)
+            }
+            _ => t,
+        };
+        let mut kind = ctx.typ(t).kind.clone();
+        if let crate::code::type_::TypeKindData::ErrorType {
+            model_type,
+            model_type_provider,
+            ..
+        } = &mut kind
+        {
+            *model_type = None;
+            let _ = syms;
+            *model_type_provider = Some(Rc::new(move |ctx, syms, types| {
+                synthesize_missing_type(ctx, syms, types, tree, interface_expected, original)
+            }));
+        }
+        ctx.alloc_type(crate::code::type_::Type::new(
+            crate::code::type_tag::TypeTag::ERROR,
+            tsym,
+            kind,
+        ))
     }
 
     // ------------------------------------------------------------------
@@ -1266,7 +1288,7 @@ impl TypeEnter {
             syms.object_type
         };
         let supertype =
-            self.model_missing_types(ctx, base_env, supertype, extending.unwrap_or(tree), false);
+            self.model_missing_types(ctx, syms, base_env, supertype, extending.unwrap_or(tree), false);
         // Determine interfaces.
         let mut interfaces: List<TypeId> = List::nil();
         let mut all_interfaces: Option<List<TypeId>> = None;
@@ -1294,7 +1316,7 @@ impl TypeEnter {
                     all_interfaces = Some(interfaces.clone());
                 }
                 let modeled =
-                    self.model_missing_types(ctx, base_env, it, cleared, true);
+                    self.model_missing_types(ctx, syms, base_env, it, cleared, true);
                 let all = all_interfaces.as_mut().expect("all interfaces");
                 *all = all.append(modeled);
             }
@@ -2482,7 +2504,8 @@ impl TypeEnter {
                 make.ident(ctx, names._super.clone())
             };
             let typeargs = {
-                let type_args = ctx.typ(init_type).get_type_arguments();
+                let type_args =
+                    crate::code::types::get_type_arguments_completed(ctx, syms, init_type, None);
                 if type_args.non_empty() {
                     make.types(ctx, syms, type_args)
                 } else {
@@ -3611,6 +3634,169 @@ fn package_fullname_of_type_enter(
     }
 }
 
+/// Synthesizer visitor (TypeEnter.java:571-674). Upstream overrides only
+/// visitTree/visitIdent/visitSelect/visitTypeApply; ArrayType and all other
+/// shapes fall to visitTree -> syms.errType (there is no visitTypeArray in the
+/// upstream Synthesizer).
+fn synthesize_missing_type(
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    types: &crate::code::types::Types,
+    tree: TreeId,
+    interface_expected: bool,
+    original: crate::ids::TypeId,
+) -> crate::ids::TypeId {
+    use crate::tree::jc_tree::TreeKind;
+    // Upstream 602-604/611-613/630-632: a non-erroneous tree.type is returned
+    // unchanged before synthesizing anything.
+    if let Some(ty) = ctx.tree(tree).ty
+        && !ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::ERROR)
+    {
+        return ty;
+    }
+    let kind = ctx.tree(tree).kind.clone();
+    match &kind {
+        TreeKind::Ident { name, .. } => {
+            let owner = unnamed_package_of(ctx, syms);
+            synthesize_class(ctx, types, name.clone(), owner, interface_expected, original)
+        }
+        TreeKind::FieldAccess {
+            selected, name, ..
+        } => {
+            let owner = selected.and_then(|selected| {
+                let ty = synthesize_missing_type(
+                    ctx, syms, types, selected, false, original,
+                );
+                ctx.typ(ty).tsym
+            });
+            synthesize_class(ctx, types, name.clone(), owner, interface_expected, original)
+        }
+        TreeKind::TypeApply { clazz, arguments } => {
+            let Some(clazz) = *clazz else {
+                return syms.err_type;
+            };
+            // Upstream 637: new ErrorType(tree.type, clazzType.tsym); the tree's
+            // own error type is the original when present (the initial check
+            // above returned any non-error tree.type).
+            let applied_original = ctx.tree(tree).ty.unwrap_or(original);
+            let base = synthesize_missing_type(
+                ctx, syms, types, clazz, interface_expected, original,
+            );
+            let tsym = ctx.typ(base).tsym;
+            if let Some(tsym) = tsym
+                && ctx.sym(tsym).kind == crate::code::kinds::Kind::ERR
+            {
+                synthesize_typarams(ctx, syms, base, arguments.length());
+            }
+            let mut actuals = List::nil();
+            for argument in arguments.iter() {
+                let actual = synthesize_missing_type(
+                    ctx, syms, types, argument, false, original,
+                );
+                actuals = actuals.append(actual);
+            }
+            ctx.alloc_type(crate::code::type_::Type::new(
+                crate::code::type_tag::TypeTag::ERROR,
+                tsym,
+                crate::code::type_::TypeKindData::ErrorType {
+                    outer_field: None,
+                    typarams_field: Some(actuals),
+                    allparams_field: None,
+                    supertype_field: None,
+                    interfaces_field: None,
+                    all_interfaces_field: None,
+                    original_type: Some(applied_original),
+                    candidate_symbol: None,
+                    model_type: None,
+                    model_type_provider: None,
+                },
+            ))
+        }
+        _ => syms.err_type,
+    }
+}
+
+/// Java: TypeEnter.java:663-671: n == 1 -> "T", n > 1 -> "T" + i.
+fn synthesized_typaram_name(
+    names: &crate::util::names::Names,
+    index: i32,
+    n: i32,
+) -> crate::util::name::Name {
+    let text = if n == 1 {
+        String::from("T")
+    } else {
+        format!("T{index}")
+    };
+    names.from_string(&javac_strings::JavaString::from(text.as_str()))
+}
+
+/// Java: synthesizeTyparams (TypeEnter.java:660-673): install T/T1..Tn on the
+/// synthesized class type when it has no type parameters yet.
+fn synthesize_typarams(
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    class_type: crate::ids::TypeId,
+    n: i32,
+) {
+    let Some(tsym) = ctx.typ(class_type).tsym else {
+        return;
+    };
+    if let crate::code::type_::TypeKindData::ErrorType { typarams_field, .. } =
+        &ctx.typ(class_type).kind
+        && typarams_field.is_some()
+    {
+        return;
+    }
+    let mut typarams = List::nil();
+    for index in (1..=n).rev() {
+        let name = synthesized_typaram_name(syms.names(), index, n);
+        let var = ctx.alloc_type(crate::code::type_::Type::new(
+            crate::code::type_tag::TypeTag::TYPEVAR,
+            Some(tsym),
+            crate::code::type_::TypeKindData::TypeVar {
+                bound: Some(syms.bot_type),
+                lower: Some(syms.bot_type),
+            },
+        ));
+        typarams = typarams.prepend(var);
+    }
+    if let crate::code::type_::TypeKindData::ErrorType { typarams_field, .. } =
+        &mut ctx.typ_mut(class_type).kind
+    {
+        *typarams_field = Some(typarams);
+    }
+}
+
+fn unnamed_package_of(ctx: &CompilerContext, syms: &Symtab) -> Option<SymbolId> {
+    match &ctx.sym(syms.unnamed_module).kind_data {
+        crate::code::symbol::SymbolKind::ModuleSymbol {
+            unnamed_package, ..
+        } => *unnamed_package,
+        _ => None,
+    }
+}
+
+fn synthesize_class(
+    ctx: &mut CompilerContext,
+    types: &crate::code::types::Types,
+    name: crate::util::name::Name,
+    owner: Option<SymbolId>,
+    interface_expected: bool,
+    original: crate::ids::TypeId,
+) -> crate::ids::TypeId {
+    let no_type = ctx.no_type_id();
+    // Upstream TypeEnter.java:646-658: new ClassSymbol(flags, name, owner)
+    // with flags = interfaceExpected ? INTERFACE : 0, members = ErrorScope,
+    // type = new ErrorType(originalType, c).
+    let flags = if interface_expected {
+        crate::code::flags::INTERFACE as i64
+    } else {
+        0
+    };
+    let class = crate::code::symtab::new_class_symbol(ctx, flags, name, owner, no_type);
+    types.create_error_type_class(ctx, class, Some(original))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3876,6 +4062,43 @@ mod tests {
             type_enter,
             names,
         }
+    }
+
+    #[test]
+    fn synthesize_typarams_names_match_upstream() {
+        let names = crate::util::names::Names::new(false);
+        assert_eq!(
+            synthesized_typaram_name(&names, 1, 1).to_java_string(),
+            javac_strings::JavaString::from("T")
+        );
+        assert_eq!(
+            synthesized_typaram_name(&names, 1, 2).to_java_string(),
+            javac_strings::JavaString::from("T1")
+        );
+        assert_eq!(
+            synthesized_typaram_name(&names, 2, 2).to_java_string(),
+            javac_strings::JavaString::from("T2")
+        );
+    }
+
+    #[test]
+    fn synthesizer_returns_non_erroneous_tree_type() {
+        let mut harness = harness();
+        let ty = harness.syms.borrow().string_type;
+        let tree = alloc(
+            &mut harness.ctx,
+            Tag::IDENT,
+            TreeKind::Ident {
+                name: harness.names.empty.clone(),
+                sym: None,
+            },
+        );
+        harness.ctx.tree_mut(tree).ty = Some(ty);
+        let types = Rc::clone(&harness.type_enter.types);
+        let syms = Rc::clone(&harness.type_enter.syms);
+        let syms_ref = syms.borrow();
+        let result = synthesize_missing_type(&mut harness.ctx, &syms_ref, &types, tree, false, ty);
+        assert_eq!(result, ty);
     }
 
     fn alloc(ctx: &mut CompilerContext, tag: Tag, kind: TreeKind) -> TreeId {

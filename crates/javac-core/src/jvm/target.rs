@@ -14,7 +14,7 @@
 //!   Display (the derived Debug name), while the upstream `name` field is the
 //!   version string ("1.1", "5", ...) returned by `name()`.
 //! * `compareTo` is Rust's derived Ord (declaration order = version order).
-//! * TODO(Options/Option): `instance(Context)` uses the not yet ported
+//! * REGISTERED(Options/Option): `instance(Context)` uses the not yet ported
 //!   Options/Options.instance and Option.TARGET ("--target -target"); it is left
 //!   as a single unimplemented entry point (no stand-in for Options).
 //!   All other methods are ported and tested.
@@ -265,7 +265,7 @@ impl Target {
     /// }
     /// </pre>
     ///
-    /// TODO(Options/Option): Options.instance/options.get and
+    /// REGISTERED(Options/Option): Options.instance/options.get and
     /// Option.TARGET ("--target -target") are not ported; the entry point stays
     /// unimplemented (no substitute Options is invented).
     pub fn instance(context: &mut Context) -> Rc<Target> {

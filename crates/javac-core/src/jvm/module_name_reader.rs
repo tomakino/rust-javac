@@ -18,7 +18,7 @@
 //!   ByteBuffer (crate::util::byte_buffer), Convert.utf2string
 //!   (crate::util::convert), Names (crate::util::names), PoolReader
 //!   (crate::jvm::pool_reader).
-//! * NOT ported yet (TODO, no substitute semantics):
+//! * NOT ported yet (REGISTERED, no substitute semantics):
 //!   - java.io.InputStream / Files.newInputStream: the Rust form takes
 //!     &mut R: Read (the JavaFileObject entry point still uses the JavaFileObject
 //!     abstraction of javac-tools); declared IOException -> io::Error;

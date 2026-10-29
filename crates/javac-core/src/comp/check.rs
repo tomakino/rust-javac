@@ -22,7 +22,7 @@
 // subset, annotation checks, lambda/method checks, warnings, sunApiHandler,
 //...).
 // The ported methods keep the upstream bodies and error keys; where a dependency
-// is not ported the branch is marked TODO and not executed (no substitute).
+// is not ported the branch is marked REGISTERED and not executed (no substitute).
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -1294,7 +1294,7 @@ impl Check {
         let t = self.check_class_type(ctx, syms, pos, t);
         if no_bounds {
             {
-                let mut args = ctx.typ(t).get_type_arguments();
+                let mut args = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
                 while args.non_empty() {
                     let head = *args.head();
                     if ctx
@@ -1973,7 +1973,7 @@ fn symbol_place_check(
 // Java: Check annotation validation (Check.java:211/2857-3520). 
 // ports the Annotate-facing part; the branches that need not-yet-ported units
 // (RecordComponent, TypeAnnotations.annotationTargets, Types.cvarLowerBound,
-// types.getRetention/overrideEquivalent) are explicit TODO registrations.
+// types.getRetention/overrideEquivalent) are explicit registrations.
 // ---------------------------------------------------------------------------
 
 impl Check {
@@ -2822,10 +2822,10 @@ impl Check {
             .map(|tsym_ty| crate::code::types::allparams_of(ctx, tsym_ty))
             .unwrap_or_else(List::nil);
         let actuals = crate::code::types::allparams_of(ctx, t);
-        let args = crate::code::types::get_type_arguments(ctx, t);
+        let args = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
         let forms = tsym
             .and_then(|tsym| ctx.sym(tsym).ty)
-            .map(|tsym_ty| crate::code::types::get_type_arguments(ctx, tsym_ty))
+            .map(|tsym_ty| crate::code::types::get_type_arguments_completed(ctx, syms, tsym_ty, None))
             .unwrap_or_else(List::nil);
         let mut bounds_buf: Vec<TypeId> = Vec::new();
         let mut args_iter = args.clone();
@@ -2879,7 +2879,8 @@ impl Check {
         let mut args_iter = args.clone();
         let mut bounds = List::from_iterable(bounds_buf);
         let captured = self.types.capture(ctx, syms, t);
-        let mut captured_args = crate::code::types::get_type_arguments(ctx, captured);
+        let mut captured_args =
+            crate::code::types::get_type_arguments_completed(ctx, syms, captured, None);
         while captured_args.non_empty() && bounds.non_empty() && args_iter.non_empty() {
             let arg = *captured_args.head();
             let bound = *bounds.head();
@@ -3817,8 +3818,8 @@ impl Check {
         let origin_type = ctx.sym(origin).ty.expect("origin type");
         let mt = self.types.member_type(ctx, syms, origin_type, m);
         let ot = self.types.member_type(ctx, syms, origin_type, other);
-        let mtvars = ctx.typ(mt).get_type_arguments();
-        let otvars = ctx.typ(ot).get_type_arguments();
+        let mtvars = crate::code::types::get_type_arguments_completed(ctx, syms, mt, None);
+        let otvars = crate::code::types::get_type_arguments_completed(ctx, syms, ot, None);
         let mtres = self.types.get_return_type_public(ctx, mt);
         let otres_unsubst = self.types.get_return_type_public(ctx, ot);
         let otres_list = self.types.subst(ctx, syms, &crate::util::list::List::of(otres_unsubst), &otvars, &mtvars);
@@ -3903,7 +3904,7 @@ impl Check {
             erased_current = erased_current.tail();
         }
         let unhandled_erased = self.unhandled(ctx, syms, mtthrown.clone(), otthrown_erased);
-        let unhandled_unerased = self.unhandled(ctx, syms, mtthrown, otthrown.clone());
+        let unhandled_unerased = self.unhandled(ctx, syms, mtthrown.clone(), otthrown.clone());
         if unhandled_erased.non_empty() {
             let head = *unhandled_erased.head();
             let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
@@ -4523,7 +4524,7 @@ impl Check {
                 if ctx.typ(tree_type).has_tag(crate::code::type_tag::TypeTag::CLASS) {
                     let tsym = ctx.typ(tree_type).tsym.expect("type apply symbol");
                     let tsym_ty = ctx.sym(tsym).ty.expect("type symbol type");
-                    let mut forms = crate::code::types::get_type_arguments(ctx, tsym_ty);
+                    let mut forms = crate::code::types::get_type_arguments_completed(ctx, syms, tsym_ty, None);
                     let incompatible = self.first_incompatible_type_arg(ctx, syms, tree_type);
                     if let Some(incompatible) = incompatible {
                         let mut args_iter = arguments.clone();
@@ -4550,7 +4551,7 @@ impl Check {
                             forms_iter = forms_iter.tail();
                         }
                     }
-                    forms = crate::code::types::get_type_arguments(ctx, tsym_ty);
+                    forms = crate::code::types::get_type_arguments_completed(ctx, syms, tsym_ty, None);
                     let flat_name = match &ctx.sym(tsym).kind_data {
                         crate::code::symbol::SymbolKind::ClassSymbol { flatname, .. } => {
                             flatname.clone()
@@ -4620,7 +4621,7 @@ impl Check {
                     let selected_ty = ctx.tree(selected).ty;
                     let tsym = ctx.typ(tree_ty).tsym.expect("select type symbol");
                     let tsym_ty = ctx.sym(tsym).ty.expect("type symbol type");
-                    let typarams = crate::code::types::get_type_arguments(ctx, tsym_ty);
+                    let typarams = crate::code::types::get_type_arguments_completed(ctx, syms, tsym_ty, None);
                     if selected_ty
                         .map(|selected_ty| self.types.is_parameterized_type_of(ctx, selected_ty))
                         .unwrap_or(false)
@@ -6312,8 +6313,8 @@ impl Check {
                     let st1_value = st1.expect("st1");
                     let st2 = self.types.member_type(ctx, syms, t2, s2);
                     if self.types.override_equivalent(ctx, syms, st1_value, st2) {
-                        let tvars1 = crate::code::types::get_type_arguments(ctx, st1_value);
-                        let tvars2 = crate::code::types::get_type_arguments(ctx, st2);
+                        let tvars1 = crate::code::types::get_type_arguments_completed(ctx, syms, st1_value, None);
+                        let tvars2 = crate::code::types::get_type_arguments_completed(ctx, syms, st2, None);
                         let rt1 = self.types.get_return_type_public(ctx, st1_value);
                         let rt2_unsubst = self.types.get_return_type_public(ctx, st2);
                         let rt2 = {
@@ -7246,7 +7247,7 @@ impl Check {
         }
         for index in 0..supertypes_vec.len() {
             let head = supertypes_vec[index];
-            if !crate::code::types::get_type_arguments(ctx, head).is_empty()
+            if !crate::code::types::get_type_arguments_completed(ctx, syms, head, None).is_empty()
                 && !self.check_compatible_abstracts(ctx, syms, pos, head, head, c)
             {
                 return;
@@ -7318,7 +7319,8 @@ impl Check {
         }
         let t_tsym = ctx.typ(t).tsym.expect("diamond class symbol");
         let t_tsym_ty = ctx.sym(t_tsym).ty.expect("diamond class symbol type");
-        let type_arguments = crate::code::types::get_type_arguments(ctx, t_tsym_ty);
+        let type_arguments =
+            crate::code::types::get_type_arguments_completed(ctx, syms, t_tsym_ty, None);
         if type_arguments.is_empty() {
             let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                 crate::resources::compiler_properties::fragments::diamond_non_generic(
@@ -7389,12 +7391,13 @@ impl Check {
     pub fn check_diamond_denotable(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
         t: TypeId,
     ) -> Vec<TypeId> {
-        let allparams = crate::code::types::allparams_of(ctx, t);
+        let allparams = crate::code::types::allparams_of_completed(ctx, syms, t, None);
         let mut result: Vec<TypeId> = Vec::new();
         for arg in allparams.iter() {
-            if !self.check_denotable(ctx, arg) {
+            if !self.check_denotable(ctx, syms, arg) {
                 result.push(arg);
             }
         }
@@ -7414,7 +7417,25 @@ impl Check {
     ///   - none.
     ///
     /// Upstream: Check.java:886-928.
-    pub fn check_denotable(
+    /// Cached entry for callers that already hold the Symtab RefCell mutably
+    /// (Attr.validateAnnotatedType); the generation/checking paths use the
+    /// completed entry above.
+    pub fn check_diamond_denotable_cached(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        t: TypeId,
+    ) -> Vec<TypeId> {
+        let allparams = crate::code::types::allparams_of(ctx, t);
+        let mut result: Vec<TypeId> = Vec::new();
+        for arg in allparams.iter() {
+            if !self.check_denotable_cached(ctx, arg) {
+                result.push(arg);
+            }
+        }
+        result
+    }
+
+    pub fn check_denotable_cached(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
         t: TypeId,
@@ -7430,7 +7451,7 @@ impl Check {
                 }
                 let allparams = crate::code::types::allparams_of(ctx, t);
                 for targ in allparams.iter() {
-                    if !self.check_denotable(ctx, targ) {
+                    if !self.check_denotable_cached(ctx, targ) {
                         return false;
                     }
                 }
@@ -7443,10 +7464,49 @@ impl Check {
                 .unwrap_or(false),
             TypeKindData::CapturedType { .. } => false,
             TypeKindData::ArrayType { elemtype, .. } => elemtype
-                .map(|elemtype| self.check_denotable(ctx, elemtype))
+                .map(|elemtype| self.check_denotable_cached(ctx, elemtype))
                 .unwrap_or(true),
             TypeKindData::WildcardType { type_, .. } => type_
-                .map(|type_| self.check_denotable(ctx, type_))
+                .map(|type_| self.check_denotable_cached(ctx, type_))
+                .unwrap_or(true),
+            _ => true,
+        }
+    }
+
+    pub fn check_denotable(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        t: TypeId,
+    ) -> bool {
+        use crate::code::type_::TypeKindData;
+        match &ctx.typ(t).kind {
+            TypeKindData::ClassType { .. }
+            | TypeKindData::ErasedClassType { .. }
+            | TypeKindData::UnionClassType { .. }
+            | TypeKindData::IntersectionClassType { .. } => {
+                if ctx.typ(t).is_union() || ctx.typ(t).is_intersection() {
+                    return false;
+                }
+                let allparams = crate::code::types::allparams_of_completed(ctx, syms, t, None);
+                for targ in allparams.iter() {
+                    if !self.check_denotable(ctx, syms, targ) {
+                        return false;
+                    }
+                }
+                true
+            }
+            TypeKindData::TypeVar { .. } => ctx
+                .typ(t)
+                .tsym
+                .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::SYNTHETIC as i64) == 0)
+                .unwrap_or(false),
+            TypeKindData::CapturedType { .. } => false,
+            TypeKindData::ArrayType { elemtype, .. } => elemtype
+                .map(|elemtype| self.check_denotable(ctx, syms, elemtype))
+                .unwrap_or(true),
+            TypeKindData::WildcardType { type_, .. } => type_
+                .map(|type_| self.check_denotable(ctx, syms, type_))
                 .unwrap_or(true),
             _ => true,
         }

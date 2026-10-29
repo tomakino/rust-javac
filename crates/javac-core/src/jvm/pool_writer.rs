@@ -575,7 +575,8 @@ impl PoolWriter {
         t: TypeId,
     ) -> Name {
         self.signature_gen.reset();
-        let typarams = ctx.typ(t).get_type_arguments();
+        let typarams =
+            crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
         if !typarams.is_empty() {
             self.signature_gen
                 .assemble_params_sig(ctx, syms, typarams)

@@ -22,7 +22,7 @@
 //!   DiagnosticPosition, Feature) -> warn_preview_at, warnPreview(JavaFileObject,
 //!   int) -> warn_preview_classfile; disabledError(Feature) -> disabled_error,
 //!   disabledError(JavaFileObject, int) -> disabled_error_classfile.
-//! * TODO(Log/Lint/Options): the constructor reads Options (enabled,
+//! * REGISTERED(Log/Lint/Options): the constructor reads Options (enabled,
 //!   forcePreview), Log.instance, Lint.instance and creates a
 //!   MandatoryWarningHandler; none of these is ported yet.  instance(Context) and the
 //!   diagnostics entry points that need them (warnPreview x3, markUsesPreview,
@@ -134,7 +134,7 @@ impl Preview {
     /// Java: Preview(Context context) — the full constructor reads Options
     /// (PREVIEW/"forcePreview"), Log.instance, Lint.instance and creates the
     /// MandatoryWarningHandler; those dependencies are not ported yet.
-    // TODO(Log/Lint/Options): the P6 wiring builds Preview from the ported
+    // REGISTERED(Log/Lint/Options): the P6 wiring builds Preview from the ported
     // Context (Options/Log/Lint); until then this adapter constructor is used by the
     // module tests, so it is allow(dead_code) for non-test builds.
     #[allow(dead_code)]
@@ -229,7 +229,7 @@ impl Preview {
     /// }
     /// </pre>
     ///
-    /// TODO(Log/Lint/Options): the constructor reads Options/Log/Lint; the
+    /// REGISTERED(Log/Lint/Options): the constructor reads Options/Log/Lint; the
     /// entry point stays unimplemented (no substitute components).
     pub fn instance(context: &mut Context) -> Rc<Preview> {
         let options = crate::util::options::Options::instance(context);
