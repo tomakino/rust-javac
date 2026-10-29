@@ -2448,12 +2448,25 @@ impl DeferredAttrService {
         attribution_mode: AttributionMode,
     ) -> Result<TreeId, DeferredAttrFailure> {
         use crate::util::log::DiagnosticHandler;
-        let (scope, owner) = {
-            let info = env.info.borrow();
-            let scope = info.scope.expect("env scope");
-            let owner = ctx.scope(scope).owner;
-            (scope, owner)
-        };
+        // The immediate env of a deferred attribution can be a synthetic env
+        // without a scope; walk the enclosing envs (upstream Env.outer is always
+        // populated during attribution) and fall back to the Attr's current env.
+        let mut scope = None;
+        let mut current = Some(Rc::clone(env));
+        while let Some(candidate) = current {
+            if let Some(candidate_scope) = candidate.info.borrow().scope {
+                scope = Some(candidate_scope);
+                break;
+            }
+            current = candidate.outer.clone();
+        }
+        if scope.is_none()
+            && let Some(attr_env) = &attr.env
+        {
+            scope = attr_env.info.borrow().scope;
+        }
+        let scope = scope.expect("env scope");
+        let owner = ctx.scope(scope).owner;
         let new_scope = ctx.scope_dup_unshared(scope, owner);
         let new_info = env.info.borrow().dup(Some(new_scope));
         let speculative_env = env.dup(Some(tree), new_info);

@@ -513,6 +513,24 @@ impl FileObject for PathFileObject {
                 })?;
             return Ok(Box::new(std::io::Cursor::new(bytes)));
         }
+        if let PathFileObjectKind::Jar { user_jar_path } = &self.kind {
+            let archive = javac_zip::ZipArchive::open(&user_jar_path.to_path_buf())
+                .map_err(|error| Error::io(JavaString::from(error.to_string().as_str())))?;
+            let entry_name = self
+                .path
+                .to_java_string()
+                .to_string()
+                .replace('\\', "/")
+                .trim_start_matches('/')
+                .to_string();
+            let bytes = archive.get_entry(&entry_name).ok_or_else(|| {
+                io_error(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "missing jar entry",
+                ))
+            })?;
+            return Ok(Box::new(std::io::Cursor::new(bytes)));
+        }
         let file = std::fs::File::open(self.path.as_path()).map_err(io_error)?;
         Ok(Box::new(file))
     }

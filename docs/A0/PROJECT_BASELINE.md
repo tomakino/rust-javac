@@ -7,7 +7,6 @@
 3. unimplemented! / unreachable! / todo!() 全项目为 0；§31 例外必须注册，不能用 panic 顶替。
 4. 禁止以预算、上下文、轮次为理由降低质量、跳过验证或交付半成品。
 5. 禁止删除/放宽测试、禁止虚报、禁止 clippy --fix、禁止未批准补丁、禁止新增 unsafe（仅已批准 2 处）。
-6. 禁止修改 gson 源码/构建文件；只允许官方模板生成 GsonBuildConfig.java。
 
 ## 二、批次与验收
 1. 每批必须完整关闭一个明确根因，并配真实触发测试；不接受“先登记下一批”当交付。
@@ -21,24 +20,6 @@
 3. 位置映射只进 docs/PORTING_MAP.md；源码注释不放位置/行号。
 4. 每批报告附“注释执行清单”：文件数、保留 javadoc 数、噪音清理数、PORTING_MAP 新增条目；违规即返工，触及的旧代码同步整改。
 5. 审计/状态/债务文档统计必须与代码一致，不得保留过期数字；TODO/“未移植”必须登记并写明关闭批次。
-
-## 四、gson 真实项目验收
-1. 80 个源文件（79 原码 + 官方模板生成类，跳过 module-info），源码原样。
-2. javac 基线：exit 0 / 207 class / 1 条 AccessController warning。
-3. 本项目目标：0 error、classes 数与 207 可解释一致，并与 javac 的 exit/诊断条数/类数交叉验证。
-4. 真实项目测试必须做成 opt-in（GSON_SRC，缺失跳过，源码不入库）；跑通后才允许入库。
-5. 不能再用 classes=0 / 13 诊断当终点；必须修根因，不能靠登记 A3x 过关。
-
-## 五、范围与债务
-最终验收前必须关闭：
-1. A3k：get_type_arguments 惰性完成、AbstractMap/Map 层次替换、InferenceException 捕获 → gson 0 error/207 classes。
-2. gson 残余：enum 5 诊断、源码 @Target RefCell、Symbol.setAnnotationTypeMetadata 断言；module-info 按 PLAN 判定。
-3. D5 三条 CompletionFailure 诊断。
-4. D4 的 printAnnotations、typed-arg P4、symbol-level printer（明确 P4 批次，不是永久豁免）。
-5. D6 Locations 8（含 warn && false 登记不接）。
-6. D7 其余 67 条待接线，每条真实触发测试。
-7. D8/D9：范围外/依赖/无上游触发登记；审计表 v3 必须项未接线=0。
-8. 历史注释/审计文档收口。
 
 ## 六、流程
 1. Lead 负责审核、提交、把关；执行者负责实现。

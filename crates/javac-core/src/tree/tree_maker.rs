@@ -88,7 +88,7 @@ pub struct TreeMaker {
     /// Java: Symtab.rootPackage (captured at wiring so qual_ident does not
     /// need to borrow the shared Symtab; registered adapter).
     pub root_package: StdOption<crate::ids::SymbolId>,
-    // Java: Types types; Symtab syms; — not declared yet, see the file header (TODO).
+// Java: Types types; Symtab syms; — not declared yet, see the file header (TODO).
 }
 
 impl TreeMaker {

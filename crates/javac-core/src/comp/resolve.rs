@@ -206,6 +206,12 @@ pub struct Resolve {
     /// module finder service (wired after construction; registered adapter
     /// cell like attr_cell).
     pub module_finder: Rc<RefCell<Option<Rc<RefCell<crate::code::module_finder::ModuleFinder>>>>>, 
+    /// Java: LogResolveHelper basicLogResolveHelper (Resolve.java:2610-2617) —
+    /// the helper read by accessBase (Resolve.java:2586-2592). Attr temporarily
+    /// replaces it with the silent helper for the error-recovery enum switch
+    /// (Attr.java:1737-1743); the port keeps the Java field in a Cell so the
+    /// &self accessBase observes the current value.
+    pub basic_log_resolve_helper: std::cell::Cell<LogResolveHelper>,
     /// Java: MethodResolutionContext currentResolutionContext.methodCheck (the
     /// applicability check of the active lookup; the port stores it next to
     /// current_resolution_step for signatureMoreSpecific; registered adapter).
@@ -297,6 +303,7 @@ impl Resolve {
             compact_method_diags,
             attr_cell: Rc::new(RefCell::new(None)),
             module_finder: Rc::new(RefCell::new(None)),
+            basic_log_resolve_helper: std::cell::Cell::new(LogResolveHelper::Basic),
         }
     }
 
@@ -3028,6 +3035,9 @@ impl Resolve {
         kind: crate::code::kinds::KindSelector,
     ) -> SymbolId {
         use crate::code::kinds::KindSelector;
+        // Java: pck.members() completes the package lazily. Symbol.members()
+        // is a raw accessor in the port, so complete explicitly before lookup.
+        let _ = ctx.complete_symbol(syms, pck);
         let fullname = form_full_name(ctx, name, pck);
         let mut best_so_far = self.type_not_found;
         if kind.contains(KindSelector::TYP) {
@@ -3349,7 +3359,7 @@ impl Resolve {
             None,
             None,
             None,
-            LogResolveHelper::Basic,
+            self.basic_log_resolve_helper.get(),
         )
     }
 }
@@ -4292,6 +4302,9 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         let inference_context = &self.deferred_attr_context.inference_context;
         let found = inference_context.as_undet_var(ctx, syms, types, found);
         let req = inference_context.as_undet_var(ctx, syms, types, req);
+        // Java: argumentsAcceptable compares the instantiated argument type
+        // against the (instantiated) formal; the wildcard bound may still be a
+        // method type-variable that inference has already solved.
         if self.strict {
             types.is_subtype_unchecked_with_warn(ctx, syms, found, req, warn)
         } else {
@@ -4393,7 +4406,10 @@ impl MethodResultInfo {
                 .inference_context()
                 .cached_capture(ctx, syms, types, tree, u_result, true),
         };
-        if !self.check_context.compatible(ctx, syms, types, captured_type, self.pt, warn) {
+        if !self
+            .check_context
+            .compatible(ctx, syms, types, captured_type, self.pt, warn)
+        {
             return Err(MethodCheckFailure::Inapplicable(
                 InapplicableMethodException::new(Some(method_check_diag(diags, "no conforming assignment"))),
             ));

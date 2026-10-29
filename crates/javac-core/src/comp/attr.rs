@@ -335,6 +335,8 @@ pub struct Attr {
     pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
     pub type_envs: Rc<RefCell<TypeEnvs>>,
     pub dependencies: Rc<RefCell<dyn Dependencies>>,
+    /// Java: final Preview preview (Attr.java:113).
+    pub preview: Rc<crate::code::preview::Preview>,
     /// Java: boolean allowPoly
     pub allow_poly: bool,
     /// Java: boolean allowTypeAnnos
@@ -474,7 +476,7 @@ impl Attr {
         infer: Rc<crate::comp::infer::Infer>,
         source: crate::code::source::Source,
         options: &crate::util::options::Options,
-        preview: &crate::code::preview::Preview,
+        preview: Rc<crate::code::preview::Preview>,
     ) -> Attr {
         let allow_poly = Feature::POLY.allowed_in_source(source);
         let allow_type_annos = Feature::TYPE_ANNOTATIONS.allowed_in_source(source);
@@ -511,6 +513,7 @@ impl Attr {
             deferred_lint_handler,
             type_envs,
             dependencies,
+            preview,
             allow_poly,
             allow_type_annos,
             allow_lambda,
@@ -627,42 +630,66 @@ impl Attr {
         let prev_result_info = self.result_info.clone();
         let needs_argument_attr = result_info.needs_argument_attr(ctx, tree);
         self.env = Some(Rc::clone(env));
-        self.result_info = Some(result_info);
-        // Port adapter: a symbol completion performed by a nested type query
-        // cannot return a result value; the failure travels through the panic
-        // channel and is restored here, where the attribution boundary reports
-        // it and yields the error type.
-        let result = crate::code::symbol::catch_completion_failure(|| {
-            if needs_argument_attr {
-            // Java: result = argumentAttr.attribArg(tree, env); (Attr.java:674-676)
-            let argument_attr = self
-                .argument_attr
-                .borrow()
-                .clone()
-                .expect("AssertionError: argumentAttr service must be installed");
-            // Port adapter: upstream ArgumentAttr is one Java object that
-            // is re-entered while a speculative argument attribution resolves
-            // nested calls. The ported session state (env/result) is cloned per
-            // attribution; the cache and services are shared Rcs, so deferred
-            // completions started from the canonical service still see the
-            // same ArgumentType entries.
-            let mut argument_attr = argument_attr.borrow().clone();
-            let log_rc = Rc::clone(&self.log);
-            match argument_attr.attrib_arg(ctx, syms, self, &log_rc, tree, env) {
-                Ok(result) => Ok(result.expect("AssertionError: argument attribution result")),
-                Err(failure) => Err(failure),
+        self.result_info = Some(result_info.clone());
+        // Attr.attribTree restores the previous env/resultInfo in a finally
+        // block (Attr.java:689-692); the catch reproduces that for the paths
+        // where BreakAttr (or any other exception) unwinds the visitor.
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // Port adapter: a symbol completion performed by a nested type
+            // query cannot return a result value; the failure travels through
+            // the panic channel and is restored here, where the attribution
+            // boundary reports it and yields the error type.
+            let result = crate::code::symbol::catch_completion_failure(|| {
+                if needs_argument_attr {
+                // Java: result = argumentAttr.attribArg(tree, env); (Attr.java:674-676)
+                let argument_attr = self
+                    .argument_attr
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: argumentAttr service must be installed");
+                // Port adapter: upstream ArgumentAttr is one Java object that
+                // is re-entered while a speculative argument attribution resolves
+                // nested calls. The ported session state (env/result) is cloned per
+                // attribution; the cache and services are shared Rcs, so deferred
+                // completions started from the canonical service still see the
+                // same ArgumentType entries.
+                let mut argument_attr = argument_attr.borrow().clone();
+                let log_rc = Rc::clone(&self.log);
+                match argument_attr.attrib_arg(ctx, syms, self, &log_rc, tree, env) {
+                    Ok(result) => Ok(result.expect("AssertionError: argument attribution result")),
+                    Err(failure) => Err(failure),
+                }
+                } else {
+                    self.visit(ctx, syms, tree)
+                }
+            });
+            if matches!(&result, Ok(Ok(_))) {
+                // Java: matchBindings = matchBindingsComputer.finishBindings(tree,
+                // matchBindings); (Attr.java:679-680)
+                let finished = self
+                    .match_bindings_computer
+                    .finish_bindings(ctx.tree(tree).tag, &self.match_bindings);
+                self.match_bindings = finished;
+                // Java: if (tree == breakTree && resultInfo.checkContext
+                // .deferredAttrContext().mode == AttrMode.CHECK)
+                //     breakTreeFound(copyEnv(env)); (Attr.java:681-684)
+                if Some(tree) == self.break_tree
+                    && result_info.check_context.deferred_attr_context().mode
+                        == crate::comp::deferred_attr::AttrMode::CHECK
+                {
+                    let types_rc = Rc::clone(&self.types);
+                    let copy = self.copy_env(ctx, syms, &types_rc, env);
+                    self.break_tree_found(copy);
+                }
             }
-            } else {
-                self.visit(ctx, syms, tree)
-            }
-        });
-        // TODO(MatchBindingsComputer): matchBindings =
-        // matchBindingsComputer.finishBindings(tree, matchBindings);
-        // TODO(DeferredAttr): if (tree == breakTree &&
-        // resultInfo.checkContext.deferredAttrContext().mode ==
-        // AttrMode.CHECK) breakTreeFound(copyEnv(env));
+            result
+        }));
         self.env = prev_env;
         self.result_info = prev_result_info;
+        let result = match outcome {
+            Ok(result) => result,
+            Err(payload) => std::panic::resume_unwind(payload),
+        };
         let value = match result {
             Ok(Ok(value)) => value,
             Ok(Err(failure)) | Err(failure) => {
@@ -1155,7 +1182,10 @@ impl Attr {
             let env = self.env.clone().expect("env");
             self.attrib_type_use(ctx, syms, inner, &env)
         };
-        // TODO(Check): chk.checkRefType(tree.pos(), type)
+        // Java: new WildcardType(chk.checkRefType(tree.pos(), type),
+        //     tree.kind.kind, syms.boundClass) (Attr.java:5104-5106).
+        let chk = Rc::clone(&self.chk);
+        let ty = chk.check_ref_type(ctx, syms, ctx.tree(tree).pos, ty);
         let wildcard = ctx.alloc_type(crate::code::type_::Type::new_wildcard_type(
             ty,
             bound_kind,
@@ -1443,8 +1473,6 @@ impl Attr {
             while let Some(outer) = sym_env.outer.clone() {
                 let encl_class = sym_env.encl_class.expect("symEnv enclClass");
                 let encl_sym = class_tree_symbol(ctx, encl_class).expect("symEnv enclClass sym");
-                // TODO(Symbol/Types): sym.isMemberOf(symEnv.enclClass.sym,
-                // types) needs Symbol.isSubClass/isInheritedIn/hiddenIn.
                 let is_member = symbol_is_member_of(ctx, syms, &self.types, sym, encl_sym);
                 if is_member {
                     break;
@@ -2873,8 +2901,12 @@ impl Attr {
             let mut current = typarams;
             while current.non_empty() {
                 let tvar = *current.head();
-                // TODO(Check): chk.checkNonCyclic(tvar.pos(), (TypeVar)tvar.type)
-                let _ = tvar;
+                // Java: chk.checkNonCyclic(tvar.pos(), (TypeVar)tvar.type)
+                // (Attr.java:828-832).
+                let tvar_type = ctx.tree(tvar).ty.expect("type parameter tree.type");
+                let tvar_pos = ctx.tree(tvar).pos;
+                let chk = Rc::clone(&self.chk);
+                chk.check_non_cyclic_typevar(ctx, syms, Some(tvar_pos), tvar_type);
                 current = current.tail();
             }
         }
@@ -9144,9 +9176,12 @@ impl Attr {
         let is_int_switch = self.types.is_assignable(ctx, syms, seltype, syms.int_type);
         let pattern_switch = if !enum_switch && !string_switch && !error_enum_switch && !is_int_switch {
             // Java: preview.checkSourceLevel(selector.pos(), Feature.PATTERN_SWITCH);
-            // TODO(Preview): the source-level preview check is registered with the
-            // Preview service integration; the switch itself is attributed as a
-            // pattern switch (the Preview.checkSourceLevel call is not ported).
+            // (Attr.java:1682). The upstream tree-as-DiagnosticPosition argument
+            // uses the port-wide SimpleDiagnosticPosition(tree.pos) adapter.
+            self.preview.check_source_level(
+                &crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(selector).pos),
+                Feature::PATTERN_SWITCH,
+            );
             true
         } else {
             let mut found = false;
@@ -9214,8 +9249,11 @@ impl Attr {
                 if is_expr_label {
                     if crate::tree::tree_info::is_null(ctx, pat) {
                         // Java: preview.checkSourceLevel(expr.pos(), Feature.CASE_NULL);
-                        // TODO(Preview): source-level CASE_NULL check registered with the
-                        // Preview service integration (Preview.checkSourceLevel is not ported).
+                        // (Attr.java:1715). Position translation as for PATTERN_SWITCH.
+                        self.preview.check_source_level(
+                            &crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(pat).pos),
+                            Feature::CASE_NULL,
+                        );
                         if has_null_pattern {
                             self.attr_error(
                                 ctx.tree(pat).pos,
@@ -9258,11 +9296,32 @@ impl Attr {
                             }
                         }
                     } else if error_enum_switch {
-                        // Java: temporarily swap rs.basicLogResolveHelper with the
-                        // silent one for the error recovery;
-                        // TODO(Resolve): the Resolve LogResolveHelper swap is registered
-                        // with the Resolve service integration and is not ported.
-                        self.attrib_expr_with_type(ctx, syms, pat, &switch_env, Some(seltype));
+                        // Java: error recovery: the selector is erroneous, and all the
+                        // case labels are identifiers. This could be an enum switch -
+                        // don't report resolve error for the case label:
+                        //     var prevResolveHelper = rs.basicLogResolveHelper;
+                        //     try {
+                        //         rs.basicLogResolveHelper = rs.silentLogResolveHelper;
+                        //         attribExpr(pat, switchEnv, seltype);
+                        //     } finally {
+                        //         rs.basicLogResolveHelper = prevResolveHelper;
+                        //     }
+                        // (Attr.java:1733-1743). The Java mutable field is the ported
+                        // Resolve.basic_log_resolve_helper Cell (Resolve.java:2610).
+                        let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                        let prev_resolve_helper = rs_rc.borrow().basic_log_resolve_helper.get();
+                        rs_rc
+                            .borrow()
+                            .basic_log_resolve_helper
+                            .set(crate::comp::resolve::LogResolveHelper::Silent);
+                        // The upstream finally restores the helper on every exit.
+                        let attribution = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            self.attrib_expr_with_type(ctx, syms, pat, &switch_env, Some(seltype));
+                        }));
+                        rs_rc.borrow().basic_log_resolve_helper.set(prev_resolve_helper);
+                        if let Err(payload) = attribution {
+                            std::panic::resume_unwind(payload);
+                        }
                     } else {
                         let val_typ_info = ResultInfo::new(
                             KindSelector::VAL_TYP,
@@ -9779,8 +9838,9 @@ impl crate::comp::infer::FreeTypeListener for AccessibleTypesListener {
         while accessible.non_empty() {
             let t = *accessible.head();
             if let Some(rs) = &self.rs {
-                let rs = rs.borrow_mut();
-                rs.check_accessible_type(ctx, syms, &self.env, t);
+                crate::comp::with_reentrant_mut(rs.as_ref(), |rs| {
+                    rs.check_accessible_type(ctx, syms, &self.env, t);
+                });
             }
             accessible = accessible.tail();
         }
@@ -14055,6 +14115,7 @@ impl Attr {
             deferred_lint_handler: Rc::clone(&self.deferred_lint_handler),
             type_envs: Rc::clone(&self.type_envs),
             dependencies: Rc::clone(&self.dependencies),
+            preview: Rc::clone(&self.preview),
             allow_poly: self.allow_poly,
             allow_type_annos: self.allow_type_annos,
             allow_lambda: self.allow_lambda,
@@ -16466,8 +16527,8 @@ mod tests {
         chk
             .set_profile(Rc::new(crate::jvm::profile::Profile::DEFAULT));
         chk.set_file_manager(Rc::clone(&manager));
-        chk
-            .set_preview(crate::code::preview::Preview::instance(&mut context));
+        let preview = Preview::instance(&mut context);
+        chk.set_preview(Rc::clone(&preview));
         let todo = crate::comp::todo::Todo::instance(&mut context);
         let enter = Rc::new(RefCell::new(Enter::new(
             Rc::clone(&log),
@@ -16505,7 +16566,6 @@ mod tests {
             Rc::new(RefCell::new(None)),
             Rc::clone(&todo)
         )));
-        let preview = Preview::new(false, false);
         let basic_handler = Rc::clone(&chk.basic_handler);
         let infer = crate::comp::infer::Infer::new(
             &mut ctx,
@@ -16532,7 +16592,7 @@ mod tests {
             Rc::clone(&infer),
             Source::JDK17,
             &options,
-            &preview,
+            Rc::clone(&preview),
         );
         enter.borrow_mut().main(&mut ctx, &syms.borrow_mut(), List::of(unit));
         let class_tree = class_tree_in(&ctx, unit);
@@ -16809,11 +16869,8 @@ mod tests {
         format!("REF {} {} {}", name, kind, owner)
     }
 
-    /// Enters the field symbols of the class. The full MemberEnter.visitVarDef
-    /// path calls Attr.attribType (TODO(Attr), not ported yet), so the
-    /// test enters the VarSymbols with the upstream MemberEnter field
-    /// construction (name/owner/flags; the type attribution is the registered
-    /// Attr dependency).
+    /// Enters the field symbols of the class. The test enters the VarSymbols
+    /// with the upstream MemberEnter field construction (name/owner/flags).
     fn enter_member_fields(harness: &mut AttrHarness) {
         let class_sym = class_tree_symbol(&harness.ctx, harness.class_tree).expect("class symbol");
         let members = harness.ctx.sym(class_sym).members().expect("class members scope");

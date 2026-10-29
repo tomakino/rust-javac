@@ -65,8 +65,8 @@ pub struct DocTreeMaker {
     /// Java: private final ReferenceParser referenceParser;
     /// PORTING_RULES: injected explicitly (registered adapter; see new()).
     reference_parser: Option<Rc<crate::parser::reference_parser::ReferenceParser>>,
-    // TODO(P6): trees: JavacTrees (used by getSentenceBreak)
-    // TODO(parser S8): reference_parser: ReferenceParser (used by newReferenceTree)
+// TODO(P6): trees: JavacTrees (used by getSentenceBreak)
+// TODO(parser S8): reference_parser: ReferenceParser (used by newReferenceTree)
 }
 
 impl DocTreeMaker {

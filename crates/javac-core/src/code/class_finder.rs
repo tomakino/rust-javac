@@ -541,6 +541,19 @@ impl ClassFinder {
             SymData::PackageSymbol { modle, .. } => modle.expect("msym"),
             _ => panic!("package expected"),
         };
+        // The package scan enters classes through enterClass(p, classname);
+        // reuse that member before enterClass(flatname), which otherwise creates
+        // a second empty symbol without the classfile attached by includeClassFile.
+        let simple = convert::short_name(&flatname);
+        if let Some(members) = ctx.sym(ps).members()
+            && let Some(existing) = ctx.scope_find_first(members, &simple, &|_| true)
+            && ctx.sym(existing).kind == crate::code::kinds::Kind::TYP
+        {
+            if class_members_field(ctx, existing).is_none() {
+                ctx.complete_class_symbol(syms, existing)?;
+            }
+            return Ok(existing);
+        }
         let absent = syms.get_class(package_module, &flatname).is_none();
         let c = syms.enter_class_flat(ctx, package_module, flatname.clone());
         if class_members_field(ctx, c).is_none() {
@@ -697,13 +710,23 @@ impl ClassFinder {
         }
         let module = match &ctx.sym(p).kind_data {
             SymData::PackageSymbol { modle, .. }
-            | SymData::RootPackageSymbol { modle, .. } => modle.expect("package module"),
+            | SymData::RootPackageSymbol { modle, .. } => modle.unwrap_or_else(|| {
+                // A package entered by the class-path package registration can
+                // reach the completer before its module field is copied; it is
+                // an unnamed-module package.
+                syms.unnamed_module
+            }),
             _ => panic!(
                 "package expected: {} kind {:?}",
                 ctx.sym(p).name.to_java_string().to_string_lossy(),
                 ctx.sym(p).kind
             ),
         };
+        if let SymData::PackageSymbol { modle, .. } = &mut ctx.sym_mut(p).kind_data
+            && modle.is_none()
+        {
+            *modle = Some(module);
+        }
         // Java: msym.complete(); (ClassFinder.java:352).
         ctx.complete_symbol(syms, module)?;
         if module == syms.no_module {

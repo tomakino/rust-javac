@@ -16,7 +16,7 @@
 //! composition replaces inheritance and the base state/methods are 1:1.
 //! Not ported dependencies:
 //! * java.nio.file.FileSystem (resolveAgainst(FileSystem)) -> TODO(P2); the resolveAgainst(Path) overload is ported on top of javac-fs;
-//! * java.util.zip.ZipFile/ZipEntry (RelativeFile.getZipEntry) -> TODO(P2);
+//! * java.util.zip.ZipFile/ZipEntry (RelativeFile.getZipEntry) -> 0TODO(P2);
 //! * equals/compareTo/hashCode/toString map onto PartialEq/Ord/Hash/Display.
 
 use javac_fs::Path as FsPath;

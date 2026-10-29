@@ -4,7 +4,7 @@
 // Ported in this file: the MemberEnter structure, signature(), memberEnter (both
 // overloads), visitMethodDef, methodEnv, visitVarDef, checkType, checkReceiver,
 // needsLazyConstValue + InitTreeVisitor, initEnv, visitTree, visitErroneous,
-// getMethodEnv, getInitEnv.
+// getMethodEnv (including the MemberEnter.java:444 lint augment), getInitEnv.
 //
 // NOT PORTED IN THIS STEP (registered; dependencies not ported yet, no
 // substitute in this file):
@@ -23,8 +23,6 @@
 // - ArrayType.makeVarargs is not ported (types batch): the VARARGS parameter
 // type refinement is TODO in visitVarDef. VarSymbol.setLazyConstValue is
 // implemented (Symbol API batch) and wired in visitVarDef.
-// - getMethodEnv mEnv.info.lint.augment(sym) is TODO (Lint), the scope
-// enterIfAbsent steps are ported.
 //
 // The MemberEnter entry point used by TypeEnter (TypeEnter.complete /
 // visitTopLevel / visitClassDef / default constructor / import processing) is in
@@ -879,11 +877,25 @@ impl MemberEnter {
     pub fn get_method_env(
         &self,
         ctx: &mut CompilerContext,
+        syms: &Symtab,
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> Rc<Env<AttrContext>> {
         let m_env = self.method_env(ctx, tree, env);
-        // TODO(Lint): mEnv.info.lint = mEnv.info.lint.augment(tree.sym);
+        // Java: mEnv.info.lint = mEnv.info.lint.augment(tree.sym);
+        // (MemberEnter.java:444). The AttrContext lint is an Option in the port;
+        // the enclosing env lint is used, falling back to chk.lint when unset
+        // (the same adapter as Attr.visitMethodDef / TypeEnter.attribImportType).
+        let base_lint = {
+            let info = m_env.info.borrow();
+            match &info.lint {
+                Some(lint) => Rc::clone(lint),
+                None => Rc::clone(&self.chk.lint.borrow()),
+            }
+        };
+        let method = method_decl_symbol(ctx, tree).expect("method symbol");
+        let lint = base_lint.augment(ctx, syms, ctx.sym(method));
+        m_env.info.borrow_mut().lint = Some(Rc::new(lint));
         let scope = m_env.info.borrow().scope.expect("method env scope");
         let mut typarams = method_decl_typarams(ctx, tree);
         while typarams.non_empty() {

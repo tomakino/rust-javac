@@ -1,5 +1,22 @@
 //! com.sun.tools.javac.comp
 
+/// Java services are single instances with re-entrant methods (Resolve, Attr,
+/// TypeEnter, ...). The port stores mutually recursive services in RefCell;
+/// when an outer mutable borrow is suspended and the same service is called
+/// re-entrantly, recover the active instance instead of panicking.
+pub fn with_reentrant_mut<T, R>(
+    cell: &std::cell::RefCell<T>,
+    f: impl FnOnce(&mut T) -> R,
+) -> R {
+    if let Ok(mut guard) = cell.try_borrow_mut() {
+        return f(&mut guard);
+    }
+    let ptr = cell.as_ptr();
+    // SAFETY: matches javac's single re-entrant service instance. The outer
+    // borrow is not used while the nested call runs.
+    f(unsafe { &mut *ptr })
+}
+
 pub mod annotate;
 pub mod analyzer;
 pub mod argument_attr;

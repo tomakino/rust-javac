@@ -2676,7 +2676,7 @@ struct UnusedFileManager;
             Rc::clone(&infer),
             Source::JDK17,
             &options,
-            &crate::code::preview::Preview::new(false, false),
+            crate::code::preview::Preview::instance(&mut context),
         )));
         let resolve = Rc::new(RefCell::new(crate::comp::resolve::Resolve::new(
             &mut ctx,

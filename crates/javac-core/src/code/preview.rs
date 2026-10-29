@@ -439,8 +439,11 @@ impl Preview {
         if self.is_preview(feature) && !self.is_enabled() {
             let error = self.disabled_error(feature);
             let log = self.log_service();
-            crate::util::abstract_log::AbstractLog::error_at(
+            // Java: log.error(JCDiagnostic.DiagnosticFlag.SOURCE_LEVEL, pos,
+            // disabledError(feature)) (Preview.java:247).
+            crate::util::abstract_log::AbstractLog::error_flag_at(
                 &mut *log.borrow_mut(),
+                crate::util::jc_diagnostic::DiagnosticFlag::SOURCE_LEVEL,
                 pos.get_start_position(),
                 error,
             );
@@ -451,8 +454,11 @@ impl Preview {
             if !feature.allowed_in_source(source) {
                 let error = feature.error(source.name());
                 let log = self.log_service();
-                crate::util::abstract_log::AbstractLog::error_at(
+                // Java: log.error(JCDiagnostic.DiagnosticFlag.SOURCE_LEVEL, pos,
+                // feature.error(source.name)) (Preview.java:250-251).
+                crate::util::abstract_log::AbstractLog::error_flag_at(
                     &mut *log.borrow_mut(),
+                    crate::util::jc_diagnostic::DiagnosticFlag::SOURCE_LEVEL,
                     pos.get_start_position(),
                     error,
                 );

@@ -21,6 +21,7 @@ use javac_tools::tools::standard_java_file_manager::StandardJavaFileManager;
 use javac_tools::tools::standard_location::StandardLocation;
 
 use crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler;
+use crate::file::javac_file_manager::is_identifier;
 use crate::code::deferred_lint_handler::DeferredLintHandler;
 use crate::code::dependencies::DummyDependencies;
 use crate::code::lint::Lint;
@@ -95,11 +96,12 @@ fn add_classpath_packages_to_unnamed_module(compiler: &mut MiniCompiler) {
     };
     let unnamed = compiler.syms.borrow().unnamed_module;
     for root in paths {
-        if !root.is_dir() {
-            continue;
-        }
         let mut package_dirs = Vec::new();
-        collect_package_dirs(&root, &root, &mut package_dirs);
+        if root.is_dir() {
+            collect_package_dirs(&root, &root, &mut package_dirs);
+        } else {
+            collect_jar_package_dirs(&root, &mut package_dirs);
+        }
         for package in package_dirs {
             let name = compiler
                 .names
@@ -108,11 +110,55 @@ fn add_classpath_packages_to_unnamed_module(compiler: &mut MiniCompiler) {
                 let syms = compiler.syms.borrow();
                 syms.enter_package(&mut compiler.ctx, unnamed, name.clone())
             };
+            // Java: p.completer = initialCompleter (Symtab.enterPackage).
+            // The ported initial completer is terminal for lazily-created
+            // packages, so install the ClassFinder package completer directly.
+            let completer = compiler.finder.get_completer_factory()();
+            compiler.ctx.sym_mut(package_symbol).completer = Some(completer);
             if let crate::code::symbol::SymbolKind::ModuleSymbol {
                 visible_packages, ..
             } = &mut compiler.ctx.sym_mut(unnamed).kind_data
             {
                 visible_packages.insert(name, package_symbol);
+            }
+        }
+    }
+}
+
+/// Collect the packages of a class-path jar (the archive sibling of
+/// collectPackageDirs). A classpath jar is an ordinary unnamed-module entry;
+/// without registering its packages, ClassFinder never asks the archive
+/// container for the package's classes.
+fn collect_jar_package_dirs(jar: &Path, out: &mut Vec<String>) {
+    let Ok(archive) = javac_zip::ZipArchive::open(&jar.to_path_buf()) else {
+        return;
+    };
+    let mut seen = std::collections::HashSet::new();
+    for entry in archive.entries() {
+        if entry.is_directory() {
+            continue;
+        }
+        let name = entry.name().to_string();
+        if !name.ends_with(".class") || name.ends_with("module-info.class") {
+            continue;
+        }
+        let Some(index) = name.rfind('/') else {
+            continue;
+        };
+        let mut current = &name[..index];
+        let valid = current
+            .split('/')
+            .all(|segment| !segment.is_empty() && is_identifier(segment));
+        if !valid {
+            continue;
+        }
+        loop {
+            if seen.insert(current.to_string()) {
+                out.push(current.to_string());
+            }
+            match current.rfind('/') {
+                Some(index) => current = &current[..index],
+                None => break,
             }
         }
     }
@@ -456,7 +502,7 @@ impl MiniCompiler {
             Rc::clone(&infer),
             source,
             &options,
-            &preview,
+            Rc::clone(&preview),
         )));
         crate::comp::attr::wire_attr_services(
             &mut ctx,

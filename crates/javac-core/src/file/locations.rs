@@ -208,7 +208,7 @@ impl<'a> LocationCtx<'a> {
         }
         result.push(file.clone());
         // Java: expandJarClassPaths -> addJarClassPath(file): java.util.jar Manifest is not
-        // ported (FSInfo.getJarClassPath TODO(P2)), so the Class-Path attribute is not expanded.
+    // ported (FSInfo.getJarClassPath TODO(P2)), so the Class-Path attribute is not expanded.
     }
 
     /// Java: private boolean isArchive(Path file).
@@ -256,7 +256,7 @@ impl<'a> LocationCtx<'a> {
             {
                 return true;
             }
-            // Java: the enclosing-jar case needs a java.nio jar file system (TODO(S3c)).
+        // Java: the enclosing-jar case needs a java.nio jar file system (TODO(S3c)).
         }
         false
     }

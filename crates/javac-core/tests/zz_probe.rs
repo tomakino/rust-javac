@@ -239,3 +239,39 @@ fn diamond_in_argument() {
         "import java.util.*;\nclass T {\n  void m(Set<String> s) {\n    Object o = new ArrayList<>(s);\n  }\n}\n",
     );
 }
+#[test]
+fn collections_unmodifiable_generic() {
+    compile_case(
+        "collections-unmodifiable",
+        "import java.util.*;\nclass T {\n  static <T> List<T> f(List<T> list) { return Collections.unmodifiableList(new ArrayList<>(list)); }\n  static <K,V> Map<K,V> g(Map<K,V> map) { return map.isEmpty() ? Collections.emptyMap() : Collections.unmodifiableMap(new LinkedHashMap<>(map)); }\n}\n",
+    );
+}
+#[test]
+fn wildcard_inference_variants() {
+    compile_case("wc-plain-list", "import java.util.*;\nclass T { static <T> List<T> f(List<T> l) { return Collections.unmodifiableList(l); } }\n");
+    compile_case("wc-diamond-list", "import java.util.*;\nclass T { static <T> List<T> f(List<T> l) { return Collections.unmodifiableList(new ArrayList<>(l)); } }\n");
+    compile_case("wc-plain-map", "import java.util.*;\nclass T { static <K,V> Map<K,V> f(Map<K,V> m) { return Collections.unmodifiableMap(m); } }\n");
+    compile_case("wc-diamond-map", "import java.util.*;\nclass T { static <K,V> Map<K,V> f(Map<K,V> m) { return Collections.unmodifiableMap(new LinkedHashMap<>(m)); } }\n");
+}
+#[test]
+fn wildcard_diamond_assignments() {
+    compile_case("wc-assign-plain", "import java.util.*;\nclass T { static <T> void f(List<T> l) { List<T> x = new ArrayList<>(l); } }\n");
+    compile_case("wc-assign-wild", "import java.util.*;\nclass T { static <T> void f(List<T> l) { List<? extends T> x = new ArrayList<>(l); } }\n");
+    compile_case("wc-assign-explicit", "import java.util.*;\nclass T { static <T> void f(List<T> l) { List<? extends T> x = new ArrayList<T>(l); } }\n");
+}
+#[test]
+fn wildcard_diamond_calls() {
+    compile_case("wc-call-explicit-new", "import java.util.*;\nclass T { static <T> List<T> f(List<T> l) { return Collections.unmodifiableList(new ArrayList<T>(l)); } }\n");
+    compile_case("wc-call-explicit-method", "import java.util.*;\nclass T { static <T> List<T> f(List<T> l) { return Collections.<T>unmodifiableList(new ArrayList<>(l)); } }\n");
+    compile_case("wc-call-cast", "import java.util.*;\nclass T { static <T> List<T> f(List<T> l) { return Collections.unmodifiableList((List<T>) new ArrayList<>(l)); } }\n");
+}
+#[test]
+fn classpath_jar_okio() {
+    compile_case_cp("jar-okio", "import okio.Buffer; class T { Buffer b; }\n", "C:/Users/Lin/RustroverProjects/javac-testdata/okhttp-deps/okio-1.17.2.jar");
+}
+#[test]
+fn classpath_jar_package_forms() {
+    let cp="C:/Users/Lin/RustroverProjects/javac-testdata/okhttp-deps/okio-1.17.2.jar";
+    compile_case_cp("jar-star", "import okio.*; class T { Buffer b; }\n", cp);
+    compile_case_cp("jar-qualified", "class T { okio.Buffer b; }\n", cp);
+}

@@ -38,7 +38,9 @@ pub fn string2int(s: &JavaString, radix: i32) -> Result<i32, NumberFormatExcepti
         if n < 0 || n > limit || n.wrapping_mul(radix) > i32::MAX.wrapping_sub(d) {
             return Err(NumberFormatException);
         }
-        n = n * radix + d;
+        // Java int arithmetic wraps here; hexadecimal literals such as
+        // 0xFFFFFFFF rely on the wrap to produce -1.
+        n = n.wrapping_mul(radix).wrapping_add(d);
     }
     Ok(n)
 }

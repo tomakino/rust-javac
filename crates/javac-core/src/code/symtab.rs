@@ -1939,17 +1939,30 @@ impl Symtab {
     /// Java: public PackageSymbol lookupPackage(ModuleSymbol msym, Name
     /// flatname)
     pub fn lookup_package(&self, ctx: &mut CompilerContext, msym: SymbolId, flatname: &Name) -> SymbolId {
-        let mut maps = self.maps.borrow_mut();
-        lookup_package_impl(
-            ctx,
-            &self.names,
-            &mut maps,
-            msym,
-            flatname,
-            false,
-            self.unnamed_module,
-            self.no_module,
-        )
+        let package = {
+            let mut maps = self.maps.borrow_mut();
+            lookup_package_impl(
+                ctx,
+                &self.names,
+                &mut maps,
+                msym,
+                flatname,
+                false,
+                self.unnamed_module,
+                self.no_module,
+            )
+        };
+        // Java: enterPackage binds initialCompleter to a newly created package
+        // (Symtab.java:780-793). lookupPackage also creates packages through the
+        // internal helper, so bind it here as well; otherwise a lazily created
+        // class-path package is never completed.
+        if let Some(factory) = &self.initial_completer
+            && ctx.sym(package).completer.is_none()
+            && ctx.sym(package).members().is_none()
+        {
+            ctx.sym_mut(package).completer = Some(factory());
+        }
+        package
     }
 
     /// Java: private PackageSymbol lookupPackage(ModuleSymbol msym, Name
@@ -1992,9 +2005,11 @@ impl Symtab {
             enter_package(ctx, &self.names, &mut maps, module, fullname)
         };
         if let Some(factory) = &self.initial_completer
-            && ctx.sym(package).completer.is_none() {
-                ctx.sym_mut(package).completer = Some(factory());
-            }
+            && ctx.sym(package).completer.is_none()
+            && ctx.sym(package).members().is_none()
+        {
+            ctx.sym_mut(package).completer = Some(factory());
+        }
         package
     }
 

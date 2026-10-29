@@ -1323,6 +1323,21 @@ struct TypeEnterCompleter {
     type_enter: Rc<RefCell<crate::comp::type_enter::TypeEnter>>,
 }
 
+impl TypeEnterCompleter {
+    /// Java: sym.completer = this; (TypeEnter.complete when completion is
+    /// disabled). completeSymbol takes the completer before invoking it, so the
+    /// deferred class needs its completer installed again for the next attempt.
+    fn reinstall(&self, ctx: &mut CompilerContext, sym: SymbolId) {
+        ctx.sym_mut(sym).completer = Some(Rc::new(RefCell::new(TypeEnterCompleter {
+            type_enter: Rc::clone(&self.type_enter),
+        })));
+    }
+
+    fn completion_disabled(&self) -> bool {
+        !self.type_enter.borrow().completion_enabled.get()
+    }
+}
+
 impl crate::code::symbol::Completer for TypeEnterCompleter {
     fn complete(
         &mut self,
@@ -1330,6 +1345,10 @@ impl crate::code::symbol::Completer for TypeEnterCompleter {
         syms: &Symtab,
         sym: SymbolId,
     ) -> Result<(), CompletionFailure> {
+        if self.completion_disabled() {
+            self.reinstall(ctx, sym);
+            return Ok(());
+        }
         self.type_enter.borrow().complete(ctx, syms, sym)
     }
 
@@ -1340,6 +1359,10 @@ impl crate::code::symbol::Completer for TypeEnterCompleter {
         sym: SymbolId,
         attr: &mut crate::comp::attr::Attr,
     ) -> Result<(), CompletionFailure> {
+        if self.completion_disabled() {
+            self.reinstall(ctx, sym);
+            return Ok(());
+        }
         self.type_enter
             .borrow()
             .complete_with_attr(ctx, syms, sym, attr)

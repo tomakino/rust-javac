@@ -538,7 +538,7 @@ impl JavacParser {
 
     #[allow(dead_code)]
     /// Unwired upstream helper: Java: peekToken(kind1, kind2);
-/// TODO(parser wiring): wire the remaining term3Rest/annotations call sites.
+    /// TODO(parser wiring): wire the remaining term3Rest/annotations call sites.
     fn peek_token2(&mut self, kind1: TokenKind, kind2: TokenKind) -> bool {
         self.peek_token_at2(0, kind1, kind2)
     }
@@ -550,7 +550,7 @@ impl JavacParser {
 
     #[allow(dead_code)]
     /// Unwired upstream helper: Java: peekToken(kind1, kind2, kind3);
-/// TODO(parser wiring).
+    /// TODO(parser wiring).
     fn peek_token3(&mut self, kind1: TokenKind, kind2: TokenKind, kind3: TokenKind) -> bool {
         self.peek_token_at3(0, kind1, kind2, kind3)
     }
@@ -767,7 +767,7 @@ impl JavacParser {
     /// Java: protected void checkNoMods(long mods)
     #[allow(dead_code)]
     /// Unwired upstream helper: Java: checkNoMods(long flags);
-/// TODO(parser wiring).
+    /// TODO(parser wiring).
     fn check_no_mods(&mut self, ctx: &mut CompilerContext, mods: i64) {
         let pos = self.token.pos;
         self.check_no_mods_at(ctx, pos, mods);
@@ -1203,7 +1203,7 @@ impl JavacParser {
     /// Java: static int earlier(int pos1, int pos2)
     #[allow(dead_code)]
     /// Unwired upstream helper: Java: static int earlier(int pos1, int pos2);
-/// TODO(parser wiring).
+    /// TODO(parser wiring).
     fn earlier(pos1: i32, pos2: i32) -> i32 {
         if pos1 == NOPOS {
             return pos2;

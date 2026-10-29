@@ -3958,9 +3958,22 @@ impl Check {
             );
         }
         // Warn if a deprecated method is overridden by a non-deprecated one.
-        if !self.is_deprecated_override_ignorable(ctx, syms, m, origin) {
-            // TODO(Check): checkDeprecated is not ported yet (Check.java:3520-3560,
-            // the deprecated warning family); registered.
+        // (Check.java:1886-1894: isDeprecatedOverrideIgnorable(other, origin),
+        // then setLint(lint.augment(m)) + checkDeprecated(pos, m, other) inside
+        // the try/finally that restores the lint.)
+        if !self.is_deprecated_override_ignorable(ctx, syms, other, origin) {
+            let lint = Rc::clone(&self.lint.borrow());
+            let augmented = Rc::new(lint.augment(ctx, syms, ctx.sym(m)));
+            let prev_lint = self.set_lint(augmented);
+            // Java: try { checkDeprecated(...); } finally { setLint(prevLint); }
+            // (Check.java:1888-1893): the lint is restored on every exit.
+            let reported = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.check_deprecated(ctx, pos, m, other);
+            }));
+            self.set_lint(prev_lint);
+            if let Err(payload) = reported {
+                std::panic::resume_unwind(payload);
+            }
         }
     }
 }

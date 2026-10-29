@@ -419,12 +419,22 @@ impl ArchiveContainer {
         recurse: bool,
         results: &mut Vec<JavaFileObjectRef>,
     ) -> Result<(), Error> {
-        let prefix = subdirectory.as_relative_path().get_path().to_string_lossy();
+        let prefix = subdirectory
+            .as_relative_path()
+            .get_path()
+            .to_string_lossy()
+            .trim_end_matches('/')
+            .to_string();
         if !self.packages.iter().any(|package| package == &prefix) {
             return Ok(());
         }
+        let full_prefix = if prefix.is_empty() {
+            String::new()
+        } else {
+            format!("{prefix}/")
+        };
         for name in &self.files {
-            let Some(rest) = name.strip_prefix(&prefix) else {
+            let Some(rest) = name.strip_prefix(&full_prefix) else {
                 continue;
             };
             if !recurse && rest.contains('/') {
@@ -996,7 +1006,7 @@ fn compute_this_system_modules(java_home: &FsPath) -> FsPath {
 
 /// Java: SourceVersion.isIdentifier(name) — ASCII subset (the full Unicode identifier rules
 /// depend on the source level; TODO(P6) for the exact SourceVersion port).
-fn is_identifier(name: &str) -> bool {
+pub(crate) fn is_identifier(name: &str) -> bool {
     let mut chars = name.chars();
     match chars.next() {
         None => false,

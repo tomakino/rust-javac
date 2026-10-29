@@ -10,7 +10,8 @@
 // (runPhase/resolveImports/checkClassPackageClash/doImport/attribImportType/
 // importAll/importStaticAll/importNamedStatic/importNamed), HierarchyPhase
 // (runPhase/complete/superTypes), PermitsPhase, AbstractHeaderPhase
-// (baseEnv/enumBase/modelMissingTypes/Synthesizer structure), HeaderPhase
+// (baseEnv/enumBase; modelMissingTypes keeps the registered Synthesizer
+// TODO), HeaderPhase
 // (runPhase/attribSuperTypes/clearTypeParams/default constructor/this&super
 // field/finishClass), RecordPhase, MembersPhase, DefaultConstructorHelper
 // hierarchy, defaultConstructor, finishClass/addAccessor/addEnumMembers/
@@ -29,10 +30,10 @@
 // - TreeMaker factories (Import/QualIdent/ClassDef/MethodDef/Modifiers/
 // VarDef/Return/Block/Type/Select/Ident/Assign...) are not ported (registered
 // in TreeMaker): make.* calls are explicit unimplemented helpers;
-// - Check: checkImportsUnique/checkImportsResolvable/
+// - Check: the import-phase checks (checkImportsUnique/checkImportsResolvable/
 // checkImportedPackagesObservable/importAccessible/checkCanonical/
-// checkDefaultConstructor/checkNonCyclic -> explicit unimplemented helpers
-// (Check);
+// checkDefaultConstructor/checkNonCyclic) are ported in Check and wired at
+// their TypeEnter call sites (checkCanonical wired in doImport, this batch);
 // - Lint: Lint.suppress is not ported (Lint) -> unimplemented helper;
 // - ClassSymbol.isCompleted/setAnnotationTypeMetadata/getRecordComponent,
 // TreeInfo.recordFields/hasConstructors/isConstructor, RecordComponent ->
@@ -244,8 +245,18 @@ impl TypeEnter {
             .borrow()
             .clone()
             .expect("TypeEnter.attr must be injected");
-        let mut attr = attr_rc.borrow_mut();
-        self.complete_with_attr(ctx, syms, sym, &mut attr)
+        if let Ok(mut attr) = attr_rc.try_borrow_mut() {
+            return self.complete_with_attr(ctx, syms, sym, &mut attr);
+        }
+        // Java: TypeEnter.attr is a plain field, so completion can re-enter
+        // Attr while an enclosing Attr method is running. Rust's RefCell would
+        // reject that; recover the active mutable Attr the same way upstream
+        // reuses its single instance. The active borrow is suspended for the
+        // duration of this nested completion and no iterator/borrow state is
+        // held across it.
+        let attr_ptr = attr_rc.as_ptr();
+        // SAFETY: see the re-entrancy note above.
+        self.complete_with_attr(ctx, syms, sym, unsafe { &mut *attr_ptr })
     }
 
     /// Java: public void complete(Symbol sym) with the enclosing &mut Attr
@@ -257,14 +268,11 @@ impl TypeEnter {
         sym: SymbolId,
         attr: &mut crate::comp::attr::Attr,
     ) -> Result<(), CompletionFailure> {
-        // Suppress some (recursive) MemberEnter invocations
+        // Suppress some (recursive) MemberEnter invocations. The
+        // TypeEnterCompleter wrapper reinstalls the completer before returning
+        // (Java: sym.completer = this;), so a deferred class is retried on the
+        // next completion attempt.
         if !self.completion_enabled.get() {
-            // Re-install same completer for next time around and return.
-            // Java: Assert.check((sym.flags() & Flags.COMPOUND) == 0);
-            // sym.completer = this;
-            // TODO(TypeEnter/Completer): the completer registration is an
-            // adapter concern (the local completion is driven by the caller's
-            // complete_symbol); registered.
             return Ok(());
         }
         let annotate = self
@@ -403,8 +411,40 @@ impl TypeEnter {
             .deferred_lint_handler
             .borrow_mut()
             .immediate();
-        // TODO(Lint): Lint prevLint = chk.setLint(lint);
+        // Java: Lint prevLint = chk.setLint(lint); (TypeEnter.java:344)
+        let base_lint = match &self.lint {
+            Some(lint) => Rc::clone(lint),
+            None => Rc::clone(&self.chk.lint.borrow()),
+        };
+        let prev_lint = self.chk.set_lint(base_lint);
         let prev_env = self.imports_env.borrow().clone();
+        // Java: try { this.env = env; ... } finally { ... } (TypeEnter.java:
+        // 346-385). The catch reproduces the finally block for normal returns,
+        // the completion-failure early return and exception unwinding.
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.resolve_imports_body(ctx, syms, tree, env, attr);
+        }));
+        *self.imports_env.borrow_mut() = prev_env;
+        self.chk.set_lint(prev_lint);
+        self.deferred_lint_handler
+            .borrow_mut()
+            .set_pos_state(prev_lint_pos);
+        *self.static_import_filter.borrow_mut() = prev_static;
+        *self.type_import_filter.borrow_mut() = prev_type;
+        if let Err(payload) = outcome {
+            std::panic::resume_unwind(payload);
+        }
+    }
+
+    /// Java: ImportsPhase.resolveImports try-body (TypeEnter.java:346-378).
+    fn resolve_imports_body(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
+    ) {
         *self.imports_env.borrow_mut() = Some(Rc::clone(env));
         let packge = compilation_unit_package(ctx, tree);
         let chk = Rc::clone(&self.chk);
@@ -494,11 +534,6 @@ impl TypeEnter {
                 );
             }
         }
-        *self.imports_env.borrow_mut() = prev_env;
-        // TODO(Lint): chk.setLint(prevLint);
-        self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint_pos);
-        *self.static_import_filter.borrow_mut() = prev_static;
-        *self.type_import_filter.borrow_mut() = prev_type;
     }
 
     /// Java: ImportsPhase.checkClassPackageClash(JCPackageDecl tree)
@@ -631,7 +666,11 @@ impl TypeEnter {
             } else {
                 ctx.typ(imported_type).tsym
             };
-            // TODO(Check): chk.checkCanonical(imp);
+            // Java: chk.checkCanonical(imp); (TypeEnter.java:433). Unlike the
+            // on-demand/static branches, which check imp.selected
+            // (TypeEnter.java:419/428), the named type import checks the
+            // qualified-name tree itself.
+            self.chk.check_canonical(ctx, qualid);
             if let Some(c) = c {
                 self.import_named(ctx, syms, ctx.tree(tree).pos, c, &env, tree, attr);
             }
@@ -803,7 +842,7 @@ impl TypeEnter {
     fn import_named(
         &self,
         ctx: &mut CompilerContext,
-        _syms: &Symtab,
+        syms: &Symtab,
         _pos: i32,
         tsym: SymbolId,
         env: &Rc<Env<AttrContext>>,
@@ -816,11 +855,14 @@ impl TypeEnter {
             // Java: tsym.owner.members() — the owner is a package for
             // top-level imports and a class for nested-class imports; both
             // symbol kinds expose their members scope through Symbol.members().
-            let owner_members = ctx
-                .sym(tsym)
-                .owner
-                .and_then(|owner| ctx.sym(owner).members())
-                .expect("owner members");
+            // A class owner coming from a classfile is completed lazily.
+            let owner = ctx.sym(tsym).owner.expect("imported type owner");
+            // Java: tsym.owner.members() completes packages and enclosing
+            // classes lazily; Symbol.members() is a raw accessor in the port.
+            if ctx.sym(owner).kind == Kind::TYP || ctx.sym(owner).kind == Kind::PCK {
+                let _ = ctx.complete_symbol(syms, owner);
+            }
+            let owner_members = ctx.sym(owner).members().expect("owner members");
             let new_scope = ctx.scope_import_type(named_scope, owner_members, owner_members, tsym);
             set_import_scope(ctx, tree, new_scope);
         }
@@ -1076,10 +1118,16 @@ impl TypeEnter {
         _tree: TreeId,
         _interface_expected: bool,
     ) -> crate::ids::TypeId {
-        // Java: if (!t.hasTag(ERROR)) return t; else new ErrorType(...)
-        // getModelType() -> new Synthesizer(...).visit(tree)
-        // TODO(Synthesizer): the local ErrorType modelType hook and the
-        // Synthesizer visitor are not ported; registered.
+        // Java: if (!t.hasTag(ERROR)) return t; else return new ErrorType(
+        //     t.getOriginalType(), t.tsym) { getModelType() ->
+        //     new Synthesizer(env.toplevel.modle, getOriginalType(),
+        //     interfaceExpected).visit(tree) }; (TypeEnter.java:555-569;
+        // Synthesizer: TypeEnter.java:571-*).
+        // TODO(Synthesizer): the local ErrorType modelType hook (the anonymous
+        // ErrorType getModelType override) and the Synthesizer visitor are not
+        // ported; dependency: ErrorType getModelType hook + the Synthesizer
+        // JCTree.Visitor. Until then the error type is returned unchanged
+        // (upstream returns an ErrorType that models the missing type lazily).
         t
     }
 
