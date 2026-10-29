@@ -3625,9 +3625,16 @@ impl Gen {
         let opcode = operator_opcode(ctx, operator);
         let l;
         if opcode == STRING_ADD {
-            let mut concat = self.concat.take().expect("string concat lowering");
+            // Java keeps one mutable StringConcat on Gen; Rust cannot borrow it
+            // and self mutably at once. Clone the lowering instead of taking
+            // it, so a nested string concat inside the same expression still
+            // finds concat present (Gen.java visitAssignop).
+            let mut concat = self
+                .concat
+                .as_ref()
+                .expect("string concat lowering")
+                .clone();
             l = concat.make_concat_assignop(ctx, self, tree);
-            self.concat = Some(concat);
         } else {
             let lhs_ty = ctx.tree(lhs).ty.expect("assignment lhs type");
             l = self.gen_expr(ctx, lhs, lhs_ty);
@@ -3807,9 +3814,12 @@ impl Gen {
         };
         let opcode = operator_opcode(ctx, operator);
         if opcode == STRING_ADD {
-            let mut concat = self.concat.take().expect("string concat lowering");
+            let mut concat = self
+                .concat
+                .as_ref()
+                .expect("string concat lowering")
+                .clone();
             let item = concat.make_concat_binary(ctx, self, tree);
-            self.concat = Some(concat);
             self.result = Some(item);
         } else if ctx.tree(tree).tag == Tag::AND {
             let lcond = self.gen_cond_crt(ctx, lhs, CRT_FLOW_CONTROLLER);

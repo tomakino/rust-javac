@@ -3488,7 +3488,7 @@ pub fn symbol_pool_tag(ctx: &crate::compiler_context::CompilerContext, sym: Symb
             }
             Kind::MDL => crate::jvm::class_file::CONSTANT_MODULE,
             Kind::PCK => crate::jvm::class_file::CONSTANT_PACKAGE,
-            _ => panic!("AssertionError: Invalid pool entry"),
+            other => panic!("AssertionError: Invalid pool entry kind={:?}", other),
         },
     }
 }

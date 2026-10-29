@@ -485,12 +485,22 @@ impl LambdaToMethod {
                 // A speculative/translated copy of a lambda has a fresh tree id
                 // but keeps the source position of the analyzed lambda.
                 let pos = ctx.tree(tree).pos;
-                let found = self
-                    .context_map
-                    .borrow()
-                    .keys()
-                    .copied()
-                    .find(|candidate| ctx.tree(*candidate).pos == pos);
+                // A reference and the lambda converted from it share the same
+                // source position. Prefer the Lambda context; matching the
+                // first context by position picked the Reference context and
+                // visit_lambda_l2m panicked with "expected a lambda context".
+                let candidates: Vec<TreeId> =
+                    self.context_map.borrow().keys().copied().collect();
+                let found = candidates.into_iter().find(|candidate| {
+                    ctx.tree(*candidate).pos == pos
+                        && matches!(
+                            self.context_map
+                                .borrow()
+                                .get(candidate)
+                                .map(|context| &context.kind),
+                            Some(TranslationContextKind::Lambda(_))
+                        )
+                });
                 found.unwrap_or_else(|| panic!("current translation context"))
             }
         };
@@ -765,7 +775,16 @@ impl LambdaToMethod {
             TreeKind::VariableDecl { init, .. } => *init,
             _ => panic!("expected a variable declaration"),
         };
-        let translated_init = self.translate_with_context(ctx, init.unwrap_or(tree), self.context);
+        // Java: visitVarDef only translates the initializer when it exists
+        // (Lower.visitVarDef / LambdaToMethod.translate). Passing the VARDEF
+        // itself as a fallback re-enters visit_var_def_l2m forever.
+        let translated_init = match init {
+            Some(init) => Some(
+                self.translate_with_context(ctx, init, self.context)
+                    .expect("translated initializer"),
+            ),
+            None => None,
+        };
         if let TreeKind::VariableDecl { init: slot, sym, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = translated_init;
             *sym = Some(mapped_sym);
@@ -1071,10 +1090,11 @@ impl LambdaAnalyzerPreprocessor {
         &mut self,
         ctx: &mut CompilerContext,
         tree: TreeId,
-        method_reference_receiver: TreeId,
+        method_reference_receiver: Option<TreeId>,
     ) {
-        let receiver = self.translate(ctx, Some(method_reference_receiver)).expect("receiver");
-        let context = self.analyze_lambda(ctx, tree, Some(receiver));
+        let receiver = method_reference_receiver
+            .and_then(|receiver| self.translate(ctx, Some(receiver)));
+        let context = self.analyze_lambda(ctx, tree, receiver);
         let _ = context;
     }
     fn analyze_lambda(
@@ -1119,6 +1139,18 @@ impl LambdaAnalyzerPreprocessor {
         let def = ctx.typ(class_ty).tsym.expect("new class symbol");
         let in_referenced_class = self.currently_in_class(ctx, def);
         let is_local = crate::code::symbol::Symbol::is_directly_or_indirectly_local(ctx, def);
+        if std::env::var_os("DSH_DEBUG_ANON").is_some() {
+            eprintln!(
+                "[ANON] new_pos={} ty_sym={} def={} def_kind={:?} is_local={} in_ref={} has_def={}",
+                ctx.tree(tree).pos,
+                ctx.typ(class_ty).tsym.map(|s| ctx.sym(s).name.to_java_string().to_string_lossy().to_string()).unwrap_or_default(),
+                ctx.sym(def).name.to_java_string().to_string_lossy(),
+                ctx.sym(def).kind,
+                is_local,
+                in_referenced_class,
+                matches!(ctx.tree(tree).kind, TreeKind::NewClass { def: Some(_), .. })
+            );
+        }
         if (in_referenced_class && is_local) || self.lambda_new_class_filter(ctx, tree) {
             let enclosing_ty = ctx.typ(class_ty).get_enclosing_type();
             let outer_instance_symbol = enclosing_ty.and_then(|encl| ctx.typ(encl).tsym);
@@ -1167,6 +1199,18 @@ impl LambdaAnalyzerPreprocessor {
         class_sym: SymbolId,
         lambda_context: TreeId,
     ) {
+        // A local/anonymous class defined in a lambda body is owned by the
+        // synthetic lambda method (upstream Lower then collects the lambda
+        // parameter as a free variable of the class). Leaving the owner at the
+        // enclosing <clinit> loses that capture and emits an empty constructor.
+        let translated = {
+            let contexts = self.context_map.borrow();
+            match contexts.get(&lambda_context).map(|context| &context.kind) {
+                Some(TranslationContextKind::Lambda(lambda)) => lambda.translated_sym,
+                _ => return,
+            }
+        };
+        ctx.sym_mut(class_sym).owner = Some(translated);
         let local_class_defs = self.local_class_defs.clone();
         let lower = Rc::clone(&self.lower);
         let frame_stack = self.frame_stack.clone();
@@ -8132,23 +8176,30 @@ impl LambdaAnalyzerPreprocessor {
             .find_descriptor_type(ctx, &mut syms, &self.diags, &chk, origin)
             .ok()
     }
-    fn member_reference_receiver(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
-        let qualifier = match &ctx.tree(tree).kind {
-            TreeKind::MemberReference { expr: Some(expr), .. } => *expr,
-            _ => return tree,
-        };
+    fn member_reference_receiver(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) -> Option<TreeId> {
         let kind = match &ctx.tree(tree).kind {
             TreeKind::MemberReference { kind, .. } => *kind,
             _ => None,
         };
-        if matches!(kind, Some(crate::tree::jc_tree::ReferenceKind::BOUND)) {
-            let attr = Rc::clone(&self.attr);
-            let mut attr = attr.borrow_mut();
-            let mut syms = self.syms.borrow_mut();
-            attr.make_null_check(ctx, &mut syms, qualifier)
-        } else {
-            qualifier
+        // Java: memberReferenceReceiver returns null for STATIC/UNBOUND; only
+        // BOUND references carry the receiver expression. Returning the
+        // qualifier unconditionally added the class symbol T as a lambda
+        // parameter for T::m.
+        if !matches!(kind, Some(crate::tree::jc_tree::ReferenceKind::BOUND)) {
+            return None;
         }
+        let qualifier = match &ctx.tree(tree).kind {
+            TreeKind::MemberReference { expr: Some(expr), .. } => *expr,
+            _ => return None,
+        };
+        let attr = Rc::clone(&self.attr);
+        let mut attr = attr.borrow_mut();
+        let mut syms = self.syms.borrow_mut();
+        Some(attr.make_null_check(ctx, &mut syms, qualifier))
     }
     fn member_reference_to_lambda(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> TreeId {
         let mut conversion = MemberReferenceToLambda::new(
@@ -8812,6 +8863,18 @@ impl MemberReferenceToLambda {
             let sym_ty = ctx.sym(sym).ty.expect("reference symbol type");
             ctx.typ(sym_ty).get_parameter_types(ctx)
         };
+        if std::env::var_os("DSH_DEBUG_SAM").is_some() {
+            eprintln!(
+                "[MREF-PARAMS] kind={:?} target={} desc={} impl={} sam={} params={:?} args={:?}",
+                kind,
+                crate::comp::attr::type_display_of(ctx, target),
+                crate::comp::attr::type_display_of(ctx, desc_type),
+                impl_ptypes.iter().map(|t| crate::comp::attr::type_display_of(ctx,t)).collect::<Vec<_>>().join(","),
+                sam_ptypes.iter().map(|t| crate::comp::attr::type_display_of(ctx,t)).collect::<Vec<_>>().join(","),
+                self.params.iter().map(|p| (ctx.tree(*p).pos, ctx.tree(*p).tag)).collect::<Vec<_>>(),
+                self.args.iter().map(|a| (ctx.tree(*a).pos, ctx.tree(*a).tag)).collect::<Vec<_>>()
+            );
+        }
         let impl_size = impl_ptypes.length();
         let sam_size = sam_ptypes.length();
         let last = if varargs_element.is_some() { impl_size - 1 } else { impl_size };
@@ -9003,10 +9066,20 @@ impl MemberReferenceToLambda {
     fn expression_invoke(&mut self, ctx: &mut CompilerContext, rcvr: Option<SymbolId>) -> TreeId {
         let qualifier = match rcvr {
             Some(rcvr) => self.make_receiver(ctx, rcvr),
-            None => match &ctx.tree(self.tree).kind {
-                TreeKind::MemberReference { expr: Some(expr), .. } => *expr,
-                _ => panic!("expected qualifier"),
-            },
+            None => {
+                // Java: make.QualIdent(tree.sym.owner) for static/unbound
+                // references; using the type tree directly makes Gen evaluate
+                // the class symbol as a member (pool kind TYP).
+                let ref_sym = match &ctx.tree(self.tree).kind {
+                    TreeKind::MemberReference { sym: Some(sym), .. } => *sym,
+                    _ => panic!("expected reference symbol"),
+                };
+                let owner = ctx.sym(ref_sym).owner.expect("reference owner");
+                let mut syms = self.syms.borrow_mut();
+                self.make
+                    .borrow_mut()
+                    .qual_ident(ctx, &mut syms, owner)
+            }
         };
         let (sym, varargs) = match &ctx.tree(self.tree).kind {
             TreeKind::MemberReference { sym: Some(sym), varargs_element, .. } => (*sym, *varargs_element),

@@ -3320,6 +3320,7 @@ impl Infer {
         let deferred_context = Rc::new(defer_context);
         // resolveContext.methodCheck.argumentsAcceptable(env, deferredAttrContext,
         // argtypes, mt.getParameterTypes(), warn);
+        let argtypes_for_final_check = argtypes.clone();
         let method_check = resolve_context
             .method_check
             .clone()
@@ -3474,6 +3475,65 @@ impl Infer {
                     crate::code::symbol::throw_completion_failure(failure)
                 }
             })?;
+        // Java: Attr final check (ResultInfo.check / checkContext.compatible)
+        // uses the speculative actual of a still-deferred argument so that the
+        // formal's undetvar receives actual as a lower bound before solve.
+        // This mirrors DeferredType.check speculating the tree even when the
+        // overload phase leaves the node stuck.
+        //
+        // Port adapter: upstream DeferredType.check has no
+        // bounded-formal/non-varargs/speculative-actual filters. They are kept
+        // here to avoid over-constraining unresolved deferred arguments and
+        // F-bounded varargs (EnumSet.of); remove them once the recursive-bound
+        // case is aligned with the upstream check path.
+        {
+            let formals = types.get_parameter_types_public(ctx, mt);
+            let mut arg_current = argtypes_for_final_check.clone();
+            let mut formal_current = formals;
+            let cc = crate::comp::resolve::MethodCheckContext {
+                strict: true,
+                deferred_attr_context: Rc::clone(&deferred_context),
+                rs_warner: Rc::new(RefCell::new(crate::util::warner::Warner::new(None))),
+                pending_inference: None,
+                most_specific: false,
+            };
+            let check_context: Rc<dyn crate::comp::check::CheckContext> = Rc::new(cc);
+            while arg_current.non_empty() && formal_current.non_empty() {
+                let arg = *arg_current.head();
+                let formal = *formal_current.head();
+                let formal_bounded = ctx.typ(formal).has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
+                    && ctx
+                        .typ(formal)
+                        .get_upper_bound()
+                        .map(|b| b != syms.object_type)
+                        .unwrap_or(false);
+                if formal_bounded
+                    && (ctx.sym(msym).flags_field & crate::code::flags::VARARGS) == 0
+                    && ctx.typ(arg).has_tag(crate::code::type_tag::TypeTag::DEFERRED)
+                    && let Some(actual) = crate::comp::deferred_attr::deferred_type_speculative_type(
+                        ctx,
+                        attr,
+                        arg,
+                        Some(msym),
+                        deferred_context.phase,
+                    )
+                    && !ctx.typ(actual).has_tag(crate::code::type_tag::TypeTag::NONE)
+                    && !ctx.typ(actual).has_tag(crate::code::type_tag::TypeTag::ERROR)
+                    && !ctx.typ(actual).has_tag(crate::code::type_tag::TypeTag::DEFERRED)
+                {
+                    let _ = check_context.compatible(
+                        ctx,
+                        syms,
+                        types,
+                        actual,
+                        formal,
+                        &mut warn_shared.borrow_mut(),
+                    );
+                }
+                arg_current = arg_current.tail();
+                formal_current = formal_current.tail();
+            }
+        }
         // minimize as yet undetermined type variables
         if self.allow_graph_inference {
             let context = Rc::clone(&inference_context);

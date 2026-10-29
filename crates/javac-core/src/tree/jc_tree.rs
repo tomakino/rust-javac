@@ -1106,8 +1106,12 @@ pub const TREE_KIND_VARIANT_COUNT: usize = 67;
 ///   accept(ctx, tree, visitor), matching the node's Tag.
 pub trait TreeVisitor {
     /// Java: public void visitTree(JCTree that) { Assert.error(); }
-    fn visit_tree(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
-        panic!("AssertionError: visitTree");
+    fn visit_tree(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        panic!(
+            "AssertionError: visitTree tag={:?} pos={}",
+            ctx.tree(tree).tag,
+            ctx.tree(tree).pos
+        );
     }
 
     fn visit_top_level(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -1313,8 +1317,41 @@ pub trait TreeVisitor {
     }
 }
 
+thread_local! {
+    static ACCEPT_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+struct AcceptDepthGuard;
+impl Drop for AcceptDepthGuard {
+    fn drop(&mut self) {
+        ACCEPT_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+    }
+}
+
 /// Java: tree.accept(visitor) - dispatch by the node tag.
 pub fn accept(ctx: &mut CompilerContext, tree: TreeId, visitor: &mut dyn TreeVisitor) {
+    let depth = ACCEPT_DEPTH.with(|d| {
+        let next = d.get() + 1;
+        d.set(next);
+        next
+    });
+    let _depth_guard = AcceptDepthGuard;
+    if depth > 1000
+        && let Ok(limit) = std::env::var("DSH_RECURSION_LIMIT")
+        && let Ok(limit) = limit.parse::<usize>()
+        && depth > limit
+    {
+        let bt = std::backtrace::Backtrace::force_capture().to_string();
+        let frames: Vec<&str> = bt.lines().take(30).collect();
+        eprintln!(
+            "[RECURSION] depth={} tag={:?} pos={}\n{}",
+            depth,
+            ctx.tree(tree).tag,
+            ctx.tree(tree).pos,
+            frames.join("\n")
+        );
+        panic!("recursion limit exceeded");
+    }
     match ctx.tree(tree).tag {
         Tag::TOPLEVEL => visitor.visit_top_level(ctx, tree),
         Tag::PACKAGEDEF => visitor.visit_package_def(ctx, tree),

@@ -651,7 +651,10 @@ impl ArgumentAttr {
     ) -> Result<Option<TypeId>, crate::code::symbol::CompletionFailure> {
         // perform arity-based check
         let env = self.env.clone().expect("argument attr env");
-        let local_env = env.dup(Some(tree), env.info.borrow().dup(None));
+        // Java: env.dup(tree) keeps the enclosing scope (ArgumentAttr.java:266);
+        // clearing it made method parameters invisible while speculating the
+        // member-reference qualifier.
+        let local_env = env.dup(Some(tree), env.info.borrow().dup_ctx());
         let (expr, name) = match &ctx.tree(tree).kind {
             crate::tree::jc_tree::TreeKind::MemberReference { expr, name, .. } => {
                 (*expr, name.clone())
@@ -819,7 +822,6 @@ impl ArgumentAttr {
         let env = self.env.clone().expect("argument attr env");
         let deferred = self.deferred.borrow().clone().expect("deferred attr service");
         let attr_recover_rc = attr.attr_recover.borrow().clone().expect("attr recover service");
-        let mut attr_recover = attr_recover_rc.borrow_mut();
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
         let rs = rs_rc.borrow();
         let chk_rc = Rc::clone(&attr.chk);
@@ -832,7 +834,7 @@ impl ArgumentAttr {
                 ctx,
                 syms,
                 attr,
-                &mut attr_recover,
+                &attr_recover_rc,
                 &rs,
                 &chk,
                 &diags,

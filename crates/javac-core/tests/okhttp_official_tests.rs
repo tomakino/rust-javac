@@ -48,6 +48,17 @@ fn okhttp_main_and_tests_compile() {
     }
     collect_java(&root.join("okhttp-tests/src/test/java"), &mut sources);
     collect_java(&root.join("okhttp-generated"), &mut sources);
+    if let Ok(include) = std::env::var("OKHTTP_INCLUDE") {
+        let needles: Vec<String> = include
+            .split(';')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.replace('\\', "/"))
+            .collect();
+        sources.retain(|path| {
+            let p = path.to_string_lossy().replace('\\', "/");
+            needles.iter().any(|needle| p.contains(needle))
+        });
+    }
     sources.sort();
 
     let out = std::env::temp_dir().join(format!("rust-javac-okhttp-tests-{}", std::process::id()));

@@ -2163,12 +2163,19 @@ impl<'a> FlowVisitor for AliveAnalyzer<'a> {
                     );
                 }
             } else {
-                self.pending_exits = exits;
+                let mut merged =
+                    std::mem::replace(&mut self.pending_exits, crate::util::list::List::nil());
+                merged = merged.append_list(&exits);
+                self.pending_exits = merged;
                 self.alive = alive_end;
             }
         } else {
             self.alive = alive_end;
-            self.pending_exits = prev_pending_exits;
+            let exits = std::mem::replace(&mut self.pending_exits, prev_pending_exits);
+            let mut merged =
+                std::mem::replace(&mut self.pending_exits, crate::util::list::List::nil());
+            merged = merged.append_list(&exits);
+            self.pending_exits = merged;
         }
     }
 

@@ -5187,6 +5187,24 @@ impl Lower {
             let string_type = self.syms.borrow().string_type;
             arg_types = arg_types.prepend(int_type).prepend(string_type);
         }
+        // The constructor symbol of an inner/local class carries synthetic
+        // parameters (enclosing instance first, captured free variables last),
+        // while NewClass.args holds only the explicit arguments. Lower adds the
+        // synthetics after boxing (upstream Lower.visitNewClass), so boxArgs
+        // must receive exactly the user-visible parameter prefix.
+        let has_outer = ctx.sym(constructor_owner).has_outer_instance(ctx);
+        let is_local = Symbol::is_directly_or_indirectly_local(ctx, constructor_owner);
+        if !is_enum && (has_outer || is_local) {
+            // Constructor symbols inconsistently expose synthetic parameters:
+            // some carry the enclosing instance, others do not. Drop only the
+            // leading synthetic count (formals - explicit args); when counts
+            // match there is nothing to drop.
+            let mut extra = arg_types.length().saturating_sub(args.length());
+            while extra > 0 && arg_types.non_empty() {
+                arg_types = arg_types.tail();
+                extra -= 1;
+            }
+        }
         let mut args = self.box_args(ctx, arg_types, args, varargs_element);
         let mut encl = encl;
         let mut def = def;
@@ -5293,14 +5311,15 @@ impl Lower {
         let mut translated_dims: Vec<TreeId> = Vec::new();
         while current.non_empty() {
             let dim = *current.head();
-            if index + 1 < current.length() {
-                let translated = self
-                    .translate_with_type(ctx, Some(dim), int_type)
-                    .expect("translated dimension");
-                translated_dims.push(translated);
-            } else {
-                translated_dims.push(dim);
-            }
+            // Java: Lower.visitNewArray translates every dimension except the
+            // last one. In this port the outer-field rewrite (this$0.size)
+            // happens in Lower.access, so the last dimension must be lowered
+            // too; otherwise "new int[size]" in an inner class emits
+            // getfield Inner.size instead of T.size.
+            let translated = self
+                .translate_with_type(ctx, Some(dim), int_type)
+                .expect("translated dimension");
+            translated_dims.push(translated);
             index += 1;
             current = current.tail();
         }
@@ -6235,6 +6254,10 @@ impl Lower {
         };
         let package_clone = ctx.sym(packge).clone();
         let mut info_symbol = ctx.sym(package_info).clone();
+        // Symbol::clone intentionally does not copy the arena id; the clone is
+        // written back to the same package_info slot below, so restore the id
+        // before metadata is created by set_attributes.
+        info_symbol.id.set(Some(package_info));
         info_symbol.set_attributes(ctx, &package_clone);
         info_symbol.flags_field |= flags;
         *ctx.sym_mut(package_info) = info_symbol;

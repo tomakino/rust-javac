@@ -44,6 +44,12 @@ pub enum ConcatKind {
 }
 
 /// The string concatenation lowering.
+// Port adapter: Java Gen holds one shared mutable StringConcat instance.
+// Rust cannot borrow that field and Gen mutably at once, so STRING_ADD sites
+// clone it instead of taking it; nested concat in the same expression still
+// finds the lowering. Cache updates made on the clone are not written back
+// (perf only, not behavior). Upstream: Gen.concat / StringConcat.
+#[derive(Clone)]
 pub struct StringConcat {
     /// The symbol table.
     pub syms: Rc<RefCell<Symtab>>,

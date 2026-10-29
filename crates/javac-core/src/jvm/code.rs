@@ -223,7 +223,14 @@ impl State {
 
     /// Lock a register (enter a monitor).
     pub fn lock(&mut self, register: i32) {
-        self.locks.push(register);
+        // Java: locks[nlocks] = register; nlocks++ (Code.java:1687-1695).
+        // The slot is reused after unlock, not appended: push would make a
+        // later unlock inspect a stale -1 instead of the new monitor.
+        let index = self.nlocks as usize;
+        if self.locks.len() <= index {
+            self.locks.resize(index + 1, -1);
+        }
+        self.locks[index] = register;
         self.nlocks += 1;
     }
 
@@ -2766,6 +2773,12 @@ impl Code {
         self.nextreg = reg + w;
         if self.nextreg > self.max_locals {
             self.max_locals = self.nextreg;
+        }
+        // Java: lvar = ArrayUtils.ensureCapacity(lvar, nextreg)
+        // (Code.java:newLocal); synthetic locals use newLocal without
+        // addLocalVar, so the register array must cover nextreg here.
+        if self.lvar.len() < self.nextreg as usize {
+            self.lvar.resize(self.nextreg as usize, None);
         }
         reg
     }

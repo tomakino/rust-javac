@@ -10731,6 +10731,42 @@ impl Attr {
         // attribute the member reference qualifier - if this is a constructor
         // reference, the expected kind must be a type
         let qualifier_info = self.member_reference_qualifier_result(ctx, &env, that);
+        if std::env::var_os("DSH_DEBUG_FI").is_some() {
+            let info = env.info.borrow();
+            let call_syms: Vec<(String, crate::code::kinds::Kind, i64)> = info
+                .scope
+                .map(|scope| {
+                    ctx.scope_get_symbols(
+                        scope,
+                        crate::code::scope::LookupKind::NON_RECURSIVE,
+                        &|_| true,
+                    )
+                    .into_iter()
+                    .filter(|sym| {
+                        ctx.sym(*sym).name.to_java_string().to_string_lossy() == "call"
+                    })
+                    .map(|sym| {
+                        (
+                            ctx.sym(sym).name.to_java_string().to_string_lossy().to_string(),
+                            ctx.sym(sym).kind,
+                            ctx.sym(sym).flags_field,
+                        )
+                    })
+                    .collect()
+                })
+                .unwrap_or_default();
+            eprintln!(
+                "[FI-QUAL] that={} expr={} env_tree={:?} encl_method={:?} scope={:?} kind={:?} call={:?} expr_ty={:?}",
+                that.index(),
+                expr.index(),
+                env.tree.map(|t| t.index()),
+                env.encl_method,
+                info.scope,
+                qualifier_info.kind,
+                call_syms,
+                ctx.tree(expr).ty.map(|t| ctx.typ(t).get_tag())
+            );
+        }
         let mut expr_type = self.attrib_tree_use(ctx, syms, expr, &env, qualifier_info);
         if mode == crate::tree::jc_tree::ReferenceMode::NEW {
             let chk_rc = Rc::clone(&self.chk);

@@ -2568,7 +2568,7 @@ impl DeferredAttrService {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: &mut Attr,
-        attr_recover: &mut crate::comp::attr_recover::AttrRecover,
+        attr_recover_rc: &Rc<RefCell<crate::comp::attr_recover::AttrRecover>>,
         rs: &crate::comp::resolve::Resolve,
         chk: &crate::comp::check::Check,
         diags: &crate::util::jc_diagnostic::Factory,
@@ -2641,7 +2641,13 @@ impl DeferredAttrService {
                 make.at(pos);
                 make.lambda(ctx, args, lambda_body)
             };
-            attr.pre_flow(ctx, syms, attr_recover, rs, &self.infer, chk, diags, env, speculative_lambda);
+            {
+                // The recover service is re-entrant: attribution inside
+                // preFlow may call checkId -> recoverMethodInvocation again.
+                // Hold the RefCell borrow only for the doRecovery call.
+                let mut attr_recover = attr_recover_rc.borrow_mut();
+                attr.pre_flow(ctx, syms, &mut attr_recover, rs, &self.infer, chk, diags, env, speculative_lambda);
+            }
             flow.analyze_lambda(ctx, syms, env, speculative_lambda, &self.make, false);
             Ok(speculative_lambda)
         })();
@@ -3068,7 +3074,6 @@ impl DeferredAttrService {
             .borrow()
             .clone()
             .expect("attr recover service");
-        let mut attr_recover = attr_recover_rc.borrow_mut();
         let rs_rc = attr.rs.borrow().clone().expect("resolve service");
         let rs = rs_rc.borrow();
         let chk_rc = Rc::clone(&attr.chk);
@@ -3084,7 +3089,7 @@ impl DeferredAttrService {
             ctx,
             syms,
             attr,
-            &mut attr_recover,
+            &attr_recover_rc,
             &rs,
             &chk,
             &diags,
@@ -3095,7 +3100,6 @@ impl DeferredAttrService {
         );
         drop(chk);
         drop(rs);
-        drop(attr_recover);
         // Java: tree.params = oldParams (finally)
         if let crate::tree::jc_tree::TreeKind::Lambda { params, .. } =
             &mut ctx.tree_mut(tree).kind

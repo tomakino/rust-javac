@@ -4374,6 +4374,9 @@ pub struct MethodCheckContext {
     /// the pending inference context (Porting rules: the override is a field + branch in
     /// compatible below).
     pub pending_inference: Option<Rc<crate::comp::infer::InferenceContext>>,
+    /// Java: MostSpecificCheckContext.compatible uses isSubtypeNoCapture
+    /// against asUndetVar(req) without adding bounds (Resolve.java:1182-1187).
+    pub most_specific: bool,
 }
 
 impl crate::comp::check::CheckContext for MethodCheckContext {
@@ -4396,6 +4399,13 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         {
             return true;
         }
+        let inference_context = &self.deferred_attr_context.inference_context;
+        if self.most_specific {
+            // Java: MostSpecificCheckContext.compatible (Resolve.java:1182-1187)
+            // has no pendingInference branch; that belongs to MethodReferenceCheck.
+            let req = inference_context.as_undet_var(ctx, syms, types, req);
+            return types.is_subtype_no_capture(ctx, syms, found, req);
+        }
         if let Some(pending) = &self.pending_inference {
             // Java: found = pendingInferenceContext.asUndetVar(found);
             found = pending.as_undet_var(ctx, syms, types, found);
@@ -4407,7 +4417,6 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
                 req = ctx.sym(boxed).ty.expect("boxed type");
             }
         }
-        let inference_context = &self.deferred_attr_context.inference_context;
         let found = inference_context.as_undet_var(ctx, syms, types, found);
         let req = inference_context.as_undet_var(ctx, syms, types, req);
         // Java: argumentsAcceptable compares the instantiated argument type
@@ -5452,6 +5461,8 @@ impl Resolve {
         use_varargs: bool,
         note_warner: &mut crate::util::warner::Warner,
     ) -> bool {
+        // Java: noteWarner.clear() (Resolve.java:1733).
+        note_warner.clear();
         let mut resolution_context = MethodResolutionContext::new();
         // Java: currentResolutionContext.step = prevResolutionContext.step;
         // currentResolutionContext.methodCheck =
@@ -5468,11 +5479,15 @@ impl Resolve {
         let m1_params = types.get_parameter_types_public(ctx, m1_type);
         let m2_params = types.get_parameter_types_public(ctx, m2_type);
         let max_length = m1_params.length().max(actuals.length()).max(m2_params.length());
+        // Java: adjustArgs(types.cvarLowerBounds(
+        //     types.memberType(site, m1).getParameterTypes()), ...)
+        // (Resolve.java:1743-1744).
+        let lowered = types.cvar_lower_bounds(ctx, &m1_params);
         let adjusted = adjust_args(
             ctx,
             syms,
             types,
-            m1_params,
+            lowered,
             Some(m1),
             max_length as usize,
             use_varargs,
@@ -5489,7 +5504,7 @@ impl Resolve {
             site,
             m2,
             None,
-            adjusted,
+            adjusted.clone(),
             None,
             false,
             use_varargs,
@@ -5498,6 +5513,53 @@ impl Resolve {
         );
         instantiated.is_some()
             && !note_warner.has_lint(crate::code::lint::LintCategory::UNCHECKED)
+    }
+
+    /// Java: MostSpecificCheckContext.functionalInterfaceMostSpecific
+    /// (Resolve.java:1217-1283), method-reference part. Returns None when the
+    /// pair is not a pair of unrelated functional interfaces (normal subtype
+    /// check applies).
+    fn functional_interface_more_specific(
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        types: &crate::code::types::Types,
+        t: TypeId,
+        s: TypeId,
+        diags: &crate::util::jc_diagnostic::Factory,
+        chk: &crate::comp::check::Check,
+    ) -> Option<bool> {
+        let t_tsym = ctx.typ(t).tsym?;
+        let s_tsym = ctx.typ(s).tsym?;
+        if t_tsym == s_tsym {
+            return None;
+        }
+        if !types.is_functional_interface(ctx, syms, diags, chk, t_tsym)
+            || !types.is_functional_interface(ctx, syms, diags, chk, s_tsym)
+        {
+            return None;
+        }
+        // unrelatedFunctionalInterfaces (Resolve.java:1197-1214)
+        if types.as_super(ctx, syms, t, s_tsym).is_some()
+            || types.as_super(ctx, syms, s, t_tsym).is_some()
+        {
+            return None;
+        }
+        let t_desc = types.find_descriptor_type(ctx, syms, diags, chk, t).ok()?;
+        let s_desc = types.find_descriptor_type(ctx, syms, diags, chk, s).ok()?;
+        let t_ret = ctx.typ(t_desc).get_return_type(ctx)?;
+        let s_ret = ctx.typ(s_desc).get_return_type(ctx)?;
+        // MostSpecificFunctionReturnChecker.visitReference: non-void return
+        // is more specific than void (Resolve.java:1314-1328).
+        if ctx.typ(s_ret).has_tag(TypeTag::VOID) {
+            return Some(true);
+        }
+        if ctx.typ(t_ret).has_tag(TypeTag::VOID) {
+            return Some(false);
+        }
+        if ctx.typ(t_ret).is_primitive() != ctx.typ(s_ret).is_primitive() {
+            return None;
+        }
+        Some(types.is_subtype(ctx, syms, t_ret, s_ret))
     }
 
     /// Java: Symbol ambiguityError(Symbol m1, Symbol m2)
@@ -5662,6 +5724,7 @@ fn method_check_context(
         deferred_attr_context,
         rs_warner: Rc::new(RefCell::new(rs_warner)),
         pending_inference: None,
+        most_specific: false,
     }
 }
 
@@ -5934,34 +5997,50 @@ impl MethodCheck for MostSpecificCheck {
         let mut formals1 = formals1;
         let mut formals2 = formals2;
         while formals2.non_empty() {
+            let actual = if actuals.non_empty() {
+                Some(*actuals.head())
+            } else {
+                None
+            };
             let check_context = Rc::new(MethodCheckContext {
                 strict: true,
                 deferred_attr_context: Rc::clone(&deferred_attr_context),
                 rs_warner: Rc::new(RefCell::new(crate::util::warner::Warner::new(warn.pos()))),
                         pending_inference: None,
+                        most_specific: true,
         });
             let mresult = MethodResultInfo {
                 pt: *formals2.head(),
                 check_context,
                 method_diag: MethodCheckDiag::ArgMismatch,
             };
-            let actual = if actuals.non_empty() {
-                Some(*actuals.head())
-            } else {
-                None
-            };
             let _ = actual;
-            mresult.check(
+            // Java: MostSpecificCheckContext.functionalInterfaceMostSpecific
+            // (Resolve.java:1217-1283): a polymorphic argument whose formal
+            // types are unrelated functional interfaces is acceptable for the
+            // more-specific SAM (value-returning SAM beats void for mrefs).
+            let more_specific = Resolve::functional_interface_more_specific(
                 ctx,
                 syms,
                 types,
-                attr,
-                chk,
-                diags,
-                None,
                 *formals1.head(),
-                warn,
-            )?;
+                *formals2.head(),
+                diags,
+                chk,
+            );
+            if more_specific != Some(true) {
+                mresult.check(
+                    ctx,
+                    syms,
+                    types,
+                    attr,
+                    chk,
+                    diags,
+                    None,
+                    *formals1.head(),
+                    warn,
+                )?;
+            }
             formals1 = formals1.tail();
             formals2 = formals2.tail();
             if actuals.non_empty() {
@@ -7799,6 +7878,12 @@ impl Resolve {
                                 allow_boxing,
                                 use_varargs,
                                 true,
+                                // Port adapter: upstream LookupFilter has no
+                                // static flag, but static interface methods are
+                                // not inherited (JLS 8.4.8) and javac's class
+                                // member closure does not expose them here.
+                                // The local interface scope does, so filter
+                                // STATIC at this interface lookup site.
                                 false,
                                 resolve_context,
                             );
@@ -9495,28 +9580,6 @@ impl Resolve {
         // Java: return accessBase(findIdent(pos, env, name, kind), pos,
         // env.enclClass.sym.type, name, false);
         let found = self.find_ident(ctx, syms, pos.clone(), env, &name, kind, attr);
-        if std::env::var_os("DSH_DEBUG_LOCALREC").is_some()
-            && name.to_java_string().to_string_lossy().contains("LocalRecord")
-        {
-            let scope_names: Vec<String> = env
-                .info
-                .borrow()
-                .scope
-                .map(|s| {
-                    ctx.scope_get_symbols(s, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true)
-                        .into_iter()
-                        .map(|sym| ctx.sym(sym).name.to_java_string().to_string_lossy().to_string())
-                        .collect()
-                })
-                .unwrap_or_default();
-            eprintln!(
-                "[LOCALREC-RESOLVE] name={} found={} kind={:?} scope={:?}",
-                name.to_java_string().to_string_lossy(),
-                ctx.sym(found).name.to_java_string().to_string_lossy(),
-                ctx.sym(found).kind,
-                scope_names
-            );
-        }
         let encl_tree = env.encl_class.expect("resolving ident outside class");
         // Java: env.enclClass.sym.type (Resolve.java:2683).
         let encl_sym = match &ctx.tree(encl_tree).kind {
@@ -9538,16 +9601,6 @@ impl Resolve {
                     crate::code::kinds::Kind::MTH | crate::code::kinds::Kind::VAR
                 )
             }) == Some(true);
-        if std::env::var_os("DSH_DEBUG_LOCALREC").is_some()
-            && name.to_java_string().to_string_lossy().contains("LocalRecord")
-        {
-            eprintln!(
-                "[LOCALREC-BYPASS] found={} owner_kind={:?} bypass={}",
-                ctx.sym(found).name.to_java_string().to_string_lossy(),
-                ctx.sym(found).owner.map(|o| ctx.sym(o).kind),
-                local_bypass
-            );
-        }
         if local_bypass {
             return found;
         }
