@@ -236,12 +236,16 @@ impl Gen {
                 format!("access{}", synthetic).as_str(),
             ))
         };
-        let line_debug_info = options.is_unset("g_custom")
+        // Java: Gen.java: lineDebugInfo = options.isUnset(G_CUSTOM) ||
+        // options.isSet(G_CUSTOM, "lines"). Options keys are the primary names
+        // ("-g:"), not the enum constant name.
+        let g_custom_key = crate::main::option::Option::G_CUSTOM.primary_name();
+        let line_debug_info = options.is_unset(g_custom_key)
             || options.is_set_choice(
                 crate::main::option::Option::G_CUSTOM,
                 "lines",
             );
-        let var_debug_info = if options.is_unset("g_custom") {
+        let var_debug_info = if options.is_unset(g_custom_key) {
             options.is_set_option(crate::main::option::Option::G)
         } else {
             options.is_set_choice(crate::main::option::Option::G_CUSTOM, "vars")

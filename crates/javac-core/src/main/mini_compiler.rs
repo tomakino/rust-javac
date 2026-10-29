@@ -350,10 +350,16 @@ impl MiniCompiler {
             Rc::clone(&options),
             fs_info,
         );
-        let class_out = StandardLocation::location_for(&js("CLASS_OUTPUT"));
-        file_manager
-            .set_location(&*class_out, Some(&[out_dir.to_path_buf()]))
-            .expect("cannot set CLASS_OUTPUT");
+        // Java: JavacFileManager.getFileForOutput(CLASS_OUTPUT, ...) uses the
+        // -d directory when set, otherwise the sibling (source file) directory
+        // (JavacFileManager.java:911-923). An empty out_dir models "no -d":
+        // leave CLASS_OUTPUT unset and let generation pass the sibling.
+        if !out_dir.as_os_str().is_empty() {
+            let class_out = StandardLocation::location_for(&js("CLASS_OUTPUT"));
+            file_manager
+                .set_location(&*class_out, Some(&[out_dir.to_path_buf()]))
+                .expect("cannot set CLASS_OUTPUT");
+        }
         // Java: JavaCompiler sets the CLASS_PATH location from -class-path before
         // entering symbols; without this the ClassFinder cannot see test jars.
         if let Some(class_path) = options.get_option(crate::main::option::Option::CLASS_PATH) {
@@ -1275,12 +1281,15 @@ impl MiniCompiler {
         let module_info = sourcefile
             .is_name_compatible(&javac_strings::JavaString::from("module-info"), javac_tools::tools::java_file_object::Kind::SOURCE);
         let result = {
+            // Java: JavaCompiler.java:618-619 passes lineDebugInfo as
+            // keepLineMap; the line map is required for LineNumberTable.
+            let keep_line_map = self.generator.borrow().line_debug_info;
             let mut parser = self.parser_factory.new_parser_full(
                 &mut self.ctx,
                 &content,
                 false,
                 false,
-                false,
+                keep_line_map,
                 module_info,
             );
             parser.parse_compilation_unit(&mut self.ctx)
@@ -1376,13 +1385,25 @@ impl MiniCompiler {
             .borrow_mut()
             .write_class(&mut self.ctx, c)
             .map_err(|error| format!("class writer error: {error:?}"))?;
-        self.write_class_file(&name, &bytes)?;
+        let sibling = match &self.ctx.sym(c).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile
+                .as_ref()
+                .map(|file| Rc::clone(file)
+                    as javac_tools::tools::java_file_manager::FileObjectRef),
+            _ => None,
+        };
+        self.write_class_file(&name, &bytes, sibling.as_ref())?;
         self.generated_classes.push(CompiledClass { name, bytes });
         Ok(())
     }
 
     /// Write one class file through the file manager output API.
-    fn write_class_file(&mut self, name: &str, bytes: &[u8]) -> Result<(), String> {
+    fn write_class_file(
+        &mut self,
+        name: &str,
+        bytes: &[u8],
+        sibling: Option<&javac_tools::tools::java_file_manager::FileObjectRef>,
+    ) -> Result<(), String> {
         let class_out = StandardLocation::location_for(&js("CLASS_OUTPUT"));
         let file = self
             .file_manager
@@ -1390,7 +1411,7 @@ impl MiniCompiler {
                 &*class_out,
                 &js(name),
                 javac_tools::tools::java_file_object::Kind::CLASS,
-                None,
+                sibling,
             )
             .map_err(|error| format!("cannot get the output file for {name}: {error:?}"))?;
         let mut stream = file

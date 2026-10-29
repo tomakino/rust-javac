@@ -617,12 +617,27 @@ impl LambdaToMethod {
         ident
     }
     fn visit_reference_l2m(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        // simply translated (no lambda conversion is needed).
-        if self.context.is_none() {
-            self.default_visit_reference(ctx, tree);
-            return;
-        }
-        let context_tree = self.context.expect("current translation context");
+        // Java: the analyzer registers a ReferenceTranslationContext for every
+        // member reference, and Translator.visitReference uses it even outside
+        // a lambda body. Look the reference context up by its tree when there
+        // is no enclosing lambda context.
+        let context_tree = match self.context {
+            Some(context_tree) => context_tree,
+            None => {
+                let is_reference = matches!(
+                    self.context_map
+                        .borrow()
+                        .get(&tree)
+                        .map(|context| &context.kind),
+                    Some(TranslationContextKind::Reference(_))
+                );
+                if !is_reference {
+                    self.default_visit_reference(ctx, tree);
+                    return;
+                }
+                tree
+            }
+        };
         let (owner, prev_context) = {
             let context_map = self.context_map.borrow();
             let context = context_map
@@ -3148,6 +3163,16 @@ impl LambdaToMethod {
                 let mut make = self.make.borrow_mut();
                 make.literal(ctx, TypeTag::CLASS, Some(LiteralValue::String(javac_strings::JavaString::from(key.as_str()))))
             };
+            {
+                let label_const = crate::util::constants::ConstantValue::String(
+                    javac_strings::JavaString::from(key.as_str()),
+                );
+                let const_ty = {
+                    let string_type = self.syms.borrow().string_type;
+                    ctx.typ(string_type).const_type(label_const)
+                };
+                ctx.tree_mut(label).ty = Some(ctx.alloc_type(const_ty));
+            }
             let case = {
                 let mut make = self.make.borrow_mut();
                 make.case(
@@ -3176,6 +3201,7 @@ impl LambdaToMethod {
             let mut make = self.make.borrow_mut();
             make.literal(ctx, TypeTag::CLASS, Some(LiteralValue::String(javac_strings::JavaString::from("Invalid lambda deserialization"))))
         };
+        ctx.tree_mut(invalid_message).ty = Some(self.syms.borrow().string_type);
         let throw = {
             let new_class = self.make_new_class(
                 ctx,
@@ -3321,6 +3347,7 @@ impl LambdaToMethod {
             let mut make = self.make.borrow_mut();
             make.literal(ctx, TypeTag::INT, Some(LiteralValue::Integer(reference_kind_of(ctx, pos_tree))))
         };
+        ctx.tree_mut(kind_literal).ty = Some(int_type);
         let kind_test = self.eq_test(ctx, int_type, method_kind_getter, kind_literal);
         let mut ser_args: Vec<TreeId> = Vec::new();
         let param_types = ctx.typ(indy_type).get_parameter_types(ctx);
@@ -3331,6 +3358,7 @@ impl LambdaToMethod {
                 make.literal(ctx, TypeTag::INT, Some(LiteralValue::Integer(index)))
             };
             let int_type = self.syms.borrow().int_type;
+            ctx.tree_mut(index_arg).ty = Some(int_type);
             let object_type = self.syms.borrow().object_type;
             let arg_types = List::of(int_type);
             let getter = self.deser_getter_with_args(
@@ -3444,12 +3472,15 @@ impl LambdaToMethod {
             List::of(object_type),
             Some(List::nil()),
         );
+        // Release the Attr RefCell borrow before deser_getter borrows it again.
+        drop(attr);
         let string_type = self.syms.borrow().string_type;
         let getter = self.deser_getter(ctx, func, string_type);
         let literal = {
             let mut make = self.make.borrow_mut();
             make.literal(ctx, TypeTag::CLASS, Some(LiteralValue::String(javac_strings::JavaString::from(lit))))
         };
+        ctx.tree_mut(literal).ty = Some(string_type);
         let select = {
             let mut make = self.make.borrow_mut();
             make.select(ctx, getter, ctx.sym(equals_sym).name.clone())

@@ -120,6 +120,9 @@ name = "rust-javac"
 version = "0.1.0"
 dependencies = [
  "javac-core",
+ "javac-fs",
+ "javac-strings",
+ "javac-tools",
 ]
 
 [[package]]

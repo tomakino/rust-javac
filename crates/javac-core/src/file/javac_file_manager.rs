@@ -871,10 +871,14 @@ impl JavacFileManager {
             return Ok(container);
         }
         let real_path = self.fs_info.get_canonical_file(path);
-        if let Some(container) = self.containers.lock().unwrap().get(&real_path) {
+        // Java: synchronized getContainer (JavacFileManager.java:297-316) may
+        // re-enter the monitor. std::sync::Mutex is not reentrant, so read the
+        // cached container, release the guard, then insert the alias.
+        let cached = self.containers.lock().unwrap().get(&real_path).cloned();
+        if let Some(container) = cached {
             self.containers.lock().unwrap()
                 .insert(path.clone(), container.clone());
-            return Ok(container.clone());
+            return Ok(container);
         }
         let container: Arc<dyn Container> = if !self.fs_info.exists(&real_path) {
             Arc::new(MissingContainer)

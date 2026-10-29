@@ -153,7 +153,12 @@ impl ClassWriter {
         method_codes: Rc<RefCell<HashMap<SymbolId, Rc<RefCell<Code>>>>>,
     ) -> ClassWriter {
         let verbose = options.is_set("verbose");
-        let emit_source_file = options.is_unset("G_CUSTOM")
+        // Java: options.isUnset(G_CUSTOM) || options.isSet(G_CUSTOM, "source")
+        // (ClassWriter.java:183-184). Options keys are the Option primary names
+        // ("-g:"), not the enum constant names; the earlier string used the
+        // Rust variant name and never matched put_option("-g:", ...).
+        let emit_source_file = options
+            .is_unset(crate::main::option::Option::G_CUSTOM.primary_name())
             || options.is_set_choice(crate::main::option::Option::G_CUSTOM, "source");
         let gen_crt = options.is_set("Xjcov");
         let debug_stackmap = options.is_set("debug.stackmap");

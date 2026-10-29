@@ -1783,7 +1783,19 @@ pub(crate) fn symbol_display_name(
 ) -> String {
     match &ctx.sym(symbol).kind_data {
         crate::code::symbol::SymbolKind::ClassSymbol { fullname, .. } => {
-            fullname.to_java_string().to_string_lossy()
+            // Java: RichDiagnosticFormatter.RichPrinter.className + NameSimplifier
+            // (RichDiagnosticFormatter.java:384-395): a class directly in
+            // java.lang is displayed by its simple name when SIMPLE_NAMES is
+            // enabled (the default). Port adapter: NameSimplifier's import/
+            // collision table is not ported yet, so only the unambiguous
+            // java.lang top-level case is simplified here.
+            let full = fullname.to_java_string().to_string_lossy();
+            if let Some(simple) = full.strip_prefix("java.lang.")
+                && !simple.contains('.')
+            {
+                return simple.to_string();
+            }
+            full
         }
         crate::code::symbol::SymbolKind::PackageSymbol { fullname, .. }
         | crate::code::symbol::SymbolKind::RootPackageSymbol { fullname, .. } => {

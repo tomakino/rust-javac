@@ -245,6 +245,7 @@ impl Option {
             Option::XLINT_CUSTOM => Some("opt.arg.Xlint"),
             Option::CLASS_PATH => Some("opt.arg.path"),
             Option::SOURCE_PATH => Some("opt.arg.path"),
+            Option::H => Some("opt.arg.directory"),
             Option::MODULE_SOURCE_PATH => Some("opt.arg.mspath"),
             Option::MODULE_PATH => Some("opt.arg.path"),
             Option::UPGRADE_MODULE_PATH => Some("opt.arg.path"),
@@ -463,7 +464,8 @@ impl Option {
     }
 
     /// Java: private final Set<String> choices.
-    fn choices(self) -> StdOption<Vec<String>> {
+    /// Java: protected final Set<String> choices (exposed for help rendering).
+    pub fn choices(self) -> StdOption<Vec<String>> {
         match self {
             Option::G_CUSTOM => Some(vec![
                 "lines".to_string(),
@@ -822,6 +824,13 @@ impl Option {
     ) -> Result<(), InvalidValueException> {
         use crate::resources::compiler_properties::errors;
         match self {
+            Option::G_NONE => {
+                // Java: Option.G_NONE.process (Option.java:99-104): -g:none is
+                // stored under the "-g:" custom key so ClassWriter sees the
+                // G_CUSTOM choice (emitSourceFile/line/vars decisions).
+                helper.put("-g:", "none");
+                Ok(())
+            }
             Option::MODULE_SOURCE_PATH => {
                 // Option.java:167-208.
                 if arg.is_empty() {

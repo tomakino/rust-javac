@@ -26,6 +26,26 @@ fn collect_java(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+fn collect_test_classes(dir: &Path, root: &Path, out: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_test_classes(&path, root, out);
+        } else if path.extension().is_some_and(|ext| ext == "class") {
+            let name = path.file_name().unwrap().to_string_lossy();
+            if name.ends_with("Test.class") && !name.contains('$') {
+                let rel = path.strip_prefix(root).expect("class under output");
+                let mut class = rel.to_string_lossy().replace('\\', ".").replace('/', ".");
+                class.truncate(class.len() - ".class".len());
+                out.push(class);
+            }
+        }
+    }
+}
+
 fn class_summary(stdout: &str) -> (bool, Option<u32>, Option<u32>) {
     if let Some(idx) = stdout.find("OK (") {
         let rest = &stdout[idx + 4..];
@@ -58,12 +78,17 @@ fn okhttp_small_core_runs_under_junit() {
 
     // HttpUrlTest needs okhttp/src/main/resources on the runtime classpath
     // (publicsuffixes.gz); otherwise PublicSuffixDatabase waits forever.
+    let all_mode = std::env::var_os("OKHTTP_JUNIT_ALL").is_some();
+    let mut all_classes: Vec<String> = Vec::new();
     let mut classes = vec![
         "okhttp3.internal.UtilTest",
         "okhttp3.HeadersTest",
         "okhttp3.HttpUrlTest",
         "okhttp3.RequestTest",
     ];
+    if all_mode {
+        classes.clear();
+    }
     if std::env::var_os("OKHTTP_JUNIT_NETWORK").is_some() {
         classes.extend([
             "okhttp3.CallTest",
@@ -107,6 +132,7 @@ fn okhttp_small_core_runs_under_junit() {
     }
 
     let mut sources = Vec::new();
+    if !all_mode {
     collect_java(&root.join("okhttp/src/main/java"), &mut sources);
     collect_java(&root.join("okhttp-generated"), &mut sources);
     collect_java(&root.join("okhttp-testing-support/src/main/java"), &mut sources);
@@ -187,6 +213,28 @@ fn okhttp_small_core_runs_under_junit() {
             sources.push(root.join(rel));
         }
     }
+    }
+    if all_mode {
+        for module in [
+            "okhttp/src/main/java",
+            "okhttp-generated",
+            "okhttp-testing-support/src/main/java",
+            "okhttp-tls/src/main/java",
+            "mockwebserver/src/main/java",
+            "okhttp-urlconnection/src/main/java",
+            "okhttp-logging-interceptor/src/main/java",
+        ] {
+            collect_java(&root.join(module), &mut sources);
+        }
+        for tests in [
+            "okhttp-tests/src/test/java",
+            "mockwebserver/src/test/java",
+            "okhttp-tls/src/test/java",
+            "okhttp-urlconnection/src/test/java",
+        ] {
+            collect_java(&root.join(tests), &mut sources);
+        }
+    }
     sources.sort();
 
     let out = std::env::temp_dir().join(format!("rust-javac-okhttp-junit-{}", std::process::id()));
@@ -220,6 +268,11 @@ fn okhttp_small_core_runs_under_junit() {
     );
     assert_eq!(compiler.error_count(), 0);
     assert!(!compiled.is_empty());
+    if all_mode {
+        collect_test_classes(&out, &out, &mut all_classes);
+        all_classes.sort();
+        eprintln!("[JUNIT] all_mode test classes={}", all_classes.len());
+    }
 
     let mut run_cp = out.to_string_lossy().to_string();
     for jar in &jars {
@@ -237,7 +290,12 @@ fn okhttp_small_core_runs_under_junit() {
         .unwrap_or_else(|_| PathBuf::from("java"));
 
     let mut failures = Vec::new();
-    for class in &classes {
+    let class_list: Vec<String> = if all_mode {
+        all_classes.clone()
+    } else {
+        classes.iter().map(|class| class.to_string()).collect()
+    };
+    for class in &class_list {
         let output = Command::new(&java)
             .arg("-cp")
             .arg(&run_cp)

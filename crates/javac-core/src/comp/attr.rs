@@ -803,6 +803,7 @@ impl Attr {
             Tag::TYPEARRAY => self.visit_type_array(ctx, syms, tree),
             Tag::TYPEAPPLY => self.visit_type_apply(ctx, syms, tree),
             Tag::TYPEUNION => self.visit_type_union(ctx, syms, tree),
+            Tag::TYPEINTERSECTION => self.visit_type_intersection(ctx, syms, tree),
             Tag::WILDCARD => self.visit_wildcard(ctx, syms, tree),
             Tag::TYPEPARAMETER => self.visit_type_parameter(ctx, syms, tree),
             Tag::ERRONEOUS => self.visit_erroneous(ctx, syms, tree),
@@ -1211,6 +1212,25 @@ impl Attr {
     ///   - the preliminary type is missing (attribTypeVariables must run first).
     ///
     /// Upstream: Attr.java:5017-5029.
+    /// Java: public void visitTypeIntersection(JCTypeIntersection tree)
+    /// (Attr.java:5012-5015).
+    fn visit_type_intersection(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let bounds = match &ctx.tree(tree).kind {
+            TreeKind::TypeIntersection { bounds } => bounds.clone(),
+            _ => panic!("ClassCastException: JCTypeIntersection expected"),
+        };
+        let env = self.env.clone().expect("env");
+        let _ = self.attrib_types(ctx, syms, bounds.clone(), &env);
+        let checked = self.check_intersection(ctx, syms, tree, bounds);
+        ctx.tree_mut(tree).ty = Some(checked);
+        Ok(checked)
+    }
+
     fn visit_type_parameter(
         &mut self,
         ctx: &mut CompilerContext,
@@ -1328,14 +1348,6 @@ impl Attr {
             bound_types = bound_types.append(ctx.tree(bound).ty.expect("bound tree.type"));
             current = current.tail();
         }
-        let owntype = self
-            .types
-            .make_intersection_type(ctx, syms, &self.names, bound_types, false);
-        let owner_class = ctx.typ(owntype).tsym.expect("intersection class symbol");
-        assert!(
-            (ctx.sym(owner_class).flags_field & crate::code::flags::COMPOUND as i64) != 0,
-            "AssertionError: bound class must be flagged COMPOUND"
-        );
         let head = *effective_bounds.head();
         let head_type = ctx.tree(head).ty.expect("bound tree.type");
         let head_is_interface = ctx
@@ -1343,6 +1355,17 @@ impl Attr {
             .tsym
             .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0)
             .unwrap_or(false);
+        // Java: Types.makeIntersectionType(bounds) uses
+        // bounds.head.tsym.isInterface() as allInterfaces (Types.java:2476-2477);
+        // with allInterfaces=true Object is prepended (Types.java:2489-2494).
+        let owntype = self
+            .types
+            .make_intersection_type(ctx, syms, &self.names, bound_types, head_is_interface);
+        let owner_class = ctx.typ(owntype).tsym.expect("intersection class symbol");
+        assert!(
+            (ctx.sym(owner_class).flags_field & crate::code::flags::COMPOUND as i64) != 0,
+            "AssertionError: bound class must be flagged COMPOUND"
+        );
         let (extending, implementing) = if !head_is_interface {
             (Some(head), effective_bounds.tail())
         } else {
@@ -3944,9 +3967,12 @@ impl Attr {
             let i_tsym_type = ctx.sym(i_tsym).ty.expect("interface tsym type");
             supertypes = supertypes.append(i_tsym_type);
         }
+        // Java: types.makeIntersectionType(supertypes) infers allInterfaces
+        // from the first bound (Types.java:2476-2477); every supertype here is
+        // an interface, so Object is prepended and none is lost.
         let notional = self
             .types
-            .make_intersection_type(ctx, syms, &self.names, supertypes, false);
+            .make_intersection_type(ctx, syms, &self.names, supertypes, true);
         if let crate::code::type_::TypeKindData::IntersectionClassType {
             allparams_field, ..
         } = &mut ctx.typ_mut(notional).kind
@@ -17576,10 +17602,13 @@ class Sample {
             ctx.typ(upper).is_intersection(),
             "the bound is an intersection"
         );
+        // Both bounds are interfaces: Types.makeIntersectionType prepends
+        // Object (allInterfaces = true), so components are [Object, I1, I2].
         let components = ctx.typ(upper).get_components();
-        assert_eq!(components.length(), 2);
-        assert_eq!(*components.head(), first_type);
-        assert_eq!(*components.tail().head(), second_type);
+        assert_eq!(components.length(), 3);
+        assert_eq!(*components.head(), object_type);
+        assert_eq!(*components.tail().head(), first_type);
+        assert_eq!(*components.tail().tail().head(), second_type);
     }
 
     /// Java: methodLogResolveHelper.getArgumentTypes (Resolve.java:2634-2636):
