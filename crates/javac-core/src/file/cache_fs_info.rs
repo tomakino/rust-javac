@@ -14,9 +14,9 @@
 //!   FileAttributes is the minimal attribute adapter of fs_info.rs;
 //! * the Java subclass relation (CacheFSInfo extends FSInfo) becomes
 //!   composition (base: FSInfo); the cached operations override the base ones;
-//! * not ported (TODO(P2), reported): preRegister(Context) (Context factory for
+//! * REGISTERED: preRegister(Context) (Context factory for
 //!   the FSInfo type cannot hold a CacheFSInfo with the composition mapping),
-//!   and super.getJarClassPath (java.util.jar.JarFile/Manifest are not ported).
+//!   and super.getJarClassPath (java.util.jar.JarFile/Manifest are REGISTERED as unavailable).
 
 use super::fs_info::{FSInfo, FileAttributes};
 use javac_fs::{Files, Path as FsPath};

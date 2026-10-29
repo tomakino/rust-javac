@@ -6,7 +6,9 @@
 // RedundantTypeArgAnalyzer, RedundantLocalVarTypeAnalyzer,
 // RedundantLocalVarTypeAnalyzerForEach);
 // - the StatementScanner/RewritingContext/deferred analysis helpers;
-// - AnalyzerCopier/TreeRewriter (expressed as TreeCopyHook implementations, adapter).
+// - AnalyzerCopier/TreeRewriter (expressed as TreeCopyHook implementations, adapter);
+// - the ArgumentAttr.LocalCacheContext of doAnalysis (outer context + the
+//   attribSpeculative argument, Analyzer.java:555/571).
 // Adapter: Java anonymous inner classes map to named structs/enums.
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -590,6 +592,29 @@ impl Analyzer {
     /// Java: void doAnalysis(RewritingContext rewriting) (Analyzer.java:553-583).
     fn do_analysis(&mut self, ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab, rewriting: RewritingContext) {
+        // Java: LocalCacheContext localCacheContext =
+        //     argumentAttr.withLocalCacheContext(); (Analyzer.java:555);
+        // the finally leave is modelled by the Drop guard below.
+        let argument_attr = self.argument_attr.borrow().clone();
+        struct CacheLeave {
+            cache: Option<crate::comp::argument_attr::LocalCacheContext>,
+            argument_attr: Option<Rc<RefCell<ArgumentAttr>>>,
+        }
+        impl Drop for CacheLeave {
+            fn drop(&mut self) {
+                if let (Some(cache), Some(argument_attr)) =
+                    (self.cache.as_mut(), &self.argument_attr)
+                {
+                    cache.leave(&argument_attr.borrow());
+                }
+            }
+        }
+        let _outer_cache = CacheLeave {
+            cache: argument_attr
+                .as_ref()
+                .map(|argument_attr| argument_attr.borrow().with_local_cache_context()),
+            argument_attr: argument_attr.clone(),
+        };
         let prev_source = {
             let toplevel = rewriting.env.toplevel.expect("env toplevel");
             let sourcefile = match &ctx.tree(toplevel).kind {
@@ -636,15 +661,17 @@ impl Analyzer {
         let mut attr = attr_rc.borrow_mut();
         let stat_info = attr.stat_info.clone();
         let deferred_rc = self.deferred_service();
-        let mut deferred = deferred_rc.borrow_mut();
+        let deferred = deferred_rc.borrow_mut();
         let diag_creator: Box<dyn Fn() -> DiagnosticHandler> = Box::new(move || {
             DiagnosticHandler::Analyzer {
                 erroneous: Rc::clone(&erroneous),
             }
         });
-        // TODO(ArgumentAttr): thread the local cache context into the speculative
-        // attribution call (upstream passes argumentAttr.withLocalCacheContext());
-        // it is registered until the ArgumentAttr wiring installs the context.
+        // Java: deferredAttr.attribSpeculative(..., AttributionMode.ANALYZER,
+        //     argumentAttr.withLocalCacheContext()); (Analyzer.java:570-571).
+        let local_cache = argument_attr
+            .as_ref()
+            .map(|argument_attr| argument_attr.borrow().with_local_cache_context());
         let result = deferred.attrib_speculative_with_rewriter(
             ctx,
             syms,
@@ -655,6 +682,7 @@ impl Analyzer {
             &rewriter,
             Some(diag_creator),
             AttributionMode::ANALYZER,
+            local_cache,
         );
         let has_errors = rewriting.erroneous.get();
         drop(deferred);

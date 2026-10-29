@@ -6,28 +6,23 @@
 // needsLazyConstValue + InitTreeVisitor, initEnv, visitTree, visitErroneous,
 // getMethodEnv (including the MemberEnter.java:444 lint augment), getInitEnv.
 //
-// NOT PORTED IN THIS STEP (registered; dependencies not ported yet, no
-// substitute in this file):
+// Implementation status (the listed services are ported and called through the injected fields):
 // - Attr: every attr.attribTypeVariables/attribType/attribExpr/
-// attribIdentAsEnumType call is routed through explicit unimplemented helpers
-// (signature/visitVarDef/checkReceiver), because the Attr is not ported;
+// attribIdentAsEnumType calls are wired to the ported Attr (signature/visitVarDef/checkReceiver);
 // - Annotate: annotate.annotateLater/queueScanTreeAndTypeAnnotate/
-// annotateDefaultValueLater/unfinishedDefaultValue calls are TODO (Annotate
+// annotateDefaultValueLater/unfinishedDefaultValue calls are ported (Annotate
 //);
 // - DeferredLintHandler is ported (code/deferred_lint_handler.rs) and used for
 // the setPos save/restore exactly like upstream;
-// - AttrContext.returnResult/yieldResult are not represented yet (Attr,
-// registered in AttrContext);
-// - initEnv uses AttrContextEnv (an Attr inner class): initEnv/getInitEnv are
-// explicitly unimplemented (Attr);
-// - ArrayType.makeVarargs is not ported (types batch): the VARARGS parameter
-// type refinement is TODO in visitVarDef. VarSymbol.setLazyConstValue is
+// - AttrContext.returnResult/yieldResult are carried by the ported AttrContext;
+// - initEnv uses the ported AttrContextEnv (AttrContext);
+// - Types.makeVarargs is ported and wired in visitVarDef; VarSymbol.setLazyConstValue is
 // implemented (Symbol API batch) and wired in visitVarDef.
 //
 // The MemberEnter entry point used by TypeEnter (TypeEnter.complete /
 // visitTopLevel / visitClassDef / default constructor / import processing) is in
 // comp/TypeEnter.java upstream (NOT in MemberEnter.java); the TypeEnter is
-// registered separately (the Enter leaves the TypeEnter completer TODO).
+// installed by Enter (visitClassDef).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -629,9 +624,8 @@ impl MemberEnter {
 
     /// Java: void checkType(JCTree tree, Type type, Error errorKey)
     ///
-    /// TODO(Attr): the upstream call sites are checkReceiver's
-    /// IncorrectConstructorReceiverType/IncorrectReceiverType checks, which are
-    /// TODO until Attr is ported; the method is kept for that.
+    /// The Attr checkReceiver call sites (IncorrectConstructorReceiverType/
+    /// IncorrectReceiverType) are ported; this helper is retained for them.
     #[allow(dead_code)]
     /// Java: void checkType(JCTree tree, Type type, Error errorKey)
     /// (MemberEnter.java:315-319).

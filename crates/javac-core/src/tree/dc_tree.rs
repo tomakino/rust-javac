@@ -17,11 +17,13 @@
 //! - the upstream Comment type is parser/Tokens.Comment (imported from
 //!   crate::parser::tokens; the old placeholder in tree/doc_comment_table.rs
 //!   now re-exports the same trait);
-//! - TODO(P4/P6): upstream DCErroneous implements JCDiagnostic.DiagnosticPosition
-//!   and its first constructor builds the diagnostic with "this" as the
-//!   position (a self reference resolved dynamically after DocTreeMaker sets
-//!   pos). The port stores a caller supplied JCDiagnostic instead; the
-//!   factory-based constructor is not ported (no placeholder is introduced).
+//! - DCErroneous's DiagnosticPosition is implemented by DCErroneousPosition
+//!   (getTree null, start=pos, preferred=pos+len-1, end=pos+len), matching
+//!   DCTree.java:375-428. The factory-based constructor is implemented by
+//!   DocTreeMaker::new_erroneous_tree, which builds the JCDiagnostic with the
+//!   DCErroneousPosition as the position (the Rust equivalent of the upstream
+//!   "this" self reference); a caller-supplied JCDiagnostic constructor also
+//!   exists.
 //!
 //! Ported 1:1 from DCTree.java: pos/getSourcePosition/pos(dc), DCEndPosTree
 //! getEndPos/setEndPos, all node fields and getKind mappings.

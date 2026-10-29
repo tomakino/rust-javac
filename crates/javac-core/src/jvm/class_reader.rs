@@ -5,8 +5,8 @@
 // ported in this file.
 //
 // Ported in this file:
-// - the 26 attribute readers are wired in read_attribute: Code (structure;
-//   Code object attach TODO), ConstantValue, Deprecated, Exceptions,
+// - the 26 attribute readers are wired in read_attribute: Code (structure
+//   only; upstream readCode also returns null and attaches nothing), ConstantValue, Deprecated, Exceptions,
 //   InnerClasses (+skipInnerClasses), LocalVariableTable, SourceFile
 //   (+SourceFileObject), Annotation, Bridge, Synthetic, Signature,
 //   MethodParameters (parameterNameIndices/parameterAccessFlags/sawMethodParameters),
@@ -62,10 +62,12 @@
 //!   in place of the Context singletons), readClassFile / readClassBuffer
 //!   (magic, version, preview checks and the PoolReader wiring), buffer access
 //!   (nextChar/nextByte/nextInt), skipMember, adjust*Flags, badClassFile.
-//! * NOT ported yet (not-yet-ported marker with TODO below): readClass and the
-//!   attribute readers / signature state machine (S2), annotation and type
-//!   annotation attributes (S3), Annotate/ClassFinder/file-manager wiring.
-//!   These methods carry explicit TODO markers; no substitutes are provided.
+//! * the attribute readers / signature state machine, annotation and type
+//!   annotation attributes are ported (see the audit at the top). Remaining
+//!   gaps: none for readCode — upstream ClassReader.readCode (ClassReader.java:
+//!   1399-1408) reads the structure and returns null (Code.java is the Gen-side
+//!   code buffer); the local read_code mirrors that exactly. PoolReader symbol
+//!   resolution is performed by the ClassReader get_* wrappers (see the audit above).
 //! * adapters (registered): Context singletons are injected; CompletionFailure
 //!   is a Result error value; PoolReader takes the buffer/names explicitly.
 
@@ -137,8 +139,8 @@ pub struct ClassReader {
     preview: Rc<Preview>,
     /// Java: protected WriteableScope typevars
     ///
-    /// PORTING_RULES: Scope.WriteableScope is not ported yet (TODO(P3 scope
-    ///)); the field is kept as None and enterTypevars is unimplemented.
+    /// PORTING_RULES: Scope.WriteableScope is ported as ScopeId; the field is
+    /// Some while readTypeVar/enterTypevars process a signature.
     typevars: Option<crate::ids::ScopeId>,
     /// Java: protected JavaFileObject currentClassFile = null
     pub current_class_file: Option<Rc<dyn JavaFileObject>>,
@@ -709,11 +711,9 @@ impl ClassReader {
         }
     }
 
-    /// Java: Type noType (syms.noType): the ClassReader only needs the tag
-    /// constant here; Types.noType is not represented in Symtab yet (TODO P3),
-    /// so the arena slot is created from the shared Type::new (tag NONE). The
-    /// call sites that need the global singleton are registered in the
-    /// report.
+    /// Java: Type noType (syms.noType): Types.noType is represented by
+    /// syms.no_type/ctx.no_type; this helper returns the shared arena Type
+    /// (tag NONE) and caches it in the reader.
     fn no_type(&mut self, ctx: &mut CompilerContext) -> TypeId {
         if let Some(no_type) = self.no_type {
             return no_type;
@@ -1162,7 +1162,27 @@ impl ClassReader {
                 Some(Rc::clone(&self.dcfh)),
             ));
         }
-        self.read_class_buffer(ctx, syms, c)?;
+        // Java: readClassFile catches ArrayIndexOutOfBoundsException and maps it
+        // to badClassFile("bad.class.file", c.flatname) (ClassReader.java:2790-2800).
+        // The Rust buffer accessors panic on an out-of-range read; only that
+        // bounds panic is converted, every other panic is resumed.
+        let read_result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.read_class_buffer(ctx, syms, c)
+            }));
+        match read_result {
+            Ok(result) => result?,
+            Err(payload) => {
+                if Self::is_index_out_of_bounds_panic(payload.as_ref()) {
+                    let class_name = ctx.sym(c).flat_name();
+                    let key = Fragment::from(
+                        crate::resources::compiler_properties::fragments::bad_class_file(class_name),
+                    );
+                    return Err(self.bad_class_file(key).failure);
+                }
+                std::panic::resume_unwind(payload);
+            }
+        }
         // Java: if (!missingTypeVariables.isEmpty() && !foundTypeVariables.isEmpty()) {
         //     ... ct.supertype_field = types.subst(...); ct.interfaces_field = ...
         //     ct.typarams_field = types.substBounds(...); ... }
@@ -2941,9 +2961,9 @@ impl ClassReader {
             };
             let attr_len = self.next_int();
             // Java: readClassFile catches ArrayIndexOutOfBoundsException and maps it
-            // to badClassFile("bad.class.file", c.flatname). The attribute length
-            // bound is validated explicitly here (the full next* bounds-error
-            // mapping is a registered TODO for the hardening).
+            // to badClassFile("bad.class.file", c.flatname). Attribute lengths are
+            // validated eagerly here; other next* bounds panics are converted at
+            // the readClassFile boundary (read_class_file).
             let attr_end = (self.bp as i64) + (attr_len as i64);
             if attr_len < 0 || attr_end > self.buf.elems.len() as i64 {
                 let class_name = ctx
@@ -3337,10 +3357,28 @@ impl ClassReader {
         }
     }
 
-    /// Java: Code readCode(Symbol owner) (ClassReader.java:1373-1390)
-    /// TODO(P6/Code): jvm.Code is not ported, so the structure is read
-    /// and nested member attributes are dispatched, but the Code object is not
-    /// stored on the method symbol (registered).
+    /// Java: readClassFile's ArrayIndexOutOfBoundsException -> badClassFile
+    /// mapping (ClassReader.java:2790-2800).
+    fn is_index_out_of_bounds_panic(payload: &(dyn std::any::Any + Send)) -> bool {
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|text| *text)
+            .or_else(|| payload.downcast_ref::<String>().map(|text| text.as_str()));
+        match message {
+            Some(message) => {
+                message.contains("out of range")
+                    || message.contains("index out of bounds")
+                    || message.contains("range end index")
+            }
+            None => false,
+        }
+    }
+
+    /// Java: Code readCode(Symbol owner) (ClassReader.java:1399-1408).
+    /// Upstream reads max_stack/max_locals/code/exception_table, dispatches the
+    /// nested member attributes, and returns null — no Code object is attached
+    /// to the method symbol (Code.java is used by Gen/ClassWriter, not the
+    /// classfile reader). The port mirrors exactly this structure-only read.
     fn read_code(
         &mut self,
         ctx: &mut CompilerContext,

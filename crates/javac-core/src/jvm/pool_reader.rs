@@ -12,33 +12,29 @@
 //! * ported dependencies: ClassFile constants/internalize (crate::jvm::class_file),
 //!   ByteBuffer (crate::util::byte_buffer), Convert.utf2string
 //!   (crate::util::convert), Name/Names (crate::util::name/names).
-//! * NOT ported yet (TODO, no substitute semantics):
-//!   - ClassReader: the Java constructors taking ClassReader/Names/Symtab and the
-//!     helpers getClass/getModule/getPackage/getType/getNameAndType (they return
-//!     ClassSymbol/ModuleSymbol/PackageSymbol/Type/NameAndType) are not ported;
-//!     the ClassReader.badClassFile error channel is replaced by the local
-//!     [Error] enum carrying the same message keys for later wiring;
-//!   - PoolConstant (and PoolConstant.NameAndType): the lazily resolved values
-//!     are represented by the raw [PoolValue] adapter below; the file header
-//!     records the wiring for the P2 ClassReader (resolve() -> PoolValue, then
-//!     ClassReader maps it to symbols/types);
-//!   - Type: CONSTANT_NameandType stores the raw descriptor Name instead of the
-//!     sigToType()-produced Type;
-//!   - Symtab: CONSTANT_Class/Module/Package return the raw internalized names
-//!     instead of entered symbols;
-//!   - java.util.BitSet: replaced by the closed [TagSet] enum (same tag
-//!     membership as the Java static BitSets);
-//!   - Names/Symtab constructor injection: the name table is passed to the
-//!     decoding methods (signature-level adaptation; Java stores it in a field).
+//! * resolution seam: PoolReader stores the raw [PoolValue] adapter (the
+//!   PoolConstant lazy values); ClassReader.get_class (class_reader.rs:459-483)
+//!   calls syms.enter_class_flat(currentModule, name), get_module (405-430)
+//!   calls enter_module, get_package (432-457) calls enter_package,
+//!   get_type (485-495) calls sig_to_type_bytes, and getNameAndType (497-524)
+//!   builds (Name, Type) — the same observable results as upstream
+//!   PoolReader.resolve (PoolReader.java:204-243) / getType (169-171).
+//!   ClassReader.pool_error (360-386) maps [Error] to badClassFile, the
+//!   upstream reader.badClassFile channel;
+//!   REGISTERED: the generated bad.const.pool.tag.at/unexpected... accessors
+//!   carry no tag/offset arguments (upstream passes Integer.toString(tag/offset)).
+//! * java.util.BitSet: replaced by the closed [TagSet] enum (same tag
+//!   membership as the Java static BitSets);
+//! * Names injection: the name table is passed to the decoding methods
+//!   (signature-level adaptation; Java stores it in a field).
 //!
 //! Local adapters keep the Java names/order: readPool/offset/tag/readIfNeeded/
 //! resolve/getUtf8/peekName/peekClassName/peekPackageName/peekModuleName/
 //! hasTag/getConstant/sizeof.
 //! 
-//! PORTING_RULES: some items are the wiring points for the P2 ClassReader
-//! (getClass/getModule/getPackage/getType/getNameAndType are still TODO; the raw
-//! adapters and the tag sets they use are consumed by the ClassReader in a later
-//!), so they are kept with the upstream shape and marked allow(dead_code).
+//! PORTING_RULES: the getClass/getModule/getPackage/getType/getNameAndType
+//! names are kept with their upstream shape; the symbol/type-producing step is
+//! performed by the ClassReader wrappers listed above (the raw PoolValue seam).
 #![allow(dead_code)]
 
 use crate::jvm::class_file::{
@@ -57,10 +53,9 @@ use std::fmt;
 
 /// The raw representation of a lazily resolved constant pool value.
 ///
-/// PORTING_RULES: PoolConstant/PoolConstant.NameAndType and the
-/// ClassSymbol/ModuleSymbol/PackageSymbol/Type results of the Java resolve()
-/// are not ported yet; this adapter carries the raw value (see the file header
-/// for the P2 ClassReader wiring).
+/// PORTING_RULES: PoolConstant/PoolConstant.NameAndType are represented by this
+/// raw-value adapter; the ClassSymbol/ModuleSymbol/PackageSymbol/Type creation
+/// happens in the ClassReader get_* seam (see the file header).
 #[derive(Clone)]
 pub(crate) enum PoolValue {
     /// Java: resolve() CONSTANT_Utf8 -> Name (names.fromUtf).
@@ -69,8 +64,8 @@ pub(crate) enum PoolValue {
     /// internalized class name (the value the symbol is entered from).
     Class(Name),
     /// Java: resolve() CONSTANT_NameandType -> PoolConstant.NameAndType; the
-    /// port keeps the raw name and descriptor indices resolved to Names
-    /// (the Type produced by sigToType is not ported).
+    /// port keeps the name and raw descriptor Name; ClassReader.get_name_and_type
+    /// applies sigToType when the (Name, Type) pair is requested.
     NameAndType { name: Name, descriptor: Name },
     /// Java: resolve() CONSTANT_Integer -> Integer.
     Integer(i32),
@@ -92,9 +87,9 @@ pub(crate) enum PoolValue {
 /// Error channel matching the ClassReader.badClassFile call sites used by this
 /// class.
 ///
-/// PORTING_RULES: TODO(P2): ClassReader.badClassFile throws a ClassFileError
-/// with these message keys; the local enum keeps the keys/arguments so the
-/// wiring can map them onto the ported ClassReader error type.
+/// PORTING_RULES: upstream reader.badClassFile throws a ClassFileError with
+/// these message keys; ClassReader.pool_error maps this enum onto the ported
+/// badClassFile channel (class_reader.rs:360-386).
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) enum Error {
     /// Java: reader.badClassFile("unexpected.const.pool.tag.at", tag, offset)
@@ -169,8 +164,9 @@ pub(crate) struct PoolReader {
 }
 
 impl PoolReader {
-    /// Java: PoolReader(ByteBuffer buf) / PoolReader(ClassReader, Names, Symtab)
-    /// — the ClassReader form is not ported yet (see the file header).
+    /// Java: PoolReader(ByteBuffer buf) / PoolReader(ClassReader, Names, Symtab);
+    /// the port keeps the buffer/name parameters on the decoding methods and the
+    /// reader context in the ClassReader get_* seam (see the file header).
     pub(crate) fn new() -> PoolReader {
         PoolReader { offsets: Vec::new(), values: RefCell::new(Vec::new()) }
     }
@@ -301,10 +297,8 @@ impl PoolReader {
                 Ok(PoolValue::Utf8(name))
             }
             CONSTANT_CLASS => {
-                // Java: Name name = names.fromUtf(getName(index).map(ClassFile::internalize));
-                // return syms.enterClass(reader.currentModule, name);
-                // TODO(P2): Symtab/currentModule are not ported; the port keeps the
-                // internalized raw name.
+                // Java: syms.enterClass(reader.currentModule, name) — performed by
+                // ClassReader.get_class (class_reader.rs:459-483) on this value.
                 let index = poolbuf.get_char(offset) as i32;
                 let name = self.get_name(poolbuf, index, names)?;
                 let internalized = name.map(|bytes, start, len| {
@@ -316,9 +310,8 @@ impl PoolReader {
             CONSTANT_NAMEANDTYPE => {
                 // Java: Name name = getName(poolbuf.getChar(offset));
                 // Type type = getType(poolbuf.getChar(offset + 2));
-                // return new NameAndType(name, type);
-                // TODO(P2): Type/sigToType is not ported; the raw descriptor Name is
-                // kept instead.
+                // return new NameAndType(name, type) — ClassReader.get_name_and_type
+                // (class_reader.rs:497-524) calls sig_to_type on the descriptor.
                 let name_index = poolbuf.get_char(offset) as i32;
                 let descriptor_index = poolbuf.get_char(offset + 2) as i32;
                 let name = self.get_name(poolbuf, name_index, names)?;
@@ -337,9 +330,8 @@ impl PoolReader {
             }
             CONSTANT_PACKAGE => {
                 // Java: Name name = getName(poolbuf.getChar(offset));
-                // return syms.enterPackage(reader.currentModule, names.fromUtf(internalize(name)));
-                // TODO(P2): Symtab/currentModule are not ported; the port keeps the
-                // internalized raw name.
+                // return syms.enterPackage(reader.currentModule, ...) — performed by
+                // ClassReader.get_package (class_reader.rs:432-457).
                 let index = poolbuf.get_char(offset) as i32;
                 let name = self.get_name(poolbuf, index, names)?;
                 let internalized = name.map(|bytes, start, len| {
@@ -350,8 +342,8 @@ impl PoolReader {
             }
             CONSTANT_MODULE => {
                 // Java: Name name = getName(poolbuf.getChar(offset));
-                // return syms.enterModule(name);
-                // TODO(P2): Symtab is not ported; the port keeps the name.
+                // return syms.enterModule(name) — performed by
+                // ClassReader.get_module (class_reader.rs:405-430).
                 let index = poolbuf.get_char(offset) as i32;
                 let name = self.get_name(poolbuf, index, names)?;
                 Ok(PoolValue::Module(name))

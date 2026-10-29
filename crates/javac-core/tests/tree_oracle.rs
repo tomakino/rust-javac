@@ -13,7 +13,7 @@
 //! expressions/modules/lambda/method references) are reported as SKIP with the
 //! missing-syntax reason; records whose oracle output contains doc comments are
 //! skipped because this port currently runs with keepDocComments=false
-//! (TODO(S8 DocCommentParser batch)). Any other difference is a FAIL with the
+//! (S8 DocCommentParser classification). Any other difference is a FAIL with the
 //! expected-vs-actual diff lines.
 
 use std::panic::AssertUnwindSafe;
@@ -112,10 +112,10 @@ fn parse_and_print(body: &str, parse_module_info: bool) -> String {
 }
 
 fn classify_panic(message: &str) -> Option<&'static str> {
-    if message.contains("TODO(S7b)") {
+    if message.contains("S7b") {
         Some("S7b syntax not ported yet")
-    } else if message.contains("TODO(S8") || message.contains("keepDocComments") {
-        Some("keepDocComments=false (TODO(S8 DocCommentParser))")
+    } else if message.contains("S8") || message.contains("keepDocComments") {
+        Some("keepDocComments=false (S8 DocCommentParser)")
     } else {
         None
     }

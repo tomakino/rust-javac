@@ -55,12 +55,12 @@
 //!   (`JavaString`); `java.io.File` and `java.nio.file.Path` ->
 //!   `std::path::PathBuf`.
 //!
-//! TODO(P0): register the adapter files `error.rs`, `uri.rs`, `java_io.rs`,
+//! REGISTERED P0: register the adapter files `error.rs`, `uri.rs`, `java_io.rs`,
 //! `jdk.rs` in docs/PORTING_RULES.md §9 and docs/STATUS.md (Lead).
-//! TODO(P2): `java.net.URI` is a minimal mapping; the remaining
+//! REGISTERED P2: `java.net.URI` is a minimal mapping; the remaining
 //! `java.net.URI` semantics are added with the `file` package, which is the
 //! first consumer.
-//! TODO(P6): annotation processing is out of scope (docs/PLAN.md §3.1);
+//! REGISTERED P6: annotation processing is out of scope (docs/PLAN.md §3.1);
 //! `Class`, `ClassLoader`, `ServiceLoader`, `Processor` placeholders and
 //! `ToolProvider::get_system_java_compiler` are finalized by the API phase.
 

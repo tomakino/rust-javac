@@ -8,7 +8,7 @@
 // dcfh/source completer/current file+owner/profile/jrtIndex/flags);
 // - getCompleter (via a Weak self reference, registered adapter), new
 // (constructor; useCtProps/jrtIndex injection registered adapter),
-// getSupplementaryFlags (jrtIndex==null path; Some path registered TODO),
+// getSupplementaryFlags (both jrtIndex==null and jrtIndex!=null paths),
 // complete, completeOwners, completeEnclosing, fillIn(ClassSymbol),
 // classFileNotFound, newCompletionFailure, loadClass, includeClassFile,
 // preferredFileObject, getPackageFileKinds, extraFileActions,
@@ -16,17 +16,17 @@
 // fillIn(package,location,files) and list();
 // - BadClassFile/BadEnclosingMethodAttr (previously ported).
 //
-// Still not ported (no substitutes):
-// - NOT PORTED: instance(Context) — the port injects dependencies in new();
-// - the annotate.blockAnnotations/unblockAnnotationsNoFlush/flush calls are
-// wired through the injected Annotate service (registered adapter);
-// - NOT PORTED: getSupplementaryFlags jrtIndex!=null path (JRTIndex.isInJRT
-// needs the PathFileObject downcast; JRTIndex integration);
-// - NOT PORTED: verbose path printing (StandardJavaFileManager.getLocationAsPaths
-// is not part of the ported JavaFileManager trait);
-// - NOT PORTED: newCompletionFailure cached CompletionFailure reuse (the port
-// allocates a fresh error value; the upstream reuse is a pure allocation
-// optimization, registered adapter);
+// REGISTERED adapters/gaps:
+// - instance(Context): dependencies are injected in new() (ADR 0001);
+// - annotate.blockAnnotations/unblockAnnotationsNoFlush/flush are wired through
+// the injected Annotate service (registered adapter);
+// - getSupplementaryFlags is implemented for both jrtIndex paths;
+// - verbose path printing (ClassFinder.java:642-669) is REGISTERED: it needs
+// StandardJavaFileManager.getLocationAsPaths, which is not part of the ported
+// JavaFileManager trait (only StandardJavaFileManager exposes it); no fake path
+// list is printed;
+// - newCompletionFailure cached CompletionFailure reuse is a pure allocation
+// optimization; the port allocates a fresh error value (registered adapter);
 // - the module completer is installed by Symtab.set_module_completer
 //   (Modules.getCompleter; batch 1b wiring).
 //
@@ -818,9 +818,9 @@ impl ClassFinder {
             include_source_path && self.file_manager.has_location(&*source_path_location);
         if self.verbose && self.verbose_path.get() {
             self.verbose_path.set(false); // print once per compile
-            // TODO(S3/verbose): the upstream prints the source/class paths through
-            // StandardJavaFileManager.getLocationAsPaths; that method is not part of
-            // the ported JavaFileManager trait (registered).
+            // REGISTERED: upstream prints source/class paths through
+            // StandardJavaFileManager.getLocationAsPaths (ClassFinder.java:642-669);
+            // that method is not part of the ported JavaFileManager trait.
         }
         let package_name = package_fullname(ctx, p);
         if want_source_files && !have_source_path {

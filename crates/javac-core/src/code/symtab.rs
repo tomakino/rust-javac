@@ -3,7 +3,8 @@
 // Dependency/phase: P3 semantic services (Enter/Attr/Resolve/Check or ClassReader; see docs/PLAN.md).
 // - NOT PORTED: isTerminal (Symtab.java:324)
 // - NOT PORTED: isTerminal (Symtab.java:358)
-// - NOT PORTED: accept (Symtab.java:447)
+// - NOT PORTED: accept (Symtab.java:445-450): the Symbol/Element visitor
+//   dispatch; ElementVisitor is ported in javac-tools, Symbol.accept is not.
 // - getAllModules ported in S3 (Symtab.java:871-873).
 // - NOT PORTED: getClassesForName (Symtab.java:875)
 // - NOT PORTED: getPackagesForName (Symtab.java:879)
@@ -32,9 +33,14 @@
 //!   bootstrap through set_initial_completer/set_module_completer (CompleterRef
 //!   factories; registered adapter, no Context singletons);
 //! - the anonymous ModuleSymbol/PackageSymbol subclasses that override toString
-//!   (localized "unnamed module"/"unnamed package") cannot be expressed without
-//!   the Symbol; the ported symbols are plain ModuleSymbol/PackageSymbol
-//!   values (registered; the localized toString is a Symbol TODO);
+//!   (localized "unnamed module"/"unnamed package") are expressed by the
+//!   Symbol.display_override adapter; Symbol::symbol_to_string returns the
+//!   localized resource strings ("compiler.misc.unnamed.module/package");
+//! - MissingInfoHandler is ported (code/missing_info_handler.rs) and carried by
+//!   the RootPackageSymbol (Symbol.java:1241-1246); the Context singleton is
+//!   replaced by explicit construction in Symtab::new (ADR 0001);
+//! - ModuleSymbol.isNoModule() is carried by Symbol.no_module and exposed by
+//!   Symbol::is_no_module (Symtab.java:438-442);
 //! - formFlatName/formFullName (Symbol.TypeSymbol/ClassSymbol statics) are not
 //!   ported in symbol.rs yet; they are reproduced here as helpers and must move
 //!   into symbol.rs with the Symbol (registered).
@@ -47,15 +53,11 @@
 //!   enterSyntheticAnnotation and the four synthetic annotation types
 //!   (previewFeatureInternalType, valueBasedInternalType, proprietaryType,
 //!   profileType) are therefore Option<TypeId> = None;
-//! - MissingInfoHandler: RootPackageSymbol is created without the missing info
-//!   handler;
 //! - Types: the minimal prefix ported in types.rs (hashCode/isSameType/
 //!   erasure/boxedClass) is used by classFields/getClassField; the remaining
 //!   Types methods are NOT PORTED (TODO Types; see types.rs).
-//! - ModuleSymbol.isNoModule(): no_module is a plain ModuleSymbol (the upstream
-//!   anonymous override is a Symbol TODO);
-//! - the JavacMessages-backed toString of the unnamed module/package (see the
-//!   anonymous-subclass note above).
+//! - the anonymous noSymbol.accept override (Symtab.java:445-450) remains not
+//!   ported (Symbol/Element visitor dispatch; see the gap registration).
 
 use std::collections::HashMap;
 use crate::code::symbol::CompleterFactory;
@@ -302,6 +304,7 @@ fn new_root_package_symbol(
     ctx: &mut CompilerContext,
     name: Name,
     allow_private_invoke_virtual: bool,
+    missing_info_handler: Option<Rc<crate::code::missing_info_handler::MissingInfoHandler>>,
 ) -> SymbolId {
     let package = ctx.alloc_symbol(Symbol::new(
         Kind::PCK,
@@ -316,6 +319,7 @@ fn new_root_package_symbol(
             modle: None,
             sourcefile: None,
             allow_private_invoke_virtual,
+            missing_info_handler,
         },
     ));
     set_package_type(ctx, package);
@@ -534,6 +538,9 @@ fn add_root_package_for(
 ) {
     do_enter_package(ctx, maps, module, root_package);
     let unnamed_package = new_package_symbol(ctx, 0, names.std.empty.clone(), Some(root_package));
+    // Java: the anonymous toString override (Symtab.java:802-807).
+    ctx.sym_mut(unnamed_package).display_override =
+        Some(crate::code::symbol::SymbolDisplayOverride::UnnamedPackage);
     // Java: unnamedPackage.completer = s -> initialCompleter.complete(s)
     // (bound by set_initial_completer; registered adapter).
     if let SymbolKind::PackageSymbol { modle, .. } = &mut ctx.sym_mut(unnamed_package).kind_data {
@@ -672,9 +679,13 @@ fn members_scope(ctx: &CompilerContext, symbol: SymbolId) -> Option<ScopeId> {
     }
 }
 
-/// Java: PackageSymbol.complete() lazily creates members_field =
-/// WriteableScope.create(this); the rest of complete() is not ported
-/// (PackageSymbol completer TODO), the members scope is created here.
+/// Java: PackageSymbol.members() calls complete() then returns members_field
+/// (Symbol.java:1175-1178). The port eagerly creates the members scope here:
+/// the initial/module completers are bound by set_initial_completer and
+/// enter_package, but invoking complete() needs the Symtab service that this
+/// helper's constructor call chain does not receive (registered dependency;
+/// classpath package completion is performed by ctx.complete_symbol at the
+/// ClassFinder query sites).
 fn ensure_members_scope(ctx: &mut CompilerContext, symbol: SymbolId) -> Option<ScopeId> {
     if let Some(members) = members_scope(ctx, symbol) {
         return Some(members);
@@ -1075,9 +1086,10 @@ impl Symtab {
     /// CompilerContext (arena) and the ported Names; the Context registration
     /// (context.put(symtabKey, this)) is done by the caller until the
     /// Symtab/Context integration.
-    /// PORTING_RULES: Target.instance(Context) and Source.instance(Context) are
-    /// not ported yet (Options/Option integration TODO), so the caller passes
-    /// them explicitly, like the Names parameter (registered section 9).
+    /// PORTING_RULES: Target/Source are ported; this constructor receives them
+    /// explicitly because Symtab is constructed before the Context service
+    /// graph (ADR 0001 explicit-service adapter; no Options.instance lookup).
+    /// The caller passes them like the Names parameter (registered section 9).
     pub fn new(
         ctx: &mut CompilerContext,
         names: Rc<Names>,
@@ -1101,12 +1113,16 @@ impl Symtab {
             TypeKindData::JCNoType { kind: crate::code::type_::JCNoTypeKind::Recovery },
         ));
 
-        // TODO(MissingInfoHandler): MissingInfoHandler.instance(context) is
-        // not ported; the root package is created without it.
+        // Java: MissingInfoHandler.instance(context) (Symtab.java:395); the
+        // ported handler stores its Names and is carried by the root package.
+        let missing_info_handler = Rc::new(
+            crate::code::missing_info_handler::MissingInfoHandler::new(Rc::clone(&names)),
+        );
         let root_package = new_root_package_symbol(
             ctx,
             names.std.empty.clone(),
             target.runtime_use_nest_access(),
+            Some(missing_info_handler),
         );
 
         // create the basic builtin symbols
@@ -1114,12 +1130,17 @@ impl Symtab {
         let java_base_requires = new_requires_directive(ctx, java_base, vec![RequiresFlag::MANDATED]);
         let unnamed_module =
             new_module_symbol(ctx, names.std.empty.clone(), List::of(java_base_requires));
+        // Java: the anonymous toString override (Symtab.java:415-418).
+        ctx.sym_mut(unnamed_module).display_override =
+            Some(crate::code::symbol::SymbolDisplayOverride::UnnamedModule);
         add_root_package_for(ctx, &names, &mut maps, unnamed_module, root_package);
         let err_module = new_module_symbol(ctx, names.std.empty.clone(), List::of(java_base_requires));
         add_root_package_for(ctx, &names, &mut maps, err_module, root_package);
-        // Java: noModule = new ModuleSymbol(...) { isNoModule() -> true }; the
-        // anonymous override is not expressible (Symbol TODO).
+        // Java: noModule = new ModuleSymbol(...) { isNoModule() -> true }
+        // (Symtab.java:438-442); the ported Symbol.no_module field carries the
+        // anonymous override.
         let no_module = new_module_symbol(ctx, names.std.empty.clone(), List::nil());
+        ctx.sym_mut(no_module).no_module = true;
         add_root_package_for(ctx, &names, &mut maps, no_module, root_package);
 
         let no_type = no_type_id(ctx);

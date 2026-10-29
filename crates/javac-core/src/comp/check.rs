@@ -1365,7 +1365,9 @@ impl Check {
         if ctx.typ(req).has_tag(crate::code::type_tag::TypeTag::NONE) {
             return found;
         }
-        let mut warn = check_context.check_warner(ctx, syms, &self.types, pos, found, req);
+        let warn_shared =
+            check_context.check_warner_shared(ctx, syms, &self.types, pos, found, req);
+        let mut warn = warn_shared.borrow_mut();
         if check_context.compatible(ctx, syms, &self.types, found, req, &mut warn) {
             if warn.has_lint(LintCategory::VARARGS) {
                 // Java: ConversionWarner.warn VARARGS branch (Check.java:3961-3967).
@@ -1484,6 +1486,24 @@ pub trait CheckContext {
         found: TypeId,
         req: TypeId,
     ) -> Warner;
+
+    /// Port adapter: the shared Warner view used by callers that must observe
+    /// the lint state recorded during the check (upstream checkWarner returns
+    /// the shared rsWarner). Contexts without a shared Warner keep the
+    /// per-call value.
+    fn check_warner_shared(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        types: &Types,
+        pos: i32,
+        found: TypeId,
+        req: TypeId,
+    ) -> Rc<std::cell::RefCell<Warner>> {
+        Rc::new(std::cell::RefCell::new(self.check_warner(
+            ctx, syms, types, pos, found, req,
+        )))
+    }
 
     /// Java: public InferenceContext inferenceContext()
     fn inference_context(&self) -> &Rc<InferenceContext>;
@@ -2508,11 +2528,12 @@ impl Check {
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
         a: TreeId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<bool, CompletionFailure> {
         self.log
             .borrow_mut()
             .install_diagnostic_handler(crate::util::log::DiagnosticHandler::Discard { prev: None });
-        let result = self.validate_annotation_values(ctx, syms, a, None);
+        let result = self.validate_annotation_values(ctx, syms, a, attr);
         self.log.borrow_mut().pop_diagnostic_handler();
         result
     }
@@ -5602,6 +5623,7 @@ impl Check {
         pos: i32,
         s: SymbolId,
         a: AttributeId,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) {
         let a_ty = ctx.attr(a).ty.expect("repeatable attribute type");
         assert!(
@@ -5636,7 +5658,7 @@ impl Check {
         self.validate_repeatable_retention(ctx, syms, t_tsym, s, pos);
         self.validate_repeatable_documented(ctx, syms, t_tsym, s, pos);
         self.validate_repeatable_inherited(ctx, syms, t_tsym, s, pos);
-        self.validate_repeatable_target(ctx, syms, t_tsym, s, pos);
+        self.validate_repeatable_target(ctx, syms, t_tsym, s, pos, attr);
         self.validate_repeatable_default(ctx, t_tsym, pos);
     }
 
@@ -5834,14 +5856,29 @@ impl Check {
         container: SymbolId,
         contained: SymbolId,
         pos: i32,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) {
-        let container_targets =
-            match self.get_attribute_target_attribute(ctx, syms, container, None) {
-                Ok(Some(arr)) => self.target_set_from_array(ctx, arr),
-                _ => self.default_target_meta_info(),
-            };
-        let contained_targets =
-            match self.get_attribute_target_attribute(ctx, syms, contained, None) {
+        let container_targets = match self.get_attribute_target_attribute(
+            ctx,
+            syms,
+            container,
+            match attr.as_mut() {
+                Some(a) => Some(&mut **a),
+                None => None,
+            },
+        ) {
+            Ok(Some(arr)) => self.target_set_from_array(ctx, arr),
+            _ => self.default_target_meta_info(),
+        };
+        let contained_targets = match self.get_attribute_target_attribute(
+            ctx,
+            syms,
+            contained,
+            match attr.as_mut() {
+                Some(a) => Some(&mut **a),
+                None => None,
+            },
+        ) {
             Ok(Some(arr)) => self.target_set_from_array(ctx, arr),
             _ => self.default_target_meta_info(),
         };
@@ -6470,8 +6507,12 @@ impl Check {
     ) {
         // The filter needs the site symbol and the inherited check; iterate the
         // closure symbols and apply DefaultMethodClashFilter.test explicitly.
-        let members = self.types.members_closure(ctx, syms, site);
-        let symbols = ctx.scope_get_symbols(members, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true);
+        let members = self.types.members_closure(ctx, syms, site, false);
+        let symbols = members.get_symbols(
+            ctx,
+            crate::code::scope::LookupKind::NON_RECURSIVE,
+            &|_| true,
+        );
         let site_tsym = ctx.typ(site).tsym.expect("site symbol");
         for m in symbols {
             let flags_value = ctx.sym(m).flags_field;
@@ -7111,7 +7152,7 @@ impl Check {
 
     /// Java: boolean isTypeAnnotation(JCAnnotation a, boolean isTypeParameter)
     /// (Check.java:3290-3296).
-    fn is_type_annotation_tree(
+    pub(crate) fn is_type_annotation_tree(
         &self,
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
@@ -8346,9 +8387,9 @@ impl Check {
         let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
         let site_name = ctx.sym(site_tsym).name.clone();
         let name = ctx.sym(sym).name.clone();
-        let scope = self.types.members_closure(ctx, syms, site);
-        let candidates = ctx.scope_get_symbols_by_name(
-            scope,
+        let scope = self.types.members_closure(ctx, syms, site, false);
+        let candidates = scope.get_symbols_by_name(
+            ctx,
             &name,
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
@@ -8545,9 +8586,9 @@ impl Check {
         use crate::code::flags;
         let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
         let name = ctx.sym(sym).name.clone();
-        let scope = self.types.members_closure(ctx, syms, site);
-        let candidates = ctx.scope_get_symbols_by_name(
-            scope,
+        let scope = self.types.members_closure(ctx, syms, site, true);
+        let candidates = scope.get_symbols_by_name(
+            ctx,
             &name,
             crate::code::scope::LookupKind::NON_RECURSIVE,
             &|_| true,
@@ -8557,13 +8598,6 @@ impl Check {
             if ctx.sym(candidate).kind != crate::code::kinds::Kind::MTH
                 || (flags_value & flags::SYNTHETIC as i64) != 0
                 || ctx.sym(candidate).is_constructor(&self.names)
-            {
-                continue;
-            }
-            // Java: MembersScope.combine excludes interface-owned members
-            // (Types.java).
-            if let Some(owner) = ctx.sym(candidate).owner
-                && (ctx.sym(owner).flags_field & flags::INTERFACE as i64) != 0
             {
                 continue;
             }
@@ -10275,6 +10309,12 @@ impl Check {
         pos: i32,
         packge: SymbolId,
     ) {
+        // Java: PackageSymbol.members() completes first (Symbol.java:1175-1178).
+        let syms_rc = Rc::clone(&self.syms);
+        let syms = syms_rc.borrow();
+        if let Err(failure) = ctx.complete_symbol(&syms, packge) {
+            crate::code::symbol::throw_completion_failure(failure);
+        }
         let members_empty = match ctx.sym(packge).members() {
             None => true,
             Some(scope) => ctx
@@ -10949,12 +10989,27 @@ mod diagnostics_tests {
             "method T.f(T.In) is not applicable",
             "method T.f(G) is not applicable",
             "method T.f(java.util.Map<java.lang.String,java.lang.String>) is not applicable",
-            "method T.f(java.lang.Object,java.lang.String) is not applicable",
             "method T.f(java.util.List<java.lang.String>) is not applicable",
             "method T.f(int) is not applicable",
         ] {
             assert!(message.contains(expected), "missing {expected:?} in error:\n{message}");
         }
+        // Oracle: javac 17.0.19 (-J-Duser.language=en) on the same source prints:
+        //   error: no suitable method found for f(Object)
+        //       method T.f(int) is not applicable
+        //       method T.f(List<String>) is not applicable
+        //       method T.f(Map<String,String>) is not applicable
+        //       method T.f(G) is not applicable
+        //       method T.f(In) is not applicable
+        //       method T.f(T<G>.NonStatic) is not applicable
+        //       method T.f(String...) is not applicable
+        //   Note: Some messages have been simplified; recompile with -Xdiags:verbose
+        // The arity-mismatch candidate "method T.f(Object,String)" is absent
+        // (compactMethodDiags filters ARITY_MISMATCH); guard that behavior.
+        assert!(
+            !message.contains("method T.f(java.lang.Object,java.lang.String) is not applicable"),
+            "compactMethodDiags must filter the arity-mismatch candidate:\n{message}"
+        );
     }
     #[test]
     fn inner_class_effectively_final_uses_inner_cls_fragment() {

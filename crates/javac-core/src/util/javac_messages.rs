@@ -16,7 +16,8 @@
 //! java.text.MessageFormat have no direct Rust equivalent, mapped as adapters
 //! (registered in PORTING_RULES section 9):
 //! - Locale: minimal mapping Locale { tag: "en", "zh_CN", ... }; the default
-//!   locale is "en" (environment detection is a registered TODO);
+//!   locale is detected from LC_ALL/LC_MESSAGES/LANG (Java Locale.getDefault
+//!   equivalent); C/POSIX/unknown falls back to "en";
 //! - ResourceBundle: a ResourceBundle is the candidate chain of read-only
 //!   static tables (most specific locale first, base bundle last), which models
 //!   the ResourceBundle parent-chain used for missing-key fallback; the
@@ -31,11 +32,10 @@
 //!   display strings before substitution (ADR 0004 parameter-object contract
 //!   lives in the formatter layer).
 //!
-//! TODO(D5): the JCDiagnostic-dependent members of JavacMessages
-//! (getLocalizedString(DiagnosticInfo), getDiagFactory, the Context-based
-//! constructor with Options/DiagnosticFormatter setup) are completed in D5 with
-//! the real JCDiagnostic; they are registered in docs/STATUS.md and must not be
-//! replaced by a simplified variant here.
+//! REGISTERED D5: getLocalizedString(DiagnosticInfo)/getDiagFactory and the
+//! Context-based constructor's Options/DiagnosticFormatter initialization are
+//! not implemented; the string-key + &[String] API below is the ported surface.
+//! No simplified substitute is introduced.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -102,9 +102,29 @@ impl Locale {
         Locale { tag: tag.into() }
     }
 
-    /// Java: Locale.getDefault() -- TODO: environment locale detection is a
-    /// registered limitation; the default is "en" for now.
+    /// Java: Locale.getDefault() -- detected from LC_ALL/LC_MESSAGES/LANG
+    /// (the JVM property source equivalent); C/POSIX and unknown languages
+    /// fall back to "en". Hyphen separators are normalized to "_".
     pub fn default_locale() -> Locale {
+        for variable in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+            if let Ok(value) = std::env::var(variable) {
+                if value.is_empty() {
+                    continue;
+                }
+                let tag = value.split('.').next().unwrap_or("").split('@').next().unwrap_or("");
+                if tag.is_empty() || tag == "C" || tag == "POSIX" {
+                    return Locale::new("en");
+                }
+                let tag = tag.replace('-', "_");
+                let language = tag.split('_').next().unwrap_or("");
+                return Locale::new(match (language, tag.as_str()) {
+                    ("en", _) => "en".to_string(),
+                    ("ja", _) => "ja".to_string(),
+                    ("zh", "zh_CN") => "zh_CN".to_string(),
+                    _ => language.to_string(),
+                });
+            }
+        }
         Locale::new("en")
     }
 
@@ -204,8 +224,8 @@ impl JavacMessages {
         if let Some(instance) = context.get::<JavacMessages>() {
             return instance;
         }
-        // TODO(D5): the upstream Context constructor also initializes Options
-        // and the DiagnosticFormatter (needs JCDiagnostic); it is completed in D5.
+        // REGISTERED D5: the upstream Context constructor also initializes
+        // Options and the DiagnosticFormatter; that hook is not ported here.
         let instance = Rc::new(JavacMessages::new(DEFAULT_BUNDLE_NAME));
         context.put(instance.clone());
         instance

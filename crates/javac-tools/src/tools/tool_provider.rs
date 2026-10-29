@@ -26,7 +26,7 @@ use std::sync::{Arc, OnceLock};
 /// * Java ServiceLoader based discovery is not available in Rust.  The
 ///   getSystemTool/matches private static helpers are therefore not ported;
 ///   getSystemJavaCompiler is unimplemented until the API phase provides the
-///   compiler entry point (TODO(P6)).
+///   compiler entry point (REGISTERED P6).
 pub struct ToolProvider(());
 
 fn system_java_compiler_module() -> JavaString {
@@ -73,7 +73,7 @@ impl ToolProvider {
     /// by the jdk.compiler module if that module is available,
     /// and null otherwise.
     ///
-    /// TODO(P6): the Rust compiler entry point is created by the API phase
+    /// REGISTERED P6: the Rust compiler entry point is created by the API phase
     /// (javac-core); javax.tools cannot depend on javac-core (dependency
     /// direction), so no compiler instance can be built here yet.
     /// Java constants used by the upstream lookup:

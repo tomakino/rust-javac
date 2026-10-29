@@ -1,53 +1,13 @@
 // Origin: com/sun/tools/javac/file/Locations.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: P2 ClassReader / API.
-// Not yet ported upstream methods (no substitutes in this file):
-// - NOT PORTED: setPathFactory (Locations.java:179)
-// - NOT PORTED: addDirectories (Locations.java:300)
-// - NOT PORTED: addDirectories (Locations.java:315)
-// - NOT PORTED: addDirectory (Locations.java:319)
-// - NOT PORTED: isSet (Locations.java:457)
-// - NOT PORTED: setPaths (Locations.java:471)
-// - NOT PORTED: setPathsForModule (Locations.java:476)
-// - NOT PORTED: setPathsForModule (Locations.java:539)
-// - NOT PORTED: setPaths (Locations.java:611)
-// - NOT PORTED: setPathsForModule (Locations.java:638)
-// - NOT PORTED: setPaths (Locations.java:722)
-// - NOT PORTED: computePath (Locations.java:733)
-// - NOT PORTED: createPath (Locations.java:737)
-// - NOT PORTED: computePath (Locations.java:764)
-// - NOT PORTED: createPath (Locations.java:787)
-// - NOT PORTED: canonicalize (Locations.java:854)
-// - NOT PORTED: setPaths (Locations.java:874)
-// - NOT PORTED: computePath (Locations.java:886)
-// - NOT PORTED: setPaths (Locations.java:1032)
-// - NOT PORTED: setPathsForModule (Locations.java:1038)
-// - NOT PORTED: setPaths (Locations.java:1188)
-// - NOT PORTED: setPathsForModule (Locations.java:1199)
-// - NOT PORTED: checkPaths (Locations.java:1217)
-// - NOT PORTED: initModuleLocations (Locations.java:1226)
-// - NOT PORTED: hasNext (Locations.java:1273)
-// - NOT PORTED: next (Locations.java:1293)
-// - NOT PORTED: scanDirectory (Locations.java:1303)
-// - NOT PORTED: scanFile (Locations.java:1361)
-// - NOT PORTED: readModuleName (Locations.java:1498)
-// - NOT PORTED: isModuleName (Locations.java:1509)
-// - NOT PORTED: initFromPattern (Locations.java:1594)
-// - NOT PORTED: initModuleTable (Locations.java:1637)
-// - NOT PORTED: isSeparator (Locations.java:1654)
-// - NOT PORTED: expandBraces (Locations.java:1686)
-// - NOT PORTED: getMatchingBrace (Locations.java:1731)
-// - NOT PORTED: isSet (Locations.java:1749)
-// - NOT PORTED: setPaths (Locations.java:1764)
-// - NOT PORTED: setPathsForModule (Locations.java:1778)
-// - NOT PORTED: checkPaths (Locations.java:1799)
-// - NOT PORTED: setPaths (Locations.java:1869)
-// - NOT PORTED: setPathsForModule (Locations.java:1881)
-// - NOT PORTED: checkPaths (Locations.java:1899)
-// - NOT PORTED: isCurrentPlatform (Locations.java:1916)
-// - NOT PORTED: isSet (Locations.java:2047)
-// - NOT PORTED: setPaths (Locations.java:2057)
-// - NOT PORTED: setPathsForModule (Locations.java:2062)
+// Method-level status: the location-handler/search-path implementation is ported
+// in this file; the remaining registered gaps are:
+// - module-source-path brace/wildcard expansion (java.util.regex dependency);
+// - the jar FileSystemProvider branch of contains() (see the file header);
+// - BootClassPath options trimmed in task-48; close() is a no-op (no java.nio FS);
+// - setPathFactory: the Java factory hook is replaced by the explicit
+//   Locations::new(java_home)/LocationCtx services (ADR 0001).
 // End of Gap registration.
 
 // PORTING_RULES: the handler code keeps the upstream deeply nested `if let` structure
@@ -76,13 +36,16 @@
 //!   locations carry the jrt-style path /modules/<module>), or from <home>/modules for an
 //!   exploded image.
 //! * option values may be absent (Java null): handleOption takes Option<&str>.
-//! * reported gaps (TODO, no substitute data):
-//!   - jar Class-Path expansion (java.util.jar Manifest; FSInfo.getJarClassPath TODO(P2)):
-//!     class path archives are accepted, their manifest Class-Path is not expanded;
-//!   - Log.warning diagnostics for path problems (TODO(Log)): invalid/nonexistent
-//!     elements are still skipped/added as upstream, only the warning is missing;
-//!   - non .jar/.zip class path files are skipped without the upstream zip readability
-//!     probe (java.nio FileSystem); TODO(S3c);
+//! * implemented path semantics:
+//!   - user class path jars expand their manifest Class-Path recursively
+//!     (SearchPath.addJarClassPath; ClassPath handler passes expand=true);
+//!   - invalid/nonexistent path elements report Warnings.InvalidPath /
+//!     PathElementNotFound / UnexpectedArchiveFile / InvalidArchiveFile through
+//!     the injected Log (warn flag honored);
+//!   - non .jar/.zip files are probed with javac_zip::ZipArchive (the port's
+//!     archive reader); a readable but unexpected archive warns and is accepted,
+//!     an unreadable one warns InvalidArchiveFile and is skipped;
+//!   - --patch-module invalid arguments report Errors.LocnInvalidArgForXpatch;
 //!   - module path scanning for MODULE_PATH/UPGRADE_MODULE_PATH is implemented with
 //!     javac-fs + javac-zip: exploded modules, directories of modules, jar modules
 //!     (module-info.class, Automatic-Module-Name, automatic name derivation) and jmod
@@ -90,14 +53,20 @@
 //!     carries the jmod file itself, see module_path_infer_module_name);
 //!   - --module-source-path pattern forms (wildcard/brace expansion) need java.util.regex
 //!     and the upstream expansion; only the module=path form is ported;
-//!   - --patch-module accepts the NUL-separated module=path form only (upstream invalid
-//!     argument reporting is TODO(Log));
+//!   - --patch-module accepts the NUL-separated module=path form and reports
+//!     invalid arguments (Errors.LocnInvalidArgForXpatch); the brace pattern form of
+//!     module-source-path remains registered (java.util.regex-dependent);
 //!   - BootClassPath options were trimmed in task-48, so the handler has no options and
 //!     only the default platform class path (system modules) is ported;
 //!   - close() is a no-op: no java.nio FileSystem is opened in this (jar/ct.sym file
 //!     systems are S3c).
-//! * TODO(S3c): JavacFileManager consumes this API.  Handler locations are looked up by
-//!   name, equal to the upstream identity/equals contract for StandardLocation.
+//! * JavacFileManager consumes this API. Handler locations are looked up by name,
+//!   equal to the upstream identity/equals contract for StandardLocation.
+//! * REGISTERED dependency: the enclosing-jar branch of contains() needs the
+//!   java.nio jar FileSystemProvider (upstream file.getFileSystem().provider() ==
+//!   fsInfo.getJarFSProvider()); the port's FSInfo has no jar FS provider, and
+//!   classpath entries are plain javac-fs paths (no jar-FS member paths), so the
+//!   branch is not reachable. The directory/prefix containment is implemented.
 
 use std::cell::Cell;
 use std::option::Option as StdOption;
@@ -108,6 +77,7 @@ use javac_jimage::JImage;
 use javac_strings::JavaString;
 use javac_tools::error::Error;
 use javac_tools::tools::java_file_manager::Location;
+use javac_tools::tools::standard_java_file_manager::PathFactory;
 use javac_tools::tools::standard_location::StandardLocation;
 
 use crate::file::cache_fs_info::CacheFSInfo;
@@ -128,22 +98,29 @@ struct LocationCtx<'a> {
     fs_info: &'a CacheFSInfo,
     /// Java: outer Locations.log (for path/option warnings).
     log: StdOption<&'a Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    /// Java: outer Locations.pathFactory.
+    path_factory: StdOption<&'a Rc<dyn PathFactory>>,
     java_home: &'a FsPath,
 }
 
 impl<'a> LocationCtx<'a> {
     fn get_path(&self, first: &str) -> FsPath {
+        if let Some(factory) = self.path_factory {
+            return FsPath::from_path_buf(factory.get_path(&JavaString::from(first), &[]));
+        }
         match FsPath::new(first) {
             Ok(path) => path,
             Err(error) => panic!("IllegalArgumentException: {error:?}"),
         }
     }
 
-    /// Java: Locations.getPathEntries(String, Path).
+    /// Java: Locations.getPathEntries(String, Path); an invalid path is
+    /// reported as Warnings.InvalidPath when warn is set (Locations.java:215-232).
     fn get_path_entries(
         &self,
         search_path: &str,
         empty_path_default: StdOption<&FsPath>,
+        warn: bool,
     ) -> Vec<FsPath> {
         let mut entries = Vec::new();
         for entry in search_path.split(path_separator()) {
@@ -152,10 +129,48 @@ impl<'a> LocationCtx<'a> {
                     entries.push(default.clone());
                 }
             } else {
-                entries.push(self.get_path(entry));
+                match FsPath::new(entry) {
+                    Ok(path) => entries.push(path),
+                    Err(_) => {
+                        if warn {
+                            self.warning(
+                                crate::resources::compiler_properties::warnings::invalid_path(
+                                    JavaString::from(entry),
+                                ),
+                            );
+                        }
+                    }
+                }
             }
         }
         entries
+    }
+
+    /// Reports a path warning through the injected Log (Locations.log).
+    fn warning(&self, info: crate::resources::diagnostic_contract::WarningInfo) {
+        if let Some(log) = self.log {
+            use crate::util::mandatory_warning_handler::MandatoryWarningLog;
+            log.borrow_mut().warning(
+                Some(crate::code::lint::LintCategory::PATH),
+                None,
+                crate::comp::check::warning_from_info(info),
+            );
+        }
+    }
+
+    /// Java: addJarClassPath's log.error(Errors.ErrorReadingFile(...)).
+    fn error_reading_file(&self, file: &FsPath, error: &javac_fs::Error) {
+        if let Some(log) = self.log {
+            use crate::util::abstract_log::AbstractLog;
+            let info = crate::resources::compiler_properties::errors::error_reading_file(
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                    file.to_java_string(),
+                ),
+                JavaString::from(format!("{error:?}").as_str()),
+            );
+            log.borrow_mut()
+                .error_pos(None, crate::util::jc_diagnostic::Error::from(info));
+        }
     }
 
     /// Java: static Path normalize(Path p) (toRealPath, else toAbsolutePath.normalize()).
@@ -164,24 +179,96 @@ impl<'a> LocationCtx<'a> {
     }
 
     /// Java: SearchPath.addFiles(String files) (plus the inherited warn behavior).
-    fn add_files(&self, files: StdOption<&str>, empty_default: StdOption<&FsPath>) -> Vec<FsPath> {
+    fn add_files(
+        &self,
+        files: StdOption<&str>,
+        empty_default: StdOption<&FsPath>,
+        warn: bool,
+        expand_jar_class_paths: bool,
+    ) -> Vec<FsPath> {
         let mut result: Vec<FsPath> = Vec::new();
         let Some(files) = files else {
             return result;
         };
-        for file in self.get_path_entries(files, empty_default) {
-            self.add_file(&mut result, &file);
+        for file in self.get_path_entries(files, empty_default, warn) {
+            self.add_file(&mut result, &file, warn, expand_jar_class_paths);
         }
         result
     }
 
-    /// Java: SearchPath.addFile(Path file, boolean warn).
-    fn add_file(&self, result: &mut Vec<FsPath>, file: &FsPath) {
+    /// Java: SearchPath.addDirectories(Path dir, boolean warn)
+    /// (Locations.java:300-333): every directory entry is listed and archive
+    /// files are added recursively. A non-directory path reports
+    /// Warnings.DirPathElementNotFound and is skipped.
+    #[allow(dead_code)]
+    fn add_directories(&self, result: &mut Vec<FsPath>, dirs: &str, warn: bool) {
+        for dir in self.get_path_entries(dirs, StdOption::None, warn) {
+            self.add_directory(result, &dir, warn);
+        }
+    }
+
+    fn add_directory(&self, result: &mut Vec<FsPath>, dir: &FsPath, warn: bool) {
+        if !self.fs_info.is_directory(dir) {
+            self.dir_path_warning(dir, warn, true);
+            return;
+        }
+        if let Ok(entries) = Files::list_directory(dir) {
+            for entry in entries {
+                if self.is_archive(&entry) {
+                    self.add_file(result, &entry, warn, true);
+                }
+            }
+        }
+    }
+
+    /// Reports DirPathElementNotFound (not_found=true) or
+    /// DirPathElementNotDirectory (not_found=false) for a dir path.
+    fn dir_path_warning(&self, path: &FsPath, warn: bool, not_found: bool) {
+        if !warn {
+            return;
+        }
+        if not_found {
+            self.warning(
+                crate::resources::compiler_properties::warnings::dir_path_element_not_found(
+                    crate::resources::diagnostic_contract::PathArg::placeholder(
+                        path.to_java_string(),
+                    ),
+                ),
+            );
+        } else {
+            self.warning(
+                crate::resources::compiler_properties::warnings::dir_path_element_not_directory(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        path.to_java_string(),
+                    ),
+                ),
+            );
+        }
+    }
+
+    /// Java: SearchPath.addFile(Path file, boolean warn)
+    /// (Locations.java:359-419).
+    fn add_file(
+        &self,
+        result: &mut Vec<FsPath>,
+        file: &FsPath,
+        warn: bool,
+        expand_jar_class_paths: bool,
+    ) {
         if result.contains(file) {
             return;
         }
         if !self.fs_info.exists(file) {
-            // Java: warning(PathElementNotFound) — TODO(Log): no Log warning entry point.
+            // Java: warning(Warnings.PathElementNotFound(file)).
+            if warn {
+                self.warning(
+                    crate::resources::compiler_properties::warnings::path_element_not_found(
+                        crate::resources::diagnostic_contract::PathArg::placeholder(
+                            file.to_java_string(),
+                        ),
+                    ),
+                );
+            }
             result.push(file.clone());
             return;
         }
@@ -192,23 +279,64 @@ impl<'a> LocationCtx<'a> {
         {
             return;
         }
+        let name = file
+            .file_name()
+            .map(|name| name.to_java_string())
+            .unwrap_or_default();
         if self.fs_info.is_file(file) {
-            let name = file
-                .file_name()
-                .map(|name| name.to_java_string())
-                .unwrap_or_default();
             let is_jmod = name.ends_with(".jmod");
             let is_modules_image = name.ends_with("modules");
-            if !is_jmod && !is_modules_image && !self.is_archive(file) {
-                // Java: opens the file as a zip filesystem to validate it. java.nio
-                // FileSystem does not exist in the port: skip (TODO(S3c); the upstream
-                // warning is a TODO(Log) diagnostic).
-                return;
+            if !is_jmod && !is_modules_image {
+                if !self.is_archive(file) {
+                    // Java: FileSystems.newFileSystem(file).close() probe
+                    // (Locations.java:385-401). javac_zip::ZipArchive is the
+                    // port's archive reader; a readable non-archive extension
+                    // warns UnexpectedArchiveFile, an unreadable file warns
+                    // InvalidArchiveFile and is skipped.
+                    match javac_zip::ZipArchive::open(&file.as_path()) {
+                        Ok(_) => {
+                            if warn {
+                                self.warning(
+                                    crate::resources::compiler_properties::warnings::unexpected_archive_file(
+                                        crate::resources::diagnostic_contract::PathArg::placeholder(
+                                            file.to_java_string(),
+                                        ),
+                                    ),
+                                );
+                            }
+                        }
+                        Err(_) => {
+                            if warn {
+                                self.warning(
+                                    crate::resources::compiler_properties::warnings::invalid_archive_file(
+                                        crate::resources::diagnostic_contract::PathArg::placeholder(
+                                            file.to_java_string(),
+                                        ),
+                                    ),
+                                );
+                            }
+                            return;
+                        }
+                    }
+                }
             }
         }
         result.push(file.clone());
-        // Java: expandJarClassPaths -> addJarClassPath(file): java.util.jar Manifest is not
-    // ported (FSInfo.getJarClassPath TODO(P2)), so the Class-Path attribute is not expanded.
+        // Java: if (expandJarClassPaths && fsInfo.isFile(file) &&
+        // !file.endsWith("modules")) addJarClassPath(file, warn);
+        if expand_jar_class_paths
+            && self.fs_info.is_file(file)
+            && !name.ends_with("modules")
+        {
+            match self.fs_info.get_jar_class_path(file) {
+                Ok(paths) => {
+                    for class_path_file in paths {
+                        self.add_file(result, &class_path_file, warn, true);
+                    }
+                }
+                Err(error) => self.error_reading_file(file, &error),
+            }
+        }
     }
 
     /// Java: private boolean isArchive(Path file).
@@ -256,7 +384,8 @@ impl<'a> LocationCtx<'a> {
             {
                 return true;
             }
-        // Java: the enclosing-jar case needs a java.nio jar file system (TODO(S3c)).
+        // REGISTERED: the enclosing-jar case needs the java.nio jar
+        // FileSystemProvider; the port's FSInfo has no jar FS (see file header).
         }
         false
     }
@@ -506,7 +635,7 @@ impl ModuleTable {
 /// (in File.pathSeparator-separated String form) into a boot class path, user class path,
 /// and source path (in Collection<String> form).
 pub struct Locations {
-    /// Java: private Log log; (not used by this; path warnings are TODO(Log)).
+    /// Java: private Log log; used for path warnings/errors (SearchPath warnings).
     #[allow(dead_code)]
     log: StdOption<Rc<std::cell::RefCell<crate::util::log::Log>>>,
     /// Java: private FSInfo fsInfo;
@@ -519,6 +648,8 @@ pub struct Locations {
     /// Java: private String multiReleaseValue / fsEnv.
     #[allow(dead_code)]
     multi_release_value: StdOption<JavaString>,
+    /// Java: PathFactory pathFactory (StandardJavaFileManager.setPathFactory).
+    path_factory: StdOption<Rc<dyn PathFactory>>,
     /// Java: Map<Location, LocationHandler> handlersForLocation.
     handlers: Vec<Handler>,
     /// Java: Map<Option, LocationHandler> handlersForOption.
@@ -534,6 +665,7 @@ impl Locations {
             warn: false,
             java_home,
             multi_release_value: None,
+            path_factory: None,
             handlers: Vec::new(),
             handlers_for_option: Vec::new(),
         };
@@ -551,6 +683,12 @@ impl Locations {
         self.log = Some(log);
         self.warn = warn;
         self.fs_info = Some(fs_info);
+    }
+
+    /// Java: public void setPathFactory(PathFactory f) —
+    /// StandardJavaFileManager.setPathFactory sets the Locations factory too.
+    pub fn set_path_factory(&mut self, factory: Rc<dyn PathFactory>) {
+        self.path_factory = Some(factory);
     }
 
     /// Java: public void setMultiReleaseValue(String multiReleaseValue).
@@ -738,6 +876,7 @@ impl Locations {
             fs_info,
             java_home: &self.java_home,
             log: self.log.as_ref(),
+            path_factory: self.path_factory.as_ref(),
         };
         match &mut self.handlers[index].kind {
             HandlerKind::BootClassPath(state) => {
@@ -748,9 +887,10 @@ impl Locations {
             HandlerKind::ClassPath(state) => {
                 if state.search_path.is_none() {
                     // Java: env.class.path / java.class.path / application.home properties are
-                    // not available without a JVM (the launcher provides them, TODO(P6)); the
-                    // upstream final fallback (the current directory) is used.
-                    state.search_path = Some(ctx.add_files(Some("."), StdOption::None));
+                    // REGISTERED: env.class.path/java.class.path/application.home come
+                    // from the launcher (no JVM here); the upstream final fallback
+                    // (the current directory) is used.
+                    state.search_path = Some(ctx.add_files(Some("."), StdOption::None, self.warn, true));
                 }
             }
             HandlerKind::ModulePath(state) => {
@@ -781,11 +921,20 @@ impl Locations {
             fs_info,
             java_home: &self.java_home,
             log: self.log.as_ref(),
+            path_factory: self.path_factory.as_ref(),
         };
         match &mut self.handlers[index].kind {
             HandlerKind::BootClassPath(_) => false,
-            HandlerKind::ClassPath(state) | HandlerKind::Simple(state) => {
-                state.search_path = value.map(|value| ctx.add_files(Some(value), StdOption::None));
+            HandlerKind::ClassPath(state) => {
+                // Java: user class path expands each jar's Class-Path manifest
+                // entry (Locations.java:789 .expandJarClassPaths(true)).
+                state.search_path =
+                    value.map(|value| ctx.add_files(Some(value), StdOption::None, self.warn, true));
+                true
+            }
+            HandlerKind::Simple(state) => {
+                state.search_path =
+                    value.map(|value| ctx.add_files(Some(value), StdOption::None, self.warn, false));
                 true
             }
             HandlerKind::Output(state) => {
@@ -793,7 +942,8 @@ impl Locations {
                 true
             }
             HandlerKind::ModulePath(state) => {
-                if let Some(files) = value.map(|value| ctx.get_path_entries(value, StdOption::None))
+                if let Some(files) =
+                    value.map(|value| ctx.get_path_entries(value, StdOption::None, self.warn))
                 {
                     for file in &files {
                         ctx.check_module_path_entry(file);
@@ -806,7 +956,7 @@ impl Locations {
                 true
             }
             HandlerKind::ModuleSourcePath(state) => {
-                ctx.module_source_path_init(state, value.unwrap_or(""));
+                ctx.module_source_path_init(state, value.unwrap_or(""), self.warn);
                 true
             }
             HandlerKind::PatchModules(state) => {
@@ -865,7 +1015,12 @@ impl<'a> LocationCtx<'a> {
 
     /// Java: ModuleSourcePathLocationHandler.initFromPattern
     /// (Locations.java:1594-1635).
-    fn module_source_path_pattern_init(&self, state: &mut ModuleSourcePathState, value: &str) {
+    fn module_source_path_pattern_init(
+        &self,
+        state: &mut ModuleSourcePathState,
+        value: &str,
+        warn: bool,
+    ) {
         let mut segments: Vec<String> = Vec::new();
         for segment in value.split(path_separator()) {
             self.expand_braces(segment, &mut segments);
@@ -878,7 +1033,7 @@ impl<'a> LocationCtx<'a> {
             let mark_start = segment.find(MARKER);
             let Some(mark_start) = mark_start else {
                 let path = self.get_path(segment);
-                self.module_source_path_add_path(&mut map, &path, StdOption::None);
+                self.module_source_path_add_path(&mut map, &path, StdOption::None, warn);
                 no_suffix_paths.push(path);
                 continue;
             };
@@ -899,7 +1054,7 @@ impl<'a> LocationCtx<'a> {
                 any_suffix = true;
                 StdOption::Some(self.get_path(&segment[mark_end + 1..]))
             };
-            self.module_source_path_add_path(&mut map, &prefix, suffix.as_ref());
+            self.module_source_path_add_path(&mut map, &prefix, suffix.as_ref(), warn);
             if suffix.is_none() {
                 no_suffix_paths.push(prefix);
             }
@@ -939,10 +1094,12 @@ impl<'a> LocationCtx<'a> {
         map: &mut Vec<(String, Vec<FsPath>)>,
         prefix: &FsPath,
         suffix: StdOption<&FsPath>,
+        warn: bool,
     ) {
         if !self.fs_info.is_directory(prefix) {
-            // Java: warn(DirPathElementNotDirectory/DirPathElementNotFound);
-            // path warnings are registered as TODO(Log) in this file.
+            // Java: warn(Files.exists(prefix) ? DirPathElementNotDirectory :
+            // DirPathElementNotFound) (Locations.java:1661-1664).
+            self.dir_path_warning(prefix, warn, !self.fs_info.exists(prefix));
             return;
         }
         let entries = match Files::list_directory(prefix) {
@@ -1043,7 +1200,7 @@ impl<'a> LocationCtx<'a> {
             match entry.find('=') {
                 Some(equal) if equal > 0 => {
                     let module_name = &entry[..equal];
-                    let paths = self.add_files(Some(&entry[equal + 1..]), StdOption::None);
+                    let paths = self.add_files(Some(&entry[equal + 1..]), StdOption::None, false, false);
                     let name = format!("PATCH_MODULE_PATH[{module_name}]");
                     state.module_table.add(ModuleLocation::new(
                         &parent,
@@ -1073,7 +1230,12 @@ impl<'a> LocationCtx<'a> {
     }
 
     /// Java: ModuleSourcePathLocationHandler.init / initForModule (module=path form only).
-    fn module_source_path_init(&self, state: &mut ModuleSourcePathState, value: &str) {
+    fn module_source_path_init(
+        &self,
+        state: &mut ModuleSourcePathState,
+        value: &str,
+        warn: bool,
+    ) {
         let mut module_paths: Vec<(String, Vec<FsPath>)> = Vec::new();
         let mut pattern: StdOption<&str> = None;
         for entry in value.split('\0') {
@@ -1100,7 +1262,7 @@ impl<'a> LocationCtx<'a> {
         if let Some(pattern_entry) = pattern {
             // Java: initFromPattern(modulePattern), then the module-specific
             // initForModule overrides (ModuleSourcePathLocationHandler.init).
-            self.module_source_path_pattern_init(state, pattern_entry);
+            self.module_source_path_pattern_init(state, pattern_entry, warn);
             if !module_paths.is_empty() {
                 let table = state.module_table.get_or_insert_with(ModuleTable::new);
                 let parent = JavaString::from("MODULE_SOURCE_PATH");
@@ -1326,6 +1488,7 @@ impl Locations {
             fs_info,
             java_home: &self.java_home,
             log: self.log.as_ref(),
+            path_factory: self.path_factory.as_ref(),
         };
         match &mut self.handlers[index].kind {
             HandlerKind::BootClassPath(state) => {
@@ -1363,7 +1526,7 @@ impl Locations {
                 let files = files.unwrap_or_default();
                 let mut table = ModuleTable::new();
                 for file in &files {
-                    ctx.module_source_path_add(&mut table, file, StdOption::None);
+                    ctx.module_source_path_add(&mut table, file, StdOption::None, self.warn);
                 }
                 state.module_table = Some(table);
                 state.paths = Some(files);
@@ -1398,6 +1561,7 @@ impl Locations {
             fs_info,
             java_home: &self.java_home,
             log: self.log.as_ref(),
+            path_factory: self.path_factory.as_ref(),
         };
         let index = match self.handler_index(location) {
             Some(index) => index,
@@ -1485,6 +1649,7 @@ impl Locations {
             fs_info,
             java_home: &self.java_home,
             log: self.log.as_ref(),
+            path_factory: self.path_factory.as_ref(),
         };
         let parent = self.handlers[index].location.clone();
         let result: StdOption<Rc<ModuleLocation>> = match &mut self.handlers[index].kind {
@@ -1550,6 +1715,7 @@ impl Locations {
             fs_info,
             java_home: &self.java_home,
             log: self.log.as_ref(),
+            path_factory: self.path_factory.as_ref(),
         };
         let parent = self.handlers[index].location.clone();
         let result: StdOption<Rc<ModuleLocation>> = match &mut self.handlers[index].kind {
@@ -1598,6 +1764,7 @@ impl Locations {
             fs_info,
             java_home: &self.java_home,
             log: self.log.as_ref(),
+            path_factory: self.path_factory.as_ref(),
         };
         let parent = self.handlers[index].location.clone();
         let result = match &mut self.handlers[index].kind {
@@ -1692,6 +1859,7 @@ impl Locations {
             fs_info,
             java_home: &self.java_home,
             log: self.log.as_ref(),
+            path_factory: self.path_factory.as_ref(),
         };
         if let Some(module) = self.find_module_location(&location.get_name().to_string_lossy()) {
             return Ok(ctx.contains_paths(&module.search_path(), file));
@@ -1740,8 +1908,10 @@ impl<'a> LocationCtx<'a> {
         table: &mut ModuleTable,
         prefix: &FsPath,
         suffix: StdOption<&FsPath>,
+        warn: bool,
     ) {
         if !self.fs_info.is_directory(prefix) {
+            self.dir_path_warning(prefix, warn, !self.fs_info.exists(prefix));
             return;
         }
         let Ok(entries) = Files::list_directory(prefix) else {
@@ -2390,13 +2560,15 @@ mod tests {
             fs_info: &fs_info,
             java_home: &home,
             log: None,
+            path_factory: None,
         };
         let separator = if cfg!(windows) { ';' } else { ':' };
         let value = format!("a{separator}b");
-        let entries = ctx.get_path_entries(&value, None);
+        let entries = ctx.get_path_entries(&value, None, false);
         assert_eq!(entries.len(), 2);
         let default = FsPath::from_path_buf(PathBuf::from("."));
-        let entries = ctx.get_path_entries(&format!("a{separator}{separator}b"), Some(&default));
+        let entries =
+            ctx.get_path_entries(&format!("a{separator}{separator}b"), Some(&default), false);
         assert_eq!(entries.len(), 3);
     }
 
@@ -2455,6 +2627,7 @@ mod module_source_path_pattern_tests {
         let ctx = LocationCtx {
             fs_info: &fs_info,
             log: None,
+            path_factory: None,
             java_home: &home,
         };
         let mut results = Vec::new();

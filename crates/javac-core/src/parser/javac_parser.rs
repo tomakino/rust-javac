@@ -30,8 +30,8 @@
 //! * keepDocComments=true and keepDocComments=false both work: the
 //!   ported LazyDocCommentTable attaches comments lazily (JavacParser.attach)
 //!   and tree/Pretty prints them from the compilation unit doc comment table;
-//! * remaining dependency: DocCommentParser's ReferenceParser is still a
-//!   TODO(parser S7) marker (doc-comment reference parsing only; registered).
+//! * DocCommentParser's ReferenceParser is ported and used for doc-comment
+//!   references.
 //!
 //! clippy debt registration (pre-existing S6/S7a items, NOT from the S7b;
 //! cleanup happens with the parser-wiring/annotations batches):
@@ -536,9 +536,8 @@ impl JavacParser {
         self.S.lookahead_token(lookahead + 1).kind == kind
     }
 
-    #[allow(dead_code)]
-    /// Unwired upstream helper: Java: peekToken(kind1, kind2);
-    /// TODO(parser wiring): wire the remaining term3Rest/annotations call sites.
+    /// Java: protected boolean peekToken(Predicate<TokenKind> tk1,
+    /// Predicate<TokenKind> tk2).
     fn peek_token2(&mut self, kind1: TokenKind, kind2: TokenKind) -> bool {
         self.peek_token_at2(0, kind1, kind2)
     }
@@ -546,28 +545,6 @@ impl JavacParser {
     fn peek_token_at2(&mut self, lookahead: i32, kind1: TokenKind, kind2: TokenKind) -> bool {
         self.S.lookahead_token(lookahead + 1).kind == kind1
             && self.S.lookahead_token(lookahead + 2).kind == kind2
-    }
-
-    #[allow(dead_code)]
-    /// Unwired upstream helper: Java: peekToken(kind1, kind2, kind3);
-    /// TODO(parser wiring).
-    fn peek_token3(&mut self, kind1: TokenKind, kind2: TokenKind, kind3: TokenKind) -> bool {
-        self.peek_token_at3(0, kind1, kind2, kind3)
-    }
-
-    #[allow(dead_code)]
-    /// Unwired upstream helper: Java: peekToken(lookahead, kind1, kind2, kind3);
-    /// TODO(parser wiring).
-    fn peek_token_at3(
-        &mut self,
-        lookahead: i32,
-        kind1: TokenKind,
-        kind2: TokenKind,
-        kind3: TokenKind,
-    ) -> bool {
-        self.S.lookahead_token(lookahead + 1).kind == kind1
-            && self.S.lookahead_token(lookahead + 2).kind == kind2
-            && self.S.lookahead_token(lookahead + 3).kind == kind3
     }
 
     /* ---------- error recovery -------------- */
@@ -762,15 +739,6 @@ impl JavacParser {
     fn illegal_at_token(&mut self, ctx: &mut CompilerContext) -> TreeId {
         let pos = self.token.pos;
         self.illegal(ctx, pos)
-    }
-
-    /// Java: protected void checkNoMods(long mods)
-    #[allow(dead_code)]
-    /// Unwired upstream helper: Java: checkNoMods(long flags);
-    /// TODO(parser wiring).
-    fn check_no_mods(&mut self, ctx: &mut CompilerContext, mods: i64) {
-        let pos = self.token.pos;
-        self.check_no_mods_at(ctx, pos, mods);
     }
 
     /// Java: protected void checkNoMods(int pos, long mods)
@@ -1190,28 +1158,6 @@ impl JavacParser {
     /// Java: protected void selectTypeMode()
     fn select_type_mode(&mut self) {
         self.mode = (self.mode & NOLAMBDA) | TYPE;
-    }
-
-    /// Java: lookahead token kind (Java: S.token(lookahead).kind).
-    /// PORTING_RULES Porting rules adapter: Scanner.lookahead token kind accessor
-    /// (upstream code inlines S.token(lookahead).kind at the call sites).
-    #[allow(dead_code)]
-    fn lookahead_kind(&mut self, lookahead: i32) -> TokenKind {
-        self.S.lookahead_token(lookahead).kind
-    }
-
-    /// Java: static int earlier(int pos1, int pos2)
-    #[allow(dead_code)]
-    /// Unwired upstream helper: Java: static int earlier(int pos1, int pos2);
-    /// TODO(parser wiring).
-    fn earlier(pos1: i32, pos2: i32) -> i32 {
-        if pos1 == NOPOS {
-            return pos2;
-        }
-        if pos2 == NOPOS {
-            return pos1;
-        }
-        if pos1 < pos2 { pos1 } else { pos2 }
     }
 
     /// Java: static JCTree.Tag optag(TokenKind token)
@@ -6546,9 +6492,9 @@ impl JavacParser {
     /// Java: protected boolean isRecordStart()
     fn is_record_start(&mut self) -> bool {
         if self.token.kind == TokenKind::IDENTIFIER && self.token.name() == &self.names.record
-            && (self.peek_token_at2(0, TokenKind::IDENTIFIER, TokenKind::LPAREN)
-                || self.peek_token_at2(0, TokenKind::IDENTIFIER, TokenKind::EOF)
-                || self.peek_token_at2(0, TokenKind::IDENTIFIER, TokenKind::LT))
+            && (self.peek_token2(TokenKind::IDENTIFIER, TokenKind::LPAREN)
+                || self.peek_token2(TokenKind::IDENTIFIER, TokenKind::EOF)
+                || self.peek_token2(TokenKind::IDENTIFIER, TokenKind::LT))
         {
             self.check_source_level(self.token.pos, Feature::RECORDS);
             true

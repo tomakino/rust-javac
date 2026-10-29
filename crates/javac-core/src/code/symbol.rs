@@ -110,11 +110,32 @@ pub struct Symbol {
     /// polymorphic-signature instance symbols (Resolve.java:2800-2810); Porting rules:
     /// the override is stored as a field and honored by base_symbol.
     pub base_symbol_override: Option<SymbolId>,
+    /// Adapter for the anonymous ModuleSymbol/PackageSymbol subclasses that
+    /// override toString in Symtab (Symtab.java:403-421/438-442/802-807):
+    /// localized "unnamed module"/"unnamed package" display.
+    pub display_override: Option<SymbolDisplayOverride>,
+    /// Java: ModuleSymbol.isNoModule() anonymous override (Symtab.java:438-442).
+    pub no_module: bool,
     /// The node-specific fields (one variant per upstream concrete subclass).
     pub kind_data: SymbolKind,
 }
 
+/// Adapter for the anonymous toString overrides of Symtab's unnamed
+/// ModuleSymbol/PackageSymbol (Symtab.java:403-421, 802-807).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SymbolDisplayOverride {
+    /// Java: new ModuleSymbol(...) { toString() { messages.getLocalizedString("compiler.misc.unnamed.module"); } }
+    UnnamedModule,
+    /// Java: new PackageSymbol(...) { toString() { messages.getLocalizedString("compiler.misc.unnamed.package"); } }
+    UnnamedPackage,
+}
+
 impl Symbol {
+    /// Java: ModuleSymbol.isNoModule() (Symbol.java:1034-1036).
+    pub fn is_no_module(&self) -> bool {
+        self.no_module
+    }
+
     /// Adapter constructor: the upstream constructor installs
     /// Completer.NULL_COMPLETER; locally None represents NULL_COMPLETER.
     pub fn new(
@@ -136,6 +157,8 @@ impl Symbol {
             metadata: None,
             id: std::cell::Cell::new(None),
             base_symbol_override: None,
+            display_override: None,
+            no_module: false,
             kind_data,
         }
     }
@@ -645,6 +668,8 @@ impl Clone for Symbol {
             completer: self.completer.clone(),
             metadata: self.metadata.clone(),
             base_symbol_override: self.base_symbol_override,
+            display_override: self.display_override,
+            no_module: self.no_module,
             kind_data: self.kind_data.clone(),
             id: std::cell::Cell::new(None),
         }
@@ -826,6 +851,14 @@ pub enum ResolveErrorData {
     /// Resolve.BadConstructorReferenceError (Resolve.java:4680-4690) extends
     /// InvalidSymbolError: an enclosing instance is not available.
     BadConstructorReference { sym: SymbolId },
+    /// Resolve.BadClassFileError (Resolve.java:4693-4712) extends
+    /// InvalidSymbolError; carries the failed class symbol and the class-file
+    /// diagnostic (upstream keeps the CompletionFailure and calls
+    /// ex.getDetailValue()).
+    BadClassFile {
+        sym: SymbolId,
+        detail: Option<crate::util::jc_diagnostic::JCDiagnostic>,
+    },
 }
 
 /// Java: the Callable form of Symbol.VarSymbol.data (Symbol.java:1735-1741).
@@ -1074,6 +1107,9 @@ pub enum SymbolKind {
         sourcefile: Option<Rc<dyn JavaFileObject>>,
         /// Whether private invokevirtual is allowed.
         allow_private_invoke_virtual: bool,
+        /// Java: public final MissingInfoHandler missingInfoHandler
+        /// (Symbol.java:1241-1246).
+        missing_info_handler: Option<Rc<crate::code::missing_info_handler::MissingInfoHandler>>,
     },
 }
 
@@ -1703,6 +1739,7 @@ pub fn symbol_exists(ctx: &CompilerContext, symbol: SymbolId) -> bool {
                 | ResolveErrorData::Ambiguity { .. }
                 | ResolveErrorData::BadMethodReference { .. }
                 | ResolveErrorData::BadConstructorReference { .. }
+                | ResolveErrorData::BadClassFile { .. }
         ),
         _ => ctx.sym(symbol).kind != crate::code::kinds::Kind::ERR,
     }
@@ -3504,6 +3541,23 @@ pub fn symbol_to_string(
     sym: SymbolId,
 ) -> String {
     let symbol = ctx.sym(sym);
+    // Java: the anonymous toString overrides of Symtab's unnamed module/package
+    // (Symtab.java:415-418/802-807).
+    if let Some(display_override) = symbol.display_override {
+        let messages = crate::util::javac_messages::JavacMessages::new(
+            crate::util::javac_messages::DEFAULT_BUNDLE_NAME,
+        );
+        return match display_override {
+            SymbolDisplayOverride::UnnamedModule => messages.get_localized_string(
+                "compiler.misc.unnamed.module",
+                &[],
+            ),
+            SymbolDisplayOverride::UnnamedPackage => messages.get_localized_string(
+                "compiler.misc.unnamed.package",
+                &[],
+            ),
+        };
+    }
     match &symbol.kind_data {
         SymbolKind::ClassSymbol { fullname, flatname, .. } => {
             if symbol.name.is_empty() {

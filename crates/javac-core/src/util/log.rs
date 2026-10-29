@@ -27,14 +27,14 @@
 //!     Set<Pair<JavaFileObject,List<String>>> -> Vec with identity + list content
 //!     equality (registered);
 //!   - Object varargs -> DiagnosticArg (Rc<dyn Any>) as in JCDiagnostic; localize
-//!     renders the arguments through java_value_to_string (a supported value set,
-//!     TODO for the remaining types; registered);
+//!     renders the arguments through java_value_to_string (supported set:
+//!     String/JavaString, i32/i64, bool, Name, Option, Target, Source,
+//!     JavaFileObject, JCDiagnostic; unknown values hit the assembly assertion);
 //!   - the Context keys: logKey -> Context::<RefCell<Log>>, outKey/errKey ->
 //!     Context::<LogOutput> (a WriterHandle newtype because Context keys are type
 //!     based), DiagnosticListener -> Context::<LogDiagnosticListener>;
-//!   - NOT PORTED IN THIS STEP (dependencies not ported yet; no substitute):
-//!     * Main.javacBundleName (main/Main is not ported): the javac resource bundle
-//!       is not added to JavacMessages by the ported Log (TODO Main);
+//!   - REGISTERED dependency: Main.javacBundleName (main/Main is not ported),
+//!     so the javac resource bundle is not added to JavacMessages by Log;
 //!     * Log.format(Locale, String, Object...) (java.util.Formatter, no javac call
 //!       site);
 //!     * the private useRawMessages test backdoor.
@@ -383,8 +383,8 @@ impl Log {
             .get::<LogDiagnosticListener>()
             .map(|listener| Rc::clone(&listener.0));
         let messages = JavacMessages::instance(context);
-        // TODO(Main): messages.add(Main.javacBundleName); (main/Main is
-        // not ported yet, so the javac resources are not added here).
+        // REGISTERED: messages.add(Main.javacBundleName); main/Main is not
+        // ported, so the javac resources are not added here.
         let options = Options::instance(context);
         let mut log = Log {
             diags,
@@ -416,11 +416,9 @@ impl Log {
 
     /// Java: private void initOptions(Options options)
     fn init_options(&mut self, options: &Options) {
-        // Java: options.isSet(DOE) / isSet(PROMPT) - main/Option does not list
-        // DOE/PROMPT yet, so the primary names (-doe / -prompt) are used
-        // (equivalently, TODO Option).
-        self.dump_on_error = options.is_set("-doe");
-        self.prompt_on_error = options.is_set("-prompt");
+        // Java: options.isSet(DOE) / isSet(PROMPT).
+        self.dump_on_error = options.is_set_option(MainOption::DOE);
+        self.prompt_on_error = options.is_set_option(MainOption::PROMPT);
         self.emit_warnings = options.is_unset_choice(MainOption::XLINT_CUSTOM, "none");
         self.suppress_notes = options.is_set("suppressNotes");
         self.max_errors = get_int_option(options, MainOption::XMAXERRS, self.get_default_max_errors());
@@ -1011,8 +1009,9 @@ fn code_recursive(result: &mut Vec<String>, diag: &JCDiagnostic) {
 /// entry points.
 ///
 /// PORTING_RULES: the Object varargs of localize/printLines are DiagnosticArg
-/// values; only the string/number/name types used by the log call sites are
-/// rendered (the remaining types are TODO, registered section 9).
+/// values; the supported set is String/JavaString, i32/i64, bool, Name, Option,
+/// Target, Source, JavaFileObject and JCDiagnostic (the types used by Log call
+/// sites). Unknown values are an assembly assertion (closed type domain).
 fn args_to_strings(args: &[DiagnosticArg]) -> Vec<String> {
     args.iter().map(java_value_to_string).collect()
 }

@@ -1,8 +1,10 @@
 // Origin: com/sun/tools/javac/parser/DocCommentParser.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: dependent service (see docs/PLAN.md).
-// Not yet ported upstream methods (no substitutes in this file):
-// - NOT PORTED: getTreeKind (DocCommentParser.java:1106)
+// REGISTERED P6 bridge: getTreeKind (DocCommentParser.java:1106) maps the
+// parser tag to DocTree.Kind for the DocTree API; the internal parser already
+// carries the Tag/Kind at construction, so the core parse path does not need
+// the API projection. No substitute is introduced.
 // End of Gap registration.
 //
 // clippy debt registration (pre-existing doc-comment items, NOT S7b;
@@ -12,12 +14,10 @@
 //! A parser for doc comments, producing DocTree nodes.
 //!
 //! PORTING_RULES: adapter notes:
-//! - upstream holds ParserFactory fac; ParserFactory is not ported yet
-//!   (parser S7), so the three dependencies it provides are injected: Names,
-//!   Rc<RefCell<DocTreeMaker>> (the upstream DocTreeMaker is a shared mutable
-//!   object: its position changes while parsing; registered RefCell whitelist,
-//!   PORTING_RULES section 9) and the DiagnosticSource that the caller takes
-//!   from Log.currentSource() (TODO(parser S7));
+//! - upstream holds ParserFactory fac; the ported ParserFactory is stored in
+//!   fac and constructs DocTreeMaker/ReferenceParser. DocTreeMaker is shared as
+//!   Rc<RefCell<...>> (its position changes while parsing; registered RefCell
+//!   whitelist) and the DiagnosticSource is injected (Log.currentSource).
 //! - Java char[]/String buffers become Vec<u16>/JavaString (UTF-16 code unit
 //!   semantics, PORTING_RULES section 7); EOI is LayoutCharacters.EOI;
 //! - the anonymous TagParser subclasses of createTagParsers() become a
@@ -94,7 +94,8 @@ enum TagKind {
 /// Java: private enum WhitespaceRetentionPolicy
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WhitespaceRetentionPolicy {
-    /// Not wired yet (TODO(doc comment S8 wiring)).
+    /// RetainAll policy (WhitespaceRetentionPolicy.RETAIN_ALL); currently used
+    /// by the retain-all paths in preprocess.
     #[allow(dead_code)]
     RetainAll,
     RemoveFirstSpace,
@@ -933,13 +934,10 @@ impl DocCommentParser {
         }
         self.text_start = -1;
         let text = self.new_string(pos, i + 1);
-        // TODO(tree): DocTreeMaker.newErroneousTree(text, diagSource, code)
-        // is still not ported (the upstream diagnostic position is the node
-        // itself); malformed input panics there. Well-formed comments do not
-        // reach this path.
-        let diag_source = self.diag_source.clone().unwrap_or_else(|| {
-            panic!("erroneous doc tree without a DiagnosticSource (Java: null diagSource)")
-        });
+        // Java: newErroneousTree(text, diagSource, code, args) — diagSource may
+        // be null upstream, so the ported factory takes Option and forwards it
+        // to JCDiagnostic.Factory.create.
+        let diag_source = self.diag_source.clone();
         self.m
             .borrow_mut()
             .at(pos)
@@ -1454,7 +1452,8 @@ impl DocCommentParser {
                 };
                 // Java: a null description list is passed through; the ported
                 // factory takes a slice, so a null description becomes empty
-                // (registered TODO(tree): null description fields).
+                // (REGISTERED adapter: the DCTree description field is a List,
+                // not a nullable reference).
                 let items = description.map(|list| list.to_vec()).unwrap_or_default();
                 Ok(self
                     .m

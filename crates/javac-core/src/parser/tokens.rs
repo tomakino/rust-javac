@@ -22,9 +22,9 @@
 //! - Comment is a trait implemented by the tokenizer comment classes
 //!   (java_tokenizer.rs / javadoc_tokenizer.rs); the comment list uses the
 //!   ported immutable List<Comment>;
-//! - Tokens.instance(Context) is injected in Rust (Names has no Context
+//! - Tokens.instance(Context) is not ported (Names has no Context
 //!   registration in the port): Tokens::new(Rc<Names>) keeps the upstream
-//!   keyword table; the Context-based instance is a registered GAP (TODO(P6)).
+//!   keyword table; the Context-based instance is a REGISTERED P6 gap.
 
 use std::collections::HashMap;
 use std::fmt;

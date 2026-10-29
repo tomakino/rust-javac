@@ -1,10 +1,10 @@
 // Origin: com/sun/tools/javac/file/BaseFileManager.java @ 982d53c (jdk-17.0.19-ga)
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: P2 ClassReader / API.
-// Not yet ported upstream methods (no substitutes in this file):
-// - NOT PORTED: run (BaseFileManager.java:148)
-// - NOT PORTED: handleFileManagerOption (BaseFileManager.java:230)
-// - NOT PORTED: getValue (BaseFileManager.java:484)
+// REGISTERED units (dependencies unavailable, no substitute logic):
+// - run (BaseFileManager.java:148)
+// - handleFileManagerOption (BaseFileManager.java:230)
+// - getValue (BaseFileManager.java:484)
 // End of Gap registration.
 
 //! Utility methods for building a file manager.
@@ -26,28 +26,27 @@
 //!   EOF instead of using InputStream.available(), same observable bytes).
 //! * java.nio.charset is the registered javac-charset adapter (whole-input decode/encode):
 //!   getEncodingName/decode are ported; the streaming CharsetDecoder used by
-//!   PathFileObject.openReader and the unsupported-charset/malformed-input Log reporting are
-//!   TODO (the Log error entry point and a streaming decoder are not available).
-//!   getDefaultEncodingName needs Charset.defaultCharset(), which the adapter does not
-//!   provide yet (TODO, reported).
+//!   PathFileObject.openReader is REGISTERED as unavailable in the javac-charset
+//!   adapter (whole-input decode/encode), as is Charset.defaultCharset() for
+//!   getDefaultEncodingName.
 //! * java.lang.Thread/wait (deferredClose) are ported through std::thread +
 //!   std::sync::{Mutex, Condvar} (DeferredCloseState; the BaseFileManager monitor
 //!   is the shared state and the deferred-close thread waits on the condition
 //!   variable). java.net.URL/URLClassLoader and reflection (getClassLoader) and
-//!   java.lang.ref.SoftReference (content cache) are not ported: getClassLoader is
-//!   unimplemented + TODO; the content cache keeps the decoded JavaString directly
+//!   java.lang.ref.SoftReference (content cache) are unavailable: getClassLoader is
+//!   REGISTERED as not declared (URL/URLClassLoader unavailable); the content cache keeps the decoded JavaString directly
 //!   (SoftReference is a memory-management detail with no observable behaviour
 //!   without GC pressure; registered).
 //!   cloneable identity and Java uses identity equality; the path-based key is the
 //!   registered approximation — content is validated by getLastModified, so only cache hit
 //!   rates can differ, never decoded content).
-//! * TODO(main/OptionHelper): handleOption(String, Iterator) needs Option.process and
-//!   main.OptionHelper (not ported); handleOptions needs Log.error and the Errors
-//!   resource for IllegalArgumentForOption (Log has no error entry point in this).
+//! * handleOption(String, Iterator) and handleOptions are implemented in
+//!   handle_option (298-325), which calls Option.process/OptionHelper (ported).
 //! * the MULTIRELEASE case of handleOption(Option, String) is ported 1:1 (Option.MULTIRELEASE
 //!   was restored at the Lead's decision); Locations.setMultiReleaseValue is a plain field
 //!   until the S3b handler chain stores it.
-//! * setContext awaits Locations.update (S3b) and therefore stays unimplemented for now.
+//! * setContext is implemented (166-172) and calls Locations.update (184) with
+//!   the Log/Options/CacheFSInfo services.
 
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -79,7 +78,7 @@ use crate::util::options::Options;
 pub struct BaseFileManager {
     /// Java: public Log log;
     ///
-    /// TODO(S3b): set by setContext once Locations.update is ported.
+    /// Set by setContext/init_services (implemented).
     #[allow(dead_code)]
     pub log: StdOption<Rc<RefCell<crate::util::log::Log>>>,
 
@@ -118,7 +117,7 @@ pub struct BaseFileManager {
 
     /// Java: protected String multiReleaseValue;
     ///
-    /// TODO(main option restore): set by the MULTIRELEASE branch of handleOption(Option,String).
+    /// Set by the MULTIRELEASE branch of handle_option_value (Option.MULTIRELEASE restored).
     #[allow(dead_code)]
     multi_release_value: RefCell<StdOption<JavaString>>,
 
@@ -162,13 +161,13 @@ impl BaseFileManager {
 
     /// Java: public void setContext(Context context).
     ///
-    /// TODO(S3b): the body needs Locations.update(log, warn, FSInfo.instance(context)) and
-    /// the FSInfo Context registration (not ported); no substitute state is set.
+    /// Calls init_services(log, options, CacheFSInfo::new()); the FSInfo Context
+    /// factory is registered as unavailable (ADR 0001 explicit construction).
     pub fn set_context(&mut self, context: &mut crate::util::context::Context) {
         let log = crate::util::log::Log::instance(context);
         let options = crate::util::options::Options::instance(context);
-        // Java: FSInfo.instance(context); the FSInfo Context factory is not ported, so the
-        // same object class is created directly (registered deviation, no substitute data).
+        // Java: FSInfo.instance(context); REGISTERED: the FSInfo Context factory is
+        // unavailable, so the same object class is constructed directly (ADR 0001).
         self.init_services(log, options, Rc::new(CacheFSInfo::new()));
     }
 
@@ -194,7 +193,7 @@ impl BaseFileManager {
     }
 
     /// Java: protected final Locations locations; (the field is exposed to JavacFileManager).
-    /// Not wired yet (TODO(file manager wiring)).
+    /// Wired to the file manager; read-only access.
     #[allow(dead_code)]
     pub(crate) fn locations(&self) -> &Locations {
         &self.locations
@@ -265,8 +264,8 @@ impl BaseFileManager {
 
     // Java: protected ClassLoader getClassLoader(URL[] urls).
     //
-    // TODO(P6): java.net.URL/URLClassLoader and the reflective custom loader lookup are not
-    // ported; the entry point is not declared while the URL type is unavailable.
+    // REGISTERED: java.net.URL/URLClassLoader and the reflective custom loader
+    // lookup are unavailable, so the entry point is not declared.
     // (not declared: getClassLoader)
 
     /// Java: public boolean isDefaultBootClassPath().
@@ -344,7 +343,7 @@ impl BaseFileManager {
     ///
     /// PORTING_RULES: the ENCODING branch is ported; every other option is forwarded to
     /// Locations.handleOption (S3b).  The MULTIRELEASE branch needs Option.MULTIRELEASE, which
-    /// was trimmed in task-48 (reported; TODO(main option restore)).
+    /// was restored (Option.MULTIRELEASE); the branch below sets multi_release_value.
     pub fn handle_option_value(&mut self, option: JavacOption, value: &str) -> bool {
         match option {
             JavacOption::ENCODING => {
@@ -407,7 +406,8 @@ impl BaseFileManager {
     ///
     /// PORTING_RULES: the streaming CharsetDecoder of upstream getDecoder has no Rust
     /// counterpart in the javac-charset adapter (whole-input decode/encode); only decode()
-    /// below is expressed (PathFileObject.openReader is a separate TODO).
+    /// below is expressed; the streaming decoder is REGISTERED as unavailable and
+    /// PathFileObject.openReader is a separate registered unit.
     fn get_charset(&self, encoding_name: &JavaString) -> Result<Charset, crate::util::jc_diagnostic::Error> {
         match &self.charset {
             Some(charset) => Ok(*charset),

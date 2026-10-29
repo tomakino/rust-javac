@@ -9,6 +9,7 @@ pub mod dependencies;
 pub mod directive;
 pub mod flags;
 pub mod kinds;
+pub mod missing_info_handler;
 pub mod module_finder;
 pub mod lint;
 pub mod printer;

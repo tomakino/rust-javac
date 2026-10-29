@@ -50,24 +50,32 @@
 //!   to the same init_services body.
 //! * org.openjdk.javac's container abstraction: Java private interface Container with the nested
 //!   DirectoryContainer/JRTImageContainer/ArchiveContainer classes becomes a private Rust trait
-//!   plus structs.  Directory and JRT image containers are ported here; ArchiveContainer
-//!   (java.nio zip/jar FileSystem) is the second S3c (TODO in getContainer).
+//!   plus structs. Directory, JRT image and ArchiveContainer (javac-zip based
+//!   jar/jmod/ct.sym reading) are ported here; getContainer dispatches to
+//!   ArchiveContainer for archive files (352/495/878).
 //! * FileObject downcast: Java uses instanceof PathFileObject to implement isSameFile /
 //!   inferBinaryName / asPath / contains.  Rust trait objects cannot be downcast, so every
 //!   PathFileObject created by this manager is registered in a thread-local name -> Weak table
 //!   (the path name is unique per file object; the PathFileObject PartialEq compares paths too).
 //!   Foreign file objects are compared by Rc identity (Java: Object.equals) and rejected by
 //!   asPath/inferBinaryName with IllegalArgumentException (registered adapter).
-//! * io PathFactory: StandardJavaFileManager.setPathFactory stores an Option<Rc<dyn PathFactory>>;
-//!   the Locations-side PathFactory (Java locations.setPathFactory) is TODO(S3b follow-up).
+//! * io PathFactory: StandardJavaFileManager.setPathFactory stores an
+//!   Option<Rc<dyn PathFactory>> and syncs the Locations factory
+//!   (JavacFileManager.setPathFactory -> locations.setPathFactory); LocationCtx
+//!   get_path uses it.
 //! * jar/jmod/ct.sym containers, PathFileObject JAR/JRT content readers and SigJavaFileObject are
 //!   the second S3c (reported).  The directory and system-image containers, the container
 //!   cache, location/search-path APIs, module location delegation and the whole JavaFileManager
 //!   surface are ported and tested here.
-//! * known gaps: getClassLoader (URLClassLoader/reflection, TODO(P6)); handleOption(String,
-//!   Iterator) (OptionHelper not ported, TODO(OptionHelper)); ServiceLoader; close's
-//!   deferredClose path (std::thread + Mutex/Condvar, ported); multiReleaseValue archive file systems
-//!   (second).  Java warnings are not emitted (TODO(Log)).
+//! * getClassLoader returns the ported PathClassLoader over the location paths
+//!   (JavacFileManager.java:747/1153); the URLClassLoader/reflection custom-loader
+//!   lookup is REGISTERED as unavailable. ServiceLoader is REGISTERED: javac-tools
+//!   ServiceLoader is an opaque placeholder (jdk.rs:105-118, no load/iterator), so
+//!   getServiceLoader (JavacFileManager.java:1145-1158) cannot be implemented;
+//!   handleOption(String, Iterator) is ported in BaseFileManager. close's
+//!   deferredClose path is ported (std::thread + Mutex/Condvar); multiReleaseValue
+//!   archive file systems remain the second S3c. JavacFileManager.java itself has
+//!   no Log.warning call sites; path warnings are emitted by Locations.
 //! * user.dir (getFileForOutput fallback) -> std::env::current_dir (no JVM system property).
 
 use std::cell::{Cell, RefCell};
@@ -1004,17 +1012,11 @@ fn compute_this_system_modules(java_home: &FsPath) -> FsPath {
     FsPath::from_path_buf(java_home.as_path().join("modules"))
 }
 
-/// Java: SourceVersion.isIdentifier(name) — ASCII subset (the full Unicode identifier rules
-/// depend on the source level; TODO(P6) for the exact SourceVersion port).
+/// Java: SourceVersion.isIdentifier(name) (JavacFileManager.java:235/641),
+/// implemented by the ported javac-tools SourceVersion (Unicode identifier
+/// rules, JDK 17 source level).
 pub(crate) fn is_identifier(name: &str) -> bool {
-    let mut chars = name.chars();
-    match chars.next() {
-        None => false,
-        Some(first) => {
-            (first.is_ascii_alphabetic() || first == '_' || first == '$')
-                && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$')
-        }
-    }
+    javac_tools::lang::model::source_version::SourceVersion::is_identifier(&JavaString::from(name))
 }
 
 use javac_tools::tools::standard_location::StandardLocation;
@@ -1514,9 +1516,12 @@ impl StandardJavaFileManager for JavacFileManager {
     }
 
     fn set_path_factory(&self, f: Rc<dyn PathFactory>) {
-        *self.path_factory.borrow_mut() = Some(f);
-        // Java: locations.setPathFactory(f); the Locations-side PathFactory is TODO(S3b
-        // follow-up); the file manager itself uses the injected factory for getPath.
+        *self.path_factory.borrow_mut() = Some(f.clone());
+        // Java: locations.setPathFactory(f) (JavacFileManager.setPathFactory).
+        self.base
+            .borrow_mut()
+            .locations_mut()
+            .set_path_factory(f);
     }
 }
 
@@ -1588,18 +1593,29 @@ impl BaseFileManagerApi for JavacFileManager {
 
 /// Java: protected static boolean isRelativeUri(String u) — the checks of the javadoc contract
 /// (no scheme, non-empty, no leading slash/dot segments, no embedded dot segments).  The full
-/// java.net.URI parsing is not ported; this covers the upstream rejection conditions
-/// (registered deviation, TODO(P6)).
+/// REGISTERED: java.net.URI's full parser is not ported; this implements the
+/// upstream rejection conditions (absolute scheme, empty path, dot segments,
+/// leading / ./ ../, and URI-illegal characters/percent escapes).
 fn is_relative_uri(value: &str) -> bool {
     if value.is_empty() || value.contains('\\') {
         return false;
     }
-    if value.starts_with('/')
-        || value.starts_with("./")
-        || value.starts_with("../")
-        || value.ends_with('/')
-    {
+    if value.starts_with('/') || value.starts_with("./") || value.starts_with("../") {
         return false;
+    }
+    // java.net.URI rejects whitespace/control and the RFC 2396 illegal
+    // characters; a trailing slash is legal for a relative URI (upstream
+    // URI.normalize().getPath() equals the original path for "a/").
+    for (index, ch) in value.char_indices() {
+        if ch.is_control() || ch.is_whitespace() || matches!(ch, '<' | '>' | '"' | '{' | '}' | '|' | '^' | '`' | '[' | ']') {
+            return false;
+        }
+        if ch == '%' {
+            let rest = &value[index + 1..];
+            if rest.len() < 2 || !rest.as_bytes()[0].is_ascii_hexdigit() || !rest.as_bytes()[1].is_ascii_hexdigit() {
+                return false;
+            }
+        }
     }
     // URI scheme detection: an absolute URI has 'scheme:' before any '/', '?', '#'.
     // Java: URI.isAbsolute() == (scheme != null); the scheme is the prefix before

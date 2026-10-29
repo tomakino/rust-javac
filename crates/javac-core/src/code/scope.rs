@@ -946,18 +946,18 @@ impl Scope {
     /// # Panics
     ///   - a FilterImportScope has no import filter.
     #[allow(clippy::too_many_arguments)]
-    pub fn get_symbols_full(
+    pub fn get_symbols_full_ctx(
         &self,
         self_id: ScopeId,
         lookup_kind: LookupKind,
-        filter: &dyn Fn(SymbolId) -> bool,
+        filter: &dyn Fn(&crate::compiler_context::CompilerContext, SymbolId) -> bool,
         types: &crate::code::types::Types,
         syms: &crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
         mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Vec<SymbolId> {
         if !matches!(&self.data, ScopeData::FilterImportScope { .. }) {
-            return self.get_symbols(self_id, lookup_kind, filter, ctx);
+            return self.get_symbols_ctx(self_id, lookup_kind, filter, ctx);
         }
         match &self.data {
             ScopeData::ScopeImpl { .. } => {
@@ -991,7 +991,7 @@ impl Scope {
                     while let Some(entry_id) = current {
                         let entry = &entries[entry_id.index() as usize];
                         if let Some(sym) = entry.sym
-                            && filter(sym)
+                            && filter(ctx, sym)
                         {
                             result.push(sym);
                         }
@@ -1017,13 +1017,13 @@ impl Scope {
                 while current.non_empty() {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
-                    result.extend(snapshot.get_symbols_full(sub_scope, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()));
+                    result.extend(snapshot.get_symbols_full_ctx(sub_scope, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()));
                     current = current.tail();
                 }
                 result
             }
             ScopeData::SingleEntryScope { sym, content, .. } => match sym {
-                Some(sym) if filter(*sym) => content.clone().to_vec(),
+                Some(sym) if filter(ctx, *sym) => content.clone().to_vec(),
                 _ => Vec::new(),
             },
             ScopeData::FilterImportScope {
@@ -1040,7 +1040,7 @@ impl Scope {
                     import_filter.clone(),
                 );
                 match filter_name {
-                    Some(name) => self.get_symbols_by_name_full(
+                    Some(name) => self.get_symbols_by_name_full_ctx(
                         self_id,
                         &name,
                         lookup_kind,
@@ -1087,12 +1087,12 @@ impl Scope {
     /// # Panics
     ///   - a FilterImportScope has no import filter.
     #[allow(clippy::too_many_arguments)]
-    pub fn get_symbols_by_name_full(
+    pub fn get_symbols_by_name_full_ctx(
         &self,
         self_id: ScopeId,
         name: &Name,
         lookup_kind: LookupKind,
-        filter: &dyn Fn(SymbolId) -> bool,
+        filter: &dyn Fn(&crate::compiler_context::CompilerContext, SymbolId) -> bool,
         types: &crate::code::types::Types,
         syms: &crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -1117,7 +1117,7 @@ impl Scope {
                     }
                     match entry.sym {
                         Some(sym) => {
-                            if filter(sym) {
+                            if filter(ctx, sym) {
                                 result.push(sym);
                             }
                         }
@@ -1134,7 +1134,7 @@ impl Scope {
                                     next = None;
                                     break;
                                 }
-                                if filter(next_sym) {
+                                if filter(ctx, next_sym) {
                                     break;
                                 }
                                 next = next_entry.shadowed;
@@ -1157,7 +1157,7 @@ impl Scope {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
                     result.extend(
-                        snapshot.get_symbols_by_name_full(sub_scope, name, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()),
+                        snapshot.get_symbols_by_name_full_ctx(sub_scope, name, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()),
                     );
                     current = current.tail();
                 }
@@ -1172,7 +1172,7 @@ impl Scope {
                 for sub_scope in scopes {
                     let snapshot = ctx.scope(sub_scope).clone();
                     result.extend(
-                        snapshot.get_symbols_by_name_full(sub_scope, name, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()),
+                        snapshot.get_symbols_by_name_full_ctx(sub_scope, name, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()),
                     );
                 }
                 result
@@ -1185,7 +1185,7 @@ impl Scope {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
                     result.extend(
-                        snapshot.get_symbols_by_name_full(sub_scope, name, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()),
+                        snapshot.get_symbols_by_name_full_ctx(sub_scope, name, lookup_kind, filter, types, syms, ctx, attr.as_deref_mut()),
                     );
                     current = current.tail();
                 }
@@ -1197,7 +1197,7 @@ impl Scope {
                         let symbol_name = ctx.sym(*sym).name.clone();
                         symbol_name == *name
                     };
-                    if matches && filter(*sym) {
+                    if matches && filter(ctx, *sym) {
                         content.clone().to_vec()
                     } else {
                         Vec::new()
@@ -1239,11 +1239,96 @@ impl Scope {
     /// variant dispatch except FilterImportScope (whose SymbolImporter needs the
     /// Types/Symtab services; that path is get_symbols_full, used by Resolve).
     /// ScopeImpl implements the RECURSIVE next-chain semantics (Scope.java:559).
+    /// Java: Scope.getSymbols(Predicate<Symbol>, LookupKind). Value-filter
+    /// wrapper; the ctx-aware variant is get_symbols_ctx (upstream filters are
+    /// Predicate<Symbol>, the ported predicate reads the arena through ctx).
     pub fn get_symbols(
         &self,
         self_id: ScopeId,
         lookup_kind: LookupKind,
         filter: &dyn Fn(SymbolId) -> bool,
+        ctx: &mut crate::compiler_context::CompilerContext,
+    ) -> Vec<SymbolId> {
+        self.get_symbols_ctx(
+            self_id,
+            lookup_kind,
+            &|_: &crate::compiler_context::CompilerContext, sym| filter(sym),
+            ctx,
+        )
+    }
+
+    /// Java: Scope.getSymbolsByName(Name, Predicate<Symbol>, LookupKind).
+    pub fn get_symbols_by_name(
+        &self,
+        self_id: ScopeId,
+        name: &Name,
+        lookup_kind: LookupKind,
+        filter: &dyn Fn(SymbolId) -> bool,
+        ctx: &mut crate::compiler_context::CompilerContext,
+    ) -> Vec<SymbolId> {
+        self.get_symbols_by_name_ctx(
+            self_id,
+            name,
+            lookup_kind,
+            &|_: &crate::compiler_context::CompilerContext, sym| filter(sym),
+            ctx,
+        )
+    }
+
+    /// Java: Scope.getSymbols(Predicate<Symbol>, LookupKind) + FilterImportScope.
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_symbols_full(
+        &self,
+        self_id: ScopeId,
+        lookup_kind: LookupKind,
+        filter: &dyn Fn(SymbolId) -> bool,
+        types: &crate::code::types::Types,
+        syms: &crate::code::symtab::Symtab,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        attr: Option<&mut crate::comp::attr::Attr>,
+    ) -> Vec<SymbolId> {
+        self.get_symbols_full_ctx(
+            self_id,
+            lookup_kind,
+            &|_: &crate::compiler_context::CompilerContext, sym| filter(sym),
+            types,
+            syms,
+            ctx,
+            attr,
+        )
+    }
+
+    /// Java: Scope.getSymbolsByName(Name, Predicate<Symbol>, LookupKind) +
+    /// FilterImportScope.
+    #[allow(clippy::too_many_arguments)]
+    pub fn get_symbols_by_name_full(
+        &self,
+        self_id: ScopeId,
+        name: &Name,
+        lookup_kind: LookupKind,
+        filter: &dyn Fn(SymbolId) -> bool,
+        types: &crate::code::types::Types,
+        syms: &crate::code::symtab::Symtab,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        attr: Option<&mut crate::comp::attr::Attr>,
+    ) -> Vec<SymbolId> {
+        self.get_symbols_by_name_full_ctx(
+            self_id,
+            name,
+            lookup_kind,
+            &|_: &crate::compiler_context::CompilerContext, sym| filter(sym),
+            types,
+            syms,
+            ctx,
+            attr,
+        )
+    }
+
+    pub fn get_symbols_ctx(
+        &self,
+        self_id: ScopeId,
+        lookup_kind: LookupKind,
+        filter: &dyn Fn(&crate::compiler_context::CompilerContext, SymbolId) -> bool,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Vec<SymbolId> {
         match &self.data {
@@ -1272,7 +1357,7 @@ impl Scope {
                     while let Some(entry_id) = current {
                         let entry = &entries[entry_id.index() as usize];
                         if let Some(sym) = entry.sym
-                            && filter(sym)
+                            && filter(ctx, sym)
                         {
                             result.push(sym);
                         }
@@ -1298,14 +1383,14 @@ impl Scope {
                 while current.non_empty() {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
-                    result.extend(snapshot.get_symbols(sub_scope, lookup_kind, filter, ctx));
+                    result.extend(snapshot.get_symbols_ctx(sub_scope, lookup_kind, filter, ctx));
                     current = current.tail();
                 }
                 result
             }
             ScopeData::SingleEntryScope { sym, content, .. } => match sym {
                 Some(sym) => {
-                    if filter(*sym) {
+                    if filter(ctx, *sym) {
                         content.clone().to_vec()
                     } else {
                         Vec::new()
@@ -1328,12 +1413,12 @@ impl Scope {
 
     /// Java: Scope.getSymbolsByName(Name, Predicate<Symbol>, LookupKind) — the
     /// complete variant dispatch except FilterImportScope (see get_symbols).
-    pub fn get_symbols_by_name(
+    pub fn get_symbols_by_name_ctx(
         &self,
         self_id: ScopeId,
         name: &Name,
         lookup_kind: LookupKind,
-        filter: &dyn Fn(SymbolId) -> bool,
+        filter: &dyn Fn(&crate::compiler_context::CompilerContext, SymbolId) -> bool,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Vec<SymbolId> {
         match &self.data {
@@ -1355,7 +1440,7 @@ impl Scope {
                     }
                     match entry.sym {
                         Some(sym) => {
-                            if filter(sym) {
+                            if filter(ctx, sym) {
                                 result.push(sym);
                             }
                         }
@@ -1372,7 +1457,7 @@ impl Scope {
                         }
                         match next_entry.sym {
                             Some(next_sym) => {
-                                if filter(next_sym) {
+                                if filter(ctx, next_sym) {
                                     break;
                                 }
                                 next = next_entry.shadowed;
@@ -1397,7 +1482,7 @@ impl Scope {
                     let sub_scope = *current.head();
                     let snapshot = ctx.scope(sub_scope).clone();
                     result.extend(
-                        snapshot.get_symbols_by_name(sub_scope, name, lookup_kind, filter, ctx),
+                        snapshot.get_symbols_by_name_ctx(sub_scope, name, lookup_kind, filter, ctx),
                     );
                     current = current.tail();
                 }
@@ -1409,7 +1494,7 @@ impl Scope {
                         let symbols = ctx.symbols_arena();
                         symbol_name(symbols, *sym) == *name
                     };
-                    if matches && filter(*sym) {
+                    if matches && filter(ctx, *sym) {
                         content.clone().to_vec()
                     } else {
                         Vec::new()
@@ -1640,7 +1725,7 @@ fn symbol_importer_import_from(
     syms: &crate::code::symtab::Symtab,
     inspect_super_types: bool,
     by_name: Option<&Name>,
-    sf: &dyn Fn(SymbolId) -> bool,
+    sf: &dyn Fn(&crate::compiler_context::CompilerContext, SymbolId) -> bool,
     lookup_kind: LookupKind,
     processed: &mut Vec<SymbolId>,
     results: &mut Vec<Vec<SymbolId>>,
@@ -1700,9 +1785,9 @@ fn symbol_importer_import_from(
     let members_snapshot = ctx.scope(members).clone();
     let found = match by_name {
         Some(name) => {
-            members_snapshot.get_symbols_by_name_full(members, name, lookup_kind, sf, types, syms, ctx, attr)
+            members_snapshot.get_symbols_by_name_full_ctx(members, name, lookup_kind, sf, types, syms, ctx, attr)
         }
-        None => members_snapshot.get_symbols_full(members, lookup_kind, sf, types, syms, ctx, attr),
+        None => members_snapshot.get_symbols_full_ctx(members, lookup_kind, sf, types, syms, ctx, attr),
     };
     results.insert(0, found);
 }
@@ -1733,7 +1818,7 @@ fn query_filter_import_scope_members(
     static_import: bool,
     import_filter: &Option<FilterImportFn>,
     by_name: Option<&Name>,
-    sf: &dyn Fn(SymbolId) -> bool,
+    sf: &dyn Fn(&crate::compiler_context::CompilerContext, SymbolId) -> bool,
     lookup_kind: LookupKind,
     types: &crate::code::types::Types,
     syms: &crate::code::symtab::Symtab,

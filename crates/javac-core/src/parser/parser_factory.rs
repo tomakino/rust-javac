@@ -9,8 +9,8 @@
 //!
 //! PORTING_RULES:
 //! * the dependency fields are injected like ScannerFactory: Names/Source/
-//!   ScannerFactory are parameters and Preview is an optional Context
-//!   injection (its instance() is not implemented yet, TODO(Log/Lint/Options
+//!   ScannerFactory are parameters and Preview is an optional explicit
+//!   injection (Preview.instance is ported; ADR 0001
 //!   )); Options is the ported Options::instance(context);
 //! * DocTreeMaker instance is not wired (doc comment parsing is deferred, see
 //!   JavacParser: keepDocComments paths (LazyDocCommentTable wired));
@@ -36,7 +36,7 @@ use crate::util::options::Options;
 #[derive(Clone)]
 pub struct ParserFactory {
     pub(crate) log: Rc<std::cell::RefCell<Log>>,
-    /// Upstream ParserFactory.tokens (unwired yet: TODO(parser wiring)).
+    /// Upstream ParserFactory.tokens; wired from the ScannerFactory in new().
     #[allow(dead_code)]
     pub(crate) tokens: Rc<crate::parser::tokens::Tokens>,
     pub(crate) source: Source,

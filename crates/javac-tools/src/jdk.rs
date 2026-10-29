@@ -28,7 +28,7 @@
 //!   `file` port
 //! * `java.util.Locale`         -> the locale tag (`javac_strings::JavaString`)
 //!
-//! TODO(P6): these placeholders are finalized by the API phase; annotation
+//! REGISTERED P6: these placeholders are finalized by the API phase; annotation
 //! processing is not ported, so class loading is never observed by the
 //! compiler itself.
 

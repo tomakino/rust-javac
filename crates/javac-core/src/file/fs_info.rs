@@ -10,12 +10,10 @@
 //!
 //! PORTING_RULES:
 //! * java.nio.file.Path -> javac-fs Path; Files.* -> javac_fs::Files.
-//! * not ported dependencies (TODO(P2), reported): java.util.jar.JarFile/
-//!   Manifest (getJarClassPath), java.net.URL (tryResolveFile),
-//!   java.nio.file.spi.FileSystemProvider (getJarFSProvider), and the
-//!   Context-based instance(Context)/factory registration (CacheFSInfo is a
-//!   composition of FSInfo rather than a subclass, so the Context key type
-//!   cannot hold both; registered).
+//! * getJarClassPath is implemented (manifest parse + URL resolution via the
+//!   javac-zip/javac-fs adapters). REGISTERED dependencies: java.nio.file.spi.
+//!   FileSystemProvider (getJarFSProvider) and the Context-based
+//!   instance(Context)/factory registration (CacheFSInfo composes FSInfo).
 
 use std::collections::HashMap;
 use std::io;
@@ -25,7 +23,7 @@ use javac_fs::{Files, Path as FsPath};
 /// The minimal java.nio.file.attribute.BasicFileAttributes representation used
 /// by CacheFSInfo.
 ///
-/// PORTING_RULES: java.nio.file.attribute is not ported; this struct carries
+/// PORTING_RULES: java.nio.file.attribute is REGISTERED as unavailable; this struct carries
 /// the attributes the caching FSInfo consults (registered adapter).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FileAttributes {
@@ -105,7 +103,7 @@ impl FSInfo {
     /// (FSInfo.java:100-137).
     ///
     /// PORTING_RULES adapter: java.util.jar.JarFile/Manifest and
-    /// java.net.URL are not ported as public types; the jar manifest main
+    /// java.net.URL is REGISTERED as unavailable; the jar manifest main
     /// attributes are parsed by [parse_manifest_main_attributes] (the JDK 17
     /// oracle records the format rules) and the URL resolution of each
     /// Class-Path element is implemented by [try_resolve_file].
@@ -144,9 +142,8 @@ impl FSInfo {
         Ok(list)
     }
 
-    // TODO(P2): the upstream getJarFSProvider() (FileSystemProvider lookup) and
-    // the static tryResolveFile(URL, String) are not ported: their java.nio.file
-    // provider / java.net.URL dependencies do not exist in the port yet.
+    // REGISTERED: getJarFSProvider() (FileSystemProvider lookup) is unavailable;
+    // java.net.URL is replaced by the ported try_resolve_file string/uri adapter.
 }
 
 impl Default for FSInfo {

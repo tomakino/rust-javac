@@ -33,7 +33,7 @@
 //!   the set is numerically sorted and de-duplicated (the Java TreeSet with
 //!   NUMERICAL_COMPARATOR).
 //!   * `System.getProperty("java.home")` is a JVM facility and rust-javac runs without a
-//!     JVM (P6 launcher not ported), so the JDK home is injected:
+//!     JVM (P6 launcher REGISTERED as unavailable), so the JDK home is injected:
 //!     `JDKPlatformProvider::new(java_home)` (registered deviation; the P6 service wiring
 //!     passes the launcher's JDK home).
 //!   * `java.nio.file` is represented by the registered javac-fs adapter
@@ -50,24 +50,17 @@
 //! * Dependencies: javac-core/Cargo.toml adds javac-fs (workspace dependency) and javac-ctsym
 //!   (path dependency for now; javac-ctsym is not yet in the workspace dependencies table).
 //!
-//! ## Not ported yet (TODO, with the dependency that unblocks each)
-//! 1. `PlatformDescriptionImpl.getFileManager()` (S3): needs
-//!    - `com.sun.tools.javac.file.JavacFileManager`/`CacheFSInfo` (the `file` package
-//!      is still an empty placeholder),
-//!    - `com.sun.tools.javac.util.Context` (ported) plus `Log` (diagnostic output) and
-//!      `main.Option` (now ported: Option.MULTIRELEASE/handleOption exist),
-//!    - the ct.sym archive handle for the platform file manager (javac-ctsym/javac-fs now exist,
-//!      but JavacFileManager and its Locations are not ported),
-//!    - the Java anonymous `JavacFileManager` subclass + `SigJavaFileObject`: Java
-//!      subclassing -> Rust composition with explicit overriding (the javac-tools
-//!      `ForwardingJavaFileObject` pattern).
-//! 2. `SigJavaFileObject` (S3, its only caller is getFileManager()).
-//! 3. the `ctSym2FileSystem` map and the `close()` loop over it (S3; in this no
-//!    file system handle is kept open — javac-ctsym reads the archive once and drops it — so
-//!    close() has nothing to release and returns Ok like the upstream empty-loop case).
+//! ## Status
+//! 1. PlatformDescriptionImpl.getFileManager() is ported (350-420): it opens ct.sym,
+//!    creates a JavacFileManager/SigJavaFileObject over the archive, and the test
+//!    platform_file_manager_reads_ct_sym_signature_files exercises it.
+//! 2. SigJavaFileObject is ported in this file.
+//! 3. ctSym2FileSystem/close(): javac-ctsym reads the archive once and drops it, so
+//!    no file-system handle is kept; close() is the upstream empty-loop case (REGISTERED
+//!    adapter, same observable Ok).
 //! 4. S4 (launcher): supply the real java.home in front of JDKPlatformProvider::new.
-//! 5. S5 (P6): real service discovery for PlatformUtils (its provider parameter is the
-//!    injection point; getSupportedPlatformNames then feeds --release).
+//! 5. S5 (P6): real service discovery for PlatformUtils (provider parameter is the
+//!    injection point).
 //!
 //! ## Oracle (development-time, recorded)
 //! The baseline JDK 17.0.19 (Temurin 17.0.19+10) javac accepts exactly releases 7..17:
@@ -302,17 +295,15 @@ struct PlatformDescriptionImpl {
 
     /// Java: private final String ctSymVersion;
     ///
-    /// TODO(S3): read by getFileManager() (the ct.sym section lookup), which is not
-    /// ported yet; the field is part of the 1:1 state.
+    /// Read by getFileManager() (the ct.sym section lookup); part of the 1:1 state.
     #[allow(dead_code)]
     ct_sym_version: JavaString,
     /// The JDK home (Java: System.getProperty("java.home") read by findCtSym();
     /// injected because the port runs without a JVM - registered deviation).
     java_home: std::option::Option<FsPath>,
     // Java: private final Map<Path, FileSystem> ctSym2FileSystem = new HashMap<>();
-    // TODO(S3): the map is only filled by getFileManager(); no FileSystem handle is kept in
-    // this (javac-ctsym reads the archive once and drops it), so the field is not
-    // declared yet. close() below is the upstream empty-loop case.
+    // REGISTERED: no FileSystem handle is kept (javac-ctsym reads the archive once
+    // and drops it), so the map is not declared; close() is the upstream empty-loop case.
 }
 
 impl PlatformDescriptionImpl {
@@ -428,9 +419,9 @@ impl PlatformDescription for PlatformDescriptionImpl {
     /// }
     /// </pre>
     ///
-    /// PORTING_RULES: no file system handle is opened by this (getFileManager is still
-    /// TODO(S3)), so the upstream loop over an empty map is the Ok(()) case here.  When S3
-    /// opens the ct.sym file system, the map and this loop are ported 1:1.
+    /// PORTING_RULES: getFileManager opens ct.sym through javac-ctsym but keeps no
+    /// FileSystem handle (the archive is read once and dropped), so the upstream loop
+    /// over ctSym2FileSystem is the Ok(()) case here (REGISTERED adapter).
     fn close(&self) -> Result<(), Error> {
         Ok(())
     }

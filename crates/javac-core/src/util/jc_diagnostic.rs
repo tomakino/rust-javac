@@ -41,8 +41,7 @@
 //!   subdiagnostics field of JCDiagnostic (isMultiline() is true when the list
 //!   is not empty; registered in PORTING_RULES section 9).
 //!
-//! NOT PORTED IN THIS STEP (dependencies are not ported yet; no substitute
-//! logic is written, tracked in docs/STATUS.md):
+//! REGISTERED (dependencies/hooks not wired; no substitute logic):
 //! - Options (next): Factory::instance does not run initOptions (the
 //!   onlySyntaxErrorsUnrecoverable option) and does not register an option
 //!   listener;
@@ -352,7 +351,7 @@ info_key_type!(Fragment, FragmentInfo, FRAGMENT);
 /// The pre-P4 contract feeding the resources-generated accessors: the contract argument is currently placeholder Display
 /// text, kept as a JavaString argument (ADR 0002 revision C: after the xtask contract replacement it becomes a real object and
 /// this function is then removed).
-fn contract_args_to_args(args: &[contract::DiagnosticArg]) -> Vec<DiagnosticArg> {
+pub(crate) fn contract_args_to_args(args: &[contract::DiagnosticArg]) -> Vec<DiagnosticArg> {
     args.iter()
         .map(|arg| match arg {
             contract::DiagnosticArg::Text(text) => {
@@ -690,10 +689,10 @@ impl Diagnostic<Rc<dyn JavaFileObject>> for JCDiagnostic {
         JCDiagnostic::get_kind(self)
     }
 
-    /// PORTING_RULES: the source (DiagnosticSource) is not ported yet, so
-    /// getSource() returns None like the upstream source-null path.
+    /// Java: Diagnostic.getSource(): the source's file, or null when no source
+    /// was attached (JCDiagnostic.java getSource).
     fn get_source(&self) -> Option<Rc<dyn JavaFileObject>> {
-        None
+        self.source.as_ref().and_then(|source| source.get_file())
     }
 
     fn get_position(&self) -> i64 {
@@ -789,10 +788,10 @@ impl Factory {
     ///
     /// Java: public static Factory instance(Context context)
     ///
-    /// TODO(Options): the upstream protected Factory(Context) initializes
-    /// Options (onlySyntaxErrorsUnrecoverable) and registers an option listener;
-    /// Options are not ported yet, so instance() only creates/registers the
-    /// factory (registered in the module doc).
+    /// REGISTERED: the upstream protected Factory(Context) initializes Options
+    /// (onlySyntaxErrorsUnrecoverable) and registers an option listener; the
+    /// Options instance is ported, but the Factory field/listener hook is not
+    /// wired, so instance() only creates/registers the factory.
     pub fn instance(context: &mut Context) -> Rc<Factory> {
         if let Some(instance) = context.get::<Factory>() {
             return instance;

@@ -1560,10 +1560,28 @@ mod tests {
             crate::code::symbol::symbol_to_string(&ctx, object_tsym),
             "java.lang.Object"
         );
+        // Java: the unnamed module is an anonymous ModuleSymbol whose toString
+        // returns messages.getLocalizedString("compiler.misc.unnamed.module")
+        // (Symtab.java:415-418), not ModuleSymbol's default "<unnamed>".
         assert_eq!(
             crate::code::symbol::symbol_to_string(&ctx, syms.unnamed_module),
-            "<unnamed>"
+            "unnamed module"
         );
+        // Java: the unnamed package's anonymous PackageSymbol.toString
+        // (Symtab.java:802-807) and ModuleSymbol.isNoModule (Symtab.java:438-442).
+        let unnamed_package = match &ctx.sym(syms.unnamed_module).kind_data {
+            crate::code::symbol::SymbolKind::ModuleSymbol {
+                unnamed_package: Some(package),
+                ..
+            } => *package,
+            _ => panic!("unnamed module has no unnamed package"),
+        };
+        assert_eq!(
+            crate::code::symbol::symbol_to_string(&ctx, unnamed_package),
+            "unnamed package"
+        );
+        assert!(!ctx.sym(syms.unnamed_module).is_no_module());
+        assert!(ctx.sym(syms.no_module).is_no_module());
     }
 
     use super::*;

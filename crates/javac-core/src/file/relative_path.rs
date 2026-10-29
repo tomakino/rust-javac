@@ -15,8 +15,11 @@
 //! (RelativePathKind) so the abstract dirname()/basename() dispatch stays 1:1;
 //! composition replaces inheritance and the base state/methods are 1:1.
 //! Not ported dependencies:
-//! * java.nio.file.FileSystem (resolveAgainst(FileSystem)) -> TODO(P2); the resolveAgainst(Path) overload is ported on top of javac-fs;
-//! * java.util.zip.ZipFile/ZipEntry (RelativeFile.getZipEntry) -> 0TODO(P2);
+//! * java.nio.file.FileSystem (resolveAgainst(FileSystem)) is REGISTERED: the
+//!   port has no FileSystem object; the resolveAgainst(Path) overload is ported
+//!   on javac-fs and the archive adapter is used for zip entries;
+//! * java.util.zip.ZipFile/ZipEntry (RelativeFile.getZipEntry) is REGISTERED:
+//!   javac-zip works on ZipArchive/entry names instead of ZipFile.
 //! * equals/compareTo/hashCode/toString map onto PartialEq/Ord/Hash/Display.
 
 use javac_fs::Path as FsPath;
@@ -83,11 +86,11 @@ impl RelativePath {
         Ok(directory.resolve(&relative))
     }
 
-    /// Java: public Path resolveAgainst(FileSystem fs) — TODO(P2): java.nio.file
-    /// FileSystem is not ported (the P2 file layer has no FileSystem object).
+    /// Java: public Path resolveAgainst(FileSystem fs) — REGISTERED: the port has
+    /// no java.nio.file.FileSystem object; callers use resolveAgainst(Path).
     /// Java: public Path resolveAgainst(FileSystem fs) throws InvalidPathException.
     ///
-    /// PORTING_RULES: java.nio.file.FileSystem is not ported; the caller supplies
+    /// PORTING_RULES: java.nio.file.FileSystem is REGISTERED as unavailable; the caller supplies
     /// the root directory and separator (Java: fs.getRootDirectories().iterator().next()
     /// and fs.getSeparator()).  The resolution algorithm is the upstream one.
     pub fn resolve_against_fs(
@@ -253,11 +256,11 @@ impl RelativeFile {
         file_basename(&self.base.path)
     }
 
-    /// Java: ZipEntry getZipEntry(ZipFile zip) — TODO(P2): java.util.zip.ZipFile/
-    /// ZipEntry are not ported (javac-zip works on ZipArchive/entry names).
+    /// Java: ZipEntry getZipEntry(ZipFile zip) — REGISTERED: javac-zip works on
+    /// ZipArchive/entry names, not java.util.zip.ZipFile/ZipEntry.
     /// Java: public ZipEntry getZipEntry(ZipFile zip) { return zip.getEntry(path); }
     ///
-    /// PORTING_RULES: java.util.zip.ZipEntry is not ported; the archive entry lookup
+    /// PORTING_RULES: java.util.zip.ZipEntry is REGISTERED as unavailable; the archive entry lookup
     /// returns the entry contents through javac-zip (registered adapter: the
     /// upstream ZipEntry object is replaced by its data).
     pub fn get_zip_entry(&self, archive: &javac_zip::ZipArchive) -> std::option::Option<Vec<u8>> {

@@ -419,7 +419,7 @@ pub trait StandardJavaFileManager: JavaFileManager {
 /// PORTING_RULES: Java nested interface StandardJavaFileManager.PathFactory ->
 /// Rust trait PathFactory (traits cannot be nested inside traits).  The path
 /// strings are Java Strings; converting them to an OS path is the platform
-/// boundary handled by the file layer (TODO(P2): platform path encoding).
+/// boundary handled by the file layer (REGISTERED P2: platform path encoding).
 ///
 /// @since 9
 pub trait PathFactory {
@@ -751,7 +751,7 @@ mod tests {
     impl PathFactory for TestPathFactory {
         fn get_path(&self, first: &JavaString, more: &[JavaString]) -> PathBuf {
             // PORTING_RULES: converting a Java String to an OS path is the
-            // platform-encoding boundary of the file layer (TODO(P2)); the
+            // platform-encoding boundary of the file layer (REGISTERED P2); the
             // lossy view is only used for this test factory.
             let mut path = PathBuf::from(first.to_string_lossy());
             for part in more {

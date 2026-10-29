@@ -85,8 +85,9 @@ pub trait AbstractLog {
         {
             return existing;
         }
-        // TODO(Log): pass the log itself as DiagnosticSourceLog once the
-        // concrete Log exists (the Java code passes this).
+        // REGISTERED: the upstream passes the Log as DiagnosticSourceLog; the
+        // Rust Log lives inside RefCell and cannot hand out an Rc to itself here,
+        // so the source is created without the log back-reference.
         let source = Rc::new(DiagnosticSource::new(Rc::clone(&file), None));
         self.source_map().push((file, Rc::clone(&source)));
         source

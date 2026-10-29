@@ -569,11 +569,16 @@ impl Annotate {
         ctx: &mut CompilerContext,
         syms: &crate::code::symtab::Symtab,
     ) -> Result<(), CompletionFailure> {
-        // Port adapter: the Attr-inside callers pass their &mut Attr to
-        // unblock_annotations_with_attr; the normal path borrows it once.
-        let attr_rc = std::rc::Rc::clone(&self.services.attr);
-        let mut attr = attr_rc.borrow_mut();
-        self.unblock_annotations_with_attr(ctx, syms, &mut attr)
+        self.block_count.set(self.block_count.get() - 1);
+        if self.block_count.get() == 0 {
+            // Port adapter: the flush needs the Attr service; borrow it only
+            // here (the Attr-inside callers use unblock_annotations_with_attr
+            // because they already hold it).
+            let attr_rc = std::rc::Rc::clone(&self.services.attr);
+            let mut attr = attr_rc.borrow_mut();
+            self.flush_with_attr(ctx, syms, &mut attr)?;
+        }
+        Ok(())
     }
 
     pub fn unblock_annotations_with_attr(
@@ -1762,7 +1767,7 @@ impl AnnotateServices {
             };
             let defer_ok = {
                 let chk = Rc::clone(&self.chk);
-                chk.validate_annotation_defer_errors(ctx, syms, anno_tree)?
+                chk.validate_annotation_defer_errors(ctx, syms, anno_tree, Some(&mut *attr))?
             };
             if !defer_ok {
                 self.log.borrow_mut().error_at(
@@ -1776,13 +1781,34 @@ impl AnnotateServices {
                     .into(),
                 );
             }
-            // Java: if (!chk.isTypeAnnotation(annoTree, isTypeParam)) error... —
-            // TODO(TypeAnnotations): Check.isTypeAnnotation is not ported.
-            let _ = is_type_param;
+            // Java: if (!chk.isTypeAnnotation(annoTree, isTypeParam)) {
+            //     log.error(pos, isTypeParam ?
+            //         Errors.InvalidRepeatableAnnotationNotApplicable(targetContainerType, on) :
+            //         Errors.InvalidRepeatableAnnotationNotApplicableInContext(targetContainerType));
+            // } (Annotate.java:832-835).
+            if !self
+                .chk
+                .is_type_annotation_tree(ctx, syms, anno_tree, is_type_param)
+            {
+                let container_name = crate::comp::resolve::symbol_display_name(
+                    ctx,
+                    ctx.typ(container_type).tsym.expect("container tsym"),
+                );
+                let info = if is_type_param {
+                    errors::invalid_repeatable_annotation_not_applicable(
+                        TypeArg::placeholder(container_name),
+                        SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, on)),
+                    )
+                } else {
+                    errors::invalid_repeatable_annotation_not_applicable_in_context(
+                        TypeArg::placeholder(container_name),
+                    )
+                };
+                self.log.borrow_mut().error_at(pos, info.into());
+            }
             if let AttributeKind::TypeCompound { synthesized, .. } = &mut ctx.attr_mut(at).kind {
                 *synthesized = true;
             }
-            let _ = at;
             return Ok(Some(at));
         }
         let container_type = target_container_type.expect("container type");
@@ -1819,7 +1845,7 @@ impl AnnotateServices {
         }
         let defer_ok = {
             let chk = Rc::clone(&self.chk);
-            chk.validate_annotation_defer_errors(ctx, syms, anno_tree)?
+            chk.validate_annotation_defer_errors(ctx, syms, anno_tree, Some(&mut *attr))?
         };
         if !defer_ok {
             self.log.borrow_mut().error_at(

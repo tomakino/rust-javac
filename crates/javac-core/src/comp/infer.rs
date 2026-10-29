@@ -1448,9 +1448,8 @@ impl InferenceContext {
         types: &Types,
         roots: List<TypeId>,
         should_solve: bool,
-        warn: &mut Warner,
+        warn: &Rc<RefCell<Warner>>,
     ) -> Result<Rc<InferenceContext>, InferenceException> {
-        let _ = warn;
         let inferencevars = self.inner.borrow().inferencevars.clone();
         if roots.length() == inferencevars.length() {
             return Ok(Rc::clone(self));
@@ -1510,6 +1509,7 @@ impl InferenceContext {
                 original,
                 var: t,
                 min_map,
+                warn: Rc::clone(warn),
             });
             min_context
                 .inner
@@ -1530,6 +1530,7 @@ impl InferenceContext {
             let listener = Rc::new(UnreachableVarsListener {
                 original,
                 unreachable_vars,
+                warn: Rc::clone(warn),
             });
             min_context
                 .inner
@@ -2763,6 +2764,10 @@ struct PropagateListener {
     original: std::rc::Weak<InferenceContext>,
     var: TypeId,
     min_map: Vec<(TypeId, Vec<TypeId>)>,
+    /// Upstream captures the caller's Warner reference (InferenceContext.java:
+    /// 380-387); the Rc keeps the shared lint state alive across the deferred
+    /// notification.
+    warn: Rc<RefCell<Warner>>,
 }
 
 impl FreeTypeListener for PropagateListener {
@@ -2784,8 +2789,9 @@ impl FreeTypeListener for PropagateListener {
             }
         }
         let infer = original.infer.clone().expect("InferenceContext.infer");
-        let mut warn = Warner::new(None);
+        let mut warn = self.warn.borrow_mut();
         infer.do_incorporation(ctx, syms, types, &original, &mut warn)?;
+        drop(warn);
         original.notify_change(ctx, syms, types)
     }
 }
@@ -2795,6 +2801,10 @@ impl FreeTypeListener for PropagateListener {
 struct UnreachableVarsListener {
     original: std::rc::Weak<InferenceContext>,
     unreachable_vars: List<TypeId>,
+    /// Upstream captures the caller's Warner reference (InferenceContext.java:
+    /// 392-395); the Rc keeps the shared lint state alive across the deferred
+    /// notification.
+    warn: Rc<RefCell<Warner>>,
 }
 
 impl FreeTypeListener for UnreachableVarsListener {
@@ -2808,10 +2818,7 @@ impl FreeTypeListener for UnreachableVarsListener {
         let Some(original) = self.original.upgrade() else {
             return Ok(());
         };
-        let mut warn = Warner::new(None);
-        // TODO(Lint): the deferred solve callback does not propagate the
-        // original Warner (upstream shares the reference); warnings are
-        // registered for the Lint, the boolean result is unaffected.
+        let mut warn = self.warn.borrow_mut();
         let _ = inference_context;
         original.solve_list(
             ctx,
@@ -2820,6 +2827,7 @@ impl FreeTypeListener for UnreachableVarsListener {
             self.unreachable_vars.clone(),
             &mut warn,
         )?;
+        drop(warn);
         original.notify_change(ctx, syms, types)
     }
 }
@@ -3248,6 +3256,7 @@ impl Infer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn instantiate_method_inner(
         &self,
         ctx: &mut CompilerContext,
@@ -3267,6 +3276,25 @@ impl Infer {
         warn: &mut Warner,
     ) -> Result<TypeId, InferenceException> {
         let _ = (allow_boxing, use_varargs);
+        // Port adapter: upstream Infer.instantiateMethod passes the caller's
+        // Warner through the deferred contexts and the min listeners
+        // (Infer.java:180, InferenceContext.java:380-395); the Rc keeps the
+        // warning/lint state shared and the guard writes it back on every
+        // return path (including the ?-early-returns).
+        struct WarnSync<'a> {
+            target: &'a mut Warner,
+            shared: Rc<RefCell<Warner>>,
+        }
+        impl Drop for WarnSync<'_> {
+            fn drop(&mut self) {
+                *self.target = std::mem::take(&mut *self.shared.borrow_mut());
+            }
+        }
+        let warn_shared = Rc::new(RefCell::new(std::mem::take(warn)));
+        let _warn_sync = WarnSync {
+            target: warn,
+            shared: Rc::clone(&warn_shared),
+        };
         let inference_context =
             InferenceContext::new(Rc::new(self.clone_shallow()), ctx, syms, types, tvars);
         let defer_context = resolve_context.deferred_attr_context(
@@ -3297,7 +3325,7 @@ impl Infer {
                     Rc::clone(&deferred_context),
                     argtypes,
                     types.get_parameter_types_public(ctx, mt),
-                    warn,
+                    &mut warn_shared.borrow_mut(),
                 )
                 .map_err(|failure| match failure {
                     crate::comp::resolve::MethodCheckFailure::Inference(ex) => ex,
@@ -3325,19 +3353,34 @@ impl Infer {
                     result_info.and_then(|ri| ri.pt).map(|p| crate::comp::attr::type_display_of(ctx, p)),
                 );
             }
-            self.do_incorporation(ctx, syms, types, &inference_context, warn)?;
+            self.do_incorporation(
+                ctx,
+                syms,
+                types,
+                &inference_context,
+                &mut warn_shared.borrow_mut(),
+            )?;
             return Ok(partially_inferred_method_type(
                 ctx,
                 mt,
                 Rc::clone(&inference_context),
                 Rc::clone(env),
-                Rc::new(RefCell::new(Warner::new(warn.pos()))),
+                Rc::clone(&warn_shared),
             ));
         } else if self.allow_graph_inference && result_info.is_some() {
             // inject return constraints earlier
-            self.do_incorporation(ctx, syms, types, &inference_context, warn)?;
+            self.do_incorporation(
+                ctx,
+                syms,
+                types,
+                &inference_context,
+                &mut warn_shared.borrow_mut(),
+            )?;
             let result_info = result_info.expect("result info");
-            if !warn.has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED) {
+            if !warn_shared
+                .borrow()
+                .has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED)
+            {
                 let should = self.should_propagate(
                     ctx,
                     syms,
@@ -3354,12 +3397,12 @@ impl Infer {
                         crate::comp::attr::type_display_of(ctx, types.get_return_type_public(ctx, mt)),
                         result_info.pt.map(|p| (crate::comp::attr::type_display_of(ctx, p), ctx.typ(p).get_tag())),
                         should,
-                        Rc::ptr_eq(&result_info.check_context.inference_context(), &crate::comp::infer::empty_context()),
+                        Rc::ptr_eq(result_info.check_context.inference_context(), &crate::comp::infer::empty_context()),
                     );
                 }
                 let min_context = if should {
                     let roots = self.roots(ctx, syms, types, mt, None);
-                    inference_context.min(ctx, syms, types, roots, false, warn)?
+                    inference_context.min(ctx, syms, types, roots, false, &warn_shared)?
                 } else {
                     Rc::clone(&inference_context)
                 };
@@ -3392,10 +3435,12 @@ impl Infer {
             .complete(ctx, syms, types, attr, self)
             .map_err(|failure| match failure {
                 crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => ex,
-                // TODO(Attr): the CompletionFailure channel of
-                // DeferredAttr.complete is registered with the Attr.
-                crate::comp::deferred_attr::DeferredAttrFailure::Completion(_) => {
-                    InferenceException::new()
+                // Java: DeferredAttrContext.complete throws CompletionFailure
+                // (unchecked); catch_inference_exception only catches
+                // InferenceException, so the ported panic channel keeps the
+                // CompletionFailure for the Attr completion boundary.
+                crate::comp::deferred_attr::DeferredAttrFailure::Completion(failure) => {
+                    crate::code::symbol::throw_completion_failure(failure)
                 }
             })?;
                     return Ok(new_mt);
@@ -3407,16 +3452,18 @@ impl Infer {
             .complete(ctx, syms, types, attr, self)
             .map_err(|failure| match failure {
                 crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => ex,
-                // TODO(Attr): the CompletionFailure channel of
-                // DeferredAttr.complete is registered with the Attr.
-                crate::comp::deferred_attr::DeferredAttrFailure::Completion(_) => {
-                    InferenceException::new()
+                // Java: DeferredAttrContext.complete throws CompletionFailure
+                // (unchecked); catch_inference_exception only catches
+                // InferenceException, so the ported panic channel keeps the
+                // CompletionFailure for the Attr completion boundary.
+                crate::comp::deferred_attr::DeferredAttrFailure::Completion(failure) => {
+                    crate::code::symbol::throw_completion_failure(failure)
                 }
             })?;
         // minimize as yet undetermined type variables
         if self.allow_graph_inference {
             let context = Rc::clone(&inference_context);
-            context.solve(ctx, syms, types, warn)?;
+            context.solve(ctx, syms, types, &mut warn_shared.borrow_mut())?;
         } else {
             inference_context.solve_legacy(
                 ctx,
@@ -3424,16 +3471,17 @@ impl Infer {
                 types,
                 true,
                 &crate::comp::infer::legacy_inference_steps_eq_lower(),
-                warn,
+                &mut warn_shared.borrow_mut(),
             )?;
         }
         let inst_mt = inference_context.as_inst_type(ctx, syms, types, mt);
         if !self.allow_graph_inference
             && !inference_context.restvars(ctx, syms, types).is_empty()
-            && result_info.is_some()
-            && !warn.has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED)
+            && let Some(result_info) = result_info
+            && !warn_shared
+                .borrow()
+                .has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED)
         {
-            let result_info = result_info.expect("result info");
             let new_restype = self.generate_return_constraints(
                 ctx,
                 syms,
@@ -3450,7 +3498,7 @@ impl Infer {
                 types,
                 false,
                 &crate::comp::infer::legacy_inference_steps_eq_upper(),
-                warn,
+                &mut warn_shared.borrow_mut(),
             )?;
             return Ok(inference_context.as_inst_type(ctx, syms, types, mt));
         }
@@ -3943,8 +3991,7 @@ impl Infer {
                 );
                 let min_context = if should {
                     let roots = self.roots(ctx, syms, types, t, None);
-                    let mut warn_ref = warn.borrow_mut();
-                    inference_context.min(ctx, syms, types, roots, false, &mut warn_ref)?
+                    inference_context.min(ctx, syms, types, roots, false, &warn)?
                 } else {
                     Rc::clone(&inference_context)
                 };

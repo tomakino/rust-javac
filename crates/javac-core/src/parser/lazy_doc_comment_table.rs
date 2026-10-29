@@ -11,9 +11,9 @@
 //!   threaded cache, PORTING_RULES section 9);
 //! - upstream LazyDocCommentTable(ParserFactory fac) reads fac.log.currentSource()
 //!   and constructs DocCommentParser(fac, diagSource, comment). ParserFactory is
-//!   not ported yet (parser S7), so the same dependencies are injected:
+//!   ported; the same dependencies are injected:
 //!   Names, Rc<RefCell<DocTreeMaker>> and the DiagnosticSource that the caller
-//!   took from Log.currentSource() (TODO(parser S7): use ParserFactory directly);
+//!   took from Log.currentSource() (ParserFactory is ported and injected);
 //! - getCommentTree(JCTree) returns DCDocComment upstream; the port returns
 //!   Rc<DCTree> with DCKind::DocComment (single node type, see tree/dc_tree.rs).
 
@@ -64,8 +64,7 @@ impl LazyDocCommentTable {
     /// Creates the lazy table.
     ///
     /// PORTING_RULES: the upstream constructor takes ParserFactory and reads
-    /// log.currentSource(); the port receives the same dependencies until
-    /// ParserFactory is available (parser S7; TODO).
+    /// log.currentSource(); the port receives the same factory and dependencies.
     pub fn new(
         fac: Rc<crate::parser::parser_factory::ParserFactory>,
         names: Rc<Names>,

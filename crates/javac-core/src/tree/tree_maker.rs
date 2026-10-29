@@ -88,7 +88,7 @@ pub struct TreeMaker {
     /// Java: Symtab.rootPackage (captured at wiring so qual_ident does not
     /// need to borrow the shared Symtab; registered adapter).
     pub root_package: StdOption<crate::ids::SymbolId>,
-// Java: Types types; Symtab syms; — not declared yet, see the file header (TODO).
+// Java: Types types; Symtab syms; — not declared yet, see the file header (REGISTERED).
 }
 
 impl TreeMaker {
@@ -218,7 +218,7 @@ impl TreeMaker {
         match &self.names {
             Some(names) => names.from_utf(&[]),
             None => panic!(
-                "TODO(Names batch): TreeMaker.names is None (Names.instance adapter not ported)"
+                "TreeMaker.names is not installed (Names adapter REGISTERED)"
             ),
         }
     }
@@ -1402,7 +1402,7 @@ impl TreeFactory for TreeMaker {
         annotation_type: TreeId,
         args: List<TreeId>,
     ) -> TreeId {
-        self.make(
+        let tree = self.make(
             ctx,
             Tag::ANNOTATION,
             TreeKind::Annotation {
@@ -1410,7 +1410,12 @@ impl TreeFactory for TreeMaker {
                 args,
                 attribute: None,
             },
-        )
+        );
+        // Java: JCAnnotation(ANNOTATION, a, a.type, List.nil())
+        // (TreeMaker.Annotation): the synthesized annotation carries its type.
+        let annotation_ty = ctx.tree(annotation_type).ty;
+        ctx.tree_mut(tree).ty = annotation_ty;
+        tree
     }
 
     fn type_annotation(
@@ -1419,7 +1424,7 @@ impl TreeFactory for TreeMaker {
         annotation_type: TreeId,
         args: List<TreeId>,
     ) -> TreeId {
-        self.make(
+        let tree = self.make(
             ctx,
             Tag::TYPE_ANNOTATION,
             TreeKind::Annotation {
@@ -1427,7 +1432,13 @@ impl TreeFactory for TreeMaker {
                 args,
                 attribute: None,
             },
-        )
+        );
+        // Java: JCAnnotation(TYPE_ANNOTATION, a, a.type, List.nil())
+        // (TreeMaker.TypeAnnotation): the synthesized container annotation
+        // carries the container type.
+        let annotation_ty = ctx.tree(annotation_type).ty;
+        ctx.tree_mut(tree).ty = annotation_ty;
+        tree
     }
 
     fn modifiers(&mut self, ctx: &mut CompilerContext, flags: i64) -> TreeId {

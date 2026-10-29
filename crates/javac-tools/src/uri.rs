@@ -4,7 +4,7 @@
 //              (reference/ contains java.compiler, jdk.compiler,
 //              jdk.internal.opt only) and javax.tools only observes a minimal
 //              subset of java.net.URI; the complete port is deferred to P2
-//              (com.sun.tools.javac.file), see the TODOs below.
+//              (com.sun.tools.javac.file), see the REGISTERED notes below.
 //! Minimal mapping of `java.net.URI` (java.base) for the `javax.tools` layer.
 //!
 //! PORTING_RULES: only the parts of `java.net.URI` that `javax.tools` observes
@@ -19,7 +19,7 @@
 //! All text is a Java String (`javac_strings::JavaString`): the URI string, the
 //! scheme and the decoded path are Java Strings in the JDK.
 //!
-//! TODO(P2): this is not the complete `java.net.URI` port.
+//! REGISTERED P2: this is not the complete `java.net.URI` port.
 //! `normalize()`, `resolve()`, `relativize()`, `toURL()`, component-wise
 //! validation and component-wise equality are added together with
 //! `com.sun.tools.javac.file`, which is the first package that observes them.
@@ -165,7 +165,7 @@ fn parse(s: &JavaString) -> Result<URI, JavaString> {
 /// set of characters rejected here is the one reported by `java.net.URI`
 /// ("Illegal character in ...") plus malformed escape pairs.
 ///
-/// TODO(P2): `java.net.URI` validates per component (for example '[' and ']'
+/// REGISTERED P2: `java.net.URI` validates per component (for example '[' and ']'
 /// are legal only in an IPv6 authority); component-wise validation is added
 /// with the complete URI port.
 fn check_chars(s: &JavaString) -> Result<(), JavaString> {

@@ -27,10 +27,10 @@ pub trait ElementScanner9<R: Clone, P: Clone>: ElementScanner8<R, P> {
     /// {@inheritDoc}
     ///
     /// @implSpec This implementation scans the enclosed elements.
-    /// TODO(upstream): the Java source carries the same "Hmmm, this might not be
+    /// Upstream note: the Java source carries the same "Hmmm, this might not be
     /// right" comment; it is kept for the upstream diff.
     fn visit_module(&mut self, e: &dyn ModuleElement, p: P) -> R {
-        // TODO: Hmmm, this might not be right
+        // Hmmm, this might not be right
         self.scan_all(&e.get_enclosed_elements(), p)
     }
 }

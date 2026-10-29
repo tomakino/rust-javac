@@ -10193,7 +10193,12 @@ impl Attr {
                 .borrow()
                 .clone()
                 .expect("AssertionError: deferredAttr service must be installed");
-            let mut deferred = deferred_rc.borrow_mut();
+            let deferred = deferred_rc.borrow_mut();
+            let local_cache = self
+                .argument_attr
+                .borrow()
+                .clone()
+                .map(|argument_attr| argument_attr.borrow().with_local_cache_context());
             let _ = deferred.attrib_speculative_with_diag(
                 ctx,
                 syms,
@@ -10203,6 +10208,7 @@ impl Attr {
                 &result_info,
                 None,
                 crate::comp::deferred_attr::AttributionMode::ATTRIB_TO_TREE,
+                local_cache,
             );
             // Java: attrRecover.doRecovery();
             self.do_recovery(ctx, syms);
@@ -10580,7 +10586,7 @@ impl Attr {
                 basic_handler: Rc::clone(&self.basic_handler),
                 diags: Rc::clone(&self.diags),
             };
-            let mut warn = check_context.check_warner(
+            let warn_shared = check_context.check_warner_shared(
                 ctx,
                 syms,
                 &self.types,
@@ -10588,6 +10594,7 @@ impl Attr {
                 res_type,
                 return_type,
             );
+            let mut warn = warn_shared.borrow_mut();
             if ctx.typ(res_type).has_tag(TypeTag::ERROR)
                 || crate::comp::check::CheckContext::compatible(
                     &func_context,
@@ -13013,7 +13020,7 @@ impl Attr {
                 let cb_pos = cb_pos.expect("AssertionError: repeatable diagnostic position");
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = Rc::clone(&chk_rc);
-                chk.validate_repeatable(ctx, syms, cb_pos, c, repeatable);
+                chk.validate_repeatable(ctx, syms, cb_pos, c, repeatable, Some(self));
             }
         } else {
             // Check that all extended classes and interfaces are compatible
@@ -14390,9 +14397,14 @@ impl Attr {
             }
         }
         if matches_val_mth {
-            self.enter
-                .borrow_mut()
-                .class_enter(ctx, syms, tree, Some(Rc::clone(&env)));
+            let enter = Rc::clone(&self.enter);
+            enter.borrow_mut().class_enter(
+                ctx,
+                syms,
+                tree,
+                Some(Rc::clone(&env)),
+                Some(self),
+            );
         } else {
             // If this class declaration is part of a class level annotation,
             // as in @MyAnno(new Object() {}) class MyClass {}, enter it in
@@ -14404,9 +14416,14 @@ impl Attr {
             if env_tree_is_new_class
                 && crate::tree::tree_info::is_in_annotation(ctx, &env, tree)
             {
-                self.enter
-                    .borrow_mut()
-                    .class_enter(ctx, syms, tree, Some(Rc::clone(&env)));
+                let enter = Rc::clone(&self.enter);
+                enter.borrow_mut().class_enter(
+                    ctx,
+                    syms,
+                    tree,
+                    Some(Rc::clone(&env)),
+                    Some(self),
+                );
             }
         }
         let class_symbol = match &ctx.tree(tree).kind {

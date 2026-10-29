@@ -5,10 +5,13 @@
 // DeferredAttrContext / DeferredAttrNode / StuckNode / DeferredTypeMap /
 // RecoveryDeferredTypeMap / FilterScanner / PolyScanner / LambdaReturnScanner /
 // SwitchExpressionScanner / CheckStuckPolicy / OverloadStuckPolicy are ported
-// here. NOT PORTED (registered): the DeferredAttr service and
-// attribSpeculative/ex attribSpeculativeLambda/DeferredAttrDiagHandler (need
-// Attr.copyEnv[ported]/TreeCopier/ArgumentAttr.LocalCacheContext/Flow.analyzeLambda/
-// Log.DeferredDiagnosticHandler/Annotate.Queues/DeferredCompletionFailureHandler);
+// here. The speculative attribution (attribSpeculative/
+// attribSpeculativeLambda/DeferredAttrDiagHandler) is ported; the
+// ArgumentAttr.LocalCacheContext parameter is wired (Analyzer/Attr pass
+// argumentAttr.withLocalCacheContext()). The DeferredAttr service construction
+// remains an ADR 0001 explicit-context TODO. Historical dependency list:
+// Attr.copyEnv/TreeCopier/ArgumentAttr.LocalCacheContext/Flow.analyzeLambda/
+// Log.DeferredDiagnosticHandler/Annotate.Queues/DeferredCompletionFailureHandler;
 // DeferredAttrNode.StructuralStuckChecker (needs Types.findDescriptorType/
 // isFunctionalInterface, Attr.lambdaEnv/preFlow/unknownExprInfo/
 // memberReferenceQualifierResult, ArgumentAttr, Resolve.resolveMemberReference);
@@ -2376,6 +2379,7 @@ impl DeferredAttrService {
             result_info,
             None,
             AttributionMode::SPECULATIVE,
+            None,
         )
     }
 
@@ -2428,13 +2432,14 @@ impl DeferredAttrService {
             result_info,
             diag_handler_creator,
             attribution_mode,
+            None,
         )
     }
 
     /// Java: JCTree attribSpeculative(JCTree tree, Env, ResultInfo,
     /// Supplier<DiagnosticHandler>, AttributionMode, LocalCacheContext)
-    /// (DeferredAttr.java:496-520) — the LocalCacheContext parameter is
-    /// registered with the ArgumentAttr stage (Porting rules of the registration).
+    /// (DeferredAttr.java:489-511); the LocalCacheContext is left by the Drop
+    /// guard below, mirroring the upstream finally (DeferredAttr.java:508-510).
     #[allow(clippy::too_many_arguments)]
     pub fn attrib_speculative_with_diag(
         &self,
@@ -2446,8 +2451,28 @@ impl DeferredAttrService {
         result_info: &ResultInfo,
         diag_handler_creator: Option<Box<dyn Fn() -> crate::util::log::DiagnosticHandler>>,
         attribution_mode: AttributionMode,
+        local_cache: Option<crate::comp::argument_attr::LocalCacheContext>,
     ) -> Result<TreeId, DeferredAttrFailure> {
         use crate::util::log::DiagnosticHandler;
+        // Java: finally { ...; if (localCache != null) localCache.leave(); }
+        // (DeferredAttr.java:502-510); the Drop guard also covers panic paths.
+        struct LocalCacheLeave {
+            cache: Option<crate::comp::argument_attr::LocalCacheContext>,
+            argument_attr: Option<Rc<RefCell<crate::comp::argument_attr::ArgumentAttr>>>,
+        }
+        impl Drop for LocalCacheLeave {
+            fn drop(&mut self) {
+                if let (Some(cache), Some(argument_attr)) =
+                    (self.cache.as_mut(), &self.argument_attr)
+                {
+                    cache.leave(&argument_attr.borrow());
+                }
+            }
+        }
+        let _local_cache_leave = LocalCacheLeave {
+            cache: local_cache,
+            argument_attr: attr.argument_attr.borrow().clone(),
+        };
         // The immediate env of a deferred attribution can be a synthetic env
         // without a scope; walk the enclosing envs (upstream Env.outer is always
         // populated during attribution) and fall back to the Attr's current env.
@@ -3211,6 +3236,7 @@ impl DeferredAttrService {
         copier: &crate::tree::tree_copier::TreeCopier,
         diag_handler_creator: Option<Box<dyn Fn() -> crate::util::log::DiagnosticHandler>>,
         attribution_mode: AttributionMode,
+        local_cache: Option<crate::comp::argument_attr::LocalCacheContext>,
     ) -> Result<TreeId, DeferredAttrFailure> {
         let new_tree = copier.copy(ctx, Some(tree)).expect("copied tree");
         self.attrib_speculative_with_diag(
@@ -3222,6 +3248,7 @@ impl DeferredAttrService {
             result_info,
             diag_handler_creator,
             attribution_mode,
+            local_cache,
         )
     }
 }

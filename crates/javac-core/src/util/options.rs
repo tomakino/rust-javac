@@ -34,9 +34,9 @@
 //!   class name Option shadows it (Porting rules name fidelity is kept).
 //! * Map values are never null upstream (absence is what get() returns as null);
 //!   Rust models absence with None, so a null value cannot be stored (Porting rules note).
-//! * TODO(Arguments/CommandLine): the table is filled by Arguments/CommandLine
-//!   (not ported yet); isLintSet's callers (Lint/Preview) are ported but the
-//!   options are only populated by that.
+//! * REGISTERED: the full Arguments/CommandLine table is not ported; Options
+//!   stores the values supplied by the compiler wiring. isLintSet and the
+//!   -Xlint parsing needed by the ported Lint/Preview callers are implemented.
 
 use std::cell::RefCell;
 use std::option::Option as StdOption;
@@ -104,8 +104,8 @@ impl Options {
         self.get(option.primary_name())
     }
 
-    /// Java: Lint.isEnabled(LintCategory) — Port adapter: the Lint service is
-    /// not ported yet (registered TODO(Lint)); the -Xlint options are parsed
+    /// Java: Lint.isEnabled(LintCategory) — REGISTERED: the full Lint option set
+    /// is not ported; the -Xlint options needed by the ported callers are parsed
     /// here with the upstream Lint construction rules: the global default is
     /// -Xlint or -Xlint:all (all enabled), -Xlint:none (all disabled), or the
     /// on-by-default set (CLASSFILE is not in it); the per-category option

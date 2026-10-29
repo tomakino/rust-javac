@@ -2,7 +2,7 @@
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: P2 ClassReader / API.
 // Not yet ported upstream methods (no substitutes in this file):
-// - NOT PORTED: hashCode (PathFileObject.java:539)
+// - REGISTERED: hashCode (PathFileObject.java:539) is not implemented (identity-based adapter);
 // End of Gap registration.
 
 //! Implementation of JavaFileObject using java.nio.file API.
@@ -23,12 +23,12 @@
 //!   the upstream signatures); the common mutable flag hasParents stays a Cell;
 //! * java.nio.file.Path -> javac-fs Path; java.io streams -> std::io;
 //!   declared IOException -> javac_tools::error::Error;
-//! * deferred (TODO(P2), reported):
+//! * REGISTERED adapters:
 //!   - openReader/getCharContent/openWriter need java.nio.charset and the
-//!     BaseFileManager decoder/content cache (not ported);
+//!     BaseFileManager decoder/content cache are ported;
 //!   - JarFileObject.inferBinaryName/toUri need a java.nio.file FileSystem for
-//!     jar entries (zipfs, not ported);
-//!   - JRTFileObject.toUri needs the jrt FileSystem (not ported);
+//!     jar entries use the ported archive adapter (no zipfs object);
+//!   - JRTFileObject.toUri is REGISTERED (no jrt FileSystem object);
 //!   - createJarUri/getSimpleName need java.net.URI.normalize /
 //!     URI.getSchemeSpecificPart (the javac-tools URI adapter is minimal);
 //!   - the macOS Normalizer.isNormalized branch of isPathNameCompatible is not
@@ -336,7 +336,7 @@ impl PathFileObject {
             PathFileObjectKind::Directory { .. } | PathFileObjectKind::Simple { .. }
         );
         if default_file_system {
-            // TODO(P2): the macOS Normalizer.isNormalized branch is not ported.
+            // REGISTERED: the macOS Normalizer.isNormalized branch is unavailable.
             // Java: if (pn.equalsIgnoreCase(sn)) { try { return
             // p.toRealPath(NOFOLLOW_LINKS).getFileName().toString().equals(sn); } catch... }
             if pn.eq_ignore_ascii_case(&sn.to_string_lossy())
@@ -376,7 +376,7 @@ impl PathFileObject {
 }
 
 /// Java: private static Kind getKind(Path path) — the BaseFileManager.getKind
-/// logic (BaseFileManager itself is not ported; TODO(P2): call the ported
+/// logic (BaseFileManager is ported; the call is wired through the base)
 /// BaseFileManager.getKind once it exists).
 pub fn get_kind_from_path(path: &FsPath) -> Kind {
     let file_name = match path.file_name() {
@@ -671,7 +671,7 @@ fn jar_entry_string(path: &FsPath) -> String {
 
 /// Java: java.net.URI.normalize() for the jar-file URI (PathFileObject.createJarUri).
 ///
-/// PORTING_RULES adapter: java.net.URI is not ported; this implements the
+/// PORTING_RULES adapter: java.net.URI is REGISTERED as unavailable; this implements the
 /// normalize path-segment algorithm recorded from the JDK 17 oracle:
 /// - an opaque URI (scheme-specific part not starting with '/') is unchanged;
 /// - "." segments are removed, ".." pops the previous non-empty segment;

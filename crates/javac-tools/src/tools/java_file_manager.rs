@@ -1,4 +1,7 @@
 // Origin: javax/tools/JavaFileManager.java @ 982d53c (jdk-17.0.19-ga)
+// NOTE: the four "Failure modes: undocumented upstream." comments below are the
+// upstream JavaFileManager.java "TODO: describe failure modes" text, rewritten
+// per project rules (semantics unchanged).
 
 //! File manager for tools operating on Java programming language
 //! source and class files.
@@ -474,7 +477,7 @@ pub trait JavaFileManager: OptionChecker {
         location: &dyn Location,
         module_name: &JavaString,
     ) -> Result<LocationRef, Error> {
-        // TODO: describe failure modes
+        // Failure modes: undocumented upstream.
         let _ = (location, module_name);
         Err(Error::UnsupportedOperationException)
     }
@@ -533,7 +536,7 @@ pub trait JavaFileManager: OptionChecker {
     where
         Self: Sized,
     {
-        // TODO: describe failure modes
+        // Failure modes: undocumented upstream.
         let _ = (location, service);
         Err(Error::UnsupportedOperationException)
     }
@@ -551,7 +554,7 @@ pub trait JavaFileManager: OptionChecker {
     /// @throws IllegalArgumentException if the location is not one known to this file manager
     /// @since 9
     fn infer_module_name(&self, location: &dyn Location) -> Result<JavaString, Error> {
-        // TODO: describe failure modes
+        // Failure modes: undocumented upstream.
         let _ = location;
         Err(Error::UnsupportedOperationException)
     }
@@ -575,7 +578,7 @@ pub trait JavaFileManager: OptionChecker {
         &self,
         location: &dyn Location,
     ) -> Result<Vec<Vec<LocationRef>>, Error> {
-        // TODO: describe failure modes
+        // Failure modes: undocumented upstream.
         let _ = location;
         Err(Error::UnsupportedOperationException)
     }

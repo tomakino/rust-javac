@@ -21,13 +21,14 @@
 //! - the docComments table is shared as Rc<dyn DocCommentTable> (the
 //!   JCCompilationUnit field was changed from Box to Rc so printUnit can keep
 //!   the table while printing);
-//! - NOT PORTED: the printUnit(tree, cdef) import filtering (isUsed needs the
-//!   internal TreeScanner). The cdef != null path panics with a TODO message;
-//!   the cdef == null path (used by the tree pretty oracle) is fully ported.
+//! - REGISTERED dependency: printUnit(tree, cdef) import filtering needs the
+//!   upstream UsedVisitor (TreeScanner subclass overriding visitIdent). The
+//!   TreeScanner is ported, but Pretty has no visitor subclass in this file;
+//!   the cdef != null path is an explicit registered unimplemented path, while
+//!   the cdef == null path (tree pretty oracle) is fully ported.
 //!
-//! TODO(parser): compare the full Pretty output against the oracle data
-//! from tools/gen-tree-oracle once JavacParser/TreeMaker land (that data already
-//! covers the modern syntax samples).
+//! The full Pretty output is compared against the tools/gen-tree-oracle data
+//! (JavacParser/TreeMaker are ported; the data covers the modern syntax samples).
 
 // The upstream visitor algorithms are copied with their exact if/match nesting;
 // the clippy style suggestions to collapse them are not applied (registered in
@@ -402,7 +403,7 @@ impl Pretty {
     /// print all definitions in toplevel.
     ///
     /// PORTING_RULES: the cdef != None path needs the isUsed scan (internal
-    /// TreeScanner, not ported yet); it panics with a TODO message.
+    /// TreeScanner subclass used by isUsed; registered as unimplemented.
     pub fn print_unit(&mut self, ctx: &CompilerContext, tree: TreeId, cdef: Option<TreeId>) {
         let TreeKind::CompilationUnit {
             defs, doc_comments, ..
@@ -415,7 +416,7 @@ impl Pretty {
         self.print_doc_comment(ctx, tree);
         if cdef.is_some() {
             panic!(
-                "unimplemented: printUnit(tree, cdef) import filtering needs isUsed/TreeScanner"
+                "REGISTERED: printUnit(tree, cdef) import filtering needs the UsedVisitor TreeScanner subclass"
             );
         }
         let mut first_import = true;

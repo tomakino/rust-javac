@@ -25,7 +25,7 @@ use crate::util::jc_diagnostic::DiagnosticPosition;
 /// An interface to support optional warnings.
 ///
 /// Java: public class Warner
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Warner {
     /// Java: private DiagnosticPosition pos (null -> None)
     pos: Option<Rc<dyn DiagnosticPosition>>,

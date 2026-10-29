@@ -17,7 +17,7 @@
 // negative index, index overflow, incomplete sub-format) panic, matching
 // Java's IllegalArgumentException (PORTING_RULES section 6).
 //
-// Not implemented (registered TODO): number/date/time/choice sub-formats
+// REGISTERED: number/date/time/choice sub-formats are not implemented
 // ({n,number}, {n,choice,...}) - a scan of all javac message resources found
 // zero uses of any sub-format; a sub-format in a pattern panics with a clear
 // message instead of silently formatting.

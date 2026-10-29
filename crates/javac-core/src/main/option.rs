@@ -131,6 +131,8 @@ pub enum Option {
     SOURCEFILE,
     H,
     MULTIRELEASE,
+    DOE,
+    PROMPT,
 }
 
 impl Option {
@@ -227,6 +229,8 @@ impl Option {
             Option::AT => &["@"],
             Option::SOURCEFILE => &["sourcefile"],
             Option::MULTIRELEASE => &["--multi-release"],
+            Option::DOE => &["-doe"],
+            Option::PROMPT => &["-prompt"],
         }
     }
 
@@ -311,6 +315,7 @@ impl Option {
             Option::AT => Some("opt.AT"),
             Option::SOURCEFILE => None,
             Option::MULTIRELEASE => Some("opt.multi-release"),
+            Option::DOE | Option::PROMPT => None,
         }
     }
 
@@ -353,9 +358,12 @@ impl Option {
             | Option::XDIAGS
             | Option::ADD_EXPORTS
             | Option::ADD_READS => OptionKind::EXTENDED,
-            Option::FULLVERSION | Option::XD | Option::SOURCEFILE | Option::MULTIRELEASE => {
-                OptionKind::HIDDEN
-            }
+            Option::FULLVERSION
+            | Option::XD
+            | Option::SOURCEFILE
+            | Option::MULTIRELEASE
+            | Option::DOE
+            | Option::PROMPT => OptionKind::HIDDEN,
             Option::VERSION | Option::WERROR => OptionKind::STANDARD,
         }
     }
@@ -387,7 +395,9 @@ impl Option {
             | Option::MODULE
             | Option::ADD_MODULES
             | Option::LIMIT_MODULES
-            | Option::MODULE_VERSION => OptionGroup::BASIC,
+            | Option::MODULE_VERSION
+            | Option::DOE
+            | Option::PROMPT => OptionGroup::BASIC,
             Option::CLASS_PATH
             | Option::SOURCE_PATH
             | Option::MODULE_SOURCE_PATH

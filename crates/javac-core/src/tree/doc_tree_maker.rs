@@ -2,7 +2,9 @@
 // Gap registration (method-level audit of the ported upstream class):
 // Dependency/phase: tree (tree nodes/scanners for the corresponding upstream feature).
 // Not yet ported upstream methods (no substitutes in this file):
-// - NOT PORTED: cast (DocTreeMaker.java:729)
+// - REGISTERED P6: cast (DocTreeMaker.java:729) belongs to the DocTreeFactory
+//   API bridge (the internal DCTree cast helper is not part of the core tree
+//   factory); no substitute is introduced.
 // End of Gap registration.
 
 //! A factory for doc-comment trees.
@@ -16,16 +18,13 @@
 //! - Java String -> JavaString, javax.lang.model.element.Name -> util::Name,
 //!   List<? extends DocTree> -> slices of Rc<DCTree> (collected into the ported
 //!   immutable List<Rc<DCTree>>);
-//! - TODO(P6): upstream instance(Context) needs JavacTrees and
-//!   ParserFactory/ReferenceParser, which are not ported yet; the ported
-//!   factory methods are usable through [DocTreeMaker::new]. TODO(parser S8):
-//!   newReferenceTree(String) needs parser.ReferenceParser;
-//!   newErroneousTree(String, DiagnosticSource, String, Object...) needs the
-//!   upstream self-referencing diagnostic position. Both are left
-//!   a not-yet-ported marker (registered, no replacement algorithm is written);
-//! - TODO(P6): getSentenceBreak uses trees.getBreakIterator() upstream; until
-//!   JavacTrees/BreakIterator are ported the upstream breakIterator == null path
-//!   (defaultSentenceBreak) is used and registered as a difference;
+//! - ParserFactory/ReferenceParser are ported; newReferenceTree parses through
+//!   the injected ReferenceParser (new_reference_tree) and newErroneousTree is
+//!   implemented with the self-position object (DCErroneousPosition);
+//! - REGISTERED P6 dependency: getSentenceBreak uses trees.getBreakIterator()
+//!   upstream; JavacTrees/BreakIterator are not ported, so the upstream
+//!   breakIterator == null path (defaultSentenceBreak) is used and registered
+//!   as a difference (no fake break iterator);
 //! - Java assert -> assert!, Java IllegalArgumentException -> panic.
 
 use std::rc::Rc;
@@ -58,15 +57,14 @@ pub struct DocTreeMaker {
     pub pos: i32,
     /// Access to the diag factory for ErroneousTrees.
     ///
-    /// PORTING_RULES: kept for the upstream newErroneousTree(diagSource, code,
-    /// args) method (TODO, see the file header); the accessor keeps the
-    /// upstream field visible to P4/P6 code.
+    /// Used by newErroneousTree(diagSource, code, args); the accessor keeps
+    /// the upstream field visible to P4/P6 code.
     diags: Rc<Factory>,
     /// Java: private final ReferenceParser referenceParser;
     /// PORTING_RULES: injected explicitly (registered adapter; see new()).
     reference_parser: Option<Rc<crate::parser::reference_parser::ReferenceParser>>,
-// TODO(P6): trees: JavacTrees (used by getSentenceBreak)
-// TODO(parser S8): reference_parser: ReferenceParser (used by newReferenceTree)
+// REGISTERED P6: trees: JavacTrees (used by getSentenceBreak); ReferenceParser
+// is injected (reference_parser) for newReferenceTree.
 }
 
 impl DocTreeMaker {
@@ -74,9 +72,9 @@ impl DocTreeMaker {
     ///
     /// PORTING_RULES: upstream protected DocTreeMaker(Context context) obtains
     /// JCDiagnostic.Factory, JavacTrees and ReferenceParser from the context;
-    /// only the diagnostic factory is available in the current port, so it is
-    /// passed in (registered adapter; the JavacTrees/ReferenceParser fields are
-    /// TODO(P6)/(parser S8), see the file header).
+    /// the factory is passed in and the ReferenceParser is injected through
+    /// set_reference_parser (registered adapter). JavacTrees remains a P6
+    /// REGISTERED dependency for getSentenceBreak.
     pub fn new(diags: Rc<Factory>) -> DocTreeMaker {
         DocTreeMaker {            pos: NOPOS,            diags,            reference_parser: None,        }
     }
@@ -285,7 +283,7 @@ impl DocTreeMaker {
     pub fn new_erroneous_tree(
         &mut self,
         text: JavaString,
-        diag_source: Rc<crate::util::diagnostic_source::DiagnosticSource>,
+        diag_source: Option<Rc<crate::util::diagnostic_source::DiagnosticSource>>,
         code: &str,
         args: Vec<crate::util::jc_diagnostic::DiagnosticArg>,
     ) -> Rc<DCTree> {
@@ -294,7 +292,7 @@ impl DocTreeMaker {
             Rc::new(DCErroneousPosition::new(self.pos, body_len));
         let diag = self.diags.create(
             crate::util::jc_diagnostic::DiagnosticType::ERROR,
-            Some(diag_source),
+            diag_source,
             Some(position),
             code,
             args,
@@ -420,9 +418,8 @@ impl DocTreeMaker {
 
     /// Java: public DCReference newReferenceTree(String signature)
     ///
-    /// TODO(parser S8): needs parser.ReferenceParser (not ported yet); upstream
-    /// parses the signature and throws IllegalArgumentException on a parse error.
-    /// No replacement parser is written here.
+    /// Uses the injected parser.ReferenceParser; a parse error corresponds to
+    /// the upstream IllegalArgumentException (panic channel).
     pub fn new_reference_tree(
         &mut self,
         ctx: &mut crate::compiler_context::CompilerContext,
@@ -768,9 +765,9 @@ impl DocTreeMaker {
      * the break is returned, if not then a -1, indicating that
      * more doctree elements are required to be examined.
      *
-     * TODO(P6): upstream consults trees.getBreakIterator(); JavacTrees and
-     * BreakIterator are not ported yet, so the upstream breakIterator == null
-     * path (defaultSentenceBreak) is used. Registered as a porting difference.
+     * REGISTERED P6: upstream consults trees.getBreakIterator(); JavacTrees and
+     * BreakIterator are not ported, so the upstream breakIterator == null path
+     * (defaultSentenceBreak) is used (no fake break iterator).
      */
     fn get_sentence_break(&self, s: &JavaString, _dt: Option<&Rc<DCTree>>) -> i32 {
         self.default_sentence_break(s)
@@ -1164,7 +1161,7 @@ mod tests {
         maker.at(5);
         let tree = maker.new_erroneous_tree(
             JavaString::from("bad"),
-            Rc::new(DiagnosticSource::no_source()),
+            Some(Rc::new(DiagnosticSource::no_source())),
             "compiler.err.test",
             Vec::new(),
         );

@@ -24,18 +24,24 @@
 //! - MethodCheck implementations: NilMethodCheck/ArityMethodCheck/
 //!   ResolveMethodCheck/MostSpecificCheck/MethodReferenceCheck (class + entry),
 //!   AbstractMethodCheck.argumentsAcceptable, MethodCheckContext, MethodResultInfo,
-//!   adjustArgs (varargs branch), varargsAccessible (registered access check);
+//!   adjustArgs (varargs branch), varargsAccessible (access check +
+//!   INACCESSIBLE_VARARGS), reportMC method-check fragments (MethodCheckDiag
+//!   basic/infer key + argument selection);
 //! - selectBest/mostSpecific/signatureMoreSpecific/ambiguityError/
 //!   findMethodInScope/findMethod/findFun/findConstructor/findDiamond;
 //! - lookupMethod/LookupHelper/BasicLookupHelper and the resolve* family:
 //!   resolveMethod/resolveQualifiedMethod/resolveInternalMethod/
 //!   resolveConstructor/resolveInternalConstructor/resolveDiamond;
 //! - ResolveError data + diagnostics: InapplicableSymbolError/
-//!   InapplicableSymbolsError/DiamondError/BadVarargsMethod added to the
-//!   existing SymbolNotFound/Access/Invisible/Static/Ambiguity/BadRestrictedType
-//!   hierarchy (Resolve.java:3904-4720);
+//!   InapplicableSymbolsError/DiamondError/BadVarargsMethod/BadClassFileError
+//!   added to the existing SymbolNotFound/Access/Invisible/Static/Ambiguity/
+//!   BadRestrictedType hierarchy (Resolve.java:3904-4720);
 //! - access errors/ambiguity helpers (new_access_error/new_ambiguity_error/
-//!   new_static_error/resolve_error_access/resolve_error_diagnostic).
+//!   new_static_error/new_bad_class_file_error/resolve_error_access/
+//!   resolve_error_diagnostic);
+//! - loadClass BadClassFile distinction, findConstructor deprecated/preview
+//!   checks, isAccessible union alternatives, currModule.complete, and the
+//!   in-query LookupFilter (Resolve.java:345/390-392/1787/2054/2896-2897).
 //!
 //! NOT YET PORTED IN THIS FILE (registered; each with a not-yet-ported marker + TODO):
 //! - member-reference resolution: makeReferenceLookupHelper/
@@ -49,12 +55,10 @@
 //!   same dependency);
 //! - selectBest inference-exception propagation (Resolve.java:1592-1593) and
 //!   AmbiguityError.mergeAbstracts (Types);
-//! - varargsAccessible isAccessible/reportMC diagnostics (Check);
 //! - verbose resolution diagnostics (reportVerboseResolutionDiagnostic/
 //!   VerboseResolutionMode): Log/Options;
 //! - MethodSymbol.implementation(hiddenIn path): Symbol;
-//! - Type.isUnion/UnionClassType and Types.overrideEquivalent/
-//!   Types.mergeAbstracts: Types.
+//! - Types.overrideEquivalent/Types.mergeAbstracts: Types.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -797,7 +801,8 @@ impl Resolve {
         match data {
             crate::code::symbol::ResolveErrorData::Access { sym, .. }
             | crate::code::symbol::ResolveErrorData::Invisible { sym, .. }
-            | crate::code::symbol::ResolveErrorData::Static { sym } => {
+            | crate::code::symbol::ResolveErrorData::Static { sym }
+            | crate::code::symbol::ResolveErrorData::BadClassFile { sym, .. } => {
                 // InvalidSymbolError.access
                 if ctx.sym(sym).kind.is_resolution_error()
                     || !ctx.sym(sym).kind.matches(crate::code::kinds::KindSelector::TYP)
@@ -978,6 +983,26 @@ impl Resolve {
                 };
                 Some(self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(info)))
             }
+            crate::code::symbol::ResolveErrorData::BadClassFile { sym, detail } => {
+                // Java: BadClassFileError.getDiagnostic (Resolve.java:4704-4710):
+                // diags.create(dkind, currentSource, pos, "cant.access", ex.sym,
+                // ex.getDetailValue()); d.setFlag(NON_DEFERRABLE).
+                use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg};
+                let detail_arg = match detail {
+                    Some(detail) => DiagnosticArg::JCDiagnostic(Rc::new(detail)),
+                    None => DiagnosticArg::from_display(""),
+                };
+                let info = errors::cant_access(
+                    SymbolArg::placeholder(symbol_display_name(ctx, sym)),
+                    detail_arg,
+                );
+                let info = info.info();
+                let args = crate::util::jc_diagnostic::contract_args_to_args(&info.args);
+                let source = self.log.borrow().current_source();
+                let mut diagnostic = self.diags.create(dkind, source, pos, info.code, args);
+                diagnostic.set_flag(crate::util::jc_diagnostic::DiagnosticFlag::NON_DEFERRABLE);
+                Some(diagnostic)
+            }
             crate::code::symbol::ResolveErrorData::BadConstructorReference { sym } => {
                 // Java: BadConstructorReferenceError.getDiagnostic (Resolve.java:4680-4690)
                 let _ = sym;
@@ -1115,6 +1140,9 @@ impl Resolve {
                 }
                 let types = Rc::clone(&self.types);
                 let mapped = resolve_map_candidates(ctx, syms, &types, &candidates);
+                // Java: Map<Symbol, JCDiagnostic> filteredCandidates =
+                //     compactMethodDiags ? filterCandidates(candidatesMap) :
+                //     mapCandidates(); (Resolve.java:4197-4203).
                 let mut filtered = if self.compact_method_diags {
                     resolve_filter_candidates(&mapped)
                 } else {
@@ -2347,6 +2375,24 @@ impl Resolve {
 // ---------------------------------------------------------------------------
 
 impl Resolve {
+    /// Java: new BadClassFileError(ex) (Resolve.java:4693-4701)
+    fn new_bad_class_file_error(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        failure: crate::code::symbol::CompletionFailure,
+    ) -> SymbolId {
+        let sym = failure.sym.expect("BadClassFile symbol");
+        let name = ctx.sym(sym).name.clone();
+        let detail = failure.get_detail_value();
+        crate::code::symbol::symbol_new_resolve_error(
+            ctx,
+            Kind::HIDDEN,
+            name,
+            "BadClassFileError",
+            crate::code::symbol::ResolveErrorData::BadClassFile { sym, detail },
+        )
+    }
+
     /// Java: new AccessError(env, site, sym) (Resolve.java:4351-4360)
     fn new_access_error(
         &self,
@@ -2537,9 +2583,15 @@ impl Resolve {
                     self.new_access_error(ctx, syms, env, None, c)
                 }
             }
-            Err(_failure) => {
-                // TODO(ClassFinder): the BadClassFile distinction is not
-                // representable in the local CompletionFailure; recovery path.
+            Err(failure) => {
+                // Java: catch (ClassFinder.BadClassFile err) {
+                //     return new BadClassFileError(err); }
+                // catch (CompletionFailure ex) { recovery... } (Resolve.java:2054-2063).
+                // The Rust CompletionFailure keeps the BadClassFile marker
+                // (CompletionFailure.bad_class_file, ClassFinder adapter).
+                if failure.bad_class_file {
+                    return self.new_bad_class_file_error(ctx, failure);
+                }
                 match recovery {
                     RecoveryLoadClass::NoRecovery => self.type_not_found,
                     RecoveryLoadClass::DoRecoveryLoadClass => {
@@ -4172,8 +4224,15 @@ pub fn abstract_method_check_arguments_acceptable(
             current = current.tail();
         }
         if arg_count != formal_count {
+            let diagnostic = report_mc_diagnostic(
+                ctx,
+                diags,
+                MethodCheckDiag::ArityMismatch,
+                &deferred_attr_context.inference_context,
+                None,
+            );
             return Err(MethodCheckFailure::Inapplicable(
-                InapplicableMethodException::new(Some(method_check_diag(diags, "arity mismatch"))),
+                InapplicableMethodException::new(Some(diagnostic)),
             ));
         }
     }
@@ -4204,9 +4263,16 @@ pub fn abstract_method_check_arguments_acceptable(
         }
     }
     if formals_head_is_not_varargs(&formals, varargs_formal) {
-        return Err(MethodCheckFailure::Inapplicable(InapplicableMethodException::new(
-            Some(method_check_diag(diags, "arity mismatch")),
-        )));
+        let diagnostic = report_mc_diagnostic(
+            ctx,
+            diags,
+            MethodCheckDiag::ArityMismatch,
+            &deferred_attr_context.inference_context,
+            None,
+        );
+        return Err(MethodCheckFailure::Inapplicable(
+            InapplicableMethodException::new(Some(diagnostic)),
+        ));
     }
     if use_varargs {
         let elt = types.elemtype(ctx, syms, varargs_formal.expect("varargs formal"));
@@ -4239,19 +4305,61 @@ pub fn abstract_method_check_arguments_acceptable(
     Ok(())
 }
 
-fn method_check_diag(
+fn report_mc_diagnostic(
+    ctx: &mut crate::compiler_context::CompilerContext,
     diags: &crate::util::jc_diagnostic::Factory,
-    text: &str,
+    diag: MethodCheckDiag,
+    inference_context: &Rc<crate::comp::infer::InferenceContext>,
+    details: Option<&crate::util::jc_diagnostic::JCDiagnostic>,
 ) -> crate::util::jc_diagnostic::JCDiagnostic {
-    // TODO(Check diagnostics , ADR 0002 P4): the upstream reportMC builds
-    // a fragment with the MethodCheckDiag key and argument list; until the
-    // diagnostic argument mapping is complete the fragment uses the
-    // no.conforming.assignment.exists key with the placeholder text argument.
-    let info = crate::resources::diagnostic_contract::FragmentInfo::new(
-        "no.conforming.assignment.exists",
-        vec![crate::resources::diagnostic_contract::DiagnosticArg::from_display(text)],
-    );
-    diags.fragment(info.into())
+    use crate::resources::compiler_properties::fragments;
+    use crate::resources::diagnostic_contract::{DiagnosticArg, TypeArg};
+    // Java: reportMC (Resolve.java:824-836): inferContext != emptyContext
+    // selects the infer key and prepends inferenceVars() when the keys differ.
+    let infer_diag = !Rc::ptr_eq(inference_context, &crate::comp::infer::empty_context());
+    let mut vars: Vec<TypeArg> = Vec::new();
+    if infer_diag {
+        let mut current = inference_context.inference_vars();
+        while current.non_empty() {
+            vars.push(TypeArg::placeholder(crate::comp::attr::type_display_of(
+                ctx,
+                *current.head(),
+            )));
+            current = current.tail();
+        }
+    }
+    let details_arg = details.map(|d| DiagnosticArg::JCDiagnostic(Rc::new(d.clone())));
+    let info = match diag {
+        MethodCheckDiag::ArityMismatch => {
+            if infer_diag {
+                fragments::infer_arg_length_mismatch(vars)
+            } else {
+                fragments::arg_length_mismatch()
+            }
+        }
+        MethodCheckDiag::ArgMismatch => {
+            let details = details_arg.expect("ARG_MISMATCH diagnostic details");
+            if infer_diag {
+                fragments::infer_no_conforming_assignment_exists(vars, details)
+            } else {
+                fragments::no_conforming_assignment_exists(details)
+            }
+        }
+        MethodCheckDiag::VarargMismatch => {
+            let details = details_arg.expect("VARARG_MISMATCH diagnostic details");
+            if infer_diag {
+                fragments::infer_varargs_argument_mismatch(vars, details)
+            } else {
+                fragments::varargs_argument_mismatch(details)
+            }
+        }
+        MethodCheckDiag::InaccessibleVarargs => {
+            // Built at the varargsAccessible call site (needs the operand type,
+            // element kind and location).
+            unreachable!("INACCESSIBLE_VARARGS is built at the call site")
+        }
+    };
+    diags.fragment(crate::util::jc_diagnostic::Fragment::from(info))
 }
 
 /// Java: class Resolve.MethodCheckContext (Resolve.java:1021-1064)
@@ -4331,11 +4439,22 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         _found: TypeId,
         _req: TypeId,
     ) -> crate::util::warner::Warner {
-        // TODO(Lint/Check): the upstream returns the shared rsWarner; the
-        // ported Warner is not Clone, so a fresh Warner is returned and the
-        // warning state is not shared (registered).
-        let _ = &self.rs_warner;
-        crate::util::warner::Warner::new(None)
+        // Kept for the trait's value-returning API; the shared view is
+        // check_warner_shared below (upstream returns rsWarner directly).
+        self.rs_warner.borrow().clone()
+    }
+
+    fn check_warner_shared(
+        &self,
+        _ctx: &mut crate::compiler_context::CompilerContext,
+        _syms: &crate::code::symtab::Symtab,
+        _types: &crate::code::types::Types,
+        _pos: i32,
+        _found: TypeId,
+        _req: TypeId,
+    ) -> Rc<RefCell<crate::util::warner::Warner>> {
+        // Java: return rsWarner; (Resolve.java:1044-1046).
+        Rc::clone(&self.rs_warner)
     }
 
     fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
@@ -4353,6 +4472,10 @@ pub struct MethodResultInfo {
     pub pt: TypeId,
     /// Java: final CheckContext checkContext
     pub check_context: Rc<dyn crate::comp::check::CheckContext>,
+    /// Java: the anonymous MethodCheckContext selects ARG_MISMATCH or
+    /// VARARG_MISMATCH (Resolve.java:941-947/986-1001); the ported
+    /// MethodResultInfo carries it because it reports the diagnostic directly.
+    pub method_diag: MethodCheckDiag,
 }
 
 impl MethodResultInfo {
@@ -4384,13 +4507,10 @@ impl MethodResultInfo {
                 crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => {
                     MethodCheckFailure::Inference(ex)
                 }
-                crate::comp::deferred_attr::DeferredAttrFailure::Completion(_) => {
-                    // Java: CompletionFailure propagates out of check; the
-                    // ported method-check path only reports inference failures
-                    // (the CompletionFailure path is Attr, registered).
-                    MethodCheckFailure::Inapplicable(InapplicableMethodException::new(
-                        Some(method_check_diag(diags, "completion failure")),
-                    ))
+                crate::comp::deferred_attr::DeferredAttrFailure::Completion(failure) => {
+                    // Java: CompletionFailure propagates out of check (unchecked);
+                    // the Attr boundary (catch_completion_failure) receives it.
+                    crate::code::symbol::throw_completion_failure(failure)
                 }
             });
         }
@@ -4410,8 +4530,29 @@ impl MethodResultInfo {
             .check_context
             .compatible(ctx, syms, types, captured_type, self.pt, warn)
         {
+            // Java: checkContext.report(pos, diags.fragment(
+            // Fragments.InconvertibleTypes(found, req))); MethodCheckContext
+            // reports it as ARG_MISMATCH/VARARG_MISMATCH
+            // (Resolve.java:945-947, 998-1001, 824-836).
+            let details = diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::inconvertible_types(
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                        crate::comp::attr::type_display_of(ctx, captured_type),
+                    ),
+                    crate::resources::diagnostic_contract::TypeArg::placeholder(
+                        crate::comp::attr::type_display_of(ctx, self.pt),
+                    ),
+                ),
+            ));
+            let diagnostic = report_mc_diagnostic(
+                ctx,
+                diags,
+                self.method_diag,
+                self.check_context.inference_context(),
+                Some(&details),
+            );
             return Err(MethodCheckFailure::Inapplicable(
-                InapplicableMethodException::new(Some(method_check_diag(diags, "no conforming assignment"))),
+                InapplicableMethodException::new(Some(diagnostic)),
             ));
         }
         // Java: super.check(pos, chk.checkNonVoid(pos, capturedType)) — the
@@ -4490,6 +4631,11 @@ impl AbstractMethodCheck for MethodReferenceCheck {
         let mresult = MethodResultInfo {
             pt: formal,
             check_context: Rc::new(check_context),
+            method_diag: if _varargs {
+                MethodCheckDiag::VarargMismatch
+            } else {
+                MethodCheckDiag::ArgMismatch
+            },
         };
         let diags = Rc::clone(&self.diags);
         mresult
@@ -4703,10 +4849,11 @@ impl Resolve {
                 crate::comp::deferred_attr::DeferredAttrFailure::Inference(ex) => {
                     MethodCheckFailure::Inference(ex)
                 }
-                crate::comp::deferred_attr::DeferredAttrFailure::Completion(_) => {
-                    // TODO(Attr): the CompletionFailure channel of
-                    // DeferredAttr.complete is registered with the Attr.
-                    MethodCheckFailure::Inference(crate::comp::infer::InferenceException::new())
+                crate::comp::deferred_attr::DeferredAttrFailure::Completion(failure) => {
+                    // Java: DeferredAttrContext.complete throws CompletionFailure
+                    // (unchecked); keep the ported completion-failure channel so
+                    // the Attr boundary (catch_completion_failure) receives it.
+                    crate::code::symbol::throw_completion_failure(failure)
                 }
             })?;
         Ok(mt)
@@ -5397,18 +5544,16 @@ impl Resolve {
         resolve_context: &mut MethodResolutionContext,
     ) -> SymbolId {
         let filter = LookupFilter { abstractok };
-        // TODO(Scope/Resolve): upstream getSymbolsByName applies the
-        // LookupFilter inside the import-scope lookup; the ported filter is
-        // applied after the lookup because the filter callback cannot borrow
-        // the context while the scope query takes it (registered adapter; the
-        // FilterImportScope static-import filtering stays in the Scope).
+        // Java: for (Symbol s : sc.getSymbolsByName(name, new LookupFilter(abstractok)))
+        // (Resolve.java:1787). The filter is applied by the scope query itself
+        // (including the import-scope branches), matching Scope.getSymbolsByName.
         let symbols = {
             let scope_ref = ctx.scope(scope).clone();
-            scope_ref.get_symbols_by_name_full(
+            scope_ref.get_symbols_by_name_full_ctx(
                 scope,
                 &name,
                 crate::code::scope::LookupKind::NON_RECURSIVE,
-                &|_| true,
+                &|c: &crate::compiler_context::CompilerContext, sym| filter.test(c, sym),
                 types,
                 syms,
                 ctx,
@@ -5417,9 +5562,6 @@ impl Resolve {
         };
         let mut best_so_far = best_so_far;
         for sym in symbols {
-            if !filter.test(ctx, sym) {
-                continue;
-            }
             best_so_far = self.select_best(
                 ctx,
                 syms,
@@ -5554,6 +5696,11 @@ impl AbstractMethodCheck for ResolveMethodCheck {
         let mresult = MethodResultInfo {
             pt: formal,
             check_context,
+            method_diag: if _varargs {
+                MethodCheckDiag::VarargMismatch
+            } else {
+                MethodCheckDiag::ArgMismatch
+            },
         };
         let _ = self.diags.clone();
         // Java: Type.getTypeArguments() lazily completes a class symbol whose
@@ -5793,6 +5940,7 @@ impl MethodCheck for MostSpecificCheck {
             let mresult = MethodResultInfo {
                 pt: *formals2.head(),
                 check_context,
+                method_diag: MethodCheckDiag::ArgMismatch,
             };
             let actual = if actuals.non_empty() {
                 Some(*actuals.head())
@@ -6182,7 +6330,7 @@ pub trait LookupHelper {
 pub enum BasicLookupFn {
     FindFun,
     FindMethod { site: TypeId },
-    FindConstructor { site: TypeId },
+    FindConstructor { site: TypeId, pos: i32 },
     FindDiamond { site: TypeId },
 }
 
@@ -6316,7 +6464,7 @@ impl LookupHelper for BasicLookupHelper {
                 phase.is_varargs_required(),
                 resolve_context,
             ),
-            BasicLookupFn::FindConstructor { site } => rs.find_constructor(
+            BasicLookupFn::FindConstructor { site, pos } => rs.find_constructor(
                 ctx,
                 syms,
                 types,
@@ -6325,6 +6473,7 @@ impl LookupHelper for BasicLookupHelper {
                 infer,
                 env,
                 *site,
+                *pos,
                 self.argtypes.clone(),
                 self.typeargtypes.clone(),
                 phase.is_boxing_required(),
@@ -6588,6 +6737,7 @@ impl Resolve {
         infer: &Rc<crate::comp::infer::Infer>,
         env: &Rc<Env<AttrContext>>,
         site: TypeId,
+        pos: i32,
         argtypes: crate::util::list::List<TypeId>,
         typeargtypes: Option<crate::util::list::List<TypeId>>,
         allow_boxing: bool,
@@ -6610,10 +6760,16 @@ impl Resolve {
             use_varargs,
             resolve_context,
         );
-        // TODO(Check): FindConstructor also runs
-        // chk.checkDeprecated(pos, env.info.scope.owner, sym) and
-        // chk.checkPreview(pos, env.info.scope.owner, sym).
-        let _ = (chk, env);
+        // Java: chk.checkDeprecated(pos, env.info.scope.owner, sym);
+        // chk.checkPreview(pos, env.info.scope.owner, sym); (Resolve.java:2896-2897).
+        let owner = env
+            .info
+            .borrow()
+            .scope
+            .and_then(|scope| ctx.scope(scope).owner)
+            .expect("env.info.scope.owner");
+        chk.check_deprecated(ctx, pos, owner, sym);
+        chk.check_preview(ctx, pos, owner, sym);
         sym
     }
 
@@ -6929,7 +7085,10 @@ impl Resolve {
             site,
             argtypes,
             typeargtypes,
-            BasicLookupFn::FindConstructor { site },
+            BasicLookupFn::FindConstructor {
+                site,
+                pos: pos.as_ref().map(|p| p.get_start_position()).unwrap_or(crate::util::position::NOPOS),
+            },
             BasicAccessKind::Default,
         );
         self.lookup_method(
@@ -6974,7 +7133,10 @@ impl Resolve {
             site,
             argtypes,
             typeargtypes,
-            BasicLookupFn::FindConstructor { site },
+            BasicLookupFn::FindConstructor {
+                site,
+                pos: pos.as_ref().map(|p| p.get_start_position()).unwrap_or(crate::util::position::NOPOS),
+            },
             BasicAccessKind::Default,
         );
         let sym = self.lookup_method(
@@ -7453,10 +7615,23 @@ impl Resolve {
         syms: &Symtab,
         sym: SymbolId,
     ) -> Option<crate::ids::ScopeId> {
+        // Java: PackageSymbol.members() calls complete() before returning
+        // members_field (Symbol.java:1175-1178); complete even when a scope is
+        // already installed (the package completer may still be pending).
+        if matches!(
+            ctx.sym(sym).kind_data,
+            crate::code::symbol::SymbolKind::PackageSymbol { .. }
+                | crate::code::symbol::SymbolKind::RootPackageSymbol { .. }
+        ) && let Err(failure) = ctx.complete_symbol(syms, sym)
+        {
+            crate::code::symbol::throw_completion_failure(failure);
+        }
         if let Some(members) = ctx.sym(sym).members() {
             return Some(members);
         }
-        let _ = ctx.complete_symbol(syms, sym);
+        if let Err(failure) = ctx.complete_symbol(syms, sym) {
+            crate::code::symbol::throw_completion_failure(failure);
+        }
         ctx.sym(sym).members()
     }
 
@@ -10200,8 +10375,12 @@ mod check_channel_tests {
         } else if access == flags::PUBLIC as i64 {
             if allow_modules {
                 let curr_module = env_toplevel_module(ctx, env).expect("toplevel module");
-                // Java: currModule.complete() — the ported symbol complete is a
-                // no-op for entered symbols (Completer registered).
+                // Java: currModule.complete(); (Resolve.java:345). The module
+                // completer (Modules.MainCompleter/UnnamedModuleCompleter) is
+                // ported and registered on the module symbol.
+                if let Err(failure) = ctx.complete_symbol(syms, curr_module) {
+                    crate::code::symbol::throw_completion_failure(failure);
+                }
                 let package = symbol_packge(ctx, c).expect("class package");
                 let package_module = package_module(ctx, package);
                 // Java: Modules.computeVisiblePackages: the unnamed module reads
@@ -10225,8 +10404,6 @@ mod check_channel_tests {
                     }
                     _ => Vec::new(),
                 };
-                // Java: currModule.complete() — TODO(Completer): the
-                // completer chain is not ported; entered modules are complete.
                 is_accessible = package_module == Some(curr_module)
                     || visible
                     || package == syms.root_package
@@ -10302,7 +10479,34 @@ mod check_channel_tests {
             let bound = types.cvar_upper_bound(ctx, elemtype);
             return is_accessible_type_free(types, allow_modules, ctx, syms, env, bound, check_inner);
         }
-        // TODO(Types): t.isUnion() / UnionClassType alternative types.
+        // Java: else if (t.isUnion())
+        //     return ((UnionClassType)t).getAlternativeTypes().stream()
+        //         .allMatch(alternative -> isAccessible(env, alternative.tsym, checkInner));
+        // (Resolve.java:390-392). The symbol overload is is_accessible_class_free.
+        if ctx.typ(t).is_union() {
+            let alternatives = ctx.typ(t).get_alternative_types();
+            let mut current = alternatives;
+            while current.non_empty() {
+                let alternative = *current.head();
+                let tsym = ctx
+                    .typ(alternative)
+                    .tsym
+                    .expect("union alternative symbol");
+                if !is_accessible_class_free(
+                    types,
+                    allow_modules,
+                    ctx,
+                    syms,
+                    env,
+                    tsym,
+                    check_inner,
+                ) {
+                    return false;
+                }
+                current = current.tail();
+            }
+            return true;
+        }
         // Java: isAccessible(env, (Symbol) t.tsym, checkInner) returns true for
         // a null symbol (e.g. the no-type has no tsym).
         let tsym = match ctx.typ(t).tsym {

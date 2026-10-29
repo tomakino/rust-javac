@@ -5,24 +5,19 @@
 // enterScope/moduleEnv, classEnter, visitTopLevel/visitClassDef/
 // visitTypeParameter/visitModuleDef/visitTree, classNameMatchesFileName/
 // duplicateClass, main/complete/newRound (see the registration).
+// Annotate instance: annotate.blockAnnotations/unblockAnnotations are wired in
+// classEnter/complete; ClassSymbol.clearAnnotationMetadata is wired in
+// visitClassDef (the enter/annotate batch).
 //
-// NOT PORTED IN THIS STEP (registered; no substitute):
-// - Annotate instance: annotate.blockAnnotations/unblockAnnotations(%NoFlush)
-// calls are TODO in the corresponding methods (Annotate);
-// - TypeEnter instance: enterType/completionEnabled/uncompleted processing and
-// ensureImportsChecked are TODO (TypeEnter/MemberEnter); visitClassDef
-// therefore does not install the TypeEnter completer;
-// - Todo instance: todo.append of package/module envs is TODO (Todo);
-// - Modules instance: module/package visibility checks, module-info handling,
-// usesProvidesCompleter and isInModuleGraph are TODO (Modules);
-// - JCTree.Visitor dispatch is expressed as a TreeKind match (registered
-// adapter: the local tree arena has no accept()/Visitor);
-// - predefClassDef construction needs TreeMaker.ClassDef/Modifiers factories,
-// which are not ported yet: the field stays None (registered);
-// - Scope.NamedImportScope/StarImportScope are not ported (Scope): the
-// compilation unit import scopes stay None (registered);
-// - UnenterScanner needs the JCTree.Visitor callback scanner (tree scanner
-//): unenter() is unimplemented below.
+// Implementation status: the TypeEnter/Todo/Modules instances are ported and
+// installed through the service cells (type_enter/todo/modules fields);
+// visitClassDef installs the TypeEnter completer and the import/module work is
+// delegated to the ported TypeEnter/Modules/Todo methods. JCTree.Visitor
+// dispatch remains a TreeKind match (registered adapter for the tree arena).
+// predefClassDef is set by set_predef_class (bootstrap adapter for the private
+// TreeMaker factories).
+// REGISTERED: UnenterScanner (no JCTree visitor callback scanner in the port);
+// unenter() is an explicit unimplemented entry point, not a silent no-op.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -62,9 +57,8 @@ pub struct Enter {
     pub file_manager: Rc<dyn JavaFileManager>,
     pub pkginfo_opt: crate::main::option::PkgInfo,
     pub type_envs: Rc<RefCell<TypeEnvs>>,
-    /// Java: private JCClassDecl predefClassDef;
-    /// TODO(TreeMaker): TreeMaker.ClassDef/Modifiers factories are not
-    /// ported; the field stays None (registered).
+    /// Java: private JCClassDecl predefClassDef; set by set_predef_class
+    /// (bootstrap adapter for TreeMaker's private factory methods).
     pub predef_class_def: Option<TreeId>,
     /// Java: ListBuffer<ClassSymbol> uncompleted (interior mutability).
     pub uncompleted: RefCell<Option<Vec<SymbolId>>>,
@@ -314,29 +308,58 @@ impl Enter {
         syms: &Symtab,
         tree: TreeId,
         env: Option<Rc<Env<AttrContext>>>,
+        attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Option<TypeId> {
         let prev_env = self.env.borrow().clone();
-        // TODO(Annotate): annotate.blockAnnotations();
-        *self.env.borrow_mut() = env;
         let previous_result = self.result.get();
         self.result.set(None);
-        let visit_result = self.visit(ctx, syms, tree);
-        let result = match visit_result {
-            Ok(()) => self.result.get(),
-            Err(failure) => {
-                // Java: return chk.completionError(tree.pos(), ex);
-                Some(self.chk.completion_error(
-                    ctx,
-                    ctx.tree(tree).pos,
-                    &failure,
-                    syms,
-                ))
+        let annotate = self.annotate.borrow().clone();
+        // Java: try { this.env = env; annotate.blockAnnotations();
+        //         tree.accept(this); return result; }
+        //         catch (CompletionFailure ex) {
+        //             return chk.completionError(tree.pos(), ex);
+        //         } finally {
+        //             annotate.unblockAnnotations(); this.env = prevEnv;
+        //         } (Enter.java:281-294).
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            *self.env.borrow_mut() = env;
+            if let Some(annotate) = &annotate {
+                annotate.block_annotations();
             }
-        };
-        // TODO(Annotate): annotate.unblockAnnotations();
+            match self.visit(ctx, syms, tree) {
+                Ok(()) => self.result.get(),
+                Err(failure) => {
+                    // Java: return chk.completionError(tree.pos(), ex);
+                    Some(self.chk.completion_error(
+                        ctx,
+                        ctx.tree(tree).pos,
+                        &failure,
+                        syms,
+                    ))
+                }
+            }
+        }));
+        // finally: unblock before restoring the environment; the local result
+        // save/restore keeps the nested classEnter field semantics. The Attr
+        // handle is only needed when the count reaches zero and the deferred
+        // annotations are flushed; the Attr-inside caller (Attr.java:956/963)
+        // passes it because the Attr service is already borrowed there.
+        if let Some(annotate) = &annotate {
+            match attr {
+                Some(attr) => annotate
+                    .unblock_annotations_with_attr(ctx, syms, attr)
+                    .expect("unblockAnnotations flush"),
+                None => annotate
+                    .unblock_annotations(ctx, syms)
+                    .expect("unblockAnnotations flush"),
+            }
+        }
         *self.env.borrow_mut() = prev_env;
         self.result.set(previous_result);
-        result
+        match outcome {
+            Ok(result) => result,
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
     }
 
     /// Java: <T extends JCTree> List<Type> classEnter(List<T> trees,
@@ -352,7 +375,7 @@ impl Enter {
         let mut list = trees;
         while list.non_empty() {
             let tree = *list.head();
-            if let Some(ty) = self.class_enter(ctx, syms, tree, env.clone()) {
+            if let Some(ty) = self.class_enter(ctx, syms, tree, env.clone(), None) {
                 ts = ts.append(ty);
             }
             list = list.tail();
@@ -760,7 +783,8 @@ impl Enter {
         if let SymbolKind::ClassSymbol { members_field, .. } = &mut ctx.sym_mut(class).kind_data {
             *members_field = Some(members_scope);
         }
-        // TODO(Annotate): c.clearAnnotationMetadata();
+        // Java: c.clearAnnotationMetadata(); (Enter.java:500)
+        ctx.sym_mut(class).clear_annotation_metadata();
         let class_ty = ctx.sym(class).ty.expect("class type");
         if ctx.sym(owner).kind != crate::code::kinds::Kind::PCK
             && (ctx.sym(class).flags_field & flags::STATIC as i64) == 0

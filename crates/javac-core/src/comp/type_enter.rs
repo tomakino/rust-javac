@@ -1,4 +1,4 @@
-#![allow(dead_code)] // TODO(Attr/TreeMaker/Check batches): helpers waiting for their batches (registered in the file header).
+#![allow(dead_code)] // helper surface retained for the phase/service wiring (see the header).
 // Origin: com/sun/tools/javac/comp/TypeEnter.java @ 982d53c (jdk-17.0.19-ga)
 //
 // Registration (this file):
@@ -10,8 +10,8 @@
 // (runPhase/resolveImports/checkClassPackageClash/doImport/attribImportType/
 // importAll/importStaticAll/importNamedStatic/importNamed), HierarchyPhase
 // (runPhase/complete/superTypes), PermitsPhase, AbstractHeaderPhase
-// (baseEnv/enumBase; modelMissingTypes keeps the registered Synthesizer
-// TODO), HeaderPhase
+// (baseEnv/enumBase; modelMissingTypes carries the registered Synthesizer
+// dependency below), HeaderPhase
 // (runPhase/attribSuperTypes/clearTypeParams/default constructor/this&super
 // field/finishClass), RecordPhase, MembersPhase, DefaultConstructorHelper
 // hierarchy, defaultConstructor, finishClass/addAccessor/addEnumMembers/
@@ -19,27 +19,15 @@
 // getDefaultConstructorHelper, markDeprecated/handleDeprecatedAnnotations/
 // setFlagIfAttributeTrue.
 //
-// NOT PORTED IN THIS FILE (registered; dependencies not ported yet, no
-// substitute):
-// - Attr: attr.attribImportQualifier/attribType/attribBase/
-// attribTypeVariables -> explicit unimplemented helpers (Attr);
-// - Annotate/TypeAnnotations/Todo/Preview: annotate.blockAnnotations/
-// unblockAnnotations/annotateLater/organizeTypeAnnotationsSignatures/
-// typeAnnotations.validate*, todo.append, preview checks -> TODO comments
-// (Annotate/TypeAnnotations/Todo batches);
-// - TreeMaker factories (Import/QualIdent/ClassDef/MethodDef/Modifiers/
-// VarDef/Return/Block/Type/Select/Ident/Assign...) are not ported (registered
-// in TreeMaker): make.* calls are explicit unimplemented helpers;
-// - Check: the import-phase checks (checkImportsUnique/checkImportsResolvable/
-// checkImportedPackagesObservable/importAccessible/checkCanonical/
-// checkDefaultConstructor/checkNonCyclic) are ported in Check and wired at
-// their TypeEnter call sites (checkCanonical wired in doImport, this batch);
-// - Lint: Lint.suppress is not ported (Lint) -> unimplemented helper;
-// - ClassSymbol.isCompleted/setAnnotationTypeMetadata/getRecordComponent,
-// TreeInfo.recordFields/hasConstructors/isConstructor, RecordComponent ->
-// registered TODOs where used (symbol/record batches);
-// - Modules: syms.enterPackage/lookupPackage/getClass are ported; the
-// checkClassPackageClash body follows upstream with the local adapters.
+// Implementation status: the Attr/Annotate/TypeAnnotations/Todo/Preview,
+// TreeMaker, Check and Lint services are ported and called through the injected
+// fields (attr/annotate/todo/make/chk/lint); the phase bodies below use them.
+// The remaining registered gap is the Synthesizer in AbstractHeaderPhase
+// modelMissingTypes (below): the ErrorType getModelType hook and the
+// JCTree.Visitor-based Synthesizer (TypeEnter.java:555-569/571+) are not ported.
+// ClassSymbol/TreeInfo/RecordComponent helpers are ported where their call
+// sites use them; any remaining per-method registrations are stated at the
+// method, not as a blanket TODO list.
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -1123,11 +1111,11 @@ impl TypeEnter {
         //     new Synthesizer(env.toplevel.modle, getOriginalType(),
         //     interfaceExpected).visit(tree) }; (TypeEnter.java:555-569;
         // Synthesizer: TypeEnter.java:571-*).
-        // TODO(Synthesizer): the local ErrorType modelType hook (the anonymous
-        // ErrorType getModelType override) and the Synthesizer visitor are not
-        // ported; dependency: ErrorType getModelType hook + the Synthesizer
-        // JCTree.Visitor. Until then the error type is returned unchanged
-        // (upstream returns an ErrorType that models the missing type lazily).
+        // REGISTERED dependency: the anonymous ErrorType getModelType hook and
+        // the Synthesizer JCTree.Visitor (TypeEnter.java:555-569, 571+) are not
+        // ported; the local Type has no lazy modelType callback. Upstream returns
+        // an ErrorType that models the missing type lazily; the port returns the
+        // original error type unchanged (no synthesized model).
         t
     }
 
