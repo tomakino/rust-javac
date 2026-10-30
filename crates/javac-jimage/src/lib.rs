@@ -29,6 +29,7 @@ pub mod image_location;
 pub mod image_reader;
 pub mod image_strings;
 
+use std::cell::OnceCell;
 use std::fmt;
 use std::io;
 use std::path::Path;
@@ -105,7 +106,8 @@ impl From<io::Error> for Error {
 pub struct JImage {
     index: ImageIndex,
     modules: Vec<String>,
-    resources: Vec<String>,
+    /// Built lazily: only callers of resources() need the full listing.
+    resources: OnceCell<Vec<String>>,
 }
 
 impl JImage {
@@ -116,11 +118,10 @@ impl JImage {
     pub fn open(path: &Path) -> Result<JImage, Error> {
         let index = ImageIndex::open(path)?;
         let modules = index.modules()?;
-        let resources = index.resource_names(&modules)?;
         Ok(JImage {
             index,
             modules,
-            resources,
+            resources: OnceCell::new(),
         })
     }
 
@@ -130,8 +131,34 @@ impl JImage {
     }
 
     /// All module resources, sorted, named "<module>/<path>" — the names jimage list prints.
+    ///
+    /// Built lazily, on first use.
     pub fn resources(&self) -> &[String] {
-        &self.resources
+        self.resources.get_or_init(|| {
+            self.index
+                .resource_names(&self.modules)
+                .unwrap_or_default()
+        })
+    }
+
+    /// Lists the children of a jimage tree node, e.g. "/modules/java.base/java/lang".
+    ///
+    /// Java: Files.newDirectoryStream(dir) on the jrt: file system (the directory's tree
+    /// node holds the offsets of its children).
+    pub fn list_directory(&self, node_path: &str) -> Option<Vec<String>> {
+        let location = self.index.find_location(node_path)?;
+        let content = self.index.get_resource(&location)?;
+        let mut children = Vec::new();
+        for chunk in content.as_chunks::<4>().0 {
+            let attribute_offset = i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            if attribute_offset <= 0 {
+                continue;
+            }
+            if let Ok(child) = self.index.get_location(attribute_offset as usize) {
+                children.push(child.full_name());
+            }
+        }
+        Some(children)
     }
 
     /// Returns the bytes of the named resource, or None when the resource does not exist.

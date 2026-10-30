@@ -275,3 +275,72 @@ fn classpath_jar_package_forms() {
     compile_case_cp("jar-star", "import okio.*; class T { Buffer b; }\n", cp);
     compile_case_cp("jar-qualified", "class T { okio.Buffer b; }\n", cp);
 }
+
+#[test]
+fn duplicate_field_diagnostic_carries_source_and_position() {
+    let dir = std::env::temp_dir().join(format!("rust-javac-probe-dupfield-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("T.java");
+    std::fs::write(&src, "class T {\n    int i;\n    int i;\n}\n").unwrap();
+    let out = dir.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let mut compiler = MiniCompiler::new_with_options(&out, |_options| {});
+    compiler.log.borrow_mut().install_diagnostic_handler(
+        javac_core::util::log::DiagnosticHandler::Deferred {
+            prev: None,
+            deferred: std::collections::VecDeque::new(),
+            filter: None,
+        },
+    );
+    let _ = compiler.compile_files(&[src]);
+    let diagnostics = compiler.log.borrow_mut().take_deferred_diagnostics();
+    for diagnostic in &diagnostics {
+        eprintln!(
+            "DIAG {} source={:?} pos={}",
+            diagnostic.get_code_string(),
+            diagnostic.get_source().map(|file| file.get_name().to_string_lossy()),
+            diagnostic.get_int_position()
+        );
+    }
+    let duplicate = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.get_code_string().contains("already.defined"))
+        .expect("already.defined diagnostic");
+    assert!(duplicate.get_source().is_some(), "duplicate field diagnostic lost its source");
+    assert_ne!(duplicate.get_int_position(), javac_core::util::position::NOPOS);
+}
+
+#[test]
+fn sealed_diagnostic_position_probe() {
+    let dir = std::env::temp_dir().join(format!("rust-javac-probe-sealedpos-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("T.java");
+    std::fs::write(&src, "sealed class Sealed {}\n").unwrap();
+    let out = dir.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let mut compiler = MiniCompiler::new_with_options(&out, |_options| {});
+    compiler.log.borrow_mut().install_diagnostic_handler(
+        javac_core::util::log::DiagnosticHandler::Deferred {
+            prev: None,
+            deferred: std::collections::VecDeque::new(),
+            filter: None,
+        },
+    );
+    let _ = compiler.compile_files(&[src]);
+    for (index, tree) in compiler.ctx.trees.iter().enumerate() {
+        if tree.tag == javac_core::tree::jc_tree::Tag::CLASSDEF {
+            eprintln!("CLASS TREE {} pos={}", index, tree.pos);
+        }
+    }
+    for diagnostic in compiler.log.borrow_mut().take_deferred_diagnostics() {
+        eprintln!(
+            "DIAG {} pos={} line={} col={}",
+            diagnostic.get_code_string(),
+            diagnostic.get_int_position(),
+            diagnostic.get_line_number(),
+            diagnostic.get_column_number()
+        );
+    }
+}

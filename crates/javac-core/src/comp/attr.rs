@@ -41,11 +41,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::code::deferred_lint_handler::DeferredLintHandler;
+use crate::code::dependencies::Dependencies;
 use crate::code::kinds::{Kind, KindSelector};
 use crate::code::source::Feature;
 use crate::code::symbol::CompletionFailure;
 use crate::code::symtab::Symtab;
-use crate::tree::tree_scanner::{tree_scanner_visitor_delegate, TreeScannerVisitor};
 use crate::code::type_::{Type, TypeKindData};
 use crate::code::type_tag::TypeTag;
 use crate::code::types::Types;
@@ -58,14 +58,14 @@ use crate::comp::type_enter::TypeEnter;
 use crate::comp::type_envs::TypeEnvs;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{SymbolId, TreeId, TypeId};
-use crate::util::abstract_log::AbstractLog;
-use crate::util::name::Name;
 use crate::tree::jc_tree::{Tag, TreeKind};
 use crate::tree::tree_maker::TreeFactory;
-use crate::code::dependencies::Dependencies;
+use crate::tree::tree_scanner::{TreeScannerVisitor, tree_scanner_visitor_delegate};
+use crate::util::abstract_log::AbstractLog;
 use crate::util::jc_diagnostic::Factory;
 use crate::util::list::List;
 use crate::util::log::Log;
+use crate::util::name::Name;
 use crate::util::names::Names;
 
 /// Java: Attr.ResultInfo — the checked subset (see the file header for the
@@ -116,7 +116,12 @@ impl ResultInfo {
         pt: Option<TypeId>,
         check_context: Rc<dyn crate::comp::check::CheckContext>,
     ) -> ResultInfo {
-        ResultInfo::new_with_mode(pkind, pt, check_context, crate::comp::check::CheckMode::NORMAL)
+        ResultInfo::new_with_mode(
+            pkind,
+            pt,
+            check_context,
+            crate::comp::check::CheckMode::NORMAL,
+        )
     }
 
     /// Java: protected ResultInfo(KindSelector pkind, Type pt, CheckContext
@@ -157,11 +162,7 @@ impl ResultInfo {
 
     /// Java: protected boolean needsArgumentAttr(JCTree tree) — the base
     /// returns false; MethodAttrInfo overrides it to true (Attr.java:563-596).
-    pub fn needs_argument_attr(
-        &self,
-        ctx: &CompilerContext,
-        tree: TreeId,
-    ) -> bool {
+    pub fn needs_argument_attr(&self, ctx: &CompilerContext, tree: TreeId) -> bool {
         if !matches!(self.kind, ResultInfoKind::MethodAttr) {
             return false;
         }
@@ -212,17 +213,14 @@ impl ResultInfo {
     ) -> ResultInfo {
         if matches!(self.kind, ResultInfoKind::MethodAttr) {
             // Java: MethodAttrInfo.dup(CheckContext) -> new MethodAttrInfo(newContext)
-            let mut info = ResultInfo::new_with_mode(
-                self.pkind,
-                self.pt,
-                check_context,
-                self.check_mode,
-            );
+            let mut info =
+                ResultInfo::new_with_mode(self.pkind, self.pt, check_context, self.check_mode);
             info.kind = ResultInfoKind::MethodAttr;
             info.check_non_void = self.check_non_void;
             return info;
         }
-        let mut result = ResultInfo::new_with_mode(self.pkind, self.pt, check_context, self.check_mode);
+        let mut result =
+            ResultInfo::new_with_mode(self.pkind, self.pt, check_context, self.check_mode);
         result.check_non_void = self.check_non_void;
         result
     }
@@ -246,17 +244,14 @@ impl ResultInfo {
     pub fn dup_context(&self, new_context: Rc<dyn crate::comp::check::CheckContext>) -> ResultInfo {
         if matches!(self.kind, ResultInfoKind::MethodAttr) {
             // Java: MethodAttrInfo.dup(CheckContext) -> new MethodAttrInfo(newContext)
-            let mut info = ResultInfo::new_with_mode(self.pkind, self.pt, new_context, self.check_mode);
+            let mut info =
+                ResultInfo::new_with_mode(self.pkind, self.pt, new_context, self.check_mode);
             info.kind = ResultInfoKind::MethodAttr;
             info.check_non_void = self.check_non_void;
             return info;
         }
-        let mut result = ResultInfo::new_with_mode(
-            self.pkind,
-            self.pt,
-            new_context,
-            self.check_mode,
-        );
+        let mut result =
+            ResultInfo::new_with_mode(self.pkind, self.pt, new_context, self.check_mode);
         result.check_non_void = self.check_non_void;
         result
     }
@@ -270,7 +265,8 @@ impl ResultInfo {
         if matches!(self.kind, ResultInfoKind::MethodAttr) {
             panic!("IllegalStateException");
         }
-        let mut result = ResultInfo::new_with_mode(self.pkind, new_pt, new_context, self.check_mode);
+        let mut result =
+            ResultInfo::new_with_mode(self.pkind, new_pt, new_context, self.check_mode);
         result.check_non_void = self.check_non_void;
         result
     }
@@ -402,7 +398,8 @@ pub struct Attr {
     /// Java: final ArgumentAttr argumentAttr (adapter cell, installed by the wiring).
     pub argument_attr: Rc<RefCell<Option<Rc<RefCell<crate::comp::argument_attr::ArgumentAttr>>>>>,
     /// Java: final DeferredAttr deferredAttr (adapter cell, installed by the wiring).
-    pub deferred_attr: Rc<RefCell<Option<Rc<RefCell<crate::comp::deferred_attr::DeferredAttrService>>>>>,
+    pub deferred_attr:
+        Rc<RefCell<Option<Rc<RefCell<crate::comp::deferred_attr::DeferredAttrService>>>>>,
     /// Java: MatchBindings matchBindings (Attr.java:451) — the current flow
     /// bindings, rewritten by the pattern-matching visitors.
     pub match_bindings: crate::comp::match_bindings::MatchBindings,
@@ -487,7 +484,8 @@ impl Attr {
         let allow_reifiable_types_in_instanceof =
             Feature::REIFIABLE_TYPES_INSTANCEOF.allowed_in_source(source);
         let allow_records = Feature::RECORDS.allowed_in_source(source);
-        let allow_pattern_switch = (preview.is_enabled() || !preview.is_preview(Feature::PATTERN_SWITCH))
+        let allow_pattern_switch = (preview.is_enabled()
+            || !preview.is_preview(Feature::PATTERN_SWITCH))
             && Feature::PATTERN_SWITCH.allowed_in_source(source);
         let recovery_type = syms.borrow().recovery_type;
         let symtab_facts = SymtabFacts {
@@ -531,17 +529,29 @@ impl Attr {
             break_attr_env: None,
             basic_handler: Rc::clone(&basic_handler),
             stat_info: ResultInfo::new(KindSelector::NIL, None, Rc::clone(&basic_handler)),
-            var_assignment_info: ResultInfo::new(KindSelector::ASG, None, Rc::clone(&basic_handler)),
+            var_assignment_info: ResultInfo::new(
+                KindSelector::ASG,
+                None,
+                Rc::clone(&basic_handler),
+            ),
             unknown_expr_info: ResultInfo::new(KindSelector::VAL, None, Rc::clone(&basic_handler)),
             unknown_type_info: ResultInfo::new(KindSelector::TYP, None, Rc::clone(&basic_handler)),
-            unknown_type_expr_info: ResultInfo::new(KindSelector::VAL_TYP, None, Rc::clone(&basic_handler)),
-            method_attr_info: ResultInfo::method_attr_info(Rc::clone(&basic_handler), infer.any_poly),
+            unknown_type_expr_info: ResultInfo::new(
+                KindSelector::VAL_TYP,
+                None,
+                Rc::clone(&basic_handler),
+            ),
+            method_attr_info: ResultInfo::method_attr_info(
+                Rc::clone(&basic_handler),
+                infer.any_poly,
+            ),
             recovery_info: ResultInfo::new_with_mode(
                 KindSelector::VAL,
                 Some(recovery_type),
                 Rc::new(RecoveryCheckContext {
                     enclosing: Rc::clone(&basic_handler),
-                    deferred_attr_context: crate::comp::deferred_attr::empty_deferred_attr_context(),
+                    deferred_attr_context: crate::comp::deferred_attr::empty_deferred_attr_context(
+                    ),
                 }),
                 crate::comp::check::CheckMode::NORMAL,
             ),
@@ -641,24 +651,26 @@ impl Attr {
             // boundary reports it and yields the error type.
             let result = crate::code::symbol::catch_completion_failure(|| {
                 if needs_argument_attr {
-                // Java: result = argumentAttr.attribArg(tree, env); (Attr.java:674-676)
-                let argument_attr = self
-                    .argument_attr
-                    .borrow()
-                    .clone()
-                    .expect("AssertionError: argumentAttr service must be installed");
-                // Port adapter: upstream ArgumentAttr is one Java object that
-                // is re-entered while a speculative argument attribution resolves
-                // nested calls. The ported session state (env/result) is cloned per
-                // attribution; the cache and services are shared Rcs, so deferred
-                // completions started from the canonical service still see the
-                // same ArgumentType entries.
-                let mut argument_attr = argument_attr.borrow().clone();
-                let log_rc = Rc::clone(&self.log);
-                match argument_attr.attrib_arg(ctx, syms, self, &log_rc, tree, env) {
-                    Ok(result) => Ok(result.expect("AssertionError: argument attribution result")),
-                    Err(failure) => Err(failure),
-                }
+                    // Java: result = argumentAttr.attribArg(tree, env); (Attr.java:674-676)
+                    let argument_attr = self
+                        .argument_attr
+                        .borrow()
+                        .clone()
+                        .expect("AssertionError: argumentAttr service must be installed");
+                    // Port adapter: upstream ArgumentAttr is one Java object that
+                    // is re-entered while a speculative argument attribution resolves
+                    // nested calls. The ported session state (env/result) is cloned per
+                    // attribution; the cache and services are shared Rcs, so deferred
+                    // completions started from the canonical service still see the
+                    // same ArgumentType entries.
+                    let mut argument_attr = argument_attr.borrow().clone();
+                    let log_rc = Rc::clone(&self.log);
+                    match argument_attr.attrib_arg(ctx, syms, self, &log_rc, tree, env) {
+                        Ok(result) => {
+                            Ok(result.expect("AssertionError: argument attribution result"))
+                        }
+                        Err(failure) => Err(failure),
+                    }
                 } else {
                     self.visit(ctx, syms, tree)
                 }
@@ -800,6 +812,7 @@ impl Attr {
             Tag::IDENT => self.visit_ident(ctx, syms, tree),
             Tag::PARENS => self.visit_parens(ctx, syms, tree),
             Tag::TYPEIDENT => self.visit_type_ident(ctx, syms, tree),
+            Tag::ANNOTATED_TYPE => self.visit_annotated_type(ctx, syms, tree),
             Tag::TYPEARRAY => self.visit_type_array(ctx, syms, tree),
             Tag::TYPEAPPLY => self.visit_type_apply(ctx, syms, tree),
             Tag::TYPEUNION => self.visit_type_union(ctx, syms, tree),
@@ -883,6 +896,42 @@ impl Attr {
         Ok(self.check(ctx, syms, tree, predefined, KindSelector::TYP, &result_info))
     }
 
+    /// Java: public void visitAnnotatedType(JCAnnotatedType tree)
+    /// (Attr.java:5114-5124).
+    fn visit_annotated_type(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
+        let (annotations, underlying) = match &ctx.tree(tree).kind {
+            TreeKind::AnnotatedType {
+                annotations,
+                underlying_type,
+            } => (
+                annotations.clone(),
+                underlying_type.expect("annotated type underlying"),
+            ),
+            _ => return self.visit_tree(ctx, tree),
+        };
+        let env = self.env.clone().expect("env");
+        self.attrib_annotation_types(ctx, syms, annotations.clone(), &env);
+        let underlying_ty = self.attrib_type_use(ctx, syms, underlying, &env);
+        // Java: underlyingType.annotatedType(Annotations.TO_BE_SET). The
+        // placeholder is a fresh clone filled by annotateTypeSecondStage below.
+        let annotated_ty = ctx.alloc_type(ctx.typ(underlying_ty).clone());
+        if !env.info.borrow().is_new_class
+            && let Some(annotate) = self.annotate.borrow().clone()
+        {
+            annotate
+                .services
+                .annotate_type_second_stage(tree, &annotations, annotated_ty);
+        }
+        ctx.tree_mut(tree).ty = Some(annotated_ty);
+        self.result = Some(annotated_ty);
+        Ok(annotated_ty)
+    }
+
     /// Java: public void visitTypeArray(JCArrayTypeTree tree) (4903-4908)
     fn visit_type_array(
         &mut self,
@@ -919,9 +968,7 @@ impl Attr {
         let env = self.env.clone().expect("env");
         let clazz_type = self.attrib_type_use(ctx, syms, clazz, &env);
         let clazz_pos = ctx.tree(clazz).pos;
-        let clazztype = self
-            .chk
-            .check_class_type(ctx, syms, clazz_pos, clazz_type);
+        let clazztype = self.chk.check_class_type(ctx, syms, clazz_pos, clazz_type);
 
         // Attribute type parameters
         let arguments = type_apply_arguments(ctx, tree);
@@ -958,15 +1005,16 @@ impl Attr {
                 actuals = List::from_iterable(actuals_vec);
                 // Compute the proper generic outer
                 let mut clazz_outer = ctx.typ(clazztype).get_enclosing_type();
-                if let Some(outer) = clazz_outer
-                    .filter(|outer| ctx.typ(*outer).has_tag(TypeTag::CLASS))
+                if let Some(outer) =
+                    clazz_outer.filter(|outer| ctx.typ(*outer).has_tag(TypeTag::CLASS))
                 {
                     {
                         let type_in = crate::tree::tree_info::type_in(ctx, clazz);
                         let site = match &ctx.tree(type_in).tag {
                             Tag::IDENT => {
                                 let encl_class = env.encl_class.expect("enclClass");
-                                let encl_sym = class_tree_symbol(ctx, encl_class).expect("enclClass sym");
+                                let encl_sym =
+                                    class_tree_symbol(ctx, encl_class).expect("enclClass sym");
                                 ctx.sym(encl_sym).ty.expect("enclClass type")
                             }
                             Tag::SELECT => match &ctx.tree(type_in).kind {
@@ -982,7 +1030,8 @@ impl Attr {
                             let mut site = site;
                             if ctx.typ(site).has_tag(TypeTag::CLASS) {
                                 let outer_tsym = ctx.typ(outer).tsym.expect("outer type symbol");
-                                site = match self.types.as_outer_super(ctx, syms, site, outer_tsym) {
+                                site = match self.types.as_outer_super(ctx, syms, site, outer_tsym)
+                                {
                                     Some(super_type) => super_type,
                                     None => self.types.erasure(ctx, syms, outer),
                                 };
@@ -1239,9 +1288,11 @@ impl Attr {
     ) -> Result<TypeId, CompletionFailure> {
         let type_var = ctx.tree(tree).ty.expect("type parameter tree.type");
         let (annotations, bounds) = match &ctx.tree(tree).kind {
-            TreeKind::TypeParameter { annotations, bounds, .. } => {
-                (annotations.clone(), bounds.clone())
-            }
+            TreeKind::TypeParameter {
+                annotations,
+                bounds,
+                ..
+            } => (annotations.clone(), bounds.clone()),
             _ => panic!("ClassCastException: JCTypeParameter expected"),
         };
         if !annotations.is_empty() {
@@ -1300,7 +1351,10 @@ impl Attr {
             let checked_head = self.check_base(ctx, syms, head_type, head, false, false, false);
             ctx.tree_mut(head).ty = Some(checked_head);
             bound_set.insert(self.types.erasure(ctx, syms, checked_head));
-            if ctx.typ(checked_head).has_tag(crate::code::type_tag::TypeTag::ERROR) {
+            if ctx
+                .typ(checked_head)
+                .has_tag(crate::code::type_tag::TypeTag::ERROR)
+            {
                 return checked_head;
             } else if ctx
                 .typ(checked_head)
@@ -1324,9 +1378,15 @@ impl Attr {
                     let bound_type = ctx.tree(bound).ty.expect("bound tree.type");
                     let checked = self.check_base(ctx, syms, bound_type, bound, false, true, false);
                     ctx.tree_mut(bound).ty = Some(checked);
-                    if ctx.typ(checked).has_tag(crate::code::type_tag::TypeTag::ERROR) {
+                    if ctx
+                        .typ(checked)
+                        .has_tag(crate::code::type_tag::TypeTag::ERROR)
+                    {
                         effective_bounds = List::of(bound);
-                    } else if ctx.typ(checked).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+                    } else if ctx
+                        .typ(checked)
+                        .has_tag(crate::code::type_tag::TypeTag::CLASS)
+                    {
                         let erased = self.types.erasure(ctx, syms, checked);
                         self.chk
                             .check_not_repeated(ctx.tree(bound).pos, erased, &mut bound_set);
@@ -1358,12 +1418,17 @@ impl Attr {
         // Java: Types.makeIntersectionType(bounds) uses
         // bounds.head.tsym.isInterface() as allInterfaces (Types.java:2476-2477);
         // with allInterfaces=true Object is prepended (Types.java:2489-2494).
-        let owntype = self
-            .types
-            .make_intersection_type(ctx, syms, &self.names, bound_types, head_is_interface);
+        let owntype = self.types.make_intersection_type(
+            ctx,
+            syms,
+            &self.names,
+            bound_types,
+            head_is_interface,
+        );
         let owner_class = ctx.typ(owntype).tsym.expect("intersection class symbol");
-        assert!(
-            (ctx.sym(owner_class).flags_field & crate::code::flags::COMPOUND as i64) != 0,
+        assert_ne!(
+            ctx.sym(owner_class).flags_field & crate::code::flags::COMPOUND as i64,
+            0,
             "AssertionError: bound class must be flagged COMPOUND"
         );
         let (extending, implementing) = if !head_is_interface {
@@ -1393,12 +1458,15 @@ impl Attr {
         if let TreeKind::ClassDecl { sym, .. } = &mut ctx.tree_mut(class_def).kind {
             *sym = Some(owner_class);
         }
-        let sourcefile = env.toplevel.and_then(|toplevel| match &ctx.tree(toplevel).kind {
-            TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
-            _ => None,
-        });
-        if let crate::code::symbol::SymbolKind::ClassSymbol { sourcefile: slot, .. } =
-            &mut ctx.sym_mut(owner_class).kind_data
+        let sourcefile = env
+            .toplevel
+            .and_then(|toplevel| match &ctx.tree(toplevel).kind {
+                TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
+                _ => None,
+            });
+        if let crate::code::symbol::SymbolKind::ClassSymbol {
+            sourcefile: slot, ..
+        } = &mut ctx.sym_mut(owner_class).kind_data
         {
             *slot = sourcefile;
         }
@@ -1434,7 +1502,11 @@ impl Attr {
             let pt = pt.expect("method prototype");
             let argtypes = self.types.get_parameter_types_public(ctx, pt);
             let typeargtypes = self.types.get_type_arguments_public(ctx, syms, pt);
-            let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+            let rs_rc = self
+                .rs
+                .borrow()
+                .clone()
+                .expect("AssertionError: rs service must be installed");
             let rs = rs_rc.borrow();
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
@@ -1461,18 +1533,30 @@ impl Attr {
                 .to_java_string()
                 .to_string_lossy()
                 .contains("<any?>");
-            if ctx.sym(tree_sym).kind != Kind::VAR && tree_sym != syms.err_symbol && !tree_sym_is_any {
+            if ctx.sym(tree_sym).kind != Kind::VAR
+                && tree_sym != syms.err_symbol
+                && !tree_sym_is_any
+            {
                 sym = tree_sym;
             } else {
                 // Java: sym = rs.resolveIdent(tree.pos(), env, tree.name, pkind());
-                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                let rs_rc = self
+                    .rs
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: rs service must be installed");
                 let rs = rs_rc.borrow();
                 let pos = simple_diag_pos(ctx.tree(tree).pos);
-                sym = rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind(), Some(self));
+                sym =
+                    rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind(), Some(self));
             }
         } else {
             // Java: sym = rs.resolveIdent(tree.pos(), env, tree.name, pkind());
-            let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+            let rs_rc = self
+                .rs
+                .borrow()
+                .clone()
+                .expect("AssertionError: rs service must be installed");
             let rs = rs_rc.borrow();
             let pos = simple_diag_pos(ctx.tree(tree).pos);
             sym = rs.resolve_ident(ctx, syms, pos, &env, name.clone(), self.pkind(), Some(self));
@@ -1549,7 +1633,11 @@ impl Attr {
                 let encl1 = env1.encl_class.expect("env1 enclClass");
                 let encl1_sym = class_tree_symbol(ctx, encl1).expect("env1 enclClass sym");
                 let site1 = ctx.sym(encl1_sym).ty.expect("env1 enclClass type");
-                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                let rs_rc = self
+                    .rs
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: rs service must be installed");
                 let rs = rs_rc.borrow();
                 if rs.is_accessible_member(ctx, syms, &env, site1, sym, false) {
                     break;
@@ -1558,9 +1646,9 @@ impl Attr {
             }
         }
         if env.info.borrow().is_serializable {
-            // NOT PORTED: chk.checkAccessFromSerializableElement(tree,
-            // env.info.isSerializableLambda) (Check.java:2745-2800, lint/serial
-            //); registered.
+            let is_lambda = env.info.borrow().is_serializable_lambda;
+            self.chk
+                .check_access_from_serializable_element(ctx, syms, tree, is_lambda);
         }
         let site = env1
             .encl_class
@@ -1611,7 +1699,10 @@ impl Attr {
         // Java: if (resultInfo.pkind.contains(KindSelector.POLY))
         // return attrRecover.recoverMethodInvocation(tree, site, sym, env, resultInfo);
         // else return checkIdInternal(tree, site, sym, resultInfo.pt, env, resultInfo);
-        if result_info.pkind.contains(crate::code::kinds::KindSelector::POLY) {
+        if result_info
+            .pkind
+            .contains(crate::code::kinds::KindSelector::POLY)
+        {
             let recover_rc = self.attr_recover.borrow().clone();
             let recover_rc = recover_rc.expect(
                 "AttrRecover instance is not installed on this Attr (service wiring pending)",
@@ -1666,9 +1757,8 @@ impl Attr {
                     // Java: chk.checkForBadAuxiliaryClassAccess(tree.pos(), env,
                     // (ClassSymbol)sym); (Attr.java:4540-4541)
                     let pos = ctx.tree(tree).pos;
-                    self.chk.check_for_bad_auxiliary_class_access(
-                        ctx, syms, pos, env, sym,
-                    );
+                    self.chk
+                        .check_for_bad_auxiliary_class_access(ctx, syms, pos, env, sym);
                     let own_outer = ctx.typ(own).get_enclosing_type();
                     let sym_type = ctx.sym(sym).ty.expect("symbol type");
                     let sym_type_args = type_arguments(ctx, sym_type);
@@ -1682,10 +1772,8 @@ impl Attr {
                             // ownOuter.tsym); (Attr.java:4555-4565)
                             let mut norm_outer = site;
                             if ctx.typ(norm_outer).has_tag(TypeTag::CLASS) {
-                                let own_outer_tsym = ctx
-                                    .typ(own_outer)
-                                    .tsym
-                                    .expect("enclosing type symbol");
+                                let own_outer_tsym =
+                                    ctx.typ(own_outer).tsym.expect("enclosing type symbol");
                                 norm_outer = match self.types.as_enclosing_super(
                                     ctx,
                                     syms,
@@ -1728,12 +1816,15 @@ impl Attr {
                 let encl_var = env.info.borrow().encl_var;
                 if encl_var.is_some() && ctx.typ(sym_ty).has_tag(TypeTag::NONE) {
                     // self reference to implicitly typed variable declaration
-                    let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                        crate::resources::compiler_properties::fragments::local_self_ref(),
-                    ));
+                    let diag = self
+                        .diags
+                        .fragment(crate::util::jc_diagnostic::Fragment::from(
+                            crate::resources::compiler_properties::fragments::local_self_ref(),
+                        ));
+                    let pos = ctx.sym(sym).var_pos().unwrap_or_else(|| ctx.tree(tree).pos);
                     crate::util::abstract_log::AbstractLog::error_at(
                         &mut *self.log.borrow_mut(),
-                        ctx.tree(tree).pos,
+                        pos,
                         crate::util::jc_diagnostic::Error::from(
                             crate::resources::compiler_properties::errors::cant_infer_local_var_type(
                                 ctx.sym(sym).name.clone(),
@@ -1743,7 +1834,9 @@ impl Attr {
                             ),
                         ),
                     );
-                    let error = self.types.create_error_type_original(ctx, Some(sym_ty), syms);
+                    let error = self
+                        .types
+                        .create_error_type_original(ctx, Some(sym_ty), syms);
                     ctx.sym_mut(sym).ty = Some(error);
                     return error;
                 }
@@ -1852,10 +1945,7 @@ impl Attr {
             Kind::PCK | Kind::ERR => {
                 // Java: owntype = sym.type; (may be null for packages; the port
                 // maps the Java null type to Type.noType).
-                owntype = ctx
-                    .sym(sym)
-                    .ty
-                    .unwrap_or_else(|| self.no_type(ctx));
+                owntype = ctx.sym(sym).ty.unwrap_or_else(|| self.no_type(ctx));
             }
             other => panic!("AssertionError: unexpected kind: {:?} in tree", other),
         }
@@ -1905,7 +1995,8 @@ impl Attr {
             {
                 self.attr_error(
                     ctx.tree(tree).pos,
-                    crate::resources::compiler_properties::errors::illegal_parenthesized_expression(),
+                    crate::resources::compiler_properties::errors::illegal_parenthesized_expression(
+                    ),
                 );
             }
         }
@@ -1927,7 +2018,8 @@ impl Attr {
         while current.non_empty() {
             let err = *current.head();
             let env = self.env.clone().expect("env");
-            let error_info = ResultInfo::new(KindSelector::ERR, self.pt(), Rc::clone(&self.basic_handler));
+            let error_info =
+                ResultInfo::new(KindSelector::ERR, self.pt(), Rc::clone(&self.basic_handler));
             let _ = self.attrib_tree_with(ctx, syms, err, &env, error_info);
             current = current.tail();
         }
@@ -1973,12 +2065,9 @@ impl Attr {
         ctx: &CompilerContext,
         ty: TypeId,
     ) -> crate::resources::diagnostic_contract::TypeArg {
-        let text = ctx
-            .typ(ty)
-            .tsym
-            .map(|tsym| crate::comp::resolve::symbol_display_name(ctx, tsym))
-            .unwrap_or_else(|| format!("{:?}", ctx.typ(ty).get_tag()));
-        crate::resources::diagnostic_contract::TypeArg::placeholder(text)
+        crate::resources::diagnostic_contract::TypeArg::placeholder(
+            crate::code::printer::visit_type(ctx, ty),
+        )
     }
 
     /// Java: public Type attribStat(JCTree tree, Env<AttrContext> env)
@@ -1991,7 +2080,11 @@ impl Attr {
         env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
         // Java: Env<AttrContext> analyzeEnv = analyzer.copyEnvIfNeeded(tree, env);
-        let analyze_env = {
+        let analyze_env = if env.info.borrow().attribution_mode.is_speculative() {
+            // Java copyEnvIfNeeded returns null for speculative attribution;
+            // avoid touching the analyzer cell while Analyzer.flush holds it.
+            None
+        } else {
             let analyzer_rc = self.analyzer.borrow().clone();
             match analyzer_rc {
                 None => None,
@@ -2003,12 +2096,14 @@ impl Attr {
         };
         let stat_info = self.stat_info.clone();
         let result = self.attrib_tree_use(ctx, syms, tree, env, stat_info);
-        // Java: analyzer.analyzeIfNeeded(tree, analyzeEnv);
+        // Java: analyzer.analyzeIfNeeded(tree, analyzeEnv); the live Attr is
+        // passed through because the caller already borrowed it mutably.
+        let analyzer_service = self.analyzer.borrow().clone();
         if analyze_env.is_some()
-            && let Some(analyzer_rc) = self.analyzer.borrow().clone()
+            && let Some(analyzer_rc) = analyzer_service
         {
             let mut analyzer = analyzer_rc.borrow_mut();
-            analyzer.analyze_if_needed(ctx, syms, tree, analyze_env.as_ref());
+            analyzer.analyze_if_needed_with_attr(ctx, syms, tree, analyze_env.as_ref(), self);
         }
         // Java: attrRecover.doRecovery();
         self.do_recovery(ctx, syms);
@@ -2027,7 +2122,9 @@ impl Attr {
             return;
         };
         let rs_rc = self.rs.borrow().clone();
-        let Some(rs_rc) = rs_rc else { return; };
+        let Some(rs_rc) = rs_rc else {
+            return;
+        };
         let rs = rs_rc.borrow();
         let chk_rc = Rc::clone(&self.chk);
         let chk = Rc::clone(&chk_rc);
@@ -2284,9 +2381,7 @@ impl Attr {
             && !env.info.borrow().is_new_class
             && env
                 .encl_method
-                .map(|encl_method| {
-                    crate::tree::tree_info::is_compact_constructor(ctx, encl_method)
-                })
+                .map(|encl_method| crate::tree::tree_info::is_compact_constructor(ctx, encl_method))
                 .unwrap_or(false)
         {
             // Java: log.error(env.enclMethod,
@@ -2299,11 +2394,16 @@ impl Attr {
             //     Errors.InvalidCanonicalConstructorInRecord(Fragments.Compact,
             //     env.enclMethod.sym.name, Fragments.CanonicalCantHaveReturnStatement));
             let encl_method = env.encl_method.expect("enclosing method");
-            let method_symbol = crate::tree::tree_info::symbol(ctx, encl_method)
-                .expect("enclosing method symbol");
-            let compact = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::compact(),
-            ));
+            // A compact constructor may not have a symbol attached to its tree
+            // yet; Java uses env.enclMethod.sym.name, which is <init>.
+            let method_name = crate::tree::tree_info::symbol(ctx, encl_method)
+                .map(|symbol| ctx.sym(symbol).name.clone())
+                .unwrap_or_else(|| self.names.init.clone());
+            let compact = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::compact(),
+                ));
             let cant_return = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                 crate::resources::compiler_properties::fragments::canonical_cant_have_return_statement(),
             ));
@@ -2311,7 +2411,7 @@ impl Attr {
                 crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
                     compact,
                 )),
-                ctx.sym(method_symbol).name.clone(),
+                method_name,
                 crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
                     cant_return,
                 )),
@@ -2328,12 +2428,10 @@ impl Attr {
                     .map(|pt| ctx.typ(pt).has_tag(TypeTag::VOID))
                     .unwrap_or(false)
                 {
-                    let fragment = self
-                        .diags
-                        .fragment(
-                            crate::resources::compiler_properties::fragments::unexpected_ret_val()
-                                .into(),
-                        );
+                    let fragment = self.diags.fragment(
+                        crate::resources::compiler_properties::fragments::unexpected_ret_val()
+                            .into(),
+                    );
                     result_info
                         .check_context
                         .report(ctx, ctx.tree(expr).pos, &fragment);
@@ -2341,14 +2439,12 @@ impl Attr {
                 self.attrib_tree_with(ctx, syms, expr, &env, result_info);
             } else if let Some(pt) = result_info.pt {
                 if !ctx.typ(pt).has_tag(TypeTag::VOID) && !ctx.typ(pt).has_tag(TypeTag::NONE) {
-                    let fragment = self
-                        .diags
-                        .fragment(
-                            crate::resources::compiler_properties::fragments::missing_ret_val(
-                                Self::type_arg_placeholder(ctx, pt),
-                            )
-                            .into(),
-                        );
+                    let fragment = self.diags.fragment(
+                        crate::resources::compiler_properties::fragments::missing_ret_val(
+                            Self::type_arg_placeholder(ctx, pt),
+                        )
+                        .into(),
+                    );
                     result_info.check_context.report(ctx, pos, &fragment);
                 }
             }
@@ -2423,16 +2519,19 @@ impl Attr {
                 ),
             );
         }
-        let pkind = self
-            .result_info
-            .as_ref()
-            .expect("resultInfo")
-            .pkind;
+        let pkind = self.result_info.as_ref().expect("resultInfo").pkind;
         if !pkind.contains(crate::code::kinds::KindSelector::VAL) {
             owntype = self.types.capture(ctx, syms, owntype);
         }
         let result_info = self.result_info.clone().expect("resultInfo");
-        Ok(self.check(ctx, syms, tree, owntype, crate::code::kinds::KindSelector::VAR, &result_info))
+        Ok(self.check(
+            ctx,
+            syms,
+            tree,
+            owntype,
+            crate::code::kinds::KindSelector::VAR,
+            &result_info,
+        ))
     }
 
     /// Java: public void visitAssign(JCAssign tree) (Attr.java:3930-3936)
@@ -2443,10 +2542,9 @@ impl Attr {
         tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
         let (lhs, rhs) = match &ctx.tree(tree).kind {
-            TreeKind::Assign { lhs, rhs } => (
-                lhs.expect("assignment lhs"),
-                rhs.expect("assignment rhs"),
-            ),
+            TreeKind::Assign { lhs, rhs } => {
+                (lhs.expect("assignment lhs"), rhs.expect("assignment rhs"))
+            }
             _ => panic!("ClassCastException: JCAssign expected"),
         };
         let env = self.env.clone().expect("env");
@@ -2506,13 +2604,11 @@ impl Attr {
             match ctx.tree(env1_tree).tag {
                 Tag::LABELLED => {
                     let (labelled_label, labelled_body) = match &ctx.tree(env1_tree).kind {
-                        TreeKind::LabeledStatement { label, body } => {
-                            (label.clone(), *body)
-                        }
+                        TreeKind::LabeledStatement { label, body } => (label.clone(), *body),
                         _ => panic!("ClassCastException: JCLabeledStatement expected"),
                     };
                     if label.as_ref() == Some(&labelled_label) {
-                        if tag == Tag::CONTINUE {
+                        return if tag == Tag::CONTINUE {
                             let is_loop = labelled_body
                                 .map(|body| {
                                     matches!(
@@ -2527,14 +2623,12 @@ impl Attr {
                             if !is_loop {
                                 pending_error = Some(errors::not_loop_label(labelled_label));
                             }
-                            return (
-                                Some(crate::tree::tree_info::referenced_statement(
-                                    ctx, env1_tree,
-                                )),
+                            (
+                                Some(crate::tree::tree_info::referenced_statement(ctx, env1_tree)),
                                 pending_error,
-                            );
+                            )
                         } else {
-                            return (Some(env1_tree), pending_error);
+                            (Some(env1_tree), pending_error)
                         }
                     }
                 }
@@ -2579,7 +2673,11 @@ impl Attr {
     }
 
     /// Java: public void visitTree(JCTree tree) (default: assert error)
-    fn visit_tree(&mut self, ctx: &mut CompilerContext, tree: TreeId) -> Result<TypeId, CompletionFailure> {
+    fn visit_tree(
+        &mut self,
+        ctx: &mut CompilerContext,
+        tree: TreeId,
+    ) -> Result<TypeId, CompletionFailure> {
         panic!(
             "AssertionError: unported Attr visitor for tag {:?} at pos {}",
             ctx.tree(tree).tag,
@@ -2636,7 +2734,9 @@ impl Attr {
             } => (*init, *mods, *sym),
             _ => return,
         };
-        if (attr_mods_flags(ctx, mods) & crate::code::flags::FIELD_INIT_TYPE_ANNOTATIONS_QUEUED) != 0 {
+        if (attr_mods_flags(ctx, mods) & crate::code::flags::FIELD_INIT_TYPE_ANNOTATIONS_QUEUED)
+            != 0
+        {
             return;
         }
         let owner_kind = env
@@ -2661,7 +2761,9 @@ impl Attr {
         annotate
             .services
             .queue_scan_tree_and_type_annotate(init, env, sym, ctx.tree(tree).pos);
-        annotate.flush_with_attr(ctx, syms, self).expect("annotation flush");
+        annotate
+            .flush_with_attr(ctx, syms, self)
+            .expect("annotation flush");
     }
 
     /// Java: public Object attribLazyConstantValue(Env<AttrContext> env,
@@ -2696,19 +2798,14 @@ impl Attr {
         let prev_lint_pos = self.deferred_lint_handler.borrow_mut().set_pos(Rc::new(
             crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(variable).pos),
         ));
-        let prev_source = env.toplevel.and_then(|toplevel| {
-            match &ctx.tree(toplevel).kind {
+        let prev_source = env
+            .toplevel
+            .and_then(|toplevel| match &ctx.tree(toplevel).kind {
                 TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
                 _ => None,
-            }
-        });
+            });
         let prev_source = self.log.borrow_mut().use_source(prev_source);
-        self.do_queue_scan_tree_and_type_annotate_for_var_init(
-            ctx,
-            syms,
-            variable,
-            enclosing_env,
-        );
+        self.do_queue_scan_tree_and_type_annotate_for_var_init(ctx, syms, variable, enclosing_env);
         let init = match &ctx.tree(variable).kind {
             TreeKind::VariableDecl {
                 init: Some(init), ..
@@ -2724,23 +2821,24 @@ impl Attr {
         let itype = self.attrib_expr_with_type(ctx, syms, init, env, Some(ty));
         let implicitly_typed = matches!(
             &ctx.tree(variable).kind,
-            TreeKind::VariableDecl {
-                vartype: None,
-                ..
-            }
+            TreeKind::VariableDecl { vartype: None, .. }
         );
         if implicitly_typed {
             let name = match &ctx.tree(variable).kind {
                 TreeKind::VariableDecl { name, .. } => name.clone(),
                 _ => self.names.empty.clone(),
             };
-            let inferred = self.chk.check_local_var_type(
-                ctx,
-                syms,
-                ctx.tree(variable).pos,
-                itype,
-                name,
-            );
+            let var_pos = ctx.tree(variable).kind.clone();
+            let name_pos = match var_pos {
+                TreeKind::VariableDecl {
+                    nameexpr: Some(nameexpr),
+                    ..
+                } => ctx.tree(nameexpr).pos,
+                _ => ctx.tree(variable).pos,
+            };
+            let inferred = self
+                .chk
+                .check_local_var_type(ctx, syms, name_pos, itype, name);
             self.set_synthetic_variable_type(ctx, syms, variable, inferred);
         }
         let result = match ctx.typ(itype).const_value().cloned() {
@@ -2843,7 +2941,11 @@ impl Attr {
         } else {
             KindSelector::TYP_PCK
         };
-        let info = ResultInfo::new(pkind, Some(self.no_type(ctx)), Rc::clone(&self.basic_handler));
+        let info = ResultInfo::new(
+            pkind,
+            Some(self.no_type(ctx)),
+            Rc::clone(&self.basic_handler),
+        );
         self.attrib_tree_use(ctx, syms, selected, env, info)
     }
 
@@ -2860,9 +2962,9 @@ impl Attr {
         while current.non_empty() {
             let annotation = *current.head();
             let annotation_type = match &ctx.tree(annotation).kind {
-                TreeKind::Annotation { annotation_type, .. } => {
-                    annotation_type.expect("annotation type")
-                }
+                TreeKind::Annotation {
+                    annotation_type, ..
+                } => annotation_type.expect("annotation type"),
                 _ => panic!("ClassCastException: JCAnnotation expected"),
             };
             self.attrib_type_use(ctx, syms, annotation_type, env);
@@ -2903,7 +3005,8 @@ impl Attr {
                     }
                     // Java: types.setBounds(a, bounds.reverse())
                     let reversed = list_reverse(result);
-                    self.types.set_bounds(ctx, syms, &self.names, type_var, reversed, false);
+                    self.types
+                        .set_bounds(ctx, syms, &self.names, type_var, reversed, false);
                 } else {
                     // if no bounds are given, assume a single bound of
                     // java.lang.Object.
@@ -3141,7 +3244,11 @@ impl Attr {
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> TypeId {
-        let info = ResultInfo::new(KindSelector::TYP, Some(self.no_type(ctx)), Rc::clone(&self.basic_handler));
+        let info = ResultInfo::new(
+            KindSelector::TYP,
+            Some(self.no_type(ctx)),
+            Rc::clone(&self.basic_handler),
+        );
         self.attrib_tree_use(ctx, syms, tree, env, info)
     }
 
@@ -3212,9 +3319,10 @@ fn literal_value_to_constant(
     }
 }
 
-/// Java: Type.toString() (the display layer, code/type_.rs type_to_string).
+/// Diagnostic display of a type: javac's default formatter renders Type
+/// arguments with the rich Printer (simple class names when unambiguous).
 fn type_display(ctx: &CompilerContext, ty: TypeId) -> String {
-    crate::code::type_::type_to_string(ctx, ty)
+    crate::code::printer::visit_type(ctx, ty)
 }
 
 /// Java: Feature::allowed_in_source helper is the ported Source feature check
@@ -3222,7 +3330,6 @@ fn type_display(ctx: &CompilerContext, ty: TypeId) -> String {
 fn _feature_allowed(feature: Feature, source: crate::code::source::Source) -> bool {
     feature.allowed_in_source(source)
 }
-
 
 /// Java: Symbol.isMemberOf(TypeSymbol clazz, Types types) (Symbol.java:552-558).
 fn symbol_is_member_of(
@@ -3317,20 +3424,28 @@ impl crate::comp::check::CheckContext for ConditionalCheckContext {
         req: TypeId,
         warn: &mut crate::util::warner::Warner,
     ) -> bool {
-        self.enclosing.compatible(ctx, syms, types, found, req, warn)
+        self.enclosing
+            .compatible(ctx, syms, types, found, req, warn)
     }
 
-    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+    fn report(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        details: &crate::util::jc_diagnostic::JCDiagnostic,
+    ) {
         // Java: enclosingContext.report(pos,
         // diags.fragment(Fragments.IncompatibleTypeInConditional(details)));
         let message = details.get_message(None);
-        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-            crate::resources::compiler_properties::fragments::incompatible_type_in_conditional(
-                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                    message.to_string(),
+        let fragment = self
+            .diags
+            .fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::incompatible_type_in_conditional(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        message.to_string(),
+                    ),
                 ),
-            ),
-        ));
+            ));
         self.enclosing.report(ctx, pos, &fragment);
     }
 
@@ -3343,7 +3458,8 @@ impl crate::comp::check::CheckContext for ConditionalCheckContext {
         found: TypeId,
         req: TypeId,
     ) -> crate::util::warner::Warner {
-        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+        self.enclosing
+            .check_warner(ctx, syms, types, pos, found, req)
     }
 
     fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
@@ -3378,10 +3494,16 @@ impl crate::comp::check::CheckContext for DiamondCheckContext {
         req: TypeId,
         warn: &mut crate::util::warner::Warner,
     ) -> bool {
-        self.enclosing.compatible(ctx, syms, types, found, req, warn)
+        self.enclosing
+            .compatible(ctx, syms, types, found, req, warn)
     }
 
-    fn report(&self, ctx: &mut CompilerContext, _pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+    fn report(
+        &self,
+        ctx: &mut CompilerContext,
+        _pos: i32,
+        details: &crate::util::jc_diagnostic::JCDiagnostic,
+    ) {
         if std::env::var_os("DSH_DEBUG_DIAMOND").is_some() {
             eprintln!(
                 "[DIAMOND] pos={} speculative={} detail={}",
@@ -3390,7 +3512,10 @@ impl crate::comp::check::CheckContext for DiamondCheckContext {
                 details.get_message(None)
             );
             if !self.speculative {
-                eprintln!("[DIAMOND-BT]\n{}", std::backtrace::Backtrace::force_capture());
+                eprintln!(
+                    "[DIAMOND-BT]\n{}",
+                    std::backtrace::Backtrace::force_capture()
+                );
             }
         }
         if self.speculative {
@@ -3399,24 +3524,34 @@ impl crate::comp::check::CheckContext for DiamondCheckContext {
         // Java: enclosingContext.report(clazz.clazz,
         // diags.fragment(Fragments.CantApplyDiamond1(Fragments.Diamond(tsym), details)));
         let diamond_text = {
-            let sym = ctx.sym(self.tsym);
-            let display = crate::code::kinds::kind_name(sym, ctx);
-            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::diamond(
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder(display.to_string()),
-                ),
-            ));
+            let mut display = crate::comp::resolve::symbol_display_name(ctx, self.tsym);
+            if display.is_empty() {
+                if let Some(ty) = ctx.sym(self.tsym).ty {
+                    display = crate::comp::attr::type_display_of(ctx, ty);
+                }
+            }
+            let fragment = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::diamond(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(display),
+                    ),
+                ));
             fragment.get_message(None).to_string()
         };
         let message = details.get_message(None);
-        let key = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-            crate::resources::compiler_properties::fragments::cant_apply_diamond1(
-                crate::resources::diagnostic_contract::DiagnosticArg::from_display(diamond_text),
-                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                    message.to_string(),
+        let key = self
+            .diags
+            .fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::cant_apply_diamond1(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        diamond_text,
+                    ),
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        message.to_string(),
+                    ),
                 ),
-            ),
-        ));
+            ));
         let clazz_pos = ctx.tree(self.clazz).pos;
         self.enclosing.report(ctx, clazz_pos, &key);
     }
@@ -3430,7 +3565,8 @@ impl crate::comp::check::CheckContext for DiamondCheckContext {
         found: TypeId,
         req: TypeId,
     ) -> crate::util::warner::Warner {
-        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+        self.enclosing
+            .check_warner(ctx, syms, types, pos, found, req)
     }
 
     fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
@@ -3464,20 +3600,28 @@ impl crate::comp::check::CheckContext for FunctionalReturnContext {
         let inference_context = Rc::clone(self.enclosing.inference_context());
         let found = inference_context.as_undet_var(ctx, syms, types, found);
         let req = inference_context.as_undet_var(ctx, syms, types, req);
-        self.basic_handler.compatible(ctx, syms, types, found, req, warn)
+        self.basic_handler
+            .compatible(ctx, syms, types, found, req, warn)
     }
 
-    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+    fn report(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        details: &crate::util::jc_diagnostic::JCDiagnostic,
+    ) {
         // Java: enclosingContext.report(pos,
         // diags.fragment(Fragments.IncompatibleRetTypeInLambda(details)));
         let message = details.get_message(None);
-        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-            crate::resources::compiler_properties::fragments::incompatible_ret_type_in_lambda(
-                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                    message.to_string(),
+        let fragment = self
+            .diags
+            .fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::incompatible_ret_type_in_lambda(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        message.to_string(),
+                    ),
                 ),
-            ),
-        ));
+            ));
         self.enclosing.report(ctx, pos, &fragment);
     }
 
@@ -3490,7 +3634,8 @@ impl crate::comp::check::CheckContext for FunctionalReturnContext {
         found: TypeId,
         req: TypeId,
     ) -> crate::util::warner::Warner {
-        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+        self.enclosing
+            .check_warner(ctx, syms, types, pos, found, req)
     }
 
     fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
@@ -3529,14 +3674,22 @@ impl crate::comp::check::CheckContext for ExpressionLambdaReturnContext {
         self.base.compatible(ctx, syms, types, found, req, warn)
     }
 
-    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+    fn report(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        details: &crate::util::jc_diagnostic::JCDiagnostic,
+    ) {
         // Java: if (expStmtExpected) enclosingContext.report(pos,
         // diags.fragment(Fragments.StatExprExpected));
         // else super.report(pos, details);
         if self.exp_stmt_expected.get() {
-            let fragment = self.base.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::stat_expr_expected(),
-            ));
+            let fragment = self
+                .base
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::stat_expr_expected(),
+                ));
             self.base.enclosing.report(ctx, pos, &fragment);
         } else {
             self.base.report(ctx, pos, details);
@@ -3567,16 +3720,16 @@ impl crate::comp::check::CheckContext for ExpressionLambdaReturnContext {
 impl Attr {
     /// Java: CheckContext conditionalContext(CheckContext checkContext)
     /// (Attr.java:2092-2106)
-/// # Arguments
-///
-/// # Returns
-///   - the upstream result (see the summary).
-///
-/// # Panics
-///   - none beyond the registered unimplemented dependencies.
-///
-/// Upstream: Attr.java:3335-3350 (conditionalContext).
-///
+    /// # Arguments
+    ///
+    /// # Returns
+    ///   - the upstream result (see the summary).
+    ///
+    /// # Panics
+    ///   - none beyond the registered unimplemented dependencies.
+    ///
+    /// Upstream: Attr.java:3335-3350 (conditionalContext).
+    ///
     pub fn conditional_context(
         &self,
         enclosing: Rc<dyn crate::comp::check::CheckContext>,
@@ -3589,18 +3742,18 @@ impl Attr {
 
     /// Java: CheckContext diamondContext(JCNewClass clazz, TypeSymbol tsym,
     /// CheckContext checkContext) (Attr.java:3007-3016)
-/// # Arguments
-///   - clazz: the diamond new-class tree
-///   - tsym: the site class symbol
-///
-/// # Returns
-///   - the upstream result (see the summary).
-///
-/// # Panics
-///   - none beyond the registered unimplemented dependencies.
-///
-/// Upstream: Attr.java:3360-3380 (diamondContext).
-///
+    /// # Arguments
+    ///   - clazz: the diamond new-class tree
+    ///   - tsym: the site class symbol
+    ///
+    /// # Returns
+    ///   - the upstream result (see the summary).
+    ///
+    /// # Panics
+    ///   - none beyond the registered unimplemented dependencies.
+    ///
+    /// Upstream: Attr.java:3360-3380 (diamondContext).
+    ///
     pub fn diamond_context(
         &self,
         clazz: TreeId,
@@ -3618,20 +3771,20 @@ impl Attr {
 
     /// Java: ResultInfo lambdaBodyResult(JCLambda that, Type descriptor,
     /// ResultInfo resultInfo) (Attr.java:3438-3453)
-/// # Arguments
-///   - ctx: compiler context
-///   - that: the lambda tree
-///   - descriptor: the functional descriptor
-///   - result_info: the target result
-///
-/// # Returns
-///   - the upstream result (see the summary).
-///
-/// # Panics
-///   - none beyond the registered unimplemented dependencies.
-///
-/// Upstream: Attr.java:3438-3453 (lambdaBodyResult).
-///
+    /// # Arguments
+    ///   - ctx: compiler context
+    ///   - that: the lambda tree
+    ///   - descriptor: the functional descriptor
+    ///   - result_info: the target result
+    ///
+    /// # Returns
+    ///   - the upstream result (see the summary).
+    ///
+    /// # Panics
+    ///   - none beyond the registered unimplemented dependencies.
+    ///
+    /// Upstream: Attr.java:3438-3453 (lambdaBodyResult).
+    ///
     pub fn lambda_body_result(
         &self,
         ctx: &mut CompilerContext,
@@ -3665,9 +3818,7 @@ impl Attr {
                 diags: Rc::clone(&self.diags),
             })
         };
-        let return_type = self
-            .types
-            .get_return_type_public(ctx, descriptor);
+        let return_type = self.types.get_return_type_public(ctx, descriptor);
         if Some(return_type) == Some(self.symtab_facts().recovery_type) {
             // Java: descriptor.getReturnType() == Type.recoveryType ? recoveryInfo:...
             self.recovery_info.clone()
@@ -3678,20 +3829,20 @@ impl Attr {
 
     /// Java: void checkLambdaCompatible(JCLambda tree, Type descriptor,
     /// CheckContext checkContext) (Attr.java:3455-3480)
-/// # Arguments
-///   - ctx/syms: explicit services
-///   - tree: the lambda tree
-///   - descriptor: the functional descriptor
-///   - check_context: the compatibility context
-///
-/// # Returns
-///   - the upstream result (see the summary).
-///
-/// # Panics
-///   - none beyond the registered unimplemented dependencies.
-///
-/// Upstream: Attr.java:3460-3490 (checkLambdaCompatible).
-///
+    /// # Arguments
+    ///   - ctx/syms: explicit services
+    ///   - tree: the lambda tree
+    ///   - descriptor: the functional descriptor
+    ///   - check_context: the compatibility context
+    ///
+    /// # Returns
+    ///   - the upstream result (see the summary).
+    ///
+    /// # Panics
+    ///   - none beyond the registered unimplemented dependencies.
+    ///
+    /// Upstream: Attr.java:3460-3490 (checkLambdaCompatible).
+    ///
     pub fn check_lambda_compatible(
         &self,
         ctx: &mut CompilerContext,
@@ -3722,22 +3873,31 @@ impl Attr {
             } => *can_complete_normally,
             _ => panic!("ClassCastException: JCLambda expected"),
         };
-        let return_type_is_void =
-            ctx.typ(return_type).has_tag(crate::code::type_tag::TypeTag::VOID);
+        let return_type_is_void = ctx
+            .typ(return_type)
+            .has_tag(crate::code::type_tag::TypeTag::VOID);
         let return_type_is_recovery = return_type == self.symtab_facts().recovery_type;
         let body_is_statement = body
             .map(|body| ctx.tree(body).tag == Tag::BLOCK)
             .unwrap_or(true);
-        if body_is_statement && can_complete_normally && !return_type_is_void && !return_type_is_recovery {
-            let missing = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::missing_ret_val(
-                    crate::resources::diagnostic_contract::TypeArg::placeholder(
-                        type_display(ctx, return_type),
-                    ),
-                ),
-            ));
+        if body_is_statement
+            && can_complete_normally
+            && !return_type_is_void
+            && !return_type_is_recovery
+        {
+            let missing =
+                self.diags
+                    .fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::missing_ret_val(
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                type_display(ctx, return_type),
+                            ),
+                        ),
+                    ));
             let message = missing.get_message(None);
-            let outer = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+            let outer = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
                 crate::resources::compiler_properties::fragments::incompatible_ret_type_in_lambda(
                     crate::resources::diagnostic_contract::DiagnosticArg::from_display(
                         message.to_string(),
@@ -3773,8 +3933,11 @@ impl Attr {
             }
         }
         if !same {
-            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::incompatible_arg_types_in_lambda(),
+            let fragment = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::incompatible_arg_types_in_lambda(
+                ),
             ));
             check_context.report(ctx, ctx.tree(tree).pos, &fragment);
         }
@@ -3792,20 +3955,20 @@ impl Attr {
     /// resultInfo, List<Type> explicitParamTypes) (Attr.java:3240-3295) —
     /// adapter: explicit ctx/syms parameters; the upstream unchecked
     /// FunctionDescriptorLookupError is returned as Err.
-/// # Arguments
-///   - ctx/syms: explicit services
-///   - that: the functional expression
-///   - result_info: the target result
-///   - explicit_param_types: the explicit parameter types (if any)
-///
-/// # Returns
-///   - the upstream result (see the summary).
-///
-/// # Panics
-///   - none beyond the registered unimplemented dependencies.
-///
-/// Upstream: Attr.java:3390-3435 (getTargetInfo).
-///
+    /// # Arguments
+    ///   - ctx/syms: explicit services
+    ///   - that: the functional expression
+    ///   - result_info: the target result
+    ///   - explicit_param_types: the explicit parameter types (if any)
+    ///
+    /// # Returns
+    ///   - the upstream result (see the summary).
+    ///
+    /// # Panics
+    ///   - none beyond the registered unimplemented dependencies.
+    ///
+    /// Upstream: Attr.java:3390-3435 (getTargetInfo).
+    ///
     pub fn get_target_info(
         &mut self,
         ctx: &mut CompilerContext,
@@ -3840,9 +4003,13 @@ impl Attr {
                 }
                 current_target = self.types.remove_wildcards(ctx, syms, current_target);
                 let chk = Rc::clone(&self.chk);
-                lambda_type = self
-                    .types
-                    .find_descriptor_type(ctx, syms, &self.diags, &chk, current_target)?;
+                lambda_type = self.types.find_descriptor_type(
+                    ctx,
+                    syms,
+                    &self.diags,
+                    &chk,
+                    current_target,
+                )?;
             } else {
                 let mut components: List<TypeId> = List::nil();
                 let explicit_components = ctx.typ(current_target).get_explicit_components();
@@ -3881,9 +4048,13 @@ impl Attr {
                 let interface_flag = crate::code::flags::INTERFACE as i64;
                 ctx.sym_mut(tsym).flags_field |= interface_flag;
                 let chk = Rc::clone(&self.chk);
-                lambda_type = self
-                    .types
-                    .find_descriptor_type(ctx, syms, &self.diags, &chk, current_target)?;
+                lambda_type = self.types.find_descriptor_type(
+                    ctx,
+                    syms,
+                    &self.diags,
+                    &chk,
+                    current_target,
+                )?;
             }
         } else {
             current_target = recovery_type;
@@ -3891,23 +4062,30 @@ impl Attr {
         }
         if ctx.tree(that).tag == Tag::LAMBDA && ctx.typ(lambda_type).has_tag(TypeTag::FORALL) {
             // lambda expression target desc cannot be a generic method
-            let kind = crate::code::kinds::kind_name(ctx.sym(ctx.typ(current_target).tsym.expect("currentTarget tsym")), ctx);
+            let kind = crate::code::kinds::kind_name(
+                ctx.sym(ctx.typ(current_target).tsym.expect("currentTarget tsym")),
+                ctx,
+            );
             let sym = ctx.typ(current_target).tsym.expect("currentTarget tsym");
-            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::invalid_generic_lambda_target(
-                    crate::resources::diagnostic_contract::TypeArg::placeholder(type_display(ctx, lambda_type)),
-                    crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                        crate::comp::resolve::symbol_display_name(ctx, sym),
+            let fragment = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::invalid_generic_lambda_target(
+                        crate::comp::check::type_arg_with_where(ctx, lambda_type),
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                            kind.name(),
+                        ),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            ctx.sym(sym).name.to_java_string().to_string_lossy(),
+                        ),
                     ),
-                ),
-            ));
+                ));
             result_info
                 .check_context
                 .report(ctx, ctx.tree(that).pos, &fragment);
-            current_target =
-                self.types
-                    .create_error_type_original(ctx, result_info.pt, syms);
+            current_target = self
+                .types
+                .create_error_type_original(ctx, result_info.pt, syms);
         }
         Ok(TargetInfo {
             target: current_target,
@@ -3948,7 +4126,9 @@ impl Attr {
         let interfaces = match &ctx.typ(ict).kind {
             crate::code::type_::TypeKindData::IntersectionClassType {
                 interfaces_field, ..
-            } => interfaces_field.clone().expect("intersection type has no interfaces"),
+            } => interfaces_field
+                .clone()
+                .expect("intersection type has no interfaces"),
             _ => panic!("ClassCastException: IntersectionClassType expected"),
         };
         let mut targs: List<TypeId> = List::nil();
@@ -4043,6 +4223,28 @@ pub(crate) fn type_display_of(ctx: &CompilerContext, t: TypeId) -> String {
     type_display(ctx, t)
 }
 
+/// Java: Printer.visitAnnotationType -- an annotation type is printed as
+/// @Name, retaining the enclosing class names but not the package.
+pub(crate) fn annotation_type_display(ctx: &CompilerContext, t: TypeId) -> String {
+    let Some(tsym) = ctx.typ(t).tsym else {
+        return format!("@{}", type_display(ctx, t));
+    };
+    let mut name = ctx.sym(tsym).name.to_java_string().to_string_lossy();
+    let mut owner = ctx.sym(tsym).owner;
+    while let Some(owner_sym) = owner {
+        if ctx.sym(owner_sym).kind != crate::code::kinds::Kind::TYP {
+            break;
+        }
+        name = format!(
+            "{}.{}",
+            ctx.sym(owner_sym).name.to_java_string().to_string_lossy(),
+            name
+        );
+        owner = ctx.sym(owner_sym).owner;
+    }
+    format!("@{name}")
+}
+
 /// Java: Attr.RecoveryInfo's anonymous CheckContext (Attr.java:598-620): a
 /// NestedCheckContext whose deferredAttrContext is the empty deferred context.
 /// Registered adapter: the anonymous subclass is a named struct.
@@ -4061,10 +4263,16 @@ impl crate::comp::check::CheckContext for RecoveryCheckContext {
         req: TypeId,
         warn: &mut crate::util::warner::Warner,
     ) -> bool {
-        self.enclosing.compatible(ctx, syms, types, found, req, warn)
+        self.enclosing
+            .compatible(ctx, syms, types, found, req, warn)
     }
 
-    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+    fn report(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        details: &crate::util::jc_diagnostic::JCDiagnostic,
+    ) {
         self.enclosing.report(ctx, pos, details);
     }
 
@@ -4077,7 +4285,8 @@ impl crate::comp::check::CheckContext for RecoveryCheckContext {
         found: TypeId,
         req: TypeId,
     ) -> crate::util::warner::Warner {
-        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+        self.enclosing
+            .check_warner(ctx, syms, types, pos, found, req)
     }
 
     fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
@@ -4088,8 +4297,6 @@ impl crate::comp::check::CheckContext for RecoveryCheckContext {
         &self.deferred_attr_context
     }
 }
-
-
 
 // ---------------------------------------------------------------------------
 // prerequisite: Attr.PostAttrAnalyzer (Attr.java:5824-5930) + postAttr.
@@ -4157,7 +4364,6 @@ impl PostAttrAnalyzer<'_> {
         self.dummy_method_type_for(ctx, None)
     }
 
-
     fn new_symbol(
         &self,
         ctx: &mut CompilerContext,
@@ -4213,29 +4419,6 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
         }
     }
 
-    /// Java: public void visitIdent(JCIdent that)
-    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        if let TreeKind::Ident { sym, .. } = &mut ctx.tree_mut(tree).kind
-            && sym.is_none()
-        {
-            *sym = Some(self.syms.unknown_symbol);
-        }
-    }
-
-    /// Java: public void visitSelect(JCFieldAccess that)
-    fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        if let TreeKind::FieldAccess { sym, .. } = &mut ctx.tree_mut(tree).kind
-            && sym.is_none()
-        {
-            *sym = Some(self.syms.unknown_symbol);
-        }
-        let selected = match &ctx.tree(tree).kind {
-            TreeKind::FieldAccess { selected, .. } => *selected,
-            _ => panic!("expected a field access"),
-        };
-        self.scan(ctx, selected);
-    }
-
     /// Java: public void visitClassDef(JCClassDecl that)
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.init_type_if_needed(ctx, tree);
@@ -4248,8 +4431,10 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
                 TreeKind::ClassDecl { name, .. } => (name.clone(), ctx.tree(tree).ty),
                 _ => crate::util::assert::error(),
             };
-            let fullname = crate::code::symtab::form_full_name(ctx, &name, Some(self.syms.no_symbol));
-            let flatname = crate::code::symtab::form_flat_name(ctx, &name, Some(self.syms.no_symbol));
+            let fullname =
+                crate::code::symtab::form_full_name(ctx, &name, Some(self.syms.no_symbol));
+            let flatname =
+                crate::code::symtab::form_flat_name(ctx, &name, Some(self.syms.no_symbol));
             let sym = self.new_symbol(
                 ctx,
                 crate::code::kinds::Kind::TYP,
@@ -4273,26 +4458,26 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
                 *slot = Some(sym);
             }
         }
-        let (mods, typarams, extending, implementing, permitting, defs) =
-            match &ctx.tree(tree).kind {
-                TreeKind::ClassDecl {
-                    mods,
-                    typarams,
-                    extending,
-                    implementing,
-                    permitting,
-                    defs,
-                    ..
-                } => (
-                    *mods,
-                    typarams.clone(),
-                    *extending,
-                    implementing.clone(),
-                    permitting.clone(),
-                    defs.clone(),
-                ),
-                _ => panic!("expected a class declaration"),
-            };
+        let (mods, typarams, extending, implementing, permitting, defs) = match &ctx.tree(tree).kind
+        {
+            TreeKind::ClassDecl {
+                mods,
+                typarams,
+                extending,
+                implementing,
+                permitting,
+                defs,
+                ..
+            } => (
+                *mods,
+                typarams.clone(),
+                *extending,
+                implementing.clone(),
+                permitting.clone(),
+                defs.clone(),
+            ),
+            _ => panic!("expected a class declaration"),
+        };
         self.scan(ctx, mods);
         self.scan_list(ctx, &typarams);
         self.scan(ctx, extending);
@@ -4370,10 +4555,7 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
         self.init_type_if_needed(ctx, tree);
         let (name, ty, needs_sym, vartype) = match &ctx.tree(tree).kind {
             TreeKind::VariableDecl {
-                name,
-                vartype,
-                sym,
-                ..
+                name, vartype, sym, ..
             } => (name.clone(), ctx.tree(tree).ty, sym.is_none(), *vartype),
             _ => panic!("expected a variable declaration"),
         };
@@ -4424,6 +4606,124 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
         self.scan(ctx, init);
     }
 
+    /// Java: public void visitNewClass(JCNewClass that)
+    fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (constructor, constructor_type) = match &ctx.tree(tree).kind {
+            TreeKind::NewClass {
+                constructor,
+                constructor_type,
+                ..
+            } => (*constructor, *constructor_type),
+            _ => panic!("expected a new class"),
+        };
+        if constructor.is_none() {
+            let ctor_type = self.dummy_method_type(ctx);
+            let sym = self.new_symbol(
+                ctx,
+                crate::code::kinds::Kind::MTH,
+                0,
+                self.names.init.clone(),
+                Some(ctor_type),
+                crate::code::symbol::SymbolKind::MethodSymbol {
+                    extra_params: List::nil(),
+                    captured_locals: List::nil(),
+                    params: List::nil(),
+                    default_value: None,
+                    original_enclosing_method: None,
+                },
+            );
+            if let TreeKind::NewClass {
+                constructor: slot, ..
+            } = &mut ctx.tree_mut(tree).kind
+            {
+                *slot = Some(sym);
+            }
+        }
+        if constructor_type.is_none()
+            && let TreeKind::NewClass {
+                constructor_type: slot,
+                ..
+            } = &mut ctx.tree_mut(tree).kind
+        {
+            *slot = Some(self.syms.unknown_type);
+        }
+        let (encl, typeargs, clazz, args, def) = match &ctx.tree(tree).kind {
+            TreeKind::NewClass {
+                encl,
+                typeargs,
+                clazz,
+                args,
+                def,
+                ..
+            } => (*encl, typeargs.clone(), *clazz, args.clone(), *def),
+            _ => panic!("expected a new class"),
+        };
+        self.scan(ctx, encl);
+        self.scan_list(ctx, &typeargs);
+        self.scan(ctx, clazz);
+        self.scan_list(ctx, &args);
+        self.scan(ctx, def);
+    }
+
+    /// Java: public void visitAssignop(JCAssignOp that)
+    fn visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let needs_operator = match &ctx.tree(tree).kind {
+            TreeKind::AssignOp { operator, .. } => operator.is_none(),
+            _ => panic!("expected a compound assignment"),
+        };
+        if needs_operator {
+            let sym = self.operation_symbol(ctx);
+            if let TreeKind::AssignOp { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                *slot = Some(sym);
+            }
+        }
+        let (lhs, rhs) = match &ctx.tree(tree).kind {
+            TreeKind::AssignOp { lhs, rhs, .. } => (*lhs, *rhs),
+            _ => panic!("expected a compound assignment"),
+        };
+        self.scan(ctx, lhs);
+        self.scan(ctx, rhs);
+    }
+
+    /// Java: public void visitUnary(JCUnary that)
+    fn visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let needs_operator = match &ctx.tree(tree).kind {
+            TreeKind::Unary { operator, .. } => operator.is_none(),
+            _ => panic!("expected a unary expression"),
+        };
+        if needs_operator {
+            let sym = self.operation_symbol(ctx);
+            if let TreeKind::Unary { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                *slot = Some(sym);
+            }
+        }
+        let arg = match &ctx.tree(tree).kind {
+            TreeKind::Unary { arg, .. } => *arg,
+            _ => panic!("expected a unary expression"),
+        };
+        self.scan(ctx, arg);
+    }
+
+    /// Java: public void visitBinary(JCBinary that)
+    fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let needs_operator = match &ctx.tree(tree).kind {
+            TreeKind::Binary { operator, .. } => operator.is_none(),
+            _ => panic!("expected a binary expression"),
+        };
+        if needs_operator {
+            let sym = self.operation_symbol(ctx);
+            if let TreeKind::Binary { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                *slot = Some(sym);
+            }
+        }
+        let (lhs, rhs) = match &ctx.tree(tree).kind {
+            TreeKind::Binary { lhs, rhs, .. } => (*lhs, *rhs),
+            _ => panic!("expected a binary expression"),
+        };
+        self.scan(ctx, lhs);
+        self.scan(ctx, rhs);
+    }
+
     /// Java: public void visitBindingPattern(JCBindingPattern that)
     fn visit_binding_pattern(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         self.init_type_if_needed(ctx, tree);
@@ -4466,121 +4766,18 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
         self.scan(ctx, var);
     }
 
-    /// Java: public void visitNewClass(JCNewClass that)
-    fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (constructor, constructor_type) = match &ctx.tree(tree).kind {
-            TreeKind::NewClass {
-                constructor,
-                constructor_type,
-                ..
-            } => (*constructor, *constructor_type),
-            _ => panic!("expected a new class"),
-        };
-        if constructor.is_none() {
-            let ctor_type = self.dummy_method_type(ctx);
-            let sym = self.new_symbol(
-                ctx,
-                crate::code::kinds::Kind::MTH,
-                0,
-                self.names.init.clone(),
-                Some(ctor_type),
-                crate::code::symbol::SymbolKind::MethodSymbol {
-                    extra_params: List::nil(),
-                    captured_locals: List::nil(),
-                    params: List::nil(),
-                    default_value: None,
-                    original_enclosing_method: None,
-                },
-            );
-            if let TreeKind::NewClass { constructor: slot, .. } = &mut ctx.tree_mut(tree).kind {
-                *slot = Some(sym);
-            }
-        }
-        if constructor_type.is_none()
-            && let TreeKind::NewClass {
-                constructor_type: slot,
-                ..
-            } = &mut ctx.tree_mut(tree).kind
+    /// Java: public void visitSelect(JCFieldAccess that)
+    fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        if let TreeKind::FieldAccess { sym, .. } = &mut ctx.tree_mut(tree).kind
+            && sym.is_none()
         {
-            *slot = Some(self.syms.unknown_type);
+            *sym = Some(self.syms.unknown_symbol);
         }
-        let (encl, typeargs, clazz, args, def) = match &ctx.tree(tree).kind {
-            TreeKind::NewClass {
-                encl,
-                typeargs,
-                clazz,
-                args,
-                def,
-                ..
-            } => (*encl, typeargs.clone(), *clazz, args.clone(), *def),
-            _ => panic!("expected a new class"),
+        let selected = match &ctx.tree(tree).kind {
+            TreeKind::FieldAccess { selected, .. } => *selected,
+            _ => panic!("expected a field access"),
         };
-        self.scan(ctx, encl);
-        self.scan_list(ctx, &typeargs);
-        self.scan(ctx, clazz);
-        self.scan_list(ctx, &args);
-        self.scan(ctx, def);
-    }
-
-
-
-    /// Java: public void visitAssignop(JCAssignOp that)
-    fn visit_assignop(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let needs_operator = match &ctx.tree(tree).kind {
-            TreeKind::AssignOp { operator, .. } => operator.is_none(),
-            _ => panic!("expected a compound assignment"),
-        };
-        if needs_operator {
-            let sym = self.operation_symbol(ctx);
-            if let TreeKind::AssignOp { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
-                *slot = Some(sym);
-            }
-        }
-        let (lhs, rhs) = match &ctx.tree(tree).kind {
-            TreeKind::AssignOp { lhs, rhs, .. } => (*lhs, *rhs),
-            _ => panic!("expected a compound assignment"),
-        };
-        self.scan(ctx, lhs);
-        self.scan(ctx, rhs);
-    }
-
-    /// Java: public void visitBinary(JCBinary that)
-    fn visit_binary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let needs_operator = match &ctx.tree(tree).kind {
-            TreeKind::Binary { operator, .. } => operator.is_none(),
-            _ => panic!("expected a binary expression"),
-        };
-        if needs_operator {
-            let sym = self.operation_symbol(ctx);
-            if let TreeKind::Binary { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
-                *slot = Some(sym);
-            }
-        }
-        let (lhs, rhs) = match &ctx.tree(tree).kind {
-            TreeKind::Binary { lhs, rhs, .. } => (*lhs, *rhs),
-            _ => panic!("expected a binary expression"),
-        };
-        self.scan(ctx, lhs);
-        self.scan(ctx, rhs);
-    }
-
-    /// Java: public void visitUnary(JCUnary that)
-    fn visit_unary(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let needs_operator = match &ctx.tree(tree).kind {
-            TreeKind::Unary { operator, .. } => operator.is_none(),
-            _ => panic!("expected a unary expression"),
-        };
-        if needs_operator {
-            let sym = self.operation_symbol(ctx);
-            if let TreeKind::Unary { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
-                *slot = Some(sym);
-            }
-        }
-        let arg = match &ctx.tree(tree).kind {
-            TreeKind::Unary { arg, .. } => *arg,
-            _ => panic!("expected a unary expression"),
-        };
-        self.scan(ctx, arg);
+        self.scan(ctx, selected);
     }
 
     /// Java: public void visitReference(JCMemberReference that)
@@ -4617,6 +4814,15 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for PostAttrAnalyzer<'_> {
             }
         }
     }
+
+    /// Java: public void visitIdent(JCIdent that)
+    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        if let TreeKind::Ident { sym, .. } = &mut ctx.tree_mut(tree).kind
+            && sym.is_none()
+        {
+            *sym = Some(self.syms.unknown_symbol);
+        }
+    }
 }
 
 tree_scanner_visitor_delegate!(PostAttrAnalyzer<'a>, 'a);
@@ -4633,8 +4839,6 @@ impl Attr {
     }
 }
 
-
-
 // ---------------------------------------------------------------------------
 // prerequisite: Attr.checkMethod (Attr.java:4774-4895).
 // adapter adapters: explicit ctx/syms/rs/infer parameters (ADR 0001);
@@ -4648,21 +4852,21 @@ impl Attr {
     /// List<Type> argtypes, List<Type> typeargtypes) (Attr.java:4774-4895)
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::drop_non_drop)] // the drops release borrows early (Attr/Check)
-/// # Arguments
-///   - ctx/syms: explicit services
-///   - rs/infer: the resolve and inference services
-///   - site/sym: the method and its site
-///   - result_info/env: the attribution target and environment
-///   - argtrees/argtypes/typeargtypes: the actual arguments
-///
-/// # Returns
-///   - the upstream result (see the summary).
-///
-/// # Panics
-///   - none beyond the registered unimplemented dependencies.
-///
-/// Upstream: Attr.java:4774-4895 (checkMethod).
-///
+    /// # Arguments
+    ///   - ctx/syms: explicit services
+    ///   - rs/infer: the resolve and inference services
+    ///   - site/sym: the method and its site
+    ///   - result_info/env: the attribution target and environment
+    ///   - argtrees/argtypes/typeargtypes: the actual arguments
+    ///
+    /// # Returns
+    ///   - the upstream result (see the summary).
+    ///
+    /// # Panics
+    ///   - none beyond the registered unimplemented dependencies.
+    ///
+    /// Upstream: Attr.java:4774-4895 (checkMethod).
+    ///
     pub fn check_method(
         &mut self,
         ctx: &mut CompilerContext,
@@ -4696,21 +4900,28 @@ impl Attr {
             if let Some(s) = types.as_outer_super(ctx, syms, site, owner)
                 && types.is_raw_type_public(ctx, s)
             {
-                    let sym_type = ctx.sym(sym).ty.expect("method type");
-                    let erased = types.erasure(ctx, syms, sym_type);
-                    let sym_params = types.get_parameter_types_public(ctx, sym_type);
-                    let erased_params = types.get_parameter_types_public(ctx, erased);
-                    if !types.is_same_types(ctx, syms, &sym_params, &erased_params) {
-                        chk_rc.warn_unchecked(
+                let sym_type = ctx.sym(sym).ty.expect("method type");
+                let erased = types.erasure(ctx, syms, sym_type);
+                let sym_params = types.get_parameter_types_public(ctx, sym_type);
+                let erased_params = types.get_parameter_types_public(ctx, erased);
+                if !types.is_same_types(ctx, syms, &sym_params, &erased_params) {
+                    let declared = ctx
+                        .typ(s)
+                        .tsym
+                        .and_then(|tsym| ctx.sym(tsym).ty)
+                        .unwrap_or(s);
+                    let mut raw_arg = crate::comp::check::type_arg_with_where(ctx, declared);
+                    raw_arg.text = type_display_of(ctx, s);
+                    chk_rc.warn_unchecked(
                             tree_pos,
                             crate::resources::compiler_properties::warnings::unchecked_call_mbr_of_raw_type(
                                 SymbolArg::placeholder(
                                     crate::comp::resolve::symbol_display_name(ctx, sym),
                                 ),
-                                TypeArg::placeholder(type_display_of(ctx, s)),
+                                raw_arg,
                             ),
                         );
-                    }
+                }
             }
         }
         // Java: if (env.info.defaultSuperCallSite != null) {... }
@@ -4736,15 +4947,16 @@ impl Attr {
                     && head != sym
                     && crate::code::symbol::overrides(ctx, syms, &types, head, sym, sup_tsym, true)
                 {
-                        let diag = diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                            crate::resources::compiler_properties::fragments::overridden_default(
-                                SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(
-                                    ctx, sym,
-                                )),
-                                TypeArg::placeholder(type_display_of(ctx, sup)),
-                            ),
-                        ));
-                        let err = crate::resources::compiler_properties::errors::illegal_default_super_call(
+                    let diag = diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        crate::resources::compiler_properties::fragments::overridden_default(
+                            SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(
+                                ctx, sym,
+                            )),
+                            TypeArg::placeholder(type_display_of(ctx, sup)),
+                        ),
+                    ));
+                    let err =
+                        crate::resources::compiler_properties::errors::illegal_default_super_call(
                             crate::resources::diagnostic_contract::DiagnosticArg::from_display(
                                 type_display_of(ctx, default_super),
                             ),
@@ -4752,12 +4964,12 @@ impl Attr {
                                 diag.get_message(None).to_string(),
                             ),
                         );
-                        crate::util::abstract_log::AbstractLog::error_at(
-                            &mut *self.log.borrow_mut(),
-                            tree_pos,
-                            crate::util::jc_diagnostic::Error::from(err),
-                        );
-                        break;
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        tree_pos,
+                        crate::util::jc_diagnostic::Error::from(err),
+                    );
+                    break;
                 }
             }
             env.info.borrow_mut().default_super_call_site = None;
@@ -4769,10 +4981,7 @@ impl Attr {
             .tsym
             .map(|tsym| ctx.sym(tsym).is_interface())
             .unwrap_or(false);
-        if sym_flags & (flags::STATIC as i64) != 0
-            && site_is_interface
-            && env_tag == Tag::APPLY
-        {
+        if sym_flags & (flags::STATIC as i64) != 0 && site_is_interface && env_tag == Tag::APPLY {
             let meth = match &ctx.tree(env_tree).kind {
                 crate::tree::jc_tree::TreeKind::MethodInvocation { meth, .. } => *meth,
                 _ => panic!("ClassCastException: JCMethodInvocation expected"),
@@ -4780,19 +4989,19 @@ impl Attr {
             if let Some(meth) = meth
                 && ctx.tree(meth).tag == Tag::SELECT
             {
-                    let selected = match &ctx.tree(meth).kind {
-                        crate::tree::jc_tree::TreeKind::FieldAccess { selected, .. } => *selected,
-                        _ => panic!("ClassCastException: JCFieldAccess expected"),
-                    };
-                    if !crate::tree::tree_info::is_static_selector(ctx, selected, &names) {
-                        let err = crate::resources::compiler_properties::errors::illegal_static_intf_meth_call(
+                let selected = match &ctx.tree(meth).kind {
+                    crate::tree::jc_tree::TreeKind::FieldAccess { selected, .. } => *selected,
+                    _ => panic!("ClassCastException: JCFieldAccess expected"),
+                };
+                if !crate::tree::tree_info::is_static_selector(ctx, selected, &names) {
+                    let err = crate::resources::compiler_properties::errors::illegal_static_intf_meth_call(
                             TypeArg::placeholder(type_display_of(ctx, site)),
                         );
-                        crate::util::abstract_log::AbstractLog::error_at(
-                            &mut *self.log.borrow_mut(),
-                            tree_pos,
-                            crate::util::jc_diagnostic::Error::from(err),
-                        );
+                    crate::util::abstract_log::AbstractLog::error_at(
+                        &mut *self.log.borrow_mut(),
+                        tree_pos,
+                        crate::util::jc_diagnostic::Error::from(err),
+                    );
                 }
             }
         }
@@ -4820,10 +5029,11 @@ impl Attr {
             )
         });
         drop(chk_guard);
-        let resolution = match resolution {
-            Ok(resolution) => resolution,
-            Err(exception) => Err(crate::comp::resolve::MethodCheckFailure::Inference(exception)),
-        };
+        let resolution = resolution.unwrap_or_else(|exception| {
+            Err(crate::comp::resolve::MethodCheckFailure::Inference(
+                exception,
+            ))
+        });
         let owntype = match resolution {
             Ok(owntype) => owntype,
             Err(crate::comp::resolve::MethodCheckFailure::Inference(ex)) => {
@@ -4881,9 +5091,9 @@ impl Attr {
                     syms,
                     err_symbol,
                     crate::util::jc_diagnostic::DiagnosticType::ERROR,
-                    Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
-                        tree_pos,
-                    ))),
+                    Some(Rc::new(
+                        crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(tree_pos),
+                    )),
                     Some(sym),
                     Some(site),
                     Some(&ctx.sym(sym).name.clone()),
@@ -4918,8 +5128,7 @@ impl Attr {
         argtypes = check_deferred_map.map(ctx, &mut dctx, &argtypes, &None);
         drop(dctx);
         drop(chk_guard);
-        let owntype = if note_warner
-            .has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED)
+        let owntype = if note_warner.has_non_silent_lint(crate::code::lint::LintCategory::UNCHECKED)
         {
             let sym_type = ctx.sym(sym).ty.expect("method type");
             let sym_params = types.get_parameter_types_public(ctx, sym_type);
@@ -4927,21 +5136,54 @@ impl Attr {
             let method_name = ctx.sym(sym).name.clone();
             let location = ctx.sym(sym).owner.expect("location");
             let location_kind = crate::code::kinds::kind_name(ctx.sym(location), ctx);
+            // Java: Resolve.methodArguments keeps the Type objects in the
+            // diagnostic argument list (so the formatter can collect their
+            // where clauses) instead of a pre-rendered string.
+            let required_args = if sym_params.is_empty() {
+                crate::resources::diagnostic_contract::DiagnosticArg::Text(
+                    "no arguments".to_string(),
+                )
+            } else {
+                crate::resources::diagnostic_contract::DiagnosticArg::List(
+                    sym_params
+                        .iter()
+                        .map(|parameter| {
+                            crate::resources::diagnostic_contract::DiagnosticArg::Type(
+                                crate::comp::check::type_arg_with_rich_where(ctx, parameter),
+                            )
+                        })
+                        .collect(),
+                )
+            };
+            let found_args = if argtypes.is_empty() {
+                crate::resources::diagnostic_contract::DiagnosticArg::Text(
+                    "no arguments".to_string(),
+                )
+            } else {
+                crate::resources::diagnostic_contract::DiagnosticArg::List(
+                    argtypes
+                        .iter()
+                        .map(|argtype| {
+                            crate::resources::diagnostic_contract::DiagnosticArg::Type(
+                                crate::comp::check::type_arg_with_rich_where(ctx, argtype),
+                            )
+                        })
+                        .collect(),
+                )
+            };
             chk_rc.warn_unchecked(
                 tree_pos,
                 crate::resources::compiler_properties::warnings::unchecked_meth_invocation_applied(
-                    crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.name()),
                     method_name,
-                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                        crate::comp::resolve::method_arguments_display_pub(ctx, Some(sym_params)),
-                    ),
-                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                        crate::comp::resolve::method_arguments_display_pub(ctx, Some(argtypes.clone())),
-                    ),
+                    required_args,
+                    found_args,
                     crate::resources::diagnostic_contract::KindNameArg::placeholder(
                         location_kind.to_string(),
                     ),
-                    SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, location)),
+                    SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(
+                        ctx, location,
+                    )),
                 ),
             );
             let any_poly = result_info.pt == Some(infer.any_poly);
@@ -5012,19 +5254,19 @@ impl Attr {
 impl Attr {
     /// Java: ResultInfo memberReferenceQualifierResult(JCMemberReference tree)
     /// (Attr.java:3755-3761)
-/// # Arguments
-///   - ctx: compiler context
-///   - env: the attribution environment
-///   - tree: the member reference
-///
-/// # Returns
-///   - the upstream result (see the summary).
-///
-/// # Panics
-///   - none beyond the registered unimplemented dependencies.
-///
-/// Upstream: Attr.java:3755-3761 (memberReferenceQualifierResult).
-///
+    /// # Arguments
+    ///   - ctx: compiler context
+    ///   - env: the attribution environment
+    ///   - tree: the member reference
+    ///
+    /// # Returns
+    ///   - the upstream result (see the summary).
+    ///
+    /// # Panics
+    ///   - none beyond the registered unimplemented dependencies.
+    ///
+    /// Upstream: Attr.java:3755-3761 (memberReferenceQualifierResult).
+    ///
     pub fn member_reference_qualifier_result(
         &self,
         ctx: &CompilerContext,
@@ -5047,19 +5289,19 @@ impl Attr {
 
     /// Java: public Env<AttrContext> lambdaEnv(JCLambda that,
     /// Env<AttrContext> env) (Attr.java:3484-3560)
-/// # Arguments
-///   - ctx/syms: explicit services
-///   - that: the lambda tree
-///   - env: the enclosing attribution environment
-///
-/// # Returns
-///   - the upstream result (see the summary).
-///
-/// # Panics
-///   - none beyond the registered unimplemented dependencies.
-///
-/// Upstream: Attr.java:3484-3560 (lambdaEnv).
-///
+    /// # Arguments
+    ///   - ctx/syms: explicit services
+    ///   - that: the lambda tree
+    ///   - env: the enclosing attribution environment
+    ///
+    /// # Returns
+    ///   - the upstream result (see the summary).
+    ///
+    /// # Panics
+    ///   - none beyond the registered unimplemented dependencies.
+    ///
+    /// Upstream: Attr.java:3484-3560 (lambdaEnv).
+    ///
     pub fn lambda_env(
         &mut self,
         ctx: &mut CompilerContext,
@@ -5083,8 +5325,8 @@ impl Attr {
             && owner_owner_kind == crate::code::kinds::Kind::TYP
         {
             // field initializer
-            let encl_class = crate::code::symbol::symbol_encl_class(ctx, owner)
-                .expect("field enclosing class");
+            let encl_class =
+                crate::code::symbol::symbol_encl_class(ctx, owner).expect("field enclosing class");
             let mut new_scope_owner = owner;
             if ctx.sym(owner).flags_field & (flags::STATIC as i64) == 0 {
                 let members = ctx.sym(encl_class).members().expect("class members");
@@ -5102,14 +5344,13 @@ impl Attr {
                 let clinit = match clinits.get(&encl_class) {
                     Some(clinit) => *clinit,
                     None => {
-                        let clinit_type = ctx.alloc_type(
-                            crate::code::type_::Type::new_method_type(
+                        let clinit_type =
+                            ctx.alloc_type(crate::code::type_::Type::new_method_type(
                                 List::nil(),
                                 syms.void_type,
                                 List::nil(),
                                 syms.method_class,
-                            ),
-                        );
+                            ));
                         let clinit = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
                             crate::code::kinds::Kind::MTH,
                             (flags::STATIC as i64)
@@ -5154,20 +5395,20 @@ impl Attr {
 
     /// Java: void preFlow(JCLambda tree) (Attr.java:3296-3315)
     #[allow(clippy::too_many_arguments)]
-/// # Arguments
-///   - ctx/syms: explicit services
-///   - attr_recover/rs/infer/chk/diags: explicit services
-///   - env: the attribution environment
-///   - tree: the lambda tree
-///
-/// # Returns
-///   - the upstream result (see the summary).
-///
-/// # Panics
-///   - none beyond the registered unimplemented dependencies.
-///
-/// Upstream: Attr.java:3296-3315 (preFlow).
-///
+    /// # Arguments
+    ///   - ctx/syms: explicit services
+    ///   - attr_recover/rs/infer/chk/diags: explicit services
+    ///   - env: the attribution environment
+    ///   - tree: the lambda tree
+    ///
+    /// # Returns
+    ///   - the upstream result (see the summary).
+    ///
+    /// # Panics
+    ///   - none beyond the registered unimplemented dependencies.
+    ///
+    /// Upstream: Attr.java:3296-3315 (preFlow).
+    ///
     pub fn pre_flow(
         &mut self,
         ctx: &mut CompilerContext,
@@ -5236,9 +5477,10 @@ impl Attr {
                 || (owner_flags & (crate::code::flags::BLOCK as i64)) != 0)
                 && v_owner == ctx.sym(owner).owner
                 && v_static == self.resolve_is_static(ctx, env));
-        let inside_compact_constructor = env.encl_method.map(|method| {
-            crate::tree::tree_info::is_compact_constructor(ctx, method)
-        }).unwrap_or(false);
+        let inside_compact_constructor = env
+            .encl_method
+            .map(|method| crate::tree::tree_info::is_compact_constructor(ctx, method))
+            .unwrap_or(false);
         is_assignable && !inside_compact_constructor
     }
 
@@ -5331,7 +5573,11 @@ impl Attr {
             // declaration FINAL); their assignment reports the resource-specific
             // error instead of the generic final-variable error.
             let name = crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                ctx.sym(v).name.to_java_string().to_string_lossy().to_string(),
+                ctx.sym(v)
+                    .name
+                    .to_java_string()
+                    .to_string_lossy()
+                    .to_string(),
             );
             let info = if crate::code::symbol::symbol_is_resource_variable(ctx, v) {
                 crate::resources::compiler_properties::errors::try_resource_may_not_be_assigned(
@@ -5347,9 +5593,7 @@ impl Attr {
             );
         }
     }
-
 }
-
 
 /// adapter helper: the length of a List<Type> (used by the type-argument arity error).
 fn list_len_type(list: &List<TypeId>) -> usize {
@@ -5498,11 +5742,7 @@ impl Attr {
         let v_owner = ctx.sym(v).owner.expect("variable owner");
         let encl_type = ctx.sym(encl_class).ty.expect("enclosing class type");
         let v_owner_type = ctx.sym(v_owner).ty.expect("owner type");
-        if v_owner != encl_class
-            && !self
-                .types
-                .is_subtype(ctx, syms, encl_type, v_owner_type)
-        {
+        if v_owner != encl_class && !self.types.is_subtype(ctx, syms, encl_type, v_owner_type) {
             return;
         }
         if !self.resolve_is_initializer(ctx, env) {
@@ -5583,9 +5823,10 @@ impl Attr {
                 .borrow()
                 .scope
                 .and_then(|scope| ctx.scope(scope).owner);
-            let scope_owner_encl = scope_owner
-                .and_then(|owner| crate::code::symbol::symbol_encl_class(ctx, owner));
-            let same_staticness = (ctx.sym(v).flags_field & (crate::code::flags::STATIC as i64) != 0)
+            let scope_owner_encl =
+                scope_owner.and_then(|owner| crate::code::symbol::symbol_encl_class(ctx, owner));
+            let same_staticness = (ctx.sym(v).flags_field & (crate::code::flags::STATIC as i64)
+                != 0)
                 == self.resolve_is_static(ctx, env);
             let assign_lhs_ok = if let Some(env_tree) = env.tree {
                 if ctx.tree(env_tree).tag == crate::tree::jc_tree::Tag::ASSIGN {
@@ -5624,17 +5865,29 @@ impl Attr {
                     let warning = if is_self_ref {
                         crate::resources::compiler_properties::warnings::self_ref(
                             crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                ctx.sym(v).name.to_java_string().to_string_lossy().to_string(),
+                                ctx.sym(v)
+                                    .name
+                                    .to_java_string()
+                                    .to_string_lossy()
+                                    .to_string(),
                             ),
                         )
                     } else {
                         crate::resources::compiler_properties::warnings::forward_ref(
                             crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                ctx.sym(v).name.to_java_string().to_string_lossy().to_string(),
+                                ctx.sym(v)
+                                    .name
+                                    .to_java_string()
+                                    .to_string_lossy()
+                                    .to_string(),
                             ),
                         )
                     };
-                    self.chk.warn_unchecked(tree_pos, warning);
+                    // Java: log.warning(tree.pos(), Warnings.SelfRef/ForwardRef)
+                    // — no lint category is attached.
+                    self.log
+                        .borrow_mut()
+                        .warning_at(tree_pos, crate::util::jc_diagnostic::Warning::from(warning));
                 }
             }
         }
@@ -5643,7 +5896,6 @@ impl Attr {
         self.check_enum_initializer(ctx, syms, env, tree, v);
     }
 }
-
 
 impl Attr {
     /// Java: KindSelector pkind() — the current result-info kind selector.
@@ -5689,7 +5941,11 @@ impl Attr {
     ) -> SymbolId {
         let encl_class = env.encl_class.expect("AssertionError: enclClass");
         let encl_sym = class_tree_symbol(ctx, encl_class).expect("AssertionError: enclClass sym");
-        let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+        let rs_rc = self
+            .rs
+            .borrow()
+            .clone()
+            .expect("AssertionError: rs service must be installed");
         let rs = rs_rc.borrow();
         let types_rc = Rc::clone(&self.types);
         rs.resolve_self(
@@ -5928,7 +6184,9 @@ impl Attr {
             };
             self.attr_error(
                 ctx.tree(tree).pos,
-                crate::resources::compiler_properties::errors::call_must_be_first_stmt_in_ctor(name),
+                crate::resources::compiler_properties::errors::call_must_be_first_stmt_in_ctor(
+                    name,
+                ),
             );
         }
         false
@@ -5965,14 +6223,17 @@ impl Attr {
         let local_env = env.dup(Some(tree), info_copy);
         let (meth, args, typeargs) = match &ctx.tree(tree).kind {
             TreeKind::MethodInvocation {
-                meth, args, typeargs, ..
+                meth,
+                args,
+                typeargs,
+                ..
             } => (*meth, args.clone(), typeargs.clone()),
             _ => panic!("ClassCastException: JCMethodInvocation expected"),
         };
         let meth = meth.expect("method invocation meth");
-        let meth_name = crate::tree::tree_info::name(ctx, meth).unwrap_or_else(|| self.names.empty.clone());
-        let is_constructor_call =
-            meth_name == self.names._this || meth_name == self.names._super;
+        let meth_name =
+            crate::tree::tree_info::name(ctx, meth).unwrap_or_else(|| self.names.empty.clone());
+        let is_constructor_call = meth_name == self.names._this || meth_name == self.names._super;
         let mut argtypes: List<TypeId> = List::nil();
         let mut typeargtypes: Option<List<TypeId>> = None;
         if is_constructor_call {
@@ -5982,13 +6243,8 @@ impl Attr {
             // Record the fact that this is a constructor call (using isSelfCall).
             local_env.info.borrow_mut().is_self_call = true;
             // Attribute arguments, yielding list of argument types.
-            let (kind, attributed) = self.attrib_args(
-                ctx,
-                syms,
-                KindSelector::MTH,
-                args.clone(),
-                &local_env,
-            );
+            let (kind, attributed) =
+                self.attrib_args(ctx, syms, KindSelector::MTH, args.clone(), &local_env);
             argtypes = attributed;
             // Java: typeargtypes = attribAnyTypes(tree.typeargs, localEnv).
             typeargtypes = Some(self.attrib_any_types(ctx, syms, typeargs.clone(), &local_env));
@@ -6004,7 +6260,9 @@ impl Attr {
                             Self::type_arg_placeholder(ctx, site),
                         ),
                     );
-                    site = self.types.create_error_type_original(ctx, Some(syms.object_type), syms);
+                    site = self
+                        .types
+                        .create_error_type_original(ctx, Some(syms.object_type), syms);
                 } else {
                     let types_rc = Rc::clone(&self.types);
                     site = types_rc.supertype(ctx, syms, site, Some(self));
@@ -6047,7 +6305,11 @@ impl Attr {
                     } else if meth_name == self.names._super {
                         // qualifier omitted; check for existence of an appropriate
                         // implicit qualifier.
-                        let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                        let rs_rc = self
+                            .rs
+                            .borrow()
+                            .clone()
+                            .expect("AssertionError: rs service must be installed");
                         let rs = rs_rc.borrow();
                         let types_rc = Rc::clone(&self.types);
                         rs.resolve_implicit_this(
@@ -6075,7 +6337,9 @@ impl Attr {
                         ),
                     );
                     let selected = match &ctx.tree(meth).kind {
-                        TreeKind::FieldAccess { selected, .. } => selected.expect("select qualifier"),
+                        TreeKind::FieldAccess { selected, .. } => {
+                            selected.expect("select qualifier")
+                        }
                         _ => panic!("ClassCastException: JCFieldAccess expected"),
                     };
                     self.attrib_expr_with_type(ctx, syms, selected, &local_env, Some(site));
@@ -6091,7 +6355,11 @@ impl Attr {
                 let select_super_prev = local_env.info.borrow().select_super;
                 local_env.info.borrow_mut().select_super = true;
                 local_env.info.borrow_mut().pending_resolution_phase = None;
-                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                let rs_rc = self
+                    .rs
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: rs service must be installed");
                 let rs = rs_rc.borrow();
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = Rc::clone(&chk_rc);
@@ -6118,7 +6386,8 @@ impl Attr {
                 //...and check that it is legal in the current context.
                 // (this will also set the tree's type)
                 let pt = self.pt().unwrap_or_else(|| self.no_type(ctx));
-                let mpt = self.new_method_template(ctx, syms, pt, argtypes.clone(), typeargtypes.clone());
+                let mpt =
+                    self.new_method_template(ctx, syms, pt, argtypes.clone(), typeargtypes.clone());
                 let result_info = self.result_info.clone().expect("resultInfo");
                 let new_info = ResultInfo::new_with_mode(
                     kind,
@@ -6127,9 +6396,7 @@ impl Attr {
                     result_info.check_mode,
                 );
                 self.check_id(ctx, syms, meth, site, sym, &local_env, &new_info);
-            } else if ctx.typ(site).has_tag(TypeTag::ERROR)
-                && ctx.tree(meth).tag == Tag::SELECT
-            {
+            } else if ctx.typ(site).has_tag(TypeTag::ERROR) && ctx.tree(meth).tag == Tag::SELECT {
                 let selected = match &ctx.tree(meth).kind {
                     TreeKind::FieldAccess { selected, .. } => selected.expect("select qualifier"),
                     _ => panic!("ClassCastException: JCFieldAccess expected"),
@@ -6142,13 +6409,8 @@ impl Attr {
         } else {
             // Otherwise, we are seeing a regular method call.
             // Attribute the arguments, yielding list of argument types,...
-            let (kind, attributed) = self.attrib_args(
-                ctx,
-                syms,
-                KindSelector::VAL,
-                args.clone(),
-                &local_env,
-            );
+            let (kind, attributed) =
+                self.attrib_args(ctx, syms, KindSelector::VAL, args.clone(), &local_env);
             argtypes = attributed;
             if std::env::var_os("DSH_DEBUG_OVERLOAD").is_some()
                 && meth_name.to_java_string().to_string_lossy() == "assertEquals"
@@ -6172,7 +6434,8 @@ impl Attr {
             // formal argument types are exactly the list of actual arguments
             // (this will also set the method symbol).
             let pt = self.pt().unwrap_or_else(|| self.no_type(ctx));
-            let mpt = self.new_method_template(ctx, syms, pt, argtypes.clone(), typeargtypes.clone());
+            let mpt =
+                self.new_method_template(ctx, syms, pt, argtypes.clone(), typeargtypes.clone());
             local_env.info.borrow_mut().pending_resolution_phase = None;
             let result_info = self.result_info.clone().expect("resultInfo");
             let new_info = ResultInfo::new_with_mode(
@@ -6224,7 +6487,8 @@ impl Attr {
                 .inference_context()
                 .cached_capture(ctx, syms, &self.types, tree, restype, true);
             let result_info2 = self.result_info.clone().expect("resultInfo");
-            self.result = Some(self.check(ctx, syms, tree, captured, KindSelector::VAL, &result_info2));
+            self.result =
+                Some(self.check(ctx, syms, tree, captured, KindSelector::VAL, &result_info2));
         }
         // Java: chk.validate(tree.typeargs, localEnv);
         {
@@ -6298,8 +6562,17 @@ impl Attr {
                     ctx.tree(tree).pos,
                     crate::resources::compiler_properties::errors::type_var_cant_be_deref(),
                 );
-                let site_name = ctx.typ(site).tsym.map(|tsym| ctx.sym(tsym).name.clone()).unwrap_or_else(|| self.names.empty.clone());
-                let error = self.types.create_error_type(ctx, site_name, ctx.typ(site).tsym.expect("site symbol"), Some(site));
+                let site_name = ctx
+                    .typ(site)
+                    .tsym
+                    .map(|tsym| ctx.sym(tsym).name.clone())
+                    .unwrap_or_else(|| self.names.empty.clone());
+                let error = self.types.create_error_type(
+                    ctx,
+                    site_name,
+                    ctx.typ(site).tsym.expect("site symbol"),
+                    Some(site),
+                );
                 ctx.tree_mut(tree).ty = Some(error);
                 let error_tsym = ctx.typ(error).tsym;
                 if let TreeKind::FieldAccess { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
@@ -6331,7 +6604,11 @@ impl Attr {
                 ctx.tree(selected).pos,
                 crate::resources::compiler_properties::errors::not_encl_class(
                     crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                        ctx.sym(site_tsym).name.to_java_string().to_string_lossy().to_string(),
+                        ctx.sym(site_tsym)
+                            .name
+                            .to_java_string()
+                            .to_string_lossy()
+                            .to_string(),
                     ),
                 ),
             );
@@ -6358,7 +6635,10 @@ impl Attr {
             // site = types.skipTypeVars(site, true)
             let mut current = site;
             while ctx.typ(current).has_tag(TypeTag::TYPEVAR) {
-                current = ctx.typ(current).get_upper_bound().expect("typevar upper bound");
+                current = ctx
+                    .typ(current)
+                    .get_upper_bound()
+                    .expect("typevar upper bound");
             }
             site = self.types.capture(ctx, syms, current);
         }
@@ -6373,9 +6653,7 @@ impl Attr {
                 self.check_assignable(ctx, &env, ctx.tree(tree).pos, sym, Some(selected));
             }
         }
-        // Java: try-with-resources explicit close lint (SERIAL) — the
-        // upstream branch needs LintCategory.TRY + autoCloseableClose;
-        // ported below with the ported Lint service.
+        // Java: try-with-resources explicit close lint (Attr.java:4342-4346).
         if let Some(sitesym) = sitesym {
             let is_resource = match &ctx.sym(sitesym).kind_data {
                 crate::code::symbol::SymbolKind::VarSymbol { data_kind, .. } => {
@@ -6389,7 +6667,7 @@ impl Attr {
             {
                 let sitesym_type = ctx.sym(sitesym).ty.expect("resource type");
                 let sitesym_tsym = ctx.typ(sitesym_type).tsym.expect("resource type symbol");
-                if crate::code::symbol::overrides(
+                let is_auto_closeable = crate::code::symbol::overrides(
                     ctx,
                     syms,
                     &self.types,
@@ -6397,7 +6675,8 @@ impl Attr {
                     syms.auto_closeable_close,
                     sitesym_tsym,
                     true,
-                ) {
+                );
+                if is_auto_closeable {
                     let try_enabled = env
                         .info
                         .borrow()
@@ -6412,7 +6691,9 @@ impl Attr {
                             &mut *self.log.borrow_mut(),
                             Some(crate::code::lint::LintCategory::TRY),
                             Some(std::rc::Rc::new(
-                                crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+                                crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                                    ctx.tree(tree).pos,
+                                ),
                             )),
                             warning,
                         );
@@ -6424,14 +6705,11 @@ impl Attr {
         let sitesym_is_type = sitesym
             .map(|sitesym| ctx.sym(sitesym).kind == crate::code::kinds::Kind::TYP)
             .unwrap_or(false);
-        let sym_is_type = ctx.sym(sym).kind == crate::code::kinds::Kind::TYP;
+        let sym_is_type = ctx.sym(sym).kind == crate::code::kinds::Kind::TYP
+            && sym != syms.err_symbol;
         if sym_is_type
             && !sitesym
-                .map(|sitesym| {
-                    ctx.sym(sitesym)
-                        .kind
-                        .matches(KindSelector::TYP_PCK)
-                })
+                .map(|sitesym| ctx.sym(sitesym).kind.matches(KindSelector::TYP_PCK))
                 .unwrap_or(false)
         {
             let pt = self.pt().unwrap_or_else(|| self.no_type(ctx));
@@ -6467,13 +6745,21 @@ impl Attr {
                         || ctx.sym(sym).kind == crate::code::kinds::Kind::MTH)
                 {
                     let static_error = {
-                        let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                        let rs_rc = self
+                            .rs
+                            .borrow()
+                            .clone()
+                            .expect("AssertionError: rs service must be installed");
                         let rs = rs_rc.borrow();
                         rs.new_static_error_pub(ctx, sym)
                     };
                     let pos = simple_diag_pos(ctx.tree(tree).pos);
                     let site_opt = Some(site);
-                    let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                    let rs_rc = self
+                        .rs
+                        .borrow()
+                        .clone()
+                        .expect("AssertionError: rs service must be installed");
                     let rs = rs_rc.borrow();
                     let sym_name = ctx.sym(sym).name.clone();
                     rs.access_base(
@@ -6491,8 +6777,16 @@ impl Attr {
             // Java: if (!allowStaticInterfaceMethods && sitesym.isInterface() &&
             // sym.isStatic() && sym.kind == MTH) log.error(DiagnosticFlag.SOURCE_LEVEL,
             // tree.pos(), Feature.STATIC_INTERFACE_METHODS_INVOKE.error(sourceName));
-            // NOT PORTED: the source-level feature error logging (Features);
-            // registered.
+            if let Some(sitesym) = sitesym
+                && (ctx.sym(sitesym).flags_field & crate::code::flags::INTERFACE as i64) != 0
+                && (ctx.sym(sym).flags_field & crate::code::flags::STATIC as i64) != 0
+                && ctx.sym(sym).kind == crate::code::kinds::Kind::MTH
+            {
+                self.preview.check_source_level(
+                    &crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+                    Feature::STATIC_INTERFACE_METHODS_INVOKE,
+                );
+            }
         } else if ctx.sym(sym).kind != crate::code::kinds::Kind::ERR
             && (ctx.sym(sym).flags_field & (flags::STATIC as i64)) != 0
             && ctx.sym(sym).name != self.names._class
@@ -6501,20 +6795,33 @@ impl Attr {
             // static, report a warning.
             let kind_name = crate::code::kinds::kind_name(ctx.sym(sym), ctx);
             let owner = ctx.sym(sym).owner.expect("symbol owner");
-            let warning = crate::resources::compiler_properties::warnings::static_not_qualified_by_type(
-                crate::resources::diagnostic_contract::KindNameArg::placeholder(kind_name.to_string()),
-                crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                    ctx.sym(owner).name.to_java_string().to_string_lossy().to_string(),
-                ),
-            );
+            let warning =
+                crate::resources::compiler_properties::warnings::static_not_qualified_by_type(
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                        kind_name.to_string(),
+                    ),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        ctx.sym(owner)
+                            .name
+                            .to_java_string()
+                            .to_string_lossy()
+                            .to_string(),
+                    ),
+                );
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
             chk.warn_static(ctx, &self.log, ctx.tree(tree).pos, warning);
         }
         // If we are selecting an instance member via a `super',...
-        if env.info.borrow().select_super && (ctx.sym(sym).flags_field & (flags::STATIC as i64)) == 0 {
+        if env.info.borrow().select_super
+            && (ctx.sym(sym).flags_field & (flags::STATIC as i64)) == 0
+        {
             // Check that super-qualified symbols are not abstract (JLS)
-            let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+            let rs_rc = self
+                .rs
+                .borrow()
+                .clone()
+                .expect("AssertionError: rs service must be installed");
             let rs = rs_rc.borrow();
             rs.check_non_abstract(ctx, simple_diag_pos(ctx.tree(tree).pos), sym);
             drop(rs);
@@ -6530,9 +6837,9 @@ impl Attr {
             }
         }
         if env.info.borrow().is_serializable {
-            // NOT PORTED: chk.checkAccessFromSerializableElement(tree,
-            // env.info.isSerializableLambda) (Check.java:2745-2800, lint/serial
-            //); registered.
+            let is_lambda = env.info.borrow().is_serializable_lambda;
+            self.chk
+                .check_access_from_serializable_element(ctx, syms, tree, is_lambda);
         }
         env.info.borrow_mut().select_super = select_super_prev;
         let result = self.check_id(ctx, syms, tree, site, sym, &env, &result_info);
@@ -6590,7 +6897,11 @@ impl Attr {
         match ctx.typ(site).get_tag() {
             TypeTag::PACKAGE => {
                 let site_tsym = ctx.typ(site).tsym.expect("package symbol");
-                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                let rs_rc = self
+                    .rs
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: rs service must be installed");
                 let rs = rs_rc.borrow();
                 let found = rs.find_ident_in_package(
                     ctx,
@@ -6615,7 +6926,11 @@ impl Attr {
                     let pt = result_info.pt.expect("method prototype");
                     let argtypes = self.types.get_parameter_types_public(ctx, pt);
                     let typeargtypes = self.types.get_type_arguments_public(ctx, syms, pt);
-                    let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                    let rs_rc = self
+                        .rs
+                        .borrow()
+                        .clone()
+                        .expect("AssertionError: rs service must be installed");
                     let rs = rs_rc.borrow();
                     let types_rc = Rc::clone(&self.types);
                     let chk_rc = Rc::clone(&self.chk);
@@ -6638,7 +6953,11 @@ impl Attr {
                     )
                 } else if name == self.names._this || name == self.names._super {
                     let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
-                    let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                    let rs_rc = self
+                        .rs
+                        .borrow()
+                        .clone()
+                        .expect("AssertionError: rs service must be installed");
                     let rs = rs_rc.borrow();
                     let types_rc = Rc::clone(&self.types);
                     rs.resolve_self(ctx, syms, &types_rc, pos, env, site_tsym, name)
@@ -6648,11 +6967,27 @@ impl Attr {
                     syms_guard.get_class_field(ctx, &types_rc, site)
                 } else {
                     let found = {
-                        let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                        let rs_rc = self
+                            .rs
+                            .borrow()
+                            .clone()
+                            .expect("AssertionError: rs service must be installed");
                         let rs = rs_rc.borrow();
-                        rs.find_ident_in_type(ctx, syms, pos.clone(), env, site, &name, result_info.pkind)
+                        rs.find_ident_in_type(
+                            ctx,
+                            syms,
+                            pos.clone(),
+                            env,
+                            site,
+                            &name,
+                            result_info.pkind,
+                        )
                     };
-                    let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                    let rs_rc = self
+                        .rs
+                        .borrow()
+                        .clone()
+                        .expect("AssertionError: rs service must be installed");
                     let rs = rs_rc.borrow();
                     rs.access_base(ctx, syms, found, pos, location, Some(site), &name, true)
                 }
@@ -6663,7 +6998,15 @@ impl Attr {
                 let mut sym: Option<SymbolId> = None;
                 if let Some(upper) = upper {
                     let captured = self.types.capture(ctx, syms, upper);
-                    sym = Some(self.select_sym(ctx, syms, tree, location, captured, env, result_info));
+                    sym = Some(self.select_sym(
+                        ctx,
+                        syms,
+                        tree,
+                        location,
+                        captured,
+                        env,
+                        result_info,
+                    ));
                 }
                 let Some(mut sym) = sym else {
                     self.attr_error(
@@ -6676,7 +7019,11 @@ impl Attr {
                     // Java: sym2 = rs.new AccessError(env, site, sym);
                     let env_snapshot = crate::comp::resolve::resolve_env_snapshot(ctx, env);
                     let access_error = {
-                        let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                        let rs_rc = self
+                            .rs
+                            .borrow()
+                            .clone()
+                            .expect("AssertionError: rs service must be installed");
                         let rs = rs_rc.borrow();
                         let data = crate::code::symbol::ResolveErrorData::Access {
                             env: env_snapshot,
@@ -6693,14 +7040,20 @@ impl Attr {
                     };
                     sym = access_error;
                 }
-                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                let rs_rc = self
+                    .rs
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: rs service must be installed");
                 let rs = rs_rc.borrow();
                 rs.access_base(ctx, syms, sym, pos, location, Some(site), &name, true);
                 sym
             }
             TypeTag::ERROR => {
                 let site_tsym = ctx.typ(site).tsym.expect("error type symbol");
-                let error = self.types.create_error_type(ctx, name, site_tsym, Some(site));
+                let error = self
+                    .types
+                    .create_error_type(ctx, name, site_tsym, Some(site));
                 ctx.typ(error).tsym.expect("error type symbol")
             }
             TypeTag::UNKNOWN | TypeTag::NONE => {
@@ -6710,9 +7063,16 @@ impl Attr {
                         ctx.tree(tree).pos,
                         name.to_java_string(),
                         ctx.typ(site).get_tag(),
-                        location.map(|l| ctx.sym(l).name.to_java_string().to_string_lossy().to_string()),
+                        location.map(|l| ctx
+                            .sym(l)
+                            .name
+                            .to_java_string()
+                            .to_string_lossy()
+                            .to_string()),
                         location.map(|l| ctx.sym(l).kind),
-                        location.and_then(|l| ctx.sym(l).ty).map(|t| ctx.typ(t).get_tag())
+                        location
+                            .and_then(|l| ctx.sym(l).ty)
+                            .map(|t| ctx.typ(t).get_tag())
                     );
                 }
                 self.attr_error(
@@ -6765,7 +7125,10 @@ impl Attr {
     ) -> Result<TypeId, CompletionFailure> {
         let (elemtype_tree, dims, elems) = match &ctx.tree(tree).kind {
             TreeKind::NewArray {
-                elemtype, dims, elems, ..
+                elemtype,
+                dims,
+                elems,
+                ..
             } => (*elemtype, dims.clone(), elems.clone()),
             _ => panic!("ClassCastException: JCNewArray expected"),
         };
@@ -6821,9 +7184,7 @@ impl Attr {
                         ),
                     );
                 }
-                elemtype = self
-                    .types
-                    .create_error_type_original(ctx, Some(pt), syms);
+                elemtype = self.types.create_error_type_original(ctx, Some(pt), syms);
             }
         }
         if let Some(elems) = elems {
@@ -6904,7 +7265,10 @@ impl Attr {
     ) -> Result<TypeId, CompletionFailure> {
         let (cond, truepart, falsepart) = match &ctx.tree(tree).kind {
             TreeKind::Conditional {
-                cond, truepart, falsepart, ..
+                cond,
+                truepart,
+                falsepart,
+                ..
             } => (
                 cond.expect("conditional cond"),
                 truepart.expect("conditional truepart"),
@@ -6919,28 +7283,31 @@ impl Attr {
         let recovery_type = syms.recovery_type;
         let any_poly = self.infer.any_poly;
         let poly_kind = if !self.allow_poly
-            || (ctx.typ(pt).has_tag(TypeTag::NONE)
-                && pt != recovery_type
-                && pt != any_poly)
+            || (ctx.typ(pt).has_tag(TypeTag::NONE) && pt != recovery_type && pt != any_poly)
             || self.is_boolean_or_numeric(ctx, syms, tree)
         {
             crate::tree::jc_tree::PolyKind::STANDALONE
         } else {
             crate::tree::jc_tree::PolyKind::POLY
         };
-        if let TreeKind::Conditional { poly_kind: slot, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::Conditional {
+            poly_kind: slot, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *slot = poly_kind;
         }
         let result_info = self.result_info.clone().expect("resultInfo");
-        if poly_kind == crate::tree::jc_tree::PolyKind::POLY
-            && ctx.typ(pt).has_tag(TypeTag::VOID)
-        {
+        if poly_kind == crate::tree::jc_tree::PolyKind::POLY && ctx.typ(pt).has_tag(TypeTag::VOID) {
             // this means we are returning a poly conditional from a
             // void-compatible lambda expression
-            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+            let fragment = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
                 crate::resources::compiler_properties::fragments::conditional_target_cant_be_void(),
             ));
-            result_info.check_context.report(ctx, ctx.tree(tree).pos, &fragment);
+            result_info
+                .check_context
+                .report(ctx, ctx.tree(tree).pos, &fragment);
             let error = self.types.create_error_type_original(ctx, Some(pt), syms);
             ctx.tree_mut(tree).ty = Some(error);
             self.result = Some(error);
@@ -6949,9 +7316,7 @@ impl Attr {
         let cond_info = if poly_kind == crate::tree::jc_tree::PolyKind::STANDALONE {
             self.unknown_expr_info.clone()
         } else {
-            result_info.dup_context(
-            self.conditional_context(Rc::clone(&result_info.check_context)),
-        )
+            result_info.dup_context(self.conditional_context(Rc::clone(&result_info.check_context)))
         };
         let cond_bindings_true = cond_bindings.bindings_when_true.clone();
         let cond_bindings_false = cond_bindings.bindings_when_false.clone();
@@ -7000,7 +7365,13 @@ impl Attr {
                             .ty
                             .and_then(|ty| ctx.typ(ty).const_value().cloned());
                         let name = crate::tree::tree_info::symbol(ctx, *lhs)
-                            .map(|sym| ctx.sym(sym).name.to_java_string().to_string_lossy().to_string())
+                            .map(|sym| {
+                                ctx.sym(sym)
+                                    .name
+                                    .to_java_string()
+                                    .to_string_lossy()
+                                    .to_string()
+                            })
                             .unwrap_or_default();
                         (c, name)
                     }
@@ -7019,7 +7390,11 @@ impl Attr {
             && !ctx.typ(owntype).has_tag(TypeTag::NONE)
         {
             let cond_type = ctx.tree(cond).ty.unwrap_or_else(|| self.no_type(ctx));
-            let chosen = if ctx.typ(cond_type).is_true() { truetype } else { falsetype };
+            let chosen = if ctx.typ(cond_type).is_true() {
+                truetype
+            } else {
+                falsetype
+            };
             let cfolder = crate::comp::const_fold::ConstFold::new();
             owntype = cfolder.coerce(ctx, syms, chosen, owntype);
         }
@@ -7078,7 +7453,11 @@ impl Attr {
             }
             Tag::CONDEXPR => {
                 let (truepart, falsepart) = match &ctx.tree(tree).kind {
-                    TreeKind::Conditional { truepart, falsepart, .. } => (
+                    TreeKind::Conditional {
+                        truepart,
+                        falsepart,
+                        ..
+                    } => (
                         truepart.expect("conditional truepart"),
                         falsepart.expect("conditional falsepart"),
                     ),
@@ -7090,9 +7469,7 @@ impl Attr {
             Tag::APPLY => {
                 let speculative = self.attrib_speculative_for_boolean(ctx, syms, tree, &env);
                 let meth = match &ctx.tree(speculative).kind {
-                    TreeKind::MethodInvocation { meth, .. } => {
-                        meth.expect("speculative meth")
-                    }
+                    TreeKind::MethodInvocation { meth, .. } => meth.expect("speculative meth"),
                     _ => return false,
                 };
                 let msym = match crate::tree::tree_info::symbol(ctx, meth) {
@@ -7121,20 +7498,37 @@ impl Attr {
                 };
                 let class_name = remove_class_params(ctx, clazz);
                 let speculative = {
-                    let deferred = self.deferred_attr.borrow().clone().expect("deferred attr service");
+                    let deferred = self
+                        .deferred_attr
+                        .borrow()
+                        .clone()
+                        .expect("deferred attr service");
                     let deferred = deferred.borrow();
                     let unknown_type = self.unknown_type_info.clone();
-                    match deferred.attrib_speculative(ctx, syms, self, class_name, &env, &unknown_type) {
+                    match deferred.attrib_speculative(
+                        ctx,
+                        syms,
+                        self,
+                        class_name,
+                        &env,
+                        &unknown_type,
+                    ) {
                         Ok(t) => t,
                         Err(_) => return false,
                     }
                 };
-                let speculative_type = ctx.tree(speculative).ty.unwrap_or_else(|| self.no_type(ctx));
+                let speculative_type = ctx
+                    .tree(speculative)
+                    .ty
+                    .unwrap_or_else(|| self.no_type(ctx));
                 self.primitive_or_boxed(ctx, syms, speculative_type)
             }
             _ => {
                 let speculative = self.attrib_speculative_for_boolean(ctx, syms, tree, &env);
-                let speculative_type = ctx.tree(speculative).ty.unwrap_or_else(|| self.no_type(ctx));
+                let speculative_type = ctx
+                    .tree(speculative)
+                    .ty
+                    .unwrap_or_else(|| self.no_type(ctx));
                 self.primitive_or_boxed(ctx, syms, speculative_type)
             }
         }
@@ -7148,7 +7542,11 @@ impl Attr {
         tree: TreeId,
         env: &Rc<Env<AttrContext>>,
     ) -> TreeId {
-        let deferred = self.deferred_attr.borrow().clone().expect("deferred attr service");
+        let deferred = self
+            .deferred_attr
+            .borrow()
+            .clone()
+            .expect("deferred attr service");
         let deferred = deferred.borrow();
         let unknown = self.unknown_expr_info.clone();
         deferred
@@ -7161,18 +7559,11 @@ impl Attr {
     }
 
     /// Java: boolean primitiveOrBoxed(Type t) (Attr.java:2082-2084).
-    fn primitive_or_boxed(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> bool {
-        !ctx.typ(t).has_tag(TypeTag::TYPEVAR)
-            && !ctx.typ(t).has_tag(TypeTag::ERROR)
-            && {
-                let unboxed = self.types.unboxed_type_or_type(ctx, syms, t);
-                ctx.typ(unboxed).is_primitive()
-            }
+    fn primitive_or_boxed(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
+        !ctx.typ(t).has_tag(TypeTag::TYPEVAR) && !ctx.typ(t).has_tag(TypeTag::ERROR) && {
+            let unboxed = self.types.unboxed_type_or_type(ctx, syms, t);
+            ctx.typ(unboxed).is_primitive()
+        }
     }
 
     /// Java: Env<AttrContext> bindingEnv(Env, List<BindingSymbol>)
@@ -7244,7 +7635,16 @@ impl Attr {
                     return self.types.base_type(ctx, *t);
                 }
             }
-            for tag in [TypeTag::BYTE, TypeTag::CHAR, TypeTag::SHORT, TypeTag::INT, TypeTag::LONG, TypeTag::FLOAT, TypeTag::DOUBLE, TypeTag::BOOLEAN] {
+            for tag in [
+                TypeTag::BYTE,
+                TypeTag::CHAR,
+                TypeTag::SHORT,
+                TypeTag::INT,
+                TypeTag::LONG,
+                TypeTag::FLOAT,
+                TypeTag::DOUBLE,
+                TypeTag::BOOLEAN,
+            ] {
                 let candidate = syms.type_of_tag[tag as usize].expect("predefined type");
                 if unboxed
                     .iter()
@@ -7266,9 +7666,10 @@ impl Attr {
             })
             .collect();
         for t in &boxed {
-            let all_ok = boxed.iter().filter(|o| *o != t).all(|o| {
-                self.types.is_assignable(ctx, syms, *o, *t)
-            });
+            let all_ok = boxed
+                .iter()
+                .filter(|o| *o != t)
+                .all(|o| self.types.is_assignable(ctx, syms, *o, *t));
             if all_ok {
                 return self.types.base_type(ctx, *t);
             }
@@ -7346,14 +7747,31 @@ impl Attr {
         let owntype = self.attrib_tree_use(ctx, syms, lhs, &env, var_info);
         let operand = self.attrib_expr(ctx, syms, rhs, &env);
         let operator = {
-            let ops = self.operators.borrow().clone().expect("AssertionError: operators service must be installed");
+            let ops = self
+                .operators
+                .borrow()
+                .clone()
+                .expect("AssertionError: operators service must be installed");
             let no_assign = tag.no_assign_op();
-            ops.resolve_binary(ctx, syms, &self.types, ctx.tree(tree).pos, no_assign, owntype, operand)
+            ops.resolve_binary(
+                ctx,
+                syms,
+                &self.types,
+                ctx.tree(tree).pos,
+                no_assign,
+                owntype,
+                operand,
+            )
         };
         if let TreeKind::AssignOp { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(operator);
         }
-        let no_op = self.operators.borrow().clone().map(|ops| ops.no_op_symbol).expect("AssertionError: operators service must be installed");
+        let no_op = self
+            .operators
+            .borrow()
+            .clone()
+            .map(|ops| ops.no_op_symbol)
+            .expect("AssertionError: operators service must be installed");
         if operator != no_op
             && !ctx.typ(owntype).has_tag(TypeTag::ERROR)
             && !ctx.typ(operand).has_tag(TypeTag::ERROR)
@@ -7406,14 +7824,25 @@ impl Attr {
             chk.check_non_void(ctx, syms, ctx.tree(arg).pos, attr_type)
         };
         let operator = {
-            let ops = self.operators.borrow().clone().expect("AssertionError: operators service must be installed");
+            let ops = self
+                .operators
+                .borrow()
+                .clone()
+                .expect("AssertionError: operators service must be installed");
             ops.resolve_unary(ctx, syms, &self.types, ctx.tree(tree).pos, tag, argtype)
         };
         if let TreeKind::Unary { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(operator);
         }
-        let mut owntype = self.types.create_error_type_original(ctx, ctx.tree(tree).ty, syms);
-        let no_op = self.operators.borrow().clone().map(|ops| ops.no_op_symbol).expect("AssertionError: operators service must be installed");
+        let mut owntype = self
+            .types
+            .create_error_type_original(ctx, ctx.tree(tree).ty, syms);
+        let no_op = self
+            .operators
+            .borrow()
+            .clone()
+            .map(|ops| ops.no_op_symbol)
+            .expect("AssertionError: operators service must be installed");
         if operator != no_op && !ctx.typ(argtype).has_tag(TypeTag::ERROR) {
             owntype = if tag.is_inc_or_dec_unary_op() {
                 ctx.tree(arg).ty.unwrap_or_else(|| self.no_type(ctx))
@@ -7434,7 +7863,9 @@ impl Attr {
         let result_info = self.result_info.clone().expect("resultInfo");
         let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &result_info);
         self.result = Some(result);
-        self.match_bindings = self.match_bindings_computer.unary(tag, &self.match_bindings);
+        self.match_bindings = self
+            .match_bindings_computer
+            .unary(tag, &self.match_bindings);
         Ok(result)
     }
 
@@ -7488,16 +7919,33 @@ impl Attr {
         let rhs_bindings = self.match_bindings.clone();
         let rhs_scope = rhs_env.info.borrow().scope.expect("rhs env scope");
         ctx.scope_leave(rhs_scope);
-        self.match_bindings = self.match_bindings_computer.binary(ctx, tag, ctx.tree(tree).pos, &lhs_bindings, &rhs_bindings);
+        self.match_bindings = self.match_bindings_computer.binary(
+            ctx,
+            tag,
+            ctx.tree(tree).pos,
+            &lhs_bindings,
+            &rhs_bindings,
+        );
         let operator = {
-            let ops = self.operators.borrow().clone().expect("AssertionError: operators service must be installed");
+            let ops = self
+                .operators
+                .borrow()
+                .clone()
+                .expect("AssertionError: operators service must be installed");
             ops.resolve_binary(ctx, syms, &self.types, ctx.tree(tree).pos, tag, left, right)
         };
         if let TreeKind::Binary { operator: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = Some(operator);
         }
-        let mut owntype = self.types.create_error_type_original(ctx, ctx.tree(tree).ty, syms);
-        let no_op = self.operators.borrow().clone().map(|ops| ops.no_op_symbol).expect("AssertionError: operators service must be installed");
+        let mut owntype = self
+            .types
+            .create_error_type_original(ctx, ctx.tree(tree).ty, syms);
+        let no_op = self
+            .operators
+            .borrow()
+            .clone()
+            .map(|ops| ops.no_op_symbol)
+            .expect("AssertionError: operators service must be installed");
         if operator != no_op
             && !ctx.typ(left).has_tag(TypeTag::ERROR)
             && !ctx.typ(right).has_tag(TypeTag::ERROR)
@@ -7513,9 +7961,13 @@ impl Attr {
                     owntype = self.cfolder.coerce(ctx, syms, ctype, owntype);
                 }
             }
-            if opc == crate::jvm::byte_codes::IF_ACMPEQ || opc == crate::jvm::byte_codes::IF_ACMPNE {
+            if opc == crate::jvm::byte_codes::IF_ACMPEQ || opc == crate::jvm::byte_codes::IF_ACMPNE
+            {
                 let mut warn = crate::util::warner::Warner::new(None);
-                if !self.types.is_castable_with_warn(ctx, syms, left, right, &mut warn) {
+                if !self
+                    .types
+                    .is_castable_with_warn(ctx, syms, left, right, &mut warn)
+                {
                     self.attr_error(
                         ctx.tree(tree).pos,
                         crate::resources::compiler_properties::errors::incomparable_types(
@@ -7534,7 +7986,6 @@ impl Attr {
         Ok(result)
     }
 }
-
 
 /// Java: the anonymous Check.NestedCheckContext in visitTypeCast
 /// (Attr.java:4044-4065) overriding compatible with isCastable (adapter: the
@@ -7557,10 +8008,16 @@ impl crate::comp::check::CheckContext for CastCheckContext {
     ) -> bool {
         let _ = types;
         // Java: return types.isCastable(found, req, warn);
-        self.types.is_castable_with_warn(ctx, syms, found, req, warn)
+        self.types
+            .is_castable_with_warn(ctx, syms, found, req, warn)
     }
 
-    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+    fn report(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        details: &crate::util::jc_diagnostic::JCDiagnostic,
+    ) {
         self.enclosing.report(ctx, pos, details);
     }
 
@@ -7573,7 +8030,8 @@ impl crate::comp::check::CheckContext for CastCheckContext {
         found: TypeId,
         req: TypeId,
     ) -> crate::util::warner::Warner {
-        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+        self.enclosing
+            .check_warner(ctx, syms, types, pos, found, req)
     }
 
     fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
@@ -7606,10 +8064,9 @@ impl Attr {
         tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
         let (clazz, expr) = match &ctx.tree(tree).kind {
-            TreeKind::TypeCast { clazz, expr } => (
-                clazz.expect("cast clazz"),
-                expr.expect("cast expr"),
-            ),
+            TreeKind::TypeCast { clazz, expr } => {
+                (clazz.expect("cast clazz"), expr.expect("cast expr"))
+            }
             _ => panic!("ClassCastException: JCTypeCast expected"),
         };
         let env = self.env.clone().expect("env");
@@ -7693,6 +8150,22 @@ impl LocalInitScanner {
 }
 
 impl crate::tree::tree_scanner::TreeScannerVisitor for LocalInitScanner {
+    /// Java: public void visitApply(JCMethodInvocation tree)
+    fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let prev = self.needs_target;
+        self.needs_target = false;
+        self.scan_children(ctx, tree);
+        self.needs_target = prev;
+    }
+
+    /// Java: public void visitNewClass(JCNewClass tree)
+    fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let prev = self.needs_target;
+        self.needs_target = false;
+        self.scan_children(ctx, tree);
+        self.needs_target = prev;
+    }
+
     /// Java: public void visitNewArray(JCNewArray tree)
     fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let elemtype = match &ctx.tree(tree).kind {
@@ -7726,26 +8199,9 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for LocalInitScanner {
     /// Java: public void visitReference(JCMemberReference tree)
     fn visit_reference(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {
         if self.needs_target {
-            self.bad_inference_msg = Some(
-                crate::resources::compiler_properties::fragments::local_mref_missing_target(),
-            );
+            self.bad_inference_msg =
+                Some(crate::resources::compiler_properties::fragments::local_mref_missing_target());
         }
-    }
-
-    /// Java: public void visitNewClass(JCNewClass tree)
-    fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let prev = self.needs_target;
-        self.needs_target = false;
-        self.scan_children(ctx, tree);
-        self.needs_target = prev;
-    }
-
-    /// Java: public void visitApply(JCMethodInvocation tree)
-    fn visit_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let prev = self.needs_target;
-        self.needs_target = false;
-        self.scan_children(ctx, tree);
-        self.needs_target = prev;
     }
 }
 
@@ -7817,7 +8273,11 @@ impl Attr {
         body: TreeId,
     ) -> bool {
         self.statement_pre_flow(ctx, syms, body);
-        let flow_rc = self.flow.borrow().clone().expect("AssertionError: flow service must be installed");
+        let flow_rc = self
+            .flow
+            .borrow()
+            .clone()
+            .expect("AssertionError: flow service must be installed");
         let make = Rc::clone(&self.make);
         let env = self.env.clone().expect("env");
         flow_rc.breaks_out_of(ctx, syms, &env, loop_tree, body, &make)
@@ -7825,7 +8285,13 @@ impl Attr {
 
     /// Java: void enterScope(Env<AttrContext> env) — the bindingEnvironment
     /// without bindings. §9 helper over the ported scope dups.
-    fn dup_env_with_scope(&self, ctx: &mut CompilerContext, env: &Rc<Env<AttrContext>>, tree: Option<TreeId>, unshared_owner: Option<SymbolId>) -> Rc<Env<AttrContext>> {
+    fn dup_env_with_scope(
+        &self,
+        ctx: &mut CompilerContext,
+        env: &Rc<Env<AttrContext>>,
+        tree: Option<TreeId>,
+        unshared_owner: Option<SymbolId>,
+    ) -> Rc<Env<AttrContext>> {
         let scope = env.info.borrow().scope.expect("env scope");
         let new_scope = match unshared_owner {
             Some(owner) => ctx.scope_dup_unshared(scope, Some(owner)),
@@ -7864,12 +8330,7 @@ impl Attr {
         };
         self.attrib_expr_with_type(ctx, syms, cond, &env, Some(syms.boolean_type));
         let cond_bindings = self.match_bindings.clone();
-        let then_env = self.binding_env(
-            ctx,
-            syms,
-            &env,
-            cond_bindings.bindings_when_true.clone(),
-        );
+        let then_env = self.binding_env(ctx, syms, &env, cond_bindings.bindings_when_true.clone());
         self.attrib_stat(ctx, syms, thenpart, &then_env);
         if let Some(scope) = then_env.info.borrow().scope {
             ctx.scope_leave(scope);
@@ -7887,12 +8348,8 @@ impl Attr {
             flow_rc.alive_after(ctx, syms, &env, thenpart, &make)
         };
         let alive_after_else = if let Some(elsepart) = elsepart {
-            let else_env = self.binding_env(
-                ctx,
-                syms,
-                &env,
-                cond_bindings.bindings_when_false.clone(),
-            );
+            let else_env =
+                self.binding_env(ctx, syms, &env, cond_bindings.bindings_when_false.clone());
             self.attrib_stat(ctx, syms, elsepart, &else_env);
             if let Some(scope) = else_env.info.borrow().scope {
                 ctx.scope_leave(scope);
@@ -8072,7 +8529,10 @@ impl Attr {
         self.attrib_expr_with_type(ctx, syms, cond, &env, Some(syms.boolean_type));
         let cond_bindings = self.match_bindings.clone();
         let while_env = self.binding_env(ctx, syms, &env, cond_bindings.bindings_when_true.clone());
-        let body_env = while_env.dup(Some(tree), while_env.info.borrow().dup(while_env.info.borrow().scope));
+        let body_env = while_env.dup(
+            Some(tree),
+            while_env.info.borrow().dup(while_env.info.borrow().scope),
+        );
         self.attrib_stat(ctx, syms, body, &body_env);
         let while_scope = while_env.info.borrow().scope.expect("while env scope");
         ctx.scope_leave(while_scope);
@@ -8097,9 +8557,12 @@ impl Attr {
     ) -> Result<TypeId, CompletionFailure> {
         let env = self.env.clone().expect("env");
         let (init, cond, step, body) = match &ctx.tree(tree).kind {
-            TreeKind::ForLoop { init, cond, step, body } => {
-                (init.clone(), *cond, step.clone(), body.expect("for body"))
-            }
+            TreeKind::ForLoop {
+                init,
+                cond,
+                step,
+                body,
+            } => (init.clone(), *cond, step.clone(), body.expect("for body")),
             _ => panic!("ClassCastException: JCForLoop expected"),
         };
         let loop_env = self.dup_env_with_scope(ctx, &env, env.tree, None);
@@ -8109,7 +8572,12 @@ impl Attr {
             self.attrib_expr_with_type(ctx, syms, cond, &loop_env, Some(syms.boolean_type));
             cond_bindings = self.match_bindings.clone();
         }
-        let body_env = self.binding_env(ctx, syms, &loop_env, cond_bindings.bindings_when_true.clone());
+        let body_env = self.binding_env(
+            ctx,
+            syms,
+            &loop_env,
+            cond_bindings.bindings_when_true.clone(),
+        );
         // Java: bodyEnv.tree = tree; (before, we were not in loop!)
         let body_env = Rc::new(Env {
             next: body_env.next.clone(),
@@ -8157,20 +8625,28 @@ impl crate::comp::check::CheckContext for TryCheckContext {
         req: TypeId,
         warn: &mut crate::util::warner::Warner,
     ) -> bool {
-        self.enclosing.compatible(ctx, syms, types, found, req, warn)
+        self.enclosing
+            .compatible(ctx, syms, types, found, req, warn)
     }
 
-    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+    fn report(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        details: &crate::util::jc_diagnostic::JCDiagnostic,
+    ) {
         // Java: chk.basicHandler.report(pos,
         //     diags.fragment(Fragments.TryNotApplicableToType(details)));
         let message = details.get_message(None);
-        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-            crate::resources::compiler_properties::fragments::try_not_applicable_to_type(
-                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                    message.to_string(),
+        let fragment = self
+            .diags
+            .fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::try_not_applicable_to_type(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        message.to_string(),
+                    ),
                 ),
-            ),
-        ));
+            ));
         self.basic_handler.report(ctx, pos, &fragment);
     }
 
@@ -8183,7 +8659,8 @@ impl crate::comp::check::CheckContext for TryCheckContext {
         found: TypeId,
         req: TypeId,
     ) -> crate::util::warner::Warner {
-        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+        self.enclosing
+            .check_warner(ctx, syms, types, pos, found, req)
     }
 
     fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
@@ -8217,9 +8694,10 @@ impl Attr {
     ) -> Result<TypeId, CompletionFailure> {
         let env = self.env.clone().expect("env");
         let (lock, body) = match &ctx.tree(tree).kind {
-            TreeKind::Synchronized { lock, body } => {
-                (lock.expect("synchronized lock"), body.expect("synchronized body"))
-            }
+            TreeKind::Synchronized { lock, body } => (
+                lock.expect("synchronized lock"),
+                body.expect("synchronized body"),
+            ),
             _ => panic!("ClassCastException: JCSynchronized expected"),
         };
         let lock_type = self.attrib_expr(ctx, syms, lock, &env);
@@ -8324,7 +8802,13 @@ impl Attr {
                 twr_result.check(ctx, syms, &chk, ctx.tree(resource).pos, resource_type);
                 drop(chk);
                 // check that resource type cannot throw InterruptedException
-                self.check_auto_closeable(ctx, syms, ctx.tree(resource).pos, &local_env, resource_type);
+                self.check_auto_closeable(
+                    ctx,
+                    syms,
+                    ctx.tree(resource).pos,
+                    &local_env,
+                    resource_type,
+                );
                 let var = match &ctx.tree(resource).kind {
                     TreeKind::VariableDecl { sym: Some(sym), .. } => Some(*sym),
                     _ => None,
@@ -8386,7 +8870,10 @@ impl Attr {
                     *data_kind = Some(crate::code::symbol::ElementKind::EXCEPTION_PARAMETER);
                 }
                 let vartype_pos = match &ctx.tree(param).kind {
-                    TreeKind::VariableDecl { vartype: Some(vartype), .. } => ctx.tree(*vartype).pos,
+                    TreeKind::VariableDecl {
+                        vartype: Some(vartype),
+                        ..
+                    } => ctx.tree(*vartype).pos,
                     _ => ctx.tree(param).pos,
                 };
                 let chk_rc = Rc::clone(&self.chk);
@@ -8434,15 +8921,20 @@ impl Attr {
             .typ(syms.auto_closeable_type)
             .tsym
             .expect("AutoCloseable type symbol");
-        if self.types.as_super(ctx, syms, resource, auto_closeable_tsym).is_none()
-            || self.types.is_same_type(ctx, syms, resource, syms.auto_closeable_type)
+        if self
+            .types
+            .as_super(ctx, syms, resource, auto_closeable_tsym)
+            .is_none()
+            || self
+                .types
+                .is_same_type(ctx, syms, resource, syms.auto_closeable_type)
         {
             return;
         }
         // Java: resolve the close method with a discarding diagnostic handler.
-        self.log
-            .borrow_mut()
-            .install_diagnostic_handler(crate::util::log::DiagnosticHandler::Discard { prev: None });
+        self.log.borrow_mut().install_diagnostic_handler(
+            crate::util::log::DiagnosticHandler::Discard { prev: None },
+        );
         // Java: types.skipTypeVars(resource, false)
         let skipped = {
             let mut current = resource;
@@ -8455,13 +8947,24 @@ impl Attr {
             current
         };
         let close_sym = {
-            let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+            let rs_rc = self
+                .rs
+                .borrow()
+                .clone()
+                .expect("AssertionError: rs service must be installed");
             let rs = rs_rc.borrow();
             let types_rc = Rc::clone(&self.types);
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
             let infer_rc = Rc::clone(&self.infer);
-            let name = ctx.sym(env.encl_class.and_then(|encl| class_tree_symbol(ctx, encl)).unwrap_or(syms.no_symbol)).name.clone();
+            let name = ctx
+                .sym(
+                    env.encl_class
+                        .and_then(|encl| class_tree_symbol(ctx, encl))
+                        .unwrap_or(syms.no_symbol),
+                )
+                .name
+                .clone();
             let _ = name;
             let close_name = self.names.close.clone();
             rs.resolve_qualified_method(
@@ -8626,7 +9129,8 @@ impl Attr {
                             ),
                         ),
                     );
-                    self.types.create_error_type_original(ctx, Some(expr_type), syms)
+                    self.types
+                        .create_error_type_original(ctx, Some(expr_type), syms)
                 }
                 Some(base) => {
                     let iterable_params = crate::code::types::allparams_of(ctx, base);
@@ -8705,9 +9209,10 @@ impl Attr {
         };
         // Java: if (tree.var.isImplicitlyTyped()) { ... }
         let var_implicitly_typed = match &ctx.tree(var).kind {
-            TreeKind::VariableDecl { vartype: Some(vartype), .. } => {
-                ctx.tree(*vartype).pos == crate::util::position::NOPOS
-            }
+            TreeKind::VariableDecl {
+                vartype: Some(vartype),
+                ..
+            } => ctx.tree(*vartype).pos == crate::util::position::NOPOS,
             TreeKind::VariableDecl { vartype: None, .. } => true,
             _ => false,
         };
@@ -8756,7 +9261,8 @@ impl Attr {
         let loop_scope = loop_env.info.borrow().scope.expect("foreach env scope");
         ctx.scope_leave(loop_scope);
         Ok(self.no_type(ctx))
-    }}
+    }
+}
 
 impl Attr {
     /// Java: public void visitBindingPattern(JCBindingPattern tree)
@@ -8820,14 +9326,15 @@ impl Attr {
                 .typ(clazztype)
                 .has_tag(crate::code::type_tag::TypeTag::ERROR);
             if self.types.is_subtype(ctx, syms, exprtype, clazztype) && !expr_bad && !clazz_bad {
-                let info = crate::resources::compiler_properties::errors::instanceof_pattern_no_subtype(
-                    crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(
-                        ctx, exprtype,
-                    )),
-                    crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(
-                        ctx, clazztype,
-                    )),
-                );
+                let info =
+                    crate::resources::compiler_properties::errors::instanceof_pattern_no_subtype(
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, exprtype),
+                        ),
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, clazztype),
+                        ),
+                    );
                 self.log.borrow_mut().error_at(
                     ctx.tree(tree).pos,
                     crate::util::jc_diagnostic::Error::from(info),
@@ -8872,9 +9379,8 @@ impl Attr {
             if self.allow_reifiable_types_in_instanceof {
                 valid = self.check_castable_pattern(ctx, syms, expr_pos, exprtype, clazztype);
             } else {
-                let feature_error =
-                    crate::code::source::Feature::REIFIABLE_TYPES_INSTANCEOF
-                        .error(&self.source_name);
+                let feature_error = crate::code::source::Feature::REIFIABLE_TYPES_INSTANCEOF
+                    .error(&self.source_name);
                 self.log.borrow_mut().error_flag_at(
                     crate::util::jc_diagnostic::DiagnosticFlag::SOURCE_LEVEL,
                     ctx.tree(tree).pos,
@@ -8883,7 +9389,9 @@ impl Attr {
                 self.allow_reifiable_types_in_instanceof = true;
             }
             if !valid {
-                clazztype = self.types.create_error_type_original(ctx, Some(clazztype), syms);
+                clazztype = self
+                    .types
+                    .create_error_type_original(ctx, Some(clazztype), syms);
             }
         }
         {
@@ -8891,7 +9399,14 @@ impl Attr {
             chk.check_castable(ctx, syms, expr_pos, exprtype, clazztype);
         }
         let result_info = self.result_info.clone().expect("resultInfo");
-        Ok(self.check(ctx, syms, tree, syms.boolean_type, KindSelector::VAL, &result_info))
+        Ok(self.check(
+            ctx,
+            syms,
+            tree,
+            syms.boolean_type,
+            KindSelector::VAL,
+            &result_info,
+        ))
     }
 
     fn visit_binding_pattern(
@@ -8912,7 +9427,10 @@ impl Attr {
             Rc::clone(&result_info.check_context),
         );
         let vartype = match &ctx.tree(var).kind {
-            TreeKind::VariableDecl { vartype: Some(vartype), .. } => *vartype,
+            TreeKind::VariableDecl {
+                vartype: Some(vartype),
+                ..
+            } => *vartype,
             _ => panic!("AssertionError: binding pattern variable without a type"),
         };
         let ty = self.attrib_tree_use(ctx, syms, vartype, &env, var_info);
@@ -8941,8 +9459,9 @@ impl Attr {
             Some(ty),
             Some(owner),
         ));
-        // Java: v.pos = tree.pos (Attr.java:4136).
-        let binding_pos = ctx.tree(tree).pos;
+        // Java: v.pos = tree.pos (Attr.java:4136); the variable tree's position
+        // is the binding name (the pattern starts at its type).
+        let binding_pos = ctx.tree(var).pos;
         ctx.sym_mut(binding).set_var_pos(binding_pos);
         if let TreeKind::VariableDecl { sym, .. } = &mut ctx.tree_mut(var).kind {
             *sym = Some(binding);
@@ -8967,12 +9486,12 @@ impl Attr {
                 .clone()
                 .expect("AssertionError: annotate service must be installed");
             let annotations = match &ctx.tree(var).kind {
-                TreeKind::VariableDecl { mods: Some(mods), .. } => {
-                    match &ctx.tree(*mods).kind {
-                        TreeKind::Modifiers { annotations, .. } => annotations.clone(),
-                        _ => List::nil(),
-                    }
-                }
+                TreeKind::VariableDecl {
+                    mods: Some(mods), ..
+                } => match &ctx.tree(*mods).kind {
+                    TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+                    _ => List::nil(),
+                },
                 _ => List::nil(),
             };
             annotate_rc.annotate_later(
@@ -8998,10 +9517,8 @@ impl Attr {
         }
         ctx.tree_mut(tree).ty = Some(ty);
         self.result = Some(ty);
-        self.match_bindings = crate::comp::match_bindings::MatchBindings::new(
-            List::of(binding),
-            List::nil(),
-        );
+        self.match_bindings =
+            crate::comp::match_bindings::MatchBindings::new(List::of(binding), List::nil());
         Ok(ty)
     }
 
@@ -9015,7 +9532,9 @@ impl Attr {
     ) -> Result<TypeId, CompletionFailure> {
         let env = self.env.clone().expect("env");
         let pattern = match &ctx.tree(tree).kind {
-            TreeKind::ParenthesizedPattern { pattern: Some(pattern) } => *pattern,
+            TreeKind::ParenthesizedPattern {
+                pattern: Some(pattern),
+            } => *pattern,
             _ => panic!("ClassCastException: JCParenthesizedPattern expected"),
         };
         self.attrib_expr(ctx, syms, pattern, &env);
@@ -9043,12 +9562,7 @@ impl Attr {
         };
         self.attrib_expr(ctx, syms, patt, &env);
         let after_pattern = self.match_bindings.clone();
-        let body_env = self.binding_env(
-            ctx,
-            syms,
-            &env,
-            after_pattern.bindings_when_true.clone(),
-        );
+        let body_env = self.binding_env(ctx, syms, &env, after_pattern.bindings_when_true.clone());
         self.attrib_expr_with_type(ctx, syms, expr, &body_env, Some(syms.boolean_type));
         let body_scope = body_env.info.borrow().scope.expect("guard body scope");
         ctx.scope_leave(body_scope);
@@ -9083,10 +9597,16 @@ impl crate::comp::check::CheckContext for SwitchExpressionCheckContext {
         req: TypeId,
         warn: &mut crate::util::warner::Warner,
     ) -> bool {
-        self.enclosing.compatible(ctx, syms, types, found, req, warn)
+        self.enclosing
+            .compatible(ctx, syms, types, found, req, warn)
     }
 
-    fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+    fn report(
+        &self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        details: &crate::util::jc_diagnostic::JCDiagnostic,
+    ) {
         let message = details.get_message(None);
         let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
             crate::resources::compiler_properties::fragments::incompatible_type_in_switch_expression(
@@ -9107,7 +9627,8 @@ impl crate::comp::check::CheckContext for SwitchExpressionCheckContext {
         found: TypeId,
         req: TypeId,
     ) -> crate::util::warner::Warner {
-        self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+        self.enclosing
+            .check_warner(ctx, syms, types, pos, found, req)
     }
 
     fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
@@ -9133,6 +9654,9 @@ pub struct YieldCollector {
 }
 
 impl crate::tree::tree_scanner::TreeScannerVisitor for YieldCollector {
+    /// Java: public void visitClassDef(JCClassDecl tree) — do nothing.
+    fn visit_class_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
+
     /// Java: public void visitYield(JCYield brk)
     fn visit_yield(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (value, target) = match &ctx.tree(tree).kind {
@@ -9140,8 +9664,12 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for YieldCollector {
             _ => return,
         };
         if target == Some(self.target) {
-            let pos = value.map(|value| ctx.tree(value).pos).unwrap_or(ctx.tree(tree).pos);
-            let ty = value.and_then(|value| ctx.tree(value).ty).unwrap_or(self.err_type);
+            let pos = value
+                .map(|value| ctx.tree(value).pos)
+                .unwrap_or(ctx.tree(tree).pos);
+            let ty = value
+                .and_then(|value| ctx.tree(value).ty)
+                .unwrap_or(self.err_type);
             self.positions.push(pos);
             self.types.push(ty);
         }
@@ -9149,9 +9677,6 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for YieldCollector {
             crate::tree::tree_scanner::TreeScannerVisitor::scan(self, ctx, Some(value));
         }
     }
-
-    /// Java: public void visitClassDef(JCClassDecl tree) — do nothing.
-    fn visit_class_def(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
     /// Java: public void visitLambda(JCLambda tree) — do nothing.
     fn visit_lambda(&mut self, _ctx: &mut CompilerContext, _tree: TreeId) {}
 }
@@ -9178,7 +9703,11 @@ impl Attr {
     ///   - none.
     ///
     /// Upstream: Attr.java:1666-1904.
-    #[allow(clippy::too_many_arguments, clippy::collapsible_if, clippy::too_many_lines)]
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::collapsible_if,
+        clippy::too_many_lines
+    )]
     fn handle_switch(
         &mut self,
         ctx: &mut CompilerContext,
@@ -9198,39 +9727,44 @@ impl Attr {
             .tsym
             .map(|tsym| ctx.sym(tsym).flags_field & (crate::code::flags::ENUM as i64) != 0)
             .unwrap_or(false);
-        let string_switch = self.types.is_same_type(ctx, syms, seltype, syms.string_type);
+        let string_switch = self
+            .types
+            .is_same_type(ctx, syms, seltype, syms.string_type);
         let error_enum_switch = crate::tree::tree_info::is_error_enum_switch(ctx, selector, &cases);
         let is_int_switch = self.types.is_assignable(ctx, syms, seltype, syms.int_type);
-        let pattern_switch = if !enum_switch && !string_switch && !error_enum_switch && !is_int_switch {
-            // Java: preview.checkSourceLevel(selector.pos(), Feature.PATTERN_SWITCH);
-            // (Attr.java:1682). The upstream tree-as-DiagnosticPosition argument
-            // uses the port-wide SimpleDiagnosticPosition(tree.pos) adapter.
-            self.preview.check_source_level(
-                &crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(selector).pos),
-                Feature::PATTERN_SWITCH,
-            );
-            true
-        } else {
-            let mut found = false;
-            let mut case_current = cases.clone();
-            while case_current.non_empty() {
-                let case = *case_current.head();
-                let labels = match &ctx.tree(case).kind {
-                    TreeKind::Case { labels, .. } => labels.clone(),
-                    _ => List::nil(),
-                };
-                let mut label_current = labels;
-                while label_current.non_empty() {
-                    let label = *label_current.head();
-                    if is_pattern_label(ctx, label) {
-                        found = true;
+        let pattern_switch =
+            if !enum_switch && !string_switch && !error_enum_switch && !is_int_switch {
+                // Java: preview.checkSourceLevel(selector.pos(), Feature.PATTERN_SWITCH);
+                // (Attr.java:1682). The upstream tree-as-DiagnosticPosition argument
+                // uses the port-wide SimpleDiagnosticPosition(tree.pos) adapter.
+                self.preview.check_source_level(
+                    &crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                        ctx.tree(selector).pos,
+                    ),
+                    Feature::PATTERN_SWITCH,
+                );
+                true
+            } else {
+                let mut found = false;
+                let mut case_current = cases.clone();
+                while case_current.non_empty() {
+                    let case = *case_current.head();
+                    let labels = match &ctx.tree(case).kind {
+                        TreeKind::Case { labels, .. } => labels.clone(),
+                        _ => List::nil(),
+                    };
+                    let mut label_current = labels;
+                    while label_current.non_empty() {
+                        let label = *label_current.head();
+                        if is_pattern_label(ctx, label) {
+                            found = true;
+                        }
+                        label_current = label_current.tail();
                     }
-                    label_current = label_current.tail();
+                    case_current = case_current.tail();
                 }
-                case_current = case_current.tail();
-            }
-            found
-        };
+                found
+            };
         let mut labels_seen_enum: Vec<SymbolId> = Vec::new();
         let mut labels_seen_consts: Vec<crate::util::constants::ConstantValue> = Vec::new();
         let mut covered_types: List<TypeId> = List::nil();
@@ -9271,20 +9805,23 @@ impl Attr {
             let mut label_current = case_labels;
             while label_current.non_empty() {
                 let pat = *label_current.head();
-                let is_expr_label = !ctx.tree(pat).has_tag(Tag::DEFAULTCASELABEL)
-                    && !is_pattern_label(ctx, pat);
+                let is_expr_label =
+                    !ctx.tree(pat).has_tag(Tag::DEFAULTCASELABEL) && !is_pattern_label(ctx, pat);
                 if is_expr_label {
                     if crate::tree::tree_info::is_null(ctx, pat) {
                         // Java: preview.checkSourceLevel(expr.pos(), Feature.CASE_NULL);
                         // (Attr.java:1715). Position translation as for PATTERN_SWITCH.
                         self.preview.check_source_level(
-                            &crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(pat).pos),
+                            &crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                                ctx.tree(pat).pos,
+                            ),
                             Feature::CASE_NULL,
                         );
                         if has_null_pattern {
                             self.attr_error(
                                 ctx.tree(pat).pos,
-                                crate::resources::compiler_properties::errors::duplicate_case_label(),
+                                crate::resources::compiler_properties::errors::duplicate_case_label(
+                                ),
                             );
                         } else if was_total_pattern {
                             self.attr_error(
@@ -9295,11 +9832,12 @@ impl Attr {
                         has_null_pattern = true;
                         self.attrib_expr_with_type(ctx, syms, pat, &switch_env, Some(seltype));
                         let bindings = self.match_bindings.clone();
-                        self.match_bindings = crate::comp::match_bindings::MatchBindings::new_with_null(
-                            bindings.bindings_when_true.clone(),
-                            bindings.bindings_when_false.clone(),
-                            true,
-                        );
+                        self.match_bindings =
+                            crate::comp::match_bindings::MatchBindings::new_with_null(
+                                bindings.bindings_when_true.clone(),
+                                bindings.bindings_when_false.clone(),
+                                true,
+                            );
                     } else if enum_switch {
                         let sym = self.enum_constant(ctx, syms, pat, seltype);
                         match sym {
@@ -9318,7 +9856,13 @@ impl Attr {
                                     );
                                 } else {
                                     labels_seen_enum.push(sym);
-                                    self.check_case_label_dominated(ctx, syms, ctx.tree(pat).pos, &covered_types, sym_ty);
+                                    self.check_case_label_dominated(
+                                        ctx,
+                                        syms,
+                                        ctx.tree(pat).pos,
+                                        &covered_types,
+                                        sym_ty,
+                                    );
                                 }
                             }
                         }
@@ -9335,17 +9879,31 @@ impl Attr {
                         //     }
                         // (Attr.java:1733-1743). The Java mutable field is the ported
                         // Resolve.basic_log_resolve_helper Cell (Resolve.java:2610).
-                        let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                        let rs_rc = self
+                            .rs
+                            .borrow()
+                            .clone()
+                            .expect("AssertionError: rs service must be installed");
                         let prev_resolve_helper = rs_rc.borrow().basic_log_resolve_helper.get();
                         rs_rc
                             .borrow()
                             .basic_log_resolve_helper
                             .set(crate::comp::resolve::LogResolveHelper::Silent);
                         // The upstream finally restores the helper on every exit.
-                        let attribution = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            self.attrib_expr_with_type(ctx, syms, pat, &switch_env, Some(seltype));
-                        }));
-                        rs_rc.borrow().basic_log_resolve_helper.set(prev_resolve_helper);
+                        let attribution =
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                self.attrib_expr_with_type(
+                                    ctx,
+                                    syms,
+                                    pat,
+                                    &switch_env,
+                                    Some(seltype),
+                                );
+                            }));
+                        rs_rc
+                            .borrow()
+                            .basic_log_resolve_helper
+                            .set(prev_resolve_helper);
                         if let Err(payload) = attribution {
                             std::panic::resume_unwind(payload);
                         }
@@ -9359,13 +9917,16 @@ impl Attr {
                             }),
                             Rc::clone(&self.basic_handler),
                         );
-                        let pattype = self.attrib_tree_use(ctx, syms, pat, &switch_env, val_typ_info);
+                        let pattype =
+                            self.attrib_tree_use(ctx, syms, pat, &switch_env, val_typ_info);
                         if !ctx.typ(pattype).has_tag(TypeTag::ERROR) {
                             let const_value = ctx.typ(pattype).const_value().cloned();
                             if const_value.is_none() {
                                 let symbol = crate::tree::tree_info::symbol(ctx, pat);
                                 let is_type_sym = symbol
-                                    .map(|symbol| ctx.sym(symbol).kind == crate::code::kinds::Kind::TYP)
+                                    .map(|symbol| {
+                                        ctx.sym(symbol).kind == crate::code::kinds::Kind::TYP
+                                    })
                                     .unwrap_or(false);
                                 if is_type_sym && self.allow_pattern_switch {
                                     self.attr_error(
@@ -9399,7 +9960,13 @@ impl Attr {
                                 } else {
                                     labels_seen_consts.push(const_value);
                                     let boxed = self.types.boxed_type_or_type(ctx, syms, pattype);
-                                    self.check_case_label_dominated(ctx, syms, ctx.tree(pat).pos, &covered_types, boxed);
+                                    self.check_case_label_dominated(
+                                        ctx,
+                                        syms,
+                                        ctx.tree(pat).pos,
+                                        &covered_types,
+                                        boxed,
+                                    );
                                 }
                             }
                         }
@@ -9408,7 +9975,8 @@ impl Attr {
                     if has_default {
                         self.attr_error(
                             ctx.tree(pat).pos,
-                            crate::resources::compiler_properties::errors::duplicate_default_label(),
+                            crate::resources::compiler_properties::errors::duplicate_default_label(
+                            ),
                         );
                     } else if was_total_pattern {
                         self.attr_error(
@@ -9430,12 +9998,20 @@ impl Attr {
                     } else {
                         primary_type
                     };
-                    self.check_castable_pattern(ctx, syms, ctx.tree(pat).pos, seltype, primary_type);
+                    self.check_castable_pattern(
+                        ctx,
+                        syms,
+                        ctx.tree(pat).pos,
+                        seltype,
+                        primary_type,
+                    );
                     let pattern_type = self.types.erasure(ctx, syms, primary_type);
                     let seltype_erased = self.types.erasure(ctx, syms, seltype);
                     let is_total = primary.unconditional
                         && !ctx.typ(pattern_type).has_tag(TypeTag::ERROR)
-                        && self.types.is_subtype(ctx, syms, seltype_erased, pattern_type);
+                        && self
+                            .types
+                            .is_subtype(ctx, syms, seltype_erased, pattern_type);
                     if is_total {
                         if has_total_pattern {
                             self.attr_error(
@@ -9450,7 +10026,13 @@ impl Attr {
                         }
                         has_total_pattern = true;
                     }
-                    self.check_case_label_dominated(ctx, syms, ctx.tree(pat).pos, &covered_types, pattern_type);
+                    self.check_case_label_dominated(
+                        ctx,
+                        syms,
+                        ctx.tree(pat).pos,
+                        &covered_types,
+                        pattern_type,
+                    );
                     if primary.unconditional && !ctx.typ(pattern_type).has_tag(TypeTag::ERROR) {
                         covered_types = covered_types.prepend(pattern_type);
                     }
@@ -9467,7 +10049,8 @@ impl Attr {
                 .as_ref()
                 .map(|bindings| bindings.bindings_when_true.clone())
                 .unwrap_or_else(List::nil);
-            let case_env = self.binding_env_with_tree(ctx, syms, &switch_env, Some(case), true_bindings);
+            let case_env =
+                self.binding_env_with_tree(ctx, syms, &switch_env, Some(case), true_bindings);
             if let Some(cond_info) = expression_result.clone() {
                 case_env.info.borrow_mut().yield_result = Some(cond_info);
             }
@@ -9480,7 +10063,11 @@ impl Attr {
                     types: Vec::new(),
                     err_type,
                 };
-                crate::tree::tree_scanner::TreeScannerVisitor::scan(&mut collector, ctx, Some(case));
+                crate::tree::tree_scanner::TreeScannerVisitor::scan(
+                    &mut collector,
+                    ctx,
+                    Some(case),
+                );
                 yield_positions.extend(collector.positions);
                 yield_types.extend(collector.types);
             }
@@ -9489,17 +10076,31 @@ impl Attr {
             // left before the case variables are entered into the switch scope.
             let case_scope = case_env.info.borrow().scope.expect("case env scope");
             ctx.scope_leave(case_scope);
-            self.add_vars(ctx, case_stats.clone(), switch_env.info.borrow().scope.expect("switch env scope"));
+            self.add_vars(
+                ctx,
+                case_stats.clone(),
+                switch_env.info.borrow().scope.expect("switch env scope"),
+            );
             self.statement_pre_flow(ctx, syms, case);
             let completes_normally = {
-                let flow_rc = self.flow.borrow().clone().expect("AssertionError: flow service must be installed");
+                let flow_rc = self
+                    .flow
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: flow service must be installed");
                 let make = Rc::clone(&self.make);
                 flow_rc.alive_after(ctx, syms, &case_env, case, &make)
             };
-            if let TreeKind::Case { completes_normally: slot, .. } = &mut ctx.tree_mut(case).kind {
+            if let TreeKind::Case {
+                completes_normally: slot,
+                ..
+            } = &mut ctx.tree_mut(case).kind
+            {
                 *slot = completes_normally;
             }
-            prev_bindings = if this_kind == javac_source::tree::case_tree::CaseKind::STATEMENT && completes_normally {
+            prev_bindings = if this_kind == javac_source::tree::case_tree::CaseKind::STATEMENT
+                && completes_normally
+            {
                 current_bindings
             } else {
                 None
@@ -9516,8 +10117,11 @@ impl Attr {
         let has_total = has_default || has_total_pattern;
         match ctx.tree(switch_tree).tag {
             Tag::SWITCH => {
-                if let TreeKind::Switch { has_total_pattern: ht, pattern_switch: ps, .. } =
-                    &mut ctx.tree_mut(switch_tree).kind
+                if let TreeKind::Switch {
+                    has_total_pattern: ht,
+                    pattern_switch: ps,
+                    ..
+                } = &mut ctx.tree_mut(switch_tree).kind
                 {
                     *ht = has_total;
                     *ps = pattern_switch;
@@ -9525,8 +10129,11 @@ impl Attr {
                 None
             }
             Tag::SWITCH_EXPRESSION => {
-                if let TreeKind::SwitchExpression { has_total_pattern: ht, pattern_switch: ps, .. } =
-                    &mut ctx.tree_mut(switch_tree).kind
+                if let TreeKind::SwitchExpression {
+                    has_total_pattern: ht,
+                    pattern_switch: ps,
+                    ..
+                } = &mut ctx.tree_mut(switch_tree).kind
                 {
                     *ht = has_total;
                     *ps = pattern_switch;
@@ -9545,9 +10152,9 @@ impl Attr {
         tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
         let (selector, cases) = match &ctx.tree(tree).kind {
-            TreeKind::Switch { selector, cases, .. } => {
-                (selector.expect("switch selector"), cases.clone())
-            }
+            TreeKind::Switch {
+                selector, cases, ..
+            } => (selector.expect("switch selector"), cases.clone()),
             _ => panic!("ClassCastException: JCSwitch expected"),
         };
         self.handle_switch(ctx, syms, tree, selector, cases, None);
@@ -9565,15 +10172,16 @@ impl Attr {
         let pt = self.pt().unwrap_or_else(|| self.no_type(ctx));
         let recovery_type = syms.recovery_type;
         let any_poly = self.infer.any_poly;
-        let poly_kind = if ctx.typ(pt).has_tag(TypeTag::NONE)
-            && pt != recovery_type
-            && pt != any_poly
+        let poly_kind =
+            if ctx.typ(pt).has_tag(TypeTag::NONE) && pt != recovery_type && pt != any_poly {
+                crate::tree::jc_tree::PolyKind::STANDALONE
+            } else {
+                crate::tree::jc_tree::PolyKind::POLY
+            };
+        if let TreeKind::SwitchExpression {
+            poly_kind: slot, ..
+        } = &mut ctx.tree_mut(tree).kind
         {
-            crate::tree::jc_tree::PolyKind::STANDALONE
-        } else {
-            crate::tree::jc_tree::PolyKind::POLY
-        };
-        if let TreeKind::SwitchExpression { poly_kind: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = poly_kind;
         }
         let result_info = self.result_info.clone().expect("resultInfo");
@@ -9581,7 +10189,9 @@ impl Attr {
             let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                 crate::resources::compiler_properties::fragments::switch_expression_target_cant_be_void(),
             ));
-            result_info.check_context.report(ctx, ctx.tree(tree).pos, &fragment);
+            result_info
+                .check_context
+                .report(ctx, ctx.tree(tree).pos, &fragment);
             let error = self.types.create_error_type_original(ctx, Some(pt), syms);
             ctx.tree_mut(tree).ty = Some(error);
             self.result = Some(error);
@@ -9590,28 +10200,21 @@ impl Attr {
         let cond_info = if poly_kind == crate::tree::jc_tree::PolyKind::STANDALONE {
             self.unknown_expr_info.clone()
         } else {
-            let context: Rc<dyn crate::comp::check::CheckContext> = Rc::new(
-                SwitchExpressionCheckContext {
+            let context: Rc<dyn crate::comp::check::CheckContext> =
+                Rc::new(SwitchExpressionCheckContext {
                     enclosing: Rc::clone(&result_info.check_context),
                     diags: Rc::clone(&self.diags),
-                },
-            );
+                });
             result_info.dup_context(context)
         };
         let (selector, cases) = match &ctx.tree(tree).kind {
-            TreeKind::SwitchExpression { selector, cases, .. } => {
-                (selector.expect("switch expression selector"), cases.clone())
-            }
+            TreeKind::SwitchExpression {
+                selector, cases, ..
+            } => (selector.expect("switch expression selector"), cases.clone()),
             _ => panic!("ClassCastException: JCSwitchExpression expected"),
         };
-        let case_info = self.handle_switch(
-            ctx,
-            syms,
-            tree,
-            selector,
-            cases.clone(),
-            Some(cond_info),
-        );
+        let case_info =
+            self.handle_switch(ctx, syms, tree, selector, cases.clone(), Some(cond_info));
         let (case_positions, case_types) = case_info.unwrap_or_default();
         if cases.is_empty() {
             self.attr_error(
@@ -9750,25 +10353,30 @@ impl Attr {
         patt_type: TypeId,
     ) -> bool {
         let mut warn = crate::util::warner::Warner::new(None);
-        if !self.types.is_castable_with_warn(ctx, syms, expr_type, patt_type, &mut warn) {
-            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::inconvertible_types(
-                    Self::type_arg_placeholder(ctx, expr_type),
-                    Self::type_arg_placeholder(ctx, patt_type),
-                ),
-            ));
+        if !self
+            .types
+            .is_castable_with_warn(ctx, syms, expr_type, patt_type, &mut warn)
+        {
+            let fragment = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::inconvertible_types(
+                        Self::type_arg_placeholder(ctx, expr_type),
+                        Self::type_arg_placeholder(ctx, patt_type),
+                    ),
+                ));
             self.basic_handler.report(ctx, pos, &fragment);
             false
         } else if warn.has_lint(crate::code::lint::LintCategory::UNCHECKED) {
             // Java: log.error(pos, Errors.InstanceofReifiableNotSafe(exprType,
             // pattType)); return false; (Attr.java:4123-4126)
             let info = crate::resources::compiler_properties::errors::instanceof_reifiable_not_safe(
-                crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(
-                    ctx, expr_type,
-                )),
-                crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(
-                    ctx, patt_type,
-                )),
+                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                    crate::comp::attr::type_display_of(ctx, expr_type),
+                ),
+                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                    crate::comp::attr::type_display_of(ctx, patt_type),
+                ),
             );
             crate::util::abstract_log::AbstractLog::error_at(
                 &mut *self.log.borrow_mut(),
@@ -9815,8 +10423,7 @@ impl crate::comp::infer::FreeTypeListener for SetFunctionalInfoListener {
         inference_context: &crate::comp::infer::InferenceContext,
     ) -> Result<(), crate::comp::infer::InferenceException> {
         let descriptor = inference_context.as_inst_type(ctx, syms, types, self.descriptor);
-        let primary_target =
-            inference_context.as_inst_type(ctx, syms, types, self.primary_target);
+        let primary_target = inference_context.as_inst_type(ctx, syms, types, self.primary_target);
         set_functional_info_step(
             ctx,
             syms,
@@ -9857,8 +10464,7 @@ impl crate::comp::infer::FreeTypeListener for AccessibleTypesListener {
         let mut current = self.ts.clone();
         while current.non_empty() {
             let t = *current.head();
-            instantiated =
-                instantiated.append(inference_context.as_inst_type(ctx, syms, types, t));
+            instantiated = instantiated.append(inference_context.as_inst_type(ctx, syms, types, t));
             current = current.tail();
         }
         let mut accessible = instantiated;
@@ -9917,8 +10523,7 @@ fn set_functional_info_step(
             _ => {}
         }
     }
-    if check_context.deferred_attr_context().mode
-        == crate::comp::deferred_attr::AttrMode::CHECK
+    if check_context.deferred_attr_context().mode == crate::comp::deferred_attr::AttrMode::CHECK
         && pt != syms.recovery_type
     {
         // check that functional interface class is well-formed
@@ -9940,7 +10545,13 @@ fn set_functional_info_step(
                 target,
                 abstract_flag,
             ) {
-                chk_guard.check_implementations_for(ctx, syms, env.tree.expect("env tree"), csym, csym);
+                chk_guard.check_implementations_for(
+                    ctx,
+                    syms,
+                    env.tree.expect("env tree"),
+                    csym,
+                    csym,
+                );
                 ctx.sym_mut(csym).flags_field |= crate::code::flags::INTERFACE as i64;
                 let csym_type = ctx.sym(csym).ty.expect("functional interface class type");
                 if types
@@ -9964,9 +10575,7 @@ fn set_functional_info_step(
 /// Java: Type checked exception classification helper used by checkExConstraints.
 #[allow(clippy::collapsible_if)]
 fn undetvar_set_throw(ctx: &mut CompilerContext, t: TypeId) {
-    if let crate::code::type_::TypeKindData::UndetVar { kind, .. } =
-        &mut ctx.typ_mut(t).kind
-    {
+    if let crate::code::type_::TypeKindData::UndetVar { kind, .. } = &mut ctx.typ_mut(t).kind {
         if *kind != crate::code::type_::UndetVarKind::CAPTURED {
             *kind = crate::code::type_::UndetVarKind::THROWS;
         }
@@ -9975,14 +10584,8 @@ fn undetvar_set_throw(ctx: &mut CompilerContext, t: TypeId) {
 
 impl Attr {
     /// Java: boolean isSerializable(Type t) (Attr.java:5521-5530).
-    fn is_serializable(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        t: TypeId,
-    ) -> bool {
-        self.types
-            .is_subtype(ctx, syms, t, syms.serializable_type)
+    fn is_serializable(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> bool {
+        self.types.is_subtype(ctx, syms, t, syms.serializable_type)
     }
 
     /// Java: private void setFunctionalInfo(Env, JCFunctionalExpression, Type,
@@ -10033,13 +10636,7 @@ impl Attr {
                 rs: self.rs.borrow().clone(),
                 ts: ts.clone(),
             });
-            inference_context.add_free_type_listener(
-                ctx,
-                syms,
-                &self.types,
-                ts.clone(),
-                listener,
-            );
+            inference_context.add_free_type_listener(ctx, syms, &self.types, ts.clone(), listener);
         } else {
             let mut current = ts.clone();
             while current.non_empty() {
@@ -10249,7 +10846,9 @@ impl Attr {
             Ok(()) => Rc::clone(env),
             Err(payload) => {
                 if payload.is::<BreakAttr>() {
-                    self.break_attr_env.take().expect("AssertionError: BreakAttr env")
+                    self.break_attr_env
+                        .take()
+                        .expect("AssertionError: BreakAttr env")
                 } else {
                     std::panic::resume_unwind(payload)
                 }
@@ -10311,17 +10910,19 @@ impl Attr {
         let result_info = self.result_info.clone().expect("resultInfo");
         // create an environment for attribution of the lambda expression
         let local_env = self.lambda_env(ctx, syms, that, &env);
-        let mut needs_recovery =
-            result_info.check_context.deferred_attr_context().mode
-                == crate::comp::deferred_attr::AttrMode::CHECK;
+        let mut needs_recovery = result_info.check_context.deferred_attr_context().mode
+            == crate::comp::deferred_attr::AttrMode::CHECK;
         if needs_recovery && self.is_serializable(ctx, syms, pt) {
             local_env.info.borrow_mut().is_serializable = true;
             local_env.info.borrow_mut().is_serializable_lambda = true;
         }
         let (params, body, param_kind) = match &ctx.tree(that).kind {
-            TreeKind::Lambda { params, body, param_kind, .. } => {
-                (params.clone(), *body, *param_kind)
-            }
+            TreeKind::Lambda {
+                params,
+                body,
+                param_kind,
+                ..
+            } => (params.clone(), *body, *param_kind),
             _ => panic!("ClassCastException: JCLambda expected"),
         };
         let explicit_param_types: Option<List<TypeId>> =
@@ -10330,25 +10931,26 @@ impl Attr {
                 let mut result: List<TypeId> = List::nil();
                 let mut current = crate::tree::tree_info::types(ctx, &params);
                 while current.non_empty() {
-                    result = result.append(
-                        (*current.head()).unwrap_or(syms.err_type),
-                    );
+                    result = result.append((*current.head()).unwrap_or(syms.err_type));
                     current = current.tail();
                 }
                 Some(result)
             } else {
                 None
             };
-        let target_info = match self.get_target_info(ctx, syms, that, &result_info, explicit_param_types) {
-            Ok(info) => info,
-            Err(ex) => {
-                if let Some(diag) = ex.get_diagnostic() {
-                    result_info.check_context.report(ctx, ctx.tree(that).pos, diag);
+        let target_info =
+            match self.get_target_info(ctx, syms, that, &result_info, explicit_param_types) {
+                Ok(info) => info,
+                Err(ex) => {
+                    if let Some(diag) = ex.get_diagnostic() {
+                        result_info
+                            .check_context
+                            .report(ctx, ctx.tree(that).pos, diag);
+                    }
+                    let error = self.types.create_error_type_original(ctx, Some(pt), syms);
+                    return Ok(error);
                 }
-                let error = self.types.create_error_type_original(ctx, Some(pt), syms);
-                return Ok(error);
-            }
-        };
+            };
         let current_target = target_info.target;
         let lambda_type = target_info.descriptor;
         if ctx.typ(current_target).has_tag(TypeTag::ERROR) {
@@ -10370,16 +10972,22 @@ impl Attr {
             // lambda expression target desc cannot be a generic method
             let target_tsym = ctx.typ(current_target).tsym.expect("current target symbol");
             let kind = crate::code::kinds::kind_name(ctx.sym(target_tsym), ctx);
-            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::invalid_generic_lambda_target(
-                    Self::type_arg_placeholder(ctx, lambda_type),
-                    crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                        crate::comp::resolve::symbol_display_name(ctx, target_tsym),
+            let fragment = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::invalid_generic_lambda_target(
+                        crate::comp::check::type_arg_with_where(ctx, lambda_type),
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                            kind.name(),
+                        ),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            ctx.sym(target_tsym).name.to_java_string().to_string_lossy(),
+                        ),
                     ),
-                ),
-            ));
-            result_info.check_context.report(ctx, ctx.tree(that).pos, &fragment);
+                ));
+            result_info
+                .check_context
+                .report(ctx, ctx.tree(that).pos, &fragment);
             let error = self.types.create_error_type_original(ctx, Some(pt), syms);
             ctx.tree_mut(that).ty = Some(error);
             self.result = Some(error);
@@ -10401,9 +11009,10 @@ impl Attr {
                     *actuals.head()
                 };
                 let implicit = match &ctx.tree(param).kind {
-                    TreeKind::VariableDecl { vartype: Some(vartype), .. } => {
-                        ctx.tree(*vartype).pos == crate::util::position::NOPOS
-                    }
+                    TreeKind::VariableDecl {
+                        vartype: Some(vartype),
+                        ..
+                    } => ctx.tree(*vartype).pos == crate::util::position::NOPOS,
                     TreeKind::VariableDecl { vartype: None, .. } => true,
                     _ => false,
                 };
@@ -10423,8 +11032,12 @@ impl Attr {
                 let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                     crate::resources::compiler_properties::fragments::incompatible_arg_types_in_lambda(),
                 ));
-                result_info.check_context.report(ctx, ctx.tree(that).pos, &fragment);
-                let error = self.types.create_error_type_original(ctx, Some(current_target), syms);
+                result_info
+                    .check_context
+                    .report(ctx, ctx.tree(that).pos, &fragment);
+                let error = self
+                    .types
+                    .create_error_type_original(ctx, Some(current_target), syms);
                 ctx.tree_mut(that).ty = Some(error);
                 self.result = Some(error);
                 return Ok(error);
@@ -10451,7 +11064,14 @@ impl Attr {
         } else {
             self.attrib_tree_use(ctx, syms, body_tree, &local_env, body_result_info);
         }
-        let mut result = self.check(ctx, syms, that, current_target, KindSelector::VAL, &result_info);
+        let mut result = self.check(
+            ctx,
+            syms,
+            that,
+            current_target,
+            KindSelector::VAL,
+            &result_info,
+        );
         let is_speculative_round = result_info.check_context.deferred_attr_context().mode
             == crate::comp::deferred_attr::AttrMode::SPECULATIVE;
         // Java: preFlow(that); flow.analyzeLambda(env, that, make, isSpeculativeRound);
@@ -10467,12 +11087,26 @@ impl Attr {
                     let chk = Rc::clone(&chk_rc);
                     let infer_rc = Rc::clone(&self.infer);
                     let diags = Rc::clone(&self.diags);
-                    self.pre_flow(ctx, syms, &mut recover, &rs, &infer_rc, &chk, &diags, &env, that);
+                    self.pre_flow(
+                        ctx,
+                        syms,
+                        &mut recover,
+                        &rs,
+                        &infer_rc,
+                        &chk,
+                        &diags,
+                        &env,
+                        that,
+                    );
                 }
             }
         }
         {
-            let flow_rc = self.flow.borrow().clone().expect("AssertionError: flow service must be installed");
+            let flow_rc = self
+                .flow
+                .borrow()
+                .clone()
+                .expect("AssertionError: flow service must be installed");
             let make = Rc::clone(&self.make);
             flow_rc.analyze_lambda(ctx, syms, &env, that, &make, is_speculative_round);
         }
@@ -10484,11 +11118,21 @@ impl Attr {
             let lambda_thrown = ctx.typ(lambda_type).get_thrown_types(ctx);
             if inference_context.free_list(ctx, syms, &self.types, lambda_thrown.clone()) {
                 let inferred_thrown_types = {
-                    let flow_rc = self.flow.borrow().clone().expect("AssertionError: flow service must be installed");
+                    let flow_rc = self
+                        .flow
+                        .borrow()
+                        .clone()
+                        .expect("AssertionError: flow service must be installed");
                     let make = Rc::clone(&self.make);
                     flow_rc.analyze_lambda_thrown_types(ctx, syms, &env, that, &make)
                 };
-                if !self.check_ex_constraints(ctx, syms, inferred_thrown_types, lambda_thrown.clone(), &inference_context) {
+                if !self.check_ex_constraints(
+                    ctx,
+                    syms,
+                    inferred_thrown_types,
+                    lambda_thrown.clone(),
+                    &inference_context,
+                ) {
                     let thrown_display = self
                         .names
                         .empty
@@ -10589,7 +11233,9 @@ impl Attr {
         };
         let res_type = if mode == crate::tree::jc_tree::ReferenceMode::NEW {
             let expr = match &ctx.tree(tree).kind {
-                TreeKind::MemberReference { expr: Some(expr), .. } => *expr,
+                TreeKind::MemberReference {
+                    expr: Some(expr), ..
+                } => *expr,
                 _ => panic!("AssertionError: member reference without qualifier"),
             };
             let expr_type = ctx.tree(expr).ty.unwrap_or_else(|| self.no_type(ctx));
@@ -10605,8 +11251,7 @@ impl Attr {
         if ctx.typ(return_type).has_tag(TypeTag::VOID) {
             incompatible_return_type = None;
         }
-        if !ctx.typ(return_type).has_tag(TypeTag::VOID)
-            && !ctx.typ(res_type).has_tag(TypeTag::VOID)
+        if !ctx.typ(return_type).has_tag(TypeTag::VOID) && !ctx.typ(res_type).has_tag(TypeTag::VOID)
         {
             let func_context = FunctionalReturnContext {
                 enclosing: Rc::clone(check_context),
@@ -10637,22 +11282,26 @@ impl Attr {
             }
         }
         if let Some(incompatible_return_type) = incompatible_return_type {
-            let details = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::inconvertible_types(
-                    Self::type_arg_placeholder(ctx, incompatible_return_type),
-                    Self::type_arg_placeholder(
-                        ctx,
-                        self.types.get_return_type_public(ctx, descriptor),
+            let details = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::inconvertible_types(
+                        Self::type_arg_placeholder(ctx, incompatible_return_type),
+                        Self::type_arg_placeholder(
+                            ctx,
+                            self.types.get_return_type_public(ctx, descriptor),
+                        ),
                     ),
-                ),
-            ));
-            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::incompatible_ret_type_in_mref(
-                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
-                        Rc::new(details),
+                ));
+            let fragment = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::incompatible_ret_type_in_mref(
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                            Rc::new(details),
+                        ),
                     ),
-                ),
-            ));
+                ));
             check_context.report(ctx, ctx.tree(tree).pos, &fragment);
         } else {
             if inference_context.free(ctx, syms, &self.types, ref_type) {
@@ -10668,7 +11317,9 @@ impl Attr {
                     listener,
                 );
             } else {
-                if let TreeKind::MemberReference { referent_type, .. } = &mut ctx.tree_mut(tree).kind {
+                if let TreeKind::MemberReference { referent_type, .. } =
+                    &mut ctx.tree_mut(tree).kind
+                {
                     *referent_type = Some(ref_type);
                 }
             }
@@ -10676,7 +11327,13 @@ impl Attr {
         if !speculative_attr {
             let ref_thrown = ctx.typ(ref_type).get_thrown_types(ctx);
             let desc_thrown = ctx.typ(descriptor).get_thrown_types(ctx);
-            if !self.check_ex_constraints(ctx, syms, ref_thrown.clone(), desc_thrown, &inference_context) {
+            if !self.check_ex_constraints(
+                ctx,
+                syms,
+                ref_thrown.clone(),
+                desc_thrown,
+                &inference_context,
+            ) {
                 let mut args: Vec<crate::resources::diagnostic_contract::TypeArg> = Vec::new();
                 let mut current = ref_thrown;
                 while current.non_empty() {
@@ -10709,7 +11366,11 @@ impl Attr {
     ///   - the registered service dependencies must be installed.
     ///
     /// Upstream: Attr.java:3541-3760.
-    #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_lines,
+        clippy::collapsible_if,
+        clippy::too_many_arguments
+    )]
     fn visit_reference(
         &mut self,
         ctx: &mut CompilerContext,
@@ -10747,12 +11408,19 @@ impl Attr {
             return Ok(error);
         }
         let (expr, name, typeargs_opt, mode) = match &ctx.tree(that).kind {
-            TreeKind::MemberReference { expr: Some(expr), name, typeargs, mode, .. } => {
-                (*expr, name.clone(), typeargs.clone(), *mode)
-            }
+            TreeKind::MemberReference {
+                expr: Some(expr),
+                name,
+                typeargs,
+                mode,
+                ..
+            } => (*expr, name.clone(), typeargs.clone(), *mode),
             _ => panic!("ClassCastException: JCMemberReference expected"),
         };
         let typeargs = typeargs_opt.unwrap_or_else(List::nil);
+        // Java: Kinds.kindName(that.getMode()) — method references name a
+        // method, constructor references name a constructor.
+        let invalid_mref_kind = crate::code::kinds::kind_name_for_reference_mode(mode);
         let local_env = Env::dup_shared(&env, Some(that));
         // attribute the member reference qualifier - if this is a constructor
         // reference, the expected kind must be a type
@@ -10768,12 +11436,14 @@ impl Attr {
                         &|_| true,
                     )
                     .into_iter()
-                    .filter(|sym| {
-                        ctx.sym(*sym).name.to_java_string().to_string_lossy() == "call"
-                    })
+                    .filter(|sym| ctx.sym(*sym).name.to_java_string().to_string_lossy() == "call")
                     .map(|sym| {
                         (
-                            ctx.sym(sym).name.to_java_string().to_string_lossy().to_string(),
+                            ctx.sym(sym)
+                                .name
+                                .to_java_string()
+                                .to_string_lossy()
+                                .to_string(),
                             ctx.sym(sym).kind,
                             ctx.sym(sym).flags_field,
                         )
@@ -10807,11 +11477,7 @@ impl Attr {
                     ctx.tree(expr).pos,
                     crate::resources::compiler_properties::errors::invalid_mref(
                         crate::resources::diagnostic_contract::KindNameArg::placeholder(
-                            crate::code::kinds::kind_name(
-                                ctx.sym(ctx.typ(expr_type).tsym.expect("expr type symbol")),
-                                ctx,
-                            )
-                            .to_string(),
+                            invalid_mref_kind.name(),
                         ),
                         crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
                             Rc::new(self.diags.fragment(
@@ -10822,7 +11488,9 @@ impl Attr {
                         ),
                     ),
                 );
-                expr_type = self.types.create_error_type_original(ctx, Some(expr_type), syms);
+                expr_type = self
+                    .types
+                    .create_error_type_original(ctx, Some(expr_type), syms);
             }
         }
         if ctx.typ(expr_type).has_tag(TypeTag::ERROR) {
@@ -10830,7 +11498,8 @@ impl Attr {
             self.result = Some(expr_type);
             return Ok(expr_type);
         }
-        let is_static_selector = crate::tree::tree_info::is_static_selector(ctx, Some(expr), &self.names);
+        let is_static_selector =
+            crate::tree::tree_info::is_static_selector(ctx, Some(expr), &self.names);
         if is_static_selector {
             // Java: chk.validate(that.expr, env, false);
             {
@@ -10849,17 +11518,16 @@ impl Attr {
         } else {
             self.attrib_types(ctx, syms, typeargs.clone(), &local_env)
         };
-        let is_target_serializable = result_info
-            .check_context
-            .deferred_attr_context()
-            .mode
+        let is_target_serializable = result_info.check_context.deferred_attr_context().mode
             == crate::comp::deferred_attr::AttrMode::CHECK
             && self.is_serializable(ctx, syms, pt);
         let target_info = match self.get_target_info(ctx, syms, that, &result_info, None) {
             Ok(info) => info,
             Err(ex) => {
                 if let Some(diag) = ex.get_diagnostic() {
-                    result_info.check_context.report(ctx, ctx.tree(that).pos, diag);
+                    result_info
+                        .check_context
+                        .report(ctx, ctx.tree(that).pos, diag);
                 }
                 let error = self.types.create_error_type_original(ctx, Some(pt), syms);
                 return Ok(error);
@@ -10888,7 +11556,9 @@ impl Attr {
             let rs = rs_rc.borrow();
             if inference_context.free_list(ctx, syms, &self.types, argtypes.clone()) {
                 Rc::new(RefCell::new(crate::comp::resolve::MethodReferenceCheck {
-                    pending_inference_context: Rc::clone(result_info.check_context.inference_context()),
+                    pending_inference_context: Rc::clone(
+                        result_info.check_context.inference_context(),
+                    ),
                     diags: Rc::clone(&self.diags),
                 }))
             } else {
@@ -10925,7 +11595,9 @@ impl Attr {
         inference_context.rollback(ctx, syms, &self.types, saved_undet);
         if ctx.sym(ref_sym).kind != crate::code::kinds::Kind::MTH {
             let target_error = match ctx.sym(ref_sym).kind {
-                crate::code::kinds::Kind::ABSENT_MTH | crate::code::kinds::Kind::MISSING_ENCL => false,
+                crate::code::kinds::Kind::ABSENT_MTH | crate::code::kinds::Kind::MISSING_ENCL => {
+                    false
+                }
                 crate::code::kinds::Kind::WRONG_MTH
                 | crate::code::kinds::Kind::WRONG_MTHS
                 | crate::code::kinds::Kind::AMBIGUOUS
@@ -10935,12 +11607,26 @@ impl Attr {
             };
             let details = {
                 let rs = rs_rc.borrow();
-                rs_error_diagnostic(&rs, ctx, syms, ref_sym, ctx.tree(that).pos, Some(expr_type), &name, &argtypes, &typeargtypes)
+                rs_error_diagnostic(
+                    &rs,
+                    ctx,
+                    syms,
+                    ref_sym,
+                    ctx.tree(that).pos,
+                    Some(expr_type),
+                    &name,
+                    &argtypes,
+                    &typeargtypes,
+                )
             };
             if let Some(details) = details {
-                let kind = crate::code::kinds::kind_name(ctx.sym(ctx.typ(expr_type).tsym.expect("expr type symbol")), ctx);
-                let details_arg = crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(details));
-                let kind_arg = crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string());
+                let details_arg =
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(
+                        details,
+                    ));
+                let kind_arg = crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                    invalid_mref_kind.name(),
+                );
                 if target_error && current_target == recovery_type {
                     // a target error doesn't make sense during recovery stage
                     ctx.tree_mut(that).ty = Some(current_target);
@@ -10948,12 +11634,22 @@ impl Attr {
                     return Ok(current_target);
                 }
                 if target_error {
-                    let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                        crate::resources::compiler_properties::fragments::invalid_mref(kind_arg, details_arg),
-                    ));
-                    result_info.check_context.report(ctx, ctx.tree(that).pos, &fragment);
+                    let fragment = self
+                        .diags
+                        .fragment(crate::util::jc_diagnostic::Fragment::from(
+                            crate::resources::compiler_properties::fragments::invalid_mref(
+                                kind_arg,
+                                details_arg,
+                            ),
+                        ));
+                    result_info
+                        .check_context
+                        .report(ctx, ctx.tree(that).pos, &fragment);
                 } else {
-                    let info = crate::resources::compiler_properties::errors::invalid_mref(kind_arg, details_arg);
+                    let info = crate::resources::compiler_properties::errors::invalid_mref(
+                        kind_arg,
+                        details_arg,
+                    );
                     crate::util::abstract_log::AbstractLog::error_at(
                         &mut *self.log.borrow_mut(),
                         ctx.tree(that).pos,
@@ -10961,15 +11657,21 @@ impl Attr {
                     );
                 }
             }
-            let error = self.types.create_error_type_original(ctx, Some(current_target), syms);
+            let error = self
+                .types
+                .create_error_type_original(ctx, Some(current_target), syms);
             ctx.tree_mut(that).ty = Some(error);
             self.result = Some(error);
             return Ok(error);
         }
         let is_constructor = ctx.sym(ref_sym).is_constructor(&self.names);
-        let that_sym = if is_constructor { crate::code::symbol::base_symbol(ctx, ref_sym) } else { ref_sym };
+        let that_sym = if is_constructor {
+            crate::code::symbol::base_symbol(ctx, ref_sym)
+        } else {
+            ref_sym
+        };
         if let TreeKind::MemberReference { sym: slot, .. } = &mut ctx.tree_mut(that).kind {
-                *slot = Some(that_sym);
+            *slot = Some(that_sym);
         }
         if let Some(helper) = &helper {
             let reference_kind = helper.reference_kind(ctx, that_sym);
@@ -10986,7 +11688,11 @@ impl Attr {
                 }
                 None => true,
             };
-            if let TreeKind::MemberReference { owner_accessible: slot, .. } = &mut ctx.tree_mut(that).kind {
+            if let TreeKind::MemberReference {
+                owner_accessible: slot,
+                ..
+            } = &mut ctx.tree_mut(that).kind
+            {
                 *slot = accessible;
             }
         }
@@ -11000,9 +11706,15 @@ impl Attr {
             && mode == crate::tree::jc_tree::ReferenceMode::NEW
         {
             let enclosing_type = ctx.typ(expr_type).get_enclosing_type();
-            if let Some(enclosing_type) = enclosing_type.filter(|t| ctx.typ(*t).has_tag(TypeTag::CLASS)) {
+            if let Some(enclosing_type) =
+                enclosing_type.filter(|t| ctx.typ(*t).has_tag(TypeTag::CLASS))
+            {
                 let _ = enclosing_type;
-                let rs_rc2 = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                let rs_rc2 = self
+                    .rs
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: rs service must be installed");
                 let rs = rs_rc2.borrow_mut();
                 let types_rc = Rc::clone(&self.types);
                 rs.resolve_implicit_this(
@@ -11020,7 +11732,11 @@ impl Attr {
             == crate::comp::deferred_attr::AttrMode::CHECK
         {
             if let Some(helper) = &helper {
-                if let TreeKind::MemberReference { kind: Some(reference_kind), .. } = &ctx.tree(that).kind {
+                if let TreeKind::MemberReference {
+                    kind: Some(reference_kind),
+                    ..
+                } = &ctx.tree(that).kind
+                {
                     if is_static_selector
                         && reference_kind.is_unbound()
                         && self.types.is_raw_type_public(ctx, helper.site)
@@ -11031,34 +11747,50 @@ impl Attr {
                     }
                 }
             }
-            let static_ref = ctx.sym(that_sym).flags_field & (crate::code::flags::STATIC as i64) != 0;
+            let static_ref =
+                ctx.sym(that_sym).flags_field & (crate::code::flags::STATIC as i64) != 0;
             if static_ref && is_static_selector {
                 let expr_args =
-                crate::code::types::get_type_arguments_completed(ctx, syms, expr_type, None);
+                    crate::code::types::get_type_arguments_completed(ctx, syms, expr_type, None);
                 if !expr_args.is_empty() {
-                    let kind = crate::code::kinds::kind_name(ctx.sym(ctx.typ(expr_type).tsym.expect("expr symbol")), ctx);
-                    let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                    let fragment = self
+                        .diags
+                        .fragment(crate::util::jc_diagnostic::Fragment::from(
                         crate::resources::compiler_properties::fragments::static_mref_with_targs(),
                     ));
                     let info = crate::resources::compiler_properties::errors::invalid_mref(
-                        crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
-                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                            invalid_mref_kind.name(),
+                        ),
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                            Rc::new(fragment),
+                        ),
                     );
                     crate::util::abstract_log::AbstractLog::error_at(
                         &mut *self.log.borrow_mut(),
                         ctx.tree(expr).pos,
                         crate::util::jc_diagnostic::Error::from(info),
                     );
-                    let error = self.types.create_error_type_original(ctx, Some(current_target), syms);
+                    let error =
+                        self.types
+                            .create_error_type_original(ctx, Some(current_target), syms);
                     ctx.tree_mut(that).ty = Some(error);
                     self.result = Some(error);
                     return Ok(error);
                 }
             }
             if !static_ref {
-                if let TreeKind::MemberReference { kind: Some(reference_kind), .. } = &ctx.tree(that).kind {
+                if let TreeKind::MemberReference {
+                    kind: Some(reference_kind),
+                    ..
+                } = &ctx.tree(that).kind
+                {
                     if *reference_kind == crate::tree::jc_tree::ReferenceKind::SUPER {
-                        let rs_rc2 = self.rs.borrow().clone().expect("AssertionError: rs service must be installed");
+                        let rs_rc2 = self
+                            .rs
+                            .borrow()
+                            .clone()
+                            .expect("AssertionError: rs service must be installed");
                         let rs = rs_rc2.borrow_mut();
                         rs.check_non_abstract(ctx, simple_diag_pos(ctx.tree(that).pos), that_sym);
                     }
@@ -11070,11 +11802,12 @@ impl Attr {
                 chk.check_access_from_serializable_element(ctx, syms, that, true);
             }
         }
-        let check_info_context: Rc<dyn crate::comp::check::CheckContext> = Rc::new(FunctionalReturnContext {
-            enclosing: Rc::clone(&result_info.check_context),
-            basic_handler: Rc::clone(&self.basic_handler),
-            diags: Rc::clone(&self.diags),
-        });
+        let check_info_context: Rc<dyn crate::comp::check::CheckContext> =
+            Rc::new(FunctionalReturnContext {
+                enclosing: Rc::clone(&result_info.check_context),
+                basic_handler: Rc::clone(&self.basic_handler),
+                diags: Rc::clone(&self.diags),
+            });
         let desc_return_ty = self.types.get_return_type_public(ctx, desc);
         let ret_for_template = if ctx.typ(desc_return_ty).has_tag(TypeTag::VOID) {
             self.no_type(ctx)
@@ -11082,7 +11815,9 @@ impl Attr {
             desc_return_ty
         };
         let reference_kind_unbound = match &ctx.tree(that).kind {
-            TreeKind::MemberReference { kind: Some(kind), .. } => kind.is_unbound(),
+            TreeKind::MemberReference {
+                kind: Some(kind), ..
+            } => kind.is_unbound(),
             _ => false,
         };
         let params_for_template = if reference_kind_unbound {
@@ -11107,8 +11842,11 @@ impl Attr {
             None => expr_type,
         };
         let mut ref_type = self.check_id(ctx, syms, that, site, ref_sym, &local_env, &check_info);
-        if reference_kind_unbound && inference_context.free(ctx, syms, &self.types, *argtypes.head()) {
-            let head_undet = inference_context.as_undet_var(ctx, syms, &self.types, *argtypes.head());
+        if reference_kind_unbound
+            && inference_context.free(ctx, syms, &self.types, *argtypes.head())
+        {
+            let head_undet =
+                inference_context.as_undet_var(ctx, syms, &self.types, *argtypes.head());
             assert!(
                 self.types.is_subtype(ctx, syms, head_undet, expr_type),
                 "AssertionError: Can't get here"
@@ -11127,7 +11865,9 @@ impl Attr {
                 &check_info_params,
                 ref_return,
             );
-            ref_type = self.types.create_method_type_with_return(ctx, ref_type, adjusted);
+            ref_type = self
+                .types
+                .create_method_type_with_return(ctx, ref_type, adjusted);
         }
         let is_speculative_round = result_info.check_context.deferred_attr_context().mode
             == crate::comp::deferred_attr::AttrMode::SPECULATIVE;
@@ -11153,7 +11893,14 @@ impl Attr {
                 &list,
             );
         }
-        let result = self.check(ctx, syms, that, current_target, KindSelector::VAL, &result_info);
+        let result = self.check(
+            ctx,
+            syms,
+            that,
+            current_target,
+            KindSelector::VAL,
+            &result_info,
+        );
         self.result = Some(result);
         Ok(result)
     }
@@ -11210,8 +11957,7 @@ impl crate::comp::infer::FreeTypeListener for CheckAfterInferenceListener {
         types: &Types,
         inference_context: &crate::comp::infer::InferenceContext,
     ) -> Result<(), crate::comp::infer::InferenceException> {
-        let instantiated_found =
-            inference_context.as_inst_type(ctx, syms, types, self.found);
+        let instantiated_found = inference_context.as_inst_type(ctx, syms, types, self.found);
         let instantiated_pt = self
             .result_info
             .pt
@@ -11283,14 +12029,19 @@ fn check_after_inference(
             &mut *log.borrow_mut(),
             ctx.tree(tree).pos,
             crate::util::jc_diagnostic::Error::from(
-                crate::resources::compiler_properties::errors::unexpected_type(expected, found_kinds),
+                crate::resources::compiler_properties::errors::unexpected_type(
+                    expected,
+                    found_kinds,
+                ),
             ),
         );
         owntype = types.create_error_type_original(ctx, Some(found), syms);
     } else if allow_poly && inference_context.free(ctx, syms, types, found) {
         // delay the check if there are inference variables in the found type
         owntype = if should_check {
-            result_info.pt.unwrap_or_else(|| crate::code::symtab::no_type_id(ctx))
+            result_info
+                .pt
+                .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx))
         } else {
             found
         };
@@ -11306,13 +12057,7 @@ fn check_after_inference(
                 chk: Rc::clone(chk_service),
                 allow_poly,
             });
-            inference_context.add_free_type_listener(
-                ctx,
-                syms,
-                types,
-                List::of(found),
-                listener,
-            );
+            inference_context.add_free_type_listener(ctx, syms, types, List::of(found), listener);
         }
     } else {
         owntype = if should_check {
@@ -11328,14 +12073,9 @@ fn check_after_inference(
     owntype
 }
 
-
 impl Attr {
     /// Adapter: the modifier annotations of a VariableDecl/ClassDecl/MethodDecl.
-    fn modifiers_annotations(
-        &self,
-        ctx: &CompilerContext,
-        mods: Option<TreeId>,
-    ) -> List<TreeId> {
+    fn modifiers_annotations(&self, ctx: &CompilerContext, mods: Option<TreeId>) -> List<TreeId> {
         match mods.map(|mods| &ctx.tree(mods).kind) {
             Some(TreeKind::Modifiers { annotations, .. }) => annotations.clone(),
             _ => List::nil(),
@@ -11534,10 +12274,8 @@ pub fn wire_attr_services(
         crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler::instance(),
     );
     // 8. ArgumentAttr (ArgumentAttr.java:112-130)
-    let argument = crate::comp::argument_attr::ArgumentAttr::new(
-        Rc::clone(&deferred_cell),
-        Rc::clone(&diags),
-    );
+    let argument =
+        crate::comp::argument_attr::ArgumentAttr::new(Rc::clone(&deferred_cell), Rc::clone(&diags));
     // 9. TypeAnnotations (TypeAnnotations.java:105-118) — needs the Attr/Check
     // handles after the Annotate service exists.
     let type_annotations = Rc::new(crate::code::type_annotations::TypeAnnotations::new(
@@ -11613,9 +12351,10 @@ impl Attr {
             let anno = *current.head();
             current = current.tail();
             let anno_type = match &ctx.tree(anno).kind {
-                TreeKind::Annotation { annotation_type: Some(annotation_type), .. } => {
-                    ctx.tree(*annotation_type).ty
-                }
+                TreeKind::Annotation {
+                    annotation_type: Some(annotation_type),
+                    ..
+                } => ctx.tree(*annotation_type).ty,
                 _ => None,
             };
             if let Some(anno_type) = anno_type {
@@ -11681,15 +12420,19 @@ impl Attr {
                 if !ctx.sym(c).is_record() {
                     let warning = crate::util::jc_diagnostic::Warning::from(
                         crate::resources::compiler_properties::warnings::missing_s_v_u_i_d(
-                            crate::resources::diagnostic_contract::SymbolArg::placeholder(c_display),
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                c_display,
+                            ),
                         ),
                     );
                     crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
                         &mut *self.log.borrow_mut(),
                         Some(crate::code::lint::LintCategory::SERIAL),
-                        Some(std::rc::Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
-                            ctx.tree(tree).pos,
-                        ))),
+                        Some(std::rc::Rc::new(
+                            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                                ctx.tree(tree).pos,
+                            ),
+                        )),
                         warning,
                     );
                 }
@@ -11716,7 +12459,9 @@ impl Attr {
             crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
                 &mut *self.log.borrow_mut(),
                 Some(crate::code::lint::LintCategory::SERIAL),
-                Some(std::rc::Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
+                Some(std::rc::Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                )),
                 warning,
             );
         } else if !ctx
@@ -11733,7 +12478,9 @@ impl Attr {
             crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
                 &mut *self.log.borrow_mut(),
                 Some(crate::code::lint::LintCategory::SERIAL),
-                Some(std::rc::Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
+                Some(std::rc::Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                )),
                 warning,
             );
         } else if ctx.symbol_get_const_value(syms, svuid, self).is_none() {
@@ -11745,7 +12492,9 @@ impl Attr {
             crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
                 &mut *self.log.borrow_mut(),
                 Some(crate::code::lint::LintCategory::SERIAL),
-                Some(std::rc::Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
+                Some(std::rc::Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                )),
                 warning,
             );
         }
@@ -11782,59 +12531,40 @@ impl Attr {
         tree_scanner_visitor_delegate!(TypeAnnotationsValidator<'a>, 'a);
         #[allow(clippy::collapsible_if, clippy::too_many_lines)]
         impl<'a> TreeScannerVisitor for TypeAnnotationsValidator<'a> {
-            /// Java: public void visitAnnotation(JCAnnotation tree) (Attr.java:5596-5599).
-            fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-                {
-                    let chk_rc = Rc::clone(&self.attr.chk);
-                    let chk = Rc::clone(&chk_rc);
-                    chk.validate_type_annotation(ctx, self.syms, tree, false);
-                }
-                // Java: super.visitAnnotation(tree);
-                let (annotation_type, args) = match &ctx.tree(tree).kind {
-                    TreeKind::Annotation { annotation_type, args, .. } => (*annotation_type, args.clone()),
-                    _ => (None, List::nil()),
-                };
-                self.scan(ctx, annotation_type);
-                self.scan_list(ctx, &args);
-            }
-
-            /// Java: public void visitAnnotatedType(JCAnnotatedType tree) (Attr.java:5600-5604).
-            fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-                let underlying = match &ctx.tree(tree).kind {
-                    TreeKind::AnnotatedType { underlying_type, .. } => *underlying_type,
-                    _ => None,
-                };
-                let has_error = underlying
-                    .and_then(|underlying| ctx.tree(underlying).ty)
-                    .map(|ty| ctx.typ(ty).has_tag(TypeTag::ERROR))
-                    .unwrap_or(false);
-                if !has_error {
-                    // Java: super.visitAnnotatedType(tree);
-                    let (annotations, underlying) = match &ctx.tree(tree).kind {
-                        TreeKind::AnnotatedType { annotations, underlying_type } => {
-                            (annotations.clone(), *underlying_type)
-                        }
-                        _ => (List::nil(), None),
-                    };
-                    self.scan_list(ctx, &annotations);
-                    self.scan(ctx, underlying);
-                }
-            }
-
-            /// Java: public void visitTypeParameter(JCTypeParameter tree) (Attr.java:5605-5613).
-            fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-                let (annotations, bounds) = match &ctx.tree(tree).kind {
-                    TreeKind::TypeParameter { annotations, bounds, .. } => {
-                        (annotations.clone(), bounds.clone())
-                    }
+            /// Java: public void visitClassDef(JCClassDecl tree) (Attr.java:5687-5703).
+            fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let (mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
+                    TreeKind::ClassDecl {
+                        mods,
+                        typarams,
+                        extending,
+                        implementing,
+                        defs,
+                        ..
+                    } => (
+                        *mods,
+                        typarams.clone(),
+                        *extending,
+                        implementing.clone(),
+                        defs.clone(),
+                    ),
                     _ => return,
                 };
-                {
-                    let chk_rc = Rc::clone(&self.attr.chk);
-                    let chk = Rc::clone(&chk_rc);
-                    chk.validate_type_annotations(ctx, self.syms, &annotations, true);
+                if self.sig_only {
+                    self.scan(ctx, mods);
+                    self.scan_list(ctx, &typarams);
+                    self.scan(ctx, extending);
+                    self.scan_list(ctx, &implementing);
                 }
-                self.scan_list(ctx, &bounds);
+                let mut current = defs;
+                while current.non_empty() {
+                    let member = *current.head();
+                    current = current.tail();
+                    if ctx.tree(member).has_tag(Tag::CLASSDEF) {
+                        continue;
+                    }
+                    self.scan(ctx, Some(member));
+                }
             }
 
             /// Java: public void visitMethodDef(JCMethodDecl tree) (Attr.java:5614-5637).
@@ -11904,9 +12634,13 @@ impl Attr {
             /// Java: public void visitVarDef(JCVariableDecl tree) (Attr.java:5638-5648).
             fn visit_var_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
                 let (mods, vartype, init, sym) = match &ctx.tree(tree).kind {
-                    TreeKind::VariableDecl { mods, vartype, init, sym, .. } => {
-                        (*mods, *vartype, *init, *sym)
-                    }
+                    TreeKind::VariableDecl {
+                        mods,
+                        vartype,
+                        init,
+                        sym,
+                        ..
+                    } => (*mods, *vartype, *init, *sym),
                     _ => return,
                 };
                 if let Some(vartype) = vartype {
@@ -11922,6 +12656,128 @@ impl Attr {
                 self.scan(ctx, vartype);
                 if !self.sig_only {
                     self.scan(ctx, init);
+                }
+            }
+
+            /// Java: public void visitBlock(JCBlock tree) (Attr.java:5704-5708).
+            fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                if !self.sig_only {
+                    let stats = match &ctx.tree(tree).kind {
+                        TreeKind::Block { stats, .. } => stats.clone(),
+                        _ => List::nil(),
+                    };
+                    self.scan_list(ctx, &stats);
+                }
+            }
+
+            /// Java: public void visitNewClass(JCNewClass tree) (Attr.java:5661-5676).
+            fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let (clazz, def) = match &ctx.tree(tree).kind {
+                    TreeKind::NewClass { clazz, def, .. } => (*clazz, *def),
+                    _ => return,
+                };
+                if let Some(clazz) = clazz {
+                    if let Some(clazz_ty) = ctx.tree(clazz).ty {
+                        let clazz_annotations = match &ctx.tree(clazz).kind {
+                            TreeKind::AnnotatedType { annotations, .. } => annotations.clone(),
+                            _ => List::nil(),
+                        };
+                        if !clazz_annotations.is_empty() {
+                            if let Some(clazz_tsym) = ctx.typ(clazz_ty).tsym {
+                                self.check_for_declaration_annotations(
+                                    ctx,
+                                    &clazz_annotations,
+                                    clazz_tsym,
+                                );
+                            }
+                        }
+                        if let Some(def) = def {
+                            let def_mods = match &ctx.tree(def).kind {
+                                TreeKind::ClassDecl { mods, .. } => *mods,
+                                _ => None,
+                            };
+                            let def_annotations = self.attr.modifiers_annotations(ctx, def_mods);
+                            if let Some(clazz_tsym) = ctx.typ(clazz_ty).tsym {
+                                self.check_for_declaration_annotations(
+                                    ctx,
+                                    &def_annotations,
+                                    clazz_tsym,
+                                );
+                            }
+                        }
+                        self.validate_annotated_type(ctx, clazz, clazz_ty);
+                    }
+                }
+                // Java: super.visitNewClass(tree);
+                let (encl, typeargs, clazz, args, def) = match &ctx.tree(tree).kind {
+                    TreeKind::NewClass {
+                        encl,
+                        typeargs,
+                        clazz,
+                        args,
+                        def,
+                        ..
+                    } => (*encl, typeargs.clone(), *clazz, args.clone(), *def),
+                    _ => (None, List::nil(), None, List::nil(), None),
+                };
+                self.scan(ctx, encl);
+                self.scan_list(ctx, &typeargs);
+                self.scan(ctx, clazz);
+                self.scan_list(ctx, &args);
+                self.scan(ctx, def);
+            }
+
+            /// Java: public void visitNewArray(JCNewArray tree) (Attr.java:5677-5686).
+            fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let elemtype = match &ctx.tree(tree).kind {
+                    TreeKind::NewArray { elemtype, .. } => *elemtype,
+                    _ => None,
+                };
+                if let Some(elemtype) = elemtype {
+                    if let Some(elem_ty) = ctx.tree(elemtype).ty {
+                        let elem_annotations = match &ctx.tree(elemtype).kind {
+                            TreeKind::AnnotatedType { annotations, .. } => annotations.clone(),
+                            _ => List::nil(),
+                        };
+                        if !elem_annotations.is_empty() {
+                            if let Some(elem_tsym) = ctx.typ(elem_ty).tsym {
+                                self.check_for_declaration_annotations(
+                                    ctx,
+                                    &elem_annotations,
+                                    elem_tsym,
+                                );
+                            }
+                        }
+                        self.validate_annotated_type(ctx, elemtype, elem_ty);
+                    }
+                }
+                // Java: super.visitNewArray(tree);
+                let (elemtype, dims, annotations, dim_annotations, elems) =
+                    match &ctx.tree(tree).kind {
+                        TreeKind::NewArray {
+                            elemtype,
+                            dims,
+                            annotations,
+                            dim_annotations,
+                            elems,
+                            ..
+                        } => (
+                            *elemtype,
+                            dims.clone(),
+                            annotations.clone(),
+                            dim_annotations.clone(),
+                            elems.clone(),
+                        ),
+                        _ => (None, List::nil(), List::nil(), List::nil(), None),
+                    };
+                self.scan(ctx, elemtype);
+                self.scan_list(ctx, &dims);
+                self.scan_list(ctx, &annotations);
+                for dim_group in dim_annotations.iter() {
+                    self.scan_list(ctx, &dim_group);
+                }
+                if let Some(elems) = elems {
+                    self.scan_list(ctx, &elems);
                 }
             }
 
@@ -11968,124 +12824,69 @@ impl Attr {
                 self.scan(ctx, test_pattern);
             }
 
-            /// Java: public void visitNewClass(JCNewClass tree) (Attr.java:5661-5676).
-            fn visit_new_class(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-                let (clazz, def) = match &ctx.tree(tree).kind {
-                    TreeKind::NewClass { clazz, def, .. } => (*clazz, *def),
+            /// Java: public void visitTypeParameter(JCTypeParameter tree) (Attr.java:5605-5613).
+            fn visit_type_parameter(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let (annotations, bounds) = match &ctx.tree(tree).kind {
+                    TreeKind::TypeParameter {
+                        annotations,
+                        bounds,
+                        ..
+                    } => (annotations.clone(), bounds.clone()),
                     _ => return,
                 };
-                if let Some(clazz) = clazz {
-                    if let Some(clazz_ty) = ctx.tree(clazz).ty {
-                        let clazz_annotations = match &ctx.tree(clazz).kind {
-                            TreeKind::AnnotatedType { annotations, .. } => annotations.clone(),
-                            _ => List::nil(),
-                        };
-                        if !clazz_annotations.is_empty() {
-                            if let Some(clazz_tsym) = ctx.typ(clazz_ty).tsym {
-                                self.check_for_declaration_annotations(ctx, &clazz_annotations, clazz_tsym);
-                            }
-                        }
-                        if let Some(def) = def {
-                            let def_mods = match &ctx.tree(def).kind {
-                                TreeKind::ClassDecl { mods, .. } => *mods,
-                                _ => None,
-                            };
-                            let def_annotations = self.attr.modifiers_annotations(ctx, def_mods);
-                            if let Some(clazz_tsym) = ctx.typ(clazz_ty).tsym {
-                                self.check_for_declaration_annotations(ctx, &def_annotations, clazz_tsym);
-                            }
-                        }
-                        self.validate_annotated_type(ctx, clazz, clazz_ty);
-                    }
+                {
+                    let chk_rc = Rc::clone(&self.attr.chk);
+                    let chk = Rc::clone(&chk_rc);
+                    chk.validate_type_annotations(ctx, self.syms, &annotations, true);
                 }
-                // Java: super.visitNewClass(tree);
-                let (encl, typeargs, clazz, args, def) = match &ctx.tree(tree).kind {
-                    TreeKind::NewClass { encl, typeargs, clazz, args, def, .. } => {
-                        (*encl, typeargs.clone(), *clazz, args.clone(), *def)
-                    }
-                    _ => (None, List::nil(), None, List::nil(), None),
-                };
-                self.scan(ctx, encl);
-                self.scan_list(ctx, &typeargs);
-                self.scan(ctx, clazz);
-                self.scan_list(ctx, &args);
-                self.scan(ctx, def);
+                self.scan_list(ctx, &bounds);
             }
 
-            /// Java: public void visitNewArray(JCNewArray tree) (Attr.java:5677-5686).
-            fn visit_new_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-                let elemtype = match &ctx.tree(tree).kind {
-                    TreeKind::NewArray { elemtype, .. } => *elemtype,
+            /// Java: public void visitAnnotation(JCAnnotation tree) (Attr.java:5596-5599).
+            fn visit_annotation(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                {
+                    let chk_rc = Rc::clone(&self.attr.chk);
+                    let chk = Rc::clone(&chk_rc);
+                    chk.validate_type_annotation(ctx, self.syms, tree, false);
+                }
+                // Java: super.visitAnnotation(tree);
+                let (annotation_type, args) = match &ctx.tree(tree).kind {
+                    TreeKind::Annotation {
+                        annotation_type,
+                        args,
+                        ..
+                    } => (*annotation_type, args.clone()),
+                    _ => (None, List::nil()),
+                };
+                self.scan(ctx, annotation_type);
+                self.scan_list(ctx, &args);
+            }
+
+            /// Java: public void visitAnnotatedType(JCAnnotatedType tree) (Attr.java:5600-5604).
+            fn visit_annotated_type(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+                let underlying = match &ctx.tree(tree).kind {
+                    TreeKind::AnnotatedType {
+                        underlying_type, ..
+                    } => *underlying_type,
                     _ => None,
                 };
-                if let Some(elemtype) = elemtype {
-                    if let Some(elem_ty) = ctx.tree(elemtype).ty {
-                        let elem_annotations = match &ctx.tree(elemtype).kind {
-                            TreeKind::AnnotatedType { annotations, .. } => annotations.clone(),
-                            _ => List::nil(),
-                        };
-                        if !elem_annotations.is_empty() {
-                            if let Some(elem_tsym) = ctx.typ(elem_ty).tsym {
-                                self.check_for_declaration_annotations(ctx, &elem_annotations, elem_tsym);
-                            }
-                        }
-                        self.validate_annotated_type(ctx, elemtype, elem_ty);
-                    }
-                }
-                // Java: super.visitNewArray(tree);
-                let (elemtype, dims, annotations, dim_annotations, elems) = match &ctx.tree(tree).kind {
-                    TreeKind::NewArray { elemtype, dims, annotations, dim_annotations, elems, .. } => {
-                        (*elemtype, dims.clone(), annotations.clone(), dim_annotations.clone(), elems.clone())
-                    }
-                    _ => (None, List::nil(), List::nil(), List::nil(), None),
-                };
-                self.scan(ctx, elemtype);
-                self.scan_list(ctx, &dims);
-                self.scan_list(ctx, &annotations);
-                for dim_group in dim_annotations.iter() {
-                    self.scan_list(ctx, &dim_group);
-                }
-                if let Some(elems) = elems {
-                    self.scan_list(ctx, &elems);
-                }
-            }
-
-            /// Java: public void visitClassDef(JCClassDecl tree) (Attr.java:5687-5703).
-            fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-                let (mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
-                    TreeKind::ClassDecl { mods, typarams, extending, implementing, defs, .. } => {
-                        (*mods, typarams.clone(), *extending, implementing.clone(), defs.clone())
-                    }
-                    _ => return,
-                };
-                if self.sig_only {
-                    self.scan(ctx, mods);
-                    self.scan_list(ctx, &typarams);
-                    self.scan(ctx, extending);
-                    self.scan_list(ctx, &implementing);
-                }
-                let mut current = defs;
-                while current.non_empty() {
-                    let member = *current.head();
-                    current = current.tail();
-                    if ctx.tree(member).has_tag(Tag::CLASSDEF) {
-                        continue;
-                    }
-                    self.scan(ctx, Some(member));
-                }
-            }
-
-            /// Java: public void visitBlock(JCBlock tree) (Attr.java:5704-5708).
-            fn visit_block(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-                if !self.sig_only {
-                    let stats = match &ctx.tree(tree).kind {
-                        TreeKind::Block { stats, .. } => stats.clone(),
-                        _ => List::nil(),
+                let has_error = underlying
+                    .and_then(|underlying| ctx.tree(underlying).ty)
+                    .map(|ty| ctx.typ(ty).has_tag(TypeTag::ERROR))
+                    .unwrap_or(false);
+                if !has_error {
+                    // Java: super.visitAnnotatedType(tree);
+                    let (annotations, underlying) = match &ctx.tree(tree).kind {
+                        TreeKind::AnnotatedType {
+                            annotations,
+                            underlying_type,
+                        } => (annotations.clone(), *underlying_type),
+                        _ => (List::nil(), None),
                     };
-                    self.scan_list(ctx, &stats);
+                    self.scan_list(ctx, &annotations);
+                    self.scan(ctx, underlying);
                 }
             }
-
         }
 
         #[allow(clippy::collapsible_if, clippy::too_many_lines)]
@@ -12113,9 +12914,13 @@ impl Attr {
                     let Some(attribute) = attribute else { continue };
                     let ta_rc = self.attr.type_annotations.borrow().clone();
                     let target = match ta_rc {
-                        Some(ta_rc) => {
-                            ta_rc.annotation_target_type(ctx, self.syms, attribute, sym, Some(&mut *self.attr))
-                        }
+                        Some(ta_rc) => ta_rc.annotation_target_type(
+                            ctx,
+                            self.syms,
+                            attribute,
+                            sym,
+                            Some(&mut *self.attr),
+                        ),
                         None => return,
                     };
                     if target == crate::code::type_annotations::AnnotationType::DECLARATION {
@@ -12195,9 +13000,10 @@ impl Attr {
                         }
                     } else if ctx.tree(encl_tr).tag == Tag::ANNOTATED_TYPE {
                         let (annotations, underlying) = match &ctx.tree(encl_tr).kind {
-                            TreeKind::AnnotatedType { annotations, underlying_type } => {
-                                (annotations.clone(), *underlying_type)
-                            }
+                            TreeKind::AnnotatedType {
+                                annotations,
+                                underlying_type,
+                            } => (annotations.clone(), *underlying_type),
                             _ => (List::nil(), None),
                         };
                         let encl_none = encl_ty
@@ -12206,26 +13012,38 @@ impl Attr {
                         if encl_none {
                             let count = annotations.length();
                             if count == 1 {
-                                let info = crate::resources::compiler_properties::errors::cant_type_annotate_scoping(vec![
-                                    crate::resources::diagnostic_contract::AnnotationArg::placeholder("type annotation"),
-                                ]);
+                                let annotation = *annotations.head();
+                                let display = ctx
+                                    .tree(annotation)
+                                    .ty
+                                    .map(|ty| annotation_type_display(ctx, ty))
+                                    .unwrap_or_default();
+                                let info = crate::resources::compiler_properties::errors::cant_type_annotate_scoping1(
+                                    crate::resources::diagnostic_contract::AnnotationArg::placeholder(display),
+                                );
                                 crate::util::abstract_log::AbstractLog::error_at(
                                     &mut *self.attr.log.borrow_mut(),
-                                    underlying.map(|underlying| ctx.tree(underlying).pos).unwrap_or(ctx.tree(encl_tr).pos),
+                                    underlying
+                                        .map(|underlying| ctx.tree(underlying).pos)
+                                        .unwrap_or(ctx.tree(encl_tr).pos),
                                     crate::util::jc_diagnostic::Error::from(info),
                                 );
                             } else {
-                                let mut args: Vec<crate::resources::diagnostic_contract::AnnotationArg> = Vec::new();
+                                let mut args: Vec<
+                                    crate::resources::diagnostic_contract::AnnotationArg,
+                                > = Vec::new();
                                 for annotation in annotations.iter() {
                                     let ty = ctx.tree(annotation).ty;
                                     args.push(crate::resources::diagnostic_contract::AnnotationArg::placeholder(
-                                        ty.map(|ty| crate::comp::attr::type_display_of(ctx, ty)).unwrap_or_default(),
+                                        ty.map(|ty| annotation_type_display(ctx, ty)).unwrap_or_default(),
                                     ));
                                 }
                                 let info = crate::resources::compiler_properties::errors::cant_type_annotate_scoping(args);
                                 crate::util::abstract_log::AbstractLog::error_at(
                                     &mut *self.attr.log.borrow_mut(),
-                                    underlying.map(|underlying| ctx.tree(underlying).pos).unwrap_or(ctx.tree(encl_tr).pos),
+                                    underlying
+                                        .map(|underlying| ctx.tree(underlying).pos)
+                                        .unwrap_or(ctx.tree(encl_tr).pos),
                                     crate::util::jc_diagnostic::Error::from(info),
                                 );
                             }
@@ -12309,7 +13127,11 @@ impl Attr {
                 }
             }
         }
-        let mut validator = TypeAnnotationsValidator { attr: self, sig_only, syms };
+        let mut validator = TypeAnnotationsValidator {
+            attr: self,
+            sig_only,
+            syms,
+        };
         validator.scan(ctx, Some(tree));
     }
 }
@@ -12431,7 +13253,6 @@ impl Attr {
         self.attrib_stat(ctx, syms, tree, &env);
     }
 
-
     pub fn attrib_class_with_pos(
         &mut self,
         ctx: &mut CompilerContext,
@@ -12464,15 +13285,10 @@ impl Attr {
     ///
     /// # Panics
     ///   - the module/package declaration branches need the injected Modules
-///     service (installed by the bootstrap).
+    ///     service (installed by the bootstrap).
     ///
     /// Upstream: Attr.java:5143-5155.
-    pub fn attrib(
-        &mut self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        env: &Rc<Env<AttrContext>>,
-    ) {
+    pub fn attrib(&mut self, ctx: &mut CompilerContext, syms: &Symtab, env: &Rc<Env<AttrContext>>) {
         let tree = env.tree.expect("env tree");
         match ctx.tree(tree).tag {
             Tag::MODULEDEF => {
@@ -12488,7 +13304,10 @@ impl Attr {
                 // Java: attribPackage(env.tree.pos(), ((JCPackageDecl) env.tree).packge)
                 let pos = ctx.tree(tree).pos;
                 let p = match &ctx.tree(tree).kind {
-                    TreeKind::PackageDecl { packge: Some(packge), .. } => *packge,
+                    TreeKind::PackageDecl {
+                        packge: Some(packge),
+                        ..
+                    } => *packge,
                     _ => panic!("ClassCastException: JCPackageDecl expected"),
                 };
                 self.attrib_package_with_pos(ctx, syms, pos, p);
@@ -12580,9 +13399,7 @@ impl Attr {
                 Some(env) => env,
                 None => return,
             };
-            let env_tree = {
-                env.tree.expect("class env tree")
-            };
+            let env_tree = { env.tree.expect("class env tree") };
             // sealed-class checks (Attr.java:5230-5305)
             let permitted = crate::code::symbol::Symbol::permitted_subs(ctx, c);
             let is_permitted_explicit = crate::code::symbol::Symbol::is_permitted_explicit(ctx, c);
@@ -12602,14 +13419,38 @@ impl Attr {
             if ctx.sym(c).is_sealed() {
                 let mut permitted_types: Vec<SymbolId> = Vec::new();
                 let c_pkg = crate::code::symbol::packge(ctx, c);
-                let c_module = c_pkg.and_then(|pkg| crate::code::symbol::Symbol::symbol_module(ctx, pkg));
+                let c_module =
+                    c_pkg.and_then(|pkg| crate::code::symbol::Symbol::symbol_module(ctx, pkg));
                 let unnamed_module = syms.unnamed_module;
                 let no_module = syms.no_module;
-                let sealed_in_unnamed = c_module == Some(unnamed_module) || c_module == Some(no_module);
+                let sealed_in_unnamed =
+                    c_module == Some(unnamed_module) || c_module == Some(no_module);
                 let mut permitted_current = permitted.clone();
+                // Java: the invalid-permits diagnostics point at the entry in
+                // the permits clause (not at the sealed class or the permitted
+                // class declaration).
+                let permit_positions: Vec<i32> = match &ctx.tree(env_tree).kind {
+                    crate::tree::jc_tree::TreeKind::ClassDecl { permitting, .. } => {
+                        permitting.iter().map(|entry| ctx.tree(entry).pos).collect()
+                    }
+                    _ => Vec::new(),
+                };
+                let mut permit_index = 0usize;
                 while permitted_current.non_empty() {
                     let sub_type_sym = *permitted_current.head();
                     permitted_current = permitted_current.tail();
+                    let sub_pos =
+                        permit_positions
+                            .get(permit_index)
+                            .copied()
+                            .unwrap_or_else(|| {
+                                crate::tree::tree_info::diagnostic_position_for(
+                                    ctx,
+                                    sub_type_sym,
+                                    env_tree,
+                                )
+                            });
+                    permit_index += 1;
                     let mut is_type_var = false;
                     let sub_ty = ctx.sym(sub_type_sym).ty;
                     if sub_ty
@@ -12617,18 +13458,30 @@ impl Attr {
                         .unwrap_or(false)
                     {
                         is_type_var = true;
-                        let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
+                        // sub_pos is the permits-clause entry for this iteration.
                         let sub_display = sub_ty
                             .map(|sub_ty| crate::comp::attr::type_display_of(ctx, sub_ty))
                             .unwrap_or_default();
-                        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                        let fragment_arg = sub_ty
+                            .map(|sub_ty| crate::comp::check::type_arg_with_where(ctx, sub_ty))
+                            .unwrap_or_else(|| {
+                                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                    sub_display,
+                                )
+                            });
+                        let fragment = self
+                            .diags
+                            .fragment(crate::util::jc_diagnostic::Fragment::from(
                             crate::resources::compiler_properties::fragments::is_a_type_variable(
-                                crate::resources::diagnostic_contract::TypeArg::placeholder(sub_display),
+                                fragment_arg,
                             ),
                         ));
-                        let info = crate::resources::compiler_properties::errors::invalid_permits_clause(
-                            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
-                        );
+                        let info =
+                            crate::resources::compiler_properties::errors::invalid_permits_clause(
+                                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                                    Rc::new(fragment),
+                                ),
+                            );
                         crate::util::abstract_log::AbstractLog::error_at(
                             &mut *self.log.borrow_mut(),
                             sub_pos,
@@ -12636,10 +13489,12 @@ impl Attr {
                         );
                     }
                     if ctx.sym(sub_type_sym).is_anonymous() && !ctx.sym(c).is_enum() {
-                        let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
-                        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                            crate::resources::compiler_properties::fragments::anonymous(),
-                        ));
+                        // sub_pos is the permits-clause entry for this iteration.
+                        let fragment =
+                            self.diags
+                                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                                    crate::resources::compiler_properties::fragments::anonymous(),
+                                ));
                         let info = crate::resources::compiler_properties::errors::local_classes_cant_extend_sealed(
                             crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
                         );
@@ -12652,18 +13507,27 @@ impl Attr {
                     if permitted_types.contains(&sub_type_sym) {
                         // Java: report the duplicated permits clause (position from the
                         // permitting list); the ported surface uses the member position.
-                        let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
-                        let sub_display = ctx.sym(sub_type_sym).ty
+                        // sub_pos is the permits-clause entry for this iteration.
+                        let sub_display = ctx
+                            .sym(sub_type_sym)
+                            .ty
                             .map(|sub_ty| crate::comp::attr::type_display_of(ctx, sub_ty))
                             .unwrap_or_default();
-                        let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                            crate::resources::compiler_properties::fragments::is_duplicated(
-                                crate::resources::diagnostic_contract::TypeArg::placeholder(sub_display),
-                            ),
-                        ));
-                        let info = crate::resources::compiler_properties::errors::invalid_permits_clause(
-                            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
-                        );
+                        let fragment =
+                            self.diags
+                                .fragment(crate::util::jc_diagnostic::Fragment::from(
+                                    crate::resources::compiler_properties::fragments::is_duplicated(
+                                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                            sub_display,
+                                        ),
+                                    ),
+                                ));
+                        let info =
+                            crate::resources::compiler_properties::errors::invalid_permits_clause(
+                                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                                    Rc::new(fragment),
+                                ),
+                            );
                         crate::util::abstract_log::AbstractLog::error_at(
                             &mut *self.log.borrow_mut(),
                             sub_pos,
@@ -12673,13 +13537,14 @@ impl Attr {
                         permitted_types.push(sub_type_sym);
                     }
                     let sub_pkg = crate::code::symbol::packge(ctx, sub_type_sym);
-                    let sub_module = sub_pkg.and_then(|pkg| crate::code::symbol::Symbol::symbol_module(ctx, pkg));
+                    let sub_module = sub_pkg
+                        .and_then(|pkg| crate::code::symbol::Symbol::symbol_module(ctx, pkg));
                     if sealed_in_unnamed {
                         if sub_pkg != c_pkg {
-                            let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
+                            // sub_pos is the permits-clause entry for this iteration.
                             let info = crate::resources::compiler_properties::errors::class_in_unnamed_module_cant_extend_sealed_in_diff_package(
                                 crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                    crate::comp::resolve::symbol_display_name(ctx, c),
+                                    crate::code::printer::visit_type(ctx, c_ty),
                                 ),
                             );
                             crate::util::abstract_log::AbstractLog::error_at(
@@ -12689,10 +13554,10 @@ impl Attr {
                             );
                         }
                     } else if sub_module != c_module {
-                        let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
+                        // sub_pos is the permits-clause entry for this iteration.
                         let info = crate::resources::compiler_properties::errors::class_in_module_cant_extend_sealed_in_diff_module(
                             crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                crate::comp::resolve::symbol_display_name(ctx, c),
+                                crate::code::printer::visit_type(ctx, c_ty),
                             ),
                             crate::resources::diagnostic_contract::SymbolArg::placeholder(
                                 c_module
@@ -12712,7 +13577,7 @@ impl Attr {
                             .map(|sub_ty| self.types.is_super_type(ctx, syms, sub_ty, c_ty))
                             .unwrap_or(false)
                     {
-                        let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
+                        // sub_pos is the permits-clause entry for this iteration.
                         let same_class = Some(sub_type_sym) == c_tsym;
                         let fragment = if same_class {
                             self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
@@ -12729,9 +13594,12 @@ impl Attr {
                                 ),
                             ))
                         };
-                        let info = crate::resources::compiler_properties::errors::invalid_permits_clause(
-                            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
-                        );
+                        let info =
+                            crate::resources::compiler_properties::errors::invalid_permits_clause(
+                                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                                    Rc::new(fragment),
+                                ),
+                            );
                         crate::util::abstract_log::AbstractLog::error_at(
                             &mut *self.log.borrow_mut(),
                             sub_pos,
@@ -12752,7 +13620,7 @@ impl Attr {
                             direct_current = direct_current.tail();
                         }
                         if !this_is_a_super {
-                            let sub_pos = crate::tree::tree_info::diagnostic_position_for(ctx, sub_type_sym, env_tree);
+                            // sub_pos is the permits-clause entry for this iteration.
                             let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                                 crate::resources::compiler_properties::fragments::doesnt_extend_sealed(
                                     crate::resources::diagnostic_contract::TypeArg::placeholder(
@@ -12792,7 +13660,9 @@ impl Attr {
                     while direct_current.non_empty() {
                         let super_ty = *direct_current.head();
                         direct_current = direct_current.tail();
-                        if ctx.typ(super_ty).tsym.map(|tsym| ctx.sym(tsym).kind) == Some(crate::code::kinds::Kind::ERR) {
+                        if ctx.typ(super_ty).tsym.map(|tsym| ctx.sym(tsym).kind)
+                            == Some(crate::code::kinds::Kind::ERR)
+                        {
                             has_error_super = true;
                         }
                     }
@@ -12816,13 +13686,15 @@ impl Attr {
                 {
                     let pos = crate::tree::tree_info::diagnostic_position_for(ctx, c, env_tree);
                     let fragment = if ctx.sym(c).is_anonymous() {
-                        self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                            crate::resources::compiler_properties::fragments::anonymous(),
-                        ))
+                        self.diags
+                            .fragment(crate::util::jc_diagnostic::Fragment::from(
+                                crate::resources::compiler_properties::fragments::anonymous(),
+                            ))
                     } else {
-                        self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                            crate::resources::compiler_properties::fragments::local(),
-                        ))
+                        self.diags
+                            .fragment(crate::util::jc_diagnostic::Fragment::from(
+                                crate::resources::compiler_properties::fragments::local(),
+                            ))
                     };
                     let info = crate::resources::compiler_properties::errors::local_classes_cant_extend_sealed(
                         crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(fragment)),
@@ -12835,10 +13707,15 @@ impl Attr {
                 }
                 if !self.types.is_compound_public(ctx, c_ty) {
                     for supertype_sym in &sealed_supers {
-                        let permitted_of_super = crate::code::symbol::Symbol::permitted_subs(ctx, *supertype_sym);
+                        let permitted_of_super =
+                            crate::code::symbol::Symbol::permitted_subs(ctx, *supertype_sym);
                         let c_tsym = ctx.typ(c_ty).tsym;
-                        if !permitted_of_super.iter().any(|permitted| Some(permitted) == c_tsym) {
-                            let pos = crate::tree::tree_info::diagnostic_position_for(ctx, c, env_tree);
+                        if !permitted_of_super
+                            .iter()
+                            .any(|permitted| Some(permitted) == c_tsym)
+                        {
+                            let pos =
+                                crate::tree::tree_info::diagnostic_position_for(ctx, c, env_tree);
                             let info = crate::resources::compiler_properties::errors::cant_inherit_from_sealed(
                                 crate::resources::diagnostic_contract::SymbolArg::placeholder(
                                     crate::comp::resolve::symbol_display_name(ctx, *supertype_sym),
@@ -12851,7 +13728,10 @@ impl Attr {
                             );
                         }
                     }
-                    if !ctx.sym(c).is_non_sealed() && !ctx.sym(c).is_final() && !ctx.sym(c).is_sealed() {
+                    if !ctx.sym(c).is_non_sealed()
+                        && !ctx.sym(c).is_final()
+                        && !ctx.sym(c).is_sealed()
+                    {
                         let pos = crate::tree::tree_info::diagnostic_position_for(ctx, c, env_tree);
                         let info = if ctx.sym(c).is_interface() {
                             crate::resources::compiler_properties::errors::non_sealed_or_sealed_expected()
@@ -12894,7 +13774,9 @@ impl Attr {
                 }
             };
             let c_sourcefile = match &ctx.sym(c).kind_data {
-                crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile.clone(),
+                crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
+                    sourcefile.clone()
+                }
                 _ => None,
             };
             let prev_source = crate::util::abstract_log::AbstractLog::use_source(
@@ -12907,7 +13789,9 @@ impl Attr {
                 let deferred_rc = Rc::clone(&self.deferred_lint_handler);
                 let mut deferred = deferred_rc.borrow_mut();
                 let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
-                    Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(env_tree).pos));
+                    Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                        ctx.tree(env_tree).pos,
+                    ));
                 deferred.flush(&position);
             }
             env.info.borrow_mut().return_result = None;
@@ -12925,17 +13809,30 @@ impl Attr {
                 );
             }
             // Enums may not be extended by source-level classes
-            if let Some(st_tsym) = st_tsym {
-                if (ctx.sym(st_tsym).flags_field & enum_flag) != 0
-                    && (ctx.sym(c).flags_field & (enum_flag | compound_flag)) == 0
-                {
-                    let info = crate::resources::compiler_properties::errors::enum_types_not_extensible();
-                    crate::util::abstract_log::AbstractLog::error_at(
-                        &mut *self.log.borrow_mut(),
-                        ctx.tree(env_tree).pos,
-                        crate::util::jc_diagnostic::Error::from(info),
-                    );
-                }
+            let st_is_enum = st_tsym
+                .map(|st_tsym| (ctx.sym(st_tsym).flags_field & enum_flag) != 0)
+                .unwrap_or(false);
+            let extending_is_enum = match &ctx.tree(env_tree).kind {
+                TreeKind::ClassDecl {
+                    extending: Some(extending),
+                    ..
+                } => ctx
+                    .tree(*extending)
+                    .ty
+                    .and_then(|super_ty| ctx.typ(super_ty).tsym)
+                    .map(|super_tsym| (ctx.sym(super_tsym).flags_field & enum_flag) != 0)
+                    .unwrap_or(false),
+                _ => false,
+            };
+            let super_is_enum = st_is_enum || extending_is_enum;
+            if super_is_enum && (ctx.sym(c).flags_field & (enum_flag | compound_flag)) == 0 {
+                let info =
+                    crate::resources::compiler_properties::errors::enum_types_not_extensible();
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    ctx.tree(env_tree).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
             }
             if self.is_serializable(ctx, syms, c_ty) {
                 env.info.borrow_mut().is_serializable = true;
@@ -12945,7 +13842,12 @@ impl Attr {
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = Rc::clone(&chk_rc);
                 chk.check_deprecated_annotation(ctx, syms, ctx.tree(env_tree).pos, c);
-                chk.check_class_override_equals_and_hash_if_needed(ctx, syms, ctx.tree(env_tree).pos, c);
+                chk.check_class_override_equals_and_hash_if_needed(
+                    ctx,
+                    syms,
+                    ctx.tree(env_tree).pos,
+                    c,
+                );
                 chk.check_functional_interface(ctx, syms, env_tree, c);
                 chk.check_leaks_not_accessible(ctx, syms, &env, env_tree);
             }
@@ -12991,16 +13893,27 @@ impl Attr {
     ) {
         let tree = env.tree.expect("class env tree");
         let (mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
-            TreeKind::ClassDecl { mods, typarams, extending, implementing, defs, .. } => {
-                (*mods, typarams.clone(), *extending, implementing.clone(), defs.clone())
-            }
+            TreeKind::ClassDecl {
+                mods,
+                typarams,
+                extending,
+                implementing,
+                defs,
+                ..
+            } => (
+                *mods,
+                typarams.clone(),
+                *extending,
+                implementing.clone(),
+                defs.clone(),
+            ),
             _ => return,
         };
         let tree_sym = match &ctx.tree(tree).kind {
             TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
             _ => c,
         };
-        assert!(c == tree_sym, "AssertionError: class symbol mismatch");
+        assert_eq!(c, tree_sym, "AssertionError: class symbol mismatch");
         let c_ty = match ctx.sym(c).ty {
             Some(ty) => ty,
             None => return,
@@ -13030,8 +13943,8 @@ impl Attr {
             );
         }
         let flags_value = ctx.sym(c).flags_field;
-        let abstract_or_interface = (crate::code::flags::ABSTRACT as i64)
-            | (crate::code::flags::INTERFACE as i64);
+        let abstract_or_interface =
+            (crate::code::flags::ABSTRACT as i64) | (crate::code::flags::INTERFACE as i64);
         if (flags_value & abstract_or_interface) == 0 {
             let envs = self.type_envs.borrow();
             let chk_rc = Rc::clone(&self.chk);
@@ -13042,7 +13955,8 @@ impl Attr {
         if (flags_value & annotation_flag) != 0 {
             if implementing.non_empty() {
                 let head = *implementing.head();
-                let info = crate::resources::compiler_properties::errors::cant_extend_intf_annotation();
+                let info =
+                    crate::resources::compiler_properties::errors::cant_extend_intf_annotation();
                 crate::util::abstract_log::AbstractLog::error_at(
                     &mut *self.log.borrow_mut(),
                     ctx.tree(head).pos,
@@ -13136,16 +14050,21 @@ impl Attr {
             // Make an exception for static constants.
             let c_name_is_empty = ctx.sym(c).name.to_java_string().is_empty();
             if !allow_records
-                && ctx.sym(c).owner.map(|owner| ctx.sym(owner).kind) != Some(crate::code::kinds::Kind::PCK)
+                && ctx.sym(c).owner.map(|owner| ctx.sym(owner).kind)
+                    != Some(crate::code::kinds::Kind::PCK)
                 && ((ctx.sym(c).flags_field & crate::code::flags::STATIC as i64) == 0
                     || c_name_is_empty)
                 && (crate::tree::tree_info::flags(ctx, def)
-                    & ((crate::code::flags::STATIC as i64) | (crate::code::flags::INTERFACE as i64)))
+                    & ((crate::code::flags::STATIC as i64)
+                        | (crate::code::flags::INTERFACE as i64)))
                     != 0
             {
                 let mut sym: Option<SymbolId> = None;
                 if ctx.tree(def).has_tag(Tag::VARDEF) {
-                    if let TreeKind::VariableDecl { sym: Some(var_sym), .. } = &ctx.tree(def).kind {
+                    if let TreeKind::VariableDecl {
+                        sym: Some(var_sym), ..
+                    } = &ctx.tree(def).kind
+                    {
                         sym = Some(*var_sym);
                     }
                 }
@@ -13157,11 +14076,12 @@ impl Attr {
                     None => false,
                 };
                 if !is_static_constant {
-                    let info = crate::resources::compiler_properties::errors::icls_cant_have_static_decl(
-                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                            crate::comp::resolve::symbol_display_name(ctx, c),
-                        ),
-                    );
+                    let info =
+                        crate::resources::compiler_properties::errors::icls_cant_have_static_decl(
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                crate::comp::resolve::symbol_display_name(ctx, c),
+                            ),
+                        );
                     crate::util::abstract_log::AbstractLog::error_at(
                         &mut *self.log.borrow_mut(),
                         ctx.tree(def).pos,
@@ -13185,8 +14105,8 @@ impl Attr {
             .as_ref()
             .map(|lint| lint.is_enabled(crate::code::lint::LintCategory::SERIAL))
             .unwrap_or(false);
-        let enum_or_interface = (crate::code::flags::ENUM as i64)
-            | (crate::code::flags::INTERFACE as i64);
+        let enum_or_interface =
+            (crate::code::flags::ENUM as i64) | (crate::code::flags::INTERFACE as i64);
         if serial_lint_enabled
             && self.is_serializable(ctx, syms, c_ty)
             && (ctx.sym(c).flags_field & enum_or_interface) == 0
@@ -13221,7 +14141,11 @@ impl Attr {
     ///   - the registered services must be installed.
     ///
     /// Upstream: Attr.java:2651-2879.
-    #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_lines,
+        clippy::collapsible_if,
+        clippy::too_many_arguments
+    )]
     fn visit_new_class(
         &mut self,
         ctx: &mut CompilerContext,
@@ -13237,9 +14161,22 @@ impl Attr {
         let info = env.info.borrow().dup_ctx();
         let local_env = env.dup(Some(tree), info);
         let (encl, typeargs, clazz, args, def, class_decl_removed) = match &ctx.tree(tree).kind {
-            TreeKind::NewClass { encl, typeargs, clazz, args, def, class_decl_removed, .. } => {
-                (*encl, typeargs.clone(), *clazz, args.clone(), *def, *class_decl_removed)
-            }
+            TreeKind::NewClass {
+                encl,
+                typeargs,
+                clazz,
+                args,
+                def,
+                class_decl_removed,
+                ..
+            } => (
+                *encl,
+                typeargs.clone(),
+                *clazz,
+                args.clone(),
+                *def,
+                *class_decl_removed,
+            ),
             _ => return Ok(owntype),
         };
         let cdef = def;
@@ -13250,10 +14187,17 @@ impl Attr {
         let mut annoclazzid: Option<TreeId> = None;
         // Java: unpack TYPEAPPLY/ANNOTATED_TYPE to find the class identifier.
         if ctx.tree(clazz).tag == Tag::TYPEAPPLY {
-            if let TreeKind::TypeApply { clazz: Some(inner), .. } = &ctx.tree(clazz).kind {
+            if let TreeKind::TypeApply {
+                clazz: Some(inner), ..
+            } = &ctx.tree(clazz).kind
+            {
                 clazzid = *inner;
                 if ctx.tree(clazzid).tag == Tag::ANNOTATED_TYPE {
-                    if let TreeKind::AnnotatedType { underlying_type: Some(underlying), .. } = &ctx.tree(clazzid).kind {
+                    if let TreeKind::AnnotatedType {
+                        underlying_type: Some(underlying),
+                        ..
+                    } = &ctx.tree(clazzid).kind
+                    {
                         annoclazzid = Some(clazzid);
                         clazzid = *underlying;
                     }
@@ -13262,7 +14206,11 @@ impl Attr {
                 return Ok(owntype);
             }
         } else if ctx.tree(clazz).tag == Tag::ANNOTATED_TYPE {
-            if let TreeKind::AnnotatedType { underlying_type: Some(underlying), .. } = &ctx.tree(clazz).kind {
+            if let TreeKind::AnnotatedType {
+                underlying_type: Some(underlying),
+                ..
+            } = &ctx.tree(clazz).kind
+            {
                 annoclazzid = Some(clazz);
                 clazzid = *underlying;
             } else {
@@ -13274,13 +14222,8 @@ impl Attr {
         let mut clazzid1 = clazzid;
         if let Some(encl) = encl {
             // Qualified new: the class name is prefixed with the qualifier type.
-            let encl_expr_ty = self.attrib_tree_use(
-                ctx,
-                syms,
-                encl,
-                &env,
-                self.unknown_expr_info.clone(),
-            );
+            let encl_expr_ty =
+                self.attrib_tree_use(ctx, syms, encl, &env, self.unknown_expr_info.clone());
             let encl_pos = ctx.tree(encl).pos;
             let encltype = {
                 let chk_rc = Rc::clone(&self.chk);
@@ -13307,22 +14250,28 @@ impl Attr {
                     _ => List::nil(),
                 };
                 let underlying_is_typeapply = match &ctx.tree(clazz).kind {
-                    TreeKind::AnnotatedType { underlying_type: Some(underlying), .. } => {
-                        ctx.tree(*underlying).tag == Tag::TYPEAPPLY
-                    }
+                    TreeKind::AnnotatedType {
+                        underlying_type: Some(underlying),
+                        ..
+                    } => ctx.tree(*underlying).tag == Tag::TYPEAPPLY,
                     _ => false,
                 };
                 if underlying_is_typeapply {
                     if let TreeKind::TypeApply { arguments, .. } = &ctx.tree(clazz).kind {
                         clazzid1 = {
                             let mut make = self.make.borrow_mut();
-                            make.at(tree_pos(ctx, tree)).type_apply(ctx, clazzid1, arguments.clone())
+                            make.at(tree_pos(ctx, tree)).type_apply(
+                                ctx,
+                                clazzid1,
+                                arguments.clone(),
+                            )
                         };
                     }
                 }
                 clazzid1 = {
                     let mut make = self.make.borrow_mut();
-                    make.at(tree_pos(ctx, tree)).annotated_type(ctx, annotations, clazzid1)
+                    make.at(tree_pos(ctx, tree))
+                        .annotated_type(ctx, annotations, clazzid1)
                 };
             } else if ctx.tree(clazz).tag == Tag::TYPEAPPLY {
                 let arguments = match &ctx.tree(clazz).kind {
@@ -13331,7 +14280,8 @@ impl Attr {
                 };
                 clazzid1 = {
                     let mut make = self.make.borrow_mut();
-                    make.at(tree_pos(ctx, tree)).type_apply(ctx, clazzid1, arguments)
+                    make.at(tree_pos(ctx, tree))
+                        .type_apply(ctx, clazzid1, arguments)
                 };
             }
             clazz = clazzid1;
@@ -13380,7 +14330,9 @@ impl Attr {
                         crate::util::jc_diagnostic::Error::from(info),
                     );
                 } else if clazztype_tsym
-                    .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::STATIC as i64) != 0)
+                    .map(|tsym| {
+                        (ctx.sym(tsym).flags_field & crate::code::flags::STATIC as i64) != 0
+                    })
                     .unwrap_or(false)
                 {
                     let info = crate::resources::compiler_properties::errors::qualified_new_of_static_class(
@@ -13409,7 +14361,11 @@ impl Attr {
                 .map(|encl_ty| ctx.typ(encl_ty).has_tag(TypeTag::CLASS))
                 .unwrap_or(false);
             if !is_interface && encl_has_class {
-                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
+                let rs_rc = self
+                    .rs
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: rs service");
                 let rs = rs_rc.borrow();
                 let types_rc = Rc::clone(&self.types);
                 rs.resolve_implicit_this(
@@ -13424,33 +14380,38 @@ impl Attr {
             }
         }
         // Attribute constructor arguments.
-        let (pkind, argtypes) = self.attrib_args(ctx, syms, KindSelector::VAL, args.clone(), &local_env);
+        let (pkind, argtypes) =
+            self.attrib_args(ctx, syms, KindSelector::VAL, args.clone(), &local_env);
         // Java: typeargtypes = attribAnyTypes(tree.typeargs, localEnv).
         let typeargtypes = self.attrib_any_types(ctx, syms, typeargs.clone(), &local_env);
-        if ctx.typ(clazztype).has_tag(TypeTag::CLASS) || ctx.typ(clazztype).has_tag(TypeTag::ERROR) {
+        if ctx.typ(clazztype).has_tag(TypeTag::CLASS) || ctx.typ(clazztype).has_tag(TypeTag::ERROR)
+        {
             // Enums may not be instantiated except implicitly
             let clazztype_tsym = ctx.typ(clazztype).tsym.expect("class type symbol");
             let enum_flag = crate::code::flags::ENUM as i64;
-            if (ctx.sym(clazztype_tsym).flags_field & enum_flag) != 0
-                && {
-                    let env_tree = env.tree.expect("env tree");
-                    if !ctx.tree(env_tree).has_tag(Tag::VARDEF) {
-                        true
-                    } else {
-                        match &ctx.tree(env_tree).kind {
-                            TreeKind::VariableDecl { mods: Some(mods), init, .. } => {
-                                let mods_flags = match &ctx.tree(*mods).kind {
-                                    TreeKind::Modifiers { flags, .. } => *flags,
-                                    _ => 0,
-                                };
-                                (mods_flags & enum_flag) == 0 || *init != Some(tree)
-                            }
-                            _ => true,
+            if (ctx.sym(clazztype_tsym).flags_field & enum_flag) != 0 && {
+                let env_tree = env.tree.expect("env tree");
+                if !ctx.tree(env_tree).has_tag(Tag::VARDEF) {
+                    true
+                } else {
+                    match &ctx.tree(env_tree).kind {
+                        TreeKind::VariableDecl {
+                            mods: Some(mods),
+                            init,
+                            ..
+                        } => {
+                            let mods_flags = match &ctx.tree(*mods).kind {
+                                TreeKind::Modifiers { flags, .. } => *flags,
+                                _ => 0,
+                            };
+                            (mods_flags & enum_flag) == 0 || *init != Some(tree)
                         }
+                        _ => true,
                     }
                 }
-            {
-                let info = crate::resources::compiler_properties::errors::enum_cant_be_instantiated();
+            } {
+                let info =
+                    crate::resources::compiler_properties::errors::enum_cant_be_instantiated();
                 crate::util::abstract_log::AbstractLog::error_at(
                     &mut *self.log.borrow_mut(),
                     ctx.tree(tree).pos,
@@ -13463,17 +14424,18 @@ impl Attr {
                     == crate::comp::deferred_attr::AttrMode::SPECULATIVE;
             let mut skip_non_diamond_path = false;
             // Check that class is not abstract
-            let abstract_or_interface = (crate::code::flags::ABSTRACT as i64)
-                | (crate::code::flags::INTERFACE as i64);
+            let abstract_or_interface =
+                (crate::code::flags::ABSTRACT as i64) | (crate::code::flags::INTERFACE as i64);
             if cdef.is_none()
                 && !is_speculative_diamond
                 && (ctx.sym(clazztype_tsym).flags_field & abstract_or_interface) != 0
             {
-                let info = crate::resources::compiler_properties::errors::abstract_cant_be_instantiated(
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                        crate::comp::resolve::symbol_display_name(ctx, clazztype_tsym),
-                    ),
-                );
+                let info =
+                    crate::resources::compiler_properties::errors::abstract_cant_be_instantiated(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            crate::comp::resolve::symbol_display_name(ctx, clazztype_tsym),
+                        ),
+                    );
                 crate::util::abstract_log::AbstractLog::error_at(
                     &mut *self.log.borrow_mut(),
                     ctx.tree(tree).pos,
@@ -13484,7 +14446,9 @@ impl Attr {
                 // Check that no constructor arguments are given to anonymous classes
                 if !argtypes.is_empty() {
                     let head = *args.head();
-                    let info = crate::resources::compiler_properties::errors::anon_class_impl_intf_no_args();
+                    let info =
+                        crate::resources::compiler_properties::errors::anon_class_impl_intf_no_args(
+                        );
                     crate::util::abstract_log::AbstractLog::error_at(
                         &mut *self.log.borrow_mut(),
                         ctx.tree(head).pos,
@@ -13509,7 +14473,10 @@ impl Attr {
                 // diamond inference (JLS 15.12.2.7)
                 let site = {
                     let outer = ctx.typ(clazztype).get_enclosing_type();
-                    let tsym_ty = ctx.sym(clazztype_tsym).ty.expect("diamond class symbol type");
+                    let tsym_ty = ctx
+                        .sym(clazztype_tsym)
+                        .ty
+                        .expect("diamond class symbol type");
                     let typarams =
                         crate::code::types::get_type_arguments_completed(ctx, syms, tsym_ty, None);
                     let metadata = ctx.typ(clazztype).get_metadata().cloned();
@@ -13527,7 +14494,11 @@ impl Attr {
                 diamond_env.info.borrow_mut().select_super = cdef.is_some() || class_decl_removed;
                 diamond_env.info.borrow_mut().pending_resolution_phase = None;
                 let (constructor, constructor_base) = {
-                    let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
+                    let rs_rc = self
+                        .rs
+                        .borrow()
+                        .clone()
+                        .expect("AssertionError: rs service");
                     let rs = rs_rc.borrow();
                     let chk_rc = Rc::clone(&self.chk);
                     let chk = Rc::clone(&chk_rc);
@@ -13549,7 +14520,10 @@ impl Attr {
                     let base = crate::code::symbol::base_symbol(ctx, constructor);
                     (constructor, base)
                 };
-                if let TreeKind::NewClass { constructor: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                if let TreeKind::NewClass {
+                    constructor: slot, ..
+                } = &mut ctx.tree_mut(tree).kind
+                {
                     *slot = Some(constructor_base);
                 }
                 // When the diamond's target is an enclosing inference
@@ -13586,15 +14560,22 @@ impl Attr {
                     diags: Rc::clone(&self.diags),
                     tsym: clazztype_tsym,
                     speculative: is_speculative_diamond || in_overload_phase,
-                }) as Rc<dyn crate::comp::check::CheckContext>;
+                })
+                    as Rc<dyn crate::comp::check::CheckContext>;
                 let diamond_result = ResultInfo::new_with_mode(
                     self.pkind(),
                     Some(method_template),
                     diamond_check_context,
                     crate::comp::check::CheckMode::NO_TREE_UPDATE,
                 );
-                let create_error = self.types.create_error_type_original(ctx, Some(clazztype), syms);
-                if let TreeKind::NewClass { constructor_type: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                let create_error =
+                    self.types
+                        .create_error_type_original(ctx, Some(clazztype), syms);
+                if let TreeKind::NewClass {
+                    constructor_type: slot,
+                    ..
+                } = &mut ctx.tree_mut(tree).kind
+                {
                     *slot = Some(create_error);
                 }
                 let constructor_type = self.check_id(
@@ -13614,10 +14595,15 @@ impl Attr {
                         ctx.typ(constructor_type).get_tag(),
                         ctx.typ(constructor_type).is_partial(),
                         crate::comp::attr::type_display_of(ctx, clazztype),
-                        argtypes.iter().map(|t| crate::comp::attr::type_display_of(ctx, t)).collect::<Vec<_>>(),
+                        argtypes
+                            .iter()
+                            .map(|t| crate::comp::attr::type_display_of(ctx, t))
+                            .collect::<Vec<_>>(),
                     );
                 }
-                let created_error = self.types.create_error_type_original(ctx, Some(clazztype), syms);
+                let created_error =
+                    self.types
+                        .create_error_type_original(ctx, Some(clazztype), syms);
                 ctx.tree_mut(clazz).ty = Some(created_error);
                 if !ctx.typ(constructor_type).has_tag(TypeTag::ERROR) {
                     let constructor_ret = self.types.get_return_type_public(ctx, constructor_type);
@@ -13635,7 +14621,11 @@ impl Attr {
                         self.types
                             .create_method_type_with_return(ctx, constructor_type, void_ty)
                     };
-                    if let TreeKind::NewClass { constructor_type: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                    if let TreeKind::NewClass {
+                        constructor_type: slot,
+                        ..
+                    } = &mut ctx.tree_mut(tree).kind
+                    {
                         *slot = Some(constructor_type_void);
                     }
                 }
@@ -13653,7 +14643,11 @@ impl Attr {
                     rs_env_info.pending_resolution_phase = None;
                 }
                 let constructor = {
-                    let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
+                    let rs_rc = self
+                        .rs
+                        .borrow()
+                        .clone()
+                        .expect("AssertionError: rs service");
                     let rs = rs_rc.borrow();
                     let chk_rc = Rc::clone(&self.chk);
                     let chk = Rc::clone(&chk_rc);
@@ -13678,7 +14672,10 @@ impl Attr {
                         Some(typeargtypes.clone()),
                     )
                 };
-                if let TreeKind::NewClass { constructor: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                if let TreeKind::NewClass {
+                    constructor: slot, ..
+                } = &mut ctx.tree_mut(tree).kind
+                {
                     *slot = Some(constructor);
                 }
                 if cdef.is_none() {
@@ -13699,9 +14696,21 @@ impl Attr {
                             Rc::clone(&result_info.check_context),
                             crate::comp::check::CheckMode::NO_TREE_UPDATE,
                         );
-                        self.check_id(ctx, syms, tree, clazztype, constructor, &rs_env_config, &info)
+                        self.check_id(
+                            ctx,
+                            syms,
+                            tree,
+                            clazztype,
+                            constructor,
+                            &rs_env_config,
+                            &info,
+                        )
                     };
-                    if let TreeKind::NewClass { constructor_type: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                    if let TreeKind::NewClass {
+                        constructor_type: slot,
+                        ..
+                    } = &mut ctx.tree_mut(tree).kind
+                    {
                         *slot = Some(constructor_type);
                     }
                 }
@@ -13721,9 +14730,10 @@ impl Attr {
                 );
             }
             let constructor_is_mth = match &ctx.tree(tree).kind {
-                TreeKind::NewClass { constructor: Some(constructor), .. } => {
-                    ctx.sym(*constructor).kind == crate::code::kinds::Kind::MTH
-                }
+                TreeKind::NewClass {
+                    constructor: Some(constructor),
+                    ..
+                } => ctx.sym(*constructor).kind == crate::code::kinds::Kind::MTH,
                 _ => false,
             };
             if constructor_is_mth {
@@ -13734,7 +14744,13 @@ impl Attr {
             let name = ctx
                 .typ(owntype)
                 .tsym
-                .map(|tsym| ctx.sym(tsym).name.to_java_string().to_string_lossy().to_string())
+                .map(|tsym| {
+                    ctx.sym(tsym)
+                        .name
+                        .to_java_string()
+                        .to_string_lossy()
+                        .to_string()
+                })
                 .unwrap_or_default();
             if name.contains("Bar") || name.contains("Box") {
                 eprintln!(
@@ -13747,7 +14763,9 @@ impl Attr {
         let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &result_info);
         let inference_context = Rc::clone(result_info.check_context.inference_context());
         let constructor_type = match &ctx.tree(tree).kind {
-            TreeKind::NewClass { constructor_type, .. } => *constructor_type,
+            TreeKind::NewClass {
+                constructor_type, ..
+            } => *constructor_type,
             _ => None,
         };
         if let Some(constructor_type) = constructor_type {
@@ -13793,7 +14811,10 @@ impl crate::comp::infer::FreeTypeListener for ConstructorTypeListener {
         inference_context: &crate::comp::infer::InferenceContext,
     ) -> Result<(), crate::comp::infer::InferenceException> {
         let instantiated = inference_context.as_inst_type(ctx, syms, types, self.constructor_type);
-        if let TreeKind::NewClass { constructor_type, .. } = &mut ctx.tree_mut(self.tree).kind {
+        if let TreeKind::NewClass {
+            constructor_type, ..
+        } = &mut ctx.tree_mut(self.tree).kind
+        {
             *constructor_type = Some(instantiated);
         }
         Ok(())
@@ -13833,7 +14854,11 @@ impl Attr {
     /// List<Type> argtypes, List<Type> typeargtypes, KindSelector pkind)
     /// (Attr.java:2881-3010) — the non-listener body shared by the normal path
     /// and the inference listener replay (Approach A: state snapshot).
-    #[allow(clippy::too_many_lines, clippy::collapsible_if, clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_lines,
+        clippy::collapsible_if,
+        clippy::too_many_arguments
+    )]
     fn anonymous_class_definition_body(
         &mut self,
         ctx: &mut CompilerContext,
@@ -13858,41 +14883,48 @@ impl Attr {
             };
             if !ctx.typ(clazztype).has_tag(TypeTag::ERROR) && !invalid.is_empty() {
                 let clazztype_tsym = ctx.typ(clazztype).tsym.expect("diamond class symbol");
-                let diamond_fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                    crate::resources::compiler_properties::fragments::diamond(
-                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                            crate::comp::resolve::symbol_display_name(ctx, clazztype_tsym),
-                        ),
-                    ),
-                ));
+                let diamond_fragment =
+                    self.diags
+                        .fragment(crate::util::jc_diagnostic::Fragment::from(
+                            crate::resources::compiler_properties::fragments::diamond(
+                                crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                                    crate::comp::attr::type_display_of(ctx, clazztype),
+                                ),
+                            ),
+                        ));
                 let invalid_args: Vec<crate::resources::diagnostic_contract::TypeArg> = invalid
                     .iter()
-                    .map(|t| crate::resources::diagnostic_contract::TypeArg::placeholder(
-                        crate::comp::attr::type_display_of(ctx, *t),
-                    ))
+                    .map(|t| {
+                        crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, *t),
+                        )
+                    })
                     .collect();
                 let detail = if invalid.len() > 1 {
                     crate::resources::compiler_properties::fragments::diamond_invalid_args(
                         invalid_args,
-                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
-                            diamond_fragment.clone(),
-                        )),
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                            std::rc::Rc::new(diamond_fragment.clone()),
+                        ),
                     )
                 } else {
                     crate::resources::compiler_properties::fragments::diamond_invalid_arg(
                         invalid_args,
-                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
-                            diamond_fragment.clone(),
-                        )),
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                            std::rc::Rc::new(diamond_fragment.clone()),
+                        ),
                     )
                 };
                 let info = crate::resources::compiler_properties::errors::cant_apply_diamond1(
-                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
-                        diamond_fragment,
-                    )),
-                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
-                        self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(detail)),
-                    )),
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                        std::rc::Rc::new(diamond_fragment),
+                    ),
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                        std::rc::Rc::new(
+                            self.diags
+                                .fragment(crate::util::jc_diagnostic::Fragment::from(detail)),
+                        ),
+                    ),
                 );
                 crate::util::abstract_log::AbstractLog::error_at(
                     &mut *self.log.borrow_mut(),
@@ -13907,40 +14939,52 @@ impl Attr {
             while arguments_current.non_empty() {
                 let argument = *arguments_current.head();
                 arguments_current = arguments_current.tail();
-                let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
+                let rs_rc = self
+                    .rs
+                    .borrow()
+                    .clone()
+                    .expect("AssertionError: rs service");
                 let rs = rs_rc.borrow();
                 let env_rc = self.env.clone().expect("env");
                 rs.check_accessible_type(ctx, syms, &env_rc, argument);
             }
         }
         // If we already errored, be careful to avoid a further avalanche.
-        let clazztype_tsym = ctx.typ(clazztype).tsym.expect("anonymous class type symbol");
+        let clazztype_tsym = ctx
+            .typ(clazztype)
+            .tsym
+            .expect("anonymous class type symbol");
         let implementing = ctx.sym(clazztype_tsym).is_interface()
-            || (ctx.typ(clazztype).has_tag(TypeTag::ERROR)
-                && {
-                    let original = match &ctx.typ(clazztype).kind {
-                        crate::code::type_::TypeKindData::ErrorType { original_type, .. } => {
-                            *original_type
-                        }
-                        _ => None,
-                    };
-                    match original {
-                        Some(original) => {
-                            !ctx.typ(original).has_tag(TypeTag::NONE)
-                                && ctx
-                                    .typ(original)
-                                    .tsym
-                                    .map(|tsym| ctx.sym(tsym).is_interface())
-                                    .unwrap_or(false)
-                        }
-                        None => false,
+            || (ctx.typ(clazztype).has_tag(TypeTag::ERROR) && {
+                let original = match &ctx.typ(clazztype).kind {
+                    crate::code::type_::TypeKindData::ErrorType { original_type, .. } => {
+                        *original_type
                     }
-                });
+                    _ => None,
+                };
+                match original {
+                    Some(original) => {
+                        !ctx.typ(original).has_tag(TypeTag::NONE)
+                            && ctx
+                                .typ(original)
+                                .tsym
+                                .map(|tsym| ctx.sym(tsym).is_interface())
+                                .unwrap_or(false)
+                    }
+                    None => false,
+                }
+            });
         if implementing {
-            if let TreeKind::ClassDecl { implementing: slot, .. } = &mut ctx.tree_mut(cdef).kind {
+            if let TreeKind::ClassDecl {
+                implementing: slot, ..
+            } = &mut ctx.tree_mut(cdef).kind
+            {
                 *slot = List::of(clazz);
             }
-        } else if let TreeKind::ClassDecl { extending: slot, .. } = &mut ctx.tree_mut(cdef).kind {
+        } else if let TreeKind::ClassDecl {
+            extending: slot, ..
+        } = &mut ctx.tree_mut(cdef).kind
+        {
             *slot = Some(clazz);
         }
         if result_info.check_context.deferred_attr_context().mode
@@ -13973,16 +15017,25 @@ impl Attr {
         }
         let cdef_sym = match &ctx.tree(cdef).kind {
             TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
-            _ => return Ok(self.types.create_error_type_original(ctx, ctx.tree(tree).ty, syms)),
+            _ => {
+                return Ok(self
+                    .types
+                    .create_error_type_original(ctx, ctx.tree(tree).ty, syms));
+            }
         };
         let cdef_ty = ctx.sym(cdef_sym).ty.expect("anonymous class type");
         clazztype = if ctx.typ(clazztype).has_tag(TypeTag::ERROR) {
-            self.types.create_error_type_original(ctx, Some(cdef_ty), syms)
+            self.types
+                .create_error_type_original(ctx, Some(cdef_ty), syms)
         } else {
             cdef_ty
         };
         let constructor = {
-            let rs_rc = self.rs.borrow().clone().expect("AssertionError: rs service");
+            let rs_rc = self
+                .rs
+                .borrow()
+                .clone()
+                .expect("AssertionError: rs service");
             let rs = rs_rc.borrow();
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
@@ -14006,40 +15059,58 @@ impl Attr {
             !crate::code::kinds::Kind::is_resolution_error(ctx.sym(constructor).kind),
             "AssertionError: constructor resolution error"
         );
-        if let TreeKind::NewClass { constructor: slot, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::NewClass {
+            constructor: slot, ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *slot = Some(constructor);
         }
         let constructor_type = {
             let void_ty = self.symtab_facts().void_type;
-            let method_template = self.new_method_template(
-                ctx,
-                syms,
-                void_ty,
-                finalargtypes,
-                Some(typeargtypes),
-            );
+            let method_template =
+                self.new_method_template(ctx, syms, void_ty, finalargtypes, Some(typeargtypes));
             let check_info = result_info.dup_pt_context_mode(
                 Some(method_template),
                 Rc::clone(&result_info.check_context),
                 crate::comp::check::CheckMode::NO_TREE_UPDATE,
             );
-            self.check_id(ctx, syms, tree, clazztype, constructor, local_env, &check_info)
+            self.check_id(
+                ctx,
+                syms,
+                tree,
+                clazztype,
+                constructor,
+                local_env,
+                &check_info,
+            )
         };
-        if let TreeKind::NewClass { constructor_type: slot, .. } = &mut ctx.tree_mut(tree).kind {
+        if let TreeKind::NewClass {
+            constructor_type: slot,
+            ..
+        } = &mut ctx.tree_mut(tree).kind
+        {
             *slot = Some(constructor_type);
         }
         let constructor_is_mth = ctx.sym(constructor).kind == crate::code::kinds::Kind::MTH;
         let owntype = if constructor_is_mth {
             clazztype
         } else {
-            self.types.create_error_type_original(ctx, ctx.tree(tree).ty, syms)
+            self.types
+                .create_error_type_original(ctx, ctx.tree(tree).ty, syms)
         };
         let no_inference_hook = result_info.dup_pt_context_mode(
             result_info.pt,
             Rc::clone(&result_info.check_context),
             crate::comp::check::CheckMode::NO_INFERENCE_HOOK,
         );
-        let result = self.check(ctx, syms, tree, owntype, KindSelector::VAL, &no_inference_hook);
+        let result = self.check(
+            ctx,
+            syms,
+            tree,
+            owntype,
+            KindSelector::VAL,
+            &no_inference_hook,
+        );
         {
             let typeargs_trees = match &ctx.tree(tree).kind {
                 TreeKind::NewClass { typeargs, .. } => typeargs.clone(),
@@ -14117,7 +15188,9 @@ impl Attr {
         let inference_context = Rc::clone(result_info.check_context.inference_context());
         let is_diamond = crate::tree::tree_info::is_diamond(ctx, tree);
         let constructor_type = match &ctx.tree(tree).kind {
-            TreeKind::NewClass { constructor_type, .. } => *constructor_type,
+            TreeKind::NewClass {
+                constructor_type, ..
+            } => *constructor_type,
             _ => None,
         };
         let clazz_ty = ctx.tree(clazz).ty;
@@ -14142,8 +15215,8 @@ impl Attr {
                 pkind,
             });
             let no_type = self.no_type(ctx);
-            let listen_types = List::of(constructor_type.unwrap_or(no_type))
-                .prepend(clazz_ty.unwrap_or(no_type));
+            let listen_types =
+                List::of(constructor_type.unwrap_or(no_type)).prepend(clazz_ty.unwrap_or(no_type));
             inference_context.add_free_type_listener(
                 ctx,
                 syms,
@@ -14154,7 +15227,9 @@ impl Attr {
             // The listener re-runs the body once inference completes; the visible
             // result until then is the recovery error type (upstream returns from
             // visitNewClass after registering the listener).
-            let error = self.types.create_error_type_original(ctx, ctx.tree(tree).ty, syms);
+            let error = self
+                .types
+                .create_error_type_original(ctx, ctx.tree(tree).ty, syms);
             ctx.tree_mut(tree).ty = Some(error);
             self.result = Some(error);
             return Ok(error);
@@ -14271,21 +15346,32 @@ impl crate::comp::infer::FreeTypeListener for AnonymousClassDiamondListener {
         types: &Types,
         inference_context: &crate::comp::infer::InferenceContext,
     ) -> Result<(), crate::comp::infer::InferenceException> {
-        let mut snapshot = self.attr.borrow_mut().take().expect("listener executed once");
+        let mut snapshot = self
+            .attr
+            .borrow_mut()
+            .take()
+            .expect("listener executed once");
         // Java: tree.constructorType = instantiatedContext.asInstType(tree.constructorType);
         let constructor_type = match &ctx.tree(self.tree).kind {
-            TreeKind::NewClass { constructor_type, .. } => *constructor_type,
+            TreeKind::NewClass {
+                constructor_type, ..
+            } => *constructor_type,
             _ => None,
         };
-        let inst_constructor_type = constructor_type
-            .map(|constructor_type| inference_context.as_inst_type(ctx, syms, types, constructor_type));
-        if let TreeKind::NewClass { constructor_type: slot, .. } = &mut ctx.tree_mut(self.tree).kind {
+        let inst_constructor_type = constructor_type.map(|constructor_type| {
+            inference_context.as_inst_type(ctx, syms, types, constructor_type)
+        });
+        if let TreeKind::NewClass {
+            constructor_type: slot,
+            ..
+        } = &mut ctx.tree_mut(self.tree).kind
+        {
             *slot = inst_constructor_type;
         }
         // Java: tree.clazz.type = clazz.type = instantiatedContext.asInstType(clazz.type);
         let clazz_ty = ctx.tree(self.clazz).ty;
-        let inst_clazz_ty = clazz_ty
-            .map(|clazz_ty| inference_context.as_inst_type(ctx, syms, types, clazz_ty));
+        let inst_clazz_ty =
+            clazz_ty.map(|clazz_ty| inference_context.as_inst_type(ctx, syms, types, clazz_ty));
         ctx.tree_mut(self.clazz).ty = inst_clazz_ty;
         let clazz_ty = match inst_clazz_ty {
             Some(clazz_ty) => clazz_ty,
@@ -14374,8 +15460,7 @@ impl Attr {
             .filter(|env| env.info.borrow().attribution_mode.is_speculative())
             .and_then(|_| {
                 let argument_attr = self.argument_attr.borrow().clone();
-                argument_attr
-                    .map(|argument_attr| argument_attr.borrow().with_local_cache_context())
+                argument_attr.map(|argument_attr| argument_attr.borrow().with_local_cache_context())
             });
         let result = self.visit_class_def_body(ctx, syms, tree);
         // Java: finally localCacheContext.ifPresent(LocalCacheContext::leave);
@@ -14422,10 +15507,9 @@ impl Attr {
                 if let (Some(dcfh), Some(orig)) = (failure.dcfh.clone(), orig_completer) {
                     dcfh.class_symbol_complete_failed(ctx, sym, orig);
                 }
-                ctx.sym_mut(sym).flags_field |= (crate::code::flags::PUBLIC
-                    | crate::code::flags::STATIC) as i64;
-                ctx.sym_mut(sym).ty =
-                    Some(crate::code::symtab::new_error_type_for_class(ctx, sym));
+                ctx.sym_mut(sym).flags_field |=
+                    (crate::code::flags::PUBLIC | crate::code::flags::STATIC) as i64;
+                ctx.sym_mut(sym).ty = Some(crate::code::symtab::new_error_type_for_class(ctx, sym));
                 Err(failure)
             }
         }
@@ -14453,7 +15537,9 @@ impl Attr {
             .unwrap_or(false);
         if std::env::var_os("DSH_DEBUG_LOCALREC").is_some() {
             let nm = match &ctx.tree(tree).kind {
-                TreeKind::ClassDecl { name, .. } => name.to_java_string().to_string_lossy().to_string(),
+                TreeKind::ClassDecl { name, .. } => {
+                    name.to_java_string().to_string_lossy().to_string()
+                }
                 _ => String::new(),
             };
             if nm.contains("LocalRecord") {
@@ -14468,13 +15554,9 @@ impl Attr {
         }
         if matches_val_mth {
             let enter = Rc::clone(&self.enter);
-            enter.borrow_mut().class_enter(
-                ctx,
-                syms,
-                tree,
-                Some(Rc::clone(&env)),
-                Some(self),
-            );
+            enter
+                .borrow_mut()
+                .class_enter(ctx, syms, tree, Some(Rc::clone(&env)), Some(self));
         } else {
             // If this class declaration is part of a class level annotation,
             // as in @MyAnno(new Object() {}) class MyClass {}, enter it in
@@ -14483,17 +15565,11 @@ impl Attr {
                 .tree
                 .map(|env_tree| ctx.tree(env_tree).has_tag(Tag::NEWCLASS))
                 .unwrap_or(false);
-            if env_tree_is_new_class
-                && crate::tree::tree_info::is_in_annotation(ctx, &env, tree)
-            {
+            if env_tree_is_new_class && crate::tree::tree_info::is_in_annotation(ctx, &env, tree) {
                 let enter = Rc::clone(&self.enter);
-                enter.borrow_mut().class_enter(
-                    ctx,
-                    syms,
-                    tree,
-                    Some(Rc::clone(&env)),
-                    Some(self),
-                );
+                enter
+                    .borrow_mut()
+                    .class_enter(ctx, syms, tree, Some(Rc::clone(&env)), Some(self));
             }
         }
         let class_symbol = match &ctx.tree(tree).kind {
@@ -14520,7 +15596,10 @@ impl Attr {
         }
         let class_pos = ctx.tree(tree).pos;
         self.attrib_class_with_pos(ctx, syms, class_pos, class_symbol);
-        let class_type = ctx.sym(class_symbol).ty.unwrap_or_else(|| self.no_type(ctx));
+        let class_type = ctx
+            .sym(class_symbol)
+            .ty
+            .unwrap_or_else(|| self.no_type(ctx));
         ctx.tree_mut(tree).ty = Some(class_type);
         self.result = Some(class_type);
         Ok(class_type)
@@ -14647,10 +15726,9 @@ impl Attr {
         let lint_rc = Rc::new(lint);
         let prev_lint = self.chk.set_lint(Rc::clone(&lint_rc));
         let prev_method = self.chk.set_method(Some(m));
-        let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
-            Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
-                ctx.tree(tree).pos,
-            ));
+        let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> = Rc::new(
+            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+        );
         self.deferred_lint_handler.borrow_mut().flush(&position);
         {
             let chk_rc = Rc::clone(&self.chk);
@@ -14685,15 +15763,18 @@ impl Attr {
         if is_default_method {
             let overrides_object = self.types.overrides_object_method(ctx, syms, origin, m);
             if overrides_object {
-                let kind_name = crate::code::kinds::kind_name(ctx.sym(m), ctx);
+                // Java: Errors.DefaultOverridesObjectMember(m.name,
+                // Kinds.kindName(m.location()), m.location()).
+                let owner = ctx.sym(m).owner.expect("method owner");
+                let kind_name = crate::code::kinds::kind_name(ctx.sym(owner), ctx);
                 let info =
                     crate::resources::compiler_properties::errors::default_overrides_object_member(
                         ctx.sym(m).name.clone(),
-                        crate::resources::diagnostic_contract::KindNameArg::placeholder(format!(
-                            "{kind_name:?}"
-                        )),
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                            kind_name.name(),
+                        ),
                         crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                            attr_symbol_name(ctx, m),
+                            attr_symbol_name(ctx, owner),
                         ),
                     );
                 self.log.borrow_mut().error_at(
@@ -14766,7 +15847,17 @@ impl Attr {
             let chk = Rc::clone(&chk_rc);
             chk.validate(ctx, syms, &new_env, recvparam);
         }
-        self.record_method_checks(ctx, syms, tree, m, origin, mods, typarams.clone(), params.clone(), thrown.clone());
+        self.record_method_checks(
+            ctx,
+            syms,
+            tree,
+            m,
+            origin,
+            mods,
+            typarams.clone(),
+            params.clone(),
+            thrown.clone(),
+        );
         if (owner_flags & flags::ANNOTATION as i64) != 0 {
             if !thrown.is_empty() {
                 let first = *thrown.head();
@@ -14826,8 +15917,7 @@ impl Attr {
                     crate::util::jc_diagnostic::Error::from(info),
                 );
             }
-            if is_default_method
-                || (m_flags & (flags::ABSTRACT as i64 | flags::NATIVE as i64)) == 0
+            if is_default_method || (m_flags & (flags::ABSTRACT as i64 | flags::NATIVE as i64)) == 0
             {
                 let info =
                     crate::resources::compiler_properties::errors::missing_meth_body_or_decl_abstract();
@@ -14911,7 +16001,9 @@ impl Attr {
                     m,
                     crate::util::position::NOPOS,
                 );
-                annotate.flush_with_attr(ctx, syms, self).expect("annotation flush");
+                annotate
+                    .flush_with_attr(ctx, syms, self)
+                    .expect("annotation flush");
             }
             self.attrib_stat(ctx, syms, body, &local_env);
         }
@@ -14948,7 +16040,13 @@ impl Attr {
         use crate::code::flags;
         let _ = mods;
         let is_record = ctx.sym(origin).is_record();
-        if !is_record || !ctx.sym(m).owner.map(|owner| ctx.sym(owner).kind == crate::code::kinds::Kind::TYP).unwrap_or(false) {
+        if !is_record
+            || !ctx
+                .sym(m)
+                .owner
+                .map(|owner| ctx.sym(owner).kind == crate::code::kinds::Kind::TYP)
+                .unwrap_or(false)
+        {
             return;
         }
         let components = match &ctx.sym(origin).kind_data {
@@ -14980,7 +16078,7 @@ impl Attr {
                 None => false,
             };
             if !same {
-                let m_name = attr_symbol_name(ctx, m);
+                let m_name = crate::comp::resolve::symbol_display_name(ctx, m);
                 let rc_name = attr_symbol_name(ctx, rc);
                 self.record_error(
                     ctx,
@@ -15066,21 +16164,19 @@ impl Attr {
                 > crate::comp::check::Check::protection(ctx.sym(origin).flags_field);
             if stronger {
                 let access = ctx.sym(origin).flags_field & flags::AccessFlags as i64;
-                let access_text = if access == 0 {
-                    String::from("package")
+                let access_text = if access & flags::PUBLIC as i64 != 0 {
+                    String::from("public")
+                } else if access & flags::PROTECTED as i64 != 0 {
+                    String::from("protected")
+                } else if access & flags::PRIVATE as i64 != 0 {
+                    String::from("private")
                 } else {
-                    format!("{:?}", flags::as_flag_set(access))
+                    String::from("package")
                 };
                 let access_frag = crate::resources::compiler_properties::fragments::canonical_must_not_have_stronger_access(
                     crate::resources::diagnostic_contract::DiagnosticArg::from_display(access_text),
                 );
-                self.record_canonical_error(
-                    ctx,
-                    tree,
-                    canonical_frag.clone(),
-                    origin,
-                    access_frag,
-                );
+                self.record_canonical_error(ctx, tree, canonical_frag.clone(), origin, access_frag);
             }
             if let Some(app) = first_call
                 && let TreeKind::MethodInvocation {
@@ -15107,7 +16203,8 @@ impl Attr {
                     crate::resources::compiler_properties::fragments::canonical_must_not_declare_type_variables(),
                 );
             }
-            let record_fields = crate::tree::tree_info::record_fields(ctx, env_of(self).encl_class.unwrap_or(tree));
+            let record_fields =
+                crate::tree::tree_info::record_fields(ctx, env_of(self).encl_class.unwrap_or(tree));
             let mut field_types: Vec<TypeId> = Vec::new();
             let mut l = record_fields;
             while l.non_empty() {
@@ -15135,14 +16232,21 @@ impl Attr {
                 };
                 let matches = match (param_ty, field_types.get(index)) {
                     (Some(param_ty), Some(field_ty)) => {
-                        self.types
-                            .is_same_type(ctx, syms, param_ty, *field_ty)
+                        self.types.is_same_type(ctx, syms, param_ty, *field_ty)
                     }
                     _ => false,
                 };
                 if !matches {
-                    self.record_canonical_error(
+                    let error_pos = match &ctx.tree(param).kind {
+                        TreeKind::VariableDecl {
+                            nameexpr: Some(nameexpr),
+                            ..
+                        } => ctx.tree(*nameexpr).pos,
+                        _ => ctx.tree(param).pos,
+                    };
+                    self.record_canonical_error_at(
                         ctx,
+                        error_pos,
                         tree,
                         canonical_frag.clone(),
                         origin,
@@ -15184,7 +16288,8 @@ impl Attr {
                     tree,
                     canonical_frag.clone(),
                     origin,
-                    crate::resources::compiler_properties::fragments::canonical_with_name_mismatch(),
+                    crate::resources::compiler_properties::fragments::canonical_with_name_mismatch(
+                    ),
                 );
             }
             let method_ty = ctx.sym(m).ty.expect("canonical constructor type");
@@ -15217,11 +16322,14 @@ impl Attr {
         origin: SymbolId,
         fragment: crate::resources::diagnostic_contract::FragmentInfo,
     ) {
+        let detail = self
+            .diags
+            .fragment(crate::util::jc_diagnostic::Fragment::from(fragment));
         let info = crate::resources::compiler_properties::errors::invalid_accessor_method_in_record(
             crate::resources::diagnostic_contract::SymbolArg::placeholder(attr_symbol_name(
                 ctx, origin,
             )),
-            crate::resources::diagnostic_contract::DiagnosticArg::from_display(fragment.info().key()),
+            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(detail)),
         );
         self.log.borrow_mut().error_at(
             ctx.tree(tree).pos,
@@ -15238,13 +16346,34 @@ impl Attr {
         origin: SymbolId,
         detail: crate::resources::diagnostic_contract::FragmentInfo,
     ) {
-        let info = crate::resources::compiler_properties::errors::invalid_canonical_constructor_in_record(
-            crate::resources::diagnostic_contract::DiagnosticArg::from_display(frag.info().key()),
-            ctx.sym(origin).name.clone(),
-            crate::resources::diagnostic_contract::DiagnosticArg::from_display(detail.info().key()),
-        );
+        let pos = ctx.tree(tree).pos;
+        self.record_canonical_error_at(ctx, pos, tree, frag, origin, detail);
+    }
+
+    /// Report an invalid canonical constructor at an explicit position.
+    fn record_canonical_error_at(
+        &mut self,
+        ctx: &mut CompilerContext,
+        pos: i32,
+        _tree: TreeId,
+        frag: crate::resources::diagnostic_contract::FragmentInfo,
+        origin: SymbolId,
+        detail: crate::resources::diagnostic_contract::FragmentInfo,
+    ) {
+        let frag = self
+            .diags
+            .fragment(crate::util::jc_diagnostic::Fragment::from(frag));
+        let detail = self
+            .diags
+            .fragment(crate::util::jc_diagnostic::Fragment::from(detail));
+        let info =
+            crate::resources::compiler_properties::errors::invalid_canonical_constructor_in_record(
+                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(frag)),
+                ctx.sym(origin).name.clone(),
+                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(detail)),
+            );
         self.log.borrow_mut().error_at(
-            ctx.tree(tree).pos,
+            pos,
             crate::util::jc_diagnostic::Error::from(info),
         );
     }
@@ -15329,9 +16458,7 @@ impl Attr {
                     ctx.scope_enter(scope, sym);
                 }
             } else {
-                if declared_using_var
-                    && (attr_mods_flags(ctx, mods) & flags::PARAMETER) == 0
-                {
+                if declared_using_var && (attr_mods_flags(ctx, mods) & flags::PARAMETER) == 0 {
                     let bad_fragment = if init.is_none() {
                         Some(crate::resources::compiler_properties::fragments::local_missing_init())
                     } else {
@@ -15353,8 +16480,7 @@ impl Attr {
                             make.at(ctx.tree(tree).pos);
                             make.erroneous_empty(ctx)
                         };
-                        if let TreeKind::VariableDecl { vartype, .. } =
-                            &mut ctx.tree_mut(tree).kind
+                        if let TreeKind::VariableDecl { vartype, .. } = &mut ctx.tree_mut(tree).kind
                         {
                             *vartype = Some(erroneous);
                         }
@@ -15373,13 +16499,15 @@ impl Attr {
                 // RefCell is already borrowed here); the vartype is attributed by
                 // the enclosing Attr pass first and memberEnter keeps that type.
                 if let Some(vartype) = vartype
-                    && ctx.tree(vartype).ty.is_none() {
-                        let attributed = self.attrib_type(ctx, syms, vartype, &env);
-                        ctx.tree_mut(vartype).ty = Some(attributed);
-                    }
+                    && ctx.tree(vartype).ty.is_none()
+                {
+                    let attributed = self.attrib_type(ctx, syms, vartype, &env);
+                    ctx.tree_mut(vartype).ty = Some(attributed);
+                }
                 {
                     let member_enter = Rc::clone(&self.member_enter);
-                    member_enter.borrow()
+                    member_enter
+                        .borrow()
                         .member_enter(ctx, syms, tree, &env, self);
                     // Java: memberEnter stores the new VarSymbol in tree.sym;
                     // the port keeps the tree slot as the shared location.
@@ -15417,15 +16545,18 @@ impl Attr {
         };
         let lint_rc = Rc::new(lint);
         let prev_lint = self.chk.set_lint(Rc::clone(&lint_rc));
-        let is_implicit_lambda_param = env.tree.map(|env_tree| {
-            matches!(
-                &ctx.tree(env_tree).kind,
-                TreeKind::Lambda {
-                    param_kind: crate::tree::jc_tree::ParameterKind::IMPLICIT,
-                    ..
-                }
-            )
-        }).unwrap_or(false)
+        let is_implicit_lambda_param = env
+            .tree
+            .map(|env_tree| {
+                matches!(
+                    &ctx.tree(env_tree).kind,
+                    TreeKind::Lambda {
+                        param_kind: crate::tree::jc_tree::ParameterKind::IMPLICIT,
+                        ..
+                    }
+                )
+            })
+            .unwrap_or(false)
             && (ctx.sym(v).flags_field & flags::PARAMETER) != 0;
         let check_raw = !is_implicit_lambda_param && !declared_using_var;
         if let Some(vartype) = vartype {
@@ -15434,10 +16565,9 @@ impl Attr {
             chk.validate_with(ctx, syms, &env, vartype, check_raw);
         }
         let _ = ctx.symbol_get_const_value(syms, v, self);
-        let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
-            Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
-                ctx.tree(tree).pos,
-            ));
+        let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> = Rc::new(
+            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+        );
         self.deferred_lint_handler.borrow_mut().flush(&position);
         {
             let chk_rc = Rc::clone(&self.chk);
@@ -15449,9 +16579,7 @@ impl Attr {
             && ((ctx.sym(v).flags_field & flags::FINAL as i64) == 0
                 || !{
                     let member_enter = Rc::clone(&self.member_enter);
-                    member_enter
-                        .borrow()
-                        .needs_lazy_const_value(ctx, init)
+                    member_enter.borrow().needs_lazy_const_value(ctx, init)
                 })
         {
             let init_env = {
@@ -15465,13 +16593,9 @@ impl Attr {
                 let init_ty = ctx.tree(init).ty.unwrap_or(v_ty);
                 let inferred = {
                     let syms_borrow: &Symtab = syms;
-                    self.chk.check_local_var_type(
-                        ctx,
-                        syms_borrow,
-                        start_pos,
-                        init_ty,
-                        name.clone(),
-                    )
+                    let name_pos = ctx.sym(v).var_pos().unwrap_or(start_pos);
+                    self.chk
+                        .check_local_var_type(ctx, syms_borrow, name_pos, init_ty, name.clone())
                 };
                 ctx.sym_mut(v).ty = Some(inferred);
             }
@@ -15508,7 +16632,6 @@ impl Attr {
         Ok(var_type)
     }
 
-
     /// Return whether the name is a no-argument method of Object.
     fn is_non_args_method_in_object(
         &self,
@@ -15539,9 +16662,6 @@ impl Attr {
         })
     }
 }
-
-
-
 
 impl Attr {
     /// Attribute a base clause (superclass/interface) type.
@@ -15660,12 +16780,11 @@ impl Attr {
         check_extensible: bool,
     ) -> TypeId {
         use crate::code::flags;
-        let pos = if ctx
-            .tree(tree)
-            .has_tag(crate::tree::jc_tree::Tag::TYPEAPPLY)
-        {
+        let pos = if ctx.tree(tree).has_tag(crate::tree::jc_tree::Tag::TYPEAPPLY) {
             match &ctx.tree(tree).kind {
-                TreeKind::TypeApply { clazz: Some(clazz), .. } => ctx.tree(*clazz).pos,
+                TreeKind::TypeApply {
+                    clazz: Some(clazz), ..
+                } => ctx.tree(*clazz).pos,
                 _ => ctx.tree(tree).pos,
             }
         } else {
@@ -15675,10 +16794,9 @@ impl Attr {
             && ctx.sym(tsym).is_anonymous()
         {
             let info = crate::resources::compiler_properties::errors::cant_inherit_from_anon();
-            self.log.borrow_mut().error_at(
-                pos,
-                crate::util::jc_diagnostic::Error::from(info),
-            );
+            self.log
+                .borrow_mut()
+                .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
             return self.types.create_error_type_original(ctx, Some(t), syms);
         }
         if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::ERROR) {
@@ -15690,10 +16808,9 @@ impl Attr {
         {
             if ctx.typ(t).get_upper_bound().is_none() {
                 let info = crate::resources::compiler_properties::errors::illegal_forward_ref();
-                self.log.borrow_mut().error_at(
-                    pos,
-                    crate::util::jc_diagnostic::Error::from(info),
-                );
+                self.log
+                    .borrow_mut()
+                    .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
                 return self.types.create_error_type_original(ctx, Some(t), syms);
             }
             t
@@ -15708,29 +16825,26 @@ impl Attr {
         let t_flags = ctx.sym(t_tsym).flags_field;
         if interface_expected && (t_flags & flags::INTERFACE as i64) == 0 {
             let info = crate::resources::compiler_properties::errors::intf_expected_here();
-            self.log.borrow_mut().error_at(
-                pos,
-                crate::util::jc_diagnostic::Error::from(info),
-            );
+            self.log
+                .borrow_mut()
+                .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
             return self.types.create_error_type_original(ctx, Some(t), syms);
         } else if check_extensible && class_expected && (t_flags & flags::INTERFACE as i64) != 0 {
             let info = crate::resources::compiler_properties::errors::no_intf_expected_here();
-            self.log.borrow_mut().error_at(
-                pos,
-                crate::util::jc_diagnostic::Error::from(info),
-            );
+            self.log
+                .borrow_mut()
+                .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
             return self.types.create_error_type_original(ctx, Some(t), syms);
         }
         if check_extensible && (t_flags & flags::FINAL as i64) != 0 {
             let info = crate::resources::compiler_properties::errors::cant_inherit_from_final(
                 crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                    format!("{t_tsym:?}"),
+                    crate::comp::resolve::symbol_display_name(ctx, t_tsym),
                 ),
             );
-            self.log.borrow_mut().error_at(
-                pos,
-                crate::util::jc_diagnostic::Error::from(info),
-            );
+            self.log
+                .borrow_mut()
+                .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
         }
         {
             let chk_rc = Rc::clone(&self.chk);
@@ -15739,7 +16853,6 @@ impl Attr {
         }
         t
     }
-
 }
 
 impl Attr {
@@ -15840,10 +16953,7 @@ impl Attr {
         modules.complete_uses_provides_from_attr(ctx, syms, msym, self)?;
         // Java: Lint lint = env.outer.info.lint = env.outer.info.lint.augment(msym);
         let env = self.env.clone().expect("AssertionError: attr env");
-        let outer = env
-            .outer
-            .clone()
-            .expect("AssertionError: module env outer");
+        let outer = env.outer.clone().expect("AssertionError: module env outer");
         let lint = {
             let prev = outer
                 .info
@@ -15859,24 +16969,18 @@ impl Attr {
         let prev_lint = self.chk.set_lint(Rc::clone(&lint_rc));
         // Java: chk.checkModuleName(tree); chk.checkDeprecatedAnnotation(tree, msym);
         self.chk.check_module_name(ctx, tree);
-        self.chk.check_deprecated_annotation(
-            ctx,
-            syms,
-            ctx.tree(tree).pos,
-            msym,
-        );
+        self.chk
+            .check_deprecated_annotation(ctx, syms, ctx.tree(tree).pos, msym);
         // Java: try { deferredLintHandler.flush(tree.pos()); }
         //       finally { chk.setLint(prevLint); }
-        let pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
-            Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
-                ctx.tree(tree).pos,
-            ));
+        let pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> = Rc::new(
+            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+        );
         self.deferred_lint_handler.borrow_mut().flush(&pos);
         self.chk.set_lint(prev_lint);
         Ok(self.no_type(ctx))
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -15939,7 +17043,11 @@ mod tests {
 
     #[test]
     fn result_info_keep_pkind_and_pt_and_dup() {
-        let info = ResultInfo::new(KindSelector::TYP, Some(TypeId::new(3)), test_check_context());
+        let info = ResultInfo::new(
+            KindSelector::TYP,
+            Some(TypeId::new(3)),
+            test_check_context(),
+        );
         assert_eq!(info.pkind, KindSelector::TYP);
         assert_eq!(info.pt, Some(TypeId::new(3)));
         let dup = info.dup(Some(TypeId::new(4)));
@@ -15948,7 +17056,10 @@ mod tests {
         let no_pt = info.dup(None);
         assert_eq!(no_pt.pt, None);
         let mode_dup = info.dup_mode(crate::comp::check::CheckMode::NO_TREE_UPDATE);
-        assert_eq!(mode_dup.check_mode, crate::comp::check::CheckMode::NO_TREE_UPDATE);
+        assert_eq!(
+            mode_dup.check_mode,
+            crate::comp::check::CheckMode::NO_TREE_UPDATE
+        );
     }
 
     #[test]
@@ -16054,8 +17165,10 @@ mod tests {
     use crate::util::options::Options;
 
     /// The development-time Attr oracle (tools/gen-attr-oracle).
-    const ATTR_ORACLE: &str =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/attr-oracle.txt"));
+    const ATTR_ORACLE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/attr-oracle.txt"
+    ));
 
     /// The same source as tools/gen-attr-oracle/GenAttrOracle.java.
     const SAMPLE_SOURCE: &str = "package p;\nimport java.util.List;\nclass Sample {\n    int f1;\n    int[] f2;\n    String f3;\n    String[] f4;\n    List<String> f5;\n    List<String[]> f6;\n    List<List<String>> f7;\n}\n";
@@ -16108,11 +17221,7 @@ mod tests {
         fn get_kind(&self) -> Kind {
             Kind::SOURCE
         }
-        fn is_name_compatible(
-            &self,
-            simple_name: &javac_strings::JavaString,
-            kind: Kind,
-        ) -> bool {
+        fn is_name_compatible(&self, simple_name: &javac_strings::JavaString, kind: Kind) -> bool {
             kind == Kind::SOURCE && simple_name.to_string_lossy() == self.base
         }
         fn get_nesting_kind(
@@ -16231,8 +17340,6 @@ mod tests {
         attr: Attr,
     }
 
-
-
     /// The test CheckContext carrying an explicit inference context (the
     /// diamond listener path needs InferenceContext.free to answer true).
     struct TestAnonCheckContext {
@@ -16250,10 +17357,16 @@ mod tests {
             req: TypeId,
             warn: &mut crate::util::warner::Warner,
         ) -> bool {
-            self.enclosing.compatible(ctx, syms, types, found, req, warn)
+            self.enclosing
+                .compatible(ctx, syms, types, found, req, warn)
         }
 
-        fn report(&self, ctx: &mut CompilerContext, pos: i32, details: &crate::util::jc_diagnostic::JCDiagnostic) {
+        fn report(
+            &self,
+            ctx: &mut CompilerContext,
+            pos: i32,
+            details: &crate::util::jc_diagnostic::JCDiagnostic,
+        ) {
             self.enclosing.report(ctx, pos, details);
         }
 
@@ -16266,7 +17379,8 @@ mod tests {
             found: TypeId,
             req: TypeId,
         ) -> crate::util::warner::Warner {
-            self.enclosing.check_warner(ctx, syms, types, pos, found, req)
+            self.enclosing
+                .check_warner(ctx, syms, types, pos, found, req)
         }
 
         fn inference_context(&self) -> &Rc<crate::comp::infer::InferenceContext> {
@@ -16324,14 +17438,7 @@ mod tests {
         };
         let tree = {
             let mut m = make.borrow_mut();
-            m.new_class(
-                ctx,
-                None,
-                List::nil(),
-                clazz,
-                List::nil(),
-                Some(cdef),
-            )
+            m.new_class(ctx, None, List::nil(), clazz, List::nil(), Some(cdef))
         };
         (tree, clazz, cdef)
     }
@@ -16341,7 +17448,14 @@ mod tests {
         attr: &Rc<RefCell<Attr>>,
         options: &Rc<Options>,
     ) {
-        wire_attr_services(ctx, Rc::clone(attr), Rc::clone(options), Source::JDK17, None, None);
+        wire_attr_services(
+            ctx,
+            Rc::clone(attr),
+            Rc::clone(options),
+            Source::JDK17,
+            None,
+            None,
+        );
     }
 
     #[test]
@@ -16416,7 +17530,8 @@ mod tests {
         };
         let result = result.expect("visit_anonymous_class_definition");
         assert!(
-            ctx.typ(result).has_tag(crate::code::type_tag::TypeTag::ERROR),
+            ctx.typ(result)
+                .has_tag(crate::code::type_tag::TypeTag::ERROR),
             "the listener branch returns the recovery error type"
         );
         assert_eq!(ctx.tree(tree).ty, Some(result));
@@ -16433,7 +17548,11 @@ mod tests {
             TreeKind::ClassDecl { extending, .. } => *extending,
             _ => panic!("class decl"),
         };
-        assert_eq!(extending, Some(clazz), "the replayed body sets the superclass");
+        assert_eq!(
+            extending,
+            Some(clazz),
+            "the replayed body sets the superclass"
+        );
     }
 
     #[test]
@@ -16457,11 +17576,8 @@ mod tests {
                 build_anonymous_class_scenario(&mut ctx, &syms_ref, &names, &make, object_type);
             (tree, clazz, cdef, object_type)
         };
-        let inference = crate::comp::infer::InferenceContext::with_undet_vars(
-            None,
-            List::nil(),
-            List::nil(),
-        );
+        let inference =
+            crate::comp::infer::InferenceContext::with_undet_vars(None, List::nil(), List::nil());
         let check_context = Rc::new(TestAnonCheckContext {
             enclosing: Rc::clone(&attr.borrow().basic_handler),
             inference,
@@ -16490,7 +17606,8 @@ mod tests {
         };
         let result = result.expect("visit_anonymous_class_definition");
         assert!(
-            ctx.typ(result).has_tag(crate::code::type_tag::TypeTag::ERROR),
+            ctx.typ(result)
+                .has_tag(crate::code::type_tag::TypeTag::ERROR),
             "the normal path returns the error type (no reusable class type)"
         );
         let extending = match &ctx.tree(cdef).kind {
@@ -16517,7 +17634,7 @@ mod tests {
             Rc::clone(&harness.options),
             Source::JDK17,
             None,
-        None,
+            None,
         );
         let a = attr.borrow();
         assert!(a.rs.borrow().is_some(), "rs service");
@@ -16548,8 +17665,7 @@ mod tests {
             content: source_text.to_string(),
         });
         log.borrow_mut().use_source(Some(Rc::clone(&sourcefile)));
-        let scanner_factory =
-            ScannerFactory::new(&mut context, Rc::clone(&names), Source::DEFAULT);
+        let scanner_factory = ScannerFactory::new(&mut context, Rc::clone(&names), Source::DEFAULT);
         let parser_factory = ParserFactory::new(
             &mut context,
             Rc::clone(&names),
@@ -16611,8 +17727,7 @@ mod tests {
         // Java: the Check constructor obtains rs/fileManager/profile/preview
         // from the Context; the harness installs the same services explicitly
         // (the ported service-injection adapter).
-        chk
-            .set_profile(Rc::new(crate::jvm::profile::Profile::DEFAULT));
+        chk.set_profile(Rc::new(crate::jvm::profile::Profile::DEFAULT));
         chk.set_file_manager(Rc::clone(&manager));
         let preview = Preview::instance(&mut context);
         chk.set_preview(Rc::clone(&preview));
@@ -16627,7 +17742,7 @@ mod tests {
             manager,
             &options,
             Rc::clone(&todo),
-            Rc::clone(&type_envs)
+            Rc::clone(&type_envs),
         )));
         let member_enter = Rc::new(RefCell::new(MemberEnter::new(
             Rc::clone(&enter),
@@ -16635,7 +17750,7 @@ mod tests {
             Rc::clone(&chk),
             Rc::clone(&types),
             Rc::clone(&deferred),
-            Rc::new(RefCell::new(None))
+            Rc::new(RefCell::new(None)),
         )));
         let type_enter = Rc::new(RefCell::new(TypeEnter::new(
             Rc::clone(&names),
@@ -16651,7 +17766,7 @@ mod tests {
             Rc::clone(&type_envs),
             Rc::clone(&dependencies),
             Rc::new(RefCell::new(None)),
-            Rc::clone(&todo)
+            Rc::clone(&todo),
         )));
         let basic_handler = Rc::clone(&chk.basic_handler);
         let infer = crate::comp::infer::Infer::new(
@@ -16681,14 +17796,14 @@ mod tests {
             &options,
             Rc::clone(&preview),
         );
-        enter.borrow_mut().main(&mut ctx, &syms.borrow_mut(), List::of(unit));
+        enter
+            .borrow_mut()
+            .main(&mut ctx, &syms.borrow_mut(), List::of(unit));
         let class_tree = class_tree_in(&ctx, unit);
         let class_sym = class_tree_symbol(&ctx, class_tree).expect("class symbol");
         let top = enter.borrow().get_top_level_env(&mut ctx, unit);
         let members_scope = match &ctx.sym(class_sym).kind_data {
-            crate::code::symbol::SymbolKind::ClassSymbol {
-                members_field, ..
-            } => *members_field,
+            crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
             _ => None,
         };
         let mut info = crate::comp::attr_context::AttrContext::new();
@@ -16768,12 +17883,7 @@ mod tests {
     /// Resolve is not ported yet (registered: Attr.visitIdent identifier
     /// resolution is the Resolve); the tree.sym fast path itself is the
     /// upstream Attr.java:4190-4192 branch.
-    fn preset_type_idents(
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        names: &Names,
-        tree: TreeId,
-    ) {
+    fn preset_type_idents(ctx: &mut CompilerContext, syms: &Symtab, names: &Names, tree: TreeId) {
         match ctx.tree(tree).tag {
             Tag::TYPEARRAY => {
                 if let TreeKind::ArrayTypeTree {
@@ -16910,15 +18020,24 @@ mod tests {
         let mut actual: Vec<String> = Vec::new();
         for (index, tree) in trees.iter().enumerate() {
             let tree = *tree;
-            preset_type_idents(&mut harness.ctx, &harness.syms.borrow(), &harness.names, tree);
-            let ty = harness
-                .attr
-                .attrib_type(&mut harness.ctx, &harness.syms.borrow_mut(), tree, &harness.env);
+            preset_type_idents(
+                &mut harness.ctx,
+                &harness.syms.borrow(),
+                &harness.names,
+                tree,
+            );
+            let ty = harness.attr.attrib_type(
+                &mut harness.ctx,
+                &harness.syms.borrow_mut(),
+                tree,
+                &harness.env,
+            );
             actual.push(format!("TYPE {} {}", index, encode_type(&harness.ctx, ty)));
         }
         let expected = oracle_entries();
         assert_eq!(actual.len(), expected.len(), "type tree count");
-        for (index, (actual_line, expected_line)) in actual.iter().zip(expected.iter()).enumerate() {
+        for (index, (actual_line, expected_line)) in actual.iter().zip(expected.iter()).enumerate()
+        {
             assert_eq!(
                 actual_line, expected_line,
                 "type tree #{index} attribution differs from the javac oracle"
@@ -16930,8 +18049,10 @@ mod tests {
     const RESOLVE_SAMPLE_SOURCE: &str = "class Sample {\n    int f1;\n    String f2;\n    static int f3;\n    class Inner {}\n    int m() {\n        return f1 + f3;\n    }\n    Inner m2() {\n        return null;\n    }\n}\n";
 
     /// The development-time Resolve oracle (tools/gen-resolve-oracle).
-    const RESOLVE_ORACLE: &str =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/resolve-oracle.txt"));
+    const RESOLVE_ORACLE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/resolve-oracle.txt"
+    ));
 
     /// Encodes a resolved symbol in the oracle line format
     /// "REF <name> <kind> <owner-qualified-name>".
@@ -16960,7 +18081,11 @@ mod tests {
     /// with the upstream MemberEnter field construction (name/owner/flags).
     fn enter_member_fields(harness: &mut AttrHarness) {
         let class_sym = class_tree_symbol(&harness.ctx, harness.class_tree).expect("class symbol");
-        let members = harness.ctx.sym(class_sym).members().expect("class members scope");
+        let members = harness
+            .ctx
+            .sym(class_sym)
+            .members()
+            .expect("class members scope");
         let mut current = class_defs(&harness.ctx, harness.class_tree);
         while current.non_empty() {
             let def = *current.head();
@@ -17128,11 +18253,12 @@ mod tests {
         assert!(crate::code::symbol::symbol_resolve_error_data(&harness.ctx, not_found).is_some());
     }
 
-
     /// The development-time Resolve error-key oracle
     /// (tools/gen-resolve-error-oracle).
-    const RESOLVE_ERROR_ORACLE: &str =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/resolve-error-oracle.txt"));
+    const RESOLVE_ERROR_ORACLE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/resolve-error-oracle.txt"
+    ));
 
     #[test]
     fn resolve_error_keys_match_the_javac_oracle() {
@@ -17342,8 +18468,7 @@ class Sample {
     fn referenced_statement_skips_labels_to_the_loop() {
         let harness = build_attr_harness_with_source(ATTR_B_SOURCE);
         let (labelled, while_tree, _break_tree) = attr_b_trees(&harness);
-        let referenced =
-            crate::tree::tree_info::referenced_statement(&harness.ctx, labelled);
+        let referenced = crate::tree::tree_info::referenced_statement(&harness.ctx, labelled);
         assert_eq!(referenced, while_tree);
     }
 
@@ -17403,7 +18528,13 @@ class Sample {
         let stat_info = harness.attr.stat_info.clone();
         let result = harness
             .attr
-            .attrib_tree(&mut harness.ctx, &harness.syms.borrow_mut(), break_tree, &env, stat_info)
+            .attrib_tree(
+                &mut harness.ctx,
+                &harness.syms.borrow_mut(),
+                break_tree,
+                &env,
+                stat_info,
+            )
             .expect("break attribution");
         let _ = result;
         let target = match &harness.ctx.tree(break_tree).kind {
@@ -17414,7 +18545,6 @@ class Sample {
         // for a labelled break (Attr.java:2352-2362).
         assert_eq!(target, Some(labelled));
     }
-
 
     /// Java: Attr.visitTypeParameter (Attr.java:5017-5029): the preliminary
     /// bound from attribTypeVariables is replaced by checkIntersection.
@@ -17431,7 +18561,7 @@ class Sample {
             Rc::clone(&harness.options),
             Source::JDK17,
             None,
-        None,
+            None,
         );
         let ctx = &mut harness.ctx;
         let object_type = harness.syms.borrow().object_type;
@@ -17500,7 +18630,7 @@ class Sample {
             Rc::clone(&harness.options),
             Source::JDK17,
             None,
-        None,
+            None,
         );
         let ctx = &mut harness.ctx;
         let object_type = harness.syms.borrow().object_type;
@@ -17626,7 +18756,7 @@ class Sample {
             Rc::clone(&harness.options),
             Source::JDK17,
             None,
-        None,
+            None,
         );
         let (int_type, string_type) = {
             let syms = harness.syms.borrow();

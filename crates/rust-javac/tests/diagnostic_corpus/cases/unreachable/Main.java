@@ -1,0 +1,1 @@
+class Main { void f() { return; int x = 1; } }

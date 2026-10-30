@@ -118,11 +118,13 @@ mod Flags {
     pub const DEFAULT: i64 = crate::code::flags::DEFAULT;
     pub const MODIFIER_FLAGS: i64 = crate::code::flags::ModifierFlags;
 }
-/// P4 placeholder: a fragment used as a diagnostic argument is currently
-/// carried as its key text (diagnostic_contract::DiagnosticArg is a text
-/// placeholder until the P4 JCDiagnostic reformatting; registered).
-fn fragment_diagnostic_arg(fragment: FragmentInfo) -> DiagnosticArg {
-    DiagnosticArg::from_display(fragment.info().key())
+/// Keep a nested fragment as a JCDiagnostic so its arguments are rendered by
+/// the diagnostic formatter (Java: the Fragment itself is an Object[] element).
+fn fragment_diagnostic_arg(log: &Log, fragment: FragmentInfo) -> DiagnosticArg {
+    let diagnostic = log
+        .diags()
+        .fragment(crate::util::jc_diagnostic::Fragment::from(fragment));
+    DiagnosticArg::JCDiagnostic(std::rc::Rc::new(diagnostic))
 }
 
 /// The number of precedence levels of infix operators.
@@ -641,11 +643,31 @@ impl JavacParser {
 
     /// The presentable text of a token kind (used for the expected diagnostics).
     fn token_text(kind: TokenKind) -> String {
-        match kind.name() {
-            Some(text) => text.to_string(),
-            None => match kind {
-                TokenKind::EOF => "end of file".to_string(),
-                _ => format!("{:?}", kind),
+        // Java: Tokens.TokenKind.toString/toString(Locale, Messages): literal
+        // token kinds use the compiler.misc.token.* names, delimiters are
+        // quoted, and the other tokens use their spelling.
+        match kind {
+            TokenKind::IDENTIFIER => "<identifier>".to_string(),
+            TokenKind::CHARLITERAL => "<character>".to_string(),
+            TokenKind::STRINGLITERAL => "<string>".to_string(),
+            TokenKind::INTLITERAL => "<integer>".to_string(),
+            TokenKind::LONGLITERAL => "<long integer>".to_string(),
+            TokenKind::FLOATLITERAL => "<float>".to_string(),
+            TokenKind::DOUBLELITERAL => "<double>".to_string(),
+            TokenKind::ERROR => "<bad symbol>".to_string(),
+            TokenKind::EOF => "<end of input>".to_string(),
+            TokenKind::DOT
+            | TokenKind::COMMA
+            | TokenKind::SEMI
+            | TokenKind::LPAREN
+            | TokenKind::RPAREN
+            | TokenKind::LBRACKET
+            | TokenKind::RBRACKET
+            | TokenKind::LBRACE
+            | TokenKind::RBRACE => format!("'{}'", kind.name().unwrap_or("")),
+            _ => match kind.name() {
+                Some(text) => text.to_string(),
+                None => format!("{kind:?}"),
             },
         }
     }
@@ -1274,7 +1296,9 @@ impl JavacParser {
     /// Java: JCAnnotation annotation(int pos, Tag kind)
     fn annotation(&mut self, ctx: &mut CompilerContext, pos: i32, is_type_annotation: bool) -> TreeId {
         if is_type_annotation {
-            self.check_source_level(pos, Feature::TYPE_ANNOTATIONS);
+            // Java: checkSourceLevel(feature) uses the current token position,
+            // which is the annotation name after the '@'.
+            self.check_source_level(self.token.pos, Feature::TYPE_ANNOTATIONS);
         }
         let ident = self.qualident(ctx, false);
         let field_values = self.annotation_field_values_opt(ctx);
@@ -1786,7 +1810,7 @@ impl JavacParser {
             if should_warn {
                 let key = JCDiagnosticWarning::from(warnings::restricted_type_not_allowed(
                     name.clone(),
-                    crate::resources::diagnostic_contract::SourceArg::placeholder("JDK10"),
+                    crate::resources::diagnostic_contract::SourceArg::placeholder(Source::JDK10.name()),
                 ));
                 self.log.borrow_mut().warning_at(pos, key);
             }
@@ -1798,7 +1822,7 @@ impl JavacParser {
             if should_warn {
                 let key = JCDiagnosticWarning::from(warnings::restricted_type_not_allowed(
                     name.clone(),
-                    crate::resources::diagnostic_contract::SourceArg::placeholder("JDK14"),
+                    crate::resources::diagnostic_contract::SourceArg::placeholder(Source::JDK14.name()),
                 ));
                 self.log.borrow_mut().warning_at(pos, key);
             }
@@ -1811,7 +1835,7 @@ impl JavacParser {
                 let key = JCDiagnosticWarning::from(
                     warnings::restricted_type_not_allowed_preview(
                         name.clone(),
-                        crate::resources::diagnostic_contract::SourceArg::placeholder("JDK14"),
+                        crate::resources::diagnostic_contract::SourceArg::placeholder(Source::JDK14.name()),
                     ),
                 );
                 self.log.borrow_mut().warning_at(pos, key);
@@ -1904,6 +1928,16 @@ impl JavacParser {
             if self.token.kind != TokenKind::COLCOL {
                 self.select_type_mode();
             }
+            t
+        } else if self.token.kind != TokenKind::COLCOL {
+            // Java: JavacParser.bracketsSuffix (JavacParser.java:2259-2265).
+            self.syntax_error(
+                ctx,
+                self.token.pos,
+                JCDiagnosticError::from(
+                    crate::resources::compiler_properties::errors::dot_class_expected(),
+                ),
+            );
             t
         } else {
             t
@@ -3470,7 +3504,7 @@ impl JavacParser {
             }
             if let Some(fragment) = diag_fragment {
                 let key = JCDiagnosticError::from(errors::invalid_lambda_parameter_declaration(
-                    fragment_diagnostic_arg(fragment),
+                    fragment_diagnostic_arg(&self.log.borrow(), fragment),
                 ));
                 self.log
                     .borrow_mut()
@@ -3910,7 +3944,7 @@ impl JavacParser {
         if let Some(source) = self.restricted_type_name_starting_at_source(&name, pos, true) {
             let key = JCDiagnosticError::from(errors::restricted_type_not_allowed(
                 name.clone(),
-                SourceArg::placeholder(source.to_string()),
+                SourceArg::placeholder(source.name()),
             ));
             self.report_syntax_error(ctx, pos, key);
         }
@@ -4076,6 +4110,20 @@ impl JavacParser {
         self.accept(ctx, TokenKind::LBRACE);
         let stats = self.block_statements(ctx);
         let t = self.F.at(pos).block(ctx, flags, stats);
+        // Java: a case/default outside a switch is orphaned; consume the
+        // switch groups so the enclosing block can close normally.
+        while matches!(self.token.kind, TokenKind::CASE | TokenKind::DEFAULT) {
+            let _ = self.syntax_error(
+                ctx,
+                self.token.pos,
+                JCDiagnosticError::from(
+                    crate::resources::compiler_properties::errors::orphaned(Self::token_arg(
+                        self.token.kind,
+                    )),
+                ),
+            );
+            self.switch_block_statement_groups(ctx);
+        }
         let endpos = self.token.pos;
         if let TreeKind::Block { endpos: field, .. } = &mut ctx.tree_mut(t).kind {
             *field = endpos;
@@ -4578,7 +4626,7 @@ impl JavacParser {
                 }
                 if resources.is_empty() {
                     if finalizer.is_none() && catchers.is_empty() {
-                        let p = self.token.pos;
+                        let p = pos;
                         let _ = self.log.borrow_mut().error_flag_at(
                             DiagnosticFlag::SYNTAX,
                             p,
@@ -5147,7 +5195,7 @@ impl JavacParser {
                 // Java: Errors.InvalidPermitsClause(Fragments.ClassIsNotSealed(classOrInterface)).
                 let class_fragment = fragments::class_is_not_sealed(JavaString::from(class_or_interface));
                 let key = JCDiagnosticError::from(errors::invalid_permits_clause(
-                    fragment_diagnostic_arg(class_fragment),
+                    fragment_diagnostic_arg(&self.log.borrow(), class_fragment),
                 ));
                 self.log.borrow_mut().error_at(self.token.pos, key);
             }
@@ -5466,14 +5514,18 @@ impl JavacParser {
             // Java: log.error(SYNTAX, token.pos, Errors.InvalidCanonicalConstructorInRecord(
             // Fragments.Compact, className,
             // Fragments.ThrowsClauseNotAllowedForCanonicalConstructor(Fragments.Compact)));
+            let compact_arg =
+                fragment_diagnostic_arg(&self.log.borrow(), fragments::compact());
+            let detail_arg = fragment_diagnostic_arg(
+                &self.log.borrow(),
+                fragments::throws_clause_not_allowed_for_canonical_constructor(compact_arg),
+            );
+            let outer_compact =
+                fragment_diagnostic_arg(&self.log.borrow(), fragments::compact());
             let key = JCDiagnosticError::from(errors::invalid_canonical_constructor_in_record(
-                fragment_diagnostic_arg(fragments::compact()),
+                outer_compact,
                 class_name.clone(),
-                fragment_diagnostic_arg(
-                    fragments::throws_clause_not_allowed_for_canonical_constructor(
-                        fragment_diagnostic_arg(fragments::compact()),
-                    ),
-                ),
+                detail_arg,
             ));
             self.log
                 .borrow_mut()
@@ -5597,10 +5649,10 @@ impl JavacParser {
                 _ => 0,
             };
             if (mods_flags & Flags::STATIC) != 0 {
-                self.check_source_level(pos, Feature::STATIC_INTERFACE_METHODS);
+                self.check_source_level(self.token.pos, Feature::STATIC_INTERFACE_METHODS);
             }
             if (mods_flags & Flags::PRIVATE) != 0 {
-                self.check_source_level(pos, Feature::PRIVATE_INTERFACE_METHODS);
+                self.check_source_level(self.token.pos, Feature::PRIVATE_INTERFACE_METHODS);
             }
         }
         let prev_receiver = self.receiver_param;
@@ -5639,7 +5691,16 @@ impl JavacParser {
             }
         }
         let result = self.F.at(pos).method_def(
-            ctx, mods, name, type_, typarams, None, params, thrown, body, default_value,
+            ctx,
+            mods,
+            name,
+            type_,
+            typarams,
+            self.receiver_param,
+            params,
+            thrown,
+            body,
+            default_value,
         );
         let result = self.to_p(result);
         self.attach(result, dc);

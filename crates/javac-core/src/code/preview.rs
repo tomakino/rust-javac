@@ -233,7 +233,9 @@ impl Preview {
     /// entry point stays unimplemented (no substitute components).
     pub fn instance(context: &mut Context) -> Rc<Preview> {
         let options = crate::util::options::Options::instance(context);
-        let enabled = options.is_set("preview");
+        // Java: options.isSet(PREVIEW) / options.isSet("forcePreview").
+        let enabled = options.is_set_option(crate::main::option::Option::PREVIEW)
+            || options.is_set("preview");
         let force_preview = options.is_set("forcePreview");
         let log = Log::instance(context);
         let lint = Lint::instance(context);

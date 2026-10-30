@@ -1037,7 +1037,10 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         annotations: &List<crate::ids::TreeId>,
     ) {
         if !annotations.is_empty() {
-            let frames = self.frames.clone();
+            // The ported frame stack is a Vec pushed root-first; ResolveFrame
+            // walks the path from the innermost annotated tree outwards.
+            let mut frames = self.frames.clone();
+            frames.reverse();
             let p = self.resolve_frame(ctx, tree, frame, &frames, self.current_lambda, 0, List::nil());
             self.set_type_annotation_pos(ctx, annotations, p);
         }
@@ -1425,14 +1428,20 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
             if ctx.typ(encl_ty_value).has_tag(crate::code::type_tag::TypeTag::NONE) {
                 if !only_type_annotations.is_empty() {
                     let info = if only_type_annotations.length() == 1 {
-                        crate::resources::compiler_properties::errors::cant_type_annotate_scoping(vec![
-                            crate::resources::diagnostic_contract::AnnotationArg::placeholder("type annotation"),
-                        ])
+                        let annotation = *only_type_annotations.head();
+                        let display = ctx
+                            .attr(annotation)
+                            .ty
+                            .map(|t| crate::comp::attr::annotation_type_display(ctx, t))
+                            .unwrap_or_default();
+                        crate::resources::compiler_properties::errors::cant_type_annotate_scoping1(
+                            crate::resources::diagnostic_contract::AnnotationArg::placeholder(display),
+                        )
                     } else {
                         let mut args: Vec<crate::resources::diagnostic_contract::AnnotationArg> = Vec::new();
                         for annotation in only_type_annotations.iter() {
                             args.push(crate::resources::diagnostic_contract::AnnotationArg::placeholder(
-                                ctx.attr(annotation).ty.map(|t| crate::comp::attr::type_display_of(ctx, t)).unwrap_or_default(),
+                                ctx.attr(annotation).ty.map(|t| crate::comp::attr::annotation_type_display(ctx, t)).unwrap_or_default(),
                             ));
                         }
                         crate::resources::compiler_properties::errors::cant_type_annotate_scoping(args)

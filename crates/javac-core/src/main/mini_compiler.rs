@@ -63,7 +63,7 @@ use crate::jvm::jni_writer::JNIWriter;
 use crate::jvm::pool_writer::PoolWriter;
 use crate::jvm::profile::Profile;
 use crate::jvm::target::Target;
-use crate::ids::TreeId;
+use crate::ids::{SymbolId, TreeId};
 use crate::parser::parser::Parser;
 use crate::tree::jc_tree::TreeKind;
 use crate::util::abstract_log::AbstractLog;
@@ -71,7 +71,8 @@ use crate::util::list::List;
 use crate::tree::tree_maker::TreeMaker;
 use crate::util::context::Context as UtilContext;
 use crate::util::javac_messages::JavacMessages;
-use crate::util::jc_diagnostic::Factory;
+use crate::resources::compiler_properties::fragments;
+use crate::util::jc_diagnostic::{Factory, Fragment};
 use crate::util::log::Log;
 use crate::util::names::Names;
 use crate::util::options::Options;
@@ -171,6 +172,16 @@ fn collect_package_dirs(root: &Path, dir: &Path, out: &mut Vec<String>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {
+            continue;
+        }
+        // Build outputs are not package roots: the default class path (.) would otherwise
+        // walk the whole target/ tree and collect thousands of bogus "packages".
+        if let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && matches!(
+                name,
+                "target" | "build" | ".git" | ".gradle" | "node_modules" | "out"
+            )
+        {
             continue;
         }
         let Ok(relative) = path.strip_prefix(root) else {
@@ -290,6 +301,141 @@ pub struct MiniCompiler {
     pub last_compiled_classes: Vec<CompiledClass>,
 }
 
+/// Java: the Completer that JavaCompiler.readSourceFile installs on the
+/// ClassFinder (JavaCompiler.java:777-855). The ported reader keeps only the
+/// services used by that method and takes &self so that completing a source
+/// file may recursively complete further source files.
+pub struct SourceFileCompleter {
+    /// Java: Log log.
+    pub log: Rc<RefCell<Log>>,
+    /// Java: JCDiagnostic.Factory diagFactory.
+    pub diags: Rc<Factory>,
+    /// Java: DeferredCompletionFailureHandler dcfh.
+    pub dcfh: Rc<DeferredCompletionFailureHandler>,
+    /// Java: ParserFactory parserFactory.
+    pub parser_factory: Rc<crate::parser::parser_factory::ParserFactory>,
+    /// Java: Enter enter.
+    pub enter: Rc<RefCell<Enter>>,
+    /// Java: Modules modules.
+    pub modules: Rc<Modules>,
+    /// Java: boolean lineDebugInfo (Gen.lineDebugInfo).
+    pub line_debug_info: bool,
+}
+
+impl crate::code::class_finder::SourceFileReader for SourceFileCompleter {
+    /// Java: public void readSourceFile(JCCompilationUnit tree, ClassSymbol c)
+    /// (JavaCompiler.java:787-855) — the tree == null parse path.
+    fn read_source_file(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: SymbolId,
+    ) -> Result<(), crate::code::symbol::CompletionFailure> {
+        use crate::code::symbol::{CompletionFailure, SymbolKind};
+        // Java: JavaFileObject filename = c.classfile;
+        let filename = match &ctx.sym(sym).kind_data {
+            SymbolKind::ClassSymbol { classfile, .. } => classfile.clone(),
+            _ => return Ok(()),
+        };
+        let Some(filename) = filename else {
+            return Ok(());
+        };
+        let prev = self
+            .log
+            .borrow_mut()
+            .use_source(Some(Rc::clone(&filename)));
+        // Java: try { tree = parse(filename, filename.getCharContent(false)); }
+        // catch (IOException e) { log.error(Errors.ErrorReadingFile(...));
+        //     tree = make.TopLevel(List.nil()); }
+        let content = filename.get_char_content(false);
+        let tree = match content {
+            Ok(Some(content)) => {
+                let module_info = filename.is_name_compatible(
+                    &js("module-info"),
+                    javac_tools::tools::java_file_object::Kind::SOURCE,
+                );
+                let mut parser = self.parser_factory.new_parser_full(
+                    ctx,
+                    &content,
+                    false,
+                    false,
+                    self.line_debug_info,
+                    module_info,
+                );
+                let tree = parser.parse_compilation_unit(ctx);
+                // Java: tree.sourcefile = filename (JavaCompiler.parse).
+                if let TreeKind::CompilationUnit { sourcefile: slot, .. } =
+                    &mut ctx.tree_mut(tree).kind
+                {
+                    *slot = Some(Rc::clone(&filename));
+                }
+                tree
+            }
+            _ => {
+                let info = crate::resources::compiler_properties::errors::error_reading_file(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        filename.to_uri(),
+                    ),
+                    js(""),
+                );
+                self.log.borrow_mut().error_at(
+                    crate::util::position::NOPOS,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+                self.log.borrow_mut().use_source(prev);
+                let diag = self
+                    .diags
+                    .fragment(Fragment::from(fragments::cant_resolve_modules()));
+                return Err(CompletionFailure::new(
+                    Some(sym),
+                    Box::new(move || diag.clone()),
+                    Some(Rc::clone(&self.dcfh)),
+                ));
+            }
+        };
+        // Java: if (!modules.enter(List.of(tree), c))
+        //     throw new CompletionFailure(c, () -> diags.fragment(
+        //         Fragments.CantResolveModules), dcfh);
+        if !self.modules.enter(ctx, syms, &[tree], Some(sym)) {
+            let diag = self
+                .diags
+                .fragment(Fragment::from(fragments::cant_resolve_modules()));
+            self.log.borrow_mut().use_source(prev);
+            return Err(CompletionFailure::new(
+                Some(sym),
+                Box::new(move || diag.clone()),
+                Some(Rc::clone(&self.dcfh)),
+            ));
+        }
+        // Java: enter.complete(List.of(tree), c);
+        let entered = self
+            .enter
+            .borrow()
+            .complete(ctx, syms, List::of(tree), Some(sym));
+        let has_env = self.enter.borrow().get_env(sym).is_some();
+        self.log.borrow_mut().use_source(prev);
+        entered?;
+        if !has_env {
+            // Java: throw new ClassFinder.BadClassFile(c, filename,
+            //     diagFactory.fragment(Fragments.FileDoesntContainClass(
+            //         c.getQualifiedName())), diagFactory, dcfh);
+            let name = ctx.sym(sym).flat_name();
+            let diag = self
+                .diags
+                .fragment(Fragment::from(fragments::file_doesnt_contain_class(name)));
+            let failure = crate::code::class_finder::BadClassFile::new(
+                Some(sym),
+                Rc::clone(&filename),
+                diag,
+                Rc::clone(&self.diags),
+                Some(Rc::clone(&self.dcfh)),
+            );
+            return Err(failure.failure);
+        }
+        Ok(())
+    }
+}
+
 impl MiniCompiler {
     /// Create the compiler services.
     ///
@@ -325,15 +471,29 @@ impl MiniCompiler {
         let mut util_context = UtilContext::new();
         let messages = JavacMessages::instance(&mut util_context);
         let diags = Rc::new(Factory::new(messages, "compiler"));
-        let log = Log::instance(&mut util_context);
         let names = Rc::new(Names::new(false));
         util_context.put(Rc::clone(&names));
         let options = Options::instance(&mut util_context);
         configure(&options);
+        // Java: Log is constructed after the command-line options are installed
+        // (Log.initOptions reads -Xmaxerrs/-Xmaxwarns/-doe/--diags).
+        let log = Log::instance(&mut util_context);
         let lint = Lint::instance(&mut util_context);
         let preview = Preview::instance(&mut util_context);
-        let source = Source::JDK17;
-        let target = Target::JDK1_17;
+        // JavaCompiler: Source/Target.instance read --source/--target;
+        // --release selects both, and target defaults to source.requiredTarget().
+        let release_source = options.get("--release").and_then(|value| Source::lookup(&value));
+        let source = options
+            .get("--source")
+            .and_then(|value| Source::lookup(&value))
+            .or(release_source)
+            .unwrap_or(Source::JDK17);
+        let release_target = options.get("--release").and_then(|value| Target::lookup(&value));
+        let target = options
+            .get("--target")
+            .and_then(|value| Target::lookup(&value))
+            .or(release_target)
+            .unwrap_or_else(|| source.required_target());
         let profile = Profile::instance(&mut util_context);
         let mut ctx = CompilerContext::new();
         let syms_value = Symtab::new(&mut ctx, Rc::clone(&names), target, source);
@@ -375,6 +535,35 @@ impl MiniCompiler {
                     .expect("cannot set CLASS_PATH");
             }
         }
+        if let Some(source_path) = options.get_option(crate::main::option::Option::SOURCE_PATH) {
+            let paths: Vec<PathBuf> = source_path
+                .split(';')
+                .filter(|part| !part.is_empty())
+                .map(PathBuf::from)
+                .collect();
+            if !paths.is_empty() {
+                let source_path_location = StandardLocation::location_for(&js("SOURCE_PATH"));
+                file_manager
+                    .set_location(&*source_path_location, Some(&paths))
+                    .expect("cannot set SOURCE_PATH");
+            }
+        }
+        if let Some(module_source_path) =
+            options.get_option(crate::main::option::Option::MODULE_SOURCE_PATH)
+        {
+            let paths: Vec<PathBuf> = module_source_path
+                .split(';')
+                .filter(|part| !part.is_empty())
+                .map(PathBuf::from)
+                .collect();
+            if !paths.is_empty() {
+                let module_source_path_location =
+                    StandardLocation::location_for(&js("MODULE_SOURCE_PATH"));
+                file_manager
+                    .set_location(&*module_source_path_location, Some(&paths))
+                    .expect("cannot set MODULE_SOURCE_PATH");
+            }
+        }
         let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
         let reader = Rc::new(RefCell::new(ClassReader::new(
             Rc::clone(&log),
@@ -414,6 +603,8 @@ impl MiniCompiler {
             Rc::clone(&syms),
         ));
         crate::comp::check::attach_self(&chk);
+        chk.warn_on_any_access_to_members
+            .set(options.is_set("warnOnAccessToMembers"));
         chk
             .set_file_manager(Rc::clone(&file_manager) as Rc<dyn JavaFileManager>);
         chk.set_profile(Rc::clone(&profile));
@@ -487,6 +678,10 @@ impl MiniCompiler {
             crate::code::source::Feature::GRAPH_INFERENCE.allowed_in_source(source),
             Rc::clone(&diags),
             Rc::clone(&names),
+        );
+        infer.install_diagnostics(
+            Rc::clone(&log),
+            crate::comp::resolve::VerboseResolutionMode::get_verbose_resolution_mode(&options),
         );
         let cfolder = Rc::new(ConstFold::new());
         let basic_handler = Rc::clone(&chk.basic_handler);
@@ -787,6 +982,18 @@ impl MiniCompiler {
             generated_classes: Vec::new(),
             last_compiled_classes: Vec::new(),
         };
+        // Java: the JavaCompiler installs readSourceFile as the ClassFinder
+        // source completer (ClassFinder.sourceCompleter = this::readSourceFile).
+        *compiler.finder.source_file_reader.borrow_mut() =
+            Some(Rc::new(SourceFileCompleter {
+                log: Rc::clone(&compiler.log),
+                diags: Rc::clone(&compiler.diags),
+                dcfh: Rc::clone(&compiler.dcfh),
+                parser_factory: Rc::clone(&compiler.parser_factory),
+                enter: Rc::clone(&compiler.enter),
+                modules: Rc::clone(&compiler.modules),
+                line_debug_info: compiler.generator.borrow().line_debug_info,
+            }));
         compiler.bootstrap_modules();
         compiler
     }
@@ -1047,6 +1254,9 @@ impl MiniCompiler {
                 .expect("enterDone annotation flush");
         }
         self.enter_done = true;
+        for root in &roots {
+            self.check_enum_tree(*root);
+        }
         // JavaCompiler.processAnnotations: if (shouldStop(PROCESS)) return.
         if self.should_stop(crate::comp::compile_states::CompileState::PROCESS) {
             self.last_compiled_classes = Vec::new();
@@ -1083,7 +1293,15 @@ impl MiniCompiler {
                     .unwrap_or_default();
                 eprintln!("[ENV-ATTR] {}", sf);
             }
-            self.attribute(env)?;
+            let attribute_result = self.attribute(env);
+            attribute_result?;
+            // JavaCompiler.attribute: analyzer.flush(env) after attributing the
+            // class (JavaCompiler.java:1342-1347).
+            let analyzer_service = self.attr.borrow().analyzer.borrow().clone();
+            if let Some(analyzer) = analyzer_service {
+                let syms = self.syms.borrow();
+                analyzer.borrow_mut().flush(&mut self.ctx, &syms, env);
+            }
         }
         if self.should_stop(crate::comp::compile_states::CompileState::FLOW) {
             self.last_compiled_classes = Vec::new();
@@ -1106,10 +1324,19 @@ impl MiniCompiler {
                     .unwrap_or_default();
                 eprintln!("[ENV-FLOW] {}", sf);
             }
+            // JavaCompiler.flow: JavaFileObject prev = log.useSource(env.toplevel.sourcefile).
+            let sourcefile = env
+                .toplevel
+                .and_then(|toplevel| match &self.ctx.tree(toplevel).kind {
+                    TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
+                    _ => None,
+                });
+            let prev_source = self.log.borrow_mut().use_source(sourcefile);
             let make = Rc::clone(&self.make);
             let syms_guard = self.syms.borrow();
             self.flow
                 .analyze_tree(&mut self.ctx, &syms_guard, env, &make);
+            self.log.borrow_mut().use_source(prev_source);
             // JavaCompiler.flow: compileStates.put(env, CompileState.FLOW)
             // (JavaCompiler.java:1380-1381).
             self.trans_types
@@ -1307,6 +1534,74 @@ impl MiniCompiler {
     }
 
     /// JavaCompiler.attribute(Env<AttrContext> env).
+    /// Java: Attr.visitClassDef: a source-level class may not extend an enum
+    /// type (other than java.lang.Enum, which has its own diagnostic).
+    fn check_enum_extension(&mut self, env: &Rc<Env<AttrContext>>) {
+        let Some(tree) = env.tree else { return };
+        self.check_enum_tree(tree);
+    }
+
+    fn check_enum_tree(&mut self, tree: TreeId) {
+        let (class_sym, extending, defs, pos) = match &self.ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl {
+                sym: Some(class_sym),
+                extending,
+                defs,
+                ..
+            } => (*class_sym, *extending, defs.clone(), self.ctx.tree(tree).pos),
+            crate::tree::jc_tree::TreeKind::CompilationUnit { defs, .. } => {
+                let mut current = defs.clone();
+                while current.non_empty() {
+                    let def = *current.head();
+                    current = current.tail();
+                    self.check_enum_tree(def);
+                }
+                return;
+            }
+            _ => return,
+        };
+        if let Some(extending) = extending
+            && let Some(super_ty) = self.ctx.tree(extending).ty
+            && let Some(super_tsym) = self.ctx.typ(super_ty).tsym
+        {
+            let enum_sym = self.syms.borrow().enum_sym;
+            if super_tsym != enum_sym
+                && (self.ctx.sym(super_tsym).flags_field & crate::code::flags::ENUM as i64) != 0
+                && (self.ctx.sym(class_sym).flags_field
+                    & (crate::code::flags::ENUM as i64 | crate::code::flags::COMPOUND as i64))
+                    == 0
+            {
+                let info =
+                    crate::resources::compiler_properties::errors::enum_types_not_extensible();
+                let sourcefile = match &self.ctx.sym(class_sym).kind_data {
+                    crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
+                        sourcefile.clone()
+                    }
+                    _ => None,
+                };
+                let prev_source = crate::util::abstract_log::AbstractLog::use_source(
+                    &mut *self.log.borrow_mut(),
+                    sourcefile,
+                );
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+                crate::util::abstract_log::AbstractLog::use_source(
+                    &mut *self.log.borrow_mut(),
+                    prev_source,
+                );
+            }
+        }
+        let mut current = defs;
+        while current.non_empty() {
+            let def = *current.head();
+            current = current.tail();
+            self.check_enum_tree(def);
+        }
+    }
+
     fn attribute(&mut self, env: &Rc<Env<AttrContext>>) -> Result<(), String> {
         let sourcefile = env
             .encl_class
@@ -1380,11 +1675,47 @@ impl MiniCompiler {
         if self.error_count() > 0 {
             return Err(self.error_message());
         }
-        let (name, bytes) = self
-            .writer
-            .borrow_mut()
-            .write_class(&mut self.ctx, c)
-            .map_err(|error| format!("class writer error: {error:?}"))?;
+        let (name, bytes) = match self.writer.borrow_mut().write_class(&mut self.ctx, c) {
+            Ok(result) => result,
+            Err(crate::jvm::class_writer::ClassWriterError::InvalidSignature(type_)) => {
+                use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg};
+                let class_display = if self.ctx.sym(c).name.is_empty() {
+                    match &self.ctx.sym(c).kind_data {
+                        crate::code::symbol::SymbolKind::ClassSymbol { flatname, .. } => {
+                            format!(
+                                "<anonymous {}>",
+                                flatname.to_java_string().to_string_lossy()
+                            )
+                        }
+                        _ => String::new(),
+                    }
+                } else {
+                    self.ctx
+                        .sym(c)
+                        .get_qualified_name()
+                        .to_java_string()
+                        .to_string_lossy()
+                        .to_string()
+                };
+                let detail = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::illegal_signature(
+                        SymbolArg::placeholder(class_display.clone()),
+                        crate::comp::check::type_arg_with_rich_where(&self.ctx, type_),
+                    ),
+                ));
+                let info = crate::resources::compiler_properties::errors::cannot_generate_class(
+                    SymbolArg::placeholder(class_display),
+                    DiagnosticArg::JCDiagnostic(Rc::new(detail)),
+                );
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    crate::util::position::NOPOS,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+                return Ok(());
+            }
+            Err(error) => return Err(format!("class writer error: {error:?}")),
+        };
         let sibling = match &self.ctx.sym(c).kind_data {
             crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile
                 .as_ref()
@@ -1452,6 +1783,42 @@ impl MiniCompiler {
     /// Return the number of errors reported so far.
     pub fn error_count(&self) -> i32 {
         self.log.borrow().nerrors
+    }
+
+    /// Return the number of warnings reported so far.
+    pub fn warning_count(&self) -> i32 {
+        self.log.borrow().nwarnings
+    }
+
+    /// Return the number of errors suppressed by -Xmaxerrs.
+    pub fn suppressed_error_count(&self) -> i32 {
+        self.log.borrow().nsuppressederrors
+    }
+
+    /// Return the number of warnings suppressed by -Xmaxwarns.
+    pub fn suppressed_warning_count(&self) -> i32 {
+        self.log.borrow().nsuppressedwarns
+    }
+
+    /// Flush the deferred deprecation/removal summaries (Java:
+    /// JavaCompiler.reportDeferredDiagnostics for the mandatory handlers).
+    pub fn report_deferred_mandatory_diagnostics(&self) {
+        self.chk
+            .deprecation_handler
+            .borrow_mut()
+            .report_deferred_diagnostic();
+        self.chk
+            .removal_handler
+            .borrow_mut()
+            .report_deferred_diagnostic();
+        self.chk
+            .unchecked_handler
+            .borrow_mut()
+            .report_deferred_diagnostic();
+        self.chk
+            .sun_api_handler
+            .borrow_mut()
+            .report_deferred_diagnostic();
     }
 
     /// Return the diagnostic summary of the current compilation.

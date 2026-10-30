@@ -1185,11 +1185,14 @@ impl Types {
                 self.erasure_recurse(ctx, syms, upper, recurse)
                 // combineMetadata(erased, t) == erased (no metadata support).
             }
+            // Java: StructuralTypeMapping has no visitErrorType override; the
+            // default visitType is the identity mapping, so erasure leaves an
+            // ErrorType untouched (Types.java:2400-2424).
+            TypeKindData::ErrorType { .. } => t,
             TypeKindData::ClassType { .. }
             | TypeKindData::ErasedClassType { .. }
             | TypeKindData::UnionClassType { .. }
-            | TypeKindData::IntersectionClassType { .. }
-            | TypeKindData::ErrorType { .. } => {
+            | TypeKindData::IntersectionClassType { .. } => {
                 let tsym = ctx.typ(t).tsym.expect("class type symbol");
                 let erased = self.symbol_erasure(ctx, syms, tsym);
                 if recurse {
@@ -1603,9 +1606,9 @@ impl Types {
             }
             let tsym = ctx.typ(t).tsym.expect("error type symbol");
             let declared = class_symbol_get_interfaces_option(ctx, tsym);
-            let result = declared.unwrap_or_else(List::nil);
-            set_class_interfaces_field(ctx, t, Some(result.clone()));
-            return result;
+            // ErrorType has no ClassType.interfaces_field to cache into; the
+            // declared interfaces (possibly empty) are the result.
+            return declared.unwrap_or_else(List::nil);
         }
         if tag == TypeTag::TYPEVAR {
             let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
@@ -5226,9 +5229,24 @@ impl Types {
                 allparams_field,
                 typarams_field,
                 ..
-            } => allparams_field
-                .clone()
-                .or_else(|| typarams_field.clone())
+            } => {
+                let own = allparams_field
+                    .clone()
+                    .or_else(|| typarams_field.clone());
+                // Java: ClassType.allparams() prepends the enclosing type's
+                // allparams (inner classes carry their owner's type arguments).
+                if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS)
+                    && let Some(enclosing) = ctx.typ(t).get_enclosing_type()
+                    && enclosing != t
+                    && ctx.typ(enclosing).has_tag(crate::code::type_tag::TypeTag::CLASS)
+                {
+                    let outer = self.class_allparams(ctx, enclosing);
+                    if outer.non_empty() {
+                        return outer.append_list(&own.unwrap_or_else(List::nil));
+                    }
+                }
+                own
+            }
                 .unwrap_or_else(List::nil),
             _ => List::nil(),
         }
@@ -8015,11 +8033,8 @@ impl Types {
                 _ => {}
             }
         }
-        // Java: isConvertible(t, s, warn) — the warn parameter is not yet wired
-        // in the ported isConvertible (Lint, registered); the boolean
-        // relation is unchanged.
-        let _ = warn;
-        self.is_convertible(ctx, syms, t, s)
+        // Java: isConvertible(t, s, warn)
+        self.is_convertible_with_warn(ctx, syms, t, s, warn)
     }
 
     /// Java: public boolean covariantReturnType(Type t, Type s, Warner warner)
@@ -8916,10 +8931,14 @@ impl Types {
         let is_sealed = is_interface && (origin_flags & crate::code::flags::SEALED) != 0;
         if !is_interface || is_annotation || is_sealed {
             // Java: throw failure("not.a.functional.intf", origin);
+            let origin_ty = ctx.sym(origin).ty.expect("origin type");
+            let origin_arg = crate::resources::diagnostic_contract::DiagnosticArg::Type(
+                crate::comp::check::type_arg_with_rich_where(ctx, origin_ty),
+            );
             return Err(self.descriptor_failure(
                 diags,
                 crate::resources::compiler_properties::fragments::not_a_functional_intf(
-                    self.symbol_arg_for(ctx, origin),
+                    origin_arg,
                 ),
             ));
         }
@@ -8968,13 +8987,30 @@ impl Types {
                 } else {
                     // Java: throw failure("not.a.functional.intf.1", origin,
                     // diags.fragment(Fragments.IncompatibleAbstracts(...)))
-                    let kind_name = crate::code::kinds::kind_name(ctx.sym(origin), ctx); 
-                    let fragment =
+                    let simple = ctx.sym(origin).name.to_java_string().to_string_lossy();
+                    let kind_name = crate::code::kinds::kind_name(ctx.sym(origin), ctx);
+                    let origin_ty = ctx.sym(origin).ty.expect("origin type");
+                    let origin_arg = if ctx.typ(origin_ty).is_intersection() {
+                        crate::resources::diagnostic_contract::DiagnosticArg::Type(
+                            crate::comp::check::type_arg_with_rich_where(ctx, origin_ty),
+                        )
+                    } else {
+                        crate::resources::diagnostic_contract::DiagnosticArg::from_display(simple)
+                    };
+                    let detail = diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                         crate::resources::compiler_properties::fragments::incompatible_abstracts(
                             crate::resources::diagnostic_contract::KindNameArg::placeholder(
-                                format!("{kind_name:?}"),
+                                kind_name.name(),
                             ),
-                            self.symbol_arg_for(ctx, origin),
+                            origin_arg.clone(),
+                        ),
+                    ));
+                    let fragment =
+                        crate::resources::compiler_properties::fragments::not_a_functional_intf1(
+                            origin_arg,
+                            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                                std::rc::Rc::new(detail),
+                            ),
                         );
                     let diag = diags.fragment(crate::util::jc_diagnostic::Fragment::from(fragment));
                     return Err(FunctionDescriptorLookupError::new().set_message(diag));
@@ -8984,13 +9020,30 @@ impl Types {
         if abstracts.is_empty() {
             // Java: throw failure("not.a.functional.intf.1", origin,
             // diags.fragment(Fragments.NoAbstracts(...)))
+            let simple = ctx.sym(origin).name.to_java_string().to_string_lossy();
             let kind_name = crate::code::kinds::kind_name(ctx.sym(origin), ctx);
-            let fragment =
+            let origin_ty = ctx.sym(origin).ty.expect("origin type");
+            let origin_arg = if ctx.typ(origin_ty).is_intersection() {
+                crate::resources::diagnostic_contract::DiagnosticArg::Type(
+                    crate::comp::check::type_arg_with_rich_where(ctx, origin_ty),
+                )
+            } else {
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(simple)
+            };
+            let detail = diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                 crate::resources::compiler_properties::fragments::no_abstracts(
-                    crate::resources::diagnostic_contract::KindNameArg::placeholder(format!(
-                        "{kind_name:?}"
-                    )),
-                    self.symbol_arg_for(ctx, origin),
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                        kind_name.name(),
+                    ),
+                    origin_arg.clone(),
+                ),
+            ));
+            let fragment =
+                crate::resources::compiler_properties::fragments::not_a_functional_intf1(
+                    origin_arg,
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                        std::rc::Rc::new(detail),
+                    ),
                 );
             let diag = diags.fragment(crate::util::jc_diagnostic::Fragment::from(fragment));
             return Err(FunctionDescriptorLookupError::new().set_message(diag));
@@ -9017,10 +9070,12 @@ impl Types {
                 let kind_name = crate::code::kinds::kind_name(ctx.sym(origin), ctx);
                 let fragment =
                     crate::resources::compiler_properties::fragments::incompatible_descs_in_functional_intf(
-                        crate::resources::diagnostic_contract::KindNameArg::placeholder(format!(
-                            "{kind_name:?}"
-                        )),
-                        self.symbol_arg_for(ctx, origin),
+                        crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                            kind_name.name(),
+                        ),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                            ctx.sym(origin).name.to_java_string().to_string_lossy(),
+                        ),
                     );
                 Err(self.descriptor_failure(diags, fragment))
             }
@@ -9467,6 +9522,24 @@ impl Types {
             return self.is_subtype_unchecked_internal_warn(
                 ctx, syms, t_elem, s_elem, false, warn,
             );
+        }
+        // Raw-to-parameterized conversion is an unchecked conversion even
+        // though the erasures are subtypes; isSubtype itself rejects it.
+        if is_raw_type(ctx, t)
+            && !is_raw_type(ctx, s)
+            && is_parameterized_type(ctx, s)
+            && ctx.typ(s).has_tag(TypeTag::CLASS)
+        {
+            let t_erasure = self.erasure(ctx, syms, t);
+            let s_erasure = self.erasure(ctx, syms, s);
+            if self.is_subtype(ctx, syms, t_erasure, s_erasure) {
+                if self.is_reifiable(ctx, syms, s) {
+                    warn.silent_warn(crate::code::lint::LintCategory::UNCHECKED);
+                } else {
+                    warn.warn(crate::code::lint::LintCategory::UNCHECKED);
+                }
+                return true;
+            }
         }
         if self.is_subtype_with_capture(ctx, syms, t, s, capture) {
             return true;
@@ -10095,6 +10168,39 @@ impl Types {
                     if implmeth.is_none() || implmeth == Some(absmeth) {
                         undef = Some(absmeth);
                         break;
+                    }
+                }
+            }
+            if undef.is_none() {
+                let c_type = match ctx.sym(c).ty {
+                    Some(ty) => ty,
+                    None => return None,
+                };
+                let supertype = self.supertype(ctx, syms, c_type, None);
+                if ctx.typ(supertype).has_tag(crate::code::type_tag::TypeTag::CLASS) {
+                    if let Some(tsym) = ctx.typ(supertype).tsym {
+                        undef = self.first_unimplemented_abstract_impl(
+                            ctx,
+                            syms,
+                            allow_default_methods,
+                            impl_sym,
+                            tsym,
+                        );
+                    }
+                }
+                let interfaces = self.interfaces(ctx, syms, c_type);
+                for interface in interfaces.iter() {
+                    if undef.is_some() {
+                        break;
+                    }
+                    if let Some(tsym) = ctx.typ(interface).tsym {
+                        undef = self.first_unimplemented_abstract_impl(
+                            ctx,
+                            syms,
+                            allow_default_methods,
+                            impl_sym,
+                            tsym,
+                        );
                     }
                 }
             }

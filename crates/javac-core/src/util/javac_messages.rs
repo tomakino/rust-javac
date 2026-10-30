@@ -376,7 +376,10 @@ fn get_localized_string_in(bundles: &[ResourceBundle], key: &str, args: &[String
         }
     }
     let template = match message {
-        Some(template) => template.to_string(),
+        // javac's .properties parser consumes the separator whitespace and the
+        // optional '=' after it; the generator kept a leading '=' for keys
+        // written as "key =\". Those values are not part of the message.
+        Some(template) => template.strip_prefix('=').unwrap_or(template).to_string(),
         None => format!(
             "compiler message file broken: key={key} arguments={{0}}, {{1}}, {{2}}, {{3}}, {{4}}, {{5}}, {{6}}, {{7}}"
         ),

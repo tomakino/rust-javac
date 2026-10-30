@@ -7,3 +7,4 @@
 !crates/javac-core/tests/data/fixtures/*.class
 
 pension
+diag-corpus

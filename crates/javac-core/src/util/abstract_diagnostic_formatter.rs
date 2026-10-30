@@ -91,6 +91,17 @@ pub trait AbstractDiagnosticFormatter {
     fn config_multiline_limit(&self, limit: MultilineLimit) -> i32;
     fn config_caret_enabled(&self) -> bool;
 
+    /// RichDiagnosticFormatter hook: render a type argument after replacing
+    /// captured/intersection types with the CAP#N/INT#N names assigned by the
+    /// formatter (Basic formatter keeps the rendered text unchanged).
+    fn format_type_argument(
+        &self,
+        arg: &crate::resources::diagnostic_contract::TypeArg,
+        locale: Option<&Locale>,
+    ) -> String {
+        format_placeholder_text(self, locale, &arg.text)
+    }
+
     /// Java: protected abstract String formatDiagnostic(JCDiagnostic d, Locale
     /// locale)
     fn format_diagnostic_impl(&self, d: &JCDiagnostic, locale: Option<&Locale>) -> String;
@@ -208,7 +219,17 @@ pub trait AbstractDiagnosticFormatter {
     ) -> String {
         let mut result = String::new();
         let mut sep = "";
-        for item in items {
+        // Java: UndetVar.addBound prepends equality bounds, so the rendered
+        // incompatible.eq.bounds list is in reverse insertion order; the
+        // ported bounds list keeps insertion order.
+        let reverse = d.get_code_string().ends_with("incompatible.eq.bounds");
+        let count = items.len();
+        for index in 0..count {
+            let item = if reverse {
+                &items[count - 1 - index]
+            } else {
+                &items[index]
+            };
             result.push_str(sep);
             result.push_str(&self.format_argument(d, item, locale));
             sep = ",";
@@ -252,7 +273,14 @@ pub trait AbstractDiagnosticFormatter {
         locale: Option<&Locale>,
     ) -> String {
         let _ = parent;
-        self.format_message_impl(sub, locale)
+        // Java: formatSubdiagnostic formats the attached diagnostic as a nested
+        // message; keep the depth incremented so rich-only where clauses are
+        // appended by the outermost format() call, not to the nested detail.
+        let depth = self.depth();
+        self.set_depth(depth + 1);
+        let text = self.format_message_impl(sub, locale);
+        self.set_depth(depth);
+        text
     }
 
     /// Format the faulty source code line and point to the error.
@@ -367,6 +395,9 @@ pub fn format_argument_default<F: AbstractDiagnosticFormatter + ?Sized>(
     arg: &DiagnosticArg,
     locale: Option<&Locale>,
 ) -> String {
+    if let Some(type_arg) = arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>() {
+        return formatter.format_type_argument(type_arg, locale);
+    }
     if let Some(diagnostic) = arg.downcast_ref::<JCDiagnostic>() {
         // Java: String s = formatMessage(diagnostic, l) with depth++ / depth--.
         let depth = formatter.depth();
@@ -402,10 +433,10 @@ pub fn format_argument_default<F: AbstractDiagnosticFormatter + ?Sized>(
         return formatter.localize(locale, &format!("compiler.misc.tree.tag.{name}"), &[]);
     }
     if let Some(value) = arg.downcast_ref::<JavaString>() {
-        return value.to_string_lossy();
+        return format_placeholder_text(formatter, locale, &value.to_string_lossy());
     }
     if let Some(value) = arg.downcast_ref::<String>() {
-        return value.clone();
+        return format_placeholder_text(formatter, locale, value);
     }
     if let Some(value) = arg.downcast_ref::<i32>() {
         return value.to_string();
@@ -431,6 +462,29 @@ pub fn format_argument_default<F: AbstractDiagnosticFormatter + ?Sized>(
     // JavaString/String/JCDiagnostic/JavaFileObject values (see the module
     // header); an unknown value cannot be produced by the ported code.
     crate::util::assert::error_msg("unreachable diagnostic argument type");
+}
+
+/// P4 placeholder arguments that carry a resource key instead of a formatted
+/// value: KindNameArg currently stores "kindname.*" and reason_place stores the
+/// fragment's "compiler.misc.*" key. Localize them at formatting time so both
+/// paths use the formatter's locale (the javac KindName/LocalizedString
+/// objects render themselves through JavacMessages).
+pub(crate) fn format_placeholder_text<F: AbstractDiagnosticFormatter + ?Sized>(
+    formatter: &F,
+    locale: Option<&Locale>,
+    text: &str,
+) -> String {
+    if let Some(name) = text.strip_prefix("kindname.") {
+        return formatter.localize(
+            locale,
+            &format!("compiler.misc.kindname.{name}"),
+            &[],
+        );
+    }
+    if text.starts_with("compiler.misc.") {
+        return formatter.localize(locale, text, &[]);
+    }
+    text.to_string()
 }
 
 /// Java: public static class SimpleConfiguration implements Configuration

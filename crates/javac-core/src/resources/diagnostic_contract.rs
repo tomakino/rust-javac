@@ -93,6 +93,14 @@ pub enum DiagnosticArg {
     Text(String),
     /// A nested diagnostic argument (Java: a JCDiagnostic in the Object[]).
     JCDiagnostic(std::rc::Rc<crate::util::jc_diagnostic::JCDiagnostic>),
+    /// A type argument carrying its TypeId and the metadata needed by the
+    /// RichDiagnosticFormatter `where` clauses. The rendered text is kept for
+    /// the common formatting path.
+    Type(TypeArg),
+    /// A diagnostic-argument list (Java: Object[] argument; used where the
+    /// message placeholder renders a comma-separated list, for example the
+    /// method arguments in cant.apply.symbol).
+    List(Vec<DiagnosticArg>),
 }
 
 impl DiagnosticArg {
@@ -105,7 +113,7 @@ impl DiagnosticArg {
     pub fn nested_diagnostic(&self) -> Option<&std::rc::Rc<crate::util::jc_diagnostic::JCDiagnostic>> {
         match self {
             DiagnosticArg::JCDiagnostic(diag) => Some(diag),
-            DiagnosticArg::Text(_) => None,
+            DiagnosticArg::Text(_) | DiagnosticArg::Type(_) | DiagnosticArg::List(_) => None,
         }
     }
 
@@ -115,6 +123,12 @@ impl DiagnosticArg {
         match self {
             DiagnosticArg::Text(text) => text.clone(),
             DiagnosticArg::JCDiagnostic(diag) => diag.get_message(None).to_string(),
+            DiagnosticArg::Type(arg) => arg.text.clone(),
+            DiagnosticArg::List(items) => items
+                .iter()
+                .map(|item| item.to_text())
+                .collect::<Vec<_>>()
+                .join(","),
         }
     }
 }
@@ -126,6 +140,8 @@ impl PartialEq for DiagnosticArg {
             (DiagnosticArg::JCDiagnostic(a), DiagnosticArg::JCDiagnostic(b)) => {
                 std::rc::Rc::ptr_eq(a, b) || a.get_message(None) == b.get_message(None)
             }
+            (DiagnosticArg::Type(a), DiagnosticArg::Type(b)) => a == b,
+            (DiagnosticArg::List(a), DiagnosticArg::List(b)) => a == b,
             _ => false,
         }
     }
@@ -176,11 +192,13 @@ impl IntoDiagnosticArg for JavaString {
 
 impl<T: IntoDiagnosticArg> IntoDiagnosticArg for Vec<T> {
     fn into_diagnostic_arg(self) -> DiagnosticArg {
-        let parts: Vec<String> = self
-            .into_iter()
-            .map(|item| item.into_diagnostic_arg().to_text())
-            .collect();
-        DiagnosticArg::Text(parts.join(", "))
+        // Java: AbstractDiagnosticFormatter.formatIterable formats each element;
+        // keep the structured items so TypeArg where metadata survives.
+        DiagnosticArg::List(
+            self.into_iter()
+                .map(IntoDiagnosticArg::into_diagnostic_arg)
+                .collect(),
+        )
     }
 }
 
@@ -260,5 +278,125 @@ opaque_arg!(SymbolKindArg);
 opaque_arg!(TargetArg);
 opaque_arg!(TokenArg);
 opaque_arg!(TreeTagArg);
-opaque_arg!(TypeArg);
 opaque_arg!(UrlArg);
+
+/// One type-variable entry of a RichDiagnosticFormatter `where` clause.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhereTypeVar {
+    /// The type-variable display name (for example T).
+    pub name: String,
+    /// The upper bound display (for example Object).
+    pub bound: String,
+    /// The declaring symbol display (for example "class X" or
+    /// "method <T>m(List<T>)").
+    pub owner: String,
+    /// Java: the tvar symbol has the SYNTHETIC flag (a fresh type variable;
+    /// RichDiagnosticFormatter renders WhereFreshTypevar without a location).
+    pub fresh: bool,
+}
+
+/// One captured-type entry of a RichDiagnosticFormatter `where` clause. The
+/// formatter assigns CAP#N in encounter order; `original` is the printer text
+/// used to locate the type inside the rendered argument.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhereCaptured {
+    /// Printer text of the captured type (capture#N of ...).
+    pub original: String,
+    /// Upper bound display.
+    pub upper: String,
+    /// Lower bound display (only rendered when it is not the null type).
+    pub lower: Option<String>,
+    /// Wildcard display (from capture of ...).
+    pub wildcard: String,
+}
+
+/// One intersection-type entry of a RichDiagnosticFormatter `where` clause.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhereIntersection {
+    /// Printer text of the intersection type.
+    pub original: String,
+    /// Supertype followed by interfaces (upstream WhereIntersection order).
+    pub bounds: Vec<String>,
+}
+
+/// A Type diagnostic argument. The TypeId is preserved for formatter-level
+/// processing; `text` is the rendered type and `where_vars` carries the
+/// declarations used by the RichDiagnosticFormatter `where` clauses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeArg {
+    /// Rendered type text (delegated to code::printer at construction).
+    pub text: String,
+    /// The Java Type object identity.
+    pub ty: Option<crate::ids::TypeId>,
+    /// Type variables occurring in the type, in encounter order.
+    pub where_vars: Vec<WhereTypeVar>,
+    /// Captured types occurring in the type, in encounter order.
+    pub where_captured: Vec<WhereCaptured>,
+    /// Intersection types occurring in the type, in encounter order.
+    pub where_intersections: Vec<WhereIntersection>,
+}
+
+impl TypeArg {
+    /// Build a placeholder value (log/test helper before P4).
+    pub fn placeholder(text: impl Into<String>) -> TypeArg {
+        TypeArg {
+            text: text.into(),
+            ty: None,
+            where_vars: Vec::new(),
+            where_captured: Vec::new(),
+            where_intersections: Vec::new(),
+        }
+    }
+
+    /// Build a typed argument with its where-clause metadata.
+    pub fn with_where(
+        text: impl Into<String>,
+        ty: crate::ids::TypeId,
+        where_vars: Vec<WhereTypeVar>,
+    ) -> TypeArg {
+        TypeArg {
+            text: text.into(),
+            ty: Some(ty),
+            where_vars,
+            where_captured: Vec::new(),
+            where_intersections: Vec::new(),
+        }
+    }
+}
+
+impl From<&str> for TypeArg {
+    fn from(text: &str) -> TypeArg {
+        TypeArg::placeholder(text)
+    }
+}
+
+impl From<String> for TypeArg {
+    fn from(text: String) -> TypeArg {
+        TypeArg::placeholder(text)
+    }
+}
+
+impl IntoDiagnosticArg for TypeArg {
+    fn into_diagnostic_arg(self) -> DiagnosticArg {
+        DiagnosticArg::Type(self)
+    }
+}
+
+/// Convert a contract argument to the formatter's Rc<dyn Any> argument,
+/// preserving Type/JCDiagnostic/list objects.
+pub(crate) fn to_jc_diagnostic_arg(
+    arg: &DiagnosticArg,
+) -> crate::util::jc_diagnostic::DiagnosticArg {
+    use crate::util::jc_diagnostic::DiagnosticArg as JcDiagnosticArg;
+    match arg {
+        DiagnosticArg::Text(text) => {
+            std::rc::Rc::new(javac_strings::JavaString::from(text.as_str())) as JcDiagnosticArg
+        }
+        DiagnosticArg::JCDiagnostic(diag) => diag.clone(),
+        DiagnosticArg::Type(type_arg) => std::rc::Rc::new(type_arg.clone()),
+        DiagnosticArg::List(items) => {
+            let converted: Vec<JcDiagnosticArg> = items.iter().map(to_jc_diagnostic_arg).collect();
+            std::rc::Rc::new(converted)
+        }
+    }
+}

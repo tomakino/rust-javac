@@ -119,6 +119,22 @@ fn help_lines_match_javac_verbatim() {
 }
 
 #[test]
+fn missing_symbol_matches_javac() {
+    let dir = temp_dir("missing-symbol");
+    let source = dir.join("Main.java");
+    std::fs::write(&source, "class Main { int x = no.Such.v(); }").expect("source");
+    let source = source.display().to_string();
+    let javac_out = run_javac(&dir, &["-d", dir.to_str().unwrap(), &source]);
+    let rust_out = run_rust(&dir, &["-d", dir.to_str().unwrap(), &source]);
+    assert_eq!(javac_out.status.code(), rust_out.status.code());
+    assert_same_output(
+        &text(&rust_out.stderr),
+        &text(&javac_out.stderr),
+        "missing symbol stderr",
+    );
+}
+
+#[test]
 fn error_source_matches_javac() {
     let dir = temp_dir("error");
     let source = dir.join("Bad.java");

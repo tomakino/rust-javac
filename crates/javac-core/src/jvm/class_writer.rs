@@ -41,8 +41,8 @@ pub enum ClassWriterError {
     PoolOverflow,
     /// A string constant is too long.
     StringOverflow(String),
-    /// The signature of a class member is illegal.
-    InvalidSignature(String),
+    /// The signature of a class member is illegal (the offending type).
+    InvalidSignature(TypeId),
 }
 
 /// An extra attribute writer hook.
@@ -2157,7 +2157,11 @@ impl ClassWriter {
                     }
                 })?;
         }
+        let signature_error = self.pool_writer.borrow_mut().take_signature_error();
         self.pool_writer.borrow_mut().reset();
+        if let Some(type_) = signature_error {
+            return Err(ClassWriterError::InvalidSignature(type_));
+        }
         out.extend_from_slice(&self.databuf.elems[..self.databuf.length as usize]);
         Ok(())
     }

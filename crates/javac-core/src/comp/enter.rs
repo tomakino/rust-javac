@@ -1044,8 +1044,12 @@ impl Enter {
             .borrow()
             .clone()
             .expect("AssertionError: TypeEnter must be installed");
+        // Java: typeEnter.ensureImportsChecked(trees) runs on the single
+        // TypeEnter instance, so a nested completion may re-enter it.
+        // TypeEnter.ensureImportsChecked takes &self (its state is interior
+        // mutable), so the shared borrow keeps that re-entrancy valid.
         type_enter
-            .borrow_mut()
+            .borrow()
             .ensure_imports_checked(ctx, syms, trees);
     }
 

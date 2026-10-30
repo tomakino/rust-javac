@@ -992,8 +992,13 @@ impl Resolve {
                     Some(detail) => DiagnosticArg::JCDiagnostic(Rc::new(detail)),
                     None => DiagnosticArg::from_display(""),
                 };
+                // Java: the cant.access symbol argument is the Symbol itself;
+                // the formatter renders it through Symbol.toString(), i.e. the
+                // simple name.
                 let info = errors::cant_access(
-                    SymbolArg::placeholder(symbol_display_name(ctx, sym)),
+                    SymbolArg::placeholder(
+                        ctx.sym(sym).name.to_java_string().to_string_lossy(),
+                    ),
                     detail_arg,
                 );
                 let info = info.info();
@@ -1030,9 +1035,13 @@ impl Resolve {
                     .unwrap_or_else(|| {
                         crate::resources::diagnostic_contract::TypeArg::placeholder("(no enclosing type)")
                     });
+                let simple_site = site
+                    .and_then(|site| ctx.typ(site).tsym)
+                    .map(|tsym| ctx.sym(tsym).name.to_java_string().to_string_lossy())
+                    .unwrap_or(site_name);
                 let info =
                     crate::resources::compiler_properties::fragments::cant_access_inner_cls_constr(
-                        crate::resources::diagnostic_contract::SymbolArg::placeholder(site_name),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(simple_site),
                         type_args,
                         enclosing,
                     );
@@ -1140,6 +1149,21 @@ impl Resolve {
                 }
                 let types = Rc::clone(&self.types);
                 let mapped = resolve_map_candidates(ctx, syms, &types, &candidates);
+                if std::env::var_os("DSH_DEBUG_RESOLVE").is_some() {
+                    eprintln!(
+                        "[INAPPLICABLE-SYMBOLS] name={:?} candidates={} mapped={} detail_codes={:?}",
+                        name.map(|n| n.to_java_string().to_string_lossy()),
+                        candidates.len(),
+                        mapped.len(),
+                        mapped
+                            .iter()
+                            .map(|(s, d)| (
+                                crate::comp::resolve::symbol_display_name(ctx, *s),
+                                d.as_ref().map(|d| d.get_code_string()),
+                            ))
+                            .collect::<Vec<_>>(),
+                    );
+                }
                 // Java: Map<Symbol, JCDiagnostic> filteredCandidates =
                 //     compactMethodDiags ? filterCandidates(candidatesMap) :
                 //     mapCandidates(); (Resolve.java:4197-4203).
@@ -1164,7 +1188,7 @@ impl Resolve {
                     let simple_name = name
                         .cloned()
                         .unwrap_or_else(|| self.names.init.clone());
-                    let found_args: Vec<crate::resources::diagnostic_contract::TypeArg> =
+                    let mut found_args: Vec<crate::resources::diagnostic_contract::TypeArg> =
                         argtypes
                             .map(|argtypes| {
                                 let mut out = Vec::new();
@@ -1180,6 +1204,13 @@ impl Resolve {
                                 out
                             })
                             .unwrap_or_default();
+                    if found_args.is_empty() {
+                        let no_args =
+                            self.log.borrow().localize_key("no.args", Vec::new());
+                        found_args.push(
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(no_args),
+                        );
+                    }
                     let kind_display =
                         self.log.borrow().localize_key(kind_name.name(), Vec::new());
                     let info = errors::cant_apply_symbols(
@@ -1194,7 +1225,13 @@ impl Resolve {
                         main.set_flag(crate::util::jc_diagnostic::DiagnosticFlag::COMPRESSED);
                     }
                     let mut details: Vec<crate::util::jc_diagnostic::JCDiagnostic> = Vec::new();
+                    let mut seen_candidates = std::collections::HashSet::new();
                     for (sym, detail) in &filtered {
+                        let candidate_key =
+                            method_symbol_display(ctx, self.names.as_ref(), *sym);
+                        if !seen_candidates.insert(candidate_key) {
+                            continue;
+                        }
                         details.push(self.inapplicable_candidate_detail(
                             ctx,
                             syms,
@@ -1252,7 +1289,9 @@ impl Resolve {
                     .map(|tsym| symbol_display_name(ctx, tsym))
                     .unwrap_or_default();
                 let info = errors::cant_apply_diamond(
-                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(site_tsym),
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(format!(
+                        "{site_tsym}<>"
+                    )),
                     (),
                 );
                 let _ = details;
@@ -1332,6 +1371,42 @@ impl Resolve {
         use crate::resources::diagnostic_contract::{
             DiagnosticArg, SymbolKindArg, TypeArg,
         };
+        if std::env::var_os("DSH_DEBUG_RESOLVE").is_some() {
+            eprintln!(
+                "[INAPPLICABLE-SYMBOL] name={:?} detail={:?} compact={}",
+                ctx.sym(ws).name.to_java_string().to_string_lossy(),
+                details.as_ref().map(|d| (d.get_code_string(), d.get_args().len())),
+                self.compact_method_diags,
+            );
+        }
+        // Java: InapplicableSymbolError.getDiagnostic applies
+        // MethodResolutionDiagHelper.rewrite when compactMethodDiags is set;
+        // the no-conforming-assignment detail is rewritten to prob.found.req
+        // using its cause and flagged COMPRESSED (Resolve.java:4137-4146).
+        if self.compact_method_diags
+            && let Some(details) = &details
+            && details
+                .get_code_string()
+                .ends_with("no.conforming.assignment.exists")
+            && details.get_args().len() == 1
+        {
+            if let Some(cause) = details.get_args()[0]
+                .downcast_ref::<crate::util::jc_diagnostic::JCDiagnostic>()
+            {
+                let cause_pos = details
+                    .get_diagnostic_position()
+                    .or_else(|| pos.clone());
+                let mut simple = self.diags.create(
+                    dkind,
+                    self.log.borrow().current_source(),
+                    cause_pos,
+                    "prob.found.req",
+                    vec![std::rc::Rc::new(cause.clone())],
+                );
+                simple.set_flag(crate::util::jc_diagnostic::DiagnosticFlag::COMPRESSED);
+                return simple;
+            }
+        }
         let ws_name = ctx.sym(ws).name.clone();
         let diagnostic_name = if ws_name == self.names.init {
             ctx.sym(ctx.sym(ws).owner.expect("owner")).name.clone()
@@ -1340,8 +1415,33 @@ impl Resolve {
         };
         let ws_owner = ctx.sym(ws).owner.expect("owner");
         let ws_type = ctx.sym(ws).ty.expect("symbol type");
-        let required_display = method_arguments_display(ctx, types_parameter_types(ctx, ws_type));
-        let found_display = method_arguments_display(ctx, argtypes);
+        let required_parameters = types_parameter_types(ctx, ws_type);
+        let required_display = method_arguments_display(ctx, required_parameters.clone());
+        let required_arg = match &required_parameters {
+            Some(parameters) if !parameters.is_empty() => DiagnosticArg::List(
+                parameters
+                    .iter()
+                    .map(|parameter| {
+                        DiagnosticArg::Type(crate::comp::check::type_arg_with_rich_where(
+                            ctx, parameter,
+                        ))
+                    })
+                    .collect(),
+            ),
+            _ => DiagnosticArg::from_display(required_display),
+        };
+        let found_args = match argtypes {
+            Some(argtypes) if !argtypes.is_empty() => {
+                let mut items = Vec::new();
+                for argtype in argtypes.iter() {
+                    items.push(DiagnosticArg::Type(
+                        crate::comp::check::type_arg_with_rich_where(ctx, argtype),
+                    ));
+                }
+                DiagnosticArg::List(items)
+            }
+            _ => DiagnosticArg::Text(String::from("no arguments")),
+        };
         let owner_type = ctx.sym(ws_owner).ty;
         let info = errors::cant_apply_symbol(
             SymbolKindArg::placeholder(
@@ -1350,8 +1450,8 @@ impl Resolve {
                     .localize_key(crate::code::kinds::kind_name(ctx.sym(ws), ctx).name(), Vec::new()),
             ),
             diagnostic_name,
-            DiagnosticArg::from_display(required_display),
-            DiagnosticArg::from_display(found_display),
+            required_arg,
+            found_args,
             SymbolKindArg::placeholder(
                 self.log
                     .borrow()
@@ -1364,7 +1464,7 @@ impl Resolve {
             ),
             DiagnosticArg::from_display(
                 details
-                    .map(|d| format!("{d:?}"))
+                    .map(|d| d.get_message(None).to_string_lossy())
                     .unwrap_or_default(),
             ),
         );
@@ -1378,16 +1478,13 @@ impl Resolve {
         pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>>,
         info: crate::resources::diagnostic_contract::ErrorInfo,
     ) -> crate::util::jc_diagnostic::JCDiagnostic {
-        // The generated resource accessors keep the ADR 0002 P4 placeholder
-        // arguments (display text); JCDiagnostic arguments are Rc<dyn Any>.
+        // Preserve structured arguments (TypeArg/JCDiagnostic/list) so the
+        // formatter can build the upstream where clauses.
         let args: Vec<crate::util::jc_diagnostic::DiagnosticArg> = info
             .info()
             .args
             .iter()
-            .map(|arg| {
-                std::rc::Rc::new(javac_strings::JavaString::from(arg.to_text().as_str()))
-                    as crate::util::jc_diagnostic::DiagnosticArg
-            })
+            .map(contract_arg_to_jcd)
             .collect();
         let source = self.log.borrow().current_source();
         self.diags
@@ -1424,6 +1521,26 @@ impl Resolve {
             location = site.and_then(|site| ctx.typ(site).tsym);
         }
         let location = location.expect("location symbol");
+        // Java: cannot.find.symbol location is the enclosing type; a local
+        // variable lookup has no type location (Resolve.java).
+        let mut suppress_location = false;
+        let location_is_site_type = site
+            .and_then(|site| ctx.typ(site).tsym)
+            .is_some_and(|site_tsym| {
+                ctx.sym(location).ty.and_then(|ty| ctx.typ(ty).tsym) == Some(site_tsym)
+            });
+        let location = if ctx.sym(location).kind == Kind::VAR && !location_is_site_type {
+            match ctx.sym(location).owner {
+                Some(owner) if ctx.sym(owner).kind == Kind::TYP => owner,
+                Some(owner) if ctx.sym(owner).kind == Kind::MTH => {
+                    suppress_location = true;
+                    location
+                }
+                _ => location,
+            }
+        } else {
+            location
+        };
         let location_name = ctx.sym(location).name.clone();
         let mut has_location = false;
         if !location_name.is_empty() {
@@ -1444,7 +1561,9 @@ impl Resolve {
                     ),
                 ));
             }
-            has_location = location_name != self.names._this && location_name != self.names._super;
+            has_location = !suppress_location
+                && location_name != self.names._this
+                && location_name != self.names._super;
         }
         let is_constructor = *name == self.names.init;
         let kindname = if is_constructor {
@@ -1466,7 +1585,7 @@ impl Resolve {
         let err_key = symbol_not_found_error_key(kindname, has_type_args, has_location);
         let mut contract_args: Vec<crate::resources::diagnostic_contract::DiagnosticArg> = vec![
             crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                kindname.name(),
+                localize_kind_name(kindname.name()),
             ),
             crate::resources::diagnostic_contract::DiagnosticArg::from_display(
                 idname.to_java_string(),
@@ -1479,13 +1598,16 @@ impl Resolve {
             ),
         ];
         if has_location {
+            // Java: the location argument is the localized Location fragment
+            // (getLocationDiag), i.e. "class Var"/"package p"; using the
+            // diagnostic code instead leaked placeholders (location/location.1).
+            let location_text = self
+                .location_diag(ctx, location, site)
+                .get_message(None)
+                .to_string_lossy()
+                .to_string();
             contract_args.push(
-                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                    self.location_diag(ctx, location, site)
-                        .get_diagnostic_info()
-                        .code
-                        .clone(),
-                ),
+                crate::resources::diagnostic_contract::DiagnosticArg::from_display(location_text),
             );
         }
         Some(self.diag_with_contract_args(dkind, pos, &err_key, contract_args))
@@ -1633,8 +1755,10 @@ impl Resolve {
             dkind,
             pos,
             crate::resources::compiler_properties::errors::not_def_public_cant_access(
-                symbol_place(ctx, sym),
-                symbol_place_opt(ctx, sym_location),
+                simple_symbol_place(ctx, sym),
+                sym_location
+                    .map(|location| simple_symbol_place(ctx, location))
+                    .unwrap_or_else(|| symbol_place_opt(ctx, None)),
             ),
         ))
     }
@@ -1799,7 +1923,19 @@ pub(crate) fn symbol_display_name(
         }
         crate::code::symbol::SymbolKind::PackageSymbol { fullname, .. }
         | crate::code::symbol::SymbolKind::RootPackageSymbol { fullname, .. } => {
-            fullname.to_java_string().to_string_lossy()
+            let full = fullname.to_java_string().to_string_lossy();
+            if full.is_empty() {
+                String::from("unnamed package")
+            } else {
+                full
+            }
+        }
+        crate::code::symbol::SymbolKind::MethodSymbol { .. } => {
+            crate::code::printer::visit_symbol(
+                ctx,
+                &crate::util::names::Names::new(false),
+                symbol,
+            )
         }
         _ => ctx.sym(symbol).name.to_java_string().to_string_lossy(),
     }
@@ -3485,11 +3621,15 @@ fn method_arguments_place(
     ctx: &crate::compiler_context::CompilerContext,
     argtypes: Option<crate::util::list::List<TypeId>>,
 ) -> String {
+    // Java: Resolve.methodArguments returns LocalizedString("compiler.misc.no.args")
+    // for an empty list; upstream compiler.properties defines that key as the
+    // empty string (the port's generated table has "no arguments"). Registered
+    // adapter: use the upstream empty rendering.
     let Some(argtypes) = argtypes else {
-        return "compiler.misc.no.args".to_string();
+        return String::new();
     };
     if argtypes.is_empty() {
-        return "compiler.misc.no.args".to_string();
+        return String::new();
     }
     let mut parts = Vec::new();
     let mut current = argtypes;
@@ -3506,14 +3646,44 @@ fn kind_name_arg(
     ctx: &crate::compiler_context::CompilerContext,
     symbol: SymbolId,
 ) -> crate::resources::diagnostic_contract::KindNameArg {
-    crate::resources::diagnostic_contract::KindNameArg::placeholder(
+    crate::resources::diagnostic_contract::KindNameArg::placeholder(localize_kind_name(
         crate::code::kinds::kind_name(ctx.sym(symbol), ctx).name(),
-    )
+    ))
+}
+
+/// Java: KindName.toString -> messages.getLocalizedString("compiler.misc." + name).
+/// The generated resource table stores "no arguments" for compiler.misc.no.args;
+/// this helper resolves the kindname.* keys to their display text.
+fn localize_kind_name(name: &str) -> String {
+    let messages = crate::util::javac_messages::JavacMessages::default_messages();
+    let text = messages.get_localized_string(&format!("compiler.misc.{name}"), &[]);
+    if text.starts_with("compiler message file broken") {
+        name.to_string()
+    } else {
+        text
+    }
 }
 
 /// Display placeholder for a Type argument (P4). The ported Type.toString is
 /// not available yet; the placeholder uses the type symbol display, which is
 /// the rendered text for the common declared-type case (registered Porting rules).
+/// Like symbol_place, but a class symbol is rendered with its simple name
+/// (RichDiagnosticFormatter's class-name simplification for access errors).
+fn simple_symbol_place(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> crate::resources::diagnostic_contract::SymbolArg {
+    if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP
+        && !ctx.sym(sym).is_anonymous()
+    {
+        crate::resources::diagnostic_contract::SymbolArg::placeholder(
+            ctx.sym(sym).name.to_java_string().to_string_lossy(),
+        )
+    } else {
+        symbol_place(ctx, sym)
+    }
+}
+
 fn type_place_text(
     ctx: &crate::compiler_context::CompilerContext,
     ty: Option<TypeId>,
@@ -3521,10 +3691,9 @@ fn type_place_text(
     let Some(ty) = ty else {
         return String::new();
     };
-    if let Some(tsym) = ctx.typ(ty).tsym {
-        return symbol_display_name(ctx, tsym);
-    }
-    format!("{:?}", ctx.typ(ty).get_tag())
+    // Java: the Type argument is rendered by the diagnostic Printer (a simple
+    // class name when unambiguous), not by the symbol's simple name only.
+    crate::code::printer::visit_type(ctx, ty)
 }
 
 fn type_place(
@@ -4239,6 +4408,7 @@ pub fn abstract_method_check_arguments_acceptable(
             let diagnostic = report_mc_diagnostic(
                 ctx,
                 diags,
+                None,
                 MethodCheckDiag::ArityMismatch,
                 &deferred_attr_context.inference_context,
                 None,
@@ -4278,6 +4448,7 @@ pub fn abstract_method_check_arguments_acceptable(
         let diagnostic = report_mc_diagnostic(
             ctx,
             diags,
+            None,
             MethodCheckDiag::ArityMismatch,
             &deferred_attr_context.inference_context,
             None,
@@ -4320,6 +4491,7 @@ pub fn abstract_method_check_arguments_acceptable(
 fn report_mc_diagnostic(
     ctx: &mut crate::compiler_context::CompilerContext,
     diags: &crate::util::jc_diagnostic::Factory,
+    pos: Option<TreeId>,
     diag: MethodCheckDiag,
     inference_context: &Rc<crate::comp::infer::InferenceContext>,
     details: Option<&crate::util::jc_diagnostic::JCDiagnostic>,
@@ -4333,10 +4505,10 @@ fn report_mc_diagnostic(
     if infer_diag {
         let mut current = inference_context.inference_vars();
         while current.non_empty() {
-            vars.push(TypeArg::placeholder(crate::comp::attr::type_display_of(
+            vars.push(crate::comp::check::type_arg_with_where(
                 ctx,
                 *current.head(),
-            )));
+            ));
             current = current.tail();
         }
     }
@@ -4371,7 +4543,13 @@ fn report_mc_diagnostic(
             unreachable!("INACCESSIBLE_VARARGS is built at the call site")
         }
     };
-    diags.fragment(crate::util::jc_diagnostic::Fragment::from(info))
+    let mut diagnostic = diags.fragment(crate::util::jc_diagnostic::Fragment::from(info));
+    if let Some(tree) = pos {
+        diagnostic.set_diagnostic_position(Some(std::rc::Rc::new(
+            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+        )));
+    }
+    diagnostic
 }
 
 /// Java: class Resolve.MethodCheckContext (Resolve.java:1021-1064)
@@ -4557,17 +4735,14 @@ impl MethodResultInfo {
             // (Resolve.java:945-947, 998-1001, 824-836).
             let details = diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                 crate::resources::compiler_properties::fragments::inconvertible_types(
-                    crate::resources::diagnostic_contract::TypeArg::placeholder(
-                        crate::comp::attr::type_display_of(ctx, captured_type),
-                    ),
-                    crate::resources::diagnostic_contract::TypeArg::placeholder(
-                        crate::comp::attr::type_display_of(ctx, self.pt),
-                    ),
+                    crate::comp::check::type_arg_with_rich_where(ctx, captured_type),
+                    crate::comp::check::type_arg_with_rich_where(ctx, self.pt),
                 ),
             ));
             let diagnostic = report_mc_diagnostic(
                 ctx,
                 diags,
+                pos,
                 self.method_diag,
                 self.check_context.inference_context(),
                 Some(&details),
@@ -4767,10 +4942,21 @@ impl Resolve {
                 let mut bounds = bounds;
                 while bounds.non_empty() {
                     if !types.is_subtype_unchecked(ctx, syms, *actuals.head(), *bounds.head()) {
+                        let actual = crate::resources::diagnostic_contract::TypeArg::placeholder(
+                            crate::comp::attr::type_display_of(ctx, *actuals.head()),
+                        );
+                        let mut bound_args = Vec::new();
+                        for bound in bounds.iter() {
+                            bound_args.push(
+                                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                    crate::comp::attr::type_display_of(ctx, bound),
+                                ),
+                            );
+                        }
                         let diag = self.diags.fragment(
                             crate::resources::compiler_properties::fragments::explicit_param_do_not_conform_to_bounds(
-                                crate::resources::diagnostic_contract::TypeArg::placeholder("type"),
-                                vec![crate::resources::diagnostic_contract::TypeArg::placeholder("type")],
+                                actual,
+                                bound_args,
                             )
                             .into(),
                         );
@@ -5841,6 +6027,15 @@ impl MethodCheck for ResolveMethodCheck {
             warn,
         )?;
         // should we check varargs element type accessibility?
+        if std::env::var_os("DSH_DEBUG_VARARGS").is_some() {
+            eprintln!(
+                "[VARARGS] phase={:?} mode={:?} skip_after={} formals={:?}",
+                deferred_attr_context.phase,
+                deferred_attr_context.mode,
+                self.check_varargs_access_after_resolution,
+                formals.last()
+            );
+        }
         if deferred_attr_context.phase.is_varargs_required()
             && (deferred_attr_context.mode == crate::comp::deferred_attr::AttrMode::CHECK
                 || !self.check_varargs_access_after_resolution)
@@ -5859,6 +6054,7 @@ impl MethodCheck for ResolveMethodCheck {
                 &deferred_attr_context.inference_context,
                 elt,
                 &self.diags,
+                chk.log.borrow().current_source(),
             )?;
         }
         Ok(())
@@ -5880,6 +6076,7 @@ fn varargs_accessible(
     inference_context: &crate::comp::infer::InferenceContext,
     t: TypeId,
     diags: &Rc<crate::util::jc_diagnostic::Factory>,
+    source: Option<Rc<crate::util::diagnostic_source::DiagnosticSource>>,
 ) -> Result<(), MethodCheckFailure> {
     // Java: ResolveMethodCheck.varargsAccessible (Resolve.java:880-900)
     if inference_context.free(ctx, syms, types, t) {
@@ -5888,6 +6085,7 @@ fn varargs_accessible(
             t: TypeId,
             diags: Rc<crate::util::jc_diagnostic::Factory>,
             allow_modules: bool,
+            source: Option<Rc<crate::util::diagnostic_source::DiagnosticSource>>,
         }
         impl crate::comp::infer::FreeTypeListener for VarargsAccessibilityListener {
             fn types_inferred(
@@ -5906,6 +6104,7 @@ fn varargs_accessible(
                     inference_context,
                     self.t,
                     &self.diags,
+                    self.source.clone(),
                 ) {
                     Ok(()) => Ok(()),
                     Err(MethodCheckFailure::Inference(exception)) => Err(exception),
@@ -5925,6 +6124,7 @@ fn varargs_accessible(
                 t,
                 diags: Rc::clone(diags),
                 allow_modules,
+                source: source.clone(),
             }),
         );
         Ok(())
@@ -5957,7 +6157,7 @@ fn varargs_accessible(
         let info = crate::util::jc_diagnostic::Fragment::from(fragment).into_info();
         let diag = diags.create(
             crate::util::jc_diagnostic::DiagnosticType::FRAGMENT,
-            None,
+            source,
             Some(Rc::new(
                 crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
             )),
@@ -6249,6 +6449,51 @@ fn method_symbol_display(
     crate::code::printer::visit_symbol(ctx, names, sym)
 }
 
+/// Java verbose resolution notes use Type.toString (fully qualified names) for
+/// the candidate parameter types.
+fn method_symbol_display_verbose(
+    ctx: &crate::compiler_context::CompilerContext,
+    names: &Names,
+    sym: SymbolId,
+) -> String {
+    let symbol = ctx.sym(sym);
+    let owner = symbol.owner;
+    let name = if symbol.is_constructor(names) {
+        owner
+            .map(|owner| ctx.sym(owner).name.to_java_string().to_string_lossy())
+            .unwrap_or_default()
+    } else {
+        symbol.name.to_java_string().to_string_lossy()
+    };
+    let Some(ty) = symbol.ty else {
+        return name;
+    };
+    let Some(params) = types_parameter_types(ctx, ty) else {
+        return name;
+    };
+    let varargs = (symbol.flags_field & crate::code::flags::VARARGS) != 0;
+    let mut parts: Vec<String> = Vec::new();
+    let mut current = params;
+    while current.non_empty() {
+        let param = *current.head();
+        current = current.tail();
+        let mut text = type_display_str(ctx, param);
+        if varargs && current.is_empty() && text.ends_with("[]") {
+            text.truncate(text.len() - 2);
+            text.push_str("...");
+        }
+        parts.push(text);
+    }
+    // Keep the printer's owner/type-variable prefix (e.g. T<G>.Ctor) and only
+    // replace the parameter types with their qualified rendering.
+    let base = crate::code::printer::visit_symbol(ctx, names, sym);
+    let prefix = base
+        .find('(')
+        .map(|open| &base[..open])
+        .unwrap_or(name.as_str());
+    format!("{prefix}({})", parts.join(","))
+}
+
 fn types_parameter_types(
     ctx: &crate::compiler_context::CompilerContext,
     t: TypeId,
@@ -6274,6 +6519,25 @@ pub(crate) fn method_arguments_display_pub(
     argtypes: Option<crate::util::list::List<TypeId>>,
 ) -> String {
     method_arguments_display(ctx, argtypes)
+}
+
+fn method_arguments_verbose(
+    ctx: &crate::compiler_context::CompilerContext,
+    argtypes: Option<crate::util::list::List<TypeId>>,
+) -> String {
+    match argtypes {
+        None => "no arguments".to_string(),
+        Some(argtypes) if argtypes.is_empty() => "no arguments".to_string(),
+        Some(argtypes) => {
+            let mut parts: Vec<String> = Vec::new();
+            let mut current = argtypes;
+            while current.non_empty() {
+                parts.push(type_display_str(ctx, *current.head()));
+                current = current.tail();
+            }
+            parts.join(",")
+        }
+    }
 }
 
 fn method_arguments_display(
@@ -6894,9 +7158,9 @@ impl Resolve {
         } else {
             site_tsym
         };
-        let members = self
-            .member_scope(ctx, syms, tsym)
-            .expect("diamond class members");
+        let Some(members) = self.member_scope(ctx, syms, tsym) else {
+            return self.method_not_found;
+        };
         let symbols = {
             let scope_ref = ctx.scope(members).clone();
             
@@ -7376,8 +7640,19 @@ impl Resolve {
             if let Some(sym_ty) = ctx.sym(candidate.sym).ty {
                 if ctx.typ(sym_ty).has_tag(crate::code::type_tag::TypeTag::FORALL) {
                     let inst = candidate.mtype.unwrap_or(sym_ty);
+                    let mut inst_arg = crate::comp::check::type_arg_with_rich_where(ctx, inst);
+                    // RichDiagnosticFormatter lists the candidate's declared
+                    // type variables (Java formats the method symbol too).
+                    let declared_arg = crate::comp::check::type_arg_with_where(ctx, sym_ty);
+                    for tvar in declared_arg.where_vars {
+                        if !inst_arg.where_vars.iter().any(|existing| {
+                            existing.name == tvar.name && existing.owner == tvar.owner
+                        }) {
+                            inst_arg.where_vars.push(tvar);
+                        }
+                    }
                     sub_diag = Some(self.diags.fragment(Fragment::from(
-                        fragments::partial_inst_sig(TypeArg::placeholder(type_display_str(ctx, inst))),
+                        fragments::partial_inst_sig(inst_arg),
                     )));
                 }
             }
@@ -7524,8 +7799,10 @@ impl Resolve {
             .tsym
             .map(|tsym| ctx.sym(tsym).name.to_java_string().to_string_lossy())
             .unwrap_or_default();
-        let argtypes_display = method_arguments_display(ctx, Some(argtypes.clone()));
-        let targs_display = method_arguments_display(ctx, typeargtypes.clone());
+        // Java: the verbose-resolution note uses Type.toString (fully qualified
+        // names), unlike the user-facing required/found diagnostics.
+        let argtypes_display = method_arguments_verbose(ctx, Some(argtypes.clone()));
+        let targs_display = method_arguments_verbose(ctx, typeargtypes.clone());
         let site_arg = SymbolArg::placeholder(site_display);
         let step_string = javac_strings::JavaString::from(step.as_str());
         let note = if success {
@@ -7576,12 +7853,21 @@ impl Resolve {
         if let Some(sym_ty) = sym_ty {
             if ctx.typ(sym_ty).has_tag(crate::code::type_tag::TypeTag::FORALL) {
                 let inst = inst.unwrap_or(sym_ty);
+                let mut inst_arg = crate::comp::check::type_arg_with_rich_where(ctx, inst);
+                let declared_arg = crate::comp::check::type_arg_with_where(ctx, sym_ty);
+                for tvar in declared_arg.where_vars {
+                    if !inst_arg.where_vars.iter().any(|existing| {
+                        existing.name == tvar.name && existing.owner == tvar.owner
+                    }) {
+                        inst_arg.where_vars.push(tvar);
+                    }
+                }
                 sub_diag = Some(self.diags.fragment(Fragment::from(
-                    fragments::partial_inst_sig(TypeArg::placeholder(type_display_str(ctx, inst))),
+                    fragments::partial_inst_sig(inst_arg),
                 )));
             }
         }
-        let sym_display = method_symbol_display(ctx, self.names.as_ref(), sym);
+        let sym_display = method_symbol_display_verbose(ctx, self.names.as_ref(), sym);
         let info = match &sub_diag {
             None => fragments::applicable_method_found(
                 pos,
@@ -7610,7 +7896,7 @@ impl Resolve {
         use crate::resources::compiler_properties::fragments;
         use crate::resources::diagnostic_contract::{DiagnosticArg, SymbolArg};
         use crate::util::jc_diagnostic::Fragment;
-        let sym_display = method_symbol_display(ctx, self.names.as_ref(), sym);
+        let sym_display = method_symbol_display_verbose(ctx, self.names.as_ref(), sym);
         let details = match sub_diag {
             Some(diag) => DiagnosticArg::JCDiagnostic(Rc::new(diag)),
             None => DiagnosticArg::from_display("null"),
@@ -8753,7 +9039,7 @@ impl ReferenceLookupHelper {
                     let sel_name = qualifier.and_then(|q| crate::tree::tree_info::name(ctx, q));
                     if sel_name
                         .as_ref()
-                        .map(|n| n.to_java_string().to_string_lossy() == "_super")
+                        .map(|n| n.to_java_string().to_string_lossy() == "super")
                         .unwrap_or(false)
                     {
                         ReferenceKind::SUPER
@@ -9871,10 +10157,21 @@ impl Resolve {
     ) -> SymbolId {
         let sym = self.resolve_self_containing_internal(ctx, syms, types, env, member, is_super_call);
         let Some(sym) = sym else {
+            let mut member_name = ctx.sym(member).name.to_java_string().to_string_lossy();
+            let mut owner = ctx.sym(member).owner;
+            while let Some(owner_sym) = owner {
+                if ctx.sym(owner_sym).kind != crate::code::kinds::Kind::TYP {
+                    break;
+                }
+                member_name = format!(
+                    "{}.{}",
+                    ctx.sym(owner_sym).name.to_java_string().to_string_lossy(),
+                    member_name
+                );
+                owner = ctx.sym(owner_sym).owner;
+            }
             let info = crate::resources::compiler_properties::errors::encl_class_required(
-                crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                    ctx.sym(member).name.to_java_string().to_string_lossy().to_string(),
-                ),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(member_name),
             );
             crate::util::abstract_log::AbstractLog::error_at(
                 &mut *self.log.borrow_mut(),
@@ -9980,7 +10277,7 @@ impl Resolve {
             let info = crate::resources::compiler_properties::errors::abstract_cant_be_accessed_directly(
                 crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
                 crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                    ctx.sym(sym).name.to_java_string().to_string_lossy().to_string(),
+                    symbol_display_name(ctx, sym),
                 ),
                 crate::resources::diagnostic_contract::SymbolArg::placeholder(
                     enclosing
@@ -10436,6 +10733,10 @@ mod check_channel_tests {
         if c == syms.array_class {
             return true;
         }
+        // Java: ClassSymbol.flags() completes the class first.
+        if let Err(failure) = ctx.complete_symbol(syms, c) {
+            crate::code::symbol::throw_completion_failure(failure);
+        }
         let access = ctx.sym(c).flags_field & flags::AccessFlags as i64;
         let is_accessible;
         if access == flags::PRIVATE as i64 {
@@ -10594,4 +10895,22 @@ mod check_channel_tests {
             None => return true,
         };
         is_accessible_class_free(types, allow_modules, ctx, syms, env, tsym, check_inner)
-    }
+    }
+
+/// Convert a contract diagnostic argument to the formatter's Rc<dyn Any>
+/// argument, preserving nested diagnostics, TypeArg metadata and lists.
+fn contract_arg_to_jcd(
+    arg: &crate::resources::diagnostic_contract::DiagnosticArg,
+) -> crate::util::jc_diagnostic::DiagnosticArg {
+    use crate::resources::diagnostic_contract::DiagnosticArg as ContractArg;
+    match arg {
+        ContractArg::Text(text) => std::rc::Rc::new(javac_strings::JavaString::from(text.as_str())),
+        ContractArg::Type(type_arg) => std::rc::Rc::new(type_arg.clone()),
+        ContractArg::JCDiagnostic(diag) => diag.clone(),
+        ContractArg::List(items) => {
+            let converted: Vec<crate::util::jc_diagnostic::DiagnosticArg> =
+                items.iter().map(contract_arg_to_jcd).collect();
+            std::rc::Rc::new(converted)
+        }
+    }
+}

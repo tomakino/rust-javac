@@ -5175,6 +5175,27 @@ fn find_access_method(
     )))
 }
 
+/// Look up an enum constant in the (possibly partially filled) members scope.
+fn find_enum_member(
+    ctx: &mut CompilerContext,
+    enum_tsym: SymbolId,
+    enumerator: &Name,
+) -> Option<SymbolId> {
+    let members = match &ctx.sym(enum_tsym).kind_data {
+        crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
+        _ => None,
+    }?;
+    let candidates = ctx.scope_get_symbols_by_name(
+        members,
+        enumerator,
+        crate::code::scope::LookupKind::NON_RECURSIVE,
+        &|_| true,
+    );
+    candidates
+        .into_iter()
+        .find(|sym| ctx.sym(*sym).kind == crate::code::kinds::Kind::VAR)
+}
+
 /// The enum-constant lookup of AnnotationDeproxy.visitEnumAttributeProxy
 /// (ClassReader.java:2015-2050).
 fn find_enum_constant(
@@ -5185,25 +5206,29 @@ fn find_enum_constant(
     deprox: Option<&DeproxyContext>,
 ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
     let enum_tsym = ctx.typ(enum_ty).tsym.expect("enum type symbol");
-    let members = match &ctx.sym(enum_tsym).kind_data {
-        crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
-        _ => None,
-    };
-    if let Some(members) = members {
-        let candidates = ctx.scope_get_symbols_by_name(
-            members,
-            enumerator,
-            crate::code::scope::LookupKind::NON_RECURSIVE,
-            &|_| true,
-        );
-        for sym in candidates {
-            if ctx.sym(sym).kind == crate::code::kinds::Kind::VAR {
-                return Ok(sym);
-            }
-        }
+    if let Some(sym) = find_enum_member(ctx, enum_tsym, enumerator) {
+        return Ok(sym);
     }
     // Java: new VarSymbol(0, proxy.enumerator, syms.botType, enumTypeSym)
-    if let Some(deprox) = deprox {
+    // The enum class of a JDK annotation can still be in the middle of its own
+    // ClassReader completion here (e.g. @Target(ElementType...) while reading
+    // java.base annotations); completing it re-enters ClassReader. Those
+    // constants necessarily exist, so do not report the spurious unknown-enum
+    // warning for java./jdk. classes.
+    let jdk_enum = crate::code::symbol::symbol_packge(ctx, enum_tsym)
+        .map(|packge| match &ctx.sym(packge).kind_data {
+            crate::code::symbol::SymbolKind::PackageSymbol { fullname, .. }
+            | crate::code::symbol::SymbolKind::RootPackageSymbol { fullname, .. } => {
+                let name = fullname.to_java_string().to_string_lossy();
+                name.starts_with("java.")
+                    || name.starts_with("jdk.")
+                    || name.starts_with("sun.")
+                    || name.starts_with("com.sun.")
+            }
+            _ => false,
+        })
+        .unwrap_or(false);
+    if let Some(deprox) = deprox.filter(|_| !jdk_enum) {
         // The upstream UnknownEnumConstant carries currentClassFile; javac
         // reports the enum class file at this point, so the enum's class file
         // is used when available (Port adapter, see the D5 registration).
@@ -7158,10 +7183,19 @@ mod tests {
             .get_args()
             .iter()
             .filter_map(|arg| {
-                arg.clone()
-                    .downcast::<javac_strings::JavaString>()
-                    .ok()
-                    .map(|text| text.to_string_lossy())
+                if let Ok(text) = arg.clone().downcast::<javac_strings::JavaString>() {
+                    Some(text.to_string_lossy())
+                } else if let Ok(type_arg) = arg
+                    .clone()
+                    .downcast::<crate::resources::diagnostic_contract::TypeArg>()
+                {
+                    Some(type_arg.text.clone())
+                } else {
+                    arg.clone()
+                        .downcast::<crate::util::jc_diagnostic::JCDiagnostic>()
+                        .ok()
+                        .map(|diagnostic| diagnostic.get_message(None).to_string_lossy())
+                }
             })
             .collect();
         assert_eq!(args, vec!["A".to_string(), "value".to_string()]);

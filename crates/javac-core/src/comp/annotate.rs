@@ -466,6 +466,10 @@ pub struct AnnotateServices {
     pub allow_repeated_annos: bool,
     /// Java: private final String sourceName
     pub source_name: String,
+    /// Annotation types whose declaration-level @Repeatable validation has been
+    /// queued once (the use-site processing reports declaration errors after
+    /// the repeated uses).
+    pub validated_repeatable_decls: Rc<std::cell::RefCell<std::collections::HashSet<SymbolId>>>,
     /// Weak self reference used by the queued closures (the Java inner-class
     /// instances capture the enclosing Annotate); set right after construction.
     pub self_ref: std::cell::RefCell<std::rc::Weak<AnnotateServices>>,
@@ -533,6 +537,9 @@ impl Annotate {
             the_unfinished_default_value: unfinished,
             allow_repeated_annos: Feature::REPEATED_ANNOTATIONS.allowed_in_source(source),
             source_name: source.name().to_string(),
+            validated_repeatable_decls: Rc::new(std::cell::RefCell::new(
+                std::collections::HashSet::new(),
+            )),
             self_ref: std::cell::RefCell::new(std::rc::Weak::new()),
         });
         *services.self_ref.borrow_mut() = Rc::downgrade(&services);
@@ -657,7 +664,13 @@ impl Annotate {
         // Port adapter: the Attr-inside callers pass their &mut Attr to
         // flush_with_attr; the normal path borrows the Attr service once.
         let attr_rc = std::rc::Rc::clone(&self.services.attr);
-        let mut attr = attr_rc.borrow_mut();
+        // Completion can re-enter Annotate while Attr is already mutably
+        // borrowed (e.g. while resolving imports); upstream shares the same
+        // instance, so skip this flush instead of panicking. Annotations are
+        // retried by the normal flush path.
+        let Ok(mut attr) = attr_rc.try_borrow_mut() else {
+            return Ok(());
+        };
         self.flush_with_attr(ctx, syms, &mut attr)
     }
 
@@ -1265,9 +1278,27 @@ impl AnnotateServices {
                 ctx.tree(name_value_pair).pos,
                 errors::annotation_value_must_be_name_value().into(),
             );
+            // Java: the malformed name/value pair is still attributed as an
+            // expression, so an identifier such as `name` is reported as an
+            // unresolved variable. Resolve that identifier directly without
+            // the enclosing-class location used for ordinary expressions.
+            if let TreeKind::Binary { lhs: Some(lhs), .. } = &ctx.tree(name_value_pair).kind
+                && let TreeKind::Ident { name, .. } = &ctx.tree(*lhs).kind
+            {
+                let info = crate::resources::compiler_properties::errors::cant_resolve(
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(
+                        "kindname.variable",
+                    ),
+                    name.clone(),
+                    (),
+                    (),
+                );
+                self.log
+                    .borrow_mut()
+                    .error_at(ctx.tree(*lhs).pos, info.into());
+            }
             let err_type = syms.err_type;
             ctx.tree_mut(name_value_pair).ty = Some(err_type);
-            let _ = self.attribute_annotation_value(ctx, syms, err_type, name_value_pair, env, attr)?;
             return Ok(None);
         }
         let (lhs, rhs) = match &ctx.tree(name_value_pair).kind {
@@ -1974,7 +2005,7 @@ impl AnnotateServices {
             self.types.is_same_type(ctx, syms, expected_type, value_ret_type)
         };
         if !(is_array && same) {
-            self.log.borrow_mut().error_at(pos, errors::invalid_repeatable_annotation_value_return(DiagnosticArg::from_display(crate::comp::resolve::symbol_display_name(ctx, container_tsym)), TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, ctx.typ(value_ret_type).tsym.unwrap_or(container_tsym))), TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, ctx.typ(expected_type).tsym.unwrap_or(container_tsym)))).into());
+            self.log.borrow_mut().error_at(pos, errors::invalid_repeatable_annotation_value_return(DiagnosticArg::from_display(crate::comp::resolve::symbol_display_name(ctx, container_tsym)), TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, value_ret_type)), TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, expected_type))).into());
             fatal_error = true;
         }
         Ok(if fatal_error { None } else { Some(container_value_symbol) })
@@ -1983,10 +2014,84 @@ impl AnnotateServices {
     /// Java: private <T> T makeContainerAnnotation(List<T> toBeReplaced,
     /// AnnotationContext<T> ctx, Symbol sym, boolean isTypeParam)
     /// (Annotate.java:1062-1080)
+    /// Run the declaration-level @Repeatable validation once, after the
+    /// use-position diagnostics of process_repeated_annotations. The @Repeatable
+    /// diagnostic position is the annotation on the annotation type declaration.
+    fn validate_repeatable_declaration(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        orig_anno_type: TypeId,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> Result<(), CompletionFailure> {
+        let Some(decl) = ctx.typ(orig_anno_type).tsym else {
+            return Ok(());
+        };
+        if !self.validated_repeatable_decls.borrow_mut().insert(decl) {
+            return Ok(());
+        }
+        let Some(metadata) = ctx.sym(decl).get_annotation_type_metadata().cloned() else {
+            return Ok(());
+        };
+        let repeatable = AnnotationTypeMetadata::get_repeatable_shared(
+            &metadata,
+            ctx,
+            syms,
+            Some(&mut *attr),
+        )?;
+        let Some(repeatable) = repeatable else {
+            return Ok(());
+        };
+        let pos = self
+            .repeatable_annotation_position(ctx, syms, decl)
+            .unwrap_or(crate::util::position::NOPOS);
+        self.chk
+            .validate_repeatable(ctx, syms, pos, decl, repeatable, Some(&mut *attr));
+        Ok(())
+    }
+
+    fn repeatable_annotation_position(
+        &self,
+        ctx: &CompilerContext,
+        syms: &Symtab,
+        decl: SymbolId,
+    ) -> Option<i32> {
+        let env = self.type_envs.borrow().get(decl)?;
+        let tree = env.tree?;
+        let TreeKind::ClassDecl { mods, .. } = &ctx.tree(tree).kind else {
+            return None;
+        };
+        let Some(mods) = *mods else {
+            return None;
+        };
+        let TreeKind::Modifiers { annotations, .. } = &ctx.tree(mods).kind else {
+            return None;
+        };
+        let repeatable_tsym = ctx.typ(syms.repeatable_type).tsym?;
+        for annotation in annotations.iter() {
+            if ctx
+                .tree(annotation)
+                .ty
+                .and_then(|ty| ctx.typ(ty).tsym)
+                == Some(repeatable_tsym)
+            {
+                return Some(ctx.tree(annotation).pos);
+            }
+        }
+        None
+    }
+
     #[allow(clippy::collapsible_if)]
     #[allow(clippy::too_many_arguments)]
     fn make_container_annotation(&self, ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, to_be_replaced: &[AttributeId], context: &AnnotatedContext, sym: SymbolId, is_type_param: bool, attr: &mut crate::comp::attr::Attr) -> Result<Option<AttributeId>, CompletionFailure> {
         let valid_repeated = self.process_repeated_annotations(ctx, syms, to_be_replaced, context, sym, is_type_param, attr)?;
+        let orig_anno_type = ctx
+            .attr(to_be_replaced[0])
+            .ty
+            .expect("repeated annotation type");
+        // Java: Check.validateRepeatable runs for the annotation type
+        // declaration after the repeated uses have been processed.
+        self.validate_repeatable_declaration(ctx, syms, orig_anno_type, attr)?;
         let Some(valid_repeated) = valid_repeated else { return Ok(None) };
         let repeated_type = ctx.attr(valid_repeated).ty.expect("repeated annotation type");
         let repeated_tsym = ctx.typ(repeated_type).tsym.expect("repeated annotation symbol");

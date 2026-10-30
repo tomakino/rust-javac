@@ -1,0 +1,338 @@
+warning: variant `Unmappable` is never constructed
+  --> crates\javac-charset\src\coder.rs:35:5
+   |
+31 | enum DecodeStep {
+   |      ---------- variant in this enum
+...
+35 |     Unmappable { length: usize },
+   |     ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `javac-charset` (lib) generated 1 warning
+warning: unused import: `Location`
+  --> crates\javac-core\src\code\module_finder.rs:16:81
+   |
+16 | use javac_tools::tools::java_file_manager::{JavaFileManager, JavaFileObjectRef, Location, LocationRef};
+   |                                                                                 ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crate::code::type_::TypeKindData`
+    --> crates\javac-core\src\comp\check.rs:2818:13
+     |
+2818 |         use crate::code::type_::TypeKindData;
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unnecessary parentheses around function argument
+    --> crates\javac-core\src\comp\type_enter.rs:1623:13
+     |
+1623 |             ((flags::FINAL as i64 | flags::HASINIT as i64)),
+     |             ^                                             ^
+     |
+     = note: `#[warn(unused_parens)]` (part of `#[warn(unused)]`) on by default
+help: remove these parentheses
+     |
+1623 -             ((flags::FINAL as i64 | flags::HASINIT as i64)),
+1623 +             (flags::FINAL as i64 | flags::HASINIT as i64),
+     |
+
+warning: unnecessary parentheses around function argument
+    --> crates\javac-core\src\comp\type_enter.rs:1637:25
+     |
+1637 |                         ((flags::FINAL as i64 | flags::HASINIT as i64)),
+     |                         ^                                             ^
+     |
+help: remove these parentheses
+     |
+1637 -                         ((flags::FINAL as i64 | flags::HASINIT as i64)),
+1637 +                         (flags::FINAL as i64 | flags::HASINIT as i64),
+     |
+
+warning: unused import: `JavaFileObject`
+  --> crates\javac-core\src\code\module_finder.rs:17:44
+   |
+17 | use javac_tools::tools::java_file_object::{JavaFileObject, Kind as FileKind};
+   |                                            ^^^^^^^^^^^^^^
+
+warning: unused import: `javac_tools::tools::file_object::FileObject`
+  --> crates\javac-core\src\jvm\jni_writer.rs:19:5
+   |
+19 | use javac_tools::tools::file_object::FileObject;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Location`
+  --> crates\javac-core\src\jvm\jni_writer.rs:21:37
+   |
+21 |     FileObjectRef, JavaFileManager, Location, LocationRef,
+   |                                     ^^^^^^^^
+
+warning: unused import: `JavaFileObject`
+  --> crates\javac-core\src\comp\modules.rs:28:44
+   |
+28 | use javac_tools::tools::java_file_object::{JavaFileObject, Kind as FileKind};
+   |                                            ^^^^^^^^^^^^^^
+
+warning: unused import: `javac_tools::java_io::Writer`
+  --> crates\javac-core\src\jvm\jni_writer.rs:18:5
+   |
+18 | use javac_tools::java_io::Writer;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+     --> crates\javac-core\src\comp\attr.rs:12889:21
+      |
+12889 |                 let mut chk = chk_rc;
+      |                     ----^^^
+      |                     |
+      |                     help: remove this `mut`
+      |
+      = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+     --> crates\javac-core\src\comp\attr.rs:12960:21
+      |
+12960 |                 let mut chk = chk_rc;
+      |                     ----^^^
+      |                     |
+      |                     help: remove this `mut`
+
+warning: variable does not need to be mutable
+     --> crates\javac-core\src\comp\attr.rs:14923:17
+      |
+14923 |             let mut chk = chk_rc;
+      |                 ----^^^
+      |                 |
+      |                 help: remove this `mut`
+
+warning: variable does not need to be mutable
+     --> crates\javac-core\src\comp\attr.rs:15485:17
+      |
+15485 |             let mut chk = chk_rc;
+      |                 ----^^^
+      |                 |
+      |                 help: remove this `mut`
+
+warning: value assigned to `solved_all` is never read
+    --> crates\javac-core\src\comp\infer.rs:2228:21
+     |
+2228 |                     solved_all = true;
+     |                     ^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `progressed` is never read
+    --> crates\javac-core\src\comp\infer.rs:2257:25
+     |
+2257 |                         progressed = true;
+     |                         ^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: variable `index` is assigned to, but never used
+    --> crates\javac-core\src\comp\lower.rs:5309:13
+     |
+5309 |         let mut index = 0;
+     |             ^^^^^^^^^
+     |
+     = note: consider using `_index` instead
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `index` is never read
+    --> crates\javac-core\src\comp\lower.rs:5323:13
+     |
+5323 |             index += 1;
+     |             ^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: variable `enclosing_constructor` is assigned to, but never used
+    --> crates\javac-core\src\comp\type_enter.rs:2567:21
+     |
+2567 |                 let mut enclosing_constructor: Option<SymbolId> = None;
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: consider using `_enclosing_constructor` instead
+
+warning: value assigned to `enclosing_constructor` is never read
+    --> crates\javac-core\src\comp\type_enter.rs:2577:25
+     |
+2577 |                         enclosing_constructor = Some(*constructor);
+     |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `encl` is never read
+    --> crates\javac-core\src\comp\type_enter.rs:2568:48
+     |
+2568 |                 let mut encl: Option<TypeId> = None;
+     |                                                ^^^^ this value is reassigned later and never used
+...
+2578 |                         encl = encl_tree.and_then(|tree| ctx.tree(tree).ty);
+     |                         --------------------------------------------------- `encl` is overwritten here before the previous value is read
+
+warning: unused variable: `name`
+    --> crates\javac-core\src\comp\type_enter.rs:3752:13
+     |
+3752 |         let name = synthesized_typaram_name(syms.names(), index, n);
+     |             ^^^^ help: if this is intentional, prefix it with an underscore: `_name`
+
+warning: unused variable: `loaded`
+    --> crates\javac-core\src\jvm\codegen.rs:3738:25
+     |
+3738 |                     let loaded = self.item_load(ctx, &od);
+     |                         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_loaded`
+
+warning: unused variable: `first`
+    --> crates\javac-core\src\parser\javac_parser.rs:5934:21
+     |
+5934 |                 let first = first_token.clone();
+     |                     ^^^^^ help: if this is intentional, prefix it with an underscore: `_first`
+
+warning: unused variable: `annotations`
+   --> crates\javac-core\src\tree\pretty.rs:925:25
+    |
+925 |         let (mod_flags, annotations) = match mods {
+    |                         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_annotations`
+
+warning: methods `warn_preview_api` and `warn_declared_using_preview` are never used
+     --> crates\javac-core\src\comp\check.rs:10033:8
+      |
+ 9894 | impl Check {
+      | ---------- methods in this implementation
+...
+10033 |     fn warn_preview_api(
+      |        ^^^^^^^^^^^^^^^^
+...
+10050 |     fn warn_declared_using_preview(
+      |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |
+      = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `java_` is never read
+  --> crates\javac-core\src\comp\modules.rs:99:5
+   |
+82 | pub struct Modules {
+   |            ------- field in this struct
+...
+99 |     java_: Name,
+   |     ^^^^^
+
+warning: method `log` is never used
+   --> crates\javac-core\src\comp\modules.rs:215:8
+    |
+126 | impl Modules {
+    | ------------ method in this implementation
+...
+215 |     fn log(&self) -> std::cell::RefMut<'_, Log> {
+    |        ^^^
+
+warning: function `module_kind_data` is never used
+    --> crates\javac-core\src\comp\modules.rs:2526:4
+     |
+2526 | fn module_kind_data<F, T>(ctx: &CompilerContext, msym: SymbolId, f: F) -> T
+     |    ^^^^^^^^^^^^^^^^
+
+warning: function `module_patch_output_location` is never used
+    --> crates\javac-core\src\comp\modules.rs:2554:4
+     |
+2554 | fn module_patch_output_location(ctx: &CompilerContext, msym: SymbolId) -> Option<LocationRef> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `deferred_close_timeout` is never used
+   --> crates\javac-core\src\file\base_file_manager.rs:208:19
+    |
+131 | impl BaseFileManager {
+    | -------------------- method in this implementation
+...
+208 |     pub(crate) fn deferred_close_timeout(&self) -> i64 {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `get_file` is never used
+  --> crates\javac-core\src\file\jrt_index.rs:98:19
+   |
+86 | impl Entry {
+   | ---------- method in this implementation
+...
+98 |     pub(crate) fn get_file(&self, name: &str) -> Option<&FsPath> {
+   |                   ^^^^^^^^
+
+warning: variants `FIELD` and `SIGNATURE` are never constructed
+   --> crates\javac-core\src\jvm\jni_writer.rs:565:5
+    |
+559 | enum EncoderType {
+    |      ----------- variants in this enum
+...
+565 |     FIELD,
+    |     ^^^^^
+...
+569 |     SIGNATURE,
+    |     ^^^^^^^^^
+    |
+    = note: `EncoderType` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: field `delegate` is never read
+  --> crates\javac-core\src\platform\ct_sym_java_file_manager.rs:52:5
+   |
+46 | struct KnownCtSymFile {
+   |        -------------- field in this struct
+...
+52 |     delegate: Option<JavaFileObjectRef>,
+   |     ^^^^^^^^
+
+warning: method `get_delegate` is never used
+   --> crates\javac-core\src\platform\ct_sym_java_file_manager.rs:392:8
+    |
+390 | impl SigJavaFileObject {
+    | ---------------------- method in this implementation
+391 |     /// Java: public JavaFileObject getDelegate().
+392 |     fn get_delegate(&self) -> JavaFileObjectRef {
+    |        ^^^^^^^^^^^^
+
+warning: calls to `std::mem::drop` with a reference instead of an owned value does nothing
+   --> crates\javac-core\src\code\type_annotations.rs:392:17
+    |
+392 |                 drop(syms);
+    |                 ^^^^^----^
+    |                      |
+    |                      argument has type `&Symtab`
+    |
+    = note: `#[warn(dropping_references)]` on by default
+help: use `let _ = ...` to ignore the expression or result
+    |
+392 -                 drop(syms);
+392 +                 let _ = syms;
+    |
+
+warning: `javac-core` (lib) generated 35 warnings (run `cargo fix --lib -p javac-core` to apply 12 suggestions)
+warning: unused import: `javac_core::api::diagnostic_formatter::DiagnosticFormatter`
+  --> crates\rust-javac\src\main.rs:11:5
+   |
+11 | use javac_core::api::diagnostic_formatter::DiagnosticFormatter;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `javac_core::main::option::InvalidValueException`
+  --> crates\rust-javac\src\main.rs:15:5
+   |
+15 | use javac_core::main::option::InvalidValueException;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `javac_core::util::basic_diagnostic_formatter::BasicDiagnosticFormatter`
+  --> crates\rust-javac\src\main.rs:20:5
+   |
+20 | use javac_core::util::basic_diagnostic_formatter::BasicDiagnosticFormatter;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `javac_core::util::log::DiagnosticHandler`
+  --> crates\rust-javac\src\main.rs:24:5
+   |
+24 | use javac_core::util::log::DiagnosticHandler;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+   Compiling rust-javac v0.1.0 (C:\Users\Lin\RustroverProjects\rust-javac\crates\rust-javac)
+warning: `rust-javac` (bin "rust-javac") generated 4 warnings (run `cargo fix --bin "rust-javac" -p rust-javac` to apply 4 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.93s
+     Running tests\diag_examples.rs (target\debug\deps\diag_examples-3d126f6599f80a44.exe)

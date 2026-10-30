@@ -309,8 +309,10 @@ impl MatchBindingsComputer {
                     && (ctx.sym(v1).flags_field & flags::CLASH) == 0
                     && (ctx.sym(v2).flags_field & flags::CLASH) == 0
                 {
-                    // Java: log.error(pos, Errors.MatchBindingExists)
-                    self.error(pos, errors::match_binding_exists());
+                    // Java: log.error(pos, Errors.MatchBindingExists); the
+                    // diagnostic caret points at the redefined binding name.
+                    let binding_pos = ctx.sym(v2).var_pos().unwrap_or(pos);
+                    self.error(binding_pos, errors::match_binding_exists());
                     ctx.sym_mut(v2).flags_field |= flags::CLASH;
                     result = result.append(v2);
                 }
@@ -345,7 +347,8 @@ impl MatchBindingsComputer {
                         && (ctx.sym(ov).flags_field & flags::CLASH) == 0
                         && (ctx.sym(v).flags_field & flags::CLASH) == 0
                     {
-                        self.error(pos, errors::match_binding_exists());
+                        let binding_pos = ctx.sym(v).var_pos().unwrap_or(pos);
+                        self.error(binding_pos, errors::match_binding_exists());
                         ctx.sym_mut(v).flags_field |= flags::CLASH;
                     }
                     list_current = list_current.tail();
@@ -368,10 +371,15 @@ impl MatchBindingsComputer {
             })
             .collect();
         let source = self.log.borrow().current_source();
+        // A diagnostic cannot carry a source position without a source (the
+        // factory asserts this); test harnesses have no current source.
+        let position = source
+            .as_ref()
+            .map(|_| Rc::new(SimpleDiagnosticPosition::new(pos)) as Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>);
         let diagnostic = self.diags.create(
             DiagnosticType::ERROR,
             source,
-            Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
+            position,
             info.info().code,
             args,
         );

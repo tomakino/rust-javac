@@ -556,20 +556,7 @@ impl Flow {
             .info()
             .args
             .iter()
-            .map(|arg| -> DiagnosticArg {
-                // The diagnostic contract preserves the original argument object
-                // (ADR 0002 revision C): a nested diagnostic/fragment is passed
-                // through, plain text becomes a Java string argument.
-                match arg {
-                    crate::resources::diagnostic_contract::DiagnosticArg::Text(text) => {
-                        Rc::new(javac_strings::JavaString::from(text.as_str()))
-                    }
-                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(diag) => {
-                        let nested: DiagnosticArg = diag.clone();
-                        nested
-                    }
-                }
-            })
+            .map(crate::resources::diagnostic_contract::to_jc_diagnostic_arg)
             .collect();
         let source = self.log.borrow().current_source();
         let diagnostic = self.diags.create(
@@ -598,7 +585,26 @@ impl Flow {
     /// Java: log.warning(LintCategory, DiagnosticPosition, Warning)
     pub fn warning(
         &self,
-        _lint_category: LintCategory,
+        lint_category: LintCategory,
+        pos: i32,
+        info: crate::resources::diagnostic_contract::WarningInfo,
+    ) {
+        self.warning_impl(Some(lint_category), pos, info);
+    }
+
+    /// Java: log.warning(DiagnosticPosition, Warning) — a warning without a
+    /// lint category (unreachable catch).
+    pub fn warning_no_lint(
+        &self,
+        pos: i32,
+        info: crate::resources::diagnostic_contract::WarningInfo,
+    ) {
+        self.warning_impl(None, pos, info);
+    }
+
+    fn warning_impl(
+        &self,
+        lint_category: Option<LintCategory>,
         pos: i32,
         info: crate::resources::diagnostic_contract::WarningInfo,
     ) {
@@ -609,8 +615,10 @@ impl Flow {
             .map(|arg| Rc::new(javac_strings::JavaString::from(arg.to_text().as_str())) as DiagnosticArg)
             .collect();
         let source = self.log.borrow().current_source();
-        let diagnostic = self.diags.create(
+        let diagnostic = self.diags.create_with_flags(
             DiagnosticType::WARNING,
+            lint_category,
+            Vec::new(),
             source,
             Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
             info.info().code,
@@ -789,11 +797,7 @@ fn type_place(
     ctx: &CompilerContext,
     ty: TypeId,
 ) -> crate::resources::diagnostic_contract::TypeArg {
-    let text = ctx
-        .typ(ty)
-        .tsym
-        .map(|tsym| crate::comp::resolve::symbol_display_name(ctx, tsym))
-        .unwrap_or_else(|| format!("{:?}", ctx.typ(ty).get_tag()));
+    let text = crate::code::printer::visit_type(ctx, ty);
     crate::resources::diagnostic_contract::TypeArg::placeholder(text)
 }
 
@@ -2717,17 +2721,17 @@ impl<'a> FlowAnalyzer<'a> {
             if chk.diff(ctx, &syms, &catchable, caught_in_try).is_empty()
                 && !is_exception_or_throwable(ctx, &syms, exc)
             {
+                let catchable_types: Vec<crate::resources::diagnostic_contract::TypeArg> =
+                    catchable.iter().map(|ty| type_place(ctx, ty)).collect();
                 if catchable.length() == 1 {
-                    self.flow.warning(
-                        LintCategory::TRY,
+                    self.flow.warning_no_lint(
                         pos,
-                        warnings::unreachable_catch(vec![type_place(ctx, exc)]),
+                        warnings::unreachable_catch(catchable_types),
                     );
                 } else {
-                    self.flow.warning(
-                        LintCategory::TRY,
+                    self.flow.warning_no_lint(
                         pos,
-                        warnings::unreachable_catch1(vec![type_place(ctx, exc)]),
+                        warnings::unreachable_catch1(catchable_types),
                     );
                 }
             }
@@ -2830,6 +2834,8 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
         for def in defs.iter() {
             if ctx.tree(def).has_tag(Tag::METHODDEF) {
                 self.scan(ctx, Some(def));
+                // Java: errorUncaught() after scanning each method (Flow.java:1118).
+                self.error_uncaught(ctx);
             }
         }
         self.pending_exits = pending_prev;
@@ -3605,7 +3611,7 @@ pub struct AssignAnalyzer<'a> {
     first_adr: i32,
     next_adr: i32,
     return_adr: i32,
-    unrefd_resources: Option<crate::ids::ScopeId>,
+    unrefd_resources: std::collections::HashSet<SymbolId>,
     flow_kind: FlowKind,
     start_pos: i32,
     is_initial_constructor: bool,
@@ -3640,7 +3646,7 @@ impl<'a> AssignAnalyzer<'a> {
             first_adr: 0,
             next_adr: 0,
             return_adr: 0,
-            unrefd_resources: None,
+            unrefd_resources: std::collections::HashSet::new(),
             flow_kind: FlowKind::NORMAL,
             start_pos: 0,
             is_initial_constructor: false,
@@ -4038,9 +4044,9 @@ impl<'a> AssignAnalyzer<'a> {
         self.is_initial_constructor = false;
         self.start_pos = ctx.tree(tree).pos;
         // Java: unrefdResources = WriteableScope.create(env.enclClass.sym)
-        // (Flow.java:2870); the resource-reference scope is not wired in the
-        // port (registered gap), as before this batch.
-        self.unrefd_resources = None;
+        // (Flow.java:2870). The set holds resource variables not yet seen in
+        // the body; a reference removes its symbol.
+        self.unrefd_resources.clear();
         *self.flow.attr_env.borrow_mut() = Some(Rc::clone(env));
         self.scan(ctx, Some(tree));
         // Java: finally { resetBits(inits, uninits, uninitsTry, ...);
@@ -4236,12 +4242,8 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
                     let info = errors::var_not_initialized_in_default_constructor(symbol_place(
                         ctx, var,
                     ));
-                    self.check_init_with(
-                        ctx,
-                        tree_info::diagnostic_position_for(ctx, var, var_decl),
-                        var,
-                        info,
-                    );
+                    let pos = tree_info::diagnostic_position_for(ctx, var, var_decl);
+                    self.check_init_with(ctx, pos, var, info);
                 } else if is_compact_constructor {
                     let is_instance_record_field = class_def_sym
                         .map(|class_def_sym| {
@@ -4265,11 +4267,8 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
                             self.check_init(ctx, tree_info::diag_end_pos(ctx, body), var);
                         }
                     } else {
-                        self.check_init(
-                            ctx,
-                            tree_info::diagnostic_position_for(ctx, var, var_decl),
-                            var,
-                        );
+                        let pos = tree_info::diagnostic_position_for(ctx, var, var_decl);
+                        self.check_init(ctx, pos, var);
                     }
                 } else {
                     self.check_init(ctx, tree_info::diag_end_pos(ctx, body), var);
@@ -4565,6 +4564,9 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
         for resource in resources.iter() {
             if matches!(ctx.tree(resource).kind, TreeKind::VariableDecl { .. }) {
                 <Self as FlowVisitor>::visit_var_def(self, ctx, resource);
+                if let Some(sym) = var_sym(ctx, resource) {
+                    self.unrefd_resources.insert(sym);
+                }
                 resource_var_decls = resource_var_decls.append(resource);
             } else {
                 self.scan_expr(ctx, Some(resource));
@@ -4580,13 +4582,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
                 let Some(sym) = var_sym(ctx, res_var) else {
                     continue;
                 };
-                let unreferenced = match self.unrefd_resources {
-                    Some(scope) => {
-                        let symbols = ctx.symbols_arena();
-                        !ctx.scope(scope).includes(scope, sym, symbols)
-                    }
-                    None => false,
-                };
+                let unreferenced = self.unrefd_resources.contains(&sym);
                 if unreferenced {
                     self.flow.warning(
                         LintCategory::TRY,
@@ -5010,6 +5006,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
             && ctx.sym(sym).kind == Kind::VAR {
                 self.check_init(ctx, ctx.tree(tree).pos, sym);
                 self.referenced(ctx, sym);
+                self.unrefd_resources.remove(&sym);
             }
     }
 

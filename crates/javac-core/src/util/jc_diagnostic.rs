@@ -353,16 +353,7 @@ info_key_type!(Fragment, FragmentInfo, FRAGMENT);
 /// this function is then removed).
 pub(crate) fn contract_args_to_args(args: &[contract::DiagnosticArg]) -> Vec<DiagnosticArg> {
     args.iter()
-        .map(|arg| match arg {
-            contract::DiagnosticArg::Text(text) => {
-                Rc::new(JavaString::from(text.as_str())) as DiagnosticArg
-            }
-            contract::DiagnosticArg::JCDiagnostic(diag) => {
-                // Java: a JCDiagnostic is itself an Object[] element — keep the
-                // nested diagnostic object (downcastable from Rc<dyn Any>).
-                Rc::clone(diag) as DiagnosticArg
-            }
-        })
+        .map(crate::resources::diagnostic_contract::to_jc_diagnostic_arg)
         .collect()
 }
 
@@ -512,6 +503,16 @@ impl JCDiagnostic {
     /// Java: public DiagnosticPosition getDiagnosticPosition()
     pub fn get_diagnostic_position(&self) -> Option<Rc<dyn DiagnosticPosition>> {
         self.position.clone()
+    }
+
+    /// Set the diagnostic position after construction (port adapter used for
+    /// fragment diagnostics whose preferred position is known only at the
+    /// reportMC call site).
+    pub fn set_diagnostic_position(
+        &mut self,
+        position: Option<Rc<dyn DiagnosticPosition>>,
+    ) {
+        self.position = position;
     }
 
     /// Java: public JavaFileObject getSource()

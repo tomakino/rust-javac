@@ -1406,6 +1406,7 @@ impl Locations {
                 state.output_dir.is_some() || state.module_table.is_some()
             }
             HandlerKind::ModulePath(state) => state.search_path.is_some(),
+            HandlerKind::Simple(state) => state.search_path.is_some(),
             HandlerKind::SystemModules(state) => state.system_java_home.is_some(),
             _ => true,
         }

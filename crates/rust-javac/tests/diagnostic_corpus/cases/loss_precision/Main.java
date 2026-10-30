@@ -1,0 +1,1 @@
+class Main { void f() { byte b = 1000; } }

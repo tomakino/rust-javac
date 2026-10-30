@@ -528,6 +528,12 @@ pub struct Infer {
     /// Java: public static final Type anyPoly = new JCNoType()
     /// (Infer.java:132; a dedicated NONE instance compared by identity)
     pub any_poly: TypeId,
+    /// Diagnostic services used by the deferred-instantiation verbose note
+    /// (installed by the compiler driver).
+    pub log: std::cell::RefCell<Option<Rc<RefCell<crate::util::log::Log>>>>,
+    /// Java: Resolve.verboseResolutionMode (the DEFERRED_INST members).
+    pub verbose_resolution_mode:
+        std::cell::RefCell<Vec<crate::comp::resolve::VerboseResolutionMode>>,
 }
 
 impl Infer {
@@ -549,7 +555,19 @@ impl Infer {
             diags,
             names,
             any_poly,
+            log: std::cell::RefCell::new(None),
+            verbose_resolution_mode: std::cell::RefCell::new(Vec::new()),
         })
+    }
+
+    /// Install the diagnostic services used by deferred-instantiation notes.
+    pub fn install_diagnostics(
+        &self,
+        log: Rc<RefCell<crate::util::log::Log>>,
+        verbose_resolution_mode: Vec<crate::comp::resolve::VerboseResolutionMode>,
+    ) {
+        *self.log.borrow_mut() = Some(log);
+        *self.verbose_resolution_mode.borrow_mut() = verbose_resolution_mode;
     }
 
     /// Java: InferenceException error(JCDiagnostic diag)
@@ -780,14 +798,17 @@ impl Infer {
             InferenceBound::EQ => {
                 let qtype = types.undet_var_qtype(ctx, uv);
                 let bounds = types.undet_var_get_bounds(ctx, uv, &[ib]);
+                let mut args = bounds_type_args(ctx, bounds);
+                // Java: equality bounds are prepended by UndetVar.addBound, so
+                // the port's insertion-ordered list is reported in reverse.
+                args.reverse();
                 let diag = self.diags.fragment(
                     fragments::incompatible_eq_bounds(
-                        TypeArg::placeholder("type"),
-                        vec![TypeArg::placeholder("type")],
+                        crate::comp::check::type_arg_with_where(ctx, qtype),
+                        args,
                     )
                     .into(),
                 );
-                let _ = (qtype, bounds);
                 Err(self.error(Some(diag)))
             }
             InferenceBound::UPPER => {
@@ -795,12 +816,11 @@ impl Infer {
                 let bounds = types.undet_var_get_bounds(ctx, uv, &[ib]);
                 let diag = self.diags.fragment(
                     fragments::incompatible_upper_bounds(
-                        TypeArg::placeholder("type"),
-                        vec![TypeArg::placeholder("type")],
+                        crate::comp::check::type_arg_with_where(ctx, qtype),
+                        bounds_type_args(ctx, bounds),
                     )
                     .into(),
                 );
-                let _ = (qtype, bounds);
                 Err(self.error(Some(diag)))
             }
             InferenceBound::LOWER => {
@@ -3013,10 +3033,10 @@ fn check_bound(
 ) -> Result<bool, InferenceException> {
     if ib_s.less_than(ib_t) {
         // Java: isSubtype(s, t, warn) -> doIncorporationOp(IS_SUBTYPE,...)
-        let _ = (infer, warn);
-        Ok(types.is_subtype_unchecked(ctx, syms, s, t))
+        // — the bound check records unchecked lint on the shared Warner.
+        Ok(types.is_subtype_unchecked_with_warn(ctx, syms, s, t, warn))
     } else if ib_t.less_than(ib_s) {
-        Ok(types.is_subtype_unchecked(ctx, syms, t, s))
+        Ok(types.is_subtype_unchecked_with_warn(ctx, syms, t, s, warn))
     } else {
         Ok(types.is_same_type(ctx, syms, s, t))
     }
@@ -3035,20 +3055,16 @@ fn report_inst_error(
     let inst = types
         .undet_var_get_inst(ctx, uv)
         .expect("CheckInst requires an instantiated undet var");
-    let args = type_args(inst, &bounds);
+    let inst_arg = crate::comp::check::type_arg_with_rich_where(ctx, inst);
+    let args = bounds_type_args(ctx, bounds);
     let fragment = match ib {
-        InferenceBound::EQ => fragments::inferred_do_not_conform_to_eq_bounds(
-            TypeArg::placeholder("type"),
-            args,
-        ),
-        InferenceBound::LOWER => fragments::inferred_do_not_conform_to_lower_bounds(
-            TypeArg::placeholder("type"),
-            args,
-        ),
-        InferenceBound::UPPER => fragments::inferred_do_not_conform_to_upper_bounds(
-            TypeArg::placeholder("type"),
-            args,
-        ),
+        InferenceBound::EQ => fragments::inferred_do_not_conform_to_eq_bounds(inst_arg, args),
+        InferenceBound::LOWER => {
+            fragments::inferred_do_not_conform_to_lower_bounds(inst_arg, args)
+        }
+        InferenceBound::UPPER => {
+            fragments::inferred_do_not_conform_to_upper_bounds(inst_arg, args)
+        }
     };
     let diag = infer.diags.fragment(fragment.into());
     Err(infer.error(Some(diag)))
@@ -3104,10 +3120,20 @@ fn report_bound_error_two(
     }
     let frag1 = get_bound_fragment(ctx, types, uv, ib1);
     let frag2 = get_bound_fragment(ctx, types, uv, ib2);
+    let qtype = match &ctx.typ(uv).kind {
+        crate::code::type_::TypeKindData::UndetVar { qtype, .. } => *qtype,
+        _ => uv,
+    };
+    let frag1_diag = infer.diags.fragment(frag1);
+    let frag2_diag = infer.diags.fragment(frag2);
     let fragment = fragments::incompatible_bounds(
-        TypeArg::placeholder("type"),
-        crate::resources::diagnostic_contract::DiagnosticArg::from_display(frag1.0.key()),
-        crate::resources::diagnostic_contract::DiagnosticArg::from_display(frag2.0.key()),
+        crate::comp::check::type_arg_with_where(ctx, qtype),
+        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+            frag1_diag,
+        )),
+        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+            frag2_diag,
+        )),
     );
     let diag = infer.diags.fragment(fragment.into());
     Err(infer.error(Some(diag)))
@@ -3122,7 +3148,7 @@ fn get_bound_fragment(
     ib: InferenceBound,
 ) -> crate::util::jc_diagnostic::Fragment {
     let bounds = types.undet_var_get_bounds(ctx, uv, &[ib]);
-    let args = bounds_type_args(bounds);
+    let args = bounds_type_args(ctx, bounds);
     let fragment = match ib {
         InferenceBound::EQ => fragments::eq_bounds(args),
         InferenceBound::LOWER => fragments::lower_bounds(args),
@@ -3133,18 +3159,17 @@ fn get_bound_fragment(
 
 /// Helper for the diagnostic arguments: the ADR 0002 P4 contract uses the
 /// TypeArg placeholder (registered).
-fn bounds_type_args(bounds: List<TypeId>) -> Vec<TypeArg> {
+fn bounds_type_args(ctx: &mut CompilerContext, bounds: List<TypeId>) -> Vec<TypeArg> {
     let mut args: Vec<TypeArg> = Vec::new();
     let mut current = bounds;
     while current.non_empty() {
-        args.push(TypeArg::placeholder("type"));
+        args.push(crate::comp::check::type_arg_with_rich_where(
+            ctx,
+            *current.head(),
+        ));
         current = current.tail();
     }
     args
-}
-
-fn type_args(_inst: TypeId, bounds: &List<TypeId>) -> Vec<TypeArg> {
-    bounds_type_args(bounds.clone())
 }
 
 /// Java: SubstBounds.checkCompatibleUpperBounds(UndetVar uv, InferenceContext
@@ -3549,6 +3574,45 @@ impl Infer {
             )?;
         }
         let inst_mt = inference_context.as_inst_type(ctx, syms, types, mt);
+        if let Some(result_info) = result_info
+            && self
+                .verbose_resolution_mode
+                .borrow()
+                .contains(&crate::comp::resolve::VerboseResolutionMode::DEFERRED_INST)
+            && let Some(log) = self.log.borrow().clone()
+        {
+            use crate::resources::diagnostic_contract::SymbolArg;
+            let mut inst_arg = crate::comp::check::type_arg_with_rich_where(ctx, inst_mt);
+            if let Some(declared_ty) = ctx.sym(msym).ty {
+                let declared_arg = crate::comp::check::type_arg_with_where(ctx, declared_ty);
+                for tvar in declared_arg.where_vars {
+                    if !inst_arg.where_vars.iter().any(|existing| {
+                        existing.name == tvar.name && existing.owner == tvar.owner
+                    }) {
+                        inst_arg.where_vars.push(tvar);
+                    }
+                }
+            }
+            let target_arg = result_info
+                .pt
+                .map(|pt| crate::comp::check::type_arg_with_rich_where(ctx, pt))
+                .unwrap_or_else(|| crate::resources::diagnostic_contract::TypeArg::placeholder("none"));
+            let method_name = crate::code::printer::visit_symbol(ctx, &self.names, msym);
+            let note = crate::util::jc_diagnostic::Note::from(
+                crate::resources::compiler_properties::notes::deferred_method_inst(
+                    SymbolArg::placeholder(method_name),
+                    inst_arg,
+                    target_arg,
+                ),
+            );
+            if let Some(env_tree) = env.tree {
+                crate::util::abstract_log::AbstractLog::note_at(
+                    &mut *log.borrow_mut(),
+                    ctx.tree(env_tree).pos,
+                    note,
+                );
+            }
+        }
         if !self.allow_graph_inference
             && !inference_context.restvars(ctx, syms, types).is_empty()
             && let Some(result_info) = result_info
@@ -3602,6 +3666,10 @@ impl Infer {
             diags: Rc::clone(&self.diags),
             names: Rc::clone(&self.names),
             any_poly: self.any_poly,
+            log: std::cell::RefCell::new(self.log.borrow().clone()),
+            verbose_resolution_mode: std::cell::RefCell::new(
+                self.verbose_resolution_mode.borrow().clone(),
+            ),
         }
     }
 
@@ -3807,11 +3875,21 @@ impl Infer {
                     result_info.check_context.deferred_attr_context().inside_overload_phase(),
                 );
             }
+            let inference_vars: Vec<_> = inference_context
+                .inference_vars()
+                .iter()
+                .map(|var| crate::comp::check::type_arg_with_rich_where(ctx, var))
+                .filter(|arg| {
+                    arg.where_vars
+                        .iter()
+                        .any(|tvar| tvar.owner.starts_with("method "))
+                })
+                .collect();
             let diag = self.diags.fragment(
                 crate::resources::compiler_properties::fragments::infer_no_conforming_instance_exists(
-                    vec![],
-                    crate::resources::diagnostic_contract::TypeArg::placeholder("type"),
-                    crate::resources::diagnostic_contract::TypeArg::placeholder("type"),
+                    inference_vars,
+                    crate::comp::check::type_arg_with_rich_where(ctx, qtype),
+                    crate::comp::check::type_arg_with_rich_where(ctx, target),
                 )
                 .into(),
             );

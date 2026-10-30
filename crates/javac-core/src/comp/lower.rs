@@ -1886,7 +1886,8 @@ impl Lower {
                 break;
             }
         }
-        let text = format!("this{}{}", self.target.synthetic_name_char(), nesting_level);
+        let synthetic_char = self.target.synthetic_name_char() as u8 as char;
+        let text = format!("this{}{}", synthetic_char, nesting_level);
         let mut result = self
             .names
             .from_string(&javac_strings::JavaString::from(text.as_str()));
@@ -1900,7 +1901,7 @@ impl Lower {
             if !found {
                 break;
             }
-            let next = format!("{}{}", result.to_java_string(), self.target.synthetic_name_char());
+            let next = format!("{}{}", result.to_java_string(), synthetic_char);
             result = self
                 .names
                 .from_string(&javac_strings::JavaString::from(next.as_str()));
@@ -2560,8 +2561,12 @@ impl Lower {
             crate::tree::jc_tree::accept(ctx, *tree, &mut checker);
         }
         let conflicts = checker.conflicts;
+        let mut seen: std::collections::HashSet<(TreeId, SymbolId)> =
+            std::collections::HashSet::new();
         for (tree, sym) in conflicts {
-            self.synthetic_error(ctx, tree, sym);
+            if seen.insert((tree, sym)) {
+                self.synthetic_error(ctx, tree, sym);
+            }
         }
     }
 
@@ -2571,20 +2576,51 @@ impl Lower {
         if ctx.typ(sym_ty).has_tag(TypeTag::ERROR) {
             return;
         }
-        let location = ctx
-            .sym(sym)
-            .get_qualified_name()
+        let location = crate::code::symbol::symbol_location(ctx, sym).unwrap_or(sym);
+        let location_class = crate::code::symbol::symbol_encl_class(ctx, location)
+            .unwrap_or(location);
+        let class_name = ctx
+            .sym(location_class)
+            .name
             .to_java_string()
             .to_string_lossy()
             .to_string();
+        let sym_name = ctx
+            .sym(sym)
+            .name
+            .to_java_string()
+            .to_string_lossy()
+            .to_string();
+        let diags = {
+            let log = self.log.borrow();
+            Rc::clone(crate::util::abstract_log::AbstractLog::diags(&*log))
+        };
+        let detail = diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+            crate::resources::compiler_properties::fragments::synthetic_name_conflict(
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(sym_name),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(class_name.clone()),
+            ),
+        ));
         let info = crate::resources::compiler_properties::errors::cannot_generate_class(
-            crate::resources::diagnostic_contract::SymbolArg::placeholder(location.clone()),
-            crate::resources::diagnostic_contract::DiagnosticArg::Text(location),
+            crate::resources::diagnostic_contract::SymbolArg::placeholder(class_name),
+            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(Rc::new(detail)),
+        );
+        let sourcefile = match &ctx.sym(location_class).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile.clone(),
+            _ => None,
+        };
+        let prev_source = crate::util::abstract_log::AbstractLog::use_source(
+            &mut *self.log.borrow_mut(),
+            sourcefile,
         );
         crate::util::abstract_log::AbstractLog::error_at(
             &mut *self.log.borrow_mut(),
             ctx.tree(tree).pos,
             crate::util::jc_diagnostic::Error::from(info),
+        );
+        crate::util::abstract_log::AbstractLog::use_source(
+            &mut *self.log.borrow_mut(),
+            prev_source,
         );
     }
 

@@ -138,6 +138,10 @@ impl Frame {
     /// translated to and the symbol mapping of its captured variables.
 pub struct LambdaTranslationContext {
     pub target: TypeId,
+    /// Whether this lambda was synthesized from a member reference
+    /// (upstream MemberReferenceToLambda); the "lambda.stat" note is only
+    /// reported for source lambdas.
+    pub from_member_reference: bool,
     pub self_sym: Option<SymbolId>,
     pub assigned_to: Option<SymbolId>,
     pub translated_symbols: HashMap<LambdaSymbolKind, Vec<(SymbolId, SymbolId)>>,
@@ -265,6 +269,7 @@ impl LambdaToMethod {
             Rc::clone(&make),
             Rc::clone(&diags),
             None,
+            dump_lambda_to_method_stats,
         );
         analyzer.force_serializable = force_serializable;
         analyzer.nestmate_lambdas = nestmate_lambdas;
@@ -554,6 +559,36 @@ impl LambdaToMethod {
                 dedupe = true;
             }
         }
+        if dedupe && self.verbose_deduplication {
+            let name = crate::comp::resolve::symbol_display_name(ctx, sym);
+            let note = crate::util::jc_diagnostic::Note::from(
+                crate::resources::compiler_properties::notes::verbose_l2m_deduplicate(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(name),
+                ),
+            );
+            // The note points at the rewritten lambda; ensure the enclosing
+            // class source is active so the diagnostic carries file:line.
+            let owner = crate::code::symbol::encl_class(ctx, sym);
+            let sourcefile = owner.and_then(|owner| match &ctx.sym(owner).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
+                    sourcefile.clone()
+                }
+                _ => None,
+            });
+            let prev_source = crate::util::abstract_log::AbstractLog::use_source(
+                &mut *self.log.borrow_mut(),
+                sourcefile,
+            );
+            crate::util::abstract_log::AbstractLog::note_at(
+                &mut *self.log.borrow_mut(),
+                ctx.tree(tree).pos,
+                note,
+            );
+            crate::util::abstract_log::AbstractLog::use_source(
+                &mut *self.log.borrow_mut(),
+                prev_source,
+            );
+        }
         if !dedupe {
             if let Some(info) = self.k_info.as_mut() {
                 info.appended_method_list.insert(0, lambda_decl);
@@ -604,6 +639,44 @@ impl LambdaToMethod {
             self.translate_list_with_context(ctx, &List::from_iterable(synthetic_inits), prev_context);
         let handle = symbol::as_method_handle(ctx, sym, false);
         let result = self.make_metafactory_indy_call(ctx, context_tree, handle, indy_args);
+        let from_member_reference = self
+            .context_map
+            .borrow()
+            .get(&context_tree)
+            .map(|context| match &context.kind {
+                TranslationContextKind::Lambda(lambda) => lambda.from_member_reference,
+                _ => false,
+            })
+            .unwrap_or(false);
+        if self.dump_lambda_to_method_stats && !from_member_reference {
+            let name = crate::comp::resolve::symbol_display_name(ctx, sym);
+            let note = crate::util::jc_diagnostic::Note::from(
+                crate::resources::compiler_properties::notes::lambda_stat(
+                    false,
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(name),
+                ),
+            );
+            let owner = crate::code::symbol::encl_class(ctx, sym);
+            let sourcefile = owner.and_then(|owner| match &ctx.sym(owner).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
+                    sourcefile.clone()
+                }
+                _ => None,
+            });
+            let prev_source = crate::util::abstract_log::AbstractLog::use_source(
+                &mut *self.log.borrow_mut(),
+                sourcefile,
+            );
+            crate::util::abstract_log::AbstractLog::note_at(
+                &mut *self.log.borrow_mut(),
+                ctx.tree(tree).pos,
+                note,
+            );
+            crate::util::abstract_log::AbstractLog::use_source(
+                &mut *self.log.borrow_mut(),
+                prev_source,
+            );
+        }
         self.result = Some(result);
     }
     fn make_this(&mut self, ctx: &mut CompilerContext, ty: TypeId, owner: SymbolId) -> TreeId {
@@ -697,6 +770,55 @@ impl LambdaToMethod {
         };
         let handle = symbol::as_method_handle(ctx, ref_sym, false);
         let result = self.make_metafactory_indy_call(ctx, context_tree, handle, indy_args);
+        let (ref_bridges, is_super) = match self.context_map.borrow().get(&context_tree) {
+            Some(context) => match &context.kind {
+                TranslationContextKind::Reference(reference) => {
+                    (context.bridges.clone(), reference.is_super)
+                }
+                _ => (Vec::new(), false),
+            },
+            None => (Vec::new(), false),
+        };
+        let super_qualifier = match &ctx.tree(tree).kind {
+            TreeKind::MemberReference { expr: Some(expr), .. } => {
+                crate::tree::tree_info::symbol(ctx, *expr)
+                    .map(|symbol| ctx.sym(symbol).name == self.names._super)
+                    .unwrap_or(false)
+            }
+            _ => false,
+        };
+        let _ = is_super;
+        let converts_to_lambda = matches!(
+            kind,
+            Some(crate::tree::jc_tree::ReferenceKind::SUPER)
+                | Some(crate::tree::jc_tree::ReferenceKind::IMPLICIT_INNER)
+        ) || super_qualifier
+            || !ref_bridges.is_empty();
+        if self.dump_lambda_to_method_stats && !converts_to_lambda {
+            let note = crate::util::jc_diagnostic::Note::from(
+                crate::resources::compiler_properties::notes::mref_stat(false, ()),
+            );
+            let owner = crate::code::symbol::encl_class(ctx, ref_sym);
+            let sourcefile = owner.and_then(|owner| match &ctx.sym(owner).kind_data {
+                crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
+                    sourcefile.clone()
+                }
+                _ => None,
+            });
+            let prev_source = crate::util::abstract_log::AbstractLog::use_source(
+                &mut *self.log.borrow_mut(),
+                sourcefile,
+            );
+            crate::util::abstract_log::AbstractLog::note_at(
+                &mut *self.log.borrow_mut(),
+                ctx.tree(tree).pos,
+                note,
+            );
+            crate::util::abstract_log::AbstractLog::use_source(
+                &mut *self.log.borrow_mut(),
+                prev_source,
+            );
+        }
         self.result = Some(result);
     }
     fn visit_ident_l2m(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
@@ -831,6 +953,7 @@ pub struct LambdaAnalyzerPreprocessor {
     pub local_class_defs: HashMap<SymbolId, TreeId>,
     pub clinits: HashMap<SymbolId, SymbolId>,
     pub attr_env: Option<Rc<Env<AttrContext>>>,
+    pub dump_lambda_to_method_stats: bool,
     pub force_serializable: bool,
     pub nestmate_lambdas: bool,
     pub result: Option<TreeId>,
@@ -915,6 +1038,7 @@ impl LambdaAnalyzerPreprocessor {
         make: Rc<RefCell<TreeMaker>>,
         diags: Rc<crate::util::jc_diagnostic::Factory>,
         attr_env: Option<Rc<Env<AttrContext>>>,
+        dump_lambda_to_method_stats: bool,
     ) -> LambdaAnalyzerPreprocessor {
         LambdaAnalyzerPreprocessor {
             context_map,
@@ -934,6 +1058,7 @@ impl LambdaAnalyzerPreprocessor {
             local_class_defs: HashMap::new(),
             clinits: HashMap::new(),
             attr_env,
+            dump_lambda_to_method_stats,
             force_serializable: false,
             nestmate_lambdas: false,
             result: None,
@@ -1111,6 +1236,64 @@ impl LambdaAnalyzerPreprocessor {
             .and_then(|receiver| self.translate(ctx, Some(receiver)));
         let context = self.analyze_lambda(ctx, tree, receiver);
         let _ = context;
+        if let Some(TranslationContext {
+            kind: TranslationContextKind::Lambda(lambda),
+            ..
+        }) = self.context_map.borrow_mut().get_mut(&tree)
+        {
+            lambda.from_member_reference = true;
+        }
+        self.dump_mref_stat1(ctx, tree);
+    }
+    /// Java: LambdaToMethod.analyzeLambda (LambdaToMethod.java:1422-1424) -
+    /// reports "mref.stat.1" for a member reference converted to a lambda.
+    fn dump_mref_stat1(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        if !self.dump_lambda_to_method_stats {
+            return;
+        }
+        let (needs_alt_metafactory, target, translated_sym) = {
+            let contexts = self.context_map.borrow();
+            let Some(context) = contexts.get(&tree) else {
+                return;
+            };
+            let TranslationContextKind::Lambda(lambda) = &context.kind else {
+                return;
+            };
+            (
+                ctx.typ(lambda.target).is_intersection() || context.bridges.len() > 1,
+                lambda.target,
+                lambda.translated_sym,
+            )
+        };
+        let needs_alt_metafactory =
+            needs_alt_metafactory || self.lambda_context_is_serializable(ctx, target);
+        let name = crate::comp::resolve::symbol_display_name(ctx, translated_sym);
+        let note = crate::util::jc_diagnostic::Note::from(
+            crate::resources::compiler_properties::notes::mref_stat1(
+                needs_alt_metafactory,
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(name),
+            ),
+        );
+        let owner = crate::code::symbol::encl_class(ctx, translated_sym);
+        let sourcefile = owner.and_then(|owner| match &ctx.sym(owner).kind_data {
+            crate::code::symbol::SymbolKind::ClassSymbol { sourcefile, .. } => {
+                sourcefile.clone()
+            }
+            _ => None,
+        });
+        let prev_source = crate::util::abstract_log::AbstractLog::use_source(
+            &mut *self.log.borrow_mut(),
+            sourcefile,
+        );
+        crate::util::abstract_log::AbstractLog::note_at(
+            &mut *self.log.borrow_mut(),
+            ctx.tree(tree).pos,
+            note,
+        );
+        crate::util::abstract_log::AbstractLog::use_source(
+            &mut *self.log.borrow_mut(),
+            prev_source,
+        );
     }
     fn analyze_lambda(
         &mut self,
@@ -2396,6 +2579,7 @@ impl LambdaAnalyzerPreprocessor {
             prev_context,
             kind: TranslationContextKind::Lambda(LambdaTranslationContext {
                 target,
+                from_member_reference: false,
                 self_sym,
                 assigned_to,
                 translated_symbols,
@@ -8708,11 +8892,14 @@ impl LambdaAnalyzerPreprocessor {
             TreeKind::MemberReference { kind, mode, varargs_element, owner_accessible, sym, .. } => (*kind, *mode, *varargs_element, *owner_accessible, *sym),
             _ => return false,
         };
-        let Some(context_tree) = self.context_key(ctx) else { return false; };
+        // Java: ReferenceTranslationContext.owner is the owner recorded for
+        // this reference (the analyzer registers it before this call), not the
+        // enclosing lambda context: references outside any lambda (for example
+        // a field initializer) still decide on their own.
         let context_owner = self
             .context_map
             .borrow()
-            .get(&context_tree)
+            .get(&tree)
             .map(|context| context.owner)
             .expect("context owner");
         let interface_intersection = self.interface_parameter_is_intersection_or_union_type(ctx, tree);
@@ -9097,20 +9284,25 @@ impl MemberReferenceToLambda {
     fn expression_invoke(&mut self, ctx: &mut CompilerContext, rcvr: Option<SymbolId>) -> TreeId {
         let qualifier = match rcvr {
             Some(rcvr) => self.make_receiver(ctx, rcvr),
-            None => {
-                // Java: make.QualIdent(tree.sym.owner) for static/unbound
-                // references; using the type tree directly makes Gen evaluate
-                // the class symbol as a member (pool kind TYP).
-                let ref_sym = match &ctx.tree(self.tree).kind {
-                    TreeKind::MemberReference { sym: Some(sym), .. } => *sym,
-                    _ => panic!("expected reference symbol"),
-                };
-                let owner = ctx.sym(ref_sym).owner.expect("reference owner");
-                let mut syms = self.syms.borrow_mut();
-                self.make
-                    .borrow_mut()
-                    .qual_ident(ctx, &mut syms, owner)
-            }
+            None => match &ctx.tree(self.tree).kind {
+                // Java: expressionInvoke uses tree.getQualifierExpression()
+                // when there is no synthetic receiver (static, unbound and
+                // super references). Keeping the original "super" qualifier is
+                // what makes the converted lambda capture the enclosing
+                // instance.
+                TreeKind::MemberReference { expr: Some(expr), .. } => *expr,
+                _ => {
+                    let ref_sym = match &ctx.tree(self.tree).kind {
+                        TreeKind::MemberReference { sym: Some(sym), .. } => *sym,
+                        _ => panic!("expected reference symbol"),
+                    };
+                    let owner = ctx.sym(ref_sym).owner.expect("reference owner");
+                    let mut syms = self.syms.borrow_mut();
+                    self.make
+                        .borrow_mut()
+                        .qual_ident(ctx, &mut syms, owner)
+                }
+            },
         };
         let (sym, varargs) = match &ctx.tree(self.tree).kind {
             TreeKind::MemberReference { sym: Some(sym), varargs_element, .. } => (*sym, *varargs_element),

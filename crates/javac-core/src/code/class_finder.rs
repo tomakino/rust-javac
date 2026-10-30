@@ -72,6 +72,20 @@ use crate::util::name::Name;
 use crate::util::names::Names;
 use crate::util::options::Options;
 
+/// Java: the Completer implemented by JavaCompiler.readSourceFile
+/// (JavaCompiler.java:777-855). The port takes &self so that completing one
+/// source file may recursively complete further source files, matching the
+/// re-entrant Java object graph (registered adapter).
+pub trait SourceFileReader {
+    /// Java: void readSourceFile(ClassSymbol c).
+    fn read_source_file(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: SymbolId,
+    ) -> Result<(), CompletionFailure>;
+}
+
 /// Java: public class ClassFinder
 pub struct ClassFinder {
     /// Java: ClassReader reader;
@@ -100,6 +114,10 @@ pub struct ClassFinder {
     pub dcfh: Rc<DeferredCompletionFailureHandler>,
     /// Java: public Completer sourceCompleter = Completer.NULL_COMPLETER;
     pub source_completer: RefCell<Option<CompleterRef>>,
+    /// Java: the Completer installed by the compiler for source files
+    /// (JavaCompiler.readSourceFile); the port stores an &self reader so the
+    /// completion is re-entrant.
+    pub source_file_reader: RefCell<Option<Rc<dyn SourceFileReader>>>,
     /// Java: protected JavaFileObject currentClassFile = null;
     pub current_class_file: RefCell<Option<Rc<dyn JavaFileObject>>>,
     /// Java: protected Symbol currentOwner = null;
@@ -177,6 +195,7 @@ impl ClassFinder {
             diag_factory,
             dcfh,
             source_completer: RefCell::new(None),
+            source_file_reader: RefCell::new(None),
             current_class_file: RefCell::new(None),
             current_owner: std::cell::Cell::new(None),
             profile,
@@ -434,15 +453,20 @@ impl ClassFinder {
         } else {
             // Java: if (!sourceCompleter.isTerminal()) sourceCompleter.complete(c);
             // else throw new IllegalStateException(...)
-            let source_completer = self.source_completer.borrow().clone();
-            match source_completer {
-                Some(completer) if !completer.borrow().is_terminal() => {
-                    completer.borrow_mut().complete(ctx, syms, c)
+            let source_reader = self.source_file_reader.borrow().clone();
+            if let Some(reader) = source_reader {
+                reader.read_source_file(ctx, syms, c)
+            } else {
+                let source_completer = self.source_completer.borrow().clone();
+                match source_completer {
+                    Some(completer) if !completer.borrow().is_terminal() => {
+                        completer.borrow_mut().complete(ctx, syms, c)
+                    }
+                    _ => panic!(
+                        "IllegalStateException: Source completer required to read {}",
+                        classfile.to_uri()
+                    ),
                 }
-                _ => panic!(
-                    "IllegalStateException: Source completer required to read {}",
-                    classfile.to_uri()
-                ),
             }
         };
         *self.current_class_file.borrow_mut() = previous_class_file;
@@ -1149,7 +1173,9 @@ pub fn create_bad_class_file_diagnostic(
     // PORTING_RULES: P4 placeholder arguments (ADR 0002); the file and the
     // nested diagnostic are carried as their text until the typed diagnostic
     // arguments land.
-    let file_arg = DiagnosticArg::from_display(file.to_uri());
+    // Java: diagFactory.fragment(key, file, diag) formats the file object as
+    // JavaFileObject.getName() (its path), not its URI.
+    let file_arg = DiagnosticArg::from_display(file.get_name().to_string_lossy());
     let diag_arg = DiagnosticArg::from_display(diag.get_message(None));
     let fragment = if is_source {
         Fragment::from(fragments::bad_source_file_header(file_arg, diag_arg))

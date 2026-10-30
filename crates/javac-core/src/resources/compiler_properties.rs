@@ -5297,8 +5297,8 @@ pub mod fragments {
     /// multiple non-overriding abstract methods found in {0} {1}
     ///
     /// Java: Fragments.IncompatibleAbstracts(kind name, symbol)
-    pub fn incompatible_abstracts(arg0: KindNameArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("incompatible.abstracts", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn incompatible_abstracts(arg0: KindNameArg, arg1: DiagnosticArg) -> FragmentInfo {
+        FragmentInfo::new("incompatible.abstracts", vec![arg0.into_diagnostic_arg(), arg1])
     }
 
     /// incompatible parameter types in lambda expression
@@ -5808,8 +5808,8 @@ pub mod fragments {
     /// no abstract method found in {0} {1}
     ///
     /// Java: Fragments.NoAbstracts(kind name, symbol)
-    pub fn no_abstracts(arg0: KindNameArg, arg1: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("no.abstracts", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn no_abstracts(arg0: KindNameArg, arg1: DiagnosticArg) -> FragmentInfo {
+        FragmentInfo::new("no.abstracts", vec![arg0.into_diagnostic_arg(), arg1])
     }
 
     /// no arguments
@@ -5857,15 +5857,15 @@ pub mod fragments {
     /// {0} is not a functional interface
     ///
     /// Java: Fragments.NotAFunctionalIntf(symbol)
-    pub fn not_a_functional_intf(arg0: SymbolArg) -> FragmentInfo {
-        FragmentInfo::new("not.a.functional.intf", vec![arg0.into_diagnostic_arg()])
+    pub fn not_a_functional_intf(arg0: DiagnosticArg) -> FragmentInfo {
+        FragmentInfo::new("not.a.functional.intf", vec![arg0])
     }
 
     /// {0} is not a functional interface\n{1}
     ///
     /// Java: Fragments.NotAFunctionalIntf1(symbol, diagnostic or fragment)
-    pub fn not_a_functional_intf1(arg0: SymbolArg, arg1: DiagnosticArg) -> FragmentInfo {
-        FragmentInfo::new("not.a.functional.intf.1", vec![arg0.into_diagnostic_arg(), arg1.into_diagnostic_arg()])
+    pub fn not_a_functional_intf1(arg0: DiagnosticArg, arg1: DiagnosticArg) -> FragmentInfo {
+        FragmentInfo::new("not.a.functional.intf.1", vec![arg0, arg1])
     }
 
     /// component type {0} is not an interface

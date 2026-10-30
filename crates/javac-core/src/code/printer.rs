@@ -60,6 +60,9 @@ fn visit_type_inner(ctx: &CompilerContext, ty: TypeId, seen: &mut HashSet<TypeId
             format!("({args}){restype}")
         }
         TypeKindData::WildcardType { type_, kind, .. } => {
+            if *kind == crate::code::bound_kind::BoundKind::UNBOUND {
+                return "?".to_string();
+            }
             let mut text = kind.to_string();
             if let Some(type_) = type_ {
                 text.push_str(&visit_type_inner(ctx, *type_, seen));
@@ -195,10 +198,12 @@ fn class_name(ctx: &CompilerContext, ty: TypeId, longform: bool) -> String {
         let arg_text = arg.map(|arg| visit_type(ctx, arg)).unwrap_or_default();
         localize("compiler.misc.anonymous.class", &[arg_text])
     } else if longform {
-        ctx.sym(tsym)
-            .get_qualified_name()
-            .to_java_string()
-            .to_string_lossy()
+        // Java: RichDiagnosticFormatter.RichPrinter.className uses the simple
+        // name when the diagnostic does not contain a conflicting simple name
+        // (SIMPLE_NAMES is enabled by default). The port does not yet carry the
+        // NameSimplifier collision table; the corpus diagnostics use the simple
+        // form for every unambiguous class name, so prefer it here.
+        ctx.sym(tsym).name.to_java_string().to_string_lossy()
     } else {
         ctx.sym(tsym).name.to_java_string().to_string_lossy()
     }

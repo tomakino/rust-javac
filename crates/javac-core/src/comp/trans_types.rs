@@ -1562,9 +1562,13 @@ impl TreeVisitor for TransTypes {
                     .iter()
                     .map(|ty| crate::comp::attr::type_display_of(ctx, ty))
                     .collect();
-                panic!(
-                    "Incorrect number of arguments; expected {argtypes_len}, found {args_len} at {file}:{pos} method={method_name} args={arg_display:?} argtypes={argtype_display:?}",
-                );
+                // A call with a recovered argument type can have a different
+                // arity (e.g. a void argument was already diagnosed and
+                // dropped by overload resolution). Upstream stops before
+                // lowering after errors; the port keeps lowering, so leave
+                // the erroneous tree attributed instead of panicking.
+                let _ = (file, pos, method_name, arg_display, argtype_display);
+                return;
             }
         }
         let args = self.translate_args(ctx, args, argtypes, varargs_element);

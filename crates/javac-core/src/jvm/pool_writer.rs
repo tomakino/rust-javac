@@ -77,6 +77,8 @@ pub struct PoolWriter {
     pub inner_classes: Vec<SymbolId>,
     /// BootstrapMethods entries in first-use order.
     pub bootstrap_methods: Vec<(BsmKey, i32)>,
+    /// The offending type when the last signature could not be assembled.
+    pub signature_error: Option<TypeId>,
 }
 
 impl PoolWriter {
@@ -96,6 +98,7 @@ impl PoolWriter {
             pool: WriteablePoolHelper::new(),
             inner_classes: Vec::new(),
             bootstrap_methods: Vec::new(),
+            signature_error: None,
         }
     }
 
@@ -108,7 +111,13 @@ impl PoolWriter {
     pub fn reset(&mut self) {
         self.inner_classes.clear();
         self.bootstrap_methods.clear();
+        self.signature_error = None;
         self.pool.reset();
+    }
+
+    /// Take the offending signature type, if the class could not be written.
+    pub fn take_signature_error(&mut self) -> Option<TypeId> {
+        self.signature_error.take()
     }
 
     /// Put a class symbol into the pool.
@@ -559,9 +568,12 @@ impl PoolWriter {
         ty: TypeId,
     ) -> Name {
         self.signature_gen.reset();
-        self.signature_gen
-            .assemble_sig(ctx, syms, ty)
-            .expect("assembled signature");
+        if let Err(error) = self.signature_gen.assemble_sig(ctx, syms, ty) {
+            if self.signature_error.is_none() {
+                self.signature_error = Some(error.type_);
+            }
+            return self.names.empty.clone();
+        }
         let names = Rc::clone(&self.names);
         self.signature_gen.take_inner_classes_into(ctx, &mut self.inner_classes);
         self.signature_gen.to_name(&names)
@@ -577,19 +589,28 @@ impl PoolWriter {
         self.signature_gen.reset();
         let typarams =
             crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
-        if !typarams.is_empty() {
-            self.signature_gen
-                .assemble_params_sig(ctx, syms, typarams)
-                .expect("assembled type parameters");
+        if !typarams.is_empty()
+            && let Err(error) = self.signature_gen.assemble_params_sig(ctx, syms, typarams)
+        {
+            if self.signature_error.is_none() {
+                self.signature_error = Some(error.type_);
+            }
+            return self.names.empty.clone();
         }
         let super_ty = self.types.supertype(ctx, syms, t, None);
-        self.signature_gen
-            .assemble_sig(ctx, syms, super_ty)
-            .expect("assembled super type");
+        if let Err(error) = self.signature_gen.assemble_sig(ctx, syms, super_ty) {
+            if self.signature_error.is_none() {
+                self.signature_error = Some(error.type_);
+            }
+            return self.names.empty.clone();
+        }
         for interface in self.types.interfaces(ctx, syms, t).iter() {
-            self.signature_gen
-                .assemble_sig(ctx, syms, interface)
-                .expect("assembled interface type");
+            if let Err(error) = self.signature_gen.assemble_sig(ctx, syms, interface) {
+                if self.signature_error.is_none() {
+                    self.signature_error = Some(error.type_);
+                }
+                return self.names.empty.clone();
+            }
         }
         let names = Rc::clone(&self.names);
         self.signature_gen.take_inner_classes_into(ctx, &mut self.inner_classes);

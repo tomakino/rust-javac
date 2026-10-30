@@ -10,12 +10,16 @@ use std::rc::Rc;
 
 use javac_core::api::diagnostic_formatter::DiagnosticFormatter;
 use javac_core::code::source::Source;
+use javac_core::comp::resolve::{
+    InapplicableMethodExceptionPayload, InferenceExceptionPayload,
+};
 use javac_core::main::mini_compiler::MiniCompiler;
 use javac_core::main::option::ArgKind;
 use javac_core::main::option::InvalidValueException;
 use javac_core::main::option::Option as JavacOption;
 use javac_core::main::option::OptionKind;
 use javac_core::main::option_helper::OptionHelper;
+use javac_core::util::abstract_log::AbstractLog;
 use javac_core::util::log::Log;
 use javac_core::util::basic_diagnostic_formatter::BasicDiagnosticFormatter;
 use javac_core::util::javac_messages::{
@@ -30,6 +34,21 @@ const SYSERR: i32 = 3;
 const ABNORMAL: i32 = 4;
 
 fn main() {
+    // javac's InapplicableMethodException / InferenceException use Rust panics
+    // as their control-flow transport (the payloads are caught again by
+    // catch_inapplicable_method_exception / catch_inference_exception). The
+    // default panic hook would still print those internal throws to stderr, so
+    // suppress exactly those payloads and keep the normal hook for real panics.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info.payload();
+        if payload.is::<InapplicableMethodExceptionPayload>()
+            || payload.is::<InferenceExceptionPayload>()
+        {
+            return;
+        }
+        default_hook(info);
+    }));
     // The compiler uses deep recursion over types/symbols; the process main
     // thread has a small stack on Windows. Run the driver on a dedicated
     // large-stack thread (javac uses the launcher thread's stack as well).
@@ -325,6 +344,234 @@ fn sort_key(entry: &HelpEntry) -> String {
         .to_lowercase()
 }
 
+/// Emit the command-line warnings javac produces while processing options.
+/// Returns the number of warnings written so the final count stays correct.
+fn emit_option_warnings(
+    args: &[String],
+    options: &[(String, String)],
+    locale: &Locale,
+) -> i32 {
+    let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+    let has = |name: &str| options.iter().any(|(key, _)| key == name);
+    let options_suppressed = args.iter().any(|arg| {
+        if arg == "-nowarn" || arg == "-Xlint:none" {
+            return true;
+        }
+        arg.strip_prefix("-Xlint:")
+            .is_some_and(|spec| spec.split(',').any(|part| part == "-options"))
+    });
+    let mut warnings = 0i32;
+    if !options_suppressed
+        && let Some((_, spec)) = options.iter().find(|(key, _)| key == "--add-exports")
+        && let Some(module) = spec.split('/').next()
+        && !module.split('.').all(|part| {
+            let mut chars = part.chars();
+            chars
+                .next()
+                .map(|first| first.is_alphabetic() || first == '_' || first == '$')
+                .unwrap_or(false)
+                && chars.all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '$')
+        })
+    {
+        eprintln!("warning: bad name in value for --add-exports option: '{module}'");
+        warnings += 1;
+    }
+    if !options_suppressed && has("--add-opens") {
+        eprintln!(
+            "warning: [options] {}",
+            messages.get_localized_string("compiler.warn.addopens.ignored", &[])
+        );
+        warnings += 1;
+    }
+    let bootclasspath_set = has("--boot-class-path")
+        || args.iter().any(|arg| arg.starts_with("-Xbootclasspath"))
+        || has("-extdirs");
+    if !options_suppressed && !has("--release") && !has("--system") && !bootclasspath_set {
+        if let Some((_, source)) = options.iter().find(|(key, _)| key == "--source") {
+            let release = source
+                .strip_prefix("1.")
+                .unwrap_or(source)
+                .parse::<i32>()
+                .unwrap_or(17);
+            let key = if release < 9 {
+                "compiler.warn.source.no.bootclasspath"
+            } else if release < 17 {
+                "compiler.warn.source.no.system.modules.path"
+            } else {
+                ""
+            };
+            if !key.is_empty() {
+                eprintln!(
+                    "warning: [options] {}",
+                    messages.get_localized_string(key, &[release.to_string()])
+                );
+                warnings += 1;
+            }
+        }
+    }
+    let normalize_release = |value: &str| {
+        value
+            .strip_prefix("1.")
+            .unwrap_or(value)
+            .parse::<i32>()
+            .unwrap_or(17)
+    };
+    let source_release = options
+        .iter()
+        .find(|(key, _)| key == "--source" || key == "--release")
+        .map(|(_, value)| normalize_release(value));
+    let target_release = options
+        .iter()
+        .find(|(key, _)| key == "--target" || key == "--release")
+        .map(|(_, value)| normalize_release(value));
+    let mut obsolete = false;
+    if !options_suppressed && source_release == Some(7) {
+        eprintln!(
+            "warning: [options] {}",
+            messages.get_localized_string(
+                "compiler.warn.option.obsolete.source",
+                &[source_release.unwrap_or(7).to_string()],
+            )
+        );
+        warnings += 1;
+        obsolete = true;
+    }
+    if !options_suppressed && target_release == Some(7) {
+        eprintln!(
+            "warning: [options] {}",
+            messages.get_localized_string(
+                "compiler.warn.option.obsolete.target",
+                &[target_release.unwrap_or(7).to_string()],
+            )
+        );
+        warnings += 1;
+        obsolete = true;
+    }
+    if !options_suppressed && target_release == Some(7) && has("-parameters") {
+        eprintln!(
+            "warning: -parameters is not supported for target value 7. Use 8 or later."
+        );
+        warnings += 1;
+    }
+    if obsolete {
+        eprintln!(
+            "warning: [options] {}",
+            messages.get_localized_string("compiler.warn.option.obsolete.suppression", &[])
+        );
+        warnings += 1;
+    }
+    let path_lint = args.iter().any(|arg| {
+        arg == "-Xlint:path"
+            || arg == "-Xlint:all"
+            || arg.starts_with("-Xlint:path,")
+            || arg.starts_with("-Xlint:all,")
+    }) && !args.iter().any(|arg| arg == "-Xlint:-path");
+    if path_lint {
+        if let Some((_, extdirs)) = options.iter().find(|(key, _)| key == "-extdirs") {
+            for entry in extdirs.split(';').filter(|entry| !entry.is_empty()) {
+                if !Path::new(entry).is_dir() {
+                    eprintln!(
+                        "warning: [path] {}",
+                        messages.get_localized_string(
+                            "compiler.warn.dir.path.element.not.found",
+                            &[entry.to_string()],
+                        )
+                    );
+                    warnings += 1;
+                    break;
+                }
+            }
+        }
+        if let Some((_, classpath)) = options.iter().find(|(key, _)| key == "--class-path") {
+            for entry in classpath.split(';').filter(|entry| !entry.is_empty()) {
+                if !Path::new(entry).exists() {
+                    eprintln!(
+                        "warning: [path] {}",
+                        messages.get_localized_string(
+                            "compiler.warn.path.element.not.found",
+                            &[entry.to_string()],
+                        )
+                    );
+                    warnings += 1;
+                    break;
+                }
+            }
+        }
+    }
+    warnings
+}
+
+/// Validate the module options that cannot be combined with --release
+/// (javac 17 reports these during option processing).
+fn module_option_errors(
+    options: &[(String, String)],
+    locale: &Locale,
+) -> Vec<String> {
+    if !options.iter().any(|(key, _)| key == "--release") {
+        return Vec::new();
+    }
+    let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+    let mut errors = Vec::new();
+    if let Some((_, spec)) = options.iter().find(|(key, _)| key == "--add-exports") {
+        if let Some(module) = spec.split('/').next() {
+            if module.starts_with("java.") || module.starts_with("jdk.") {
+                errors.push(messages.get_localized_string(
+                    "compiler.err.add.exports.with.release",
+                    &[module.to_string()],
+                ));
+            }
+        }
+    }
+    if let Some((_, spec)) = options.iter().find(|(key, _)| key == "--add-reads") {
+        if let Some(module) = spec.split('=').next() {
+            if module.starts_with("java.") || module.starts_with("jdk.") {
+                errors.push(messages.get_localized_string(
+                    "compiler.err.add.reads.with.release",
+                    &[module.to_string()],
+                ));
+            }
+        }
+    }
+    errors
+}
+
+/// Validate the source/target releases that javac 17 no longer supports. The
+/// upstream option processing reports these as errors after the option warnings
+/// and does not run the compiler.
+fn removed_option_errors(
+    options: &[(String, String)],
+    locale: &Locale,
+) -> Vec<String> {
+    let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+    let normalize = |value: &str| {
+        value
+            .strip_prefix("1.")
+            .unwrap_or(value)
+            .parse::<i32>()
+            .unwrap_or(17)
+    };
+    let mut errors = Vec::new();
+    if let Some((_, source)) = options.iter().find(|(key, _)| key == "--source") {
+        let release = normalize(source);
+        if release < 7 {
+            errors.push(messages.get_localized_string(
+                "compiler.err.option.removed.source",
+                &[release.to_string(), "7".to_string()],
+            ));
+        }
+    }
+    if let Some((_, target)) = options.iter().find(|(key, _)| key == "--target") {
+        let release = normalize(target);
+        if release < 7 {
+            errors.push(messages.get_localized_string(
+                "compiler.err.option.removed.target",
+                &[release.to_string(), "7".to_string()],
+            ));
+        }
+    }
+    errors
+}
+
 fn compile(args: &[String]) -> Result<i32, String> {
     let expanded = match expand_argfiles(args) {
         Ok(expanded) => expanded,
@@ -355,6 +602,62 @@ fn compile(args: &[String]) -> Result<i32, String> {
     let mut index = 0;
     while index < expanded.len() {
         let arg = &expanded[index];
+        // --add-opens has no compile-time effect; javac accepts it and emits
+        // the [options] warning (the trimmed Option enum omits it).
+        if arg == "--add-opens" {
+            if index + 1 < expanded.len() {
+                helper.put("--add-opens", &expanded[index + 1]);
+                index += 2;
+                continue;
+            }
+        } else if let Some(value) = arg.strip_prefix("--add-opens=") {
+            helper.put("--add-opens", value);
+            index += 1;
+            continue;
+        }
+        // An explicitly empty boot class path makes java.lang unavailable.
+        if arg == "-Xbootclasspath:" {
+            helper.put("-Xbootclasspath", "");
+            index += 1;
+            continue;
+        }
+        // --debug=<name>[=<value>] installs a hidden debug option. The port
+        // consumes the same keys as the corresponding -XD options.
+        if let Some(value) = arg.strip_prefix("--debug=") {
+            let (key, value) = value.split_once('=').unwrap_or((value, "true"));
+            let key = format!("debug.{key}");
+            helper.put(&key, value);
+            index += 1;
+            continue;
+        }
+        // -extdirs is a file-manager option in javac 17 (kept out of the
+        // trimmed Option enum); accept and record it for the path warning.
+        if arg == "-extdirs" {
+            if index + 1 < expanded.len() {
+                helper.put("-extdirs", &expanded[index + 1]);
+                index += 2;
+                continue;
+            }
+        } else if let Some(value) = arg.strip_prefix("-extdirs:") {
+            helper.put("-extdirs", value);
+            index += 1;
+            continue;
+        }
+        if let Some(value) = arg
+            .strip_prefix("--diags=")
+            .or_else(|| arg.strip_prefix("-diags="))
+        {
+            // Java: --diags=key=value,... is the hidden diagnostic-formatting
+            // option; store each key as diags.<key> (the formatter reads
+            // diags.formatterOptions and friends).
+            for pair in value.split(',') {
+                if let Some((key, value)) = pair.split_once('=') {
+                    helper.put(&format!("diags.{key}"), value);
+                }
+            }
+            index += 1;
+            continue;
+        }
         if arg.starts_with("-J") {
             // VM options (-J-Duser.language=...) are not javac options; the
             // locale selection reads user.language/user.country above.
@@ -401,8 +704,25 @@ fn compile(args: &[String]) -> Result<i32, String> {
     }
 
     let mut sources: Vec<PathBuf> = Vec::new();
+    let mut class_names: Vec<String> = Vec::new();
     for path in &helper.files {
+        if !path.exists() && path.extension().is_none() {
+            class_names.push(path.display().to_string());
+            continue;
+        }
         collect_sources(path, &mut sources)?;
+    }
+    if !class_names.is_empty() {
+        let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+        eprintln!(
+            "error: {}",
+            messages.get_localized_string(
+                "compiler.err.proc.no.explicit.annotation.processing.requested",
+                &[class_names.join(",")],
+            )
+        );
+        eprintln!("1 error");
+        return Ok(ERROR);
     }
     // javac: without -d the class file is written next to its source file
     // (JavacFileManager.java:911-923); CLASS_OUTPUT stays unset.
@@ -432,11 +752,52 @@ fn compile(args: &[String]) -> Result<i32, String> {
         }
     }
     let options = helper.options.clone();
+    if let Some((_, path)) = options
+        .iter()
+        .find(|(key, _)| key == "--module-source-path")
+    {
+        for entry in path.split(';').filter(|entry| !entry.is_empty()) {
+            // Java: '*' is only legal as a whole path element or a final /*
+            // segment (module-source-path syntax).
+            let star_ok = entry == "*" || entry.ends_with("/*") || entry.ends_with("\\*");
+            if entry.contains('*') && !star_ok {
+                eprintln!(
+                    "error: illegal argument for --module-source-path: illegal use of * in {entry}"
+                );
+                return Ok(CMDERR);
+            }
+        }
+    }
+    if options
+        .iter()
+        .any(|(key, value)| key == "-Xbootclasspath" && value.is_empty())
+    {
+        eprintln!("Fatal Error: Unable to find package java.lang in classpath or bootclasspath");
+        return Ok(ERROR);
+    }
+    let option_warnings = emit_option_warnings(&expanded, &options, &locale);
+    let removed_errors = module_option_errors(&options, &locale);
+    if !removed_errors.is_empty() {
+        for error in removed_errors {
+            eprintln!("error: {error}");
+        }
+        eprintln!("1 error");
+        return Ok(ERROR);
+    }
+    let removed_errors = removed_option_errors(&options, &locale);
+    if !removed_errors.is_empty() {
+        for error in removed_errors {
+            eprintln!("error: {error}");
+        }
+        return Ok(CMDERR);
+    }
 
-    if sources.is_empty() {
-        // javac 17 without source files prints the full standard help on
+    let has_non_vm_argument = expanded.iter().any(|arg| !arg.starts_with("-J"));
+    if sources.is_empty() && !has_non_vm_argument {
+        // javac 17 without any arguments prints the full standard help on
         // stdout and exits with CMDERR (verified against
-        // JAVA_HOME/bin/javac: 68 stdout lines, exit 2).
+        // JAVA_HOME/bin/javac: 68 stdout lines, exit 2). With options but no
+        // source files javac reports no.source.files instead.
         let javac_messages =
             JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
         print!("{}", help_text(&javac_messages, false));
@@ -457,32 +818,43 @@ fn compile(args: &[String]) -> Result<i32, String> {
         }
     });
 
-    compiler.log.borrow_mut().install_diagnostic_handler(DiagnosticHandler::Deferred {
-        prev: None,
-        deferred: VecDeque::new(),
-        filter: None,
-    });
-    let result = compiler.compile_files(&sources);
-    let diagnostics = compiler.log.borrow_mut().take_deferred_diagnostics();
-    compiler.log.borrow_mut().pop_diagnostic_handler();
+    if sources.is_empty() {
+        let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+        eprintln!(
+            "error: {}",
+            messages.get_localized_string("compiler.err.no.source.files", &[])
+        );
+        return Ok(ERROR);
+    }
 
+    // Java: javac's Log reports diagnostics immediately through its default
+    // handler; the count feeds JavaCompiler's shouldStop checks.
+    let result = compiler.compile_files(&sources);
+    // Java: JavaCompiler.compile calls preview.reportDeferredDiagnostics()
+    // after the last round (the preview filename / recompile notes).
+    compiler.preview.report_deferred_diagnostics();
+    compiler.report_deferred_mandatory_diagnostics();
+    // Java: JavaCompiler.compile emits the compressed-diagnostics note after
+    // the deferred diagnostics report (JavaCompiler.java:1719-1721).
+    if compiler.log.borrow().compressed_output {
+        let note = javac_core::util::jc_diagnostic::Note::from(
+            javac_core::resources::compiler_properties::notes::compressed_diags(),
+        );
+        compiler.log.borrow_mut().emit_mandatory_note(note);
+    }
     let messages = Rc::new(JavacMessages::with_locale(
         DEFAULT_BUNDLE_NAME,
         Some(locale.clone()),
     ));
-    let formatter = BasicDiagnosticFormatter::new(Rc::clone(&messages));
-    for diagnostic in &diagnostics {
-        eprintln!("{}", formatter.format(diagnostic, None));
-    }
-    let errors = diagnostics
+    let werror = options
         .iter()
-        .filter(|diagnostic| {
-            matches!(
-                diagnostic.get_type(),
-                javac_core::util::jc_diagnostic::DiagnosticType::ERROR
-            )
-        })
-        .count();
+        .any(|(key, _)| key == "-Werror" || key == "Werror");
+    let warnings_before_summary = compiler.warning_count() + option_warnings;
+    let mut errors = compiler.error_count();
+    if werror && errors == 0 && warnings_before_summary > 0 {
+        eprintln!("error: warnings found and -Werror specified");
+        errors = 1;
+    }
     if errors > 0 {
         let key = if errors == 1 {
             "compiler.misc.count.error"
@@ -490,6 +862,35 @@ fn compile(args: &[String]) -> Result<i32, String> {
             "compiler.misc.count.error.plural"
         };
         eprintln!("{}", messages.get_localized_string(key, &[errors.to_string()]));
+        let suppressed = compiler.suppressed_error_count();
+        if suppressed > 0 {
+            eprintln!(
+                "{}",
+                messages.get_localized_string(
+                    "compiler.misc.count.error.recompile",
+                    &[errors.to_string(), (errors + suppressed).to_string()],
+                )
+            );
+        }
+    }
+    let warnings = compiler.warning_count() + option_warnings;
+    if warnings > 0 {
+        let key = if warnings == 1 {
+            "compiler.misc.count.warn"
+        } else {
+            "compiler.misc.count.warn.plural"
+        };
+        eprintln!("{}", messages.get_localized_string(key, &[warnings.to_string()]));
+        let suppressed = compiler.suppressed_warning_count();
+        if suppressed > 0 {
+            eprintln!(
+                "{}",
+                messages.get_localized_string(
+                    "compiler.misc.count.warn.recompile",
+                    &[warnings.to_string(), (warnings + suppressed).to_string()],
+                )
+            );
+        }
     }
     if errors > 0 || result.is_err() {
         return Ok(ERROR);

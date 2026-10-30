@@ -1733,7 +1733,6 @@ pub fn symbol_exists(ctx: &CompilerContext, symbol: SymbolId) -> bool {
     match &ctx.sym(symbol).kind_data {
         SymbolKind::ResolveError { data, .. } => matches!(
             **data,
-                | ResolveErrorData::Access { .. }
                 | ResolveErrorData::Invisible { .. }
                 | ResolveErrorData::Static { .. }
                 | ResolveErrorData::Ambiguity { .. }
@@ -1741,6 +1740,12 @@ pub fn symbol_exists(ctx: &CompilerContext, symbol: SymbolId) -> bool {
                 | ResolveErrorData::BadConstructorReference { .. }
                 | ResolveErrorData::BadClassFile { .. }
         ),
+        // Java: Symbol.exists() is kind != ERR, but PackageSymbol overrides it
+        // with the EXISTS flag (a package "exists" only once a type/package
+        // within it has been seen; Symbol.java:1208-1213).
+        SymbolKind::PackageSymbol { .. } | SymbolKind::RootPackageSymbol { .. } => {
+            ctx.sym(symbol).flags_field & crate::code::flags::EXISTS as i64 != 0
+        }
         _ => ctx.sym(symbol).kind != crate::code::kinds::Kind::ERR,
     }
 }

@@ -427,9 +427,34 @@ impl UnicodeReader {
         } else {
             u32::from(self.character)
         };
-        let result = char::from_u32(code_point)
-            .and_then(|ch| ch.to_digit(digit_radix as u32))
-            .map(|digit| digit as i32)
+        // Java: Character.digit supports the Unicode decimal-digit scripts;
+        // Rust's char::to_digit only covers ASCII. The common Nd ranges are
+        // enough for source lexing (the full tables are not ported).
+        let unicode_digit = match code_point {
+            0x0660..=0x0669 => Some((code_point - 0x0660) as i32),
+            0x06F0..=0x06F9 => Some((code_point - 0x06F0) as i32),
+            0x0966..=0x096F => Some((code_point - 0x0966) as i32),
+            0x09E6..=0x09EF => Some((code_point - 0x09E6) as i32),
+            0x0A66..=0x0A6F => Some((code_point - 0x0A66) as i32),
+            0x0AE6..=0x0AEF => Some((code_point - 0x0AE6) as i32),
+            0x0B66..=0x0B6F => Some((code_point - 0x0B66) as i32),
+            0x0BE6..=0x0BEF => Some((code_point - 0x0BE6) as i32),
+            0x0C66..=0x0C6F => Some((code_point - 0x0C66) as i32),
+            0x0CE6..=0x0CEF => Some((code_point - 0x0CE6) as i32),
+            0x0D66..=0x0D6F => Some((code_point - 0x0D66) as i32),
+            0x0E50..=0x0E59 => Some((code_point - 0x0E50) as i32),
+            0x0ED0..=0x0ED9 => Some((code_point - 0x0ED0) as i32),
+            0x0F20..=0x0F29 => Some((code_point - 0x0F20) as i32),
+            0x1040..=0x1049 => Some((code_point - 0x1040) as i32),
+            0x17E0..=0x17E9 => Some((code_point - 0x17E0) as i32),
+            0x1810..=0x1819 => Some((code_point - 0x1810) as i32),
+            0xFF10..=0xFF19 => Some((code_point - 0xFF10) as i32),
+            _ => char::from_u32(code_point)
+                .and_then(|ch| ch.to_digit(digit_radix as u32))
+                .map(|digit| digit as i32),
+        };
+        let result = unicode_digit
+            .filter(|digit| *digit < digit_radix)
             .unwrap_or(-1);
         if result >= 0 && !self.is_ascii() {
             self.log.borrow_mut().error_at(

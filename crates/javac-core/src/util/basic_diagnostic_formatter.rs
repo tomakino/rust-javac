@@ -38,18 +38,50 @@
 //!   including the upstream behaviour that sourcePosition stays null (None)
 //!   until set.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::api::diagnostic_formatter::{
     Configuration, DiagnosticFormatter, DiagnosticPart, MultilineLimit, PositionKind,
 };
-use crate::util::abstract_diagnostic_formatter::{AbstractDiagnosticFormatter, SimpleConfiguration};
+use crate::util::abstract_diagnostic_formatter::{
+    format_placeholder_text, AbstractDiagnosticFormatter, SimpleConfiguration,
+};
 use crate::util::javac_messages::{JavacMessages, Locale};
 use crate::util::options::Options;
 use crate::util::jc_diagnostic::JCDiagnostic;
 use crate::util::layout_characters::{DIAG_INC, DETAILS_INC};
 use crate::util::position::NOPOS;
+
+#[derive(Debug, Clone)]
+struct RichCaptured {
+    original: String,
+    name: String,
+    upper: String,
+    lower: Option<String>,
+    wildcard: String,
+}
+
+#[derive(Debug, Clone)]
+struct RichIntersection {
+    original: String,
+    name: String,
+    bounds: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct RichTypeVar {
+    name: String,
+    owner: String,
+    display: String,
+}
+
+#[derive(Default)]
+struct RichWhereState {
+    captured: Vec<RichCaptured>,
+    intersections: Vec<RichIntersection>,
+    typevars: Vec<RichTypeVar>,
+}
 
 /// A basic formatter for diagnostic messages.
 ///
@@ -58,10 +90,153 @@ use crate::util::position::NOPOS;
 pub struct BasicDiagnosticFormatter {
     messages: Rc<JavacMessages>,
     config: BasicConfiguration,
+    rich_state: RefCell<RichWhereState>,
     depth: Cell<i32>,
 }
 
 impl BasicDiagnosticFormatter {
+    /// Java: RichDiagnosticFormatter.format/formatMessage appends the where
+    /// clauses after the formatted diagnostic; nested messages never add them.
+    fn append_where_clauses(&self, d: &JCDiagnostic, text: &mut String) {
+        if self.depth.get() != 0 {
+            return;
+        }
+        let state = self.rich_state.borrow();
+        let mut where_text = format_where_clauses(d, &state.typevars);
+        if !state.captured.is_empty() {
+            let names: Vec<&str> = state.captured.iter().map(|c| c.name.as_str()).collect();
+            if !where_text.is_empty() {
+                where_text.push('\n');
+            }
+            if names.len() == 1 {
+                where_text.push_str(&format!(
+                    "  where {} is a fresh type-variable:",
+                    names[0]
+                ));
+            } else {
+                where_text.push_str(&format!(
+                    "  where {} are fresh type-variables:",
+                    names.join(",")
+                ));
+            }
+            for captured in &state.captured {
+                where_text.push_str("\n    ");
+                match &captured.lower {
+                    Some(lower) => where_text.push_str(&format!(
+                        "{} extends {} super: {} from capture of {}",
+                        captured.name, captured.upper, lower, captured.wildcard
+                    )),
+                    None => where_text.push_str(&format!(
+                        "{} extends {} from capture of {}",
+                        captured.name, captured.upper, captured.wildcard
+                    )),
+                }
+            }
+        }
+        if !state.intersections.is_empty() {
+            let names: Vec<&str> = state
+                .intersections
+                .iter()
+                .map(|i| i.name.as_str())
+                .collect();
+            if !where_text.is_empty() {
+                where_text.push('\n');
+            }
+            if names.len() == 1 {
+                where_text.push_str(&format!(
+                    "  where {} is an intersection type:",
+                    names[0]
+                ));
+            } else {
+                where_text.push_str(&format!(
+                    "  where {} are intersection types:",
+                    names.join(",")
+                ));
+            }
+            for intersection in &state.intersections {
+                let mut bounds = intersection.bounds.join(",");
+                for nested in &state.intersections {
+                    bounds = bounds.replace(&nested.original, &nested.name);
+                }
+                for captured in &state.captured {
+                    bounds = bounds.replace(&captured.original, &captured.name);
+                }
+                where_text.push_str(&format!(
+                    "\n    {} extends {}",
+                    intersection.name, bounds
+                ));
+            }
+        }
+        if !where_text.is_empty() && !text.contains(&where_text) {
+            text.push('\n');
+            text.push_str(&where_text);
+        }
+    }
+
+    /// Collect the RichDiagnosticFormatter where entries for one diagnostic,
+    /// assigning CAP#N/INT#N in first-occurrence order (upstream indexOf).
+    fn reset_rich_state(&self, d: &JCDiagnostic) {
+        let mut state = RichWhereState::default();
+        collect_rich_arguments(d, &mut state);
+        // Java: RichPrinter.visitTypeVar uses T#N when two distinct tvars
+        // share the same simple name (disambiguateTvars).
+        let mut counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        for typevar in &state.typevars {
+            *counts.entry(typevar.name.clone()).or_insert(0) += 1;
+        }
+        let mut indices: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        for typevar in &mut state.typevars {
+            if counts.get(&typevar.name).copied().unwrap_or(0) > 1 {
+                let index = indices.entry(typevar.name.clone()).or_insert(0);
+                *index += 1;
+                typevar.display = format!("{}#{}", typevar.name, index);
+            }
+        }
+        *self.rich_state.borrow_mut() = state;
+    }
+
+    /// Render a TypeArg, replacing captured/intersection printer text with the
+    /// names assigned by reset_rich_state (upstream RichPrinter).
+    fn render_rich_type_arg(
+        &self,
+        arg: &crate::resources::diagnostic_contract::TypeArg,
+        locale: Option<&Locale>,
+    ) -> String {
+        let state = self.rich_state.borrow();
+        let mut text = arg.text.clone();
+        for captured in &arg.where_captured {
+            if let Some(entry) = state
+                .captured
+                .iter()
+                .find(|entry| entry.original == captured.original)
+            {
+                text = text.replace(&captured.original, &entry.name);
+            }
+        }
+        for intersection in &arg.where_intersections {
+            if let Some(entry) = state
+                .intersections
+                .iter()
+                .find(|entry| entry.original == intersection.original)
+            {
+                text = text.replace(&intersection.original, &entry.name);
+            }
+        }
+        for typevar in &arg.where_vars {
+            if let Some(entry) = state
+                .typevars
+                .iter()
+                .find(|entry| entry.name == typevar.name && entry.owner == typevar.owner)
+            {
+                text = replace_identifier(&text, &typevar.name, &entry.display);
+            }
+        }
+        drop(state);
+        format_placeholder_text(self, locale, &text)
+    }
+
     /// Create a standard basic formatter.
     ///
     /// Java: public BasicDiagnosticFormatter(JavacMessages msgs)
@@ -69,6 +244,7 @@ impl BasicDiagnosticFormatter {
         BasicDiagnosticFormatter {
             messages,
             config: BasicConfiguration::new(),
+            rich_state: RefCell::new(RichWhereState::default()),
             depth: Cell::new(0),
         }
     }
@@ -78,6 +254,7 @@ impl BasicDiagnosticFormatter {
         BasicDiagnosticFormatter {
             messages,
             config: BasicConfiguration::new_with_options(options),
+            rich_state: RefCell::new(RichWhereState::default()),
             depth: Cell::new(0),
         }
     }
@@ -145,9 +322,21 @@ impl BasicDiagnosticFormatter {
         }
         if lines.len() > 1 && visible.contains(&DiagnosticPart::Details) {
             current_indentation += self.config.get_indentation(DiagnosticPart::Details);
+            let mut in_where = false;
             for line in lines.iter().skip(1) {
                 buf.push('\n');
-                buf.push_str(&self.indent(line, current_indentation));
+                // Java: RichDiagnosticFormatter appends where clauses after the
+                // whole diagnostic, outside the details indentation. Keep that
+                // block at its own two-space indentation when the message is
+                // embedded as a detail.
+                if line.starts_with("  where ") {
+                    in_where = true;
+                }
+                if in_where {
+                    buf.push_str(line);
+                } else {
+                    buf.push_str(&self.indent(line, current_indentation));
+                }
             }
         }
         if d.is_multiline() && visible.contains(&DiagnosticPart::Subdiagnostics) {
@@ -272,8 +461,21 @@ impl AbstractDiagnosticFormatter for BasicDiagnosticFormatter {
         self.format_diagnostic_basic(d, locale)
     }
 
+    fn format_type_argument(
+        &self,
+        arg: &crate::resources::diagnostic_contract::TypeArg,
+        locale: Option<&Locale>,
+    ) -> String {
+        self.render_rich_type_arg(arg, locale)
+    }
+
     fn format_message_impl(&self, d: &JCDiagnostic, locale: Option<&Locale>) -> String {
-        self.format_message_basic(d, locale)
+        if self.depth.get() == 0 {
+            self.reset_rich_state(d);
+        }
+        let mut text = self.format_message_basic(d, locale);
+        self.append_where_clauses(d, &mut text);
+        text
     }
 }
 
@@ -309,6 +511,214 @@ impl DiagnosticFormatter<JCDiagnostic> for BasicDiagnosticFormatter {
 
     fn get_configuration(&mut self) -> &mut dyn Configuration {
         &mut self.config
+    }
+}
+
+/// Collect the declared type variables carried by Type arguments and render
+/// them as RichDiagnosticFormatter `where` clauses.
+fn format_where_clauses(
+    d: &JCDiagnostic,
+    typevars: &[RichTypeVar],
+) -> String {
+    let mut vars: Vec<crate::resources::diagnostic_contract::WhereTypeVar> = Vec::new();
+    collect_where_clauses(d, &mut vars);
+    if vars.is_empty() {
+        return String::new();
+    }
+    let display_of = |var: &crate::resources::diagnostic_contract::WhereTypeVar| {
+        typevars
+            .iter()
+            .find(|entry| entry.name == var.name && entry.owner == var.owner)
+            .map(|entry| entry.display.clone())
+            .unwrap_or_else(|| var.name.clone())
+    };
+    let names: Vec<String> = vars.iter().map(display_of).collect();
+    let mut out = if names.len() == 1 {
+        format!("  where {} is a type-variable:", names[0])
+    } else {
+        format!("  where {} are type-variables:", names.join(","))
+    };
+    for var in vars {
+        let display = display_of(&var);
+        if var.fresh {
+            // Java: Fragments.WhereFreshTypevar has no declared-in location.
+            out.push_str(&format!("\n    {} extends {}", display, var.bound));
+        } else {
+            let owner = replace_identifier(&var.owner, &var.name, &display);
+            out.push_str(&format!(
+                "\n    {} extends {} declared in {}",
+                display, var.bound, owner
+            ));
+        }
+    }
+    out
+}
+
+/// Replace a whole identifier (Java Name boundary) inside a rendered string.
+fn replace_identifier(text: &str, from: &str, to: &str) -> String {
+    if from.is_empty() || from == to {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let from_chars: Vec<char> = from.chars().collect();
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_';
+    let mut out = String::new();
+    let mut index = 0usize;
+    while index < chars.len() {
+        let matched = index + from_chars.len() <= chars.len()
+            && chars[index..index + from_chars.len()] == from_chars[..]
+            && (index == 0 || !is_ident(chars[index - 1]))
+            && (index + from_chars.len() == chars.len()
+                || !is_ident(chars[index + from_chars.len()]));
+        if matched {
+            out.push_str(to);
+            index += from_chars.len();
+        } else {
+            out.push(chars[index]);
+            index += 1;
+        }
+    }
+    out
+}
+
+fn collect_rich_arguments(d: &JCDiagnostic, state: &mut RichWhereState) {
+    for arg in d.get_args() {
+        if let Some(type_arg) = arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>() {
+            for captured in &type_arg.where_captured {
+                if !state
+                    .captured
+                    .iter()
+                    .any(|entry| entry.original == captured.original)
+                {
+                    state.captured.push(RichCaptured {
+                        original: captured.original.clone(),
+                        name: format!("CAP#{}", state.captured.len() + 1),
+                        upper: captured.upper.clone(),
+                        lower: captured.lower.clone(),
+                        wildcard: captured.wildcard.clone(),
+                    });
+                }
+            }
+            for intersection in &type_arg.where_intersections {
+                if !state
+                    .intersections
+                    .iter()
+                    .any(|entry| entry.original == intersection.original)
+                {
+                    state.intersections.push(RichIntersection {
+                        original: intersection.original.clone(),
+                        name: format!("INT#{}", state.intersections.len() + 1),
+                        bounds: intersection.bounds.clone(),
+                    });
+                }
+            }
+            for typevar in &type_arg.where_vars {
+                if !state
+                    .typevars
+                    .iter()
+                    .any(|entry| entry.name == typevar.name && entry.owner == typevar.owner)
+                {
+                    state.typevars.push(RichTypeVar {
+                        name: typevar.name.clone(),
+                        owner: typevar.owner.clone(),
+                        display: typevar.name.clone(),
+                    });
+                }
+            }
+        } else if let Some(nested) = arg.downcast_ref::<JCDiagnostic>() {
+            collect_rich_arguments(nested, state);
+        } else if let Some(items) = arg.downcast_ref::<Vec<crate::util::jc_diagnostic::DiagnosticArg>>() {
+            for item in items {
+                if let Some(type_arg) =
+                    item.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>()
+                {
+                    for captured in &type_arg.where_captured {
+                        if !state
+                            .captured
+                            .iter()
+                            .any(|entry| entry.original == captured.original)
+                        {
+                            state.captured.push(RichCaptured {
+                                original: captured.original.clone(),
+                                name: format!("CAP#{}", state.captured.len() + 1),
+                                upper: captured.upper.clone(),
+                                lower: captured.lower.clone(),
+                                wildcard: captured.wildcard.clone(),
+                            });
+                        }
+                    }
+                    for intersection in &type_arg.where_intersections {
+                        if !state
+                            .intersections
+                            .iter()
+                            .any(|entry| entry.original == intersection.original)
+                        {
+                            state.intersections.push(RichIntersection {
+                                original: intersection.original.clone(),
+                                name: format!("INT#{}", state.intersections.len() + 1),
+                                bounds: intersection.bounds.clone(),
+                            });
+                        }
+                    }
+                    for typevar in &type_arg.where_vars {
+                        if !state
+                            .typevars
+                            .iter()
+                            .any(|entry| entry.name == typevar.name && entry.owner == typevar.owner)
+                        {
+                            state.typevars.push(RichTypeVar {
+                                name: typevar.name.clone(),
+                                owner: typevar.owner.clone(),
+                                display: typevar.name.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for sub in d.get_subdiagnostics().iter() {
+        collect_rich_arguments(&sub, state);
+    }
+}
+
+fn collect_where_clauses(
+    d: &JCDiagnostic,
+    vars: &mut Vec<crate::resources::diagnostic_contract::WhereTypeVar>,
+) {
+    for arg in d.get_args() {
+        if let Some(type_arg) = arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>() {
+            for var in &type_arg.where_vars {
+                if !vars
+                    .iter()
+                    .any(|existing| existing.name == var.name && existing.owner == var.owner)
+                {
+                    vars.push(var.clone());
+                }
+            }
+        }
+        if let Some(nested) = arg.downcast_ref::<JCDiagnostic>() {
+            collect_where_clauses(nested, vars);
+        }
+        if let Some(items) = arg.downcast_ref::<Vec<crate::util::jc_diagnostic::DiagnosticArg>>() {
+            for item in items {
+                if let Some(type_arg) =
+                    item.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>()
+                {
+                    for var in &type_arg.where_vars {
+                        if !vars
+                            .iter()
+                            .any(|existing| existing.name == var.name && existing.owner == var.owner)
+                        {
+                            vars.push(var.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for sub in d.get_subdiagnostics().iter() {
+        collect_where_clauses(&sub, vars);
     }
 }
 

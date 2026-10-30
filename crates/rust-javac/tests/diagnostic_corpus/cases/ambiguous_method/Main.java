@@ -1,0 +1,1 @@
+class Main { void f() { Math.abs(1, 2); } }

@@ -2034,6 +2034,10 @@ impl Modules {
             self.init_err_module(ctx, msym);
         } else if (ctx.sym(msym).flags_field & flags::AUTOMATIC_MODULE) != 0 {
             self.setup_automatic_module(ctx, syms, msym)?;
+        } else if module_info_symbol_opt(ctx, msym).is_none() {
+            // The unnamed module of a -source 8 compilation has no module-info
+            // class; there is no module content to complete.
+            return Ok(());
         } else {
             let module_info = module_info_symbol(ctx, msym);
             if let Err(failure) = ctx.complete_class_symbol(syms, module_info) {
@@ -2451,11 +2455,15 @@ impl<'a> ModuleVisitor<'a> {
 // ModuleSymbol field helpers (Java public fields).
 // ---------------------------------------------------------------------------
 
-fn module_info_symbol(ctx: &CompilerContext, msym: SymbolId) -> SymbolId {
+fn module_info_symbol_opt(ctx: &CompilerContext, msym: SymbolId) -> Option<SymbolId> {
     match &ctx.sym(msym).kind_data {
-        SymbolKind::ModuleSymbol { module_info, .. } => module_info.expect("module-info symbol"),
+        SymbolKind::ModuleSymbol { module_info, .. } => *module_info,
         _ => panic!("AssertionError: module expected"),
     }
+}
+
+fn module_info_symbol(ctx: &CompilerContext, msym: SymbolId) -> SymbolId {
+    module_info_symbol_opt(ctx, msym).expect("module-info symbol")
 }
 
 fn module_info_sourcefile(ctx: &CompilerContext, module_info: SymbolId) -> Option<JavaFileObjectRef> {
@@ -3136,12 +3144,19 @@ impl<'a> UsesProvidesVisitor<'a> {
                 self.modules.log.borrow_mut().error_at(pos, error);
             } else if is_inner_symbol(self.ctx, impl_sym) {
                 let pos = self.ctx.tree(impl_name).pos;
-                let name = self
-                    .ctx
-                    .sym(impl_sym)
-                    .name
-                    .to_java_string()
-                    .to_string_lossy();
+                let mut name = self.ctx.sym(impl_sym).name.to_java_string().to_string_lossy();
+                let mut owner = self.ctx.sym(impl_sym).owner;
+                while let Some(owner_sym) = owner {
+                    if self.ctx.sym(owner_sym).kind != crate::code::kinds::Kind::TYP {
+                        break;
+                    }
+                    name = format!(
+                        "{}.{}",
+                        self.ctx.sym(owner_sym).name.to_java_string().to_string_lossy(),
+                        name
+                    );
+                    owner = self.ctx.sym(owner_sym).owner;
+                }
                 let error = JCDiagnosticError::from(
                     crate::resources::compiler_properties::errors::service_implementation_is_inner(
                         SymbolArg::placeholder(name),

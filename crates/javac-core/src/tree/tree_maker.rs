@@ -2945,6 +2945,10 @@ impl TreeMaker {
                 let elem_tree = self.type_from_type(ctx, syms, elemtype);
                 self.type_array(ctx, elem_tree)
             }
+            // Java does not build trees for erroneous types (they are only
+            // reached during recovery); use Object as a harmless placeholder
+            // so lowering does not abort.
+            TypeTag::ERROR => return self.type_from_type(ctx, syms, syms.object_type),
             other => panic!("AssertionError: unexpected type tag: {:?}", other),
         };
         // The tree type is set on the returned identifier.

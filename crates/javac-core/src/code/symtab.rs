@@ -1409,7 +1409,7 @@ impl Symtab {
         let auto_closeable_tsym = ctx.typ(auto_closeable_type).tsym.expect("AutoCloseable symbol");
         let close_type = new_method_type(
             ctx,
-            List::of(exception_type),
+            List::nil(),
             Some(void_type),
             List::of(exception_type),
             method_class,

@@ -1,0 +1,1 @@
+class Main { void 1f() {} }

@@ -277,6 +277,28 @@ pub struct Log {
 }
 
 impl Log {
+    /// Emit a mandatory note through the AbstractLog handler (Java:
+    /// log.mandatoryNote); used by the compiler driver for the
+    /// compressed-diagnostics note.
+    pub fn emit_mandatory_note(&mut self, note: Note) {
+        AbstractLog::mandatory_note_file(self, None, note);
+    }
+
+    /// Report an error through the default handler, ignoring a temporarily
+    /// installed speculative/deferred handler. Java reports void-argument
+    /// errors while the surrounding method call is still being resolved.
+    pub fn error_at_default(
+        &mut self,
+        pos: i32,
+        error_key: crate::util::jc_diagnostic::Error,
+    ) {
+        let diagnostic = {
+            let source = self.source.clone();
+            let diags = Rc::clone(&self.diags);
+            diags.error(None, source, Self::wrap_pos(pos), error_key)
+        };
+        self.default_report(diagnostic);
+    }
     /// Get the Log instance for this context.
     ///
     /// Java: public static Log instance(Context context)

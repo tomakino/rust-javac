@@ -1078,14 +1078,44 @@ pub fn flags(ctx: &CompilerContext, tree: TreeId) -> i64 {
 }
 
 /// Java: public static DiagnosticPosition diagnosticPositionFor(final Symbol
-/// sym, final JCTree tree) (TreeInfo.java:711-733): the ported surface is the
-/// tree start position (Porting rules adapter).
+/// sym, final JCTree tree) (TreeInfo.java:711-735): scan for the declaration
+/// (or the matching Ident/Select) and use that node's position; when the
+/// symbol is not declared in the tree, use the tree position.
 pub fn diagnostic_position_for(
-    ctx: &CompilerContext,
-    _sym: crate::ids::SymbolId,
+    ctx: &mut CompilerContext,
+    sym: crate::ids::SymbolId,
     tree: TreeId,
 ) -> i32 {
-    get_start_pos(ctx, tree)
+    match find_diagnostic_tree(ctx, sym, tree) {
+        Some(found) => ctx.tree(found).pos,
+        None => ctx.tree(tree).pos,
+    }
+}
+
+/// Java: TreeInfo.DeclScanner/DiagScanner (TreeInfo.java:716-781).
+fn find_diagnostic_tree(
+    ctx: &mut CompilerContext,
+    sym: crate::ids::SymbolId,
+    tree: TreeId,
+) -> Option<TreeId> {
+    let matches = match &ctx.tree(tree).kind {
+        TreeKind::ClassDecl { sym: Some(found), .. }
+        | TreeKind::MethodDecl { sym: Some(found), .. }
+        | TreeKind::VariableDecl { sym: Some(found), .. }
+        | TreeKind::Ident { sym: Some(found), .. }
+        | TreeKind::FieldAccess { sym: Some(found), .. }
+        | TreeKind::MemberReference { sym: Some(found), .. } => *found == sym,
+        _ => false,
+    };
+    if matches {
+        return Some(tree);
+    }
+    for child in crate::tree::tree_scanner::tree_children(ctx, tree) {
+        if let Some(found) = find_diagnostic_tree(ctx, sym, child) {
+            return Some(found);
+        }
+    }
+    None
 }
 /// Java: public static boolean isDeclaration(JCTree node)
 pub fn is_declaration(ctx: &CompilerContext, node: TreeId) -> bool {
@@ -1380,17 +1410,18 @@ pub fn get_module(ctx: &CompilerContext, tree: TreeId) -> Option<TreeId> {
     let TreeKind::CompilationUnit { defs, .. } = &ctx.tree(tree).kind else {
         return None;
     };
-    match defs.head_opt() {
-        Some(head) => {
-            let node = ctx.tree(head);
-            if node.has_tag(Tag::MODULEDEF) {
-                Some(head)
-            } else {
-                None
-            }
+    // The port stores JCCompilationUnit.pid as the first def; skip it here so
+    // the module declaration is found just as upstream (where pid is a separate
+    // field and defs.head is the module decl).
+    let mut current = defs.clone();
+    while current.non_empty() {
+        let head = *current.head();
+        if ctx.tree(head).has_tag(Tag::MODULEDEF) {
+            return Some(head);
         }
-        None => None,
+        current = current.tail();
     }
+    None
 }
 
 /// Java: public static boolean isPackageInfo(JCCompilationUnit tree)
@@ -1658,7 +1689,7 @@ pub fn is_expression(ctx: &CompilerContext, tree: TreeId) -> bool {
 /// declaration-position visitor is registered in PORTING_RULES section 9).
 /// Upstream: TreeInfo.java:715-735.
 pub fn diagnostic_position_for_with_flag(
-    ctx: &CompilerContext,
+    ctx: &mut CompilerContext,
     sym: crate::ids::SymbolId,
     tree: TreeId,
     _return_null_if_not_found: bool,

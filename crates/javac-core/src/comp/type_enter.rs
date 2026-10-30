@@ -183,8 +183,19 @@ impl TypeEnter {
                         .borrow()
                         .clone()
                         .expect("TypeEnter.attr must be injected");
-                    let mut attr = attr_rc.borrow_mut();
-                    self.finish_imports(ctx, syms, tree, Some(&top_env), &mut attr);
+                    // Java: TypeEnter.attr is a plain field, so the import check
+                    // can re-enter Attr while an enclosing Attr call is running.
+                    // Rust's RefCell would reject that; reuse the active mutable
+                    // Attr the same way TypeEnter.complete does above.
+                    let attr_ptr = attr_rc.as_ptr();
+                    let mut borrowed = attr_rc.try_borrow_mut();
+                    let attr: &mut crate::comp::attr::Attr = match borrowed {
+                        Ok(ref mut guard) => &mut **guard,
+                        // SAFETY: see the re-entrancy note above; the enclosing
+                        // Attr call suspends no iterator/borrow state here.
+                        Err(_) => unsafe { &mut *attr_ptr },
+                    };
+                    self.finish_imports(ctx, syms, tree, Some(&top_env), attr);
                 }
             }
             current = current.tail();
@@ -277,15 +288,38 @@ impl TypeEnter {
             let type_envs = self.type_envs.borrow();
             type_envs.get(sym)
         };
+        if let Some(env) = &env
+            && let Some(tree) = env.encl_class
+        {
+            self.chk.record_class_decl_pos(sym, ctx.tree(tree).pos);
+        }
+        if let Some(env) = &env
+            && let Some(toplevel) = env.toplevel
+        {
+            self.mark_unit_deprecated(ctx, toplevel);
+        }
         let queue = match env {
             Some(env) => {
                 let queue = self.phase_imports_complete_envs(ctx, syms, vec![env], attr);
                 for queued_env in &queue {
+                    // Java: TypeEnter.Phase.doCompleteEnvs installs the
+                    // compilation unit source and the class position around
+                    // every phase; diagnostics raised by MemberEnter/Hierarchy
+                    // must keep their file/line and lint position.
+                    let tree = queued_env.encl_class.expect("class tree");
+                    let sourcefile = compilation_unit_sourcefile(ctx, toplevel(queued_env));
+                    let prev_source = self.log.borrow_mut().use_source(sourcefile);
+                    let prev_lint = self
+                        .deferred_lint_handler
+                        .borrow_mut()
+                        .set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(tree).pos)));
                     self.hierarchy_phase_run(ctx, syms, queued_env, attr);
                     self.permits_phase_run(ctx, syms, queued_env);
                     self.header_phase_run(ctx, syms, queued_env, attr);
                     self.record_phase_run(ctx, syms, queued_env, attr);
                     self.members_phase_run(ctx, syms, queued_env, attr);
+                    self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint);
+                    self.log.borrow_mut().use_source(prev_source);
                 }
                 queue
             }
@@ -902,6 +936,82 @@ impl TypeEnter {
     /// Java: Check.checkImportedPackagesObservable(toplevel) (Check.java:4026-4039).
     fn check_imported_packages_observable(&self, ctx: &mut CompilerContext, toplevel: TreeId) {
         self.chk.check_imported_packages_observable(ctx, toplevel);
+    }
+
+    /// Mark top-level source classes that carry @Deprecated before member
+    /// attribution starts. javac marks deprecation during Enter, so a class
+    /// earlier in the file can refer to a class declared later without losing
+    /// the warning.
+    fn mark_unit_deprecated(&self, ctx: &mut CompilerContext, toplevel: TreeId) {
+        let defs = match &ctx.tree(toplevel).kind {
+            crate::tree::jc_tree::TreeKind::CompilationUnit { defs, .. } => defs.clone(),
+            _ => return,
+        };
+        for def in defs.iter() {
+            let (sym, mods) = match &ctx.tree(def).kind {
+                crate::tree::jc_tree::TreeKind::ClassDecl {
+                    sym: Some(sym),
+                    mods,
+                    ..
+                } => (*sym, *mods),
+                _ => continue,
+            };
+            if ctx.sym(sym).is_deprecated() {
+                continue;
+            }
+            let Some(mods) = mods else { continue };
+            let annotations = match &ctx.tree(mods).kind {
+                crate::tree::jc_tree::TreeKind::Modifiers { annotations, .. } => annotations.clone(),
+                _ => continue,
+            };
+            let mut deprecated = false;
+            let mut for_removal = false;
+            for annotation in annotations.iter() {
+                let (annotation_type, args) = match &ctx.tree(annotation).kind {
+                    crate::tree::jc_tree::TreeKind::Annotation {
+                        annotation_type: Some(annotation_type),
+                        args,
+                        ..
+                    } => (*annotation_type, args.clone()),
+                    _ => continue,
+                };
+                let is_deprecated = crate::tree::tree_info::name(ctx, annotation_type)
+                    .map(|name| name.to_java_string().to_string_lossy() == "Deprecated")
+                    .unwrap_or(false);
+                if !is_deprecated {
+                    continue;
+                }
+                deprecated = true;
+                for arg in args.iter() {
+                    if let crate::tree::jc_tree::TreeKind::Assign {
+                        lhs: Some(lhs),
+                        rhs: Some(rhs),
+                    } = &ctx.tree(arg).kind
+                        && crate::tree::tree_info::name(ctx, *lhs)
+                            .map(|name| {
+                                name.to_java_string().to_string_lossy() == "forRemoval"
+                            })
+                            .unwrap_or(false)
+                        && matches!(
+                            &ctx.tree(*rhs).kind,
+                            crate::tree::jc_tree::TreeKind::Literal {
+                                value: Some(crate::tree::jc_tree::LiteralValue::Boolean(true)),
+                                ..
+                            }
+                        )
+                    {
+                        for_removal = true;
+                    }
+                }
+            }
+            if deprecated {
+                ctx.sym_mut(sym).flags_field |= crate::code::flags::DEPRECATED as i64
+                    | crate::code::flags::DEPRECATED_ANNOTATION as i64;
+                if for_removal {
+                    ctx.sym_mut(sym).flags_field |= crate::code::flags::DEPRECATED_REMOVAL as i64;
+                }
+            }
+        }
     }
 
     /// Java: public void markDeprecated(Symbol sym, List<JCAnnotation>
@@ -1565,7 +1675,9 @@ impl TypeEnter {
             };
             let fullname = class_fullname(ctx, sym)
                 .unwrap_or_else(|| self.names.empty.clone());
-            if owner != unnamed_package.unwrap_or(owner)
+            // Java: owner != unnamedPackage — a class in the default package
+            // cannot clash with a named package.
+            if unnamed_package.is_some()
                 && modle
                     .map(|modle| syms.package_exists(ctx, modle, &fullname))
                     .unwrap_or(false)
@@ -1575,9 +1687,7 @@ impl TypeEnter {
                         "class",
                     )),
                     crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                        class_fullname(ctx, sym)
-                            .map(|name| name.to_java_string().to_string_lossy().to_string())
-                            .unwrap_or_default(),
+                        ctx.sym(sym).name.to_java_string().to_string_lossy().to_string(),
                     ),
                 );
                 self.log.borrow_mut().error_at(
@@ -1657,6 +1767,36 @@ impl TypeEnter {
     ///
     /// # Panics
     ///   - a record invariant is violated.
+    /// Java: Attr.isNonArgsMethodInObject — the record component name is the
+    /// same as an Object method with no arguments (hashCode, toString, ...).
+    fn record_component_name_is_illegal(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        name: &crate::util::name::Name,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> bool {
+        let object_tsym = match ctx.typ(syms.object_type).tsym {
+            Some(tsym) => tsym,
+            None => return false,
+        };
+        if ctx.sym(object_tsym).members().is_none() {
+            let _ = ctx.complete_symbol_with_attr(syms, object_tsym, Some(attr));
+        }
+        let candidate = match self.lookup_method(ctx, syms, object_tsym, name.clone(), List::nil()) {
+            Some(candidate) => candidate,
+            None => {
+                return false;
+            }
+        };
+        ctx.sym(candidate).kind == crate::code::kinds::Kind::MTH
+            && !ctx.sym(candidate).is_static(ctx)
+            && match &ctx.sym(candidate).kind_data {
+                crate::code::symbol::SymbolKind::MethodSymbol { params, .. } => params.is_empty(),
+                _ => false,
+            }
+    }
+
     fn record_phase_run(
         &self,
         ctx: &mut CompilerContext,
@@ -1671,6 +1811,9 @@ impl TypeEnter {
             return;
         }
         let fields = tree_info::record_fields(ctx, tree);
+        let mut first_component_by_name: std::collections::HashMap<String, TreeId> =
+            std::collections::HashMap::new();
+        let record_name = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
         let mut current = fields;
         while current.non_empty() {
             let field = *current.head();
@@ -1719,6 +1862,52 @@ impl TypeEnter {
                 TreeKind::VariableDecl { sym: Some(sym), .. } => *sym,
                 _ => continue,
             };
+            let field_name = ctx.sym(field_sym).name.clone();
+            let field_name_text = field_name.to_java_string().to_string_lossy().to_string();
+            if let Some(first_field) = first_component_by_name.get(&field_name_text).copied() {
+                // The generated accessor for the second component is already
+                // defined by the first one (Java reports this at the accessor's
+                // position, which is the first component's name).
+                let info = crate::resources::compiler_properties::errors::already_defined(
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(String::from(
+                        "method",
+                    )),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(format!(
+                        "{}()",
+                        field_name_text
+                    )),
+                    crate::resources::diagnostic_contract::KindNameArg::placeholder(String::from(
+                        "record",
+                    )),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        record_name.clone(),
+                    ),
+                );
+                self.log.borrow_mut().error_at(
+                    ctx.tree(first_field).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            } else {
+                let component_position = match &ctx.tree(field).kind {
+                    TreeKind::VariableDecl {
+                        vartype: Some(vartype),
+                        ..
+                    } => *vartype,
+                    _ => field,
+                };
+                first_component_by_name.insert(field_name_text, component_position);
+            }
+            if self.record_component_name_is_illegal(ctx, syms, &field_name, attr) {
+                let info = crate::resources::compiler_properties::errors::illegal_record_component_name(
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
+                        field_name.to_java_string().to_string_lossy().to_string(),
+                    ),
+                );
+                self.log.borrow_mut().error_at(
+                    ctx.tree(field).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+            }
             let annos = match &ctx.tree(field).kind {
                 TreeKind::VariableDecl { mods: Some(mods), .. } => {
                     match &ctx.tree(*mods).kind {
@@ -1951,6 +2140,11 @@ impl TypeEnter {
             _ => return,
         };
         let field_sym = field_sym.expect("record field symbol");
+        // An illegal record component name has already been diagnosed; do not
+        // synthesize an accessor that would additionally report a duplicate.
+        if self.record_component_name_is_illegal(ctx, syms, &name, attr) {
+            return;
+        }
         let owner = ctx.sym(field_sym).owner.expect("record owner");
         let impl_sym = self.lookup_method(ctx, syms, owner, name.clone(), List::nil());
         let Some(rec) = ctx.sym(owner).get_record_component(ctx, field_sym) else {

@@ -80,6 +80,10 @@ pub struct Check {
     pub compiled: RefCell<HashMap<(SymbolId, Name), SymbolId>>,
     /// Java: private Map<Pair<Name, Name>, Integer> localClassNameIndexes
     pub local_class_name_indexes: RefCell<HashMap<(Name, Name), i32>>,
+    /// Declaration positions of source classes, used to report cyclic
+    /// inheritance at the class keyword even when the cycle is detected from a
+    /// supertype expression (Java keeps the diagnostic position on the tree).
+    pub class_decl_positions: RefCell<HashMap<SymbolId, i32>>,
     /// Java: final Types types
     pub types: Rc<Types>,
     /// Java: CheckContext basicHandler = new CheckContext() {...}
@@ -102,7 +106,7 @@ pub struct Check {
     pub type_annotations: Rc<RefCell<Option<Rc<crate::code::type_annotations::TypeAnnotations>>>>,
     /// Java: final boolean warnOnAnyAccessToMembers (from -Xlint options);
     /// injected through the setter at wiring time (Adapter).
-    pub warn_on_any_access_to_members: bool,
+    pub warn_on_any_access_to_members: std::cell::Cell<bool>,
     /// Java: private MethodSymbol method (Check.java:109).
     pub method: Cell<Option<SymbolId>>,
     /// Java: final Source source (Check.java:200).
@@ -117,6 +121,10 @@ pub struct Check {
         Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
     /// Java: MandatoryWarningHandler removalHandler (Check.java:181).
     pub removal_handler: Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
+    /// Java: MandatoryWarningHandler uncheckedHandler (Check.java:184).
+    pub unchecked_handler: Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
+    /// Java: MandatoryWarningHandler sunApiHandler (Check.java:187).
+    pub sun_api_handler: Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
     /// Java: private final Preview preview (Check.java:99; installed by the
     /// wiring because the ported Preview is created after Check).
     pub preview: Rc<RefCell<Option<Rc<Preview>>>>,
@@ -235,6 +243,23 @@ impl Check {
             "removal",
             Some(LintCategory::REMOVAL),
         )));
+        let verbose_unchecked = lint.is_enabled(LintCategory::UNCHECKED);
+        let unchecked_handler = Rc::new(RefCell::new(MandatoryWarningHandler::new(
+            Rc::clone(&log),
+            None,
+            verbose_unchecked,
+            true,
+            "unchecked",
+            Some(LintCategory::UNCHECKED),
+        )));
+        let sun_api_handler = Rc::new(RefCell::new(MandatoryWarningHandler::new(
+            Rc::clone(&log),
+            None,
+            false,
+            true,
+            "sunapi",
+            None,
+        )));
         let basic_handler: Rc<dyn CheckContext> = Rc::new(BasicCheckContext {
             log: Rc::clone(&log),
             types: Rc::clone(&types),
@@ -255,6 +280,7 @@ impl Check {
             synthetic_name_char,
             compiled: RefCell::new(HashMap::new()),
             local_class_name_indexes: RefCell::new(HashMap::new()),
+            class_decl_positions: RefCell::new(HashMap::new()),
             lint: RefCell::new(lint),
             deferred_lint_handler,
             private_safe_varargs: crate::code::source::Feature::PRIVATE_SAFE_VARARGS
@@ -262,10 +288,12 @@ impl Check {
             syms,
             type_annotations: Rc::new(RefCell::new(None)),
             method: Cell::new(None),
-            warn_on_any_access_to_members: false,
+            warn_on_any_access_to_members: std::cell::Cell::new(false),
             enter: RefCell::new(None),
             deprecation_handler,
             removal_handler,
+            unchecked_handler,
+            sun_api_handler,
             preview: Rc::new(RefCell::new(None)),
             resolve: Rc::new(RefCell::new(None)),
             file_manager: Rc::new(RefCell::new(None)),
@@ -555,13 +583,26 @@ impl Check {
                 if !skip {
                     let kind = crate::code::kinds::kind_name(ctx.sym(sym), ctx);
                     let loc_kind = crate::code::kinds::kind_name(ctx.sym(location), ctx);
+                    let loc_name = ctx
+                        .sym(location)
+                        .name
+                        .to_java_string()
+                        .to_string_lossy()
+                        .to_string();
+                    let loc_name = if loc_name.is_empty()
+                        && ctx.sym(location).kind == crate::code::kinds::Kind::PCK
+                    {
+                        String::from("unnamed package")
+                    } else {
+                        loc_name
+                    };
                     self.report_error(
                         pos,
                         errors::already_defined(
                             KindNameArg::from(kind.name()),
                             SymbolArg::placeholder(ctx.sym(sym).name.to_java_string().to_string_lossy()),
                             KindNameArg::from(loc_kind.name()),
-                            SymbolArg::placeholder(ctx.sym(location).name.to_java_string().to_string_lossy()),
+                            SymbolArg::placeholder(loc_name),
                         ),
                     );
                 }
@@ -1090,7 +1131,9 @@ impl Check {
                         })
                         .unwrap_or(false);
                     if !erroneous {
-                        self.report_error(pos, errors::match_binding_exists());
+                        // The diagnostic points at the redefined binding name.
+                        let binding_pos = ctx.sym(sym).var_pos().unwrap_or(pos);
+                        self.report_error(binding_pos, errors::match_binding_exists());
                         ctx.sym_mut(sym).flags_field |= crate::code::flags::CLASH;
                     }
                     return false;
@@ -1244,6 +1287,23 @@ impl Check {
         let required_arg =
             DiagnosticArg::from_display(required.get_message(None).to_string_lossy());
         let found_arg = match &found {
+            FoundArg::Type(t) if ctx.typ(*t).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) => {
+                let mut name = crate::code::printer::visit_type(ctx, *t);
+                    // The TypeVar created by inference may not carry a tsym;
+                    // recover the declared type-variable symbol by identity.
+                    for sym in ctx.symbols_arena().iter() {
+                        if matches!(
+                            &sym.kind_data,
+                            crate::code::symbol::SymbolKind::TypeVariableSymbol
+                        ) && sym.ty == Some(*t)
+                        {
+                            name = sym.name.to_java_string().to_string_lossy();
+                            break;
+                        }
+                    }
+                let name = if name == "none" { String::new() } else { name };
+                DiagnosticArg::from_display(format!("type parameter {name}"))
+            }
             FoundArg::Type(t) => match ctx.typ(*t).tsym {
                 Some(tsym) => DiagnosticArg::from_display(
                     crate::comp::resolve::symbol_display_name(ctx, tsym),
@@ -1369,6 +1429,16 @@ impl Check {
             check_context.check_warner_shared(ctx, syms, &self.types, pos, found, req);
         let mut warn = warn_shared.borrow_mut();
         if check_context.compatible(ctx, syms, &self.types, found, req, &mut warn) {
+            if warn.has_non_silent_lint(LintCategory::UNCHECKED) {
+                let warning = crate::resources::compiler_properties::warnings::prob_found_req(
+                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                        "unchecked conversion",
+                    ),
+                    type_arg_with_where(ctx, found),
+                    type_arg_with_where(ctx, req),
+                );
+                self.warn_unchecked(pos, warning);
+            }
             if warn.has_lint(LintCategory::VARARGS) {
                 // Java: ConversionWarner.warn VARARGS branch (Check.java:3961-3967).
                 self.warn_unsafe_varargs_param(ctx, syms, pos);
@@ -1399,12 +1469,8 @@ impl Check {
         // return types.createErrorType(found);
         let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
             crate::resources::compiler_properties::fragments::inconvertible_types(
-                crate::resources::diagnostic_contract::TypeArg::placeholder(
-                    self.type_display(ctx, found),
-                ),
-                crate::resources::diagnostic_contract::TypeArg::placeholder(
-                    self.type_display(ctx, req),
-                ),
+                type_arg_with_rich_where(ctx, found),
+                type_arg_with_rich_where(ctx, req),
             ),
         ));
         check_context.report(ctx, pos, &diag);
@@ -1588,16 +1654,14 @@ impl CheckContext for BasicCheckContext {
     }
 
     fn report(&self, _ctx: &mut CompilerContext, pos: i32, details: &JCDiagnostic) {
-        // Java: log.error(pos, Errors.ProbFoundReq(details));
-        // ADR 0002 P4: the JCDiagnostic argument is mapped to its message text
-        // (DiagnosticArg has no JCDiagnostic variant); registered adapter.
-        let message = details.get_message(None);
+        // Java: log.error(pos, Errors.ProbFoundReq(details)); keep the nested
+        // diagnostic object so its TypeArg where metadata survives.
         self.log.borrow_mut().error_at(
             pos,
             crate::util::jc_diagnostic::Error::from(
                 crate::resources::compiler_properties::errors::prob_found_req(
-                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                        message.to_string(),
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                        std::rc::Rc::new(details.clone()),
                     ),
                 ),
             ),
@@ -1646,9 +1710,27 @@ impl Check {
             .typ(t)
             .has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
         {
-            // Java: diags.fragment(Fragments.TypeParameter(t)) — the P4
-            // argument mapping keeps the diagnostic text placeholder.
-            FoundArg::Fragment(DiagnosticArg::from_display("type parameter"))
+            // Java: diags.fragment(Fragments.TypeParameter(t)) — keeps the
+            // type-variable name in the nested diagnostic.
+            let mut name = crate::comp::attr::type_display_of(ctx, t);
+            if name == "none" {
+                for sym in ctx.symbols_arena().iter() {
+                    if matches!(
+                        &sym.kind_data,
+                        crate::code::symbol::SymbolKind::TypeVariableSymbol
+                    ) && sym.ty == Some(t)
+                    {
+                        name = sym.name.to_java_string().to_string_lossy();
+                        break;
+                    }
+                }
+            }
+            let mut type_arg = type_arg_with_where(ctx, t);
+            type_arg.text = name;
+            let fragment = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                crate::resources::compiler_properties::fragments::type_parameter(type_arg),
+            ));
+            FoundArg::Fragment(DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)))
         } else {
             FoundArg::Type(t)
         }
@@ -1664,7 +1746,12 @@ impl Check {
         t: TypeId,
     ) -> TypeId {
         if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::VOID) {
-            self.report_error(pos, errors::void_not_allowed_here());
+            // Arguments are attributed while overload resolution may have a
+            // speculative diagnostic handler installed; this error is not
+            // speculative (Java reports it immediately from Attr.check).
+            self.log
+                .borrow_mut()
+                .error_at_default(pos, self.error_info(errors::void_not_allowed_here()));
             self.types.create_error_type_original(ctx, Some(t), syms)
         } else {
             t
@@ -1946,10 +2033,7 @@ pub(crate) fn warning_from_info(
         .info()
         .args
         .iter()
-        .map(|arg| {
-            Rc::new(javac_strings::JavaString::from(arg.to_text().as_str()))
-                as crate::util::jc_diagnostic::DiagnosticArg
-        })
+        .map(crate::resources::diagnostic_contract::to_jc_diagnostic_arg)
         .collect();
     Warning(crate::util::jc_diagnostic::DiagnosticInfo::of(
         crate::util::jc_diagnostic::DiagnosticType::WARNING,
@@ -2148,6 +2232,8 @@ impl Check {
                     ctx.sym_mut(record_component).append_attributes(filtered);
                 }
             }
+            // Java: the record-field branch is self-contained.
+            return Ok(());
         }
         if is_record_member
             && !is_record_field
@@ -2229,14 +2315,21 @@ impl Check {
                         .unwrap_or(false)
                 {
                     let fragment = fragments::varargs_trustme_on_non_varargs_accessor(
-                        SymbolArg::placeholder(symbol_name(ctx, s)),
+                        SymbolArg::placeholder(crate::code::printer::visit_symbol(
+                            ctx,
+                            &self.names,
+                            s,
+                        )),
                     );
+                    let detail = self
+                        .diags
+                        .fragment(crate::util::jc_diagnostic::Fragment::from(fragment));
                     let info = errors::varargs_invalid_trustme_anno(
                         SymbolArg::placeholder(symbol_name(
                             ctx,
                             trust_me.expect("trust me type symbol"),
                         )),
-                        DiagnosticArg::from_display(fragment.info().key()),
+                        DiagnosticArg::JCDiagnostic(std::rc::Rc::new(detail)),
                     );
                     self.report_error(ctx.tree(a).pos, info);
                 }
@@ -2261,11 +2354,18 @@ impl Check {
             } else if !ctx.sym(s).is_interface()
                 || (ctx.sym(s).flags_field & crate::code::flags::ANNOTATION as i64) != 0
             {
+                let detail = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::not_a_functional_intf(
+                        crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                            crate::comp::resolve::symbol_display_name(ctx, s),
+                        ),
+                    ),
+                ));
                 self.report_error(
                     ctx.tree(a).pos,
                     errors::bad_functional_intf_anno1(
-                        crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                            "not a functional interface",
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                            Rc::new(detail),
                         ),
                     ),
                 );
@@ -2656,7 +2756,9 @@ impl Check {
             TreeKind::Annotation { args, .. } => args.clone(),
             _ => panic!("expected an annotation"),
         };
-        if args.length() <= 1 {
+        // @Target's single value argument (the array) is the only argument;
+        // upstream validateTargetAnnotationValue inspects that assign.
+        if args.length() != 1 {
             return true;
         }
         let first = *args.head();
@@ -2706,8 +2808,10 @@ impl Check {
     /// (Check.java:262-268)
     pub(crate) fn warn_unchecked(&self, pos: i32, warn_key: crate::resources::diagnostic_contract::WarningInfo) {
         if !self.lint.borrow().is_suppressed(LintCategory::UNCHECKED) {
-            self.log.borrow_mut().warning(
-                Some(LintCategory::UNCHECKED),
+            // Java: uncheckedHandler.report(pos, warnKey) — the handler emits
+            // point-of-use warnings with -Xlint:unchecked and a filename note
+            // otherwise.
+            self.unchecked_handler.borrow_mut().report(
                 Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
                 warning_from_info(warn_key),
             );
@@ -2759,15 +2863,15 @@ impl Check {
                 self.warn_unchecked(
                     pos,
                     warnings::prob_found_req(
-                        crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                            "unchecked.cast.to.type",
+                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                            Rc::new(self.diags.fragment(
+                                crate::util::jc_diagnostic::Fragment::from(
+                                    crate::resources::compiler_properties::fragments::unchecked_cast_to_type(),
+                                ),
+                            )),
                         ),
-                        crate::resources::diagnostic_contract::TypeArg::placeholder(
-                            self.type_display(ctx, found),
-                        ),
-                        crate::resources::diagnostic_contract::TypeArg::placeholder(
-                            self.type_display(ctx, req),
-                        ),
+                        type_arg_with_where(ctx, found),
+                        type_arg_with_where(ctx, req),
                     ),
                 );
             }
@@ -2775,12 +2879,8 @@ impl Check {
         } else {
             let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                 crate::resources::compiler_properties::fragments::inconvertible_types(
-                    crate::resources::diagnostic_contract::TypeArg::placeholder(
-                        self.type_display(ctx, found),
-                    ),
-                    crate::resources::diagnostic_contract::TypeArg::placeholder(
-                        self.type_display(ctx, req),
-                    ),
+                    type_arg_with_rich_where(ctx, found),
+                    type_arg_with_rich_where(ctx, req),
                 ),
             ));
             check_context.report(ctx, pos, &diag);
@@ -2791,10 +2891,7 @@ impl Check {
 
     /// The display text used for the ADR 0002 P4 TypeArg placeholders.
     fn type_display(&self, ctx: &CompilerContext, t: TypeId) -> String {
-        match ctx.typ(t).tsym {
-            Some(tsym) => crate::comp::resolve::symbol_display_name(ctx, tsym),
-            None => format!("{:?}", ctx.typ(t).get_tag()),
-        }
+        crate::code::printer::visit_type(ctx, t)
     }
 
     /// Java: public boolean checkValidGenericType(Type t) (Check.java:1076-1078)
@@ -3115,7 +3212,10 @@ impl Check {
         if let Some(mut args_list) = args.clone() {
             while args_list.non_empty() && Some(*formals.head()) != last {
                 let arg = *args_list.head();
-                let arg_type = ctx.tree(arg).ty.expect("attributed argument type");
+                // Erroneous arguments (for example the self-reference of a
+                // 'var' declaration) may not have been attributed with a type;
+                // javac then works with the error type instead of aborting.
+                let arg_type = ctx.tree(arg).ty.unwrap_or(syms.err_type);
                 let non_inferred_head = *non_inferred.head();
                 let mut warn = self.convert_warner(ctx.tree(arg).pos);
                 self.assert_convertible(
@@ -3126,7 +3226,23 @@ impl Check {
                     *formals.head(),
                     &mut warn,
                 );
-                let _ = non_inferred_head;
+                // Java: Check.ConversionWarner.warn reports
+                // Warnings.ProbFoundReq(Fragments.UncheckedConversion,
+                // found, expected) as soon as the UNCHECKED lint is set
+                // (Check.java:3952-3959). The ported Warner is a plain value,
+                // so the report happens right after the conversion check.
+                if warn.has_non_silent_lint(LintCategory::UNCHECKED) {
+                    self.warn_unchecked(
+                        ctx.tree(arg).pos,
+                        crate::resources::compiler_properties::warnings::prob_found_req(
+                            crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                                "unchecked conversion",
+                            ),
+                            type_arg_with_where(ctx, arg_type),
+                            type_arg_with_where(ctx, non_inferred_head),
+                        ),
+                    );
+                }
                 args_list = args_list.tail();
                 formals = formals.tail();
                 non_inferred = non_inferred.tail();
@@ -3139,6 +3255,18 @@ impl Check {
                     let arg_type = ctx.tree(arg).ty.expect("attributed argument type");
                     let mut warn = self.convert_warner(ctx.tree(arg).pos);
                     self.assert_convertible(ctx, syms, arg, arg_type, var_arg, &mut warn);
+                    if warn.has_non_silent_lint(LintCategory::UNCHECKED) {
+                        self.warn_unchecked(
+                            ctx.tree(arg).pos,
+                            crate::resources::compiler_properties::warnings::prob_found_req(
+                                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
+                                    "unchecked conversion",
+                                ),
+                                type_arg_with_where(ctx, arg_type),
+                                type_arg_with_where(ctx, var_arg),
+                            ),
+                        );
+                    }
                     args_list = args_list.tail();
                 }
             } else if ctx.sym(sym).flags_field
@@ -3199,9 +3327,7 @@ impl Check {
                     self.warn_unchecked(
                         ctx.tree(env_tree).pos,
                         crate::resources::compiler_properties::warnings::unchecked_generic_array_creation(
-                            crate::resources::diagnostic_contract::TypeArg::placeholder(
-                                crate::comp::attr::type_display_of(ctx, argtype),
-                            ),
+                            type_arg_with_where(ctx, argtype),
                         ),
                     );
                 }
@@ -3923,13 +4049,24 @@ impl Check {
             return;
         } else if unhandled_unerased.non_empty() {
             let head = *unhandled_unerased.head();
+            let mut thrown_arg = crate::comp::check::type_arg_with_rich_where(ctx, head);
+            if let Some(other_ty) = ctx.sym(other).ty {
+                let other_arg = crate::comp::check::type_arg_with_where(ctx, other_ty);
+                for tvar in other_arg.where_vars {
+                    if !thrown_arg.where_vars.iter().any(|existing| {
+                        existing.name == tvar.name && existing.owner == tvar.owner
+                    }) {
+                        thrown_arg.where_vars.push(tvar);
+                    }
+                }
+            }
             let warning = crate::resources::compiler_properties::warnings::override_unchecked_thrown(
                 DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
                     self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                         self.cannot_override(ctx, m, other),
                     )),
                 )),
-                TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, head)),
+                thrown_arg,
             );
             self.warn_unchecked(pos, warning);
             return;
@@ -3951,9 +4088,9 @@ impl Check {
                 )
             };
             let warning = crate::util::jc_diagnostic::Warning::from(warning);
-            crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
-                &mut *self.log.borrow_mut(),
-                Some(crate::code::lint::LintCategory::OVERRIDES),
+            // Java: log.warning(pos, key) — the warning has no lint category
+            // even though it is gated by -Xlint:overrides.
+            self.log.borrow_mut().warning_pos(
                 Some(std::rc::Rc::new(
                     crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
                 )),
@@ -4172,7 +4309,7 @@ impl Check {
         if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::CLASS) {
             let tsym = ctx.typ(t).tsym.expect("class type symbol");
             let flags_value = ctx.sym(tsym).flags_field;
-            if flags_value
+            return if flags_value
                 & ((crate::code::flags::ABSTRACT as i64) | (crate::code::flags::INTERFACE as i64))
                 != 0
             {
@@ -4186,7 +4323,7 @@ impl Check {
                     pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
-                return self.types.create_error_type_original(ctx, Some(t), syms);
+                self.types.create_error_type_original(ctx, Some(t), syms)
             } else if flags_value & (crate::code::flags::ENUM as i64) != 0 {
                 let info = crate::resources::compiler_properties::errors::enum_cant_be_instantiated();
                 crate::util::abstract_log::AbstractLog::error_at(
@@ -4194,9 +4331,9 @@ impl Check {
                     pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
-                return self.types.create_error_type_original(ctx, Some(t), syms);
+                self.types.create_error_type_original(ctx, Some(t), syms)
             } else {
-                return self.check_class_type_no_bounds(ctx, syms, pos, t, true);
+                self.check_class_type_no_bounds(ctx, syms, pos, t, true)
             }
         } else if ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::ARRAY) {
             let elemtype = match &ctx.typ(t).kind {
@@ -4279,13 +4416,11 @@ impl Check {
             .tsym
             .and_then(|tsym| ctx.sym(tsym).ty)
             .unwrap_or(tree_type);
+        let mut raw_arg = type_arg_with_where(ctx, declared);
+        raw_arg.text = crate::comp::attr::type_display_of(ctx, tree_type);
         let warning = crate::resources::compiler_properties::warnings::raw_class_use(
-            crate::resources::diagnostic_contract::TypeArg::placeholder(
-                crate::comp::attr::type_display_of(ctx, tree_type),
-            ),
-            crate::resources::diagnostic_contract::TypeArg::placeholder(
-                crate::comp::attr::type_display_of(ctx, declared),
-            ),
+            raw_arg,
+            type_arg_with_where(ctx, declared),
         );
         let warning = crate::util::jc_diagnostic::Warning::from(warning);
         crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
@@ -4323,7 +4458,9 @@ impl Check {
     ) {
         let serial_lint = self.lint.borrow().is_enabled(crate::code::lint::LintCategory::SERIAL);
         let serial_suppressed = self.lint.borrow().is_suppressed(crate::code::lint::LintCategory::SERIAL);
-        if !(self.warn_on_any_access_to_members || (serial_lint && !serial_suppressed && is_lambda)) {
+        if !(self.warn_on_any_access_to_members.get()
+            || (serial_lint && !serial_suppressed && is_lambda))
+        {
             return;
         }
         let Some(sym) = crate::tree::tree_info::symbol(ctx, tree) else {
@@ -4744,7 +4881,7 @@ impl Check {
                 if !equivalent {
                     let info = crate::resources::compiler_properties::errors::cant_inherit_diff_arg(
                         crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                            crate::comp::resolve::symbol_display_name(ctx, it_tsym),
+                            ctx.sym(it_tsym).name.to_java_string().to_string_lossy(),
                         ),
                         crate::util::java_string::JavaString::from(
                             type_list_display(ctx, &old_params).as_str(),
@@ -4775,15 +4912,556 @@ impl Check {
     }
 }
 
+fn localized_kind_name(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> String {
+    let key = crate::code::kinds::kind_name(ctx.sym(sym), ctx).name();
+    let messages = crate::util::javac_messages::JavacMessages::default_messages();
+    let text = messages.get_localized_string(&format!("compiler.misc.{key}"), &[]);
+    if text.starts_with("compiler message file broken") {
+        key.to_string()
+    } else {
+        text
+    }
+}
+
+/// Build a Type diagnostic argument preserving the TypeId and the declared
+/// type variables needed by RichDiagnosticFormatter's `where` clauses.
+pub(crate) fn type_arg_with_where(
+    ctx: &crate::compiler_context::CompilerContext,
+    ty: TypeId,
+) -> crate::resources::diagnostic_contract::TypeArg {
+    let text = crate::code::printer::visit_type(ctx, ty);
+    let mut vars = Vec::new();
+    let mut seen_types = std::collections::HashSet::new();
+    collect_where_vars(ctx, ty, &mut seen_types, &mut vars);
+    // Java's RichDiagnosticFormatter lists only the type variables that occur
+    // in the formatted argument; traversal can also reach declared parameters
+    // of a class whose type arguments were substituted.
+    vars.retain(|var| text.contains(&var.name));
+    crate::resources::diagnostic_contract::TypeArg::with_where(text, ty, vars)
+}
+
+/// Build a Type diagnostic argument with the captured/intersection metadata
+/// consumed by RichDiagnosticFormatter (Java: RichDiagnosticFormatter's
+/// type preprocessor). The formatter assigns CAP#N/INT#N, not this helper.
+pub(crate) fn type_arg_with_rich_where(
+    ctx: &crate::compiler_context::CompilerContext,
+    ty: TypeId,
+) -> crate::resources::diagnostic_contract::TypeArg {
+    let mut arg = type_arg_with_where(ctx, ty);
+    let mut seen_types = std::collections::HashSet::new();
+    collect_captured_and_intersections(
+        ctx,
+        ty,
+        &mut seen_types,
+        &mut arg.where_captured,
+        &mut arg.where_intersections,
+    );
+    arg
+}
+
+fn collect_captured_and_intersections(
+    ctx: &crate::compiler_context::CompilerContext,
+    ty: TypeId,
+    seen_types: &mut std::collections::HashSet<TypeId>,
+    captured: &mut Vec<crate::resources::diagnostic_contract::WhereCaptured>,
+    intersections: &mut Vec<crate::resources::diagnostic_contract::WhereIntersection>,
+) {
+    use crate::code::type_::TypeKindData;
+    if !seen_types.insert(ty) {
+        return;
+    }
+    let display = |t: TypeId| crate::code::printer::visit_type(ctx, t);
+    let is_bot = |t: TypeId| ctx.typ(t).has_tag(crate::code::type_tag::TypeTag::BOT);
+    match &ctx.typ(ty).kind {
+        TypeKindData::CapturedType {
+            bound,
+            lower,
+            wildcard,
+        } => {
+            let upper = bound.map(display).unwrap_or_else(|| String::from("Object"));
+            let lower_text = lower
+                .filter(|lower| !is_bot(*lower))
+                .map(display);
+            let wildcard_text = wildcard.map(display).unwrap_or_default();
+            captured.push(crate::resources::diagnostic_contract::WhereCaptured {
+                original: display(ty),
+                upper,
+                lower: lower_text,
+                wildcard: wildcard_text,
+            });
+            if let Some(bound) = bound {
+                collect_captured_and_intersections(
+                    ctx,
+                    *bound,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+            if let Some(lower) = lower {
+                collect_captured_and_intersections(
+                    ctx,
+                    *lower,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+            if let Some(wildcard) = wildcard {
+                collect_captured_and_intersections(
+                    ctx,
+                    *wildcard,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+        }
+        TypeKindData::ClassType {
+            outer_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::ErasedClassType {
+            outer_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::UnionClassType {
+            outer_field,
+            typarams_field,
+            ..
+        } => {
+            if let Some(outer) = outer_field {
+                collect_captured_and_intersections(
+                    ctx,
+                    *outer,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+            if let Some(typarams) = typarams_field {
+                for param in typarams.iter() {
+                    collect_captured_and_intersections(
+                        ctx,
+                        param,
+                        seen_types,
+                        captured,
+                        intersections,
+                    );
+                }
+            }
+        }
+        TypeKindData::IntersectionClassType {
+            outer_field,
+            typarams_field,
+            supertype_field,
+            interfaces_field,
+            all_interfaces,
+            ..
+        } => {
+            let interface_texts: Vec<String> = interfaces_field
+                .as_ref()
+                .map(|interfaces| interfaces.iter().map(display).collect())
+                .unwrap_or_default();
+            // Java: types.supertype(t) + types.interfaces(t); when the port's
+            // field holds the first interface as the supertype, the real
+            // supertype is Object.
+            let supertype_text = supertype_field
+                .map(display)
+                .unwrap_or_else(|| String::from("Object"));
+            let supertype_is_interface = supertype_field
+                .and_then(|supertype| ctx.typ(supertype).tsym)
+                .map(|tsym| {
+                    (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0
+                })
+                .unwrap_or(false);
+            let mut bounds = Vec::new();
+            if *all_interfaces
+                || supertype_is_interface
+                || interface_texts.iter().any(|text| text == &supertype_text)
+            {
+                bounds.push(String::from("Object"));
+                if supertype_field.is_some() {
+                    bounds.push(supertype_text);
+                }
+                bounds.extend(interface_texts);
+            } else {
+                bounds.push(supertype_text);
+                bounds.extend(interface_texts);
+            }
+            intersections.push(crate::resources::diagnostic_contract::WhereIntersection {
+                original: display(ty),
+                bounds,
+            });
+            if let Some(supertype) = supertype_field {
+                collect_captured_and_intersections(
+                    ctx,
+                    *supertype,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+            if let Some(interfaces) = interfaces_field {
+                for interface in interfaces.iter() {
+                    collect_captured_and_intersections(
+                        ctx,
+                        interface,
+                        seen_types,
+                        captured,
+                        intersections,
+                    );
+                }
+            }
+            if let Some(outer) = outer_field {
+                collect_captured_and_intersections(
+                    ctx,
+                    *outer,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+            if let Some(typarams) = typarams_field {
+                for param in typarams.iter() {
+                    collect_captured_and_intersections(
+                        ctx,
+                        param,
+                        seen_types,
+                        captured,
+                        intersections,
+                    );
+                }
+            }
+        }
+        TypeKindData::ArrayType { elemtype, .. } => {
+            if let Some(elem) = elemtype {
+                collect_captured_and_intersections(
+                    ctx,
+                    *elem,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+        }
+        TypeKindData::WildcardType { type_, .. } => {
+            if let Some(inner) = type_ {
+                collect_captured_and_intersections(
+                    ctx,
+                    *inner,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+        }
+        TypeKindData::MethodType {
+            argtypes,
+            restype,
+            thrown,
+            recvtype,
+        } => {
+            for arg in argtypes.iter() {
+                collect_captured_and_intersections(ctx, arg, seen_types, captured, intersections);
+            }
+            if let Some(restype) = restype {
+                collect_captured_and_intersections(
+                    ctx,
+                    *restype,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+            for thrown in thrown.iter() {
+                collect_captured_and_intersections(
+                    ctx,
+                    thrown,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+            if let Some(recvtype) = recvtype {
+                collect_captured_and_intersections(
+                    ctx,
+                    *recvtype,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+        }
+        TypeKindData::ForAll { tvars, qtype } => {
+            for tvar in tvars.iter() {
+                collect_captured_and_intersections(
+                    ctx,
+                    tvar,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+            if let Some(qtype) = qtype {
+                collect_captured_and_intersections(
+                    ctx,
+                    *qtype,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+        }
+        TypeKindData::TypeVar { bound, lower } => {
+            if let Some(bound) = bound {
+                // Java: RichDiagnosticFormatter visits the tvar's bound list;
+                // an intersection bound is rendered as I1,I2, so its members
+                // are visited individually rather than as an INT# type.
+                if let TypeKindData::IntersectionClassType {
+                    supertype_field,
+                    interfaces_field,
+                    ..
+                } = &ctx.typ(*bound).kind
+                {
+                    if let Some(supertype) = supertype_field {
+                        collect_captured_and_intersections(
+                            ctx,
+                            *supertype,
+                            seen_types,
+                            captured,
+                            intersections,
+                        );
+                    }
+                    if let Some(interfaces) = interfaces_field {
+                        for interface in interfaces.iter() {
+                            collect_captured_and_intersections(
+                                ctx,
+                                interface,
+                                seen_types,
+                                captured,
+                                intersections,
+                            );
+                        }
+                    }
+                } else {
+                    collect_captured_and_intersections(
+                        ctx,
+                        *bound,
+                        seen_types,
+                        captured,
+                        intersections,
+                    );
+                }
+            }
+            if let Some(lower) = lower {
+                collect_captured_and_intersections(
+                    ctx,
+                    *lower,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+        }
+        TypeKindData::ErrorType { original_type, .. } => {
+            if let Some(original) = original_type {
+                collect_captured_and_intersections(
+                    ctx,
+                    *original,
+                    seen_types,
+                    captured,
+                    intersections,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_where_vars(
+    ctx: &crate::compiler_context::CompilerContext,
+    ty: TypeId,
+    seen_types: &mut std::collections::HashSet<TypeId>,
+    out: &mut Vec<crate::resources::diagnostic_contract::WhereTypeVar>,
+) {
+    if !seen_types.insert(ty) {
+        return;
+    }
+    use crate::code::type_::TypeKindData;
+    match &ctx.typ(ty).kind {
+        TypeKindData::TypeVar { bound, .. } => {
+            if let Some(tsym) = ctx.typ(ty).tsym {
+                let name = ctx.sym(tsym).name.to_java_string().to_string_lossy();
+                let owner = ctx
+                    .sym(tsym)
+                    .owner
+                    .map(|owner| {
+                        if ctx.sym(owner).kind == crate::code::kinds::Kind::MTH {
+                            format!(
+                                "method {}",
+                                crate::code::printer::visit_symbol(
+                                    ctx,
+                                    &crate::util::names::Names::new(false),
+                                    owner,
+                                )
+                            )
+                        } else {
+                            format!(
+                                "{} {}",
+                                localized_kind_name(ctx, owner),
+                                ctx.sym(owner).name.to_java_string().to_string_lossy()
+                            )
+                        }
+                    })
+                    .unwrap_or_default();
+                if !out.iter().any(|v| v.name == name && v.owner == owner) {
+                    let bound_text = ctx
+                        .typ(ty)
+                        .get_upper_bound()
+                        .map(|bound| {
+                            if let crate::code::type_::TypeKindData::IntersectionClassType {
+                                supertype_field,
+                                interfaces_field,
+                                ..
+                            } = &ctx.typ(bound).kind
+                            {
+                                let mut parts = Vec::new();
+                                if let Some(supertype) = supertype_field {
+                                    let text = crate::code::printer::visit_type(ctx, *supertype);
+                                    if text != "Object" {
+                                        parts.push(text);
+                                    }
+                                }
+                                if let Some(interfaces) = interfaces_field {
+                                    for interface in interfaces.iter() {
+                                        parts.push(crate::code::printer::visit_type(
+                                            ctx, interface,
+                                        ));
+                                    }
+                                }
+                                parts.join(",")
+                            } else {
+                                crate::code::printer::visit_type(ctx, bound)
+                            }
+                        })
+                        .unwrap_or_else(|| String::from("Object"));
+                    out.push(crate::resources::diagnostic_contract::WhereTypeVar {
+                        name,
+                        bound: bound_text,
+                        owner,
+                        fresh: (ctx.sym(tsym).flags_field
+                            & crate::code::flags::SYNTHETIC as i64)
+                            != 0,
+                    });
+                }
+            }
+            if let Some(bound) = bound {
+                collect_where_vars(ctx, *bound, seen_types, out);
+            }
+        }
+        TypeKindData::CapturedType { bound, wildcard, .. } => {
+            if let Some(bound) = bound {
+                collect_where_vars(ctx, *bound, seen_types, out);
+            }
+            if let Some(wildcard) = wildcard {
+                collect_where_vars(ctx, *wildcard, seen_types, out);
+            }
+        }
+        TypeKindData::ClassType {
+            outer_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::ErasedClassType {
+            outer_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::UnionClassType {
+            outer_field,
+            typarams_field,
+            ..
+        }
+        | TypeKindData::IntersectionClassType {
+            outer_field,
+            typarams_field,
+            ..
+        } => {
+            if let Some(outer) = outer_field {
+                collect_where_vars(ctx, *outer, seen_types, out);
+            }
+            if let Some(typarams) = typarams_field {
+                for param in typarams.iter() {
+                    collect_where_vars(ctx, param, seen_types, out);
+                }
+            }
+        }
+        TypeKindData::WildcardType { type_, bound, .. } => {
+            if let Some(type_) = type_ {
+                collect_where_vars(ctx, *type_, seen_types, out);
+            }
+            if let Some(bound) = bound {
+                collect_where_vars(ctx, *bound, seen_types, out);
+            }
+        }
+        TypeKindData::ArrayType { elemtype, .. } => {
+            if let Some(elemtype) = elemtype {
+                collect_where_vars(ctx, *elemtype, seen_types, out);
+            }
+        }
+        TypeKindData::MethodType {
+            argtypes,
+            restype,
+            thrown,
+            recvtype,
+        } => {
+            for arg in argtypes.iter() {
+                collect_where_vars(ctx, arg, seen_types, out);
+            }
+            if let Some(restype) = restype {
+                collect_where_vars(ctx, *restype, seen_types, out);
+            }
+            for thrown in thrown.iter() {
+                collect_where_vars(ctx, thrown, seen_types, out);
+            }
+            if let Some(recvtype) = recvtype {
+                collect_where_vars(ctx, *recvtype, seen_types, out);
+            }
+        }
+        TypeKindData::ForAll { tvars, qtype } => {
+            for tvar in tvars.iter() {
+                collect_where_vars(ctx, tvar, seen_types, out);
+            }
+            if let Some(qtype) = qtype {
+                collect_where_vars(ctx, *qtype, seen_types, out);
+            }
+        }
+        TypeKindData::UninitializedType { qtype, .. } => {
+            if let Some(qtype) = qtype {
+                collect_where_vars(ctx, *qtype, seen_types, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Java: Type.toString(List<Type>) display helper for the class-bound error.
 fn type_list_display(ctx: &mut crate::compiler_context::CompilerContext, ts: &List<TypeId>) -> String {
     let mut parts: Vec<String> = Vec::new();
     let mut current = ts.clone();
     while current.non_empty() {
-        parts.push(crate::comp::attr::type_display_of(ctx, *current.head()));
+        // Java: the type arguments are rendered with qualified names inside
+        // the caller's <...> delimiters.
+        parts.push(crate::code::type_::type_to_string(ctx, *current.head()));
         current = current.tail();
     }
-    format!("<{}>", parts.join(","))
+    parts.join(",")
 }
 impl Check {
     /// Java: void checkNonCyclic(DiagnosticPosition pos, Type t) (Check.java:2374-2391).
@@ -4954,6 +5632,12 @@ impl Check {
         complete
     }
 
+    /// Record the declaration position of a source class so cycle diagnostics
+    /// can be anchored at the class keyword.
+    pub fn record_class_decl_pos(&self, sym: SymbolId, pos: i32) {
+        self.class_decl_positions.borrow_mut().insert(sym, pos);
+    }
+
     /// Java: private void noteCyclic(DiagnosticPosition pos, ClassSymbol c)
     /// (Check.java:2472-2490).
     #[allow(clippy::collapsible_if)]
@@ -4964,7 +5648,19 @@ impl Check {
         pos: Option<i32>,
         c: SymbolId,
     ) {
-        if let Some(pos) = pos {
+        // Java: noteCyclic is called with the class declaration position;
+        // prefer the declaration's own pos over the point at which the cycle
+        // was detected in the supertype chain.
+        let recorded_pos = self.class_decl_positions.borrow().get(&c).copied();
+        let class_pos = recorded_pos.or_else(|| {
+            self.enter
+                .borrow()
+                .as_ref()
+                .and_then(|enter| enter.borrow().get_env(c))
+                .and_then(|env| env.encl_class)
+                .map(|tree| ctx.tree(tree).pos)
+        });
+        if let Some(pos) = class_pos.or(pos) {
             let info = crate::resources::compiler_properties::errors::cyclic_inheritance(
                 crate::resources::diagnostic_contract::DiagnosticArg::from_display(
                     crate::comp::resolve::symbol_display_name(ctx, c),
@@ -5114,10 +5810,7 @@ impl Check {
         if (ctx.sym(sym).flags_field & crate::code::flags::ANNOTATION as i64) == 0 {
             return;
         }
-        assert!(
-            (ctx.sym(sym).flags_field & crate::code::flags::LOCKED as i64) == 0,
-            "AssertionError: annotation class already locked"
-        );
+        assert_eq!(ctx.sym(sym).flags_field & crate::code::flags::LOCKED as i64, 0, "AssertionError: annotation class already locked");
         ctx.sym_mut(sym).flags_field |= crate::code::flags::LOCKED as i64;
         let defs = match &ctx.tree(tree).kind {
             crate::tree::jc_tree::TreeKind::ClassDecl { defs, .. } => defs.clone(),
@@ -5638,10 +6331,7 @@ impl Check {
         let mut t: Option<TypeId> = None;
         if values.non_empty() {
             let head = values.head().clone();
-            assert!(
-                ctx.sym(head.fst).name == self.names.value,
-                "AssertionError: @Repeatable value method"
-            );
+            assert_eq!(ctx.sym(head.fst).name, self.names.value, "AssertionError: @Repeatable value method");
             t = match &ctx.attr(head.snd).kind {
                 crate::code::attribute::AttributeKind::Class { class_type } => *class_type,
                 _ => None,
@@ -6584,8 +7274,12 @@ impl Check {
             .collect();
         let s1_loc = ctx.sym(s1).location().unwrap_or(s1);
         let s2_loc = ctx.sym(s2).location().unwrap_or(s2);
-        let s1_arg = crate::resources::diagnostic_contract::SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, s1_loc));
-        let s2_arg = crate::resources::diagnostic_contract::SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, s2_loc));
+        let s1_arg = crate::resources::diagnostic_contract::SymbolArg::placeholder(
+            ctx.sym(s1_loc).name.to_java_string().to_string_lossy(),
+        );
+        let s2_arg = crate::resources::diagnostic_contract::SymbolArg::placeholder(
+            ctx.sym(s2_loc).name.to_java_string().to_string_lossy(),
+        );
         let info = if unrelated {
             crate::resources::compiler_properties::fragments::incompatible_unrelated_defaults(
                 crate::resources::diagnostic_contract::KindNameArg::placeholder(kind.to_string()),
@@ -6683,12 +7377,56 @@ pub struct LeaksChecker<'a> {
 }
 
 impl<'a> crate::tree::tree_scanner::TreeScannerVisitor for LeaksChecker<'a> {
-    /// Java: public void visitBlock(JCBlock tree) — no-op.
-    fn visit_block(
+    /// Java: public void visitClassDef(JCClassDecl tree) (Check.java:4142-4172).
+    fn visit_class_def(
         &mut self,
-        _ctx: &mut crate::compiler_context::CompilerContext,
-        _tree: TreeId,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
     ) {
+        if tree != self.check_tree {
+            return;
+        }
+        let (sym, mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::ClassDecl {
+                sym: Some(sym),
+                mods,
+                typarams,
+                extending,
+                implementing,
+                defs,
+                ..
+            } => (
+                *sym,
+                *mods,
+                typarams.clone(),
+                *extending,
+                implementing.clone(),
+                defs.clone(),
+            ),
+            _ => return,
+        };
+        if !is_api_symbol(ctx, sym) {
+            return;
+        }
+        let prev_lint = self.lint.clone();
+        if let Some(lint) = prev_lint.clone() {
+            let augmented = {
+                let sym_ref = ctx.sym(sym);
+                lint.augment(&*ctx, self.syms, sym_ref)
+            };
+            self.lint = Some(std::rc::Rc::new(augmented));
+        }
+        if self.exports_lint_enabled() {
+            self.scan(ctx, mods);
+            self.scan_list(ctx, &typarams);
+            let old_in_super_type = self.in_super_type;
+            self.in_super_type = true;
+            self.scan(ctx, extending);
+            self.scan_list(ctx, &implementing);
+            self.in_super_type = old_in_super_type;
+            self.scan_list(ctx, &defs);
+        }
+        self.lint = prev_lint;
     }
 
     /// Java: public void visitMethodDef(JCMethodDecl tree) (Check.java:4108-4122).
@@ -6758,93 +7496,12 @@ impl<'a> crate::tree::tree_scanner::TreeScannerVisitor for LeaksChecker<'a> {
         self.lint = prev_lint;
     }
 
-    /// Java: public void visitClassDef(JCClassDecl tree) (Check.java:4142-4172).
-    fn visit_class_def(
+    /// Java: public void visitBlock(JCBlock tree) — no-op.
+    fn visit_block(
         &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        tree: TreeId,
+        _ctx: &mut crate::compiler_context::CompilerContext,
+        _tree: TreeId,
     ) {
-        if tree != self.check_tree {
-            return;
-        }
-        let (sym, mods, typarams, extending, implementing, defs) = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::ClassDecl {
-                sym: Some(sym),
-                mods,
-                typarams,
-                extending,
-                implementing,
-                defs,
-                ..
-            } => (
-                *sym,
-                *mods,
-                typarams.clone(),
-                *extending,
-                implementing.clone(),
-                defs.clone(),
-            ),
-            _ => return,
-        };
-        if !is_api_symbol(ctx, sym) {
-            return;
-        }
-        let prev_lint = self.lint.clone();
-        if let Some(lint) = prev_lint.clone() {
-            let augmented = {
-                let sym_ref = ctx.sym(sym);
-                lint.augment(&*ctx, self.syms, sym_ref)
-            };
-            self.lint = Some(std::rc::Rc::new(augmented));
-        }
-        if self.exports_lint_enabled() {
-            self.scan(ctx, mods);
-            self.scan_list(ctx, &typarams);
-            let old_in_super_type = self.in_super_type;
-            self.in_super_type = true;
-            self.scan(ctx, extending);
-            self.scan_list(ctx, &implementing);
-            self.in_super_type = old_in_super_type;
-            self.scan_list(ctx, &defs);
-        }
-        self.lint = prev_lint;
-    }
-
-    /// Java: public void visitTypeApply(JCTypeApply tree) (Check.java:4174-4186).
-    fn visit_type_apply(
-        &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        tree: TreeId,
-    ) {
-        let (clazz, arguments) = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::TypeApply { clazz, arguments } => (*clazz, arguments.clone()),
-            _ => return,
-        };
-        self.scan(ctx, clazz);
-        let old_in_super_type = self.in_super_type;
-        self.in_super_type = false;
-        self.scan_list(ctx, &arguments);
-        self.in_super_type = old_in_super_type;
-    }
-
-    /// Java: public void visitIdent(JCIdent tree) (Check.java:4188-4194).
-    fn visit_ident(
-        &mut self,
-        ctx: &mut crate::compiler_context::CompilerContext,
-        tree: TreeId,
-    ) {
-        let Some(sym) = crate::tree::tree_info::symbol(ctx, tree) else {
-            return;
-        };
-        let is_type = ctx.sym(sym).kind == crate::code::kinds::Kind::TYP;
-        let is_typevar = ctx
-            .sym(sym)
-            .ty
-            .map(|ty| ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::TYPEVAR))
-            .unwrap_or(false);
-        if is_type && !is_typevar {
-            self.check_visible(ctx, ctx.tree(tree).pos, sym);
-        }
     }
 
     /// Java: public void visitSelect(JCFieldAccess tree) (Check.java:4196-4205).
@@ -6869,6 +7526,43 @@ impl<'a> crate::tree::tree_scanner::TreeScannerVisitor for LeaksChecker<'a> {
         } else if let Some(selected) = selected {
             self.scan(ctx, Some(selected));
         }
+    }
+
+    /// Java: public void visitIdent(JCIdent tree) (Check.java:4188-4194).
+    fn visit_ident(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) {
+        let Some(sym) = crate::tree::tree_info::symbol(ctx, tree) else {
+            return;
+        };
+        let is_type = ctx.sym(sym).kind == crate::code::kinds::Kind::TYP;
+        let is_typevar = ctx
+            .sym(sym)
+            .ty
+            .map(|ty| ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::TYPEVAR))
+            .unwrap_or(false);
+        if is_type && !is_typevar {
+            self.check_visible(ctx, ctx.tree(tree).pos, sym);
+        }
+    }
+
+    /// Java: public void visitTypeApply(JCTypeApply tree) (Check.java:4174-4186).
+    fn visit_type_apply(
+        &mut self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        tree: TreeId,
+    ) {
+        let (clazz, arguments) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::TypeApply { clazz, arguments } => (*clazz, arguments.clone()),
+            _ => return,
+        };
+        self.scan(ctx, clazz);
+        let old_in_super_type = self.in_super_type;
+        self.in_super_type = false;
+        self.scan_list(ctx, &arguments);
+        self.in_super_type = old_in_super_type;
     }
 }
 
@@ -7304,8 +7998,8 @@ impl Check {
                     .fragment(self.source.name()),
             );
             let info = crate::resources::compiler_properties::errors::cant_apply_diamond1(
-                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                    crate::comp::attr::type_display_of(ctx, t),
+                crate::resources::diagnostic_contract::DiagnosticArg::Type(
+                    type_arg_with_where(ctx, t),
                 ),
                 crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
                     std::rc::Rc::new(feature_fragment),
@@ -7330,8 +8024,8 @@ impl Check {
                 ),
             ));
             let info = crate::resources::compiler_properties::errors::cant_apply_diamond1(
-                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                    crate::comp::attr::type_display_of(ctx, t),
+                crate::resources::diagnostic_contract::DiagnosticArg::Type(
+                    type_arg_with_where(ctx, t),
                 ),
                 crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
             );
@@ -7357,8 +8051,8 @@ impl Check {
                     ),
                 ));
                 let info = crate::resources::compiler_properties::errors::cant_apply_diamond1(
-                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                        crate::comp::attr::type_display_of(ctx, t),
+                    crate::resources::diagnostic_contract::DiagnosticArg::Type(
+                        type_arg_with_where(ctx, t),
                     ),
                     crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
                 );
@@ -8256,6 +8950,7 @@ impl Check {
         let trust_me_tsym = syms.trust_me_type;
         let trust_me_tsym = ctx.typ(trust_me_tsym).tsym.expect("SafeVarargs type");
         let has_trust_me = ctx.sym(m).attribute(ctx, trust_me_tsym).is_some();
+        let method_display = crate::code::printer::visit_symbol(ctx, &self.names, m);
         let is_var_args = (ctx.sym(m).flags_field & flags::VARARGS) != 0;
         let mut vararg_elem_type: Option<TypeId> = None;
         if is_var_args
@@ -8272,18 +8967,21 @@ impl Check {
             if let Some(elem) = vararg_elem_type {
                 let fragment = if private_safe {
                     crate::resources::compiler_properties::fragments::varargs_trustme_on_virtual_varargs(
-                        crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_name(ctx, m)),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(method_display.clone()),
                     )
                 } else {
                     crate::resources::compiler_properties::fragments::varargs_trustme_on_virtual_varargs_final_only(
-                        crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_name(ctx, m)),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(method_display.clone()),
                     )
                 };
                 let _ = elem;
+                let detail = self
+                    .diags
+                    .fragment(crate::util::jc_diagnostic::Fragment::from(fragment));
                 let info = crate::resources::compiler_properties::errors::varargs_invalid_trustme_anno(
                     crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_name(ctx, trust_me_tsym)),
-                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                        fragment.info().key(),
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                        std::rc::Rc::new(detail),
                     ),
                 );
                 self.log
@@ -8292,12 +8990,15 @@ impl Check {
             } else {
                 let fragment =
                     crate::resources::compiler_properties::fragments::varargs_trustme_on_non_varargs_meth(
-                        crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_name(ctx, m)),
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(method_display.clone()),
                     );
+                let detail = self
+                    .diags
+                    .fragment(crate::util::jc_diagnostic::Fragment::from(fragment));
                 let info = crate::resources::compiler_properties::errors::varargs_invalid_trustme_anno(
                     crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_name(ctx, trust_me_tsym)),
-                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                        fragment.info().key(),
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                        std::rc::Rc::new(detail),
                     ),
                 );
                 self.log
@@ -8314,10 +9015,13 @@ impl Check {
                         type_name(ctx, elem),
                     ),
                 );
+            let detail = self
+                .diags
+                .fragment(crate::util::jc_diagnostic::Fragment::from(fragment));
             let warning = crate::resources::compiler_properties::warnings::varargs_redundant_trustme_anno(
                 crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_name(ctx, trust_me_tsym)),
-                crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                    fragment.info().key(),
+                crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                    std::rc::Rc::new(detail),
                 ),
             );
             self.warn_unsafe_vararg(ctx.tree(tree).pos, warning);
@@ -8329,9 +9033,7 @@ impl Check {
             let first = *params.head();
             let warning =
                 crate::resources::compiler_properties::warnings::unchecked_varargs_non_reifiable_type(
-                    crate::resources::diagnostic_contract::TypeArg::placeholder(type_name(
-                        ctx, elem,
-                    )),
+                    type_arg_with_where(ctx, elem),
                 );
             self.warn_unchecked(ctx.tree(first).pos, warning);
         }
@@ -8392,9 +9094,13 @@ impl Check {
 
     fn warn_unsafe_vararg(&self, pos: i32, warning: crate::resources::diagnostic_contract::WarningInfo) {
         if self.lint.borrow().is_enabled(crate::code::lint::LintCategory::VARARGS) {
-            self.log
-                .borrow_mut()
-                .warning_at(pos, crate::util::jc_diagnostic::Warning::from(warning));
+            self.log.borrow_mut().warning(
+                Some(crate::code::lint::LintCategory::VARARGS),
+                Some(std::rc::Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+                )),
+                crate::util::jc_diagnostic::Warning::from(warning),
+            );
         }
     }
 }
@@ -8540,12 +9246,22 @@ impl Check {
                             m1_name,
                             m1_params,
                             crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                symbol_display_name(ctx, m1),
+                                ctx.sym(m1)
+                                    .location()
+                                    .map(|owner| {
+                                        ctx.sym(owner).name.to_java_string().to_string_lossy()
+                                    })
+                                    .unwrap_or_default(),
                             ),
                             m2_name,
                             m2_params,
                             crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                symbol_display_name(ctx, m2),
+                                ctx.sym(m2)
+                                    .location()
+                                    .map(|owner| {
+                                        ctx.sym(owner).name.to_java_string().to_string_lossy()
+                                    })
+                                    .unwrap_or_default(),
                             ),
                         )
                     } else {
@@ -8557,19 +9273,32 @@ impl Check {
                         } else {
                             javac_strings::JavaString::from("class")
                         };
+                        let owner_name = |m: SymbolId| {
+                            ctx.sym(m)
+                                .location()
+                                .map(|owner| {
+                                    // Interfaces print with their simple name;
+                                    // classes use the (nested) qualified name.
+                                    if (ctx.sym(owner).flags_field
+                                        & crate::code::flags::INTERFACE as i64)
+                                        != 0
+                                    {
+                                        ctx.sym(owner).name.to_java_string().to_string_lossy()
+                                    } else {
+                                        crate::comp::resolve::symbol_display_name(ctx, owner)
+                                    }
+                                })
+                                .unwrap_or_default()
+                        };
                         crate::resources::compiler_properties::errors::name_clash_same_erasure_no_override1(
                             kind,
                             site_name.clone(),
                             m1_name,
                             m1_params,
-                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                symbol_display_name(ctx, m1),
-                            ),
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(owner_name(m1)),
                             m2_name,
                             m2_params,
-                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                symbol_display_name(ctx, m2),
-                            ),
+                            crate::resources::diagnostic_contract::SymbolArg::placeholder(owner_name(m2)),
                         )
                     };
                     self.log
@@ -8709,19 +9438,23 @@ impl Check {
                     .has_same_args(ctx, syms, candidate_erased, sym_erased)
             };
             if same_args {
+                let m1_display = symbol_display_name(ctx, sym);
+                let m2_display = symbol_display_name(ctx, candidate);
+                let owner1 = ctx
+                    .sym(sym)
+                    .location()
+                    .map(|owner| ctx.sym(owner).name.to_java_string().to_string_lossy())
+                    .unwrap_or_default();
+                let owner2 = ctx
+                    .sym(candidate)
+                    .location()
+                    .map(|owner| ctx.sym(owner).name.to_java_string().to_string_lossy())
+                    .unwrap_or_default();
                 let info = crate::resources::compiler_properties::errors::name_clash_same_erasure_no_hide(
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                        symbol_display_name(ctx, sym),
-                    ),
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                        symbol_display_name(ctx, sym),
-                    ),
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                        symbol_display_name(ctx, candidate),
-                    ),
-                    crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                        symbol_display_name(ctx, candidate),
-                    ),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(m1_display),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(owner1),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(m2_display),
+                    crate::resources::diagnostic_contract::SymbolArg::placeholder(owner2),
                 );
                 self.log
                     .borrow_mut()
@@ -8894,19 +9627,23 @@ impl Check {
         if potentially_ambiguous {
             ctx.sym_mut(msym1).flags_field |= flags::POTENTIALLY_AMBIGUOUS;
             ctx.sym_mut(msym2).flags_field |= flags::POTENTIALLY_AMBIGUOUS;
+            let m1_display = symbol_display_name(ctx, msym1);
+            let m2_display = symbol_display_name(ctx, msym2);
+            let owner1 = ctx
+                .sym(msym1)
+                .location()
+                .map(|owner| ctx.sym(owner).name.to_java_string().to_string_lossy())
+                .unwrap_or_default();
+            let owner2 = ctx
+                .sym(msym2)
+                .location()
+                .map(|owner| ctx.sym(owner).name.to_java_string().to_string_lossy())
+                .unwrap_or_default();
             let warning = crate::resources::compiler_properties::warnings::potentially_ambiguous_overload(
-                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_display_name(
-                    ctx, msym1,
-                )),
-                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_display_name(
-                    ctx, msym1,
-                )),
-                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_display_name(
-                    ctx, msym2,
-                )),
-                crate::resources::diagnostic_contract::SymbolArg::placeholder(symbol_display_name(
-                    ctx, msym2,
-                )),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(m1_display),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(owner1),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(m2_display),
+                crate::resources::diagnostic_contract::SymbolArg::placeholder(owner2),
             );
             self.log.borrow_mut().warning(
                 Some(crate::code::lint::LintCategory::OVERLOADS),
@@ -8955,6 +9692,18 @@ impl Check {
 
 /// Return a printable name for a symbol (diagnostic argument adapter).
 fn symbol_display_name(ctx: &mut CompilerContext, sym: SymbolId) -> String {
+    // Java: Printer.visitSymbol — method symbols carry their type variables and
+    // parameter list (`m()`, `<T>m(T)`); other symbols use the simple name.
+    if matches!(
+        ctx.sym(sym).kind_data,
+        crate::code::symbol::SymbolKind::MethodSymbol { .. }
+    ) {
+        return crate::code::printer::visit_symbol(
+            ctx,
+            &crate::util::names::Names::new(false),
+            sym,
+        );
+    }
     ctx.sym(sym)
         .name
         .to_java_string()
@@ -9326,49 +10075,6 @@ impl CycleChecker<'_> {
 }
 
 impl crate::tree::tree_scanner::TreeScannerVisitor for CycleChecker<'_> {
-    /// Java: public void visitSelect(JCFieldAccess tree)
-    fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (selected, sym) = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::FieldAccess { selected, sym, .. } => {
-                (*selected, *sym)
-            }
-            _ => (None, None),
-        };
-        if let Some(selected) = selected {
-            crate::tree::jc_tree::accept(ctx, selected, self);
-        }
-        let pos = ctx.tree(tree).pos;
-        self.check_symbol(ctx, pos, sym);
-    }
-
-    /// Java: public void visitIdent(JCIdent tree)
-    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let sym = match &ctx.tree(tree).kind {
-            crate::tree::jc_tree::TreeKind::Ident { sym, .. } => *sym,
-            _ => None,
-        };
-        let pos = ctx.tree(tree).pos;
-        self.check_symbol(ctx, pos, sym);
-    }
-
-    /// Java: public void visitTypeApply(JCTypeApply tree)
-    fn visit_type_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        if let crate::tree::jc_tree::TreeKind::TypeApply { clazz, .. } = &ctx.tree(tree).kind
-            && let Some(clazz) = *clazz
-        {
-            crate::tree::jc_tree::accept(ctx, clazz, self);
-        }
-    }
-
-    /// Java: public void visitTypeArray(JCArrayTypeTree tree)
-    fn visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        if let crate::tree::jc_tree::TreeKind::ArrayTypeTree { elemtype } = &ctx.tree(tree).kind
-            && let Some(elemtype) = *elemtype
-        {
-            crate::tree::jc_tree::accept(ctx, elemtype, self);
-        }
-    }
-
     /// Java: public void visitClassDef(JCClassDecl tree)
     fn visit_class_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
         let (extending, implementing, sym) = match &ctx.tree(tree).kind {
@@ -9395,6 +10101,49 @@ impl crate::tree::tree_scanner::TreeScannerVisitor for CycleChecker<'_> {
         };
         let pos = ctx.tree(tree).pos;
         self.check_class(ctx, Some(pos), sym, supertypes);
+    }
+
+    /// Java: public void visitSelect(JCFieldAccess tree)
+    fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let (selected, sym) = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::FieldAccess { selected, sym, .. } => {
+                (*selected, *sym)
+            }
+            _ => (None, None),
+        };
+        if let Some(selected) = selected {
+            crate::tree::jc_tree::accept(ctx, selected, self);
+        }
+        let pos = ctx.tree(tree).pos;
+        self.check_symbol(ctx, pos, sym);
+    }
+
+    /// Java: public void visitIdent(JCIdent tree)
+    fn visit_ident(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        let sym = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::Ident { sym, .. } => *sym,
+            _ => None,
+        };
+        let pos = ctx.tree(tree).pos;
+        self.check_symbol(ctx, pos, sym);
+    }
+
+    /// Java: public void visitTypeArray(JCArrayTypeTree tree)
+    fn visit_type_array(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        if let crate::tree::jc_tree::TreeKind::ArrayTypeTree { elemtype } = &ctx.tree(tree).kind
+            && let Some(elemtype) = *elemtype
+        {
+            crate::tree::jc_tree::accept(ctx, elemtype, self);
+        }
+    }
+
+    /// Java: public void visitTypeApply(JCTypeApply tree)
+    fn visit_type_apply(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
+        if let crate::tree::jc_tree::TreeKind::TypeApply { clazz, .. } = &ctx.tree(tree).kind
+            && let Some(clazz) = *clazz
+        {
+            crate::tree::jc_tree::accept(ctx, clazz, self);
+        }
     }
 }
 
@@ -9658,7 +10407,7 @@ impl Check {
 
 /// Java: String.valueOf(tree.clazz.type) for the RedundantCast warning argument.
 fn type_display_str(ctx: &mut CompilerContext, ty: TypeId) -> String {
-    crate::code::type_::type_to_string(ctx, ty)
+    crate::code::printer::visit_type(ctx, ty)
 }
 
 /// Java: private boolean is292targetTypeCast(JCTypeCast tree) (Check.java:660-671).
@@ -9697,10 +10446,6 @@ mod tests {
     }
 
     impl CheckContext for FreeTypeCheckContext {
-        fn inference_context(&self) -> &Rc<InferenceContext> {
-            &self.inference
-        }
-
         fn compatible(
             &self,
             _ctx: &mut CompilerContext,
@@ -9733,6 +10478,10 @@ mod tests {
             _req: TypeId,
         ) -> Warner {
             Warner::new(None)
+        }
+
+        fn inference_context(&self) -> &Rc<InferenceContext> {
+            &self.inference
         }
 
         fn deferred_attr_context(&self) -> &Rc<DeferredAttrContext> {
@@ -9970,8 +10719,9 @@ impl Check {
         let loc_name = ctx
             .sym(sym)
             .location()
-            .map(|loc| ctx.sym(loc).name.to_java_string().to_string_lossy())
-            .unwrap_or_default();
+            .map(|loc| ctx.sym(loc).name.to_java_string().to_string_lossy().to_string())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| String::from("unnamed package"));
         let lint = Rc::clone(&self.lint.borrow());
         let deprecation_handler = Rc::clone(&self.deprecation_handler);
         let removal_handler = Rc::clone(&self.removal_handler);
@@ -10085,9 +10835,20 @@ impl Check {
     /// # Panics
     ///   - none.
     pub fn check_sun_api(&self, ctx: &CompilerContext, pos: i32, s: SymbolId) {
-        if (ctx.sym(s).flags_field & crate::code::flags::PROPRIETARY) != 0 {
+        let qualified = ctx
+            .sym(s)
+            .get_qualified_name()
+            .to_java_string()
+            .to_string_lossy();
+        // registered deviation: the ported class reader does not carry the
+        // ct.sym proprietary attribute, so the sun.misc proprietary API
+        // family is recognized by package prefix here. This compensation can
+        // be removed once ct.sym PROPRIETARY flags are preserved.
+        if (ctx.sym(s).flags_field & crate::code::flags::PROPRIETARY) != 0
+            || qualified.starts_with("sun.misc.")
+        {
             let warning = warning_from_info(warnings::sun_proprietary(SymbolArg::placeholder(
-                crate::comp::resolve::symbol_display_name(ctx, s),
+                ctx.sym(s).name.to_java_string().to_string_lossy(),
             )));
             let log = Rc::clone(&self.log);
             let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
@@ -10158,9 +10919,25 @@ impl Check {
         env: &Rc<Env<AttrContext>>,
         c: SymbolId,
     ) {
-        if !self.lint.borrow().is_enabled(LintCategory::AUXILIARYCLASS)
-            || (ctx.sym(c).flags_field & crate::code::flags::AUXILIARY) == 0
-        {
+        if !self.lint.borrow().is_enabled(LintCategory::AUXILIARYCLASS) {
+            return;
+        }
+        let c_sourcefile = match &ctx.sym(c).kind_data {
+            SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile.clone(),
+            _ => None,
+        };
+        let Some(c_sourcefile) = c_sourcefile else {
+            return;
+        };
+        // The AUXILIARY flag is set by TypeEnter's HeaderPhase, which can run
+        // after an access in a different source file; derive the same fact
+        // from the class name and its source file name.
+        let is_auxiliary = (ctx.sym(c).flags_field & crate::code::flags::AUXILIARY) != 0
+            || !c_sourcefile.is_name_compatible(
+                &ctx.sym(c).name.to_java_string(),
+                javac_tools::tools::java_file_object::Kind::SOURCE,
+            );
+        if !is_auxiliary {
             return;
         }
         let resolve = Rc::clone(
@@ -10175,13 +10952,6 @@ impl Check {
         {
             return;
         }
-        let c_sourcefile = match &ctx.sym(c).kind_data {
-            SymbolKind::ClassSymbol { sourcefile, .. } => sourcefile.clone(),
-            _ => None,
-        };
-        let Some(c_sourcefile) = c_sourcefile else {
-            return;
-        };
         let env_sourcefile = env.toplevel.and_then(|toplevel| match &ctx.tree(toplevel).kind {
             TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
             _ => None,
@@ -10256,11 +11026,44 @@ impl Check {
     /// final Symbol other, final Symbol s) (Check.java:3553-3564).
     pub fn check_deprecated(
         &self,
-        ctx: &CompilerContext,
+        ctx: &mut CompilerContext,
         pos: i32,
         other: SymbolId,
         s: SymbolId,
     ) {
+        // A source class that is completed later than the referring class has
+        // not run markDeprecated yet; recover the annotation lazily from its
+        // declaration so deprecation is still reported in source order.
+        if ctx.sym(s).kind == Kind::TYP && !ctx.sym(s).is_deprecated() {
+            let tree = self
+                .enter
+                .borrow()
+                .as_ref()
+                .and_then(|enter| enter.borrow().get_env(s))
+                .and_then(|env| env.encl_class);
+            if let Some(tree) = tree
+                && let crate::tree::jc_tree::TreeKind::ClassDecl { mods, .. } = &ctx.tree(tree).kind
+                && let Some(mods) = *mods
+                && let crate::tree::jc_tree::TreeKind::Modifiers { annotations, .. } =
+                    &ctx.tree(mods).kind
+            {
+                let deprecated = annotations.iter().any(|annotation| {
+                    match &ctx.tree(annotation).kind {
+                        crate::tree::jc_tree::TreeKind::Annotation {
+                            annotation_type: Some(annotation_type),
+                            ..
+                        } => crate::tree::tree_info::name(ctx, *annotation_type)
+                            .map(|name| name.to_java_string().to_string_lossy() == "Deprecated")
+                            .unwrap_or(false),
+                        _ => false,
+                    }
+                });
+                if deprecated {
+                    ctx.sym_mut(s).flags_field |= crate::code::flags::DEPRECATED as i64
+                        | crate::code::flags::DEPRECATED_ANNOTATION as i64;
+                }
+            }
+        }
         let s_outermost = outermost_class(ctx, s);
         let other_outermost = outermost_class(ctx, other);
         if (ctx.sym(s).is_deprecated_for_removal()
@@ -10843,7 +11646,7 @@ mod diagnostics_tests {
             message.lines().next().unwrap_or_default(),
             "erroneous resolution for method f in type T"
         );
-        assert!(message.contains("with actuals: java.lang.Object"));
+        assert!(message.contains("with actuals: Object"));
         assert!(!note.get_subdiagnostics().is_empty());
     }
 
@@ -10941,13 +11744,13 @@ mod diagnostics_tests {
         // Matches the JDK 17 diagnostic text for this source.
         assert_eq!(
             message.lines().next().unwrap_or_default(),
-            "no suitable method found for f(java.lang.Object)"
+            "no suitable method found for f(Object)"
         );
         assert!(message.contains("is not applicable"));
         // Candidate details come from the non-verbose inapplicable-method
-        // path; the JDK 17 output for this source names the signatures.
+        // path; JDK 17's rich formatter uses the unqualified parameter names.
         assert!(message.contains("method T.f(T) is not applicable"));
-        assert!(message.contains("method T.f(java.lang.Runnable) is not applicable"));
+        assert!(message.contains("method T.f(Runnable) is not applicable"));
         let mut sub_count = 0;
         let mut subs = error.get_subdiagnostics();
         while subs.non_empty() {
@@ -11018,19 +11821,19 @@ mod diagnostics_tests {
         let joined = texts.join("\n");
         for expected in [
             "with actuals: int",
-            "with actuals: java.util.List<java.lang.String>",
-            "with actuals: java.lang.String,java.lang.String",
-            "with actuals: java.util.Map<java.lang.String,java.lang.String>",
-            "with actuals: java.lang.String[]",
-            "f(java.lang.String...)",
+            "with actuals: List<String>",
+            "with actuals: String,String",
+            "with actuals: Map<String,String>",
+            "with actuals: String[]",
+            "f(String...)",
             "f(T<G>.NonStatic)",
-            "f(T.In)",
+            "f(In)",
             "f(G)",
-            "f(java.util.Map<java.lang.String,java.lang.String>)",
-            "f(java.lang.Object,java.lang.String)",
-            "f(java.util.List<java.lang.String>)",
+            "f(Map<String,String>)",
+            "f(Object,String)",
+            "f(List<String>)",
             "f(int)",
-            "wild(java.util.List<? extends java.lang.Number>)",
+            "wild(List<? extends Number>)",
         ] {
             assert!(joined.contains(expected), "missing {expected:?} in diagnostics:\n{joined}");
         }
@@ -11041,15 +11844,15 @@ mod diagnostics_tests {
         let message = error.get_message(None).to_string_lossy();
         assert_eq!(
             message.lines().next().unwrap_or_default(),
-            "no suitable method found for f(java.lang.Object)"
+            "no suitable method found for f(Object)"
         );
         for expected in [
-            "method T.f(java.lang.String...) is not applicable",
+            "method T.f(String...) is not applicable",
             "method T.f(T<G>.NonStatic) is not applicable",
-            "method T.f(T.In) is not applicable",
+            "method T.f(In) is not applicable",
             "method T.f(G) is not applicable",
-            "method T.f(java.util.Map<java.lang.String,java.lang.String>) is not applicable",
-            "method T.f(java.util.List<java.lang.String>) is not applicable",
+            "method T.f(Map<String,String>) is not applicable",
+            "method T.f(List<String>) is not applicable",
             "method T.f(int) is not applicable",
         ] {
             assert!(message.contains(expected), "missing {expected:?} in error:\n{message}");

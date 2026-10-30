@@ -1,0 +1,1 @@
+class A { private int x; } class Main { int y = new A().x; }

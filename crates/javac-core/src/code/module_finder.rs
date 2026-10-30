@@ -223,10 +223,13 @@ impl ModuleFinder {
         }
         let kind = ctx.sym(msym).kind;
         if kind != Kind::ERR {
-            let module_info = module_info_symbol(ctx, msym);
-            let (sourcefile, classfile) = module_info_files(ctx, module_info);
-            if sourcefile.is_none() && classfile.is_none() {
-                self.find_module_info(ctx, msym);
+            // The unnamed module of a -source 8 compilation has no module-info
+            // class symbol; there is nothing to look up in that case.
+            if let Some(module_info) = module_info_symbol_opt(ctx, msym) {
+                let (sourcefile, classfile) = module_info_files(ctx, module_info);
+                if sourcefile.is_none() && classfile.is_none() {
+                    self.find_module_info(ctx, msym);
+                }
             }
         }
         msym
@@ -326,7 +329,7 @@ impl ModuleFinder {
         fo: JavaFileObjectRef,
     ) -> Result<crate::ids::SymbolId, CompletionFailure> {
         let name = match fo.get_kind() {
-            FileKind::SOURCE => match self.read_module_name(&fo) {
+            FileKind::SOURCE => match Self::read_source_module_name(&fo) {
                 Some(name) if !name.to_string_lossy().is_empty() => {
                     self.names.from_string(&name)
                 }
@@ -400,7 +403,10 @@ impl ModuleFinder {
                 }
             }
             ctx.sym_mut(module_info).completer = None;
-            self.class_finder.fill_in(ctx, syms, module_info)?;
+            // A source module-info found on the source path has no Enter tree
+            // yet; its directives are read when the module is completed. Do
+            // not force ClassFinder.fillIn here, which would require a source
+            // completer that Enter has not installed.
         }
         Ok(msym)
     }
@@ -417,6 +423,50 @@ impl ModuleFinder {
             .expect("module name reader")
             .read_module_name_from_java_file_object(fo.as_ref())
             .ok()
+    }
+
+    /// Java: JavaCompiler.readModuleName(JavaFileObject fo) -- the SOURCE
+    /// branch of ModuleFinder.readModule parses the module declaration from the
+    /// source text (ModuleFinder.ModuleNameFromSourceReader).
+    fn read_source_module_name(fo: &JavaFileObjectRef) -> Option<JavaString> {
+        let text = fo.get_char_content(false).ok()??.to_string_lossy();
+        let chars: Vec<char> = text.chars().collect();
+        let mut i = 0usize;
+        while i < chars.len() {
+            skip_source_space_and_comments(&chars, &mut i);
+            if i >= chars.len() {
+                return None;
+            }
+            let (ident, next) = read_source_identifier(&chars, i);
+            if ident.is_empty() {
+                i += 1;
+                continue;
+            }
+            i = next;
+            if ident != "module" {
+                continue;
+            }
+            skip_source_space_and_comments(&chars, &mut i);
+            let mut name = String::new();
+            loop {
+                let (part, next) = read_source_identifier(&chars, i);
+                if part.is_empty() {
+                    return None;
+                }
+                name.push_str(&part);
+                i = next;
+                skip_source_space_and_comments(&chars, &mut i);
+                if i < chars.len() && chars[i] == '.' {
+                    name.push('.');
+                    i += 1;
+                    skip_source_space_and_comments(&chars, &mut i);
+                } else {
+                    break;
+                }
+            }
+            return Some(JavaString::from(name.as_str()));
+        }
+        None
     }
 
     /// Java: private List<ModuleSymbol> scanModulePath(ModuleSymbol toFind)
@@ -780,12 +830,21 @@ fn set_patch_output_location(
     }
 }
 
-/// The module-info class symbol of a module (Java: msym.module_info).
-fn module_info_symbol(ctx: &CompilerContext, msym: crate::ids::SymbolId) -> crate::ids::SymbolId {
+/// The module-info class symbol of a module, if Java initialized the slot
+/// (Java: msym.module_info).
+fn module_info_symbol_opt(
+    ctx: &CompilerContext,
+    msym: crate::ids::SymbolId,
+) -> Option<crate::ids::SymbolId> {
     match &ctx.sym(msym).kind_data {
-        SymbolKind::ModuleSymbol { module_info, .. } => module_info.expect("module-info symbol"),
+        SymbolKind::ModuleSymbol { module_info, .. } => *module_info,
         _ => panic!("module expected"),
     }
+}
+
+/// The module-info class symbol of a module (Java: msym.module_info).
+fn module_info_symbol(ctx: &CompilerContext, msym: crate::ids::SymbolId) -> crate::ids::SymbolId {
+    module_info_symbol_opt(ctx, msym).expect("module-info symbol")
 }
 
 /// The source and class files of the module-info class (Java field reads).
@@ -812,6 +871,49 @@ fn set_module_info_classfile(
     }
 }
 
+
+/// Skip whitespace and Java comments while scanning a module declaration.
+fn skip_source_space_and_comments(chars: &[char], i: &mut usize) {
+    loop {
+        while *i < chars.len() && chars[*i].is_whitespace() {
+            *i += 1;
+        }
+        if *i + 1 < chars.len() && chars[*i] == '/' && chars[*i + 1] == '/' {
+            *i += 2;
+            while *i < chars.len() && chars[*i] != '\n' {
+                *i += 1;
+            }
+            continue;
+        }
+        if *i + 1 < chars.len() && chars[*i] == '/' && chars[*i + 1] == '*' {
+            *i += 2;
+            while *i + 1 < chars.len() && !(chars[*i] == '*' && chars[*i + 1] == '/') {
+                *i += 1;
+            }
+            if *i + 1 < chars.len() {
+                *i += 2;
+            }
+            continue;
+        }
+        break;
+    }
+}
+
+/// Read one Java identifier starting at i, returning it and the new index.
+fn read_source_identifier(chars: &[char], i: usize) -> (String, usize) {
+    let mut j = i;
+    let mut value = String::new();
+    while j < chars.len() {
+        let c = chars[j];
+        if c.is_alphanumeric() || c == '_' || c == '$' {
+            value.push(c);
+            j += 1;
+        } else {
+            break;
+        }
+    }
+    (value, j)
+}
 
 #[cfg(test)]
 mod tests {

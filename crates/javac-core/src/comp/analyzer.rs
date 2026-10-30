@@ -467,12 +467,13 @@ impl Analyzer {
             let new_return_result = match return_result {
                 None => None,
                 Some(result_info) => {
-                    let attr_rc = self.attr_service();
-                    let attr = attr_rc.borrow();
+                    // The caller may already hold the Attr RefCell mutably;
+                    // reuse the current ResultInfo's handler instead of
+                    // borrowing the Attr service (Context.get(Attr.class)).
                     Some(crate::comp::attr::ResultInfo::new(
                         result_info.pkind,
                         result_info.pt,
-                        Rc::clone(&attr.basic_handler),
+                        Rc::clone(&result_info.check_context),
                     ))
                 }
             };
@@ -507,6 +508,29 @@ impl Analyzer {
     ) {
         if let Some(env) = env {
             self.analyze(ctx, syms, tree, env);
+        }
+    }
+
+    /// analysis entry for Attr.attribStat, where the caller already holds the
+    /// Attr object mutably (Java passes `this` directly).
+    pub fn analyze_if_needed_with_attr(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &crate::code::symtab::Symtab,
+        tree: TreeId,
+        env: Option<&Rc<Env<AttrContext>>>,
+        attr: &mut crate::comp::attr::Attr,
+    ) {
+        let Some(env) = env else { return; };
+        let rewritings = {
+            let mut scanner = StatementScanner::new_with_attr(self, ctx, syms, tree, env, attr);
+            scanner.scan_statement(ctx);
+            std::mem::take(&mut scanner.rewritings)
+        };
+        if !rewritings.is_empty() {
+            for rewriting in rewritings {
+                self.queue(ctx, rewriting);
+            }
         }
     }
 
@@ -713,8 +737,14 @@ impl Analyzer {
     /// Java: JCVariableDecl rewriteVarType(JCVariableDecl oldTree)
     fn rewrite_var_type(&mut self, ctx: &mut CompilerContext, old_tree: TreeId) -> TreeId {
         let new_tree = self.copier.copy(ctx, Some(old_tree)).expect("copied tree");
-        if let TreeKind::VariableDecl { vartype, .. } = &mut ctx.tree_mut(new_tree).kind {
+        if let TreeKind::VariableDecl { vartype, declared_using_var, .. } =
+            &mut ctx.tree_mut(new_tree).kind
+        {
+            // Java: newTree.vartype = null makes the declaration implicitly
+            // typed. The port also carries the parser's declared-using-var
+            // flag, so set it for the inferred type to be computed.
             *vartype = None;
+            *declared_using_var = true;
         }
         new_tree
     }
@@ -749,7 +779,8 @@ impl Analyzer {
 
     /// Java: StatementAnalyzer.isEnabled/analyzer.match dispatch.
     fn matches(&mut self, ctx: &mut CompilerContext,
-        syms: &crate::code::symtab::Symtab, kind: AnalyzerKind, tree: TreeId) -> bool {
+        syms: &crate::code::symtab::Symtab, kind: AnalyzerKind, tree: TreeId,
+        active_attr: Option<&mut crate::comp::attr::Attr>) -> bool {
         if !self.analyzer_modes.contains(kind.mode()) {
             return false;
         }
@@ -780,13 +811,20 @@ impl Analyzer {
                     return false;
                 }
                 let Some(tsym) = ctx.typ(clazz_type).tsym else { return false; };
-                let attr_rc = self.attr_service();
-                let attr = attr_rc.borrow();
-                let chk = Rc::clone(&attr.chk);
-                let diags = Rc::clone(&attr.diags);
-                let is_fi = self.types.is_functional_interface(ctx, syms, &diags, &chk, tsym);
-                drop(chk);
-                drop(attr);
+                let is_fi = match active_attr {
+                    Some(attr) => {
+                        let chk = Rc::clone(&attr.chk);
+                        let diags = Rc::clone(&attr.diags);
+                        self.types.is_functional_interface(ctx, syms, &diags, &chk, tsym)
+                    }
+                    None => {
+                        let attr_rc = self.attr_service();
+                        let attr = attr_rc.borrow();
+                        let chk = Rc::clone(&attr.chk);
+                        let diags = Rc::clone(&attr.diags);
+                        self.types.is_functional_interface(ctx, syms, &diags, &chk, tsym)
+                    }
+                };
                 if !is_fi {
                     return false;
                 }
@@ -818,10 +856,14 @@ impl Analyzer {
                 if !owner_is_mth || init.is_none() || self.is_implicitly_typed(ctx, tree) {
                     return false;
                 }
-                let attr_rc = self.attr_service();
-                let attr = attr_rc.borrow();
-                let inferable = attr.can_infer_local_var_type(ctx, tree).is_none();
-                drop(attr);
+                let inferable = match active_attr {
+                    Some(attr) => attr.can_infer_local_var_type(ctx, tree).is_none(),
+                    None => {
+                        let attr_rc = self.attr_service();
+                        let attr = attr_rc.borrow();
+                        attr.can_infer_local_var_type(ctx, tree).is_none()
+                    }
+                };
                 inferable
             }
             AnalyzerKind::RedundantLocalVarTypeAnalyzerForEach => {
@@ -1059,6 +1101,9 @@ pub struct StatementScanner<'a> {
     pub env: Rc<Env<AttrContext>>,
     /// Java: ListBuffer<RewritingContext> rewritings
     pub rewritings: Vec<RewritingContext>,
+    /// The live Attr when the scanner is invoked from attribStat (the caller
+    /// already holds the Attr RefCell mutably).
+    pub active_attr: Option<&'a mut crate::comp::attr::Attr>,
 }
 
 impl<'a> StatementScanner<'a> {
@@ -1081,6 +1126,28 @@ impl<'a> StatementScanner<'a> {
             original_tree,
             env: copied_env,
             rewritings: Vec::new(),
+            active_attr: None,
+        }
+    }
+
+    /// StatementScanner constructor used while Attr is already mutably
+    /// borrowed by its caller (attribStat); Java passes the live Attr object.
+    pub fn new_with_attr(
+        analyzer: &'a mut Analyzer,
+        ctx: &mut CompilerContext,
+        syms: &'a crate::code::symtab::Symtab,
+        original_tree: TreeId,
+        env: &Rc<Env<AttrContext>>,
+        attr: &'a mut crate::comp::attr::Attr,
+    ) -> StatementScanner<'a> {
+        let copied_env = attr.copy_env(ctx, syms, &analyzer.types, env);
+        StatementScanner {
+            analyzer,
+            syms,
+            original_tree,
+            env: copied_env,
+            rewritings: Vec::new(),
+            active_attr: Some(attr),
         }
     }
 
@@ -1109,7 +1176,8 @@ impl TreeScannerVisitor for StatementScanner<'_> {
             if ctx.tree(tree).tag != kind.tag() {
                 continue;
             }
-            if !self.analyzer.matches(ctx, self.syms, kind, tree) {
+            let active_attr = self.active_attr.as_deref_mut();
+            if !self.analyzer.matches(ctx, self.syms, kind, tree, active_attr) {
                 continue;
             }
             let replacements = self.analyzer.rewrite(ctx, kind, tree);
@@ -1117,9 +1185,13 @@ impl TreeScannerVisitor for StatementScanner<'_> {
             while current.non_empty() {
                 let replacement = *current.head();
                 let env = {
-                    let attr_rc = self.analyzer.attr_service();
-                    let mut attr = attr_rc.borrow_mut();
-                    let env = attr.copy_env(ctx, self.syms, &self.analyzer.types, &self.env);
+                    let env = if let Some(attr) = self.active_attr.as_deref_mut() {
+                        attr.copy_env(ctx, self.syms, &self.analyzer.types, &self.env)
+                    } else {
+                        let attr_rc = self.analyzer.attr_service();
+                        let mut attr = attr_rc.borrow_mut();
+                        attr.copy_env(ctx, self.syms, &self.analyzer.types, &self.env)
+                    };
                     let env_scope = env.info.borrow().scope.expect("env scope");
                     if ctx.tree(tree).tag == Tag::VARDEF {
                         if let TreeKind::VariableDecl { sym: Some(sym), .. } = &ctx.tree(tree).kind {
