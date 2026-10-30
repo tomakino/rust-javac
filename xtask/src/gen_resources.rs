@@ -21,15 +21,15 @@ use std::path::{Path, PathBuf};
 use crate::properties::parse_properties;
 
 const COMPILER_PROPERTIES: &str =
-    "reference/jdk17u/src/jdk.compiler/share/classes/com/sun/tools/javac/resources/compiler.properties";
+    "crates/javac-core/resources/l10n/compiler.properties";
 const JAVAC_SOURCE_ROOT: &str =
-    "reference/jdk17u/src/jdk.compiler/share/classes/com/sun/tools/javac";
+    "internal/reference/jdk17u/src/jdk.compiler/share/classes/com/sun/tools/javac";
 const OUTPUT_ACCESSORS: &str = "crates/javac-core/src/resources/compiler_accessors.rs";
 const OUTPUT_METADATA: &str = "crates/javac-core/src/resources/compiler_metadata.rs";
 const OUTPUT_REEXPORT: &str = "crates/javac-core/src/resources/compiler_properties.rs";
 #[cfg(test)]
 const RESOURCE_ROOT: &str =
-    "reference/jdk17u/src/jdk.compiler/share/classes/com/sun/tools/javac/resources";
+    "internal/reference/jdk17u/src/jdk.compiler/share/classes/com/sun/tools/javac/resources";
 const BASELINE: &str = "982d53c (jdk-17.0.19-ga)";
 
 // Localized bundles are now embedded as raw .properties text via include_str!
@@ -1030,8 +1030,16 @@ pub(crate) fn generate_and_verify() -> Result<(), String> {
         .map_err(|e| format!("write {}: {e}", reexport_path.display()))?;
     // Localized bundles are embedded at compile time (include_str! in
     // resources/l10n/*); the generator no longer emits message tables.
-    let sites = scan_call_sites(&project_path(JAVAC_SOURCE_ROOT))?;
-    verify_call_sites(&entries, &sites)?;
+    let source_root = project_path(JAVAC_SOURCE_ROOT);
+    if source_root.is_dir() {
+        let sites = scan_call_sites(&source_root)?;
+        verify_call_sites(&entries, &sites)?;
+    } else {
+        println!(
+            "gen-resources: call site verification skipped: {} not present",
+            source_root.display()
+        );
+    }
     let placeholders_without_types = entries
         .iter()
         .filter(|entry| entry.is_no_args() && placeholder_count(&entry.value) > 0)
@@ -1246,6 +1254,10 @@ mod tests {
     #[test]
     fn ct_and_legacy_are_not_message_bundles() {
         let root = project_path(RESOURCE_ROOT);
+        if !root.is_dir() {
+            eprintln!("skipping: ct/legacy properties not present");
+            return;
+        }
         for file in ["ct.properties", "legacy.properties"] {
             let text = std::fs::read_to_string(root.join(file)).expect("read");
             let map = parse_properties(&text);

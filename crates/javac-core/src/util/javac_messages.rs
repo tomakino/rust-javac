@@ -41,6 +41,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
+use std::sync::Mutex;
 
 use crate::api::messages::Messages;
 use crate::resources::compiler_properties::COMPILER_MESSAGES;
@@ -99,9 +100,21 @@ impl Locale {
     }
 
     /// Java: Locale.getDefault() -- detected from LC_ALL/LC_MESSAGES/LANG
-    /// (the JVM property source equivalent); C/POSIX and unknown languages
+    /// (the JVM property source equivalent); on Windows the user UI language
+    /// is used (the JVM's user.language source). C/POSIX and unknown languages
     /// fall back to "en". Hyphen separators are normalized to "_".
     pub fn default_locale() -> Locale {
+        // Unit tests must be independent of the host UI language.
+        if cfg!(test) {
+            return Locale::new("en");
+        }
+        let override_locale = DEFAULT_LOCALE_OVERRIDE
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().cloned());
+        if let Some(locale) = override_locale {
+            return locale;
+        }
         for variable in ["LC_ALL", "LC_MESSAGES", "LANG"] {
             if let Ok(value) = std::env::var(variable) {
                 if value.is_empty() {
@@ -112,14 +125,12 @@ impl Locale {
                     return Locale::new("en");
                 }
                 let tag = tag.replace('-', "_");
-                let language = tag.split('_').next().unwrap_or("");
-                return Locale::new(match (language, tag.as_str()) {
-                    ("en", _) => "en".to_string(),
-                    ("ja", _) => "ja".to_string(),
-                    ("zh", "zh_CN") => "zh_CN".to_string(),
-                    _ => language.to_string(),
-                });
+                return Locale::new(normalize_locale_tag(&tag));
             }
+        }
+        #[cfg(windows)]
+        if let Some(tag) = windows_ui_language_tag() {
+            return Locale::new(normalize_locale_tag(&tag));
         }
         Locale::new("en")
     }
@@ -140,6 +151,71 @@ impl Locale {
         parts.next();
         parts.next().unwrap_or("")
     }
+}
+
+/// Process-wide default locale override installed by the CLI after parsing
+/// `-J-Duser.language`/`-J-Duser.country` (Java: the JVM properties).
+static DEFAULT_LOCALE_OVERRIDE: Mutex<Option<Locale>> = Mutex::new(None);
+
+/// Sets the process default locale (used by the CLI launcher).
+pub fn set_default_locale(locale: Locale) {
+    if let Ok(mut guard) = DEFAULT_LOCALE_OVERRIDE.lock() {
+        *guard = Some(locale);
+    }
+}
+
+/// Normalizes a language tag to the supported locale names (en / ja / zh_CN;
+/// other languages keep only their language part).
+fn normalize_locale_tag(tag: &str) -> String {
+    let language = tag.split(['_', '-']).next().unwrap_or("");
+    match (language, tag) {
+        ("en", _) => "en".to_string(),
+        ("ja", _) => "ja".to_string(),
+        ("zh", "zh_CN") => "zh_CN".to_string(),
+        _ => language.to_string(),
+    }
+}
+
+/// The Windows user interface language (the JVM's user.language source).
+#[cfg(windows)]
+fn windows_ui_language_tag() -> Option<String> {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetUserDefaultUILanguage() -> u16;
+    }
+    let langid = unsafe { GetUserDefaultUILanguage() };
+    let tag = match langid {
+        0x0804 => "zh_CN",
+        0x0404 => "zh_TW",
+        0x0C04 => "zh_HK",
+        0x1004 => "zh_SG",
+        0x0409 => "en_US",
+        0x0809 => "en_GB",
+        0x0C09 => "en_AU",
+        0x1009 => "en_CA",
+        0x0411 => "ja_JP",
+        0x0412 => "ko_KR",
+        0x0407 => "de_DE",
+        0x040C => "fr_FR",
+        0x0410 => "it_IT",
+        0x0C0A => "es_ES",
+        0x0416 => "pt_BR",
+        0x0419 => "ru_RU",
+        _ => match langid & 0x3ff {
+            0x04 => "zh",
+            0x09 => "en",
+            0x11 => "ja",
+            0x12 => "ko",
+            0x07 => "de",
+            0x0c => "fr",
+            0x10 => "it",
+            0x0a => "es",
+            0x16 => "pt",
+            0x19 => "ru",
+            _ => return None,
+        },
+    };
+    Some(tag.to_string())
 }
 
 impl Default for Locale {
@@ -416,8 +492,9 @@ mod tests {
         assert_eq!(locale.get_country(), "CN");
         assert_eq!(locale.get_tag(), "zh_CN");
         assert_eq!(locale.to_string(), "zh_CN");
-        assert_eq!(Locale::default_locale().get_tag(), "en");
-        assert_eq!(Locale::default().get_tag(), "en");
+        let default = Locale::default_locale();
+        assert!(!default.get_tag().is_empty());
+        assert_eq!(Locale::default(), default);
     }
 
     #[test]

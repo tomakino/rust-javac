@@ -852,7 +852,7 @@ mod tests {
     }
 
     fn corpus_root() -> Option<PathBuf> {
-        let root = project_root().join("reference/jdk17u/test/langtools/tools/javac");
+        let root = project_root().join("internal/reference/jdk17u/test/langtools/tools/javac");
         if root.is_dir() { Some(root) } else { None }
     }
 

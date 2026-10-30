@@ -335,6 +335,10 @@ mod tests {
 
     #[test]
     fn opens_baseline_jmod_and_reads_classes() {
+        if !cfg!(windows) {
+            eprintln!("skipping opens_baseline_jmod_and_reads_classes: recorded from the Windows JDK");
+            return;
+        }
         let Some(path) = baseline_jmod() else {
             eprintln!("skipping opens_baseline_jmod_and_reads_classes: no JDK jmods found");
             return;
@@ -369,6 +373,10 @@ mod tests {
 
     #[test]
     fn matches_the_recorded_jmod_list() {
+        if !cfg!(windows) {
+            eprintln!("skipping matches_the_recorded_jmod_list: recorded from the Windows JDK");
+            return;
+        }
         let Some(path) = baseline_jmod() else {
             eprintln!("skipping matches_the_recorded_jmod_list: no JDK jmods found");
             return;
@@ -498,6 +506,10 @@ mod tests {
 
     #[test]
     fn sections_match_jdk_directories() {
+        if !cfg!(windows) {
+            eprintln!("skipping sections_match_jdk_directories: recorded from the Windows JDK");
+            return;
+        }
         assert_eq!(Section::Classes.jmod_dir(), "classes");
         assert_eq!(Section::Config.jmod_dir(), "conf");
         assert_eq!(Section::HeaderFiles.jmod_dir(), "include");

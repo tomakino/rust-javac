@@ -20,7 +20,7 @@ use javac_tests::diff::{
 const DEFAULT_DIAGNOSTICS: &str = "crates/javac-tests/data/diagnostics-oracle.txt";
 const DEFAULT_BUILTIN_CASES: &str = "crates/javac-tests/data/diagnostics-builtin-cases.txt";
 const DEFAULT_BASELINES: &str = "target/javac-corpus/baselines";
-const DEFAULT_CORPUS_ROOT: &str = "reference/jdk17u/test/langtools/tools/javac";
+const DEFAULT_CORPUS_ROOT: &str = "internal/reference/jdk17u/test/langtools/tools/javac";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SourceKind {

@@ -186,7 +186,7 @@ fn collect_package_dirs(root: &Path, dir: &Path, out: &mut Vec<String>) {
         if let Some(name) = path.file_name().and_then(|n| n.to_str())
             && matches!(
                 name,
-                "target" | "build" | ".git" | ".gradle" | "node_modules" | "out"
+                "target" | "build" | ".git" | ".gradle" | "node_modules" | "out" | "internal" | "reference"
             )
         {
             continue;

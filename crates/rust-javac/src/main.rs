@@ -598,6 +598,9 @@ fn compile(args: &[String]) -> Result<i32, String> {
         }
     };
     let locale = select_locale(&expanded);
+    // Apply the locale to compiler diagnostics (Java: user.language/user.country
+    // JVM properties).
+    javac_core::util::javac_messages::set_default_locale(locale.clone());
 
     if let Some(option) = info_option(&expanded) {
         match option {

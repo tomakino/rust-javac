@@ -258,7 +258,7 @@ fn sample_source_path(name: &str) -> Option<String> {
         Some(format!("tools/gen-tree-oracle/{}", name))
     } else {
         name.strip_prefix("javac/")
-            .map(|rest| format!("reference/jdk17u/test/langtools/tools/javac/{}", rest))
+            .map(|rest| format!("internal/reference/jdk17u/test/langtools/tools/javac/{}", rest))
     }
 }
 

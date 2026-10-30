@@ -35,7 +35,7 @@ use javac_tests::{Javac, SourceFile, decode_output, normalize_text};
 /// 差分基线(与 docs/PLAN.md、其他 oracle 数据一致)。
 const BASELINE: &str = "982d53c (jdk-17.0.19-ga)";
 const DEFAULT_OUTPUT: &str = "crates/javac-tests/data/diagnostics-oracle.txt";
-const DEFAULT_CORPUS_ROOT: &str = "reference/jdk17u/test/langtools/tools/javac/diags/examples";
+const DEFAULT_CORPUS_ROOT: &str = "internal/reference/jdk17u/test/langtools/tools/javac/diags/examples";
 const DEFAULT_BUILTIN_CASES: &str = "crates/javac-tests/data/diagnostics-builtin-cases.txt";
 
 const USAGE: &str = "usage: cargo run -p javac-tests --bin gen_diagnostics_oracle -- [OUTPUT] [--corpus-root DIR] [--builtin-cases PATH]";

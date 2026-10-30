@@ -23,7 +23,7 @@ use std::process::ExitCode;
 use javac_tests::Javac;
 use javac_tests::corpus::{BaselineOptions, BaselineStatus, Corpus, generate_baselines};
 
-const DEFAULT_CORPUS_ROOT: &str = "reference/jdk17u/test/langtools/tools/javac";
+const DEFAULT_CORPUS_ROOT: &str = "internal/reference/jdk17u/test/langtools/tools/javac";
 const DEFAULT_OUTPUT: &str = "target/javac-corpus";
 const MAX_DETAILS: usize = 10;
 

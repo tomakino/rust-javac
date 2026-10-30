@@ -16,7 +16,7 @@ use std::fs;
 use std::path::Path;
 
 const MANIFEST: &str = "docs/PORTING_MANIFEST.md";
-const REFERENCE: &str = "reference/jdk17u/src/jdk.compiler/share/classes";
+const REFERENCE: &str = "internal/reference/jdk17u/src/jdk.compiler/share/classes";
 const CORE_SRC: &str = "crates/javac-core/src";
 
 /// 一行 manifest 记录。

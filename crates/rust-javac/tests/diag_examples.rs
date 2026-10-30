@@ -52,6 +52,7 @@ fn repo_root() -> PathBuf {
 
 fn examples_dir() -> PathBuf {
     repo_root()
+        .join("internal")
         .join("reference")
         .join("jdk17u")
         .join("test")
@@ -63,7 +64,7 @@ fn examples_dir() -> PathBuf {
 }
 
 fn expected_dir() -> PathBuf {
-    repo_root().join("diag-corpus").join("expected")
+    repo_root().join("internal").join("diag-corpus").join("expected")
 }
 
 fn timeout() -> Duration {
@@ -674,6 +675,16 @@ fn run_example(example: &Example, index: usize) -> Outcome {
 
 #[test]
 fn official_diagnostic_examples() {
+    let examples = examples_dir();
+    let expected = expected_dir();
+    if !examples.is_dir() || !expected.is_dir() {
+        println!(
+            "DIAG_EXAMPLES skipped: fixtures not found (examples={}, expected={}); see README (internal/ setup)",
+            examples.display(),
+            expected.display()
+        );
+        return;
+    }
     let filter = std::env::var("DIAG_EXAMPLES_FILTER").ok();
     let verbose = std::env::var_os("DIAG_EXAMPLES_VERBOSE").is_some();
     let examples = collect_examples();

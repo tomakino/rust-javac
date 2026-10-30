@@ -22,7 +22,7 @@ mod properties;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const REFERENCE: &str = "reference/jdk17u/src/jdk.compiler/share/classes";
+const REFERENCE: &str = "internal/reference/jdk17u/src/jdk.compiler/share/classes";
 const CORE_SRC: &str = "crates/javac-core/src";
 
 fn main() {

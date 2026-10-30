@@ -42,7 +42,7 @@ struct Record {
 fn source_path(name: &str) -> Option<String> {
     if let Some(rest) = name.strip_prefix("javac/") {
         Some(format!(
-            "reference/jdk17u/test/langtools/tools/javac/{rest}"
+            "internal/reference/jdk17u/test/langtools/tools/javac/{rest}"
         ))
     } else if name.starts_with("samples/") {
         Some(format!("tools/gen-tree-oracle/{name}"))
