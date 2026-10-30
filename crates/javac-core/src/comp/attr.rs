@@ -6973,7 +6973,12 @@ impl Attr {
                 }
             }
         }
-        let pos = simple_diag_pos(ctx.tree(tree).pos);
+        // Java: DiagnosticPosition pos = tree.pos(); (Attr.java:4417). JCTree
+        // is its own DiagnosticPosition (JCTree.java:88, 486-510).
+        let pos: Option<Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
+            Some(Rc::new(
+                crate::util::jc_diagnostic::TreeDiagnosticPosition::new(ctx, tree),
+            ));
         match ctx.typ(site).get_tag() {
             TypeTag::PACKAGE => {
                 let site_tsym = ctx.typ(site).tsym.expect("package symbol");

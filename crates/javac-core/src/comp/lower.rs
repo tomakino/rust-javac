@@ -956,6 +956,7 @@ impl Lower {
     ) -> SymbolId {
         let mut cloned = ctx.sym(sym).clone();
         cloned.owner = Some(owner);
+        cloned.base_symbol_override = Some(crate::code::symbol::base_symbol(ctx, sym));
         let cloned_id = ctx.alloc_symbol(cloned);
         actual_symbols.insert(cloned_id, sym);
         cloned_id
@@ -1886,7 +1887,7 @@ impl Lower {
                 break;
             }
         }
-        let synthetic_char = self.target.synthetic_name_char() as u8 as char;
+        let synthetic_char = self.target.synthetic_name_char();
         let text = format!("this{}{}", synthetic_char, nesting_level);
         let mut result = self
             .names
@@ -2944,7 +2945,7 @@ impl Lower {
                     recvtype: None,
                 },
             ));
-            ctx.sym_mut(tree_sym).ty = Some(new_erasure);
+            ctx.sym_mut(tree_sym).erasure_field = Some(new_erasure);
         }
         let prev_method_def = self.current_method_def;
         let prev_method_sym = self.current_method_sym;
@@ -3091,7 +3092,7 @@ impl Lower {
                         recvtype: None,
                     },
                 ));
-                ctx.sym_mut(sym).ty = Some(new_erasure);
+                ctx.sym_mut(sym).erasure_field = Some(new_erasure);
             }
             if ctx.sym(current_class).has_outer_instance(ctx) && is_initial_ctor {
                 let init = self.init_outer_this(ctx, ctx.tree(body).pos);
@@ -5099,7 +5100,11 @@ impl Lower {
                 List::nil(),
             );
             let container_def = self.class_def(ctx, container).expect("class definition");
-            let container_pos = ctx.tree(container_def).pos;
+            // Java: Lower.java:1937/1940 use containerDef.pos() (a
+            // DiagnosticPosition); classOfType's make_at(pos) resolves it via
+            // getStartPosition() = TreeInfo.getStartPos, i.e. the annotation
+            // start for an annotated class declaration.
+            let container_pos = crate::tree::tree_info::get_start_pos(ctx, container_def);
             let outermost = self.outermost_class_def.expect("outermost class definition");
             let outermost_sym = match &ctx.tree(outermost).kind {
                 TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
@@ -5134,7 +5139,9 @@ impl Lower {
             }
             if ctx.sym(current_class).is_interface() {
                 let current_def = self.class_def(ctx, current_class).expect("current class definition");
-                let current_pos = ctx.tree(current_def).pos;
+                // Java: Lower.java:1950 make_at(currentClassDef.pos()) uses the
+                // DiagnosticPosition start position as well.
+                let current_pos = crate::tree::tree_info::get_start_pos(ctx, current_def);
                 self.make.borrow_mut().at(current_pos);
                 let flag_ident = {
                     self.make.borrow_mut().qual_ident(ctx, &mut self.syms.borrow_mut(), var)
@@ -6133,12 +6140,10 @@ impl Lower {
         let next = self.lookup_method(ctx, None, next_name, itvar_ty, List::nil());
         let next_sel = self.select_symbol(ctx, itvar_ident2, next);
         let mut vardef_init = self.make.borrow_mut().app(ctx, next_sel);
-        let var_ty = match &ctx.tree(var_tree).kind {
-            TreeKind::VariableDecl {
-                sym: Some(sym), ..
-            } => ctx.sym(*sym).ty.expect("loop variable type"),
-            _ => panic!("expected a variable declaration"),
-        };
+        // Java: Lower.java:3517 uses tree.var.type, i.e. the JCVariableDecl
+        // tree type, which TransTypes.visitVarDef has already erased
+        // (TransTypes.java:494-498).
+        let var_ty = ctx.tree(var_tree).ty.expect("loop variable type");
         let vardef_type = if ctx.typ(var_ty).is_primitive() {
 
             self.types.cvar_upper_bound(ctx, iterator_target)
@@ -6691,7 +6696,11 @@ impl Lower {
         let selector_ty = ctx.tree(selector).ty.expect("selector type");
         let enum_sym = ctx.typ(selector_ty).tsym.expect("enum symbol");
         let pos = ctx.tree(tree).pos;
-        let map_rc = self.map_for_enum(ctx, None, enum_sym);
+        // Java: Lower.java:3685 `mapForEnum(tree.pos(), enumSym)` — the switch
+        // statement's position is the position of the generated map clinit.
+        let diagnostic_pos: Option<Rc<dyn DiagnosticPosition>> =
+            Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos)));
+        let map_rc = self.map_for_enum(ctx, diagnostic_pos, enum_sym);
         let (map_var, mut map_for_constants) = {
             let map = map_rc.borrow();
             (map.map_var, ())

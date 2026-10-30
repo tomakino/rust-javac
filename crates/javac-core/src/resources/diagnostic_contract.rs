@@ -101,6 +101,10 @@ pub enum DiagnosticArg {
     /// message placeholder renders a comma-separated list, for example the
     /// method arguments in cant.apply.symbol).
     List(Vec<DiagnosticArg>),
+    /// A Symbol argument carrying both upstream renderings: the default
+    /// formatter (Printer) text and the raw formatter (-XDrawDiagnostics)
+    /// Symbol.toString text.
+    Symbol(SymbolArgValue),
 }
 
 impl DiagnosticArg {
@@ -113,7 +117,10 @@ impl DiagnosticArg {
     pub fn nested_diagnostic(&self) -> Option<&std::rc::Rc<crate::util::jc_diagnostic::JCDiagnostic>> {
         match self {
             DiagnosticArg::JCDiagnostic(diag) => Some(diag),
-            DiagnosticArg::Text(_) | DiagnosticArg::Type(_) | DiagnosticArg::List(_) => None,
+            DiagnosticArg::Text(_)
+            | DiagnosticArg::Type(_)
+            | DiagnosticArg::List(_)
+            | DiagnosticArg::Symbol(_) => None,
         }
     }
 
@@ -124,6 +131,7 @@ impl DiagnosticArg {
             DiagnosticArg::Text(text) => text.clone(),
             DiagnosticArg::JCDiagnostic(diag) => diag.get_message(None).to_string(),
             DiagnosticArg::Type(arg) => arg.text.clone(),
+            DiagnosticArg::Symbol(arg) => arg.text.clone(),
             DiagnosticArg::List(items) => items
                 .iter()
                 .map(|item| item.to_text())
@@ -141,6 +149,7 @@ impl PartialEq for DiagnosticArg {
                 std::rc::Rc::ptr_eq(a, b) || a.get_message(None) == b.get_message(None)
             }
             (DiagnosticArg::Type(a), DiagnosticArg::Type(b)) => a == b,
+            (DiagnosticArg::Symbol(a), DiagnosticArg::Symbol(b)) => a == b,
             (DiagnosticArg::List(a), DiagnosticArg::List(b)) => a == b,
             _ => false,
         }
@@ -291,6 +300,39 @@ opaque_arg!(SourceVersionArg);
 /// the real Symbol type replaces it at P4.
 pub type SymbolArg = DiagnosticArg;
 
+/// A Symbol diagnostic argument (Java: a Symbol in the Object[] args).
+///
+/// The port keeps the two upstream renderings so the default formatter and
+/// the raw formatter can both match javac:
+/// - `text`: the default formatter text (Java `Printer.visit(symbol)` through
+///   AbstractDiagnosticFormatter.formatArgument, AbstractDiagnosticFormatter.java:201-203);
+/// - `qualified_text`: the raw formatter text (RawDiagnosticFormatter falls
+///   back to AbstractDiagnosticFormatter.formatArgument; for a ClassSymbol the
+///   Printer returns the full name, Printer.java:363-367, and for a
+///   PackageSymbol the full name, Printer.java:396-400).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolArgValue {
+    /// Default formatter rendering (Java: Printer.visit(symbol)).
+    pub text: String,
+    /// Raw formatter rendering (Java: Symbol.toString() for class/package).
+    pub qualified_text: String,
+}
+
+impl SymbolArgValue {
+    pub fn new(text: impl Into<String>, qualified_text: impl Into<String>) -> SymbolArgValue {
+        SymbolArgValue {
+            text: text.into(),
+            qualified_text: qualified_text.into(),
+        }
+    }
+}
+
+impl IntoDiagnosticArg for SymbolArgValue {
+    fn into_diagnostic_arg(self) -> DiagnosticArg {
+        DiagnosticArg::Symbol(self)
+    }
+}
+
 impl DiagnosticArg {
     /// Build a placeholder argument from Display text (the same helper the
     /// other diagnostic argument types expose before P4).
@@ -422,6 +464,7 @@ pub(crate) fn to_jc_diagnostic_arg(
         }
         DiagnosticArg::JCDiagnostic(diag) => diag.clone(),
         DiagnosticArg::Type(type_arg) => std::rc::Rc::new(type_arg.clone()),
+        DiagnosticArg::Symbol(symbol_arg) => std::rc::Rc::new(symbol_arg.clone()),
         DiagnosticArg::List(items) => {
             let converted: Vec<JcDiagnosticArg> = items.iter().map(to_jc_diagnostic_arg).collect();
             std::rc::Rc::new(converted)

@@ -721,7 +721,14 @@ fn enter_class_named(
     // Symtab value; this free helper is called from the constructor, so the
     // same two steps are performed here (owner = the entered package).
     let flat = name_of(names, text);
-    let package = enter_package(ctx, names, maps, java_base, convert::package_part(&flat));
+    let package = enter_package(
+        ctx,
+        names,
+        maps,
+        java_base,
+        convert::package_part(&flat),
+        None,
+    );
     let class = enter_class_full(
         ctx,
         names,
@@ -780,6 +787,18 @@ fn enter_synthetic_annotation(
 // The extra parameters are the ported Symtab state (unnamed/no module) passed
 // explicitly because the Rust free function cannot read the Java instance
 // fields of the caller (registered section 9).
+/// The result of lookup_package_impl. The depends_on_unnamed branch runs
+/// complete() on the entered packages; that cannot happen while the symbol
+/// table maps are borrowed, so the methods do it after the borrow (official
+/// Symtab.lookupPackage calls pack.complete() inline, Symtab.java:721-731).
+enum PackageLookup {
+    /// The package looked up directly.
+    Done(SymbolId),
+    /// Official Symtab.java:710-733: complete pack, then unnamed; the first
+    /// package that exists is returned (the unnamed one also becomes visible).
+    DependsOnUnnamed { pack: SymbolId, unnamed: SymbolId },
+}
+
 #[allow(clippy::too_many_arguments)]
 fn lookup_package_impl(
     ctx: &mut CompilerContext,
@@ -791,52 +810,103 @@ fn lookup_package_impl(
     only_existing: bool,
     unnamed_module: SymbolId,
     no_module: SymbolId,
-) -> SymbolId {
+) -> PackageLookup {
     if flatname.is_empty() {
-        return match &ctx.sym(module).kind_data {
+        return PackageLookup::Done(match &ctx.sym(module).kind_data {
             SymbolKind::ModuleSymbol {
                 unnamed_package, ..
             } => unnamed_package.expect("module unnamed package"),
             _ => panic!("module expected"),
-        };
+        });
     }
     if module == no_module {
-        return enter_package(ctx, names, maps, module, flatname.clone());
+        return PackageLookup::Done(enter_package(
+            ctx,
+            names,
+            maps,
+            module,
+            flatname.clone(),
+            syms.initial_completer.as_ref(),
+        ));
     }
     // Java: msym.complete(); (module completer: pending the Modules port, batch 1b).
     if let Some(visible) = visible_package(ctx, module, flatname) {
-        return visible;
+        return PackageLookup::Done(visible);
     }
+    // Java: visiblePackages is authoritative; there is no java.base fallback
+    // (Symtab.java:695-736).
     let existing = get_package_in(maps, module, flatname);
     if let Some(package) = existing
         && (package_exists(ctx, package) || only_existing)
     {
-        return package;
+        return PackageLookup::Done(package);
     }
-    let depends_on_unnamed = module_reads_module(ctx, module, unnamed_module);
-    if depends_on_unnamed {
+    if module_reads_module(ctx, module, unnamed_module) {
         if let Some(unnamed_package) = get_package_in(maps, unnamed_module, flatname)
             && package_exists(ctx, unnamed_package)
         {
             set_visible_package(ctx, module, unnamed_package);
-            return unnamed_package;
+            return PackageLookup::Done(unnamed_package);
         }
-        let package = enter_package(ctx, names, maps, module, flatname.clone());
-        if package_exists(ctx, package) {
-            return package;
-        }
-        let unnamed_package = enter_package(ctx, names, maps, unnamed_module, flatname.clone());
-        if package_exists(ctx, unnamed_package) {
-            set_visible_package(ctx, module, unnamed_package);
-            return unnamed_package;
-        }
-        // The class-path package may not be completed yet (its classes are
-        // loaded lazily); return it so the caller can complete it after the
-        // symbol table borrow is released (ClassFinder.fillIn(PackageSymbol)).
-        set_visible_package(ctx, module, unnamed_package);
-        return unnamed_package;
+        let pack = enter_package(
+            ctx,
+            names,
+            maps,
+            module,
+            flatname.clone(),
+            syms.initial_completer.as_ref(),
+        );
+        let unnamed = enter_package(
+            ctx,
+            names,
+            maps,
+            unnamed_module,
+            flatname.clone(),
+            syms.initial_completer.as_ref(),
+        );
+        return PackageLookup::DependsOnUnnamed { pack, unnamed };
     }
-    enter_package(ctx, names, maps, module, flatname.clone())
+    PackageLookup::Done(enter_package(
+        ctx,
+        names,
+        maps,
+        module,
+        flatname.clone(),
+        syms.initial_completer.as_ref(),
+    ))
+}
+
+/// Official lookupPackage completes the entered packages inline
+/// (Symtab.java:721-731). The port cannot complete while the maps are borrowed,
+/// so the methods call this after releasing the borrow.
+fn finish_package_lookup(
+    ctx: &mut CompilerContext,
+    syms: &Symtab,
+    module: SymbolId,
+    result: PackageLookup,
+) -> SymbolId {
+    match result {
+        PackageLookup::Done(package) => package,
+        PackageLookup::DependsOnUnnamed { pack, unnamed } => {
+            // Java: pack = enterPackage(msym, flatName); pack.complete();
+            // if (pack.exists()) return pack; (Symtab.java:721-724)
+            let _ = ctx.complete_symbol(syms, pack);
+            if package_exists(ctx, pack) {
+                return pack;
+            }
+            // Java: unnamedPack = enterPackage(unnamedModule, flatName);
+            // unnamedPack.complete(); if (unnamedPack.exists()) {
+            //     msym.visiblePackages.put(unnamedPack.fullname, unnamedPack);
+            //     return unnamedPack; } (Symtab.java:726-731)
+            let _ = ctx.complete_symbol(syms, unnamed);
+            if package_exists(ctx, unnamed) {
+                set_visible_package(ctx, module, unnamed);
+                return unnamed;
+            }
+            // Java: return pack; (Symtab.java:733)
+            pack
+        }
+    }
 }
 
 fn visible_package(ctx: &CompilerContext, module: SymbolId, flatname: &Name) -> Option<SymbolId> {
@@ -939,6 +1009,7 @@ fn enter_package(
     maps: &mut SymtabMaps,
     module: SymbolId,
     fullname: Name,
+    initial_completer: Option<&CompleterFactory>,
 ) -> SymbolId {
     if let Some(package) = get_package_in(maps, module, &fullname) {
         return package;
@@ -949,9 +1020,13 @@ fn enter_package(
     );
     let short_name = convert::short_name(&fullname);
     let parent = convert::package_part(&fullname);
-    let parent_package = enter_package(ctx, names, maps, module, parent);
+    let parent_package = enter_package(ctx, names, maps, module, parent, initial_completer);
     let package = new_package_symbol(ctx, 0, short_name, Some(parent_package));
-    // Java: p.completer = initialCompleter; (bound by enter_package; registered adapter).
+    // Java: p.completer = initialCompleter; (Symtab.java:788)
+    if let Some(factory) = initial_completer {
+        ctx.sym_mut(package).completer = Some(factory());
+    }
+    // Java: p.modle = currModule; (Symtab.java:789)
     if let SymbolKind::PackageSymbol { modle, .. } = &mut ctx.sym_mut(package).kind_data {
         *modle = Some(module);
     }
@@ -1374,6 +1449,7 @@ impl Symtab {
             &mut maps,
             java_base,
             convert::package_part(&names.std.java_lang_Enum),
+            None,
         );
         let enum_sym = enter_class_full(
             ctx,
@@ -1542,6 +1618,7 @@ impl Symtab {
                 &mut maps,
                 java_base,
                 convert::package_part(name),
+                None,
             );
             let class = enter_class_full(
                 ctx,
@@ -1978,9 +2055,9 @@ impl Symtab {
             ctx.sym_mut(msym).completer = Some(factory());
         }
         let _ = ctx.complete_symbol(self, msym);
-        let package = {
+        let result = {
             let mut maps = self.maps.borrow_mut();
-            let package = lookup_package_impl(
+            lookup_package_impl(
                 ctx,
                 self,
                 &self.names,
@@ -1990,20 +2067,9 @@ impl Symtab {
                 false,
                 self.unnamed_module,
                 self.no_module,
-            );
-            package
+            )
         };
-        // Java: enterPackage binds initialCompleter to a newly created package
-        // (Symtab.java:780-793). lookupPackage also creates packages through the
-        // internal helper, so bind it here as well; otherwise a lazily created
-        // class-path package is never completed.
-        if let Some(factory) = &self.initial_completer
-            && ctx.sym(package).completer.is_none()
-            && ctx.sym(package).members().is_none()
-        {
-            ctx.sym_mut(package).completer = Some(factory());
-        }
-        package
+        finish_package_lookup(ctx, self, msym, result)
     }
 
     /// Java: private PackageSymbol lookupPackage(ModuleSymbol msym, Name
@@ -2021,18 +2087,21 @@ impl Symtab {
             ctx.sym_mut(msym).completer = Some(factory());
         }
         let _ = ctx.complete_symbol(self, msym);
-        let mut maps = self.maps.borrow_mut();
-        lookup_package_impl(
-            ctx,
-            self,
-            &self.names,
-            &mut maps,
-            msym,
-            flatname,
-            true,
-            self.unnamed_module,
-            self.no_module,
-        )
+        let result = {
+            let mut maps = self.maps.borrow_mut();
+            lookup_package_impl(
+                ctx,
+                self,
+                &self.names,
+                &mut maps,
+                msym,
+                flatname,
+                true,
+                self.unnamed_module,
+                self.no_module,
+            )
+        };
+        finish_package_lookup(ctx, self, msym, result)
     }
 
     /// Java: public boolean packageExists(ModuleSymbol msym, Name fullname)
@@ -2049,17 +2118,15 @@ impl Symtab {
         module: SymbolId,
         fullname: Name,
     ) -> SymbolId {
-        let package = {
-            let mut maps = self.maps.borrow_mut();
-            enter_package(ctx, &self.names, &mut maps, module, fullname)
-        };
-        if let Some(factory) = &self.initial_completer
-            && ctx.sym(package).completer.is_none()
-            && ctx.sym(package).members().is_none()
-        {
-            ctx.sym_mut(package).completer = Some(factory());
-        }
-        package
+        let mut maps = self.maps.borrow_mut();
+        enter_package(
+            ctx,
+            &self.names,
+            &mut maps,
+            module,
+            fullname,
+            self.initial_completer.as_ref(),
+        )
     }
 
     /// Java: public ModuleSymbol enterModule(Name name)
@@ -2116,7 +2183,10 @@ impl Symtab {
             }
         }
         for symbol in packages {
-            if ctx.sym(symbol).completer.is_none() {
+            // Java: only enterPackage-created packages get initialCompleter;
+            // the root package stays without a completer (Symtab.java:788,
+            // addRootPackageFor only binds the unnamed package).
+            if symbol != self.root_package && ctx.sym(symbol).completer.is_none() {
                 ctx.sym_mut(symbol).completer = Some(factory());
             }
         }

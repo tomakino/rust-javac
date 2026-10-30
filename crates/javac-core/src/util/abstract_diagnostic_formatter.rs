@@ -395,6 +395,14 @@ pub fn format_argument_default<F: AbstractDiagnosticFormatter + ?Sized>(
     arg: &DiagnosticArg,
     locale: Option<&Locale>,
 ) -> String {
+    if let Some(symbol_arg) =
+        arg.downcast_ref::<crate::resources::diagnostic_contract::SymbolArgValue>()
+    {
+        // Java: AbstractDiagnosticFormatter.formatArgument Symbol branch ->
+        // Printer.visit(symbol, locale) (AbstractDiagnosticFormatter.java:201-203).
+        // The port pre-renders this text (SymbolArgValue.text).
+        return symbol_arg.text.clone();
+    }
     if let Some(type_arg) = arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>() {
         return formatter.format_type_argument(type_arg, locale);
     }

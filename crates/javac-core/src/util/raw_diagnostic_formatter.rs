@@ -246,6 +246,14 @@ impl AbstractDiagnosticFormatter for RawDiagnosticFormatter {
             }
             return format!("kindname.{text}");
         }
+        if let Some(symbol_arg) =
+            arg.downcast_ref::<crate::resources::diagnostic_contract::SymbolArgValue>()
+        {
+            // Java: RawDiagnosticFormatter.formatArgument falls back to
+            // AbstractDiagnosticFormatter.formatArgument, whose Symbol branch
+            // uses Printer.visit(symbol) (AbstractDiagnosticFormatter.java:201-203).
+            return symbol_arg.qualified_text.clone();
+        }
         if let Some(type_arg) =
             arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>()
             && let Some(qualified) = &type_arg.qualified_text

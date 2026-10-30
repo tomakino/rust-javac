@@ -378,27 +378,6 @@ impl ClassFinder {
         Ok(())
     }
 
-    /// Java: void fillIn(ClassSymbol c) (ClassFinder.java:341-392) — the
-    /// ModuleFinder.readModule path needs the same completion entry.
-    ///
-    /// # Arguments
-    ///   - ctx/syms: the compiler services;
-    ///   - c: the class symbol.
-    ///
-    /// # Returns
-    ///   - Ok(()) when the class body was filled in.
-    ///
-    /// # Panics
-    ///   - none.
-    pub(crate) fn fill_in(
-        &self,
-        ctx: &mut CompilerContext,
-        syms: &Symtab,
-        c: SymbolId,
-    ) -> Result<(), CompletionFailure> {
-        self.fill_in_class(ctx, syms, c)
-    }
-
     /// Java: void fillIn(ClassSymbol c) (ClassFinder.java:341-392)
     fn fill_in_class(
         &self,
@@ -734,24 +713,24 @@ impl ClassFinder {
         }
         let module = match &ctx.sym(p).kind_data {
             SymData::PackageSymbol { modle, .. }
-            | SymData::RootPackageSymbol { modle, .. } => modle.unwrap_or_else(|| {
-                // A package entered by the class-path package registration can
-                // reach the completer before its module field is copied; it is
-                // an unnamed-module package.
-                syms.unnamed_module
-            }),
+            | SymData::RootPackageSymbol { modle, .. } => match modle {
+                Some(module) => *module,
+                // Java: Assert.checkNonNull(msym, p::toString)
+                // (ClassFinder.java:540). PackageSymbol.toString is the full
+                // name (Symbol.java:1161-1163); the unnamed package uses the
+                // localized override of Symtab.java:802-807.
+                None => panic!(
+                    "AssertionError: {}",
+                    crate::code::symbol::symbol_to_string(ctx, p)
+                ),
+            },
             _ => panic!(
                 "package expected: {} kind {:?}",
                 ctx.sym(p).name.to_java_string().to_string_lossy(),
                 ctx.sym(p).kind
             ),
         };
-        if let SymData::PackageSymbol { modle, .. } = &mut ctx.sym_mut(p).kind_data
-            && modle.is_none()
-        {
-            *modle = Some(module);
-        }
-        // Java: msym.complete(); (ClassFinder.java:352).
+        // Java: msym.complete(); (ClassFinder.java:542).
         ctx.complete_symbol(syms, module)?;
         if module == syms.no_module {
             self.prefer_current.set(false);
@@ -953,22 +932,6 @@ impl ClassFinder {
             }
         }
         Ok(result)
-    }
-
-    /// Adapter for Resolve: true when the module's class location contains the
-    /// package (the module package table is not maintained by the port yet, so
-    /// the location is listed directly).
-    pub(crate) fn module_package_exists(
-        &self,
-        location: &LocationRef,
-        package_name: &str,
-    ) -> bool {
-        let package_name = javac_strings::JavaString::from(package_name);
-        let kinds = [Kind::CLASS, Kind::SOURCE];
-        self.file_manager
-            .list(&**location, &package_name, &kinds, false)
-            .map(|files| !files.is_empty())
-            .unwrap_or(false)
     }
 
     /// Java: the IOException -> CompletionFailure(ExceptionMessage) mapping of

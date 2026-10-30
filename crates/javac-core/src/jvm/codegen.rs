@@ -167,8 +167,9 @@ pub struct Gen {
     pub stack_before_switch_expression: Vec<Item>,
     /// The temporary result item of the enclosing switch expression.
     pub switch_result: Option<Item>,
-    /// The cache of qualifying symbols, keyed by type.
-    pub qualified_symbol_cache: HashMap<TypeId, SymbolId>,
+    /// The cache of qualifying symbols (Java: Map<Type, Symbol>; array keys
+    /// follow Type.ArrayType.equals, Type.java:1360-1364).
+    pub qualified_symbol_cache: Vec<(TypeId, SymbolId)>,
     /// The current environment.
     pub env: Option<Rc<Env<GenContext>>>,
     /// The expected type of the expression being visited.
@@ -215,6 +216,7 @@ impl Gen {
         attr: Rc<RefCell<Attr>>,
         infer: Rc<Infer>,
         pool_writer: Rc<RefCell<PoolWriter>>,
+        lower: Rc<RefCell<Lower>>,
         options: &Options,
     ) -> Gen {
         let method_type = {
@@ -231,7 +233,7 @@ impl Gen {
             ))
         };
         let access_dollar = {
-            let synthetic = target.synthetic_name_char() as u8 as char;
+            let synthetic = target.synthetic_name_char();
             names.from_string(&crate::util::java_string::JavaString::from(
                 format!("access{}", synthetic).as_str(),
             ))
@@ -273,7 +275,7 @@ impl Gen {
             target,
             access_dollar,
             types,
-            lower: None,
+            lower: Some(lower),
             annotate,
             attr,
             infer,
@@ -298,7 +300,7 @@ impl Gen {
             switch_expression_false_chain: None,
             stack_before_switch_expression: Vec::new(),
             switch_result: None,
-            qualified_symbol_cache: HashMap::new(),
+            qualified_symbol_cache: Vec::new(),
             env: None,
             pt: None,
             result: None,
@@ -397,32 +399,38 @@ impl Gen {
             if is_length_var || !is_array_owner {
                 return sym;
             }
-            if let Some(cached) = self.qualified_symbol_cache.get(&site) {
-                return *cached;
-            }
-            let site_tsym = ctx.typ(site).tsym.expect("array type symbol");
-            let site_name = ctx.sym(site_tsym).name.clone();
-            let no_symbol = self.syms.borrow().no_symbol;
-            let qualifier = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
-                crate::code::kinds::Kind::TYP,
-                crate::code::flags::PUBLIC as i64,
-                site_name.clone(),
-                Some(site),
-                Some(no_symbol),
-                crate::code::symbol::SymbolKind::ClassSymbol {
-                    members_field: None,
-                    fullname: site_name.clone(),
-                    flatname: site_name,
-                    sourcefile: None,
-                    classfile: None,
-                    trans_local: List::nil(),
-                    record_components: List::nil(),
-                    permitted: List::nil(),
-                    is_permitted_explicit: false,
-                    annotation_type_metadata: Default::default(),
-                },
-            ));
-            self.qualified_symbol_cache.insert(site, qualifier);
+            let qualifier = if let Some((_, cached)) = self
+                .qualified_symbol_cache
+                .iter()
+                .find(|(cached_site, _)| array_types_equal(ctx, *cached_site, site))
+            {
+                *cached
+            } else {
+                let site_tsym = ctx.typ(site).tsym.expect("array type symbol");
+                let site_name = ctx.sym(site_tsym).name.clone();
+                let no_symbol = self.syms.borrow().no_symbol;
+                let qualifier = ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+                    crate::code::kinds::Kind::TYP,
+                    crate::code::flags::PUBLIC as i64,
+                    site_name.clone(),
+                    Some(site),
+                    Some(no_symbol),
+                    crate::code::symbol::SymbolKind::ClassSymbol {
+                        members_field: None,
+                        fullname: site_name.clone(),
+                        flatname: site_name,
+                        sourcefile: None,
+                        classfile: None,
+                        trans_local: List::nil(),
+                        record_components: List::nil(),
+                        permitted: List::nil(),
+                        is_permitted_explicit: false,
+                        annotation_type_metadata: Default::default(),
+                    },
+                ));
+                self.qualified_symbol_cache.push((site, qualifier));
+                qualifier
+            };
             return clone_symbol_with_owner(ctx, sym, qualifier);
         }
         let site_tsym = ctx.typ(site).tsym.expect("site type symbol");
@@ -689,6 +697,22 @@ impl Gen {
     }
 }
 
+/// Java: Type.ArrayType.equals (Type.java:1360-1364): array types compare by
+/// their element types recursively; all other Type equals is identity.
+fn array_types_equal(ctx: &CompilerContext, a: TypeId, b: TypeId) -> bool {
+    if a == b {
+        return true;
+    }
+    let elem = |t: TypeId| match &ctx.typ(t).kind {
+        crate::code::type_::TypeKindData::ArrayType { elemtype, .. } => *elemtype,
+        _ => None,
+    };
+    match (elem(a), elem(b)) {
+        (Some(x), Some(y)) => array_types_equal(ctx, x, y),
+        _ => false,
+    }
+}
+
 /// Clone a symbol with the given owner.
 fn clone_symbol_with_owner(
     ctx: &mut CompilerContext,
@@ -697,6 +721,10 @@ fn clone_symbol_with_owner(
 ) -> SymbolId {
     let mut cloned = ctx.sym(sym).clone();
     cloned.owner = Some(owner);
+    // Java: Symbol.clone(Symbol) overrides baseSymbol() (Symbol.java:
+    // 1676-1693/1928-1942), which in turn defines poolKey as
+    // Pair(newOwner, baseSymbol()).
+    cloned.base_symbol_override = Some(crate::code::symbol::base_symbol(ctx, sym));
     ctx.alloc_symbol(cloned)
 }
 
@@ -898,7 +926,10 @@ impl Gen {
             let head_pos = ctx.tree(*clinit_stats.head()).pos;
             let make = Rc::clone(&self.make);
             let block = make.borrow_mut().at(head_pos).block(ctx, 0, clinit_stats.clone());
-            let last_pos = ctx.tree(clinit_stats.last().expect("clinit last")).pos;
+            // Java: Gen.java:496-500 sets block.endpos to
+            // TreeInfo.endPos(clinitStats.last()) (the closing brace of the
+            // user static initializer), not its start position.
+            let last_pos = tree_info::end_pos(ctx, clinit_stats.last().expect("clinit last"));
             if let TreeKind::Block { endpos, .. } = &mut ctx.tree_mut(block).kind {
                 *endpos = last_pos;
             }
@@ -2165,7 +2196,7 @@ impl Gen {
                 let ty = self.get_code().borrow().state.peek();
                 let cp = self.get_code().borrow().cp;
                 let stacksize = self.get_code().borrow().state.stacksize;
-                let synthetic = self.target.synthetic_name_char() as u8 as char;
+                let synthetic = self.target.synthetic_name_char();
                 let name_text = format!(
                     "{0}stack{0}{1}{0}{2}",
                     synthetic, ctx.tree(tree).pos, stacksize
@@ -2949,6 +2980,9 @@ impl Gen {
             TreeKind::TypeUnion { alternatives, .. } => alternatives.clone(),
             _ => panic!("AssertionError: union type expected"),
         };
+        // Java: Gen.java:1676-1691 builds the list with the head first, then
+        // prepends the remaining alternatives and reverses the result, which
+        // yields the source order of the union alternatives.
         let mut res: Vec<(List<crate::ids::AttributeId>, TreeId)> = Vec::new();
         let head = *alts.head();
         res.push((first, head));
@@ -2966,7 +3000,6 @@ impl Gen {
                 res.push((List::nil(), alt));
             }
         }
-        res.reverse();
         res
     }
 

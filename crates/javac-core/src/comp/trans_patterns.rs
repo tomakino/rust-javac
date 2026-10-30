@@ -828,7 +828,6 @@ impl TransPatterns {
         let mut statements: Vec<TreeId> = Vec::new();
         let pos = ctx.tree(tree).pos;
         let synthetic = self.target.synthetic_name_char();
-        let synthetic = char::from_u32(u32::from(synthetic)).unwrap_or('$');
         let temp_name = self.names.from_string(&javac_strings::JavaString::from(
             format!("selector{}{}temp", pos, synthetic).as_str(),
         ));

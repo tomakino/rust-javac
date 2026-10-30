@@ -21,7 +21,6 @@ use javac_tools::tools::standard_java_file_manager::StandardJavaFileManager;
 use javac_tools::tools::standard_location::StandardLocation;
 
 use crate::code::deferred_completion_failure_handler::DeferredCompletionFailureHandler;
-use crate::file::javac_file_manager::is_identifier;
 use crate::code::deferred_lint_handler::DeferredLintHandler;
 use crate::code::dependencies::DummyDependencies;
 use crate::code::lint::Lint;
@@ -86,128 +85,6 @@ pub struct CompiledClass {
     pub bytes: Vec<u8>,
 }
 
-
-/// Register packages found on CLASS_PATH in the unnamed module's visible
-/// package map. Upstream Modules.computeVisiblePackages does the same for the
-/// unnamed module; without it ClassFinder never scans user class path packages.
-fn add_classpath_packages_to_unnamed_module(compiler: &mut MiniCompiler) {
-    let class_path = StandardLocation::location_for(&js("CLASS_PATH"));
-    let Some(paths) = compiler.file_manager.get_location_as_paths(&*class_path) else {
-        return;
-    };
-    let unnamed = compiler.syms.borrow().unnamed_module;
-    for root in paths {
-        let mut package_dirs = Vec::new();
-        if root.is_dir() {
-            collect_package_dirs(&root, &root, &mut package_dirs);
-        } else {
-            collect_jar_package_dirs(&root, &mut package_dirs);
-        }
-        for package in package_dirs {
-            let name = compiler
-                .names
-                .from_string(&javac_strings::JavaString::from(package.as_str()));
-            let package_symbol = {
-                let syms = compiler.syms.borrow();
-                syms.enter_package(&mut compiler.ctx, unnamed, name.clone())
-            };
-            // Java: p.completer = initialCompleter (Symtab.enterPackage).
-            // The ported initial completer is terminal for lazily-created
-            // packages, so install the ClassFinder package completer directly.
-            let completer = compiler.finder.get_completer_factory()();
-            compiler.ctx.sym_mut(package_symbol).completer = Some(completer);
-            // Java: ClassFinder fills a class-path package lazily when it is
-            // first looked up; complete it here (before attribution) so the
-            // package members are available without scanning inside Attr.
-            {
-                let syms = compiler.syms.borrow();
-                let _ = compiler.ctx.complete_symbol(&syms, package_symbol);
-            }
-            if let crate::code::symbol::SymbolKind::ModuleSymbol {
-                visible_packages, ..
-            } = &mut compiler.ctx.sym_mut(unnamed).kind_data
-            {
-                visible_packages.insert(name, package_symbol);
-            }
-        }
-    }
-}
-
-/// Collect the packages of a class-path jar (the archive sibling of
-/// collectPackageDirs). A classpath jar is an ordinary unnamed-module entry;
-/// without registering its packages, ClassFinder never asks the archive
-/// container for the package's classes.
-fn collect_jar_package_dirs(jar: &Path, out: &mut Vec<String>) {
-    let Ok(archive) = javac_zip::ZipArchive::open(&jar.to_path_buf()) else {
-        return;
-    };
-    let mut seen = std::collections::HashSet::new();
-    for entry in archive.entries() {
-        if entry.is_directory() {
-            continue;
-        }
-        let name = entry.name().to_string();
-        if !name.ends_with(".class") || name.ends_with("module-info.class") {
-            continue;
-        }
-        let Some(index) = name.rfind('/') else {
-            continue;
-        };
-        let mut current = &name[..index];
-        let valid = current
-            .split('/')
-            .all(|segment| !segment.is_empty() && is_identifier(segment));
-        if !valid {
-            continue;
-        }
-        loop {
-            if seen.insert(current.to_string()) {
-                out.push(current.to_string());
-            }
-            match current.rfind('/') {
-                Some(index) => current = &current[..index],
-                None => break,
-            }
-        }
-    }
-}
-
-fn collect_package_dirs(root: &Path, dir: &Path, out: &mut Vec<String>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        // Build outputs are not package roots: the default class path (.) would otherwise
-        // walk the whole target/ tree and collect thousands of bogus "packages".
-        if let Some(name) = path.file_name().and_then(|n| n.to_str())
-            && matches!(
-                name,
-                "target" | "build" | ".git" | ".gradle" | "node_modules" | "out" | "internal" | "reference"
-            )
-        {
-            continue;
-        }
-        let Ok(relative) = path.strip_prefix(root) else {
-            continue;
-        };
-        let package = relative
-            .components()
-            .filter_map(|component| match component {
-                std::path::Component::Normal(part) => Some(part.to_string_lossy().to_string()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join(".");
-        if !package.is_empty() {
-            out.push(package);
-        }
-        collect_package_dirs(root, &path, out);
-    }
-}
 
 /// The minimal compiler wiring over the ported compilation phases.
 pub struct MiniCompiler {
@@ -646,7 +523,7 @@ impl MiniCompiler {
             Rc::clone(&log),
             Rc::clone(&diags),
             source,
-            char::from_u32(target.synthetic_name_char() as u32).expect("synthetic name char"),
+            target.synthetic_name_char(),
             Rc::clone(&types),
             Rc::clone(&lint),
             Rc::clone(&deferred_lint_handler),
@@ -867,6 +744,7 @@ impl MiniCompiler {
             Rc::clone(&attr),
             Rc::clone(&infer),
             Rc::clone(&pool_writer),
+            Rc::clone(&lower),
             &options,
         )));
         let method_codes = Rc::clone(&generator.borrow().method_codes);
@@ -1268,8 +1146,6 @@ impl MiniCompiler {
             self.modules
                 .init_modules(&mut self.ctx, &mut syms, &roots);
         }
-        add_classpath_packages_to_unnamed_module(self);
-
         // JavaCompiler.compile2: the second stopIfError(ENTER, ...) guards
         // enterTrees.
         if self.should_stop(crate::comp::compile_states::CompileState::ENTER) {

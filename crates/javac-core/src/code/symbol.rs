@@ -3129,8 +3129,11 @@ pub fn external_type(
     names: &crate::util::names::Names,
     sym: SymbolId,
 ) -> crate::ids::TypeId {
-    let sym_ty = ctx.sym(sym).ty.expect("symbol type");
-    let erased = types.erasure(ctx, syms, sym_ty);
+    // Java: Symbol.externalType calls erasure(types), which returns the
+    // symbol's cached erasure_field (Symbol.java:347-357). Enum and anonymous
+    // constructors rewrite erasure_field with their synthetic parameters
+    // (Lower.java:2626-2631, 2699-2704) while keeping the source type.
+    let erased = types.symbol_erasure(ctx, syms, sym);
     let is_init = ctx.sym(sym).name == names.init;
     let owner_has_outer = ctx
         .sym(sym)
@@ -3514,14 +3517,24 @@ pub fn symbol_pool_key(
     ctx: &crate::compiler_context::CompilerContext,
     sym: SymbolId,
 ) -> crate::jvm::pool_constant::PoolKey {
+    use crate::jvm::pool_constant::PoolKey;
     match &ctx.sym(sym).kind_data {
-        SymbolKind::MethodHandleSymbol { .. } => {
-            crate::jvm::pool_constant::PoolKey::MethodHandle(sym)
-        }
+        SymbolKind::MethodHandleSymbol { .. } => PoolKey::MethodHandle(sym),
         SymbolKind::DynamicMethodSymbol { .. } | SymbolKind::DynamicVarSymbol { .. } => {
-            crate::jvm::pool_constant::PoolKey::Dynamic(sym)
+            PoolKey::Dynamic(sym)
         }
-        _ => crate::jvm::pool_constant::PoolKey::Symbol(sym),
+        _ => {
+            // Java: VarSymbol.clone/MethodSymbol.clone override poolKey as
+            // `new Pair<>(newOwner, baseSymbol())` (Symbol.java:1684-1686,
+            // 1936-1938); non-clone member symbols use the identity key.
+            if ctx.sym(sym).base_symbol_override.is_some() {
+                let owner = ctx.sym(sym).owner.expect("member owner");
+                let base = base_symbol(ctx, sym);
+                PoolKey::Pair(Box::new(PoolKey::Symbol(owner)), Box::new(PoolKey::Symbol(base)))
+            } else {
+                PoolKey::Symbol(sym)
+            }
+        }
     }
 }
 

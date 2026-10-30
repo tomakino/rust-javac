@@ -184,6 +184,70 @@ impl DiagnosticPosition for SimpleDiagnosticPosition {
     }
 }
 
+/// A DiagnosticPosition backed by a tree node: the port's form of
+/// `JCTree.pos()`, where a tree is its own diagnostic position.
+///
+/// Java: JCTree implements DiagnosticPosition (JCTree.java:88) and
+/// `pos()` returns the tree itself (JCTree.java:486-490):
+/// - getTree() returns the tree (JCTree.java:493-495);
+/// - getStartPosition() delegates to TreeInfo.getStartPos(this)
+///   (JCTree.java:498-500, TreeInfo.java:447-556);
+/// - getPreferredPosition() returns the tree's pos field
+///   (JCTree.java:503-505);
+/// - getEndPosition(endPosTable) delegates to TreeInfo.getEndPos(this,
+///   endPosTable) (JCTree.java:508-510, TreeInfo.java:560-652). With a null
+///   table that is endPos(tree) (TreeInfo.java:564-567); with a table it is
+///   the table's end position (TreeInfo.java:569-571), and the fallback
+///   switch that follows does not list SELECT, so for a JCFieldAccess the
+///   table result (which may be NOPOS) is returned unchanged. This type is
+///   currently used for exactly that case (Attr.selectSym, Attr.java:4417).
+///
+/// The port's EndPosTable is passed to getEndPosition by the diagnostic
+/// formatter, while the CompilerContext needed by TreeInfo is not available
+/// at that point, so the start position and the table-less end position are
+/// captured when the position is created.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TreeDiagnosticPosition {
+    tree: TreeId,
+    start: i32,
+    preferred: i32,
+    end_without_table: i32,
+}
+
+impl TreeDiagnosticPosition {
+    /// Java: JCTree.pos() (JCTree.java:486-490): a tree is its own
+    /// DiagnosticPosition.
+    pub fn new(ctx: &crate::compiler_context::CompilerContext, tree: TreeId) -> TreeDiagnosticPosition {
+        TreeDiagnosticPosition {
+            tree,
+            start: crate::tree::tree_info::get_start_pos(ctx, tree),
+            preferred: ctx.tree(tree).pos,
+            end_without_table: crate::tree::tree_info::get_end_pos(ctx, Some(tree), None),
+        }
+    }
+}
+
+impl DiagnosticPosition for TreeDiagnosticPosition {
+    fn get_tree(&self) -> Option<TreeId> {
+        Some(self.tree)
+    }
+
+    fn get_start_position(&self) -> i32 {
+        self.start
+    }
+
+    fn get_preferred_position(&self) -> i32 {
+        self.preferred
+    }
+
+    fn get_end_position(&self, end_pos_table: Option<&dyn EndPosTable>) -> i32 {
+        match end_pos_table {
+            Some(end_pos_table) => end_pos_table.get_end_pos(self.tree),
+            None => self.end_without_table,
+        }
+    }
+}
+
 /// Java diagnostic argument (an element of JCDiagnostic.DiagnosticInfo.args,
 /// which is a Java Object[]). ADR 0002 revision C: the original object identity
 /// and type are preserved so formatters can inspect the concrete type.

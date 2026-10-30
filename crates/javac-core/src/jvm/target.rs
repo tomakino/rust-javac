@@ -194,9 +194,9 @@ impl Target {
     /// Return the character to be used in constructing synthetic
     /// identifiers, where not specified by the JLS.
     ///
-    /// Java: public char syntheticNameChar()
-    pub fn synthetic_name_char(self) -> u16 {
-        '$' as u16
+    /// Java: public char syntheticNameChar() (Target.java:143-145)
+    pub fn synthetic_name_char(self) -> char {
+        '$'
     }
 
     /// Does the target VM expect MethodParameters attributes?
@@ -343,7 +343,7 @@ mod tests {
 
     #[test]
     fn target_properties_switch_at_the_documented_versions() {
-        assert_eq!(Target::JDK1_8.synthetic_name_char(), '$' as u16);
+        assert_eq!(Target::JDK1_8.synthetic_name_char(), '$');
         assert!(!Target::JDK1_7.has_method_parameters());
         assert!(Target::JDK1_8.has_method_parameters());
         assert!(!Target::JDK1_8.has_string_concat_factory());

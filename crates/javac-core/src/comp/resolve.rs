@@ -2689,6 +2689,7 @@ impl Resolve {
         let original = ctx.sym(sym).clone();
         let mut copy = original;
         copy.owner = Some(new_owner);
+        copy.base_symbol_override = Some(crate::code::symbol::base_symbol(ctx, sym));
         ctx.alloc_symbol(copy)
     }
 }
@@ -3001,7 +3002,8 @@ impl Resolve {
             crate::code::symbol::symbol_new_resolve_error(
                 ctx,
                 Kind::HIDDEN,
-                self.names.empty.clone(),
+                // Java: this.name = sym.name; (Resolve.java:4432)
+                ctx.sym(sym).name.clone(),
                 "invisible class error",
                 crate::code::symbol::ResolveErrorData::Invisible {
                     env: snapshot,
@@ -3052,7 +3054,8 @@ impl Resolve {
                 return crate::code::symbol::symbol_new_resolve_error(
                     ctx,
                     Kind::HIDDEN,
-                    self.names.empty.clone(),
+                    // Java: this.name = sym.name; (Resolve.java:4432)
+                    ctx.sym(existing).name.clone(),
                     "invisible class error",
                     crate::code::symbol::ResolveErrorData::Invisible {
                         env: snapshot,
@@ -3131,111 +3134,6 @@ impl Resolve {
                     &mut validate,
                     pack,
                 );
-            }
-        }
-        // Java: when the package cannot be found in the current module but it
-        // exists in a module this module cannot read (or that does not export
-        // it), report the invisible-package error instead of a generic
-        // "package does not exist" (Resolve.InvisibleSymbolError path). This
-        // applies inside a named module; an unnamed-module compilation keeps the
-        // plain classpath package lookup (see the NotDefAccess examples).
-        let named_module_compilation = env
-            .toplevel
-            .and_then(|toplevel| match &ctx.tree(toplevel).kind {
-                TreeKind::CompilationUnit { modle, .. } => *modle,
-                _ => None,
-            })
-            .is_some_and(|module| module != syms.unnamed_module);
-        if self.allow_modules {
-            let pack_members_empty = ctx
-                .sym(pack)
-                .members()
-                .map(|scope| {
-                    ctx.scope_get_symbols(
-                        scope,
-                        crate::code::scope::LookupKind::NON_RECURSIVE,
-                        &|_| true,
-                    )
-                    .is_empty()
-                })
-                .unwrap_or(true);
-            let snapshot = resolve_env_snapshot(ctx, env);
-            if named_module_compilation && pack_members_empty {
-                for candidate in syms.get_packages_for_name(name) {
-                    if candidate == pack || ctx.sym(candidate).kind != Kind::PCK {
-                        continue;
-                    }
-                    // Packages of java.base are always visible to a named
-                    // module; do not turn a system-package lookup into an
-                    // invisible-package error.
-                    if crate::code::symbol::package_module(ctx, candidate) == Some(syms.java_base) {
-                        continue;
-                    }
-                    let candidate_members_empty = ctx
-                        .sym(candidate)
-                        .members()
-                        .map(|scope| {
-                            ctx.scope_get_symbols(
-                                scope,
-                                crate::code::scope::LookupKind::NON_RECURSIVE,
-                                &|_| true,
-                            )
-                            .is_empty()
-                        })
-                        .unwrap_or(true);
-                    if candidate_members_empty {
-                        // A package of a module on the module path may exist
-                        // without any entered member yet (its classes are
-                        // loaded lazily); the module location tells whether the
-                        // package really exists. A package of the unnamed
-                        // module (or of a module that does not contain it) does
-                        // not exist here.
-                        let candidate_module =
-                            crate::code::symbol::package_module(ctx, candidate);
-                        let exists = match candidate_module {
-                            Some(module) => syms.package_exists(ctx, module, name),
-                            None => false,
-                        };
-                        if !exists {
-                            continue;
-                        }
-                    }
-                    if !symbol_package_visible(ctx, &snapshot, candidate) {
-                        return self.create_invisible_symbol_error(ctx, syms, env, candidate);
-                    }
-                }
-            }
-            // Packages of the modules on the module path are entered lazily,
-            // so getPackagesForName cannot see them. Only modules whose class
-            // location is MODULE_PATH are scanned: system modules (jrt image)
-            // already have their packages in the symbol table, and listing them
-            // here would misreport the sun/java parent packages of unrelated
-            // compilations. This also covers the unnamed module, which reads
-            // every module of the graph.
-            if pack_members_empty {
-                let env_module = env_toplevel_module(ctx, env);
-                for module in syms.get_all_modules() {
-                    if Some(module) == env_module {
-                        continue;
-                    }
-                    let Some(class_location) = resolve_module_class_location(ctx, module) else {
-                        continue;
-                    };
-                    let location_name = class_location.get_name().to_string_lossy();
-                    if !location_name.starts_with("MODULE_PATH") {
-                        continue;
-                    }
-                    let package_text = name.to_java_string().to_string_lossy();
-                    let exists = self.finder.as_ref().is_some_and(|finder| {
-                        finder.module_package_exists(&class_location, &package_text)
-                    });
-                    if exists {
-                        let candidate = syms.enter_package(ctx, module, name.clone());
-                        if !symbol_package_visible(ctx, &snapshot, candidate) {
-                            return self.create_invisible_symbol_error(ctx, syms, env, candidate);
-                        }
-                    }
-                }
             }
         }
         pack
@@ -10290,9 +10188,13 @@ impl Resolve {
                             std::rc::Rc::new(redundant),
                         ),
                     );
+                    // Java: log.error(pos, Errors.IllegalDefaultSuperCall(...))
+                    // (Resolve.java:3757-3759): the diagnostic keeps the
+                    // position and JCDiagnostic.getIntPosition (preferred) is
+                    // the one used by the formatter.
                     crate::util::abstract_log::AbstractLog::error_at(
                         &mut *self.log.borrow_mut(),
-                        pos.as_ref().map(|pos| pos.get_start_position()).unwrap_or(0),
+                        pos.as_ref().map(|pos| pos.get_preferred_position()).unwrap_or(0),
                         crate::util::jc_diagnostic::Error::from(info),
                     );
                     return syms.err_symbol;
@@ -10306,9 +10208,11 @@ impl Resolve {
                 ctx.sym(c).name.to_java_string().to_string_lossy().to_string(),
             ),
         );
+        // Java: log.error(pos, Errors.NotEnclClass(c)) (Resolve.java:3765);
+        // the formatter uses the preferred position (JCDiagnostic.getIntPosition).
         crate::util::abstract_log::AbstractLog::error_at(
             &mut *self.log.borrow_mut(),
-            pos.as_ref().map(|pos| pos.get_start_position()).unwrap_or(0),
+            pos.as_ref().map(|pos| pos.get_preferred_position()).unwrap_or(0),
             crate::util::jc_diagnostic::Error::from(info),
         );
         syms.err_symbol
@@ -11172,6 +11076,7 @@ fn contract_arg_to_jcd(
     match arg {
         ContractArg::Text(text) => std::rc::Rc::new(javac_strings::JavaString::from(text.as_str())),
         ContractArg::Type(type_arg) => std::rc::Rc::new(type_arg.clone()),
+        ContractArg::Symbol(symbol_arg) => std::rc::Rc::new(symbol_arg.clone()),
         ContractArg::JCDiagnostic(diag) => diag.clone(),
         ContractArg::List(items) => {
             let converted: Vec<crate::util::jc_diagnostic::DiagnosticArg> =

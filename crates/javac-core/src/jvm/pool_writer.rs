@@ -81,6 +81,30 @@ pub struct PoolWriter {
     pub signature_error: Option<TypeId>,
 }
 
+/// Java: PoolWriter.enterInner (PoolWriter.java:223-231): enter the class and
+/// its enclosing classes only when the class is nested (its owner has an
+/// enclosing class); top-level classes are not entered.
+fn enter_inner_symbol(
+    ctx: &mut CompilerContext,
+    types: &crate::code::types::Types,
+    inner_classes: &mut Vec<SymbolId>,
+    c: SymbolId,
+) {
+    let c_ty = ctx.sym(c).ty.expect("class symbol type");
+    if types.is_compound_public(ctx, c_ty) {
+        panic!("AssertionError: Unexpected intersection type");
+    }
+    if inner_classes.contains(&c) {
+        return;
+    }
+    if let Some(owner) = ctx.sym(c).owner
+        && let Some(encl) = crate::code::symbol::symbol_encl_class(ctx, owner)
+    {
+        enter_inner_symbol(ctx, types, inner_classes, encl);
+        inner_classes.push(c);
+    }
+}
+
 impl PoolWriter {
     /// Maximum number of constant pool entries.
     pub const MAX_ENTRIES: i32 = 0xFFFF;
@@ -292,21 +316,9 @@ impl PoolWriter {
         self.write_if_needed(ctx, syms, PoolConstantRef::Module(module))
     }
 
-    /// Enter a class in the inner-classes set (enclosing first).
+    /// Java: public void enterInner(ClassSymbol c) (PoolWriter.java:223-231).
     pub fn enter_inner(&mut self, ctx: &mut CompilerContext, c: SymbolId) {
-        let c_ty = ctx.sym(c).ty.expect("class symbol type");
-        if self.types.is_compound_public(ctx, c_ty) {
-            panic!("AssertionError: Unexpected intersection type");
-        }
-        if self.inner_classes.contains(&c) {
-            return;
-        }
-        if let Some(owner) = ctx.sym(c).owner
-            && let Some(encl) = crate::code::symbol::symbol_encl_class(ctx, owner)
-        {
-            self.enter_inner(ctx, encl);
-            self.inner_classes.push(c);
-        }
+        enter_inner_symbol(ctx, &self.types, &mut self.inner_classes, c);
     }
 
     /// Write the pool into the given class-file byte buffer.
@@ -347,7 +359,7 @@ impl PoolWriter {
             PoolConstantRef::Member(s) => crate::code::symbol::symbol_pool_key(ctx, *s),
             PoolConstantRef::Package(s) | PoolConstantRef::Module(s) => PoolKey::Symbol(*s),
             PoolConstantRef::Basic(basic) => basic.pool_key(),
-            PoolConstantRef::MethodHandle(s) => PoolKey::MethodHandle(*s),
+            PoolConstantRef::MethodHandle(s) => method_handle_pool_key(&*ctx, *s),
             PoolConstantRef::MethodType(ty) => PoolKey::Type(*ty),
             PoolConstantRef::NameAndType(nt) => PoolKey::NameAndType(nt.name.clone(), nt.type_),
             PoolConstantRef::Dynamic(s) => PoolKey::Dynamic(*s),
@@ -542,12 +554,14 @@ impl PoolWriter {
             .expect("dynamic symbol bootstrap method");
         let static_args = crate::code::symbol::dynamic_static_args(ctx, dynamic)
             .expect("dynamic symbol static args");
-        let static_arg_keys: Vec<PoolKey> =
-            static_args.iter().map(loadable_pool_key).collect();
+        let static_arg_keys: Vec<PoolKey> = static_args
+            .iter()
+            .map(|arg| loadable_pool_key(&*ctx, arg))
+            .collect();
         let key = BsmKey {
             bsm: Some(bsm),
             static_args,
-            bsm_key: PoolKey::MethodHandle(bsm),
+            bsm_key: method_handle_pool_key(&*ctx, bsm),
             static_arg_keys,
         };
         for (existing, index) in &self.bootstrap_methods {
@@ -640,12 +654,31 @@ fn pool_tag_of(constant: &PoolConstantRef) -> i32 {
     }
 }
 
+/// Java: MethodHandleSymbol.poolKey (Symbol.java:2403-2406):
+/// new Pair<>(baseSymbol(), referenceKind()).
+fn method_handle_pool_key(
+    ctx: &CompilerContext,
+    handle: SymbolId,
+) -> PoolKey {
+    let base = crate::code::symbol::method_handle_base_symbol(ctx, handle)
+        .expect("method handle base symbol");
+    let reference_kind = crate::code::symbol::method_handle_reference_kind(ctx, handle)
+        .expect("method handle reference kind");
+    PoolKey::Pair(
+        Box::new(PoolKey::Symbol(base)),
+        Box::new(PoolKey::Integer(reference_kind)),
+    )
+}
+
 /// Return the pool key of a loadable constant reference.
-fn loadable_pool_key(arg: &LoadableConstantRef) -> PoolKey {
+fn loadable_pool_key(
+    ctx: &CompilerContext,
+    arg: &LoadableConstantRef,
+) -> PoolKey {
     match arg {
         LoadableConstantRef::Basic(basic) => basic.pool_key(),
         LoadableConstantRef::Class(ty) => PoolKey::Class(*ty),
-        LoadableConstantRef::MethodHandle(sym) => PoolKey::MethodHandle(*sym),
+        LoadableConstantRef::MethodHandle(sym) => method_handle_pool_key(ctx, *sym),
         LoadableConstantRef::MethodType(ty) => PoolKey::Type(*ty),
         LoadableConstantRef::Dynamic(sym) => PoolKey::Dynamic(*sym),
     }
@@ -670,6 +703,42 @@ fn pool_keys_equal(
         (PoolKey::Pair(x1, y1), PoolKey::Pair(x2, y2)) => {
             pool_keys_equal(ctx, syms, types, x1, x2)
                 && pool_keys_equal(ctx, syms, types, y1, y2)
+        }
+        // Java: Dynamic.poolKey (PoolConstant.java:151-154) is
+        // Pair(bsmKey, dynamicType().poolKey(types)); equal dynamic symbols
+        // share one InvokeDynamic/ConstantDynamic pool entry.
+        (PoolKey::Dynamic(s1), PoolKey::Dynamic(s2)) => {
+            if s1 == s2 {
+                return true;
+            }
+            let (Some(h1), Some(h2)) = (
+                crate::code::symbol::dynamic_bootstrap_method(ctx, *s1),
+                crate::code::symbol::dynamic_bootstrap_method(ctx, *s2),
+            ) else {
+                return false;
+            };
+            if method_handle_pool_key(&*ctx, h1) != method_handle_pool_key(&*ctx, h2) {
+                return false;
+            }
+            let a1 = crate::code::symbol::dynamic_static_args(ctx, *s1).unwrap_or_default();
+            let a2 = crate::code::symbol::dynamic_static_args(ctx, *s2).unwrap_or_default();
+            if a1.len() != a2.len() {
+                return false;
+            }
+            for (x, y) in a1.iter().zip(a2.iter()) {
+                if !pool_keys_equal(
+                    ctx,
+                    syms,
+                    types,
+                    &loadable_pool_key(&*ctx, x),
+                    &loadable_pool_key(&*ctx, y),
+                ) {
+                    return false;
+                }
+            }
+            let t1 = ctx.sym(*s1).ty.expect("dynamic type");
+            let t2 = ctx.sym(*s2).ty.expect("dynamic type");
+            types.is_same_type(ctx, syms, t1, t2)
         }
         _ => a == b,
     }
@@ -746,23 +815,20 @@ impl SharedSignatureGenerator {
         self.sigbuf.to_name(names)
     }
 
-    /// Move the collected inner classes into the writer list.
+    /// Move the collected signature references into the writer list.
+    ///
+    /// Java: SignatureGenerator.classReference calls PoolWriter.enterInner
+    /// (PoolWriter.java:318-319), which only enters classes with an enclosing
+    /// class (PoolWriter.java:223-231). The shared generator has no context,
+    /// so the official enterInner semantics are applied here, at the merge
+    /// into PoolWriter.inner_classes.
     fn take_inner_classes_into(
         &mut self,
         ctx: &mut CompilerContext,
         inner_classes: &mut Vec<SymbolId>,
     ) {
         for c in std::mem::take(&mut self.inner_classes) {
-            if inner_classes.contains(&c) {
-                continue;
-            }
-            if let Some(owner) = ctx.sym(c).owner
-                && let Some(encl) = crate::code::symbol::symbol_encl_class(ctx, owner)
-                && !inner_classes.contains(&encl)
-            {
-                inner_classes.push(encl);
-            }
-            inner_classes.push(c);
+            enter_inner_symbol(ctx, &self.types, inner_classes, c);
         }
     }
 }
@@ -780,6 +846,11 @@ impl SignatureGenerator for SharedSignatureGenerator {
         self.sigbuf.append_name(name);
     }
 
+    /// Java: SignatureGenerator.classReference (PoolWriter.java:318-319)
+    /// calls PoolWriter.enterInner. The shared generator has no writer or
+    /// context, so it records the referenced class here; the enterInner
+    /// condition is applied when the candidates are merged into
+    /// PoolWriter.inner_classes (take_inner_classes_into).
     fn class_reference(&mut self, c: SymbolId) {
         if !self.inner_classes.contains(&c) {
             self.inner_classes.push(c);

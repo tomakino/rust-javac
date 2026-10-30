@@ -1275,7 +1275,7 @@ impl Types {
     }
 
     /// Java: Symbol.TypeSymbol.erasure(Types) / Symbol.ClassSymbol.erasure(Types)
-    fn symbol_erasure(
+    pub fn symbol_erasure(
         &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,

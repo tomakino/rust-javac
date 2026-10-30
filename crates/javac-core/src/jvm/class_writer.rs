@@ -353,11 +353,14 @@ impl ClassWriter {
         }
         let sym_ty = ctx.sym(sym).ty.expect("member type");
         let syms = Rc::clone(&self.syms);
-        let erased = self.types.erasure(ctx, &syms.borrow(), sym_ty);
+        // Java: ClassWriter.java:363-370 compares sym.type with
+        // sym.erasure(types) (the symbol's erasure_field) and checks the
+        // thrown types of sym.type, not of the erasure.
+        let erased = self.types.symbol_erasure(ctx, &syms.borrow(), sym);
         let same = self
             .types
             .is_same_type(ctx, &syms.borrow(), sym_ty, erased);
-        let thrown = ctx.typ(erased).get_thrown_types(ctx);
+        let thrown = ctx.typ(sym_ty).get_thrown_types(ctx);
         let has_type_var = {
             let pool = self.pool_writer.borrow();
             pool.signature_gen.has_type_var(ctx, thrown.clone())

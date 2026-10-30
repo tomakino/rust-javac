@@ -730,7 +730,48 @@ fn compile(args: &[String]) -> Result<i32, String> {
             class_names.push(path.display().to_string());
             continue;
         }
+        if !path.exists() {
+            // Java: Main/javac reports an explicitly named missing source as
+            // "error: file not found: <path>" followed by the usage line, with
+            // the CMDERR exit code (JavacFileManager/Arguments).
+            let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+            eprintln!(
+                "error: {}",
+                messages.get_localized_string(
+                    "compiler.err.file.not.found",
+                    &[path.display().to_string()],
+                )
+            );
+            let javac_messages =
+                JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
+            eprintln!(
+                "{}",
+                javac_messages.get_localized_string("javac.msg.usage", &["javac".to_string()])
+            );
+            return Ok(CMDERR);
+        }
         collect_sources(path, &mut sources)?;
+    }
+    // Java: with -m, javac compiles the module's sources discovered on
+    // --module-source-path (ModuleFinder); no explicit file arguments are
+    // expected in that mode.
+    if let Some((_, module_value)) = helper.options.iter().find(|(name, _)| name == "--module")
+        && let Some((_, module_source_path)) = helper
+            .options
+            .iter()
+            .find(|(name, _)| name == "--module-source-path")
+    {
+        for module in module_value.split(',') {
+            if module.is_empty() {
+                continue;
+            }
+            for entry in module_source_path.split(';').filter(|entry| !entry.is_empty()) {
+                let module_dir = PathBuf::from(entry).join(module);
+                if module_dir.is_dir() {
+                    collect_sources(&module_dir, &mut sources)?;
+                }
+            }
+        }
     }
     if !class_names.is_empty() {
         let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));

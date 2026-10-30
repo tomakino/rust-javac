@@ -921,14 +921,13 @@ impl TransTypes {
             TreeKind::ClassDecl { defs, .. } => defs.clone(),
             _ => List::nil(),
         };
-        let mut new_defs: List<TreeId> = List::nil();
+        // Java: TransTypes.java:963 `tree.defs = bridges.toList().prependList(tree.defs)`.
+        // List.prependList(xs) returns xs followed by this (see
+        // util/List.java:236-252: reverse(xs) is prepended to this), so the
+        // upstream result is tree.defs followed by the bridge methods.
+        let mut new_defs: List<TreeId> = defs;
         for bridge in bridges.iter() {
             new_defs = new_defs.append(*bridge);
-        }
-        let mut current = defs;
-        while current.non_empty() {
-            new_defs = new_defs.append(*current.head());
-            current = current.tail();
         }
         if let TreeKind::ClassDecl { defs: slot, .. } = &mut ctx.tree_mut(tree).kind {
             *slot = new_defs;

@@ -53,7 +53,9 @@ use crate::util::warner::Warner;
 use crate::compiler_context::CompilerContext;
 use crate::ids::{AttributeId, ScopeId, SymbolId, TreeId};
 use crate::resources::compiler_properties::{errors, fragments, warnings};
-use crate::resources::diagnostic_contract::{DiagnosticArg, FlagArg, KindNameArg, SymbolArg};
+use crate::resources::diagnostic_contract::{
+    DiagnosticArg, FlagArg, KindNameArg, SymbolArg, SymbolArgValue,
+};
 use crate::resources::diagnostic_contract::ErrorInfo;
 use crate::util::jc_diagnostic::{Error as JCDiagnosticError, Factory};
 use crate::util::abstract_log::AbstractLog;
@@ -10773,10 +10775,16 @@ impl Check {
     ) {
         let removal = ctx.sym(sym).is_deprecated_for_removal();
         let is_module = ctx.sym(sym).kind == Kind::MDL;
-        let sym_name = ctx.sym(sym).name.to_java_string().to_string_lossy();
-        let loc_name = ctx
-            .sym(sym)
-            .location()
+        // Java: Warnings.HasBeenDeprecatedForRemoval(sym, sym.location())
+        // (Check.java:227-240) passes Symbol arguments. The default (rich)
+        // formatter prints them through the Printer (simple class names,
+        // AbstractDiagnosticFormatter.java:201-203); the raw formatter falls
+        // back to the same Printer, which renders ClassSymbol/PackageSymbol by
+        // full name (Printer.java:363-367/396-400). Keep both renderings.
+        let sym_text = ctx.sym(sym).name.to_java_string().to_string_lossy().to_string();
+        let sym_qualified_text = crate::code::symbol::symbol_to_string(ctx, sym);
+        let location = ctx.sym(sym).location();
+        let loc_text = location
             .map(|loc| {
                 let loc_sym = ctx.sym(loc);
                 if loc_sym.kind == Kind::PCK {
@@ -10793,6 +10801,10 @@ impl Check {
             })
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| String::from("unnamed package"));
+        let loc_qualified_text = location
+            .map(|loc| crate::code::symbol::symbol_to_string(ctx, loc))
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| String::from("unnamed package"));
         let lint = Rc::clone(&self.lint.borrow());
         let deprecation_handler = Rc::clone(&self.deprecation_handler);
         let removal_handler = Rc::clone(&self.removal_handler);
@@ -10807,7 +10819,7 @@ impl Check {
                             crate::util::jc_diagnostic::Warning::from(
                                 crate::resources::compiler_properties::warnings::
                                     has_been_deprecated_for_removal_module(
-                                        SymbolArg::placeholder(sym_name.clone()),
+                                        SymbolArg::placeholder(sym_text.clone()),
                                     ),
                             ),
                         );
@@ -10817,8 +10829,14 @@ impl Check {
                             crate::util::jc_diagnostic::Warning::from(
                                 crate::resources::compiler_properties::warnings::
                                     has_been_deprecated_for_removal(
-                                        SymbolArg::placeholder(sym_name.clone()),
-                                        SymbolArg::placeholder(loc_name.clone()),
+                                        DiagnosticArg::Symbol(SymbolArgValue::new(
+                                            sym_text.clone(),
+                                            sym_qualified_text.clone(),
+                                        )),
+                                        DiagnosticArg::Symbol(SymbolArgValue::new(
+                                            loc_text.clone(),
+                                            loc_qualified_text.clone(),
+                                        )),
                                     ),
                             ),
                         );
@@ -10830,7 +10848,7 @@ impl Check {
                         Some(Rc::clone(&position)),
                         crate::util::jc_diagnostic::Warning::from(
                             crate::resources::compiler_properties::warnings::
-                                has_been_deprecated_module(SymbolArg::placeholder(sym_name.clone())),
+                                has_been_deprecated_module(SymbolArg::placeholder(sym_text.clone())),
                         ),
                     );
                 } else {
@@ -10839,8 +10857,14 @@ impl Check {
                         crate::util::jc_diagnostic::Warning::from(
                             crate::resources::compiler_properties::warnings::
                                 has_been_deprecated(
-                                    SymbolArg::placeholder(sym_name.clone()),
-                                    SymbolArg::placeholder(loc_name.clone()),
+                                    DiagnosticArg::Symbol(SymbolArgValue::new(
+                                        sym_text.clone(),
+                                        sym_qualified_text.clone(),
+                                    )),
+                                    DiagnosticArg::Symbol(SymbolArgValue::new(
+                                        loc_text.clone(),
+                                        loc_qualified_text.clone(),
+                                    )),
                                 ),
                         ),
                     );

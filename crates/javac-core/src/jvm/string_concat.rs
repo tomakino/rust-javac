@@ -443,15 +443,19 @@ impl StringConcat {
         _generator: &mut crate::jvm::codegen::Gen,
         arg_type: TypeId,
     ) -> bool {
-        let unboxed = self.types.unboxed_type_ro(ctx, &self.syms.borrow(), arg_type);
-        let string_tsym = ctx.typ(self.syms.borrow().string_type).tsym.expect("string type symbol");
-        // types.unboxedType returns noType for a type that is not boxed (for
-        // example a primitive double); only an actual boxed type is converted
-        // eagerly (StringConcat.shouldConvertToStringEagerly).
-        let arg_is_primitive = ctx.typ(arg_type).get_tag().is_primitive();
-        let unboxed_is_primitive = !ctx.typ(unboxed).has_tag(TypeTag::NONE)
-            && ctx.typ(unboxed).get_tag().is_primitive();
-        !arg_is_primitive && unboxed_is_primitive && ctx.typ(arg_type).tsym != Some(string_tsym)
+        // Java: StringConcat.java:294-296:
+        //   !types.unboxedTypeOrType(argType).isPrimitive()
+        //       && argType.tsym != syms.stringType.tsym
+        let unboxed_or_type = {
+            let syms = self.syms.borrow();
+            self.types.unboxed_type_or_type(ctx, &syms, arg_type)
+        };
+        let string_tsym = {
+            let syms = self.syms.borrow();
+            ctx.typ(syms.string_type).tsym.expect("string type symbol")
+        };
+        !ctx.typ(unboxed_or_type).is_primitive()
+            && ctx.typ(arg_type).tsym != Some(string_tsym)
     }
 
     /// Emit the plain invokedynamic concat.
