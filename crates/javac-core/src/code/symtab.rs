@@ -783,6 +783,7 @@ fn enter_synthetic_annotation(
 #[allow(clippy::too_many_arguments)]
 fn lookup_package_impl(
     ctx: &mut CompilerContext,
+    syms: &Symtab,
     names: &Names,
     maps: &mut SymtabMaps,
     module: SymbolId,
@@ -829,7 +830,11 @@ fn lookup_package_impl(
             set_visible_package(ctx, module, unnamed_package);
             return unnamed_package;
         }
-        return package;
+        // The class-path package may not be completed yet (its classes are
+        // loaded lazily); return it so the caller can complete it after the
+        // symbol table borrow is released (ClassFinder.fillIn(PackageSymbol)).
+        set_visible_package(ctx, module, unnamed_package);
+        return unnamed_package;
     }
     enter_package(ctx, names, maps, module, flatname.clone())
 }
@@ -1964,10 +1969,20 @@ impl Symtab {
     /// Java: public PackageSymbol lookupPackage(ModuleSymbol msym, Name
     /// flatname)
     pub fn lookup_package(&self, ctx: &mut CompilerContext, msym: SymbolId, flatname: &Name) -> SymbolId {
+        // Java: msym.complete() (Symtab.java lookupPackage): the module
+        // completion merges the --add-reads directives into requires, which the
+        // package lookup below relies on (unnamed-module packages).
+        if ctx.sym(msym).completer.is_none()
+            && let Some(factory) = &self.module_completer
+        {
+            ctx.sym_mut(msym).completer = Some(factory());
+        }
+        let _ = ctx.complete_symbol(self, msym);
         let package = {
             let mut maps = self.maps.borrow_mut();
-            lookup_package_impl(
+            let package = lookup_package_impl(
                 ctx,
+                self,
                 &self.names,
                 &mut maps,
                 msym,
@@ -1975,7 +1990,8 @@ impl Symtab {
                 false,
                 self.unnamed_module,
                 self.no_module,
-            )
+            );
+            package
         };
         // Java: enterPackage binds initialCompleter to a newly created package
         // (Symtab.java:780-793). lookupPackage also creates packages through the
@@ -1998,9 +2014,17 @@ impl Symtab {
         msym: SymbolId,
         flatname: &Name,
     ) -> SymbolId {
+        // Java: msym.complete() (Symtab.java lookupPackage): see lookup_package.
+        if ctx.sym(msym).completer.is_none()
+            && let Some(factory) = &self.module_completer
+        {
+            ctx.sym_mut(msym).completer = Some(factory());
+        }
+        let _ = ctx.complete_symbol(self, msym);
         let mut maps = self.maps.borrow_mut();
         lookup_package_impl(
             ctx,
+            self,
             &self.names,
             &mut maps,
             msym,

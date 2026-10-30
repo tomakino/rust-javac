@@ -257,7 +257,7 @@ impl BinaryToASCIIBuffer {
 
     fn dtoa(&mut self, bin_exp: i32, mut fract_bits: i64, n_significant_bits: i32, is_compatible_format: bool) {
         assert!(fract_bits > 0); // fractBits here can't be zero or negative
-        assert!((fract_bits & FRACT_HOB) != 0); // Hi-order bit should be set
+        assert_ne!(fract_bits & FRACT_HOB, 0); // Hi-order bit should be set
         // Examine number. Determine if it is an easy case,
         // which we can do pretty trivially using float/long conversion,
         // or whether we must do real work.
@@ -447,7 +447,7 @@ impl BinaryToASCIIBuffer {
                 self.exact_decimal_conversion = b == 0;
             } else {
                 // still good! they're all longs!
-                let mut b = (fract_bits.wrapping_mul(fdbig_long5pow(b5)))
+                let mut b = fract_bits.wrapping_mul(fdbig_long5pow(b5))
                     .wrapping_shl(b2 as u32);
                 let s = fdbig_long5pow(s5).wrapping_shl(s2 as u32);
                 let mut m = fdbig_long5pow(m5).wrapping_shl(m2 as u32);
@@ -847,14 +847,14 @@ fn get_binary_to_ascii_converter_double_compatible(
     let mut bin_exp = ((d_bits & EXP_BIT_MASK) >> EXP_SHIFT) as i32;
     // Discover obvious special cases of NaN and Infinity.
     if bin_exp == ((EXP_BIT_MASK >> EXP_SHIFT) as i32) {
-        if fract_bits == 0 {
-            return if is_negative {
+        return if fract_bits == 0 {
+            if is_negative {
                 Box::new(B2AC_NEGATIVE_INFINITY.clone())
             } else {
                 Box::new(B2AC_POSITIVE_INFINITY.clone())
-            };
+            }
         } else {
-            return Box::new(B2AC_NOT_A_NUMBER.clone());
+            Box::new(B2AC_NOT_A_NUMBER.clone())
         }
     }
     // Finish unpacking
@@ -895,14 +895,14 @@ pub(crate) fn get_binary_to_ascii_converter_float(f: f32) -> Box<dyn BinaryToASC
     let mut bin_exp = (f_bits & F_EXP_BIT_MASK) >> SINGLE_EXP_SHIFT;
     // Discover obvious special cases of NaN and Infinity.
     if bin_exp == (F_EXP_BIT_MASK >> SINGLE_EXP_SHIFT) {
-        if fract_bits == 0 {
-            return if is_negative {
+        return if fract_bits == 0 {
+            if is_negative {
                 Box::new(B2AC_NEGATIVE_INFINITY.clone())
             } else {
                 Box::new(B2AC_POSITIVE_INFINITY.clone())
-            };
+            }
         } else {
-            return Box::new(B2AC_NOT_A_NUMBER.clone());
+            Box::new(B2AC_NOT_A_NUMBER.clone())
         }
     }
     // Finish unpacking
@@ -1354,7 +1354,7 @@ impl ASCIIToBinaryConverter for ASCIIToBinaryBuffer {
                 big_bbits |= FRACT_HOB;
             } else {
                 // Normalize denormalized numbers.
-                assert!(big_bbits != 0, "{big_bbits}"); // doubleToBigInt(0.0)
+                assert_ne!(big_bbits, 0, "{big_bbits}"); // doubleToBigInt(0.0)
                 let leading_zeros = (big_bbits as u64).leading_zeros() as i32;
                 let shift = leading_zeros - (63 - EXP_SHIFT);
                 big_bbits = big_bbits.wrapping_shl(shift as u32);
@@ -1671,7 +1671,7 @@ impl ASCIIToBinaryConverter for ASCIIToBinaryBuffer {
                 big_bbits |= SINGLE_FRACT_HOB;
             } else {
                 // Normalize denormalized numbers.
-                assert!(big_bbits != 0, "{big_bbits}"); // floatToBigInt(0.0)
+                assert_ne!(big_bbits, 0, "{big_bbits}"); // floatToBigInt(0.0)
                 let leading_zeros = (big_bbits as u32).leading_zeros() as i32;
                 let shift = leading_zeros - (31 - SINGLE_EXP_SHIFT);
                 big_bbits = big_bbits.wrapping_shl(shift as u32);

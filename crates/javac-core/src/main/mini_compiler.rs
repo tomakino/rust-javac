@@ -116,6 +116,13 @@ fn add_classpath_packages_to_unnamed_module(compiler: &mut MiniCompiler) {
             // packages, so install the ClassFinder package completer directly.
             let completer = compiler.finder.get_completer_factory()();
             compiler.ctx.sym_mut(package_symbol).completer = Some(completer);
+            // Java: ClassFinder fills a class-path package lazily when it is
+            // first looked up; complete it here (before attribution) so the
+            // package members are available without scanning inside Attr.
+            {
+                let syms = compiler.syms.borrow();
+                let _ = compiler.ctx.complete_symbol(&syms, package_symbol);
+            }
             if let crate::code::symbol::SymbolKind::ModuleSymbol {
                 visible_packages, ..
             } = &mut compiler.ctx.sym_mut(unnamed).kind_data
@@ -396,7 +403,14 @@ impl crate::code::class_finder::SourceFileReader for SourceFileCompleter {
         // Java: if (!modules.enter(List.of(tree), c))
         //     throw new CompletionFailure(c, () -> diags.fragment(
         //         Fragments.CantResolveModules), dcfh);
-        if !self.modules.enter(ctx, syms, &[tree], Some(sym)) {
+        // A module-info compilation unit has no primary class: Java passes a
+        // null c for it (JavaCompiler.completeModule unit), so the
+        // duplicate-module path is the c == null one of Modules.enterModule.
+        // Java: JavaCompiler.readSourceFile passes the completed class as c
+        // (a module-info class is a ClassSymbol too), so Modules.enter takes
+        // the c != null path and does not report the duplicate again.
+        let c = Some(sym);
+        if !self.modules.enter(ctx, syms, &[tree], c) {
             let diag = self
                 .diags
                 .fragment(Fragment::from(fragments::cant_resolve_modules()));
@@ -407,15 +421,24 @@ impl crate::code::class_finder::SourceFileReader for SourceFileCompleter {
                 Some(Rc::clone(&self.dcfh)),
             ));
         }
-        // Java: enter.complete(List.of(tree), c);
-        let entered = self
-            .enter
-            .borrow()
-            .complete(ctx, syms, List::of(tree), Some(sym));
+        // Java: enter.complete(List.of(tree), c). A module-info compilation
+        // unit has no class to complete: completing the module-info class here
+        // would try to read "m2x.module-info" from module-info.java (bad source
+        // file). Modules.enter already completed the module.
+        let is_module_info = self.modules.compilation_unit_is_module_info(ctx, tree);
+        let entered = if is_module_info {
+            Ok(())
+        } else {
+            self.enter
+                .borrow()
+                .complete(ctx, syms, List::of(tree), Some(sym))
+        };
         let has_env = self.enter.borrow().get_env(sym).is_some();
         self.log.borrow_mut().use_source(prev);
         entered?;
-        if !has_env {
+        // A module-info compilation unit has no class body to enter, so no
+        // environment is created for it; only real classes must have one.
+        if !has_env && !is_module_info {
             // Java: throw new ClassFinder.BadClassFile(c, filename,
             //     diagFactory.fragment(Fragments.FileDoesntContainClass(
             //         c.getQualifiedName())), diagFactory, dcfh);
@@ -562,6 +585,33 @@ impl MiniCompiler {
                 file_manager
                     .set_location(&*module_source_path_location, Some(&paths))
                     .expect("cannot set MODULE_SOURCE_PATH");
+            }
+        }
+        if let Some(module_path) = options.get_option(crate::main::option::Option::MODULE_PATH) {
+            let paths: Vec<PathBuf> = module_path
+                .split(';')
+                .filter(|part| !part.is_empty())
+                .map(PathBuf::from)
+                .collect();
+            if !paths.is_empty() {
+                let module_path_location = StandardLocation::location_for(&js("MODULE_PATH"));
+                file_manager
+                    .set_location(&*module_path_location, Some(&paths))
+                    .expect("cannot set MODULE_PATH");
+            }
+        }
+        // Java: Main.java:265 - the deferred file manager options are handed to
+        // the file manager (BaseFileManager.handleOptions -> Locations.handleOption);
+        // --patch-module fills the PatchModules handler's module table that way.
+        if let Some(patch_module) = options.get_option(crate::main::option::Option::PATCH_MODULE) {
+            if !patch_module.is_empty() {
+                // Java: Main.java:265 hands the deferred value composed by
+                // Option.PATCH_MODULE (NUL-separated entries) to the file
+                // manager, which forwards it to Locations.handleOption.
+                file_manager.handle_option_value(
+                    crate::main::option::Option::PATCH_MODULE,
+                    &patch_module,
+                );
             }
         }
         let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
@@ -1723,7 +1773,17 @@ impl MiniCompiler {
                     as javac_tools::tools::java_file_manager::FileObjectRef),
             _ => None,
         };
-        self.write_class_file(&name, &bytes, sibling.as_ref())?;
+        let module = env
+            .toplevel
+            .and_then(|toplevel| match &self.ctx.tree(toplevel).kind {
+                TreeKind::CompilationUnit { modle, .. } => *modle,
+                _ => None,
+            })
+            .or_else(|| {
+                crate::code::symbol::symbol_packge(&self.ctx, c)
+                    .and_then(|package| crate::code::symbol::package_module(&self.ctx, package))
+            });
+        self.write_class_file(&name, &bytes, sibling.as_ref(), module)?;
         self.generated_classes.push(CompiledClass { name, bytes });
         Ok(())
     }
@@ -1734,17 +1794,33 @@ impl MiniCompiler {
         name: &str,
         bytes: &[u8],
         sibling: Option<&javac_tools::tools::java_file_manager::FileObjectRef>,
+        module: Option<SymbolId>,
     ) -> Result<(), String> {
         let class_out = StandardLocation::location_for(&js("CLASS_OUTPUT"));
+        // Java: ClassWriter uses getJavaFileForOutputForModule in multi-module
+        // mode; the ported file manager has no module-output API, so the module
+        // directory is prepended to the output name instead (the same layout).
+        let output_name = match module {
+            Some(module) if self.modules.multi_module_mode => format!(
+                "{}/{}",
+                self.ctx
+                    .sym(module)
+                    .name
+                    .to_java_string()
+                    .to_string_lossy(),
+                name
+            ),
+            _ => name.to_string(),
+        };
         let file = self
             .file_manager
             .get_java_file_for_output(
                 &*class_out,
-                &js(name),
+                &js(&output_name),
                 javac_tools::tools::java_file_object::Kind::CLASS,
                 sibling,
             )
-            .map_err(|error| format!("cannot get the output file for {name}: {error:?}"))?;
+            .map_err(|error| format!("cannot get the output file for {output_name}: {error:?}"))?;
         let mut stream = file
             .open_output_stream()
             .map_err(|error| format!("cannot open the output file for {name}: {error:?}"))?;

@@ -1424,6 +1424,18 @@ impl JavaFileManager for JavacFileManager {
 }
 
 impl JavacFileManager {
+    /// Java: BaseFileManager.handleOption(Option, String) (BaseFileManager.java:266-278).
+    /// Main.java:265 hands the deferred file manager options to the file manager
+    /// directly, without re-running Option.process, so this entry point skips
+    /// the repeated-value checks of the command line parser.
+    pub fn handle_option_value(
+        &self,
+        option: crate::main::option::Option,
+        value: &str,
+    ) -> bool {
+        self.base.borrow_mut().handle_option_value(option, value)
+    }
+
     /// Helper for getLocationForModule (the Locations API returns Option).
     fn module_location(
         &self,

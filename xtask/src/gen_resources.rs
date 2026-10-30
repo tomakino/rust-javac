@@ -24,81 +24,19 @@ const COMPILER_PROPERTIES: &str =
     "reference/jdk17u/src/jdk.compiler/share/classes/com/sun/tools/javac/resources/compiler.properties";
 const JAVAC_SOURCE_ROOT: &str =
     "reference/jdk17u/src/jdk.compiler/share/classes/com/sun/tools/javac";
-const OUTPUT_FILE: &str = "crates/javac-core/src/resources/compiler_properties.rs";
-const OUTPUT_DIR: &str = "crates/javac-core/src/resources";
+const OUTPUT_ACCESSORS: &str = "crates/javac-core/src/resources/compiler_accessors.rs";
+const OUTPUT_METADATA: &str = "crates/javac-core/src/resources/compiler_metadata.rs";
+const OUTPUT_REEXPORT: &str = "crates/javac-core/src/resources/compiler_properties.rs";
+#[cfg(test)]
 const RESOURCE_ROOT: &str =
     "reference/jdk17u/src/jdk.compiler/share/classes/com/sun/tools/javac/resources";
 const BASELINE: &str = "982d53c (jdk-17.0.19-ga)";
 
-/// 一个要生成的只读消息表(英文 base bundle 或本地化翻译表)。
-struct MessageTableSpec {
-    properties: &'static str,
-    output: &'static str,
-    static_name: &'static str,
-    description: &'static str,
-    /// 翻译表对应的 base properties(用于键集关系校验);base 表为 None。
-    base_properties: Option<&'static str>,
-}
+// Localized bundles are now embedded as raw .properties text via include_str!
+// (crates/javac-core/resources/l10n), so the generator only emits the typed
+// accessors and their metadata.
 
-/// 生成的消息表清单:每个 (bundle, locale) 一个独立文件(Lead 批准的设计)。
-const MESSAGE_TABLES: &[MessageTableSpec] = &[
-    MessageTableSpec {
-        properties: "launcher.properties",
-        output: "launcher_properties.rs",
-        static_name: "LAUNCHER_MESSAGES",
-        description: "launcher messages (base bundle, en)",
-        base_properties: None,
-    },
-    MessageTableSpec {
-        properties: "javac.properties",
-        output: "javac_properties.rs",
-        static_name: "JAVAC_MESSAGES",
-        description: "javac messages (base bundle, en)",
-        base_properties: None,
-    },
-    MessageTableSpec {
-        properties: "compiler_zh_CN.properties",
-        output: "compiler_zh_CN.rs",
-        static_name: "COMPILER_ZH_CN",
-        description: "compiler messages (zh_CN translation)",
-        base_properties: Some("compiler.properties"),
-    },
-    MessageTableSpec {
-        properties: "compiler_ja.properties",
-        output: "compiler_ja.rs",
-        static_name: "COMPILER_JA",
-        description: "compiler messages (ja translation)",
-        base_properties: Some("compiler.properties"),
-    },
-    MessageTableSpec {
-        properties: "launcher_zh_CN.properties",
-        output: "launcher_zh_CN.rs",
-        static_name: "LAUNCHER_ZH_CN",
-        description: "launcher messages (zh_CN translation)",
-        base_properties: Some("launcher.properties"),
-    },
-    MessageTableSpec {
-        properties: "launcher_ja.properties",
-        output: "launcher_ja.rs",
-        static_name: "LAUNCHER_JA",
-        description: "launcher messages (ja translation)",
-        base_properties: Some("launcher.properties"),
-    },
-    MessageTableSpec {
-        properties: "javac_zh_CN.properties",
-        output: "javac_zh_CN.rs",
-        static_name: "JAVAC_ZH_CN",
-        description: "javac messages (zh_CN translation)",
-        base_properties: Some("javac.properties"),
-    },
-    MessageTableSpec {
-        properties: "javac_ja.properties",
-        output: "javac_ja.rs",
-        static_name: "JAVAC_JA",
-        description: "javac messages (ja translation)",
-        base_properties: Some("javac.properties"),
-    },
-];
+
 
 // 上游资源快照断言(见 ADR 0002 修订 G)。
 const EXPECTED_KEYS: usize = 936;
@@ -451,10 +389,12 @@ fn parse_entries(text: &str) -> Result<Vec<Entry>, String> {
             if looks_like_info_line(previous) {
                 parse_info_line(previous).map_err(|e| format!("{key}: {e}"))?
             } else {
-                Vec::new()
+                // Upstream PropertiesParser generates a zero-argument dummy
+                // factory when the value uses {n} without a type comment.
+                vec![]
             }
         } else {
-            Vec::new()
+            vec![]
         };
         let parts: Vec<&str> = key.split('.').collect();
         if parts.len() < 3 {
@@ -521,8 +461,8 @@ fn placeholder_count(value: &str) -> usize {
     maximum.map_or(0, |index| index + 1)
 }
 
-/// 生成 Rust 源文件(确定性:输入顺序固定 + BTreeMap + 固定换行)。
-fn generate_rust(entries: &[Entry]) -> String {
+/// 生成访问器源文件(确定性:输入顺序固定 + BTreeMap + 固定换行)。
+fn generate_accessors(entries: &[Entry]) -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,
@@ -587,14 +527,21 @@ fn generate_rust(entries: &[Entry]) -> String {
         out.push_str("}\n\n");
     }
 
-    out.push_str("/// 上游消息模板(key -> 模板;保留原有 COMPILER_MESSAGES 能力)。\n");
-    out.push_str("pub static COMPILER_MESSAGES: &[(&str, &str)] = &[\n");
-    for entry in entries {
-        let _ = writeln!(out, "    ({:?}, {:?}),", entry.key, entry.value);
-    }
-    out.push_str("];\n\n");
 
-    out.push_str("/// 生成的访问器元数据:(key, kind, Rust 名, 参数个数)。\n");
+    out
+}
+
+/// 生成访问器元数据源文件(key, kind, Rust 名, 参数个数)。
+fn generate_metadata(entries: &[Entry]) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "//! GENERATED by cargo xtask gen-resources from com/sun/tools/javac/resources/compiler.properties @ {BASELINE} \u{2014} DO NOT EDIT."
+    );
+    out.push_str("//!\n");
+    out.push_str("//! Accessor metadata: (resource key, diagnostic kind, Rust factory name, arity).\n");
+    out.push_str("//! Kept separate from both the accessor code (compiler_accessors.rs) and\n");
+    out.push_str("//! the English message table (compiler_en.rs).\n\n");
     out.push_str("pub static COMPILER_KEYS: &[(&str, &str, &str, usize)] = &[\n");
     for entry in entries {
         let _ = writeln!(
@@ -610,65 +557,22 @@ fn generate_rust(entries: &[Entry]) -> String {
     out
 }
 
-/// 生成一个只读消息表文件(确定性:Java Properties 语义 + BTreeMap 排序 + 固定头)。
-fn generate_message_table(text: &str, spec: &MessageTableSpec) -> Result<(String, usize), String> {
-    let messages = parse_properties(text);
-    if messages.is_empty() {
-        return Err(format!("{}: no message keys found", spec.properties));
-    }
+/// 生成 compiler_properties.rs 兼容层:数据表在 compiler_en.rs,访问器在
+/// compiler_accessors.rs,元数据在 compiler_metadata.rs;这里只做 re-export。
+fn generate_reexport() -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,
-        "//! GENERATED by cargo xtask gen-resources from com/sun/tools/javac/resources/{} @ {BASELINE} — DO NOT EDIT.",
-        spec.properties
+        "//! GENERATED by cargo xtask gen-resources from com/sun/tools/javac/resources/compiler.properties @ {BASELINE} \u{2014} DO NOT EDIT."
     );
-    out.push_str("//!
-");
-    let _ = writeln!(out, "//! {}", spec.description);
-    out.push_str("//!
-");
-    out.push_str("//! Read-only message table: resource key -> localized template; missing keys\n");
-    out.push_str("//! fall back to the base bundle at lookup time (ResourceBundle parent-chain\n");
-    out.push_str("//! semantics).\n\n");
-    let _ = writeln!(out, "pub static {}: &[(&str, &str)] = &[", spec.static_name);
-    for (key, value) in &messages {
-        let _ = writeln!(out, "    ({:?}, {:?}),", key, value);
-    }
-    out.push_str("];\n");
-    Ok((out, messages.len()))
-}
-
-/// 校验翻译表与 base 表的键集关系,返回 (缺失键数, 过时键数)。
-///
-/// - 缺失键:base 有而翻译没有,按 ResourceBundle parent-chain 回退英文,属正常情况;
-/// - 过时键:翻译有而 base 没有(上游翻译文件可能残留已删除的键),无害(运行时不会请求),
-///   保留在生成的翻译表中以忠实反映上游资源,但计数用于测试断言与汇报。
-fn verify_message_table_keys(
-    base_text: &str,
-    translation_text: &str,
-    spec: &MessageTableSpec,
-) -> Result<(usize, usize), String> {
-    let base = parse_properties(base_text);
-    let translation = parse_properties(translation_text);
-    let mut extra: Vec<&str> = Vec::new();
-    for key in translation.keys() {
-        if !base.contains_key(key) {
-            extra.push(key.as_str());
-        }
-    }
-    if extra.len() > base.len() / 10 {
-        return Err(format!(
-            "{}: too many translation keys not present in base ({}): {:?}",
-            spec.properties,
-            extra.len(),
-            &extra[..extra.len().min(10)]
-        ));
-    }
-    let missing = base
-        .keys()
-        .filter(|key| !translation.contains_key(*key))
-        .count();
-    Ok((missing, extra.len()))
+    out.push_str("//!\n");
+    out.push_str("//! Compatibility re-exports: the English message table lives in\n");
+    out.push_str("//! resources/l10n (see resources/bundles.rs), the accessor code in\n");
+    out.push_str("//! compiler_accessors.rs and the metadata in compiler_metadata.rs.\n\n");
+    out.push_str("pub use super::compiler_accessors::{errors, fragments, notes, warnings};\n");
+    out.push_str("pub use super::compiler_metadata::COMPILER_KEYS;\n");
+    out.push_str("pub use super::bundles::COMPILER_EN as COMPILER_MESSAGES;\n");
+    out
 }
 
 fn project_root() -> PathBuf {
@@ -1112,48 +1016,20 @@ pub(crate) fn generate_and_verify() -> Result<(), String> {
     let entries = parse_entries(&text)?;
     verify_snapshot(&entries)?;
     verify_names(&entries)?;
-    let generated = generate_rust(&entries);
-    let output_path = project_path(OUTPUT_FILE);
+    let generated = generate_accessors(&entries);
+    let output_path = project_path(OUTPUT_ACCESSORS);
     fs::write(&output_path, &generated)
         .map_err(|e| format!("write {}: {e}", output_path.display()))?;
-    // 生成 base/本地化消息表(每个 (bundle, locale) 一个独立文件)。
-    let resource_root = project_path(RESOURCE_ROOT);
-    let output_dir = project_path(OUTPUT_DIR);
-    let mut table_count = 0usize;
-    let mut table_keys = 0usize;
-    let mut table_bytes = 0usize;
-    for spec in MESSAGE_TABLES {
-        let source_path = resource_root.join(spec.properties);
-        let source_text = fs::read_to_string(&source_path)
-            .map_err(|e| format!("read {}: {e}", source_path.display()))?;
-        let (table, key_count) = generate_message_table(&source_text, spec)?;
-        if let Some(base_name) = spec.base_properties {
-            let base_text = fs::read_to_string(resource_root.join(base_name))
-                .map_err(|e| format!("read {base_name}: {e}"))?;
-            let (missing, stale) = verify_message_table_keys(&base_text, &source_text, spec)?;
-            println!(
-                "gen-resources: {}: {key_count} keys, {missing} key(s) fall back to the base bundle, {stale} stale key(s) kept",
-                spec.properties
-            );
-        }
-        let table_path = output_dir.join(spec.output);
-        fs::write(&table_path, &table)
-            .map_err(|e| format!("write {}: {e}", table_path.display()))?;
-        println!(
-            "gen-resources: {key_count} keys, {} bytes -> {}",
-            table.len(),
-            table_path.display()
-        );
-        table_count += 1;
-        table_keys += key_count;
-        table_bytes += table.len();
-    }
-    println!(
-        "gen-resources: {table_count} message tables, {table_keys} keys, {table_bytes} bytes"
-    );
-    println!(
-        "gen-resources: ct.properties/legacy.properties are hidden-package / legacy-name mappings without translations; skipped"
-    );
+    let metadata = generate_metadata(&entries);
+    let metadata_path = project_path(OUTPUT_METADATA);
+    fs::write(&metadata_path, &metadata)
+        .map_err(|e| format!("write {}: {e}", metadata_path.display()))?;
+    let reexport = generate_reexport();
+    let reexport_path = project_path(OUTPUT_REEXPORT);
+    fs::write(&reexport_path, &reexport)
+        .map_err(|e| format!("write {}: {e}", reexport_path.display()))?;
+    // Localized bundles are embedded at compile time (include_str! in
+    // resources/l10n/*); the generator no longer emits message tables.
     let sites = scan_call_sites(&project_path(JAVAC_SOURCE_ROOT))?;
     verify_call_sites(&entries, &sites)?;
     let placeholders_without_types = entries
@@ -1257,8 +1133,8 @@ mod tests {
     fn generated_output_is_deterministic() {
         let text = std::fs::read_to_string(project_path(COMPILER_PROPERTIES)).expect("read");
         let entries = parse_entries(&text).expect("entries");
-        let first = generate_rust(&entries);
-        let second = generate_rust(&entries);
+        let first = generate_accessors(&entries);
+        let second = generate_accessors(&entries);
         assert_eq!(first, second);
         assert!(first.starts_with(
             "//! GENERATED by cargo xtask gen-resources from com/sun/tools/javac/resources/compiler.properties @ 982d53c"
@@ -1266,8 +1142,12 @@ mod tests {
         assert!(first.contains("pub mod errors"));
         assert!(first.contains("pub mod fragments"));
         assert!(first.contains("pub fn abstract_cant_be_instantiated(arg0: SymbolArg) -> ErrorInfo"));
-        assert!(first.contains("pub static COMPILER_KEYS"));
-        assert!(first.contains("pub static COMPILER_MESSAGES"));
+        assert!(!first.contains("COMPILER_KEYS"));
+        assert!(!first.contains("COMPILER_EN"));
+        let metadata = generate_metadata(&entries);
+        assert!(metadata.contains("pub static COMPILER_KEYS"));
+        let reexport = generate_reexport();
+        assert!(reexport.contains("pub use super::compiler_en::COMPILER_EN as COMPILER_MESSAGES;"));
     }
 
     #[test]
@@ -1361,74 +1241,6 @@ mod tests {
             sites.len()
         );
         verify_call_sites(&entries, &sites).expect("reference call sites");
-    }
-
-    #[test]
-    fn message_tables_are_deterministic_and_shaped_correctly() {
-        let root = project_path(RESOURCE_ROOT);
-        for spec in MESSAGE_TABLES {
-            let text = std::fs::read_to_string(root.join(spec.properties)).expect("read");
-            let first = generate_message_table(&text, spec).expect("generate");
-            let second = generate_message_table(&text, spec).expect("generate");
-            assert_eq!(first.0, second.0, "{}", spec.properties);
-            assert!(first.0.starts_with(&format!(
-                "//! GENERATED by cargo xtask gen-resources from com/sun/tools/javac/resources/{} @ 982d53c",
-                spec.properties
-            )));
-            assert!(first.0.contains(&format!(
-                "pub static {}: &[(&str, &str)] = &[",
-                spec.static_name
-            )));
-            assert!(first.1 > 0, "{}", spec.properties);
-        }
-    }
-
-    #[test]
-    fn translation_key_sets_are_subsets_of_base_bundles() {
-        let root = project_path(RESOURCE_ROOT);
-        for spec in MESSAGE_TABLES
-            .iter()
-            .filter(|spec| spec.base_properties.is_some())
-        {
-            let base_name = spec.base_properties.expect("base properties");
-            let base_text =
-                std::fs::read_to_string(root.join(base_name)).expect("read base");
-            let translation_text = std::fs::read_to_string(root.join(spec.properties))
-                .expect("read translation");
-            let (missing, stale) = verify_message_table_keys(&base_text, &translation_text, spec)
-                .unwrap_or_else(|error| panic!("{}", error));
-            // 翻译缺键属于正常回退情况,数量应小于 base 键数;过时键只能是少量残留。
-            let base_count = parse_properties(&base_text).len();
-            assert!(missing < base_count, "{}", spec.properties);
-            let expected_stale = match spec.properties {
-                // compiler_zh_CN/ja 与 javac_zh_CN/ja 上游翻译各残留 1 个 base 已删除的键
-                "compiler_zh_CN.properties" | "compiler_ja.properties" => 1,
-                "javac_zh_CN.properties" | "javac_ja.properties" => 1,
-                _ => 0,
-            };
-            assert_eq!(stale, expected_stale, "{}", spec.properties);
-        }
-    }
-
-    #[test]
-    fn translation_samples_match_properties() {
-        let root = project_path(RESOURCE_ROOT);
-        for spec in MESSAGE_TABLES {
-            let text = std::fs::read_to_string(root.join(spec.properties)).expect("read");
-            let expected = parse_properties(&text);
-            let (generated, _) = generate_message_table(&text, spec).expect("generate");
-            let keys: Vec<&String> = expected.keys().collect();
-            let samples: [&String; 3] = [keys[0], keys[keys.len() / 2], keys[keys.len() - 1]];
-            for key in samples {
-                let value = expected[key].clone();
-                let needle = format!("({:?}, {:?})", key, value);
-                assert!(
-                    generated.contains(&needle),
-                    "{} missing sample {key}",
-                    spec.properties
-                );
-            }
-        }
     }
 
     #[test]

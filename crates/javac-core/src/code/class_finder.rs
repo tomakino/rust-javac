@@ -955,6 +955,22 @@ impl ClassFinder {
         Ok(result)
     }
 
+    /// Adapter for Resolve: true when the module's class location contains the
+    /// package (the module package table is not maintained by the port yet, so
+    /// the location is listed directly).
+    pub(crate) fn module_package_exists(
+        &self,
+        location: &LocationRef,
+        package_name: &str,
+    ) -> bool {
+        let package_name = javac_strings::JavaString::from(package_name);
+        let kinds = [Kind::CLASS, Kind::SOURCE];
+        self.file_manager
+            .list(&**location, &package_name, &kinds, false)
+            .map(|files| !files.is_empty())
+            .unwrap_or(false)
+    }
+
     /// Java: the IOException -> CompletionFailure(ExceptionMessage) mapping of
     /// complete(PackageSymbol) (ClassFinder.java:296-305)
     fn io_failure(

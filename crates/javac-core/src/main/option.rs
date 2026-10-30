@@ -55,7 +55,7 @@
 //!   XBOOTCLASSPATH_PREPEND (-Xbootclasspath/p:), XBOOTCLASSPATH_APPEND
 //!   (-Xbootclasspath/a:), XBOOTCLASSPATH (-Xbootclasspath:), EXTDIRS,
 //!   DJAVA_EXT_DIRS (-Djava.ext.dirs=), ENDORSEDDIRS, DJAVA_ENDORSED_DIRS
-//!   (-Djava.endorsed.dirs=), PROFILE (-profile).
+//!   (-Djava.endorsed.dirs=).
 //! * -h / -s / -J*: H (native header output), S (source output, APT), J (JVM args;
 //!   the launcher handles them in upstream javac — no launcher is ported).
 //! * doclint (-Xdoclint*, com.sun.tools.doclint is trimmed): XDOCLINT,
@@ -112,7 +112,6 @@ pub enum Option {
     TARGET,
     RELEASE,
     PREVIEW,
-    PROFILE,
     VERSION,
     FULLVERSION,
     HELP,
@@ -138,7 +137,7 @@ pub enum Option {
 
 impl Option {
     /// Java: Option.values() (the trimmed constants are absent, see the header).
-    pub fn values() -> [Option; 43] {
+    pub fn values() -> [Option; 42] {
         [
             Option::G,
             Option::G_NONE,
@@ -163,7 +162,6 @@ impl Option {
             Option::TARGET,
             Option::RELEASE,
             Option::PREVIEW,
-            Option::PROFILE,
             Option::VERSION,
             Option::FULLVERSION,
             Option::HELP,
@@ -213,7 +211,6 @@ impl Option {
             Option::TARGET => &["--target", "-target"],
             Option::RELEASE => &["--release"],
             Option::PREVIEW => &["--enable-preview"],
-            Option::PROFILE => &["-profile"],
             Option::VERSION => &["--version", "-version"],
             Option::FULLVERSION => &["--full-version", "-fullversion"],
             Option::HELP => &["--help", "-help", "-?"],
@@ -259,7 +256,6 @@ impl Option {
             Option::SOURCE => Some("opt.arg.release"),
             Option::TARGET => Some("opt.arg.release"),
             Option::RELEASE => Some("opt.arg.release"),
-            Option::PROFILE => Some("opt.arg.profile"),
             Option::XMAXERRS => Some("opt.arg.number"),
             Option::XMAXWARNS => Some("opt.arg.number"),
             Option::ADD_EXPORTS => Some("opt.arg.addExports"),
@@ -302,7 +298,6 @@ impl Option {
             Option::TARGET => Some("opt.target"),
             Option::RELEASE => Some("opt.release"),
             Option::PREVIEW => Some("opt.preview"),
-            Option::PROFILE => Some("opt.profile"),
             Option::VERSION => Some("opt.version"),
             Option::FULLVERSION => None,
             Option::HELP => Some("opt.help"),
@@ -348,7 +343,6 @@ impl Option {
             | Option::TARGET
             | Option::RELEASE
             | Option::PREVIEW
-            | Option::PROFILE
             | Option::HELP
             | Option::X
             | Option::AT
@@ -392,7 +386,6 @@ impl Option {
             | Option::TARGET
             | Option::RELEASE
             | Option::PREVIEW
-            | Option::PROFILE
             | Option::WERROR
             | Option::XMAXERRS
             | Option::XMAXWARNS
@@ -876,17 +869,6 @@ impl Option {
                 }
                 Ok(())
             }
-            Option::PROFILE => {
-                // Java: Option.PROFILE.process (Option.java:380-389): the
-                // operand must name a supported profile.
-                if crate::jvm::profile::Profile::lookup(arg).is_none() {
-                    return Err(helper.new_invalid_value_exception(
-                        errors::invalid_profile(JavaString::from(arg)),
-                    ));
-                }
-                self.default_process(helper, arg);
-                Ok(())
-            }
             Option::XD => {
                 // Option.java XD.process: split "key=value" and store the
                 // undocumented option under its key (e.g. -XDforcePreview).
@@ -1219,6 +1201,7 @@ mod tests {
             "-extdirs",
             "-endorseddirs",
             "-Djava.ext.dirs=",
+            "-profile",
             "-moreinfo",
             "-doe",
             "-prompt",

@@ -1819,6 +1819,17 @@ impl Locations {
                 }
                 if state.search_path.is_some() {
                     for set in module_path_scan_sets(fs_info, self.log.as_ref(), state, &parent) {
+                        // Java: ModulePathIterator records the scanned locations
+                        // in the handler's module table (Locations.java:1161-1177);
+                        // inferModuleName resolves them through that table.
+                        {
+                            let table = state.module_table.get_or_insert_with(ModuleTable::new);
+                            for location in &set {
+                                if table.get(location.get_module_name()).is_none() {
+                                    table.add(Rc::clone(location));
+                                }
+                            }
+                        }
                         paths.push(
                             set.into_iter()
                                 .map(|location| location as Rc<dyn Location>)

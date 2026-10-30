@@ -5111,7 +5111,16 @@ impl<'a> CaptureAnalyzer<'a> {
             crate::code::symbol::SymbolKind::VarSymbol { pos, .. } => *pos,
             _ => 0,
         };
+        // Java: MATCH_BINDING variables are declared inside the switch case
+        // itself; the ported pattern var has no declaration position, so the
+        // upstream position test must not treat it as a captured local.
+        let is_binding_var = (ctx.sym(sym).flags_field & flags::MATCH_BINDING) != 0;
+        // Java: checkEffectivelyFinal (Flow.java:2910-2932); a pattern binding
+        // has no recorded declaration position (NOPOS) and is declared inside
+        // the guard itself, so the upstream position test does not apply.
         if matches!(ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind), Some(Kind::MTH))
+            && !is_binding_var
+            && sym_pos >= 0
             && sym_pos < tree_info::get_start_pos(ctx, current_tree)
         {
             match ctx.tree(current_tree).tag {
@@ -5153,8 +5162,18 @@ impl<'a> CaptureAnalyzer<'a> {
                     crate::code::symbol::SymbolKind::VarSymbol { pos, .. } => *pos,
                     _ => 0,
                 };
+                let is_binding_var =
+                    (ctx.sym(sym).flags_field & flags::MATCH_BINDING) != 0;
+                // Java: letInit compares the variable position with the start
+                // of the capturing tree; a pattern binding is declared inside
+                // that tree (and the ported pattern var may have no usable
+                // position), so it is never a captured local.
                 if ctx.sym(sym).kind == Kind::VAR
                     && matches!(ctx.sym(sym).owner.map(|owner| ctx.sym(owner).kind), Some(Kind::MTH))
+                    && !is_binding_var
+                    // A pattern binding has no recorded declaration position
+                    // (NOPOS); the upstream position test cannot be applied.
+                    && sym_pos >= 0
                     && sym_pos < tree_info::get_start_pos(ctx, current_tree)
                 {
                     match ctx.tree(current_tree).tag {

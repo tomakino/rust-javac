@@ -279,29 +279,22 @@ fn skip_reason(example: &Example) -> Option<&'static str> {
     if options.iter().any(|option| option == "-verbose") {
         return Some("verbose");
     }
+    if options.iter().any(|option| option == "-doe") {
+        // -doe (dump-on-error) makes the reference javac print the JVM stack
+        // trace of Log.writeDiagnostic; the port has no JVM, so that output is
+        // not reproducible (only UnsupportedEncoding uses -doe).
+        return Some("jvm-stacktrace");
+    }
+    // Automatic-module examples require a jar on the module path (the
+    // official Example driver packages the compiled classes with
+    // JarOutputStream, Example.java:233-269); they stay out of scope here.
     if !files.module_path.is_empty()
-        || !files.module_source_path.is_empty()
-        || files
-            .module_source_path_dir
-            .as_ref()
-            .is_some_and(|path| path.is_dir())
-        || files.patch_module_dir.is_some()
-        || !files.patch_module.is_empty()
-        || options.iter().any(|option| {
-            matches!(
-                option.as_str(),
-                "--module-path"
-                    | "--module-source-path"
-                    | "--patch-module"
-                    | "--add-modules"
-                    | "-m"
-                    | "-p"
-                    | "--upgrade-module-path"
-                    | "--limit-modules"
-            )
-        })
+        && !files
+            .module_path
+            .iter()
+            .any(|path| path.file_name().is_some_and(|name| name == "module-info.java"))
     {
-        return Some("modules");
+        return Some("modules-automatic");
     }
     if run.iter().any(|option| option == "-filemanager") {
         return Some("custom-file-manager");
@@ -323,7 +316,38 @@ fn normalize(text: &str, dir: &Path) -> String {
     text = text.replace(&format!("{unix}/"), "<src>/");
     text = text.replace(&windows, "<src>");
     text = text.replace(&unix, "<src>");
-    text
+    normalize_temp_markers(&text)
+}
+
+/// Replaces the per-run temporary directory markers (`expected-gen-<n>` in the
+/// frozen expected text, `diag-examples-...` in our runs) with `<tmp>` so that
+/// environment-specific paths compare equal. The message format is unchanged;
+/// only the random directory name is normalized.
+fn normalize_temp_markers(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    loop {
+        let mut best: Option<(usize, &str)> = None;
+        for marker in ["expected-gen-", "diag-examples-"] {
+            if let Some(pos) = rest.find(marker)
+                && best.map_or(true, |(best_pos, _)| pos < best_pos)
+            {
+                best = Some((pos, marker));
+            }
+        }
+        let Some((pos, marker)) = best else {
+            out.push_str(rest);
+            break;
+        };
+        out.push_str(&rest[..pos]);
+        out.push_str("<tmp>");
+        rest = &rest[pos + marker.len()..];
+        let end = rest
+            .find(|c: char| c == '\\' || c == '/')
+            .unwrap_or(rest.len());
+        rest = &rest[end..];
+    }
+    out
 }
 
 fn normalized_lines(text: &str, dir: &Path) -> Vec<String> {
@@ -496,29 +520,100 @@ fn run_example(example: &Example, index: usize) -> Outcome {
         let _ = run_compiler(&extra, &temp);
     }
 
+    // Java: Example.run (Example.java:219-272): compile the modulepath sources
+    // into an exploded module directory first, then pass that directory as
+    // --module-path to the main compilation.
+    if !example.files.module_path.is_empty() {
+        let module_root = example
+            .files
+            .module_path
+            .iter()
+            .find_map(|path| {
+                path.ancestors()
+                    .find(|ancestor| {
+                        ancestor.file_name().and_then(|name| name.to_str()) == Some("modulepath")
+                    })
+                    .map(std::path::Path::to_path_buf)
+            })
+            .expect("modulepath directory");
+        let module_dir = temp.join("modulepath");
+        std::fs::create_dir_all(&module_dir).expect("module dir");
+        let mut module_args = vec![
+            "-d".to_string(),
+            module_dir.to_string_lossy().to_string(),
+            "--module-source-path".to_string(),
+            module_root.to_string_lossy().to_string(),
+        ];
+        module_args.extend(
+            example
+                .files
+                .module_path
+                .iter()
+                .map(|path| path.to_string_lossy().to_string()),
+        );
+        // The driver compiles the module sources with its own compiler and
+        // discards that output; the diagnostics come from the main pass.
+        let _ = run_compiler(&module_args, &temp);
+        args.push("--module-path".to_string());
+        args.push(module_dir.to_string_lossy().to_string());
+    }
+
     if let Some(source_path) = &example.files.src_path_dir {
         args.push("-sourcepath".to_string());
         args.push(source_path.to_string_lossy().to_string());
     }
-    if let Some(module_source_path) = &example.files.module_source_path_dir
-        && !module_source_path.is_dir()
-    {
-        // Java: Example.run passes moduleSourcePathDir through
-        // -modulesourcepath even when it names a plain file; the compiler then
-        // diagnoses the bad path element.
+
+    // Java: Example.run (Example.java:325-331): --module-source-path plus the
+    // module source files and the non-empty top-level sources.
+    if let Some(module_source_path) = &example.files.module_source_path_dir {
         args.push("--module-source-path".to_string());
         args.push(module_source_path.to_string_lossy().to_string());
     }
 
+    // Java: Example.run (Example.java:333-341).
+    if let Some(patch_module_dir) = &example.files.patch_module_dir {
+        let mut patches: Vec<PathBuf> = std::fs::read_dir(patch_module_dir)
+            .expect("patch module dir")
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect();
+        patches.sort();
+        for patch in patches {
+            let name = patch
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("patch module name");
+            args.push("--patch-module".to_string());
+            args.push(format!("{}={}", name, patch.to_string_lossy()));
+        }
+    }
+
     let sources: Vec<&PathBuf> = if example.files.module_source_path_dir.is_some() {
-        // Java: Example.run compiles moduleSourcePathFiles plus only the
-        // nonEmptySrcFiles (sources containing declarations) when a module
-        // source path is present.
         example
             .files
-            .src
+            .module_source_path
             .iter()
-            .filter(|path| source_has_declarations(path))
+            .chain(
+                example
+                    .files
+                    .src
+                    .iter()
+                    .filter(|path| source_has_declarations(path)),
+            )
+            .collect()
+    } else if example.files.patch_module_dir.is_some() {
+        example
+            .files
+            .patch_module
+            .iter()
+            .chain(
+                example
+                    .files
+                    .src
+                    .iter()
+                    .filter(|path| source_has_declarations(path)),
+            )
             .collect()
     } else {
         example.files.src.iter().collect()

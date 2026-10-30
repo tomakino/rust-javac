@@ -1764,7 +1764,7 @@ impl MutableBigInteger {
         }
         if self.bit_length() <= 63 {
             let v = BigInteger::new_from_mag(self.value.clone(), 1).long_value_exact();
-            let mut xk = ((v as f64).sqrt()).floor() as i64;
+            let mut xk = (v as f64).sqrt().floor() as i64;
             loop {
                 let xk1 = (xk + v / xk) / 2;
                 if xk1 >= xk {
@@ -1788,7 +1788,7 @@ impl MutableBigInteger {
         xk.right_shift(shift);
         xk.normalize();
         let d = BigInteger::new_from_mag(xk.value.clone(), 1).double_value();
-        let bi = BigInteger::value_of_long(((d.sqrt()).ceil()) as i64);
+        let bi = BigInteger::value_of_long(d.sqrt().ceil() as i64);
         xk = MutableBigInteger::new_from_big_integer(&bi);
         xk.left_shift(shift / 2);
         let mut xk1 = MutableBigInteger::new_empty();

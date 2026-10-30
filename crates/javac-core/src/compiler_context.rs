@@ -759,9 +759,22 @@ impl CompilerContext {
     ) -> Result<(), crate::code::symbol::CompletionFailure> {
         let completer = self.sym_mut(symbol).completer.take();
         if let Some(completer) = completer {
+            // Java: the completer field is cleared before the call, so a
+            // completion nested on the same symbol does nothing. Two symbols
+            // can share one completer object (the module/class completer
+            // adapters); a nested completion of that shared object must not
+            // re-enter it (the outer call finishes the work).
             match attr {
-                Some(attr) => completer.borrow_mut().complete_with_attr(self, syms, symbol, attr)?,
-                None => completer.borrow_mut().complete(self, syms, symbol)?,
+                Some(attr) => {
+                    if let Ok(mut completer) = completer.try_borrow_mut() {
+                        completer.complete_with_attr(self, syms, symbol, attr)?;
+                    }
+                }
+                None => {
+                    if let Ok(mut completer) = completer.try_borrow_mut() {
+                        completer.complete(self, syms, symbol)?;
+                    }
+                }
             }
         }
         Ok(())

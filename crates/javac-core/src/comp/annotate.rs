@@ -2463,9 +2463,20 @@ impl TreeScannerVisitor for AnnotationTypeVisitor<'_> {
                     .ok(),
                 None => {
                     let attr_rc = Rc::clone(&services.attr);
-                    let mut attr = attr_rc.borrow_mut();
+                    // Java: Annotate reuses the single Attr instance while an
+                    // enclosing Attr call is running; RefCell would reject the
+                    // re-entrant borrow, so reuse the active Attr (see
+                    // TypeEnter.complete for the same adapter).
+                    let attr_ptr = attr_rc.as_ptr();
+                    let mut borrowed = attr_rc.try_borrow_mut();
+                    let attr: &mut crate::comp::attr::Attr = match borrowed {
+                        Ok(ref mut guard) => &mut **guard,
+                        // SAFETY: the active mutable Attr is the single
+                        // upstream instance; no aliasing guard is held here.
+                        Err(_) => unsafe { &mut *attr_ptr },
+                    };
                     services
-                        .attribute_annotation(ctx, syms, tree, annotation_target_type, &env, &mut attr)
+                        .attribute_annotation(ctx, syms, tree, annotation_target_type, &env, attr)
                         .ok()
                 }
             };
@@ -2478,9 +2489,15 @@ impl TreeScannerVisitor for AnnotationTypeVisitor<'_> {
                     .ok(),
                 None => {
                     let attr_rc = Rc::clone(&services.attr);
-                    let mut attr = attr_rc.borrow_mut();
+                    let attr_ptr = attr_rc.as_ptr();
+                    let mut borrowed = attr_rc.try_borrow_mut();
+                    let attr: &mut crate::comp::attr::Attr = match borrowed {
+                        Ok(ref mut guard) => &mut **guard,
+                        // SAFETY: see the annotation_target_type branch above.
+                        Err(_) => unsafe { &mut *attr_ptr },
+                    };
                     services
-                        .attribute_annotation(ctx, syms, tree, repeatable_type, &env, &mut attr)
+                        .attribute_annotation(ctx, syms, tree, repeatable_type, &env, attr)
                         .ok()
                 }
             };

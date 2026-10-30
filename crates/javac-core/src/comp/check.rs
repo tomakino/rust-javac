@@ -3210,7 +3210,11 @@ impl Check {
         }
         let args = argtrees.cloned();
         if let Some(mut args_list) = args.clone() {
-            while args_list.non_empty() && Some(*formals.head()) != last {
+            // Java: checkMethod iterates the argument trees; an error-recovery
+            // constructor (e.g. an anonymous class implementing an interface
+            // with arguments) has no formals, so stop instead of reading an
+            // empty formal list.
+            while args_list.non_empty() && formals.non_empty() && Some(*formals.head()) != last {
                 let arg = *args_list.head();
                 // Erroneous arguments (for example the self-reference of a
                 // 'var' declaration) may not have been attributed with a type;
@@ -4670,10 +4674,17 @@ impl Check {
                             let arg = *args_iter.head();
                             if ctx.tree(arg).ty == Some(incompatible) {
                                 let form = *forms_iter.head();
+                                // Java: the diagnostic argument is the Type
+                                // object; attach the type-variable where clause
+                                // so the formatter can render "where X ...".
+                                let mut arg_arg =
+                                    crate::comp::check::type_arg_with_rich_where(ctx, incompatible);
+                                let mut seen_types = std::collections::HashSet::new();
+                                let mut where_vars = Vec::new();
+                                collect_where_vars(ctx, form, &mut seen_types, &mut where_vars);
+                                arg_arg.where_vars.extend(where_vars);
                                 let info = crate::resources::compiler_properties::errors::not_within_bounds(
-                                    crate::resources::diagnostic_contract::TypeArg::placeholder(
-                                        crate::comp::attr::type_display_of(ctx, incompatible),
-                                    ),
+                                    arg_arg,
                                     crate::resources::diagnostic_contract::DiagnosticArg::from_display(
                                         crate::comp::attr::type_display_of(ctx, form),
                                     ),
@@ -4940,7 +4951,10 @@ pub(crate) fn type_arg_with_where(
     // in the formatted argument; traversal can also reach declared parameters
     // of a class whose type arguments were substituted.
     vars.retain(|var| text.contains(&var.name));
-    crate::resources::diagnostic_contract::TypeArg::with_where(text, ty, vars)
+    let qualified_text = Some(crate::code::printer::visit_type_qualified(ctx, ty));
+    let mut arg = crate::resources::diagnostic_contract::TypeArg::with_where(text, ty, vars);
+    arg.qualified_text = qualified_text;
+    arg
 }
 
 /// Build a Type diagnostic argument with the captured/intersection metadata
@@ -6785,22 +6799,36 @@ impl Check {
                                 }
                                 let st2 = self.types.member_type(ctx, syms, t2, s2);
                                 if self.types.override_equivalent(ctx, syms, st1, st2) {
+                                    // Java: the Type arguments carry the where
+                                    // clause of the inherited methods' type
+                                    // variables (the symbols are wrapped as
+                                    // Type arguments by the formatter).
+                                    let inherited_where = |ctx: &crate::compiler_context::CompilerContext,
+                                                           method: SymbolId|
+                                     -> Vec<crate::resources::diagnostic_contract::WhereTypeVar> {
+                                        let mut seen_types = std::collections::HashSet::new();
+                                        let mut vars = Vec::new();
+                                        if let Some(method_ty) = ctx.sym(method).ty {
+                                            collect_where_vars(ctx, method_ty, &mut seen_types, &mut vars);
+                                        }
+                                        vars
+                                    };
+                                    let mut t1_arg =
+                                        crate::comp::check::type_arg_with_rich_where(ctx, t1);
+                                    t1_arg.where_vars.extend(inherited_where(ctx, s1));
+                                    let mut t2_arg =
+                                        crate::comp::check::type_arg_with_rich_where(ctx, t2);
+                                    t2_arg.where_vars.extend(inherited_where(ctx, s2));
                                     let info = crate::resources::compiler_properties::errors::concrete_inheritance_conflict(
                                         crate::resources::diagnostic_contract::SymbolArg::placeholder(
                                             crate::comp::resolve::symbol_display_name(ctx, s1),
                                         ),
-                                        crate::resources::diagnostic_contract::TypeArg::placeholder(
-                                            crate::comp::attr::type_display_of(ctx, t1),
-                                        ),
+                                        t1_arg,
                                         crate::resources::diagnostic_contract::SymbolArg::placeholder(
                                             crate::comp::resolve::symbol_display_name(ctx, s2),
                                         ),
-                                        crate::resources::diagnostic_contract::TypeArg::placeholder(
-                                            crate::comp::attr::type_display_of(ctx, t2),
-                                        ),
-                                        crate::resources::diagnostic_contract::TypeArg::placeholder(
-                                            crate::comp::attr::type_display_of(ctx, sup),
-                                        ),
+                                        t2_arg,
+                                        crate::comp::check::type_arg_with_rich_where(ctx, sup),
                                     );
                                     crate::util::abstract_log::AbstractLog::error_at(
                                         &mut *self.log.borrow_mut(),
@@ -7043,8 +7071,15 @@ impl Check {
                     } else if self.check_name_clash(ctx, syms, site_tsym, s1, s2)
                         && !self.check_common_overrider_in(ctx, syms, s1, s2, site)
                     {
-                        let st1_member = self.types.member_type(ctx, syms, site, s1);
-                        let st2_member = self.types.member_type(ctx, syms, site, s2);
+
+                        // Java: types.memberType(site, s1/s2).asMethodType()
+                        // .getParameterTypes(). The ported site can be raw in
+                        // this path (upstream site is parameterized), which
+                        // would erase the parameters; the declared method type
+                        // keeps the upstream diagnostic text (see also
+                        // member_parameter_types below).
+                        let st1_member = ctx.sym(s1).ty.expect("method type");
+                        let st2_member = ctx.sym(s2).ty.expect("method type");
                         let params1: Vec<crate::resources::diagnostic_contract::TypeArg> = self.types.get_parameter_types_public(ctx, st1_member)
                             .iter().map(|p| crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, p))).collect();
                         let params2: Vec<crate::resources::diagnostic_contract::TypeArg> = self.types.get_parameter_types_public(ctx, st2_member)
@@ -7586,7 +7621,10 @@ impl<'a> LeaksChecker<'a> {
         what: SymbolId,
     ) {
         let what_kind = crate::code::kinds::kind_name(ctx.sym(what), ctx).to_string();
-        let what_display = crate::comp::resolve::symbol_display_name(ctx, what);
+        // Java: the diagnostic formats the Symbol with its simple name
+        // (AbstractDiagnosticFormatter prints the symbol name, not the
+        // qualified name).
+        let what_display = ctx.sym(what).name.to_java_string().to_string_lossy();
         let what_pkg = crate::code::symbol::packge(ctx, what);
         let what_module = what_pkg.and_then(|pkg| crate::code::symbol::Symbol::symbol_module(ctx, pkg));
         if !is_api_symbol(ctx, what) && !self.in_super_type {
@@ -9237,11 +9275,29 @@ impl Check {
                 };
                 if !sub_signature && same_args {
                     ctx.sym_mut(sym).flags_field |= flags::CLASH;
-                    let m1_params = self.member_parameter_types(ctx, syms, site, m1);
-                    let m2_params = self.member_parameter_types(ctx, syms, site, m2);
+                    // Java: types.memberType(site, m1/m2).asMethodType()
+                    // .getParameterTypes(); the ported site is raw in this
+                    // path, which would erase the member type, so use the
+                    // declared method type for the displayed parameters.
+                    let declared_params = |ctx: &mut crate::compiler_context::CompilerContext,
+                                           method: SymbolId|
+                     -> Vec<crate::resources::diagnostic_contract::TypeArg> {
+                        let method_ty = ctx.sym(method).ty.expect("method type");
+                        self.types
+                            .get_parameter_types_public(ctx, method_ty)
+                            .iter()
+                            .map(|ty| {
+                                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                    crate::comp::attr::type_display_of(ctx, ty),
+                                )
+                            })
+                            .collect()
+                    };
                     let m1_name = ctx.sym(m1).name.clone();
                     let m2_name = ctx.sym(m2).name.clone();
                     let info = if m1 == sym {
+                        let m1_params = declared_params(ctx, m1);
+                        let m2_params = declared_params(ctx, m2);
                         crate::resources::compiler_properties::errors::name_clash_same_erasure_no_override(
                             m1_name,
                             m1_params,
@@ -9265,6 +9321,8 @@ impl Check {
                             ),
                         )
                     } else {
+                        let m1_params = self.member_parameter_types(ctx, syms, site, m1);
+                        let m2_params = self.member_parameter_types(ctx, syms, site, m2);
                         let is_interface = (ctx.sym(site_tsym).flags_field
                             & flags::INTERFACE as i64)
                             != 0;
@@ -9323,9 +9381,7 @@ impl Check {
         site: TypeId,
         sym: SymbolId,
     ) -> Vec<crate::resources::diagnostic_contract::TypeArg> {
-        let member_ty = {
-            self.types.member_type(ctx, syms, site, sym)
-        };
+        let member_ty = self.types.member_type(ctx, syms, site, sym);
         let params = match &ctx.typ(member_ty).kind {
             crate::code::type_::TypeKindData::MethodType { argtypes, .. } => argtypes.clone(),
             crate::code::type_::TypeKindData::ForAll { qtype: Some(qtype), .. } => {
@@ -9341,9 +9397,11 @@ impl Check {
         params
             .iter()
             .map(|ty| {
-                crate::resources::diagnostic_contract::TypeArg::placeholder(type_display_name(
-                    ctx, ty,
-                ))
+                // Java: the diagnostic argument is the Type object; the
+                // formatter renders its full parameterized form.
+                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                    crate::comp::attr::type_display_of(ctx, ty),
+                )
             })
             .collect()
     }
@@ -10719,7 +10777,20 @@ impl Check {
         let loc_name = ctx
             .sym(sym)
             .location()
-            .map(|loc| ctx.sym(loc).name.to_java_string().to_string_lossy().to_string())
+            .map(|loc| {
+                let loc_sym = ctx.sym(loc);
+                if loc_sym.kind == Kind::PCK {
+                    // Java: PackageSymbol.toString() is the fully qualified
+                    // name (java.security), not the simple name (security).
+                    loc_sym
+                        .get_qualified_name()
+                        .to_java_string()
+                        .to_string_lossy()
+                        .to_string()
+                } else {
+                    loc_sym.name.to_java_string().to_string_lossy().to_string()
+                }
+            })
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| String::from("unnamed package"));
         let lint = Rc::clone(&self.lint.borrow());
@@ -11173,18 +11244,18 @@ impl Check {
         packge: SymbolId,
     ) {
         // Java: PackageSymbol.members() completes first (Symbol.java:1175-1178).
-        let syms_rc = Rc::clone(&self.syms);
-        let syms = syms_rc.borrow();
-        if let Err(failure) = ctx.complete_symbol(&syms, packge) {
-            crate::code::symbol::throw_completion_failure(failure);
-        }
+        // The opens check runs while Modules.complete already borrowed the
+        // symbol table, so the members are read directly: a package of the
+        // current module is filled by Enter, and a missing package has no
+        // members anyway.
         let members_empty = match ctx.sym(packge).members() {
             None => true,
             Some(scope) => ctx
                 .scope_get_symbols(scope, crate::code::scope::LookupKind::NON_RECURSIVE, &|_| true)
                 .is_empty(),
         };
-        if members_empty && (ctx.sym(packge).flags_field & crate::code::flags::HAS_RESOURCE) == 0 {
+        let has_resource = (ctx.sym(packge).flags_field & crate::code::flags::HAS_RESOURCE) != 0;
+        if members_empty && !has_resource {
             let lint = Rc::clone(&self.lint.borrow());
             let log = Rc::clone(&self.log);
             let sym_name = ctx.sym(packge).name.to_java_string().to_string_lossy();
@@ -11197,11 +11268,10 @@ impl Check {
                 Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
             self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
                 if lint.is_enabled(LintCategory::OPENS) {
-                    log.borrow_mut().warning_lint_pos(
-                        LintCategory::OPENS,
-                        Some(Rc::clone(&position)),
-                        warning.clone(),
-                    );
+                    // Java: log.warning(pos, Warnings.PackageEmptyOrNotFound)
+                    // (Check.java:4273); the lint switch above is the only
+                    // category gate, the message carries no [opens] prefix.
+                    log.borrow_mut().warning_pos(Some(Rc::clone(&position)), warning.clone());
                 }
             }));
         }

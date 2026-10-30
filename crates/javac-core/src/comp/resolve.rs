@@ -1149,21 +1149,6 @@ impl Resolve {
                 }
                 let types = Rc::clone(&self.types);
                 let mapped = resolve_map_candidates(ctx, syms, &types, &candidates);
-                if std::env::var_os("DSH_DEBUG_RESOLVE").is_some() {
-                    eprintln!(
-                        "[INAPPLICABLE-SYMBOLS] name={:?} candidates={} mapped={} detail_codes={:?}",
-                        name.map(|n| n.to_java_string().to_string_lossy()),
-                        candidates.len(),
-                        mapped.len(),
-                        mapped
-                            .iter()
-                            .map(|(s, d)| (
-                                crate::comp::resolve::symbol_display_name(ctx, *s),
-                                d.as_ref().map(|d| d.get_code_string()),
-                            ))
-                            .collect::<Vec<_>>(),
-                    );
-                }
                 // Java: Map<Symbol, JCDiagnostic> filteredCandidates =
                 //     compactMethodDiags ? filterCandidates(candidatesMap) :
                 //     mapCandidates(); (Resolve.java:4197-4203).
@@ -1371,28 +1356,68 @@ impl Resolve {
         use crate::resources::diagnostic_contract::{
             DiagnosticArg, SymbolKindArg, TypeArg,
         };
-        if std::env::var_os("DSH_DEBUG_RESOLVE").is_some() {
-            eprintln!(
-                "[INAPPLICABLE-SYMBOL] name={:?} detail={:?} compact={}",
-                ctx.sym(ws).name.to_java_string().to_string_lossy(),
-                details.as_ref().map(|d| (d.get_code_string(), d.get_args().len())),
-                self.compact_method_diags,
-            );
-        }
         // Java: InapplicableSymbolError.getDiagnostic applies
         // MethodResolutionDiagHelper.rewrite when compactMethodDiags is set;
         // the no-conforming-assignment detail is rewritten to prob.found.req
         // using its cause and flagged COMPRESSED (Resolve.java:4137-4146).
+        // Java: a lambda return-type failure surfaces as the enclosing
+        // expression's incompatible types (checkMethod's InferenceException
+        // path), not as an inapplicable method.
+        if self.compact_method_diags
+            && let Some(details) = &details
+            && details
+                .get_code_string()
+                .ends_with("incompatible.ret.type.in.lambda")
+        {
+            // Java: the report position is the lambda expression, not the
+            // enclosing call.
+            let detail_pos: Option<std::rc::Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>> =
+                if details.get_int_position() >= 0 {
+                    Some(std::rc::Rc::new(
+                        crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                            details.get_int_position(),
+                        ),
+                    ))
+                } else {
+                details.get_diagnostic_position().or_else(|| pos.clone())
+            };
+            let mut simple = self.diags.create(
+                dkind,
+                self.log.borrow().current_source(),
+                detail_pos,
+                "prob.found.req",
+                vec![std::rc::Rc::new(details.clone())],
+            );
+            simple.set_flag(crate::util::jc_diagnostic::DiagnosticFlag::COMPRESSED);
+            return simple;
+        }
         if self.compact_method_diags
             && let Some(details) = &details
             && details
                 .get_code_string()
                 .ends_with("no.conforming.assignment.exists")
-            && details.get_args().len() == 1
         {
-            if let Some(cause) = details.get_args()[0]
-                .downcast_ref::<crate::util::jc_diagnostic::JCDiagnostic>()
-            {
+            // Java: MethodResolutionDiagHelper.rewriters (Resolve.java:4810-4847):
+            // the plain arg-mismatch detail has one argument (the cause); the
+            // infer variant has (inference vars, cause) and is only rewritten
+            // when the cause does not mention any inference variable.
+            let cause = match details.get_args() {
+                [arg] => arg
+                    .downcast_ref::<crate::util::jc_diagnostic::JCDiagnostic>()
+                    .cloned(),
+                [tvars, cause] => {
+                    let tvars = diag_type_vars(tvars);
+                    if diag_contains_any(ctx, _syms, &self.types, cause, &tvars) {
+                        None
+                    } else {
+                        cause
+                            .downcast_ref::<crate::util::jc_diagnostic::JCDiagnostic>()
+                            .cloned()
+                    }
+                }
+                _ => None,
+            };
+            if let Some(cause) = cause {
                 let cause_pos = details
                     .get_diagnostic_position()
                     .or_else(|| pos.clone());
@@ -1401,7 +1426,7 @@ impl Resolve {
                     self.log.borrow().current_source(),
                     cause_pos,
                     "prob.found.req",
-                    vec![std::rc::Rc::new(cause.clone())],
+                    vec![std::rc::Rc::new(cause)],
                 );
                 simple.set_flag(crate::util::jc_diagnostic::DiagnosticFlag::COMPRESSED);
                 return simple;
@@ -1538,6 +1563,16 @@ impl Resolve {
                 }
                 _ => location,
             }
+        } else {
+            location
+        };
+        // Java callers pass the enclosing type as the location; a nameless
+        // method symbol here means the lookup ran inside an implicit enclosing
+        // context, so fall back to the site type (see getLocationDiag).
+        let location = if ctx.sym(location).kind == Kind::MTH
+            && ctx.sym(location).name.is_empty()
+        {
+            site.and_then(|site| ctx.typ(site).tsym).unwrap_or(location)
         } else {
             location
         };
@@ -1704,9 +1739,9 @@ impl Resolve {
                     dkind,
                     pos,
                     crate::resources::compiler_properties::errors::not_def_access_package_cant_access(
-                        symbol_place(ctx, sym),
+                        simple_member_place(ctx, sym),
                         symbol_place_opt(ctx, sym_location),
-                        reason_place(&reason),
+                        reason_place(&self.diags, &reason),
                     ),
                 ));
             } else if crate::code::symbol::symbol_packge(ctx, sym) != Some(syms.root_package)
@@ -1721,9 +1756,9 @@ impl Resolve {
                     pos,
                     crate::resources::compiler_properties::errors::not_def_access_class_intf_cant_access_reason(
                         symbol_place(ctx, sym),
-                        symbol_place_opt(ctx, sym_location),
+                        simple_symbol_place(ctx, sym_location.expect("access location type")),
                         symbol_place_opt(ctx, location_package),
-                        reason_place(&reason),
+                        reason_place(&self.diags, &reason),
                     ),
                 ));
             } else {
@@ -1786,7 +1821,7 @@ impl Resolve {
                 pos,
                 crate::resources::compiler_properties::errors::package_not_visible(
                     symbol_place(ctx, sym),
-                    reason_place(&reason),
+                    reason_place(&self.diags, &reason),
                 ),
             ));
         }
@@ -1819,7 +1854,7 @@ impl Resolve {
                     Some(new_pos),
                     crate::resources::compiler_properties::errors::package_not_visible(
                         symbol_place(ctx, o),
-                        reason_place(&reason),
+                        reason_place(&self.diags, &reason),
                     ),
                 ));
             }
@@ -1828,9 +1863,47 @@ impl Resolve {
             dkind,
             pos,
             crate::resources::compiler_properties::errors::not_def_access_package_cant_access(
-                symbol_place(ctx, sym),
+                simple_member_place(ctx, sym),
                 symbol_place_opt(ctx, Some(package)),
-                reason_place(&reason),
+                reason_place(&self.diags, &reason),
+            ),
+        ))
+    }
+
+    /// Adapter for Attr: the module-access part of checkAccess (the
+    /// symbolPackageVisible check of the AccessError reasons). Java:
+    /// Attr.checkAccess -> checkAccessible -> symbolPackageVisible.
+    pub(crate) fn module_access_diagnostic(
+        &self,
+        ctx: &mut crate::compiler_context::CompilerContext,
+        syms: &Symtab,
+        env: &Rc<Env<AttrContext>>,
+        pos: i32,
+        sym: SymbolId,
+    ) -> Option<crate::util::jc_diagnostic::JCDiagnostic> {
+        if ctx.sym(sym).kind == Kind::ERR || ctx.sym(sym).kind == Kind::PCK {
+            return None;
+        }
+        let package = crate::code::symbol::symbol_packge(ctx, sym)?;
+        if package == syms.root_package {
+            return None;
+        }
+        let snapshot = resolve_env_snapshot(ctx, env);
+        if symbol_package_visible(ctx, &snapshot, sym) {
+            return None;
+        }
+        let reason = self.inaccessible_package_reason(ctx, syms, &snapshot, package);
+        let location = crate::code::symbol::symbol_location(ctx, sym)?;
+        Some(self.factory_error(
+            crate::util::jc_diagnostic::DiagnosticType::ERROR,
+            Some(Rc::new(
+                crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
+            )),
+            crate::resources::compiler_properties::errors::not_def_access_class_intf_cant_access_reason(
+                symbol_place(ctx, sym),
+                simple_symbol_place(ctx, location),
+                symbol_place_opt(ctx, Some(package)),
+                reason_place(&self.diags, &reason),
             ),
         ))
     }
@@ -3060,6 +3133,111 @@ impl Resolve {
                 );
             }
         }
+        // Java: when the package cannot be found in the current module but it
+        // exists in a module this module cannot read (or that does not export
+        // it), report the invisible-package error instead of a generic
+        // "package does not exist" (Resolve.InvisibleSymbolError path). This
+        // applies inside a named module; an unnamed-module compilation keeps the
+        // plain classpath package lookup (see the NotDefAccess examples).
+        let named_module_compilation = env
+            .toplevel
+            .and_then(|toplevel| match &ctx.tree(toplevel).kind {
+                TreeKind::CompilationUnit { modle, .. } => *modle,
+                _ => None,
+            })
+            .is_some_and(|module| module != syms.unnamed_module);
+        if self.allow_modules {
+            let pack_members_empty = ctx
+                .sym(pack)
+                .members()
+                .map(|scope| {
+                    ctx.scope_get_symbols(
+                        scope,
+                        crate::code::scope::LookupKind::NON_RECURSIVE,
+                        &|_| true,
+                    )
+                    .is_empty()
+                })
+                .unwrap_or(true);
+            let snapshot = resolve_env_snapshot(ctx, env);
+            if named_module_compilation && pack_members_empty {
+                for candidate in syms.get_packages_for_name(name) {
+                    if candidate == pack || ctx.sym(candidate).kind != Kind::PCK {
+                        continue;
+                    }
+                    // Packages of java.base are always visible to a named
+                    // module; do not turn a system-package lookup into an
+                    // invisible-package error.
+                    if crate::code::symbol::package_module(ctx, candidate) == Some(syms.java_base) {
+                        continue;
+                    }
+                    let candidate_members_empty = ctx
+                        .sym(candidate)
+                        .members()
+                        .map(|scope| {
+                            ctx.scope_get_symbols(
+                                scope,
+                                crate::code::scope::LookupKind::NON_RECURSIVE,
+                                &|_| true,
+                            )
+                            .is_empty()
+                        })
+                        .unwrap_or(true);
+                    if candidate_members_empty {
+                        // A package of a module on the module path may exist
+                        // without any entered member yet (its classes are
+                        // loaded lazily); the module location tells whether the
+                        // package really exists. A package of the unnamed
+                        // module (or of a module that does not contain it) does
+                        // not exist here.
+                        let candidate_module =
+                            crate::code::symbol::package_module(ctx, candidate);
+                        let exists = match candidate_module {
+                            Some(module) => syms.package_exists(ctx, module, name),
+                            None => false,
+                        };
+                        if !exists {
+                            continue;
+                        }
+                    }
+                    if !symbol_package_visible(ctx, &snapshot, candidate) {
+                        return self.create_invisible_symbol_error(ctx, syms, env, candidate);
+                    }
+                }
+            }
+            // Packages of the modules on the module path are entered lazily,
+            // so getPackagesForName cannot see them. Only modules whose class
+            // location is MODULE_PATH are scanned: system modules (jrt image)
+            // already have their packages in the symbol table, and listing them
+            // here would misreport the sun/java parent packages of unrelated
+            // compilations. This also covers the unnamed module, which reads
+            // every module of the graph.
+            if pack_members_empty {
+                let env_module = env_toplevel_module(ctx, env);
+                for module in syms.get_all_modules() {
+                    if Some(module) == env_module {
+                        continue;
+                    }
+                    let Some(class_location) = resolve_module_class_location(ctx, module) else {
+                        continue;
+                    };
+                    let location_name = class_location.get_name().to_string_lossy();
+                    if !location_name.starts_with("MODULE_PATH") {
+                        continue;
+                    }
+                    let package_text = name.to_java_string().to_string_lossy();
+                    let exists = self.finder.as_ref().is_some_and(|finder| {
+                        finder.module_package_exists(&class_location, &package_text)
+                    });
+                    if exists {
+                        let candidate = syms.enter_package(ctx, module, name.clone());
+                        if !symbol_package_visible(ctx, &snapshot, candidate) {
+                            return self.create_invisible_symbol_error(ctx, syms, env, candidate);
+                        }
+                    }
+                }
+            }
+        }
         pack
     }
 
@@ -3684,6 +3862,32 @@ fn simple_symbol_place(
     }
 }
 
+/// Java: Printer.visitSymbol for a member symbol: the owner class uses its
+/// simple name (class-name simplification) and a method is followed by "()".
+fn simple_member_place(
+    ctx: &crate::compiler_context::CompilerContext,
+    sym: SymbolId,
+) -> crate::resources::diagnostic_contract::SymbolArg {
+    use crate::resources::diagnostic_contract::SymbolArg;
+    if ctx.sym(sym).kind != crate::code::kinds::Kind::TYP
+        && let Some(owner) = ctx.sym(sym).owner
+        && ctx.sym(owner).kind == crate::code::kinds::Kind::TYP
+    {
+        let owner_name = ctx.sym(owner).name.to_java_string().to_string_lossy();
+        let name = ctx.sym(sym).name.to_java_string().to_string_lossy();
+        if name == "<init>" {
+            return SymbolArg::placeholder(format!("{owner_name}()"));
+        }
+        let suffix = if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH {
+            "()"
+        } else {
+            ""
+        };
+        return SymbolArg::placeholder(format!("{owner_name}.{name}{suffix}"));
+    }
+    simple_symbol_place(ctx, sym)
+}
+
 fn type_place_text(
     ctx: &crate::compiler_context::CompilerContext,
     ty: Option<TypeId>,
@@ -3724,9 +3928,14 @@ fn symbol_place_opt(
 
 /// Display placeholder for a diagnostic fragment argument (P4).
 fn reason_place(
+    diags: &crate::util::jc_diagnostic::Factory,
     reason: &crate::resources::diagnostic_contract::FragmentInfo,
 ) -> crate::resources::diagnostic_contract::DiagnosticArg {
-    crate::resources::diagnostic_contract::DiagnosticArg::from_display(reason.info().key())
+    // Java: the access-reason detail is a JCDiagnostic fragment argument
+    // (formatted/localized by the formatter), not the raw resource key.
+    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
+        diags.fragment(crate::util::jc_diagnostic::Fragment::from(reason.clone())),
+    ))
 }
 
 /// Java: Flags.asFlagSet(sym.flags() & (PRIVATE | PROTECTED))
@@ -3800,7 +4009,7 @@ fn module_visible_package(
 }
 
 /// Java: Resolve.symbolPackageVisible(Env, Symbol) (Resolve.java:2205-2210)
-fn symbol_package_visible(
+pub(crate) fn symbol_package_visible(
     ctx: &crate::compiler_context::CompilerContext,
     env_snapshot: &crate::code::symbol::ResolveEnvSnapshot,
     sym: SymbolId,
@@ -8753,6 +8962,13 @@ fn resolve_map_candidates(
     for candidate in candidates {
         let cand_sym = candidate.sym;
         let cand_details = &candidate.details;
+        // Java: MostSpecificMap is a LinkedHashMap keyed by Symbol; a later
+        // candidate with the same symbol replaces the details but keeps the
+        // first insertion position.
+        if let Some(entry) = result.iter_mut().find(|(sym, _)| *sym == cand_sym) {
+            entry.1 = cand_details.clone();
+            continue;
+        }
         let mut overridden: Vec<SymbolId> = Vec::new();
         let mut skip = false;
         for (existing, _) in &result {
@@ -8781,6 +8997,56 @@ fn resolve_map_candidates(
         result.push((cand_sym, cand_details.clone()));
     }
     result
+}
+
+/// Collects the inference-variable types carried by a diagnostic argument
+/// that renders as a list of TypeArg values (Java: a List<Type> diagnostic
+/// argument such as inferenceContext.inferenceVars()).
+fn diag_type_vars(
+    arg: &crate::util::jc_diagnostic::DiagnosticArg,
+) -> crate::util::list::List<TypeId> {
+    let mut result = crate::util::list::List::nil();
+    if let Some(items) = arg.downcast_ref::<Vec<crate::util::jc_diagnostic::DiagnosticArg>>() {
+        for item in items {
+            if let Some(type_arg) = item
+                .downcast_ref::<crate::resources::diagnostic_contract::TypeArg>()
+                && let Some(ty) = type_arg.ty
+            {
+                result = result.append(ty);
+            }
+        }
+    }
+    result
+}
+
+/// Java: MethodResolutionDiagHelper.containsPredicate — whether a diagnostic
+/// argument mentions any of the given inference variables.
+fn diag_contains_any(
+    ctx: &mut crate::compiler_context::CompilerContext,
+    syms: &Symtab,
+    types: &crate::code::types::Types,
+    arg: &crate::util::jc_diagnostic::DiagnosticArg,
+    tvars: &crate::util::list::List<TypeId>,
+) -> bool {
+    if let Some(diag) = arg.downcast_ref::<crate::util::jc_diagnostic::JCDiagnostic>() {
+        return diag
+            .get_args()
+            .iter()
+            .any(|nested| diag_contains_any(ctx, syms, types, nested, tvars));
+    }
+    if let Some(type_arg) =
+        arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>()
+    {
+        return type_arg
+            .ty
+            .is_some_and(|ty| types.contains_any(ctx, syms, ty, tvars));
+    }
+    if let Some(items) = arg.downcast_ref::<Vec<crate::util::jc_diagnostic::DiagnosticArg>>() {
+        return items
+            .iter()
+            .any(|nested| diag_contains_any(ctx, syms, types, nested, tvars));
+    }
+    false
 }
 
 /// Drops candidates whose details are arity mismatches.

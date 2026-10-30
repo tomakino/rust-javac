@@ -140,6 +140,207 @@ fn visit_type_name(ctx: &CompilerContext, ty: TypeId) -> String {
     }
 }
 
+/// The qualified representation of a type (Java: Type.toString(), used by the
+/// raw diagnostic formatter: java.lang.String instead of String).
+///
+/// # Arguments
+///   - ctx: the compiler context;
+///   - ty: the type to render.
+///
+/// # Returns
+///   - the qualified type text.
+///
+/// # Panics
+///   - a class type has no tsym (upstream invariant).
+pub fn visit_type_qualified(ctx: &CompilerContext, ty: TypeId) -> String {
+    let mut seen = HashSet::new();
+    visit_type_qualified_inner(ctx, ty, &mut seen)
+}
+
+fn visit_type_qualified_inner(
+    ctx: &CompilerContext,
+    ty: TypeId,
+    seen: &mut HashSet<TypeId>,
+) -> String {
+    let t = ctx.typ(ty);
+    match &t.kind {
+        TypeKindData::ClassType { .. }
+        | TypeKindData::ErasedClassType { .. }
+        | TypeKindData::UnionClassType { .. }
+        | TypeKindData::IntersectionClassType { .. } => visit_class_type_qualified(ctx, ty, seen),
+        TypeKindData::MethodType { argtypes, restype, .. }
+        | TypeKindData::PartiallyInferredMethodType { argtypes, restype, .. } => {
+            let args = print_method_args_qualified(ctx, argtypes, false, seen);
+            let restype = restype
+                .map(|restype| visit_type_qualified_inner(ctx, restype, seen))
+                .unwrap_or_default();
+            format!("({args}){restype}")
+        }
+        TypeKindData::WildcardType { type_, kind, .. } => {
+            if *kind == crate::code::bound_kind::BoundKind::UNBOUND {
+                return "?".to_string();
+            }
+            let mut text = kind.to_string();
+            if let Some(type_) = type_ {
+                text.push_str(&visit_type_qualified_inner(ctx, *type_, seen));
+            }
+            text
+        }
+        TypeKindData::ArrayType { .. } => {
+            let mut root = ty;
+            while let TypeKindData::ArrayType { elemtype: Some(inner), .. } = &ctx.typ(root).kind {
+                root = *inner;
+            }
+            let mut text = visit_type_qualified_inner(ctx, root, seen);
+            let mut current = ty;
+            loop {
+                text.push_str("[]");
+                match &ctx.typ(current).kind {
+                    TypeKindData::ArrayType { elemtype: Some(elemtype), .. }
+                        if ctx.typ(*elemtype).has_tag(TypeTag::ARRAY) =>
+                    {
+                        current = *elemtype;
+                    }
+                    _ => break,
+                }
+            }
+            text
+        }
+        TypeKindData::CapturedType { wildcard, .. } => {
+            let id = (stable_type_id(ty) & 0xFFFF_FFFF) % PRINTER_PRIME;
+            if seen.contains(&ty) {
+                localize("compiler.misc.type.captureof.1", &[id.to_string()])
+            } else {
+                seen.insert(ty);
+                let wildcard = wildcard
+                    .map(|wildcard| visit_type_qualified_inner(ctx, wildcard, seen))
+                    .unwrap_or_default();
+                seen.remove(&ty);
+                localize("compiler.misc.type.captureof", &[id.to_string(), wildcard])
+            }
+        }
+        TypeKindData::ForAll { tvars, qtype } => {
+            let tvars = visit_types_qualified(ctx, tvars, seen);
+            let qtype = qtype
+                .map(|qtype| visit_type_qualified_inner(ctx, qtype, seen))
+                .unwrap_or_default();
+            format!("<{tvars}>{qtype}")
+        }
+        TypeKindData::UndetVar { qtype, inst, .. } => match inst {
+            Some(inst) => visit_type_qualified_inner(ctx, *inst, seen),
+            None => format!("{}?", visit_type_qualified_inner(ctx, *qtype, seen)),
+        },
+        TypeKindData::PackageType | TypeKindData::ModuleType => t
+            .tsym
+            .map(|tsym| {
+                ctx.sym(tsym)
+                    .get_qualified_name()
+                    .to_java_string()
+                    .to_string_lossy()
+            })
+            .unwrap_or_else(|| localize("compiler.misc.type.none", &[])),
+        TypeKindData::ErrorType { .. } => visit_type_name_qualified(ctx, ty),
+        TypeKindData::JCPrimitiveType
+        | TypeKindData::JCVoidType
+        | TypeKindData::BottomType
+        | TypeKindData::UnknownType
+        | TypeKindData::TypeVar { .. } => visit_type_name_qualified(ctx, ty),
+        TypeKindData::JCNoType { .. } => visit_type_name_qualified(ctx, ty),
+        TypeKindData::UninitializedType { qtype, .. } => qtype
+            .map(|qtype| visit_type_qualified_inner(ctx, qtype, seen))
+            .unwrap_or_else(|| localize("compiler.misc.type.none", &[])),
+        TypeKindData::Deferred { .. } => "DeferredType".to_string(),
+        TypeKindData::ProxyType { .. } => "<ProxyType>".to_string(),
+    }
+}
+
+fn visit_type_name_qualified(ctx: &CompilerContext, ty: TypeId) -> String {
+    match ctx.typ(ty).tsym {
+        Some(tsym) => {
+            let name = ctx
+                .sym(tsym)
+                .get_qualified_name()
+                .to_java_string()
+                .to_string_lossy()
+                .to_string();
+            if name.is_empty() {
+                ctx.sym(tsym).name.to_java_string().to_string_lossy()
+            } else {
+                name
+            }
+        }
+        None => localize("compiler.misc.type.none", &[]),
+    }
+}
+
+fn visit_class_type_qualified(
+    ctx: &CompilerContext,
+    ty: TypeId,
+    seen: &mut HashSet<TypeId>,
+) -> String {
+    let t = ctx.typ(ty);
+    let tsym = t.tsym.expect("ClassType.tsym");
+    let mut text = if ctx.sym(tsym).name.is_empty() {
+        class_name(ctx, ty, true)
+    } else {
+        visit_type_name_qualified(ctx, ty)
+    };
+    let arguments = class_type_parts(ctx, ty).1.unwrap_or_else(List::nil);
+    if !arguments.is_empty() {
+        text.push('<');
+        text.push_str(&visit_types_qualified(ctx, &arguments, seen));
+        text.push('>');
+    }
+    text
+}
+
+fn visit_types_qualified(
+    ctx: &CompilerContext,
+    types: &List<TypeId>,
+    seen: &mut HashSet<TypeId>,
+) -> String {
+    let mut text = String::new();
+    let mut current = types.clone();
+    while current.non_empty() {
+        if !text.is_empty() {
+            text.push(',');
+        }
+        text.push_str(&visit_type_qualified_inner(ctx, *current.head(), seen));
+        current = current.tail();
+    }
+    text
+}
+
+fn print_method_args_qualified(
+    ctx: &CompilerContext,
+    args: &List<TypeId>,
+    varargs: bool,
+    seen: &mut HashSet<TypeId>,
+) -> String {
+    if !varargs {
+        return visit_types_qualified(ctx, args, seen);
+    }
+    let mut text = String::new();
+    let mut current = args.clone();
+    while current.tail().non_empty() {
+        text.push_str(&visit_type_qualified_inner(ctx, *current.head(), seen));
+        text.push(',');
+        current = current.tail();
+    }
+    if current.non_empty() {
+        let head = *current.head();
+        if ctx.typ(head).has_tag(TypeTag::ARRAY) {
+            if let TypeKindData::ArrayType { elemtype: Some(elemtype), .. } = &ctx.typ(head).kind {
+                text.push_str(&visit_type_qualified_inner(ctx, *elemtype, seen));
+            }
+            text.push_str("...");
+        } else {
+            text.push_str(&visit_type_qualified_inner(ctx, head, seen));
+        }
+    }
+    text
+}
+
 fn visit_class_type(ctx: &CompilerContext, ty: TypeId, seen: &mut HashSet<TypeId>) -> String {
     let t = ctx.typ(ty);
     let tsym = t.tsym.expect("ClassType.tsym");

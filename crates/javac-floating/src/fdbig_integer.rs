@@ -130,29 +130,29 @@ impl FDBigInteger {
 
     /// Java: public static FDBigInteger valueOfPow52(int p5, int p2)
     pub(crate) fn value_of_pow52(p5: i32, p2: i32) -> FDBigInteger {
-        if p5 != 0 {
+        return if p5 != 0 {
             if p2 == 0 {
-                return Self::big5pow(p5);
+                Self::big5pow(p5)
             } else if (p5 as usize) < SMALL_5_POW.len() {
                 let pow5 = SMALL_5_POW[p5 as usize];
                 let wordcount = p2 >> 5;
                 let bitcount = p2 & 0x1f;
                 if bitcount == 0 {
-                    return FDBigInteger::new_from_int_array(vec![pow5], wordcount);
+                    FDBigInteger::new_from_int_array(vec![pow5], wordcount)
                 } else {
-                    return FDBigInteger::new_from_int_array(
+                    FDBigInteger::new_from_int_array(
                         vec![
                             pow5.wrapping_shl(bitcount as u32),
                             ((pow5 as u32) >> (32 - bitcount) as u32) as i32,
                         ],
                         wordcount,
-                    );
+                    )
                 }
             } else {
-                return Self::big5pow(p5).left_shift(p2);
+                Self::big5pow(p5).left_shift(p2)
             }
         } else {
-            return Self::value_of_pow2(p2);
+            Self::value_of_pow2(p2)
         }
     }
 
@@ -165,7 +165,7 @@ impl FDBigInteger {
         let wordcount = p2 >> 5;
         let bitcount = p2 & 0x1f;
         if p5 != 0 {
-            if (p5 as usize) < SMALL_5_POW.len() {
+            return if (p5 as usize) < SMALL_5_POW.len() {
                 let pow5 = SMALL_5_POW[p5 as usize] as i64 & LONG_MASK;
                 let mut carry = (v0 as i64 & LONG_MASK).wrapping_mul(pow5);
                 v0 = carry as i32;
@@ -174,9 +174,9 @@ impl FDBigInteger {
                 v1 = carry as i32;
                 let v2 = (carry as u64 >> 32) as i32;
                 if bitcount == 0 {
-                    return FDBigInteger::new_from_int_array(vec![v0, v1, v2], wordcount);
+                    FDBigInteger::new_from_int_array(vec![v0, v1, v2], wordcount)
                 } else {
-                    return FDBigInteger::new_from_int_array(
+                    FDBigInteger::new_from_int_array(
                         vec![
                             v0.wrapping_shl(bitcount as u32),
                             ((v1 as u32) << (bitcount as u32)
@@ -188,7 +188,7 @@ impl FDBigInteger {
                             (v2 as u32 >> (32 - bitcount) as u32) as i32,
                         ],
                         wordcount,
-                    );
+                    )
                 }
             } else {
                 let pow5 = Self::big5pow(p5);
@@ -212,13 +212,13 @@ impl FDBigInteger {
                         &mut r,
                     );
                 }
-                return FDBigInteger::new_from_int_array(r, pow5.offset).left_shift(p2);
+                FDBigInteger::new_from_int_array(r, pow5.offset).left_shift(p2)
             }
         } else if p2 != 0 {
-            if bitcount == 0 {
-                return FDBigInteger::new_from_int_array(vec![v0, v1], wordcount);
+            return if bitcount == 0 {
+                FDBigInteger::new_from_int_array(vec![v0, v1], wordcount)
             } else {
-                return FDBigInteger::new_from_int_array(
+                FDBigInteger::new_from_int_array(
                     vec![
                         v0.wrapping_shl(bitcount as u32),
                         ((v1 as u32) << (bitcount as u32)
@@ -227,7 +227,7 @@ impl FDBigInteger {
                         (v1 as u32 >> (32 - bitcount) as u32) as i32,
                     ],
                     wordcount,
-                );
+                )
             }
         }
         FDBigInteger::new_from_int_array(vec![v0, v1], 0)
@@ -456,7 +456,7 @@ impl FDBigInteger {
         // it cannot overflow, right, as the high-order word has
         // at least 4 high-order zeros!
         let p = Self::mult_and_carry_by_10_in_place(&mut self.data, self.n_words as usize);
-        assert!(p == 0, "{p}");
+        assert_eq!(p, 0, "{p}");
         self.trim_leading_zeros();
         q as i32
     }
@@ -597,7 +597,7 @@ impl FDBigInteger {
             borrow = diff >> 32; // signed shift
             m_index += 1;
         }
-        assert!(borrow == 0, "{borrow}");
+        assert_eq!(borrow, 0, "{borrow}");
         // result should be positive
         minuend.trim_leading_zeros();
         minuend
@@ -660,7 +660,7 @@ impl FDBigInteger {
             s_index += 1;
             m_index += 1;
         }
-        assert!(borrow == 0, "{borrow}");
+        assert_eq!(borrow, 0, "{borrow}");
         subtrahend.n_words = s_index as i32;
         subtrahend.trim_leading_zeros();
         subtrahend

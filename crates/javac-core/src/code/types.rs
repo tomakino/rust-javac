@@ -9062,13 +9062,12 @@ impl Types {
                 }),
             }),
             None => {
-                // Java: build IncompatibleDescsInFunctionalIntf with the
-                // descriptor.throws/descriptor fragment lines (JCDiagnostic.
-                // MultilineDiagnostic). The ported JCDiagnostic has no
-                // MultiLine form yet (registered adapter): the error is reported with
-                // the primary diagnostic only, same key.
+                // Java: Types.java:765-781 — one descriptor/descriptor.throws
+                // fragment per abstract method, reported as a
+                // MultilineDiagnostic under the IncompatibleDescsInFunctionalIntf
+                // primary fragment.
                 let kind_name = crate::code::kinds::kind_name(ctx.sym(origin), ctx);
-                let fragment =
+                let msg = diags.fragment(crate::util::jc_diagnostic::Fragment::from(
                     crate::resources::compiler_properties::fragments::incompatible_descs_in_functional_intf(
                         crate::resources::diagnostic_contract::KindNameArg::placeholder(
                             kind_name.name(),
@@ -9076,8 +9075,62 @@ impl Types {
                         crate::resources::diagnostic_contract::SymbolArg::placeholder(
                             ctx.sym(origin).name.to_java_string().to_string_lossy(),
                         ),
+                    ),
+                ));
+                let mut descriptors: crate::util::list::List<
+                    crate::util::jc_diagnostic::JCDiagnostic,
+                > = crate::util::list::List::nil();
+                for desc in &abstracts {
+                    let desc_name = ctx.sym(*desc).name.clone();
+                    let desc_ty = ctx.sym(*desc).ty.expect("descriptor method type");
+                    let params = self.get_parameter_types_public(ctx, desc_ty);
+                    let ret = self.get_return_type_public(ctx, desc_ty);
+                    let thrown = self.get_thrown_types_public(ctx, desc_ty);
+                    let params_args: Vec<crate::resources::diagnostic_contract::TypeArg> =
+                        params
+                            .iter()
+                            .map(|p| {
+                                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                    crate::comp::attr::type_display_of(ctx, p),
+                                )
+                            })
+                            .collect();
+                    let ret_arg = crate::resources::diagnostic_contract::TypeArg::placeholder(
+                        crate::comp::attr::type_display_of(ctx, ret),
                     );
-                Err(self.descriptor_failure(diags, fragment))
+                    let thrown_args: Vec<crate::resources::diagnostic_contract::TypeArg> =
+                        thrown
+                            .iter()
+                            .map(|t| {
+                                crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                    crate::comp::attr::type_display_of(ctx, t),
+                                )
+                            })
+                            .collect();
+                    let info = if thrown.is_empty() {
+                        crate::resources::compiler_properties::fragments::descriptor(
+                            desc_name,
+                            params_args,
+                            ret_arg,
+                            thrown_args,
+                        )
+                    } else {
+                        crate::resources::compiler_properties::fragments::descriptor_throws(
+                            desc_name,
+                            params_args,
+                            ret_arg,
+                            thrown_args,
+                        )
+                    };
+                    descriptors = descriptors
+                        .append(diags.fragment(crate::util::jc_diagnostic::Fragment::from(info)));
+                }
+                let multiline = crate::util::jc_diagnostic::MultilineDiagnostic::new(
+                    &msg,
+                    descriptors,
+                );
+                Err(FunctionDescriptorLookupError::new()
+                    .set_message(multiline.as_diagnostic().clone()))
             }
         }
     }

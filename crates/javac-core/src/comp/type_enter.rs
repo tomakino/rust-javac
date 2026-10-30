@@ -147,7 +147,10 @@ impl TypeEnter {
             type_envs,
             dependencies,
             allow_type_annos: true,
-            allow_deprecation_on_import: true,
+            // Java: allowDeprecationOnImport = Feature.DEPRECATION_ON_IMPORT
+            // .allowedInSource(source); the feature's max level is JDK8, so
+            // source 9+ (the compiler default) must not warn on imports.
+            allow_deprecation_on_import: false,
             completion_enabled: std::cell::Cell::new(true),
             top_level_phase: std::cell::Cell::new(None),
             imports_env: std::cell::RefCell::new(None),

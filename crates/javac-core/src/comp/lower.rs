@@ -6400,6 +6400,10 @@ impl Lower {
         };
         let module_clone = ctx.sym(msym).clone();
         let mut info_symbol = ctx.sym(module_info).clone();
+        // Java: the clone keeps the arena identity (Symbol.id is filled by
+        // CompilerContext::alloc_symbol; Clone does not copy it, so restore it
+        // before the symbol is mutated through the metadata API again).
+        info_symbol.id.set(Some(module_info));
         info_symbol.set_attributes(ctx, &module_clone);
         info_symbol.flags_field |= crate::code::flags::MODULE;
         *ctx.sym_mut(module_info) = info_symbol;

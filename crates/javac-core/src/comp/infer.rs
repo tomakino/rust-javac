@@ -3127,7 +3127,7 @@ fn report_bound_error_two(
     let frag1_diag = infer.diags.fragment(frag1);
     let frag2_diag = infer.diags.fragment(frag2);
     let fragment = fragments::incompatible_bounds(
-        crate::comp::check::type_arg_with_where(ctx, qtype),
+        crate::comp::check::type_arg_with_rich_where(ctx, qtype),
         crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(
             frag1_diag,
         )),
@@ -3684,15 +3684,6 @@ impl Infer {
         target: &crate::comp::attr::ResultInfo,
         inference_context: &Rc<InferenceContext>,
     ) -> bool {
-        // A method type variable as the target means the enclosing invocation
-        // has not been instantiated yet; solve this invocation independently
-        // from its arguments so the argument type passed outwards is concrete.
-        if let Some(pt) = target.pt
-            && (ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
-                || ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::NONE))
-        {
-            return false;
-        }
         let target_context = target.check_context.inference_context();
         if !Rc::ptr_eq(target_context, &crate::comp::infer::empty_context()) {
             if !inference_context.free(ctx, syms, types, restype) {
@@ -3796,16 +3787,6 @@ impl Infer {
         let mut to = result_info
             .pt
             .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
-        // A method type variable belongs to the enclosing invocation. Using
-        // it as this invocation's return-type target adds a bogus lower bound
-        // (e.g. V <- Map<K,V>); solve independently and let the concrete result
-        // constrain the enclosing call instead.
-        if ctx.typ(to).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
-            to = ctx
-                .typ(to)
-                .get_upper_bound()
-                .unwrap_or_else(|| crate::code::symtab::no_type_id(ctx));
-        }
         if ctx.typ(qtype).has_tag(TypeTag::VOID) {
             to = syms.void_type;
         } else if ctx.typ(to).has_tag(TypeTag::NONE) {

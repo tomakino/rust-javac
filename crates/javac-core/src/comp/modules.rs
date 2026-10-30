@@ -364,6 +364,19 @@ impl Modules {
         modules
     }
 
+    /// Java: toplevel.sourcefile.isNameCompatible("module-info", Kind.SOURCE)
+    /// (Modules.java:308). A module-info compilation unit has no primary
+    /// class, so Modules.enter is called with a null class for it.
+    pub(crate) fn compilation_unit_is_module_info(
+        &self,
+        ctx: &CompilerContext,
+        tree: TreeId,
+    ) -> bool {
+        compilation_unit_sourcefile(ctx, tree).is_some_and(|sourcefile| {
+            sourcefile.is_name_compatible(&JavaString::from("module-info"), FileKind::SOURCE)
+        })
+    }
+
     /// Java: private void enterModule(JCCompilationUnit toplevel, ClassSymbol c,
     /// Set<ModuleSymbol> modules) (Modules.java:307-351).
     fn enter_module(
@@ -397,18 +410,11 @@ impl Modules {
             let name = tree_info::full_name(ctx, qual_id).expect("module name");
             let sym = match c {
                 Some(c) => {
-                    let owner = ctx.sym(c).owner.expect("module owner of package-info");
-                    let tree_name = tree_info::full_name(ctx, qual_id).expect("module name");
-                    if ctx.sym(owner).name.to_java_string()
-                        != tree_name.to_java_string()
-                    {
-                        let pos = ctx.tree(decl).pos;
-                        self.log.borrow_mut().error_at(
-                            pos,
-                            JCDiagnosticError::from(errors::module_name_mismatch(tree_name.clone(), ctx.sym(owner).name.clone())),
-                        );
-                    }
-                    owner
+                    // Java: sym = c.owner (Modules.java:317-323). The
+                    // name-mismatch diagnostic is reported once by
+                    // initModules (setCompilationUnitModules); completing the
+                    // module-info class must not report it again.
+                    ctx.sym(c).owner.expect("module owner of package-info")
                 }
                 None => {
                     let sym = syms.enter_module(ctx, name);
@@ -416,12 +422,17 @@ impl Modules {
                     if module_info_sourcefile(ctx, info).is_some()
                         && !same_file(module_info_sourcefile(ctx, info), &sourcefile)
                     {
-                        self.log.borrow_mut().error_at(
-                            ctx.tree(decl).pos,
-                            JCDiagnosticError::from(errors::duplicate_module(
-                                SymbolArg::placeholder(ctx.sym(sym).name.to_java_string().to_string_lossy()),
-                            )),
-                        );
+                        // initModules reports the duplicate once; re-entering
+                        // the same unit during its completion must not report
+                        // it again (it still returns without a symbol).
+                        if self.in_init_modules.get() {
+                            self.log.borrow_mut().error_at(
+                                ctx.tree(decl).pos,
+                                JCDiagnosticError::from(errors::duplicate_module(
+                                    SymbolArg::placeholder(ctx.sym(sym).name.to_java_string().to_string_lossy()),
+                                )),
+                            );
+                        }
                         return;
                     }
                     sym
@@ -565,12 +576,31 @@ impl Modules {
                         .from_string(&self.module_name(ctx, msplocn));
                     let msym = match decl {
                         Some(decl) => {
+                            // A duplicate module declaration has no symbol
+                            // installed by Enter (the second module-info of the
+                            // same name); fall back to entering the module by
+                            // its declared name, like the Java path that reads
+                            // tree.sym after initModules.
                             let sym = match &ctx.tree(decl).kind {
-                                TreeKind::ModuleDecl { sym: Some(sym), .. } => *sym,
-                                _ => panic!("AssertionError: module decl sym"),
+                                TreeKind::ModuleDecl { sym: Some(sym), .. } => Some(*sym),
+                                _ => None,
                             };
-                            if ctx.sym(sym).name.to_java_string()
-                                != name.to_java_string()
+                            let sym = match sym {
+                                Some(sym) => sym,
+                                None => {
+                                    // Enter did not install a symbol for this
+                                    // module declaration: a duplicate module
+                                    // name. The duplicate-module error was
+                                    // already reported by Enter; the module is
+                                    // still entered by its declared name.
+                                    syms.enter_module(ctx, name.clone())
+                                }
+                            };
+                            // initModules reports the name mismatch once; the
+                            // per-unit completion must not report it again.
+                            if self.in_init_modules.get()
+                                && ctx.sym(sym).name.to_java_string()
+                                    != name.to_java_string()
                             {
                                 let pos = match &ctx.tree(decl).kind {
                                     TreeKind::ModuleDecl { qual_id, .. } => {
@@ -586,8 +616,13 @@ impl Modules {
                             sym
                         }
                         None => {
-                            let pkg = compilation_unit_package(ctx, *tree);
-                            if pkg.is_none() {
+                            // Java: tree.getPackage() is JCCompilationUnit
+                            // .getPackage(), i.e. the package *declaration*
+                            // tree, not the entered PackageSymbol (which is
+                            // only set by Enter, after Modules.initModules).
+                            if crate::comp::enter::compilation_unit_package_decl(ctx, *tree)
+                                .is_none()
+                            {
                                 self.log.borrow_mut().error_at(
                                     ctx.tree(*tree).pos,
                                     JCDiagnosticError::from(

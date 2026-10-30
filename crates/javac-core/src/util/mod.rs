@@ -34,6 +34,7 @@ pub mod names;
 pub mod options;
 pub mod pair;
 pub mod position;
+pub mod properties;
 pub mod propagated_exception;
 pub mod raw_diagnostic_formatter;
 pub mod shared_name_table;

@@ -3547,8 +3547,10 @@ impl crate::comp::check::CheckContext for DiamondCheckContext {
                     crate::resources::diagnostic_contract::DiagnosticArg::from_display(
                         diamond_text,
                     ),
-                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                        message.to_string(),
+                    // Java: the reason argument is the details diagnostic
+                    // itself (its Type arguments carry the where clauses).
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                        std::rc::Rc::new(details.clone()),
                     ),
                 ),
             ));
@@ -3858,13 +3860,18 @@ impl Attr {
             &self.types,
             self.types.get_return_type_public(ctx, descriptor),
         );
-        let (body, _body_is_expression) = match &ctx.tree(tree).kind {
-            TreeKind::Lambda { body, .. } => (
-                body,
-                body.map(|body| ctx.tree(body).tag != Tag::BLOCK)
-                    .unwrap_or(false),
-            ),
-            _ => panic!("ClassCastException: JCLambda expected"),
+        let (body, _body_is_expression) = {
+            let node = ctx.tree(tree);
+            match &node.kind {
+                TreeKind::Lambda { body, .. } => {
+                    let body = *body;
+                    let is_expression = body
+                        .map(|body| ctx.tree(body).tag != Tag::BLOCK)
+                        .unwrap_or(false);
+                    (body, is_expression)
+                }
+                _ => panic!("ClassCastException: JCLambda expected"),
+            }
         };
         let can_complete_normally = match &ctx.tree(tree).kind {
             TreeKind::Lambda {
@@ -3894,17 +3901,20 @@ impl Attr {
                             ),
                         ),
                     ));
-            let message = missing.get_message(None);
-            let outer = self
-                .diags
-                .fragment(crate::util::jc_diagnostic::Fragment::from(
-                crate::resources::compiler_properties::fragments::incompatible_ret_type_in_lambda(
-                    crate::resources::diagnostic_contract::DiagnosticArg::from_display(
-                        message.to_string(),
-                    ),
-                ),
-            ));
-            check_context.report(ctx, ctx.tree(tree).pos, &outer);
+            let int_pos = ctx.tree(tree).pos;
+            let source = self.log.borrow().current_source();
+            // Java: the details diagnostic carries the lambda position (used by
+            // the final incompatible-types report).
+            let outer = self.diags.create(
+                crate::util::jc_diagnostic::DiagnosticType::FRAGMENT,
+                source,
+                Some(std::rc::Rc::new(
+                    crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(int_pos),
+                )),
+                "incompatible.ret.type.in.lambda",
+                vec![std::rc::Rc::new(missing)],
+            );
+            check_context.report(ctx, int_pos, &outer);
         }
         let arg_types = inference_context.as_undet_vars(
             ctx,
@@ -6587,10 +6597,45 @@ impl Attr {
         // are accessible.
         let sitesym = crate::tree::tree_info::symbol(ctx, selected);
         let select_super_prev = env.info.borrow().select_super;
-        let is_super_qualifier = sitesym
-            .map(|sitesym| ctx.sym(sitesym).name == self.names._super)
-            .unwrap_or(false);
+        // Java: both "super.m()" (an ident qualifier) and "I.super.m()" (a
+        // super-qualified field access) select through super.
+        let selected_is_super_tree = match &ctx.tree(selected).kind {
+            crate::tree::jc_tree::TreeKind::FieldAccess { name, .. } => {
+                *name == self.names._super
+            }
+            _ => false,
+        };
+        let is_super_qualifier = selected_is_super_tree
+            || sitesym
+                .map(|sitesym| ctx.sym(sitesym).name == self.names._super)
+                .unwrap_or(false);
         env.info.borrow_mut().select_super = is_super_qualifier;
+        // Java: when the qualifier is an invisible package, the package
+        // diagnostic was already reported by the qualifier resolution; the
+        // selection must not be diagnosed again. The package is invisible for
+        // the unnamed module too when it belongs to a module outside the graph
+        // or to a module that does not export it.
+        if let Some(sitesym) = sitesym
+            && ctx.sym(sitesym).kind == Kind::PCK
+        {
+            let snapshot = crate::comp::resolve::resolve_env_snapshot(ctx, &env);
+            if crate::code::symbol::package_module(ctx, sitesym).is_some()
+                && crate::code::symbol::package_module(ctx, sitesym) != Some(syms.java_base)
+                && !crate::comp::resolve::symbol_package_visible(ctx, &snapshot, sitesym)
+            {
+                let error_type = ctx
+                    .sym(syms.err_symbol)
+                    .ty
+                    .unwrap_or_else(|| self.symtab_facts().recovery_type);
+                if let TreeKind::FieldAccess { sym: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                    *slot = Some(syms.err_symbol);
+                }
+                ctx.tree_mut(tree).ty = Some(error_type);
+                self.result = Some(error_type);
+                env.info.borrow_mut().select_super = select_super_prev;
+                return Ok(error_type);
+            }
+        }
         // Determine the symbol represented by the selection.
         env.info.borrow_mut().pending_resolution_phase = None;
         let result_info = self.result_info.clone().expect("resultInfo");
@@ -6615,6 +6660,24 @@ impl Attr {
             sym = syms.err_symbol;
         }
         let sym_exists = crate::code::symbol::symbol_exists(ctx, sym);
+        // Java: Attr.checkAccess on the selected symbol: a symbol in a package
+        // that is invisible from the current module is reported with its
+        // module-access reason (Resolve.symbolPackageVisible).
+        if sym_exists {
+            let rs_rc = self.rs.borrow().clone();
+            if let Some(rs_rc) = rs_rc {
+                let diag = rs_rc.borrow().module_access_diagnostic(
+                    ctx,
+                    syms,
+                    &env,
+                    ctx.tree(tree).pos,
+                    sym,
+                );
+                if let Some(diag) = diag {
+                    self.log.borrow_mut().report(diag);
+                }
+            }
+        }
         if sym_exists
             && ctx.sym(sym).kind != crate::code::kinds::Kind::TYP
             && self.pkind().contains(KindSelector::TYP_PCK)
@@ -6741,6 +6804,9 @@ impl Attr {
                 let sym_flags = ctx.sym(sym).flags_field;
                 if (sym_flags & (flags::STATIC as i64)) == 0
                     && ctx.sym(sym).name != self.names._super
+                    // Java: a super-qualified selection is never a static
+                    // reference (I.super.m()).
+                    && !env.info.borrow().select_super
                     && (ctx.sym(sym).kind == crate::code::kinds::Kind::VAR
                         || ctx.sym(sym).kind == crate::code::kinds::Kind::MTH)
                 {
@@ -6842,7 +6908,21 @@ impl Attr {
                 .check_access_from_serializable_element(ctx, syms, tree, is_lambda);
         }
         env.info.borrow_mut().select_super = select_super_prev;
-        let result = self.check_id(ctx, syms, tree, site, sym, &env, &result_info);
+        // Java: the type of a super-qualified selection (I.super) is the
+        // qualifier type itself; the ported selectSym may return an error
+        // symbol for a redundant supertype, which would make the following
+        // selection (I.super.m()) unresolved.
+        let select_is_super = match &ctx.tree(tree).kind {
+            crate::tree::jc_tree::TreeKind::FieldAccess { name, .. } => {
+                *name == self.names._super
+            }
+            _ => false,
+        };
+        let result = if select_is_super {
+            site
+        } else {
+            self.check_id(ctx, syms, tree, site, sym, &env, &result_info)
+        };
         self.result = Some(result);
         Ok(result)
     }
@@ -7057,24 +7137,6 @@ impl Attr {
                 ctx.typ(error).tsym.expect("error type symbol")
             }
             TypeTag::UNKNOWN | TypeTag::NONE => {
-                if std::env::var_os("DSH_DEBUG_SELECT").is_some() {
-                    eprintln!(
-                        "[SELECT-UNKNOWN] pos={} name={} tag={:?} loc={:?} loc_kind={:?} loc_ty={:?}",
-                        ctx.tree(tree).pos,
-                        name.to_java_string(),
-                        ctx.typ(site).get_tag(),
-                        location.map(|l| ctx
-                            .sym(l)
-                            .name
-                            .to_java_string()
-                            .to_string_lossy()
-                            .to_string()),
-                        location.map(|l| ctx.sym(l).kind),
-                        location
-                            .and_then(|l| ctx.sym(l).ty)
-                            .map(|t| ctx.typ(t).get_tag())
-                    );
-                }
                 self.attr_error(
                     ctx.tree(tree).pos,
                     crate::resources::compiler_properties::errors::cant_deref(
@@ -14380,7 +14442,7 @@ impl Attr {
             }
         }
         // Attribute constructor arguments.
-        let (pkind, argtypes) =
+        let (pkind, mut argtypes) =
             self.attrib_args(ctx, syms, KindSelector::VAL, args.clone(), &local_env);
         // Java: typeargtypes = attribAnyTypes(tree.typeargs, localEnv).
         let typeargtypes = self.attrib_any_types(ctx, syms, typeargs.clone(), &local_env);
@@ -14464,17 +14526,44 @@ impl Attr {
                         crate::util::jc_diagnostic::Error::from(info),
                     );
                 }
-                // Error recovery: pretend no arguments were supplied.
-                let _ = argtypes;
+                // Java: Attr.java:2795-2798 — error recovery: pretend no
+                // arguments were supplied, so the anonymous class constructor
+                // lookup (visitAnonymousClassDefinition) uses the no-arg
+                // superclass constructor.
+                argtypes = List::nil();
                 skip_non_diamond_path = true;
             }
             let _ = class_decl_removed;
-            if is_diamond {
+            if is_diamond
+                && !ctx
+                    .typ(clazztype)
+                    .has_tag(crate::code::type_tag::TypeTag::ERROR)
+            {
+                // Java: Attr.java:2800 — checkDiamond already reported the
+                // diamond error and returned an error type; the ported
+                // resolveDiamond would report a second (redundant) diamond
+                // error for that error type, so skip the inference here.
                 // diamond inference (JLS 15.12.2.7)
+                // Java keeps the original class symbol on an error type
+                // (createErrorType(t).tsym == t.tsym); the ported ErrorType
+                // uses the error symbol, so recover the original type here.
+                let (diamond_outer, diamond_tsym) = match &ctx.typ(clazztype).kind {
+                    crate::code::type_::TypeKindData::ErrorType {
+                        original_type: Some(original),
+                        ..
+                    } => (
+                        ctx.typ(*original).get_enclosing_type(),
+                        ctx.typ(*original).tsym.unwrap_or(clazztype_tsym),
+                    ),
+                    _ => (
+                        ctx.typ(clazztype).get_enclosing_type(),
+                        clazztype_tsym,
+                    ),
+                };
                 let site = {
-                    let outer = ctx.typ(clazztype).get_enclosing_type();
+                    let outer = diamond_outer;
                     let tsym_ty = ctx
-                        .sym(clazztype_tsym)
+                        .sym(diamond_tsym)
                         .ty
                         .expect("diamond class symbol type");
                     let typarams =
@@ -14483,7 +14572,7 @@ impl Attr {
                     let mut new_type = crate::code::type_::Type::new_class_type(
                         outer,
                         Some(typarams),
-                        clazztype_tsym,
+                        diamond_tsym,
                     );
                     if let Some(metadata) = metadata {
                         new_type.metadata = Some(metadata);
@@ -14558,7 +14647,7 @@ impl Attr {
                     enclosing: Rc::clone(&result_info.check_context),
                     clazz,
                     diags: Rc::clone(&self.diags),
-                    tsym: clazztype_tsym,
+                    tsym: diamond_tsym,
                     speculative: is_speculative_diamond || in_overload_phase,
                 })
                     as Rc<dyn crate::comp::check::CheckContext>;
@@ -14635,7 +14724,14 @@ impl Attr {
                     let chk = Rc::clone(&chk_rc);
                     chk.check_class_type_no_bounds(ctx, syms, ctx.tree(clazz).pos, clazz_ty, true)
                 };
-            } else if !skip_non_diamond_path {
+            } else if !skip_non_diamond_path
+                && !ctx
+                    .typ(clazztype)
+                    .has_tag(crate::code::type_tag::TypeTag::ERROR)
+            {
+                // Java: Attr.java:2749 — a diamond/constructor error turns the
+                // class type into an error type, and the constructor lookup is
+                // skipped (the error type has no constructor to resolve).
                 let rs_env_config = local_env.dup(Some(tree), local_env.info.borrow().dup_ctx());
                 {
                     let mut rs_env_info = rs_env_config.info.borrow_mut();
@@ -14883,22 +14979,26 @@ impl Attr {
             };
             if !ctx.typ(clazztype).has_tag(TypeTag::ERROR) && !invalid.is_empty() {
                 let clazztype_tsym = ctx.typ(clazztype).tsym.expect("diamond class symbol");
+                // Java: Fragments.Diamond(tsym) — the symbol (simple class
+                // name), not the parameterized site type.
                 let diamond_fragment =
                     self.diags
                         .fragment(crate::util::jc_diagnostic::Fragment::from(
                             crate::resources::compiler_properties::fragments::diamond(
                                 crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                    crate::comp::attr::type_display_of(ctx, clazztype),
+                                    ctx.sym(clazztype_tsym)
+                                        .name
+                                        .to_java_string()
+                                        .to_string_lossy(),
                                 ),
                             ),
                         ));
+                // Java: the diagnostic arguments are the inferred types; the
+                // rich formatter renders captured types as CAP#N and adds the
+                // fresh-type-variable where clauses.
                 let invalid_args: Vec<crate::resources::diagnostic_contract::TypeArg> = invalid
                     .iter()
-                    .map(|t| {
-                        crate::resources::diagnostic_contract::TypeArg::placeholder(
-                            crate::comp::attr::type_display_of(ctx, *t),
-                        )
-                    })
+                    .map(|t| crate::comp::check::type_arg_with_rich_where(ctx, *t))
                     .collect();
                 let detail = if invalid.len() > 1 {
                     crate::resources::compiler_properties::fragments::diamond_invalid_args(

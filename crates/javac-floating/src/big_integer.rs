@@ -2719,7 +2719,7 @@ impl BigInteger {
 
     /// Java: final int compareMagnitude(long val).
     fn compare_magnitude_long(&self, val: i64) -> i32 {
-        assert!(val != i64::MIN);
+        assert_ne!(val, i64::MIN);
         let m1 = &self.mag;
         let len = m1.len() as i32;
         if len > 2 {
@@ -2900,7 +2900,7 @@ impl BigInteger {
             return;
         }
         let b = u.bit_length();
-        let n = (((b as f64 * LOG_TWO / LOG_CACHE[radix as usize]).ln() / LOG_TWO - 1.0).round())
+        let n = ((b as f64 * LOG_TWO / LOG_CACHE[radix as usize]).ln() / LOG_TWO - 1.0).round()
             as i32;
         let v = Self::get_radix_conversion_cache(radix, n);
         let (q, r) = u.divide_and_remainder(&v);

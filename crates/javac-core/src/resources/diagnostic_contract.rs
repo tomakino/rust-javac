@@ -149,6 +149,18 @@ impl PartialEq for DiagnosticArg {
 
 impl Eq for DiagnosticArg {}
 
+impl From<&str> for DiagnosticArg {
+    fn from(value: &str) -> DiagnosticArg {
+        DiagnosticArg::Text(value.to_string())
+    }
+}
+
+impl From<String> for DiagnosticArg {
+    fn from(value: String) -> DiagnosticArg {
+        DiagnosticArg::Text(value)
+    }
+}
+
 /// Argument boxing trait: the generated accessors call into_diagnostic_arg() for every argument.
 pub trait IntoDiagnosticArg {
     fn into_diagnostic_arg(self) -> DiagnosticArg;
@@ -273,7 +285,19 @@ opaque_arg!(PathArg);
 opaque_arg!(ProfileArg);
 opaque_arg!(SourceArg);
 opaque_arg!(SourceVersionArg);
-opaque_arg!(SymbolArg);
+/// P4 placeholder: SymbolArg is the pre-formatted text argument used by the
+/// typed accessors for symbol parameters (ADR 0002). It shares the
+/// DiagnosticArg representation so both accessor call styles are accepted;
+/// the real Symbol type replaces it at P4.
+pub type SymbolArg = DiagnosticArg;
+
+impl DiagnosticArg {
+    /// Build a placeholder argument from Display text (the same helper the
+    /// other diagnostic argument types expose before P4).
+    pub fn placeholder(text: impl Into<String>) -> Self {
+        DiagnosticArg::Text(text.into())
+    }
+}
 opaque_arg!(SymbolKindArg);
 opaque_arg!(TargetArg);
 opaque_arg!(TokenArg);
@@ -328,6 +352,8 @@ pub struct TypeArg {
     pub text: String,
     /// The Java Type object identity.
     pub ty: Option<crate::ids::TypeId>,
+    /// Qualified rendering (Java: Type.toString()) used by the raw formatter.
+    pub qualified_text: Option<String>,
     /// Type variables occurring in the type, in encounter order.
     pub where_vars: Vec<WhereTypeVar>,
     /// Captured types occurring in the type, in encounter order.
@@ -342,6 +368,7 @@ impl TypeArg {
         TypeArg {
             text: text.into(),
             ty: None,
+            qualified_text: None,
             where_vars: Vec::new(),
             where_captured: Vec::new(),
             where_intersections: Vec::new(),
@@ -357,6 +384,7 @@ impl TypeArg {
         TypeArg {
             text: text.into(),
             ty: Some(ty),
+            qualified_text: None,
             where_vars,
             where_captured: Vec::new(),
             where_intersections: Vec::new(),

@@ -437,3 +437,39 @@ fn multiple_error_files_keep_source_order() {
     };
     assert_eq!(error_files(&rust_out), error_files(&javac_out));
 }
+
+#[test]
+fn draw_diagnostics_matches_javac() {
+    let dir = temp_dir("draw-diagnostics");
+    // The canonical raw-diagnostics example: a single type error.
+    std::fs::write(
+        dir.join("Foo.java"),
+        "class Foo {\n    void m() {\n        String s = 1;\n    }\n}\n",
+    )
+    .expect("source");
+    let source = dir.join("Foo.java").display().to_string();
+    let out = dir.to_str().unwrap();
+    let javac_out = run_javac(&dir, &["-XDrawDiagnostics", "-d", out, &source]);
+    let rust_out = run_rust(&dir, &["-XDrawDiagnostics", "-d", out, &source]);
+    assert_eq!(javac_out.status.code(), rust_out.status.code());
+    assert_same_output(
+        &text(&rust_out.stderr),
+        &text(&javac_out.stderr),
+        "-XDrawDiagnostics stderr",
+    );
+}
+
+#[test]
+fn draw_diagnostics_lowercase_flag_is_invalid() {
+    // -XDrawDiagnostics is the -XD extension key "rawDiagnostics"; the
+    // lowercase spelling is not a javac option and must stay invalid.
+    let dir = temp_dir("draw-diagnostics-lowercase");
+    let javac_out = run_javac(&dir, &["-XdrawDiagnostics"]);
+    let rust_out = run_rust(&dir, &["-XdrawDiagnostics"]);
+    assert_eq!(javac_out.status.code(), rust_out.status.code());
+    assert_same_output(
+        &text(&rust_out.stderr),
+        &text(&javac_out.stderr),
+        "-XdrawDiagnostics stderr",
+    );
+}

@@ -98,7 +98,12 @@ impl BasicDiagnosticFormatter {
     /// Java: RichDiagnosticFormatter.format/formatMessage appends the where
     /// clauses after the formatted diagnostic; nested messages never add them.
     fn append_where_clauses(&self, d: &JCDiagnostic, text: &mut String) {
-        if self.depth.get() != 0 {
+        // Java: only the outermost error/warning carries the where clauses; a
+        // fragment (a reason/detail message) is formatted on its own only when
+        // embedded in another diagnostic, which must not duplicate them.
+        if self.depth.get() != 0
+            || d.get_type() == crate::util::jc_diagnostic::DiagnosticType::FRAGMENT
+        {
             return;
         }
         let state = self.rich_state.borrow();
@@ -1072,22 +1077,23 @@ mod tests {
         }
     }
 
-    static TEST_MESSAGES: &[(&str, &str)] = &[
-        // The real values of the compiler resource keys (with the trailing
-        // space) are overridden to keep the tests independent of the bundle.
-        ("compiler.err.error", "error: "),
-        ("compiler.warn.warning", "warning: "),
-        ("compiler.note.note", "Note: "),
-        ("compiler.err.test", "test error {0}"),
-        ("compiler.err.multi", "summary\ndetail one\ndetail two"),
-        ("compiler.warn.lintOption", "[{0}] "),
-        ("compiler.note.sub", "sub message {0}"),
-        ("compiler.warn.deprecation", "deprecated {0}"),
-    ];
+    static TEST_MESSAGES: crate::resources::message_table::MessageTable =
+        crate::resources::message_table::MessageTable::new(concat!(
+            // The real values of the compiler resource keys (with the trailing
+            // space) are overridden to keep the tests independent of the bundle.
+            "compiler.err.error=error: \n",
+            "compiler.warn.warning=warning: \n",
+            "compiler.note.note=Note: \n",
+            "compiler.err.test=test error {0}\n",
+            "compiler.err.multi=summary\\ndetail one\\ndetail two\n",
+            "compiler.warn.lintOption=[{0}] \n",
+            "compiler.note.sub=sub message {0}\n",
+            "compiler.warn.deprecation=deprecated {0}\n",
+        ));
 
     fn messages() -> Rc<JavacMessages> {
         let mut messages = JavacMessages::new(DEFAULT_BUNDLE_NAME);
-        messages.add_helper(Box::new(TestBundle(TEST_MESSAGES)));
+        messages.add_helper(Box::new(TestBundle(&TEST_MESSAGES)));
         Rc::new(messages)
     }
 

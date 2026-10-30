@@ -113,6 +113,23 @@ fn expand_argfiles(args: &[String]) -> Result<Vec<String>, (String, i32)> {
     Ok(result)
 }
 
+/// Java: a module name is a dot-separated sequence of Java identifiers.
+fn is_valid_module_name(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    name.split('.').all(|part| {
+        let mut chars = part.chars();
+        match chars.next() {
+            Some(first) => {
+                (first.is_alphabetic() || first == '_' || first == '$')
+                    && chars.all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+            }
+            None => false,
+        }
+    })
+}
+
 fn collect_sources(path: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     if path.is_dir() {
         let entries = std::fs::read_dir(path).map_err(|e| format!("cannot read {path:?}: {e}"))?;
@@ -750,8 +767,108 @@ fn compile(args: &[String]) -> Result<i32, String> {
             );
             return Ok(CMDERR);
         }
+        if name == "--add-modules" {
+            for module in value.split(',') {
+                if module.is_empty()
+                    || matches!(
+                        module,
+                        "ALL-MODULE-PATH" | "ALL-DEFAULT" | "ALL-SYSTEM"
+                    )
+                {
+                    continue;
+                }
+                if !is_valid_module_name(module) {
+                    // Java: Arguments.checkName (bad name in value for option).
+                    let messages =
+                        JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+                    let text = messages.get_localized_string(
+                        "compiler.err.bad.name.for.option",
+                        &["--add-modules".to_string(), module.to_string()],
+                    );
+                    eprintln!("error: {text}");
+                    return Ok(CMDERR);
+                }
+            }
+        }
     }
     let options = helper.options.clone();
+    // Java: Arguments.validate - -m requires -d and --module-source-path.
+    if options.iter().any(|(key, _)| key == "--module") {
+        if out_dir.is_none() {
+            let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+            let text = messages.get_localized_string(
+                "compiler.err.output.dir.must.be.specified.with.dash.m.option",
+                &[],
+            );
+            eprintln!("error: {text}");
+            return Ok(CMDERR);
+        }
+        if !options
+            .iter()
+            .any(|(key, _)| key == "--module-source-path")
+        {
+            let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+            let text = messages.get_localized_string(
+                "compiler.err.modulesourcepath.must.be.specified.with.dash.m.option",
+                &[],
+            );
+            eprintln!("error: {text}");
+            return Ok(CMDERR);
+        }
+    }
+    // Java: Arguments.validate - each -m module must be found in the module
+    // source path (the simple, non-wildcard form is checked here; wildcard
+    // layouts are resolved by the file manager).
+    if let Some((_, module_value)) = options.iter().find(|(key, _)| key == "--module") {
+        if let Some((_, module_source_path)) = options
+            .iter()
+            .find(|(key, _)| key == "--module-source-path")
+        {
+            let entries: Vec<&str> = module_source_path
+                .split(';')
+                .filter(|entry| !entry.is_empty())
+                .collect();
+            let all_simple = entries.iter().all(|entry| !entry.contains('*'));
+            if all_simple {
+                for module in module_value.split(',') {
+                    if module.is_empty() {
+                        continue;
+                    }
+                    let found = entries.iter().any(|entry| {
+                        let root = PathBuf::from(entry);
+                        root.join(module).join("module-info.java").exists()
+                            || root.join(module).is_dir()
+                    });
+                    if !found {
+                        let messages =
+                            JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+                        let text = messages.get_localized_string(
+                            "compiler.err.module.not.found.in.module.source.path",
+                            &[module.to_string()],
+                        );
+                        eprintln!("error: {text}");
+                        return Ok(CMDERR);
+                    }
+                }
+            }
+        }
+    }
+    // Java: Arguments.validate - avoid confusion between directories of
+    // modules and exploded module directories.
+    if let Some(out_dir) = &out_dir
+        && options
+            .iter()
+            .any(|(key, _)| key == "--module-source-path")
+        && out_dir.join("module-info.class").exists()
+    {
+        let messages = JavacMessages::with_locale(DEFAULT_BUNDLE_NAME, Some(locale.clone()));
+        let text = messages.get_localized_string(
+            "compiler.err.multi-module.outdir.cannot.be.exploded.module",
+            &[out_dir.display().to_string()],
+        );
+        eprintln!("error: {text}");
+        return Ok(CMDERR);
+    }
     if let Some((_, path)) = options
         .iter()
         .find(|(key, _)| key == "--module-source-path")
@@ -832,6 +949,7 @@ fn compile(args: &[String]) -> Result<i32, String> {
     let result = compiler.compile_files(&sources);
     // Java: JavaCompiler.compile calls preview.reportDeferredDiagnostics()
     // after the last round (the preview filename / recompile notes).
+    compiler.log.borrow_mut().report_deferred_diagnostics();
     compiler.preview.report_deferred_diagnostics();
     compiler.report_deferred_mandatory_diagnostics();
     // Java: JavaCompiler.compile emits the compressed-diagnostics note after

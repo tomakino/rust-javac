@@ -94,13 +94,20 @@ impl RawDiagnosticFormatter {
     fn format_diagnostic(&self, d: &JCDiagnostic) -> String {
         let mut buf = String::new();
         if d.get_position() != NOPOS as i64 {
-            // Java: buf.append(formatSource(d, false, null)).
-            buf.push_str(&AbstractDiagnosticFormatter::format_source_impl(self, d, false, None));
+            // Java: buf.append(formatSource(d, false, null)).append(':')
+            // .append(formatPosition(d, LINE, null)).append(':')
+            // .append(formatPosition(d, COLUMN, null)).append(':');
+            buf.push_str(&self.source_short_name(d));
+            buf.push(':');
+            buf.push_str(&d.get_line_number().to_string());
+            buf.push(':');
+            buf.push_str(&d.get_column_number().to_string());
+            buf.push(':');
         } else if let Some(source) = d.get_source()
             && source.get_kind() == Kind::CLASS
         {
-            // Java: buf.append(formatSource(d, false, null)).
-            buf.push_str(&AbstractDiagnosticFormatter::format_source_impl(self, d, false, None));
+            buf.push_str(&self.source_short_name(d));
+            buf.push_str(":-:-:");
         } else {
             buf.push('-');
         }
@@ -111,6 +118,19 @@ impl RawDiagnosticFormatter {
             buf.push_str(&self.format_source_line(d, 0));
         }
         buf
+    }
+
+    /// Java: formatSource(d, false, null) for the raw output (the simple
+    /// source file name, no directory).
+    fn source_short_name(&self, d: &JCDiagnostic) -> String {
+        let Some(file) = d.get_source() else {
+            panic!("IllegalArgumentException: diagnostic has no source");
+        };
+        let name = file.get_name().to_string_lossy();
+        name.rsplit(|c| c == '/' || c == '\\')
+            .next()
+            .unwrap_or(&name)
+            .to_string()
     }
 
     /// Java: public String formatMessage(JCDiagnostic d, Locale l)
@@ -211,6 +231,38 @@ impl AbstractDiagnosticFormatter for RawDiagnosticFormatter {
         if let Some(tag) = arg.downcast_ref::<Tag>() {
             let name = format!("{tag:?}").to_lowercase();
             return format!("compiler.misc.tree.tag.{name}");
+        }
+        if let Some(kind) =
+            arg.downcast_ref::<crate::resources::diagnostic_contract::KindNameArg>()
+        {
+            // Java: Kinds.KindName.toString() is "kindname.<name>" (the raw
+            // key), independent of the localized normal-form text.
+            let text = kind.0.as_str();
+            if let Some(rest) = text.strip_prefix("compiler.misc.") {
+                return rest.to_string();
+            }
+            if text.starts_with("kindname.") {
+                return text.to_string();
+            }
+            return format!("kindname.{text}");
+        }
+        if let Some(type_arg) =
+            arg.downcast_ref::<crate::resources::diagnostic_contract::TypeArg>()
+            && let Some(qualified) = &type_arg.qualified_text
+        {
+            // Java: Type.toString() is the qualified form (java.lang.String).
+            return qualified.clone();
+        }
+        if let Some(file_object) = arg
+            .downcast_ref::<Rc<dyn javac_tools::tools::java_file_object::JavaFileObject>>()
+        {
+            // Java: PathFileObject.getShortName().
+            let name = file_object.get_name().to_string_lossy();
+            let short = name
+                .rsplit(|c| c == '/' || c == '\\')
+                .next()
+                .unwrap_or(&name);
+            return short.to_string();
         }
         let s = format_argument_default(self, diag, arg, None);
         if arg.downcast_ref::<JCDiagnostic>().is_some() {

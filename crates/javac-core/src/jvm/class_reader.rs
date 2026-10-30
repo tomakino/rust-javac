@@ -951,9 +951,7 @@ impl ClassReader {
         }
         Err(self
             .bad_class_file(Fragment::from(
-                crate::resources::compiler_properties::fragments::undecl_type_var(
-                    name.clone(),
-                ),
+                crate::resources::compiler_properties::fragments::undecl_type_var(),
             ))
             .failure)
     }
@@ -1238,17 +1236,7 @@ impl ClassReader {
             // Java: Name name = missingTypeVariables.head.tsym.name;
             // throw badClassFile("undecl.type.var", name);
             // Java: Name name = missingTypeVariables.head.tsym.name;
-            let key = Fragment::from(
-                crate::resources::compiler_properties::fragments::undecl_type_var(
-                    ctx.sym(
-                        ctx.typ(*self.missing_type_variables.head())
-                            .tsym
-                            .expect("missing type variable symbol"),
-                    )
-                    .name
-                    .clone(),
-                ),
-            );
+            let key = Fragment::from(crate::resources::compiler_properties::fragments::undecl_type_var());
             return Err(self.bad_class_file(key).failure);
         }
 
@@ -1390,12 +1378,7 @@ impl ClassReader {
                 // Java: badClassFile("wrong.version", major, minor, maxMajor, maxMinor);
                 // The generated accessor takes the four version strings (P4 contract).
                 let key = Fragment::from(
-                crate::resources::compiler_properties::fragments::wrong_version(
-                    javac_strings::JavaString::from(self.major_version.to_string().as_str()),
-                    javac_strings::JavaString::from(self.minor_version.to_string().as_str()),
-                    javac_strings::JavaString::from(max_major.to_string().as_str()),
-                    javac_strings::JavaString::from(max_minor.to_string().as_str()),
-                ),
+                    crate::resources::compiler_properties::fragments::wrong_version(),
                 );
                 return Err(self.bad_class_file(key).failure);
             }

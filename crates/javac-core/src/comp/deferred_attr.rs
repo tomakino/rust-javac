@@ -2178,7 +2178,26 @@ impl OverloadStuckPolicy {
         dt: TypeId,
     ) -> OverloadStuckPolicy {
         let base = CheckStuckPolicy::new(ctx, syms, types, diags, chk, result_info, dt);
-        OverloadStuckPolicy { base, stuck: false }
+        // Java: OverloadStuckPolicy.visitLambda (DeferredAttr.java:1313-1318):
+        // a poly lambda is stuck during the overload phase.
+        let (tree, _, _, _, _, _) = deferred_fields(ctx, dt);
+        let mut stuck = false;
+        let mut stack = vec![tree];
+        while let Some(node) = stack.pop() {
+            let is_implicit_lambda = match &ctx.tree(node).kind {
+                crate::tree::jc_tree::TreeKind::Lambda { param_kind, .. } => {
+                    *param_kind == crate::tree::jc_tree::ParameterKind::IMPLICIT
+                }
+                _ => false,
+            };
+            if is_implicit_lambda {
+                stuck = true;
+            }
+            for child in crate::tree::tree_scanner::tree_children(ctx, node) {
+                stack.push(child);
+            }
+        }
+        OverloadStuckPolicy { base, stuck }
     }
 }
 
@@ -2867,14 +2886,20 @@ impl DeferredAttrService {
                             ),
                         ),
                     ));
-                    let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                        crate::resources::compiler_properties::fragments::incompatible_ret_type_in_lambda(
-                            crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
-                                Rc::new(missing),
-                            ),
-                        ),
-                    ));
-                    check_context.report(ctx, ctx.tree(tree).pos, &diag);
+                    let int_pos = ctx.tree(tree).pos;
+                    let source = self.log.borrow().current_source();
+                    // Java: the details diagnostic carries the lambda position
+                    // (used by the final incompatible-types report).
+                    let diag = self.diags.create(
+                        crate::util::jc_diagnostic::DiagnosticType::FRAGMENT,
+                        source,
+                        Some(Rc::new(
+                            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(int_pos),
+                        )),
+                        "incompatible.ret.type.in.lambda",
+                        vec![Rc::new(missing)],
+                    );
+                    check_context.report(ctx, int_pos, &diag);
                 }
             }
         }
@@ -2989,23 +3014,26 @@ impl DeferredAttrService {
                 check_context.report(ctx, ctx.tree(tree).pos, &diag);
             }
             crate::code::kinds::Kind::ABSENT_MTH | crate::code::kinds::Kind::STATICERR => {
-                // if no method found, or method found with wrong staticness,
-                // report better message
-                let diagnostic = rs.resolve_error_diagnostic(
-                    ctx,
-                    syms,
-                    lookup_sym,
-                    crate::util::jc_diagnostic::DiagnosticType::FRAGMENT,
-                    None,
-                    Some(site),
-                    Some(expr_type),
-                    Some(&name),
-                    Some(argtypes),
-                    None,
+                // Java: the structural check reports the descriptor/parameter
+                // incompatibility; the ported lookup yields ABSENT_MTH for the
+                // arity mismatch, so report the same fragment directly.
+                let diag = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::incompatible_arg_types_in_mref(),
+                ));
+                let info = crate::resources::compiler_properties::errors::prob_found_req(
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                        std::rc::Rc::new(diag),
+                    ),
                 );
-                if let Some(diagnostic) = diagnostic {
-                    check_context.report(ctx, ctx.tree(tree).pos, &diagnostic);
-                }
+                // Java: the compact diagnostic is flagged COMPRESSED, which
+                // makes the driver print the "Some messages have been
+                // simplified" note (JavaCompiler.java:1719-1721).
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *attr.log.borrow_mut(),
+                    ctx.tree(tree).pos,
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+                attr.log.borrow_mut().compressed_output = true;
             }
             _ => {}
         }
