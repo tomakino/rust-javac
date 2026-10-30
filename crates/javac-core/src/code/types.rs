@@ -1574,6 +1574,17 @@ impl Types {
                 return list;
             }
             let tsym = ctx.typ(t).tsym.expect("class type symbol");
+            // Java: Types.java:2594-2613 visitClassType calls
+            // ((ClassSymbol)t.tsym).getInterfaces(), and
+            // Symbol.java:1421-1422 getInterfaces() starts with apiComplete().
+            // Completion must happen before reading the declared interface
+            // list, otherwise an incomplete classfile stub caches an empty
+            // list in the ClassType of an already-completed symbol.
+            if !ctx.is_symbol_completed(tsym) {
+                if let Err(failure) = ctx.complete_class_symbol(syms, tsym) {
+                    crate::code::symbol::throw_completion_failure(failure);
+                }
+            }
             let tsym_type = ctx.sym(tsym).ty.expect("symbol type");
             // The declared interfaces are substituted with the actual type
             // the declared interfaces of the symbol are substituted with the

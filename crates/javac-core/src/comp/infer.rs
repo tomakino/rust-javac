@@ -3315,6 +3315,7 @@ impl Infer {
         warn: &mut Warner,
     ) -> Result<TypeId, InferenceException> {
         let _ = (allow_boxing, use_varargs);
+
         // Port adapter: upstream Infer.instantiateMethod passes the caller's
         // Warner through the deferred contexts and the min listeners
         // (Infer.java:180, InferenceContext.java:380-395); the Rc keeps the
@@ -3574,6 +3575,7 @@ impl Infer {
             )?;
         }
         let inst_mt = inference_context.as_inst_type(ctx, syms, types, mt);
+
         if let Some(result_info) = result_info
             && self
                 .verbose_resolution_mode

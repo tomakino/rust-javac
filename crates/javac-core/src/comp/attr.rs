@@ -5021,29 +5021,38 @@ impl Attr {
         // The inference exception is thrown by the resolution machinery (the
         // upstream checked exception) and converted to the resolution error
         // value here, where the upstream checkMethod catches it.
+        // Java: Attr.java:4823-4884 wraps Resolve.checkMethod in a single try
+        // with two catches: InferenceException (4866) and
+        // InapplicableMethodException (4871). Both can propagate from
+        // Resolve.checkMethod (the latter is not caught by Resolve itself).
         let resolution = crate::comp::resolve::catch_inference_exception(|| {
-            rs.check_method(
-                ctx,
-                syms,
-                &types,
-                self,
-                &chk_guard,
-                infer,
-                env,
-                site,
-                sym,
-                result_info,
-                argtypes.clone(),
-                typeargtypes.clone(),
-                &mut note_warner,
-            )
+            crate::comp::resolve::catch_inapplicable_method_exception(|| {
+                rs.check_method(
+                    ctx,
+                    syms,
+                    &types,
+                    self,
+                    &chk_guard,
+                    infer,
+                    env,
+                    site,
+                    sym,
+                    result_info,
+                    argtypes.clone(),
+                    typeargtypes.clone(),
+                    &mut note_warner,
+                )
+            })
         });
         drop(chk_guard);
-        let resolution = resolution.unwrap_or_else(|exception| {
-            Err(crate::comp::resolve::MethodCheckFailure::Inference(
+        let resolution = match resolution {
+            // inner: Result<Result<TypeId, MethodCheckFailure>, MethodCheckFailure>
+            Ok(inner) => inner,
+            Err(exception) => Err(crate::comp::resolve::MethodCheckFailure::Inference(
                 exception,
-            ))
-        });
+            )),
+        };
+        let resolution = resolution.and_then(|inner| inner);
         let owntype = match resolution {
             Ok(owntype) => owntype,
             Err(crate::comp::resolve::MethodCheckFailure::Inference(ex)) => {
@@ -14620,9 +14629,10 @@ impl Attr {
                 {
                     *slot = Some(constructor_base);
                 }
-                // When the diamond's target is an enclosing inference
-                // variable, use no target: the constructor arguments determine
-                // the type, and the resulting type constrains the outer call.
+                // Java: Attr.java:2821 — newMethodTemplate(resultInfo.pt,
+                // argtypes, typeargtypes). The target type is passed through
+                // even when it is an enclosing inference variable; the
+                // constructor check then constrains it.
                 if std::env::var_os("DSH_DEBUG_DIAMOND_PT").is_some() {
                     eprintln!(
                         "[DPT] pt={} tag={:?}",
@@ -14630,17 +14640,10 @@ impl Attr {
                         ctx.typ(pt).get_tag()
                     );
                 }
-                let pt_for_template = if ctx.typ(pt).has_tag(TypeTag::UNDETVAR)
-                    || ctx.typ(pt).has_tag(TypeTag::TYPEVAR)
-                {
-                    self.no_type(ctx)
-                } else {
-                    pt
-                };
                 let method_template = self.new_method_template(
                     ctx,
                     syms,
-                    pt_for_template,
+                    pt,
                     argtypes.clone(),
                     Some(typeargtypes.clone()),
                 );
