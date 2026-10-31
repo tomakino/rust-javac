@@ -5,8 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-# Pure-Rust DEFLATE codec; the only third-party dependency of the zip reader.
-# The zip reader itself is implemented here to avoid platform build prerequisites
-# (the zip crate pulled windows-sys/getrandom with raw-dylib, which needs dlltool
-# on the Windows GNU toolchain).
-miniz_oxide = "0.8"
+zune-inflate = "0.2.54"
+
+[dev-dependencies]
+miniz_oxide = "0.9.1"
