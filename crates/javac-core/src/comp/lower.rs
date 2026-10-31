@@ -2670,14 +2670,17 @@ impl Lower {
 
     /// Translate a list of trees, preserving the list order.
     fn translate_list(&mut self, ctx: &mut CompilerContext, mut trees: List<TreeId>) -> List<TreeId> {
-        let mut out: List<TreeId> = List::nil();
+        // Java: ListBuffer<T> buf = new ListBuffer<>(); buf.append(t); return buf.toList();
+        // (Lower.java translate). Appending to an immutable List is O(n), so the
+        // buffer is a Vec here and the list is built once at the end.
+        let mut out: Vec<TreeId> = Vec::new();
         while trees.non_empty() {
             let tree = *trees.head();
             let translated = self.translate(ctx, Some(tree)).expect("translated tree");
-            out = out.append(translated);
+            out.push(translated);
             trees = trees.tail();
         }
-        out
+        List::from_iterable(out)
     }
 
     /// Translate a list of trees with a prototype type for each element.
@@ -2687,16 +2690,16 @@ impl Lower {
         mut trees: List<TreeId>,
         ty: TypeId,
     ) -> List<TreeId> {
-        let mut out: List<TreeId> = List::nil();
+        let mut out: Vec<TreeId> = Vec::new();
         while trees.non_empty() {
             let tree = *trees.head();
             let translated = self
                 .translate_with_type(ctx, Some(tree), ty)
                 .expect("translated tree");
-            out = out.append(translated);
+            out.push(translated);
             trees = trees.tail();
         }
-        out
+        List::from_iterable(out)
     }
 
 

@@ -69,6 +69,21 @@ struct ListNode<A> {
     tail: Cell<Option<Rc<ListNode<A>>>>,
 }
 
+impl<A> Drop for ListNode<A> {
+    /// Releases the tail chain iteratively. The default Rc drop would recurse
+    /// through every node, which is O(n) stack depth and dominates the profile
+    /// when long temporary lists are released.
+    fn drop(&mut self) {
+        let mut next = self.tail.take();
+        while let Some(rc) = next {
+            match Rc::try_unwrap(rc) {
+                Ok(mut node) => next = node.tail.take(),
+                Err(_) => break,
+            }
+        }
+    }
+}
+
 impl<A> ListNode<A> {
     /// Java: read of the tail field.
     fn tail(&self) -> Option<Rc<ListNode<A>>> {

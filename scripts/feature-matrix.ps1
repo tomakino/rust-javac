@@ -24,7 +24,9 @@ if (-not (Test-Path $DebugBinary)) { throw "rust-javac (debug) not found: $Debug
 if ($MatrixRoot -eq '') { $MatrixRoot = Join-Path $Repo 'testdata\feature-matrix' }
 if (-not (Test-Path $MatrixRoot)) { throw "matrix root not found: $MatrixRoot" }
 
-$tmp = Join-Path $env:TEMP ('feature-matrix-' + [guid]::NewGuid().ToString('N'))
+# Keep the scratch directory inside the workspace: the DSH file sandbox lets
+# child processes (javac/rust-javac) write only under the repository.
+$tmp = Join-Path $Repo ('target\feature-matrix-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $tmp | Out-Null
 $results = New-Object System.Collections.Generic.List[object]
 function Record([string]$name, [bool]$ok, [string]$detail = '') {
