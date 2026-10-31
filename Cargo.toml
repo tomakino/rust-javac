@@ -40,4 +40,5 @@ javac-charset = { path = "crates/javac-charset" }
 javac-fs = { path = "crates/javac-fs" }
 
 [profile.release]
-lto = "thin"
+lto = "fat"
+codegen-units = 1

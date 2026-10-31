@@ -86,6 +86,13 @@ classpath 扫描的跳过列表从：
 - 未实现官方完整 TypeEnter Phase 树（`HierarchyPhase` 的 Completer 排序、`AbstractMembersPhase` 的 todo/completing 重入队列）；只对齐可观察的 `finishImports` 时序。
 - `speculativeTypes` 用 `Vec` 保留插入序（官方 `HashMap` 依 identity hash）；put 已按 `ResultInfo` 身份覆盖，当前语义对齐，迭代序差异已登记。
 - Rust 用 panic 适配 Java 受检异常，catch 时 panic hook 会打印 `resolve.rs:4220` 噪音；非行为失败。
+### 性能榨取尝试（2026-10-31 第三轮）
+
+- 保留：`[profile.release] lto = "fat"` + `codegen-units = 1`（仅 release 构建生效）。
+- **PGO 不可行**：`-Cprofile-generate` 需要 `profiler_builtins`；rustup 的 windows-gnu 目标未提供该运行时（只有 android/linux 目标有 `libprofiler_builtins`），安装 `rustc-dev` 后仍缺失；msvc 工具链缺 Windows SDK（`kernel32.lib`），无法替代。
+- **mimalloc 不可行**：`libmimalloc-sys` 需要完整 MinGW `gcc`（本机只有 rust-mingw 的驱动，缺 `cc1.exe`），已回滚依赖与 `global_allocator`。
+- **`Name` 去 bytes（对齐官方 `NameImpl`）**：实现后 Gson `exit=4`（`RefCell` 借用重入）、`javac-core --lib` 72 fail，已回滚；后续如需重做，应改用不重入借用表的方案（例如 `Name` 持有 `Rc<RefCell<Vec<u8>>>` 或表访问闭包严格禁止重入 `from_*`）。
+- 结论：当前可复现的低风险优化空间已基本用尽；剩余差距主要是 JVM JIT/成熟缓存与 Rust 运行模型差异。
 ### 性能优化（2026-10-31 第二轮，samply profiling）
 
 - samply 在本机崩溃根因：ETW `ImageFileName` 为 GBK（“哔哩哔哩.exe”），samply 0.13.1 用严格 UTF-8 解析导致 panic；本地补丁版 samply 把 `parser.rs` 的 `String::from_utf8` 改为 `from_utf8_lossy`（工具修复，不入库）。
