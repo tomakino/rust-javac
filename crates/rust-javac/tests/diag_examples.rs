@@ -286,6 +286,21 @@ fn skip_reason(example: &Example) -> Option<&'static str> {
         // not reproducible (only UnsupportedEncoding uses -doe).
         return Some("jvm-stacktrace");
     }
+    if options.iter().any(|option| option == "-profile") {
+        // -profile is the deprecated JDK 8 profile mechanism (valid only for
+        // --release 8); the deprecated mechanism stays out of scope instead of
+        // carrying legacy debt.
+        return Some("deprecated-profile");
+    }
+    if let Some(index) = options.iter().position(|option| option == "-source")
+        && options
+            .get(index + 1)
+            .is_some_and(|value| value == "7")
+    {
+        // -source 7 selects the legacy inference diagnostic path; deprecated
+        // mechanisms stay out of scope.
+        return Some("deprecated-source");
+    }
     // Automatic-module examples require a jar on the module path (the
     // official Example driver packages the compiled classes with
     // JarOutputStream, Example.java:233-269); they stay out of scope here.
