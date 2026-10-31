@@ -84,6 +84,9 @@ use crate::util::names::Names;
 /// The Java class/package/module tables: name -> module -> symbol.
 struct SymtabMaps {
     classes: Vec<(Name, Vec<(SymbolId, SymbolId)>)>,
+    /// flat name -> index into `classes` (Java: classes is a HashMap indexed
+    /// by Name, Symtab.java:250).
+    class_index: crate::util::fx_hasher::FxNameMap<usize>,
     packages: Vec<(Name, Vec<(SymbolId, SymbolId)>)>,
     modules: Vec<(Name, SymbolId)>,
 }
@@ -92,6 +95,7 @@ impl SymtabMaps {
     fn new() -> SymtabMaps {
         SymtabMaps {
             classes: Vec::new(),
+            class_index: crate::util::fx_hasher::FxNameMap::default(),
             packages: Vec::new(),
             modules: Vec::new(),
         }
@@ -556,30 +560,28 @@ fn add_root_package_for(
 fn get_class_in(maps: &SymtabMaps, module: SymbolId, flat_name: &Name) -> Option<SymbolId> {
     // Java: classes.get(flatName) compares Name values directly (Symtab.java);
     // to_java_string() allocated a UTF-16 copy per candidate (profile hot path).
-    maps.classes
+    let index = *maps.class_index.get(flat_name)?;
+    let (_, modules) = &maps.classes[index];
+    modules
         .iter()
-        .find(|(name, _)| name == flat_name)
-        .and_then(|(_, modules)| {
-            modules
-                .iter()
-                .find(|(candidate, _)| *candidate == module)
-                .map(|(_, class)| *class)
-        })
+        .find(|(candidate, _)| *candidate == module)
+        .map(|(_, class)| *class)
 }
 
 fn do_enter_class(maps: &mut SymtabMaps, module: SymbolId, class: SymbolId, flatname: Name) {
-    if let Some((_, modules)) = maps
-        .classes
-        .iter_mut()
-        .find(|(name, _)| *name == flatname)
-    {
-        if let Some(entry) = modules.iter_mut().find(|(candidate, _)| *candidate == module) {
-            entry.1 = class;
-        } else {
-            modules.push((module, class));
-        }
+    let index = if let Some(&index) = maps.class_index.get(&flatname) {
+        index
     } else {
-        maps.classes.push((flatname, vec![(module, class)]));
+        let index = maps.classes.len();
+        maps.class_index.insert(flatname.clone(), index);
+        maps.classes.push((flatname, Vec::new()));
+        index
+    };
+    let (_, modules) = &mut maps.classes[index];
+    if let Some(entry) = modules.iter_mut().find(|(candidate, _)| *candidate == module) {
+        entry.1 = class;
+    } else {
+        modules.push((module, class));
     }
 }
 
@@ -1817,10 +1819,15 @@ impl Symtab {
     /// Upstream: Symtab.java:875-877.
     pub fn get_classes_for_name(&self, candidate: &Name) -> Vec<SymbolId> {
         let maps = self.maps.borrow();
-        maps.classes
-            .iter()
-            .find(|(name, _)| name == candidate)
-            .map(|(_, modules)| modules.iter().map(|(_, class)| *class).collect())
+        maps.class_index
+            .get(candidate)
+            .map(|&index| {
+                maps.classes[index]
+                    .1
+                    .iter()
+                    .map(|(_, class)| *class)
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
