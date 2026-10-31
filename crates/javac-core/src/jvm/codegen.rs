@@ -724,7 +724,10 @@ fn clone_symbol_with_owner(
     // Java: Symbol.clone(Symbol) overrides baseSymbol() (Symbol.java:
     // 1676-1693/1928-1942), which in turn defines poolKey as
     // Pair(newOwner, baseSymbol()).
-    cloned.base_symbol_override = Some(crate::code::symbol::base_symbol(ctx, sym));
+    // Java: Symbol.clone(Symbol) returns an anonymous subclass whose
+    // baseSymbol() returns the cloned symbol itself (Symbol.java:1928-1942);
+    // poolKey is then Pair(newOwner, baseSymbol()).
+    cloned.base_symbol_override = Some(sym);
     ctx.alloc_symbol(cloned)
 }
 

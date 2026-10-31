@@ -7552,6 +7552,24 @@ impl Resolve {
             &mut helper,
         );
         if ctx.sym(sym).kind == crate::code::kinds::Kind::MTH {
+            // Java: an inherited method resolved for a call site is cloned to
+            // the call site's type; the clone keeps the original symbol as
+            // baseSymbol(), so each call site gets a distinct pool key
+            // Pair(newOwner, baseSymbol()).
+            let site_tsym = ctx.typ(site).tsym.expect("internal method site symbol");
+            if ctx.sym(sym).owner != Some(site_tsym) {
+                // Java: an inherited interface method resolved for a call site is
+                // cloned per call (baseSymbol() returns the original symbol); the
+                // owner stays the declaring interface so Gen.binaryQualifier
+                // qualifies it to the call site as a second clone.
+                let original_owner = ctx.sym(sym).owner.expect("inherited method owner");
+                let is_interface = (ctx.sym(original_owner).flags_field
+                    & crate::code::flags::INTERFACE as i64)
+                    != 0;
+                if is_interface {
+                    return self.clone_symbol_with_owner(ctx, sym, original_owner);
+                }
+            }
             sym
         } else {
             // A failure to locate the method is fatal.

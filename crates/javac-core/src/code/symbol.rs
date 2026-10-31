@@ -3527,12 +3527,15 @@ pub fn symbol_pool_key(
             // Java: VarSymbol.clone/MethodSymbol.clone override poolKey as
             // `new Pair<>(newOwner, baseSymbol())` (Symbol.java:1684-1686,
             // 1936-1938); non-clone member symbols use the identity key.
-            if ctx.sym(sym).base_symbol_override.is_some() {
-                let owner = ctx.sym(sym).owner.expect("member owner");
-                let base = base_symbol(ctx, sym);
-                PoolKey::Pair(Box::new(PoolKey::Symbol(owner)), Box::new(PoolKey::Symbol(base)))
-            } else {
-                PoolKey::Symbol(sym)
+            match ctx.sym(sym).base_symbol_override {
+                // Java: baseSymbol() returns the symbol that was cloned (the
+                // immediate base, not its transitive base); poolKey is
+                // Pair(newOwner, baseSymbol()) (Symbol.java:1684-1686, 1936-1938).
+                Some(base) => {
+                    let owner = ctx.sym(sym).owner.expect("member owner");
+                    PoolKey::Pair(Box::new(PoolKey::Symbol(owner)), Box::new(PoolKey::Symbol(base)))
+                }
+                None => PoolKey::Symbol(sym),
             }
         }
     }
