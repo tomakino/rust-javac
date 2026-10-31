@@ -10817,7 +10817,10 @@ impl Check {
         let removal_handler = Rc::clone(&self.removal_handler);
         let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
             Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
-        self.deferred_lint_handler.borrow_mut().report(Box::new(move || {
+        // Java: Check.warnDeprecated (Check.java:227-243) reports through the
+        // MandatoryWarningHandler immediately; there is no deferred step (the
+        // deferral would move the warning to the flush source and reorder it).
+        {
             if removal {
                 if !lint.is_suppressed(LintCategory::REMOVAL) {
                     if is_module {
@@ -10877,7 +10880,7 @@ impl Check {
                     );
                 }
             }
-        }));
+        }
     }
 
     /// Java: void warnPreviewAPI(DiagnosticPosition pos, Warning warnKey)

@@ -5022,7 +5022,14 @@ fn deproxy_value(
                 Some(reader) => reader.resolve_possible_proxy_type(ctx, syms, *enum_type)?,
                 None => *enum_type,
             };
-            let enumerator_sym = find_enum_constant(ctx, syms, enum_ty, enumerator, deprox)?;
+            let enumerator_sym = find_enum_constant(
+                ctx,
+                syms,
+                enum_ty,
+                enumerator,
+                deprox,
+                reader.as_deref_mut(),
+            )?;
             crate::code::attribute::Attribute::new_enum(Some(enum_ty), enumerator_sym)
         }
         AnnotationValue::Class { class_type } => {
@@ -5158,6 +5165,18 @@ fn find_access_method(
     )))
 }
 
+/// Java: enumTypeSym.classfile() != null — whether the class symbol already
+/// carries the class file to read (ClassFinder.include sets it).
+fn has_class_file(ctx: &CompilerContext, sym: SymbolId) -> bool {
+    matches!(
+        &ctx.sym(sym).kind_data,
+        crate::code::symbol::SymbolKind::ClassSymbol {
+            classfile: Some(_),
+            ..
+        }
+    )
+}
+
 /// Look up an enum constant in the (possibly partially filled) members scope.
 fn find_enum_member(
     ctx: &mut CompilerContext,
@@ -5187,10 +5206,23 @@ fn find_enum_constant(
     enum_ty: TypeId,
     enumerator: &Name,
     deprox: Option<&DeproxyContext>,
+    mut reader: Option<&mut ClassReader>,
 ) -> Result<SymbolId, crate::code::symbol::CompletionFailure> {
     let enum_tsym = ctx.typ(enum_ty).tsym.expect("enum type symbol");
     if let Some(sym) = find_enum_member(ctx, enum_tsym, enumerator) {
         return Ok(sym);
+    }
+    // Java: enumTypeSym.members() triggers the enum class's completion
+    // (ClassReader.java:2021). The enum class is normally read through the
+    // ClassFinder; re-entering it from the deproxy is the same re-entrant
+    // ClassReader.readClassFile call, so read it here when a reader is handy.
+    if let Some(reader) = reader.as_deref_mut()
+        && has_class_file(ctx, enum_tsym)
+    {
+        let _ = reader.read_class_file(ctx, syms, enum_tsym);
+        if let Some(sym) = find_enum_member(ctx, enum_tsym, enumerator) {
+            return Ok(sym);
+        }
     }
     // Java: new VarSymbol(0, proxy.enumerator, syms.botType, enumTypeSym)
     // The enum class of a JDK annotation can still be in the middle of its own
