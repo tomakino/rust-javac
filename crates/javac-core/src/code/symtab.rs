@@ -366,7 +366,7 @@ fn new_module_symbol(
             uses: List::nil(),
             module_info: None,
             unnamed_package: None,
-            visible_packages: HashMap::new(),
+            visible_packages: crate::util::fx_hasher::FxNameMap::default(),
             read_modules: Vec::new(),
             enclosed_packages: List::nil(),
             flags: Vec::new(),

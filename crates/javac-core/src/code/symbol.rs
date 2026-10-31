@@ -1080,7 +1080,7 @@ pub enum SymbolKind {
         /// The unnamed package of the module.
         unnamed_package: Option<SymbolId>,
         /// The visible packages of the module.
-        visible_packages: HashMap<Name, SymbolId>,
+        visible_packages: crate::util::fx_hasher::FxNameMap<SymbolId>,
         /// The modules read by this module.
         read_modules: Vec<SymbolId>,
         /// The packages enclosed by this module.
@@ -4213,7 +4213,7 @@ mod tests {
             uses: List::nil(),
             module_info: None,
             unnamed_package: None,
-            visible_packages: HashMap::new(),
+            visible_packages: crate::util::fx_hasher::FxNameMap::default(),
             read_modules: Vec::new(),
             enclosed_packages: List::nil(),
             flags: Vec::new(),

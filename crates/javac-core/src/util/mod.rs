@@ -16,6 +16,7 @@ pub mod convert;
 pub mod diagnostic_source;
 pub mod fatal_error;
 pub mod forwarding_diagnostic_formatter;
+pub mod fx_hasher;
 pub mod graph_utils;
 pub mod int_hash_table;
 pub mod iterators;

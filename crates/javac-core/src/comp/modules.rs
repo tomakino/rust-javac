@@ -1576,9 +1576,9 @@ impl Modules {
         readable: &[SymbolId],
     ) {
         self.init_add_exports(ctx, syms);
-        set_module_visible_packages(ctx, msym, HashMap::new());
+        set_module_visible_packages(ctx, msym, crate::util::fx_hasher::FxNameMap::default());
         set_module_read_modules(ctx, msym, readable.to_vec());
-        let mut seen: HashMap<Name, SymbolId> = HashMap::new();
+        let mut seen: crate::util::fx_hasher::FxNameMap<SymbolId> = crate::util::fx_hasher::FxNameMap::default();
         for rm in readable {
             if *rm == syms.unnamed_module {
                 continue;
@@ -1600,7 +1600,7 @@ impl Modules {
         &self,
         ctx: &mut CompilerContext,
         msym: SymbolId,
-        seen_packages: &mut HashMap<Name, SymbolId>,
+        seen_packages: &mut crate::util::fx_hasher::FxNameMap<SymbolId>,
         exports_from: SymbolId,
         exports: &[DirectiveId],
     ) {
@@ -2732,17 +2732,17 @@ fn set_module_flags(ctx: &mut CompilerContext, msym: SymbolId, flags: Vec<Module
     }
 }
 
-fn module_visible_packages(ctx: &CompilerContext, msym: SymbolId) -> HashMap<Name, SymbolId> {
+fn module_visible_packages(ctx: &CompilerContext, msym: SymbolId) -> crate::util::fx_hasher::FxNameMap<SymbolId> {
     match &ctx.sym(msym).kind_data {
         SymbolKind::ModuleSymbol { visible_packages, .. } => visible_packages.clone(),
-        _ => HashMap::new(),
+        _ => crate::util::fx_hasher::FxNameMap::default(),
     }
 }
 
 fn set_module_visible_packages(
     ctx: &mut CompilerContext,
     msym: SymbolId,
-    packages: HashMap<Name, SymbolId>,
+    packages: crate::util::fx_hasher::FxNameMap<SymbolId>,
 ) {
     if let SymbolKind::ModuleSymbol { visible_packages, .. } = &mut ctx.sym_mut(msym).kind_data {
         *visible_packages = packages;

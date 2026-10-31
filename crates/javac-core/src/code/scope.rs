@@ -206,7 +206,7 @@ pub enum ScopeData {
         sub_scopes: List<ScopeId>,
         mark: i32,
         listeners: ScopeListenerList,
-        name2_scopes: HashMap<Name, Vec<ScopeId>>,
+        name2_scopes: crate::util::fx_hasher::FxNameMap<Vec<ScopeId>>,
     },
     /// Java: public static class StarImportScope
     StarImportScope {
@@ -324,7 +324,7 @@ impl Scope {
                 sub_scopes: List::nil(),
                 mark: 0,
                 listeners: ScopeListenerList::new(),
-                name2_scopes: HashMap::new(),
+                name2_scopes: crate::util::fx_hasher::FxNameMap::default(),
             },
         }
     }

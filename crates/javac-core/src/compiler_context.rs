@@ -645,7 +645,7 @@ impl CompilerContext {
         // mutably.
         let named_updated = match name2_scopes {
             Some(name2_scopes) => {
-                let mut updated = std::collections::HashMap::new();
+                let mut updated = crate::util::fx_hasher::FxNameMap::default();
                 for (name, scopes) in name2_scopes {
                     let mut remapped = Vec::new();
                     for candidate in scopes {

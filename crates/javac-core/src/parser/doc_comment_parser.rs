@@ -153,7 +153,7 @@ pub struct DocCommentParser {
     newline: bool,
 
     /// Java: private final Map<Name, TagParser> tagParsers
-    tag_parsers: HashMap<Name, TagParserSpec>,
+    tag_parsers: crate::util::fx_hasher::FxNameMap<TagParserSpec>,
 }
 
 impl DocCommentParser {
@@ -182,7 +182,7 @@ impl DocCommentParser {
             text_start: -1,
             last_non_white: -1,
             newline: true,
-            tag_parsers: HashMap::new(),
+            tag_parsers: crate::util::fx_hasher::FxNameMap::default(),
         };
         parser.tag_parsers = parser.create_tag_parsers();
         parser.m.borrow_mut().set_reference_parser(Rc::new(
@@ -1560,7 +1560,7 @@ impl DocCommentParser {
     }
 
     /// Java: private Map<Name, TagParser> createTagParsers()
-    fn create_tag_parsers(&self) -> HashMap<Name, TagParserSpec> {
+    fn create_tag_parsers(&self) -> crate::util::fx_hasher::FxNameMap<TagParserSpec> {
         let specs = [
             // @author name-text
             TagParserSpec {
@@ -1713,7 +1713,7 @@ impl DocCommentParser {
                 retain_white_space: false,
             },
         ];
-        let mut tag_parsers = HashMap::new();
+        let mut tag_parsers = crate::util::fx_hasher::FxNameMap::default();
         for spec in specs {
             let tag_name = spec
                 .tree_kind
