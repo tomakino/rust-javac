@@ -211,5 +211,8 @@
 - 把 okhttp `-XDrawDiagnostics` 11 行逐行对比加入 L2 门禁命令。
 - okhttp release 性能基准纳入 L5，建立回归阈值。
 - diag-corpus 实时对照模式（防止 JDK 升级后 expected 漂移）。
-- feature-matrix 的 2 个已知差异：TYPE_USE 参数注解的调用点参数计数、默认构造器 LineNumberTable 行号。
+- feature-matrix 的 2 个已知差异（同一根因）：默认构造器 LineNumberTable 行号。
+  字段声明的 pos 仍取名字 token，官方取 `mods.pos`；改成 `mods.pos` 会连锁暴露
+  端口对 NOPOS 声明的处理（Flow trackable/adr、`Lower` 构造器体），需要单独对齐。
+  （TYPE_USE 参数注解的调用点参数计数已修：`TypeAnnotations.separateAnnotationsKinds`。）
 - CI 串联 L1-L4。
