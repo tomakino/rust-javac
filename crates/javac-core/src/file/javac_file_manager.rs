@@ -364,6 +364,10 @@ struct ArchiveContainer {
     /// the valid package directories and the file entries (jar paths).
     files: Vec<String>,
     packages: Vec<String>,
+    /// The entry names indexed for getFileObject (Java: the packages map
+    /// lookup, JavacFileManager.java:560/646-656; the port keeps the earlier
+    /// linear scan semantics with an O(1) name index).
+    entry_index: std::collections::HashSet<String>,
 }
 
 impl ArchiveContainer {
@@ -375,6 +379,7 @@ impl ArchiveContainer {
         })?;
         let mut files: Vec<String> = Vec::new();
         let mut packages: Vec<String> = Vec::new();
+        let mut entry_index: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut seen_packages: std::collections::HashSet<String> = std::collections::HashSet::new();
         for entry in archive.entries() {
             let name = entry.name().to_string();
@@ -406,12 +411,14 @@ impl ArchiveContainer {
             if seen_packages.insert(String::new()) {
                 packages.push(String::new());
             }
+            entry_index.insert(name.clone());
             files.push(name);
         }
         Ok(ArchiveContainer {
             archive_path: archive_path.clone(),
             files,
             packages,
+            entry_index,
         })
     }
 
@@ -474,7 +481,9 @@ impl ArchiveContainer {
         let dirname = name.dirname().as_relative_path().get_path().to_string_lossy();
         let basename = name.basename().to_string_lossy();
         let entry = format!("{dirname}{basename}");
-        if !self.files.iter().any(|candidate| candidate == &entry) {
+        // Java: packages.get(dirname).resolve(basename) (JavacFileManager.java:646-656);
+        // the port indexes entry names so the lookup stays O(1).
+        if !self.entry_index.contains(&entry) {
             return Ok(None);
         }
         let entry_path = FsPath::new(&format!("/{entry}"))
@@ -671,6 +680,10 @@ pub struct JavacFileManager {
     paths_and_containers: Arc<std::sync::Mutex<HashMap<String, HashMap<RelativeDirectory, Vec<PathAndContainer>>>>>,
     /// Java: private Map<Location, List<PathAndContainer>> nonIndexingContainersByLocation.
     non_indexing_containers: Arc<std::sync::Mutex<HashMap<String, Vec<PathAndContainer>>>>,
+    /// Opened archive readers reused by PathFileObject.openInputStream.
+    /// Adapter: the upstream ArchiveContainer holds one FileSystem per archive
+    /// (JavacFileManager.java:557-575, PathFileObject.java:459).
+    archive_readers: Arc<Mutex<HashMap<FsPath, Arc<Mutex<javac_zip::ZipArchive>>>>>,
 }
 
 impl JavacFileManager {
@@ -692,6 +705,10 @@ impl JavacFileManager {
         self.non_indexing_containers
             .lock()
             .expect("non indexing")
+            .clear();
+        self.archive_readers
+            .lock()
+            .expect("archive readers")
             .clear();
         self.base.borrow_mut().clear_content_cache();
         Ok(())
@@ -731,6 +748,7 @@ impl JavacFileManager {
                 containers: Arc::new(std::sync::Mutex::new(HashMap::new())),
                 paths_and_containers: Arc::new(std::sync::Mutex::new(HashMap::new())),
                 non_indexing_containers: Arc::new(std::sync::Mutex::new(HashMap::new())),
+                archive_readers: Arc::new(Mutex::new(HashMap::new())),
             }
         })
     }
@@ -1552,6 +1570,26 @@ impl BaseFileManagerApi for JavacFileManager {
 
     fn jrt_read_resource(&self, path: &javac_fs::Path) -> Option<Vec<u8>> {
         self.get_jrt_index().get_resource(path)
+    }
+
+    fn open_jar_entry(
+        &self,
+        archive_path: &javac_fs::Path,
+        entry_name: &str,
+    ) -> StdOption<Vec<u8>> {
+        let reader = {
+            let mut readers = self.archive_readers.lock().expect("archive readers");
+            if let Some(reader) = readers.get(archive_path) {
+                Arc::clone(reader)
+            } else {
+                let archive = javac_zip::ZipArchive::open(&archive_path.to_path_buf()).ok()?;
+                let reader = Arc::new(Mutex::new(archive));
+                readers.insert(archive_path.clone(), Arc::clone(&reader));
+                reader
+            }
+        };
+        let archive = reader.lock().expect("archive reader");
+        archive.get_entry(entry_name)
     }
     fn decode(&self, inbuf: &[u8], ignore_encoding_errors: bool) -> JavaString {
         self.base.borrow().decode(inbuf, ignore_encoding_errors)

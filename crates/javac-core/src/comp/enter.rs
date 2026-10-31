@@ -475,18 +475,21 @@ impl Enter {
             let modle = module;
             let packge_symbol = compilation_unit_package(ctx, tree).expect("tree.packge");
             let packge_fullname = package_fullname_of(ctx, packge_symbol);
+            // Java: visiblePackages.get(fullname) (Enter.java:344-354); the map is
+            // only read here, so borrow it instead of cloning it.
             let visible_packages = match &ctx.sym(modle).kind_data {
                 crate::code::symbol::SymbolKind::ModuleSymbol {
                     visible_packages, ..
-                } => visible_packages.clone(),
-                _ => std::collections::HashMap::new(),
+                } => Some(visible_packages),
+                _ => None,
             };
             let dependency_with_package = syms
                 .list_package_modules(&packge_fullname)
                 .iter()
                 .find(|candidate| {
                     *candidate != modle
-                        && visible_packages.get(&packge_fullname).copied()
+                        && visible_packages
+                            .and_then(|m| m.get(&packge_fullname).copied())
                             == syms.get_package(*candidate, &packge_fullname)
                 });
             if let Some(dependency) = dependency_with_package {

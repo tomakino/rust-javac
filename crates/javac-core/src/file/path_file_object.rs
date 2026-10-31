@@ -514,8 +514,6 @@ impl FileObject for PathFileObject {
             return Ok(Box::new(std::io::Cursor::new(bytes)));
         }
         if let PathFileObjectKind::Jar { user_jar_path } = &self.kind {
-            let archive = javac_zip::ZipArchive::open(&user_jar_path.to_path_buf())
-                .map_err(|error| Error::io(JavaString::from(error.to_string().as_str())))?;
             let entry_name = self
                 .path
                 .to_java_string()
@@ -523,6 +521,15 @@ impl FileObject for PathFileObject {
                 .replace('\\', "/")
                 .trim_start_matches('/')
                 .to_string();
+            // Adapter: reuse the manager's opened archive (upstream reads through
+            // ArchiveContainer's FileSystem, JavacFileManager.java:557-575,
+            // PathFileObject.java:459). Fall back to opening once for managers
+            // that do not keep an archive reader.
+            if let Some(bytes) = self.file_manager.open_jar_entry(user_jar_path, &entry_name) {
+                return Ok(Box::new(std::io::Cursor::new(bytes)));
+            }
+            let archive = javac_zip::ZipArchive::open(&user_jar_path.to_path_buf())
+                .map_err(|error| Error::io(JavaString::from(error.to_string().as_str())))?;
             let bytes = archive.get_entry(&entry_name).ok_or_else(|| {
                 io_error(std::io::Error::new(
                     std::io::ErrorKind::NotFound,

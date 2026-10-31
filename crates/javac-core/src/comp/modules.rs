@@ -1666,9 +1666,15 @@ impl Modules {
                 continue;
             }
             seen_packages.insert(package_name.clone(), exports_from);
-            let mut visible = module_visible_packages(ctx, msym);
-            visible.insert(package_name, package);
-            set_module_visible_packages(ctx, msym, visible);
+            // Java: msym.visiblePackages.put(packageName, package)
+            // (Modules.java addVisiblePackages); update in place instead of
+            // cloning the whole map, inserting and writing it back.
+            if let crate::code::symbol::SymbolKind::ModuleSymbol {
+                visible_packages, ..
+            } = &mut ctx.sym_mut(msym).kind_data
+            {
+                visible_packages.insert(package_name, package);
+            }
         }
     }
 

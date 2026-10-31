@@ -69,6 +69,13 @@ pub struct JRTIndex {
 
     /// Java: private final Map<RelativeDirectory, SoftReference<Entry>> entries;
     entries: RefCell<HashMap<RelativeDirectory, Rc<Entry>>>,
+
+    /// Resource bytes reused across reads (adapter for the jrtfs ImageReader/
+    /// BaseFileManager content cache semantics: the upstream jrt FileSystem
+    /// shares one memory-mapped image and BaseFileManager caches the content
+    /// it has read, BaseFileManager.java:448-482; the port's javac-jimage
+    /// adapter otherwise re-reads/decodes the image for every resource).
+    resource_cache: RefCell<HashMap<String, Vec<u8>>>,
 }
 
 /// Java: class JRTIndex.Entry — cached info about a package directory.
@@ -195,6 +202,7 @@ impl JRTIndex {
             modules,
             module_resources,
             entries: RefCell::new(HashMap::new()),
+            resource_cache: RefCell::new(HashMap::new()),
         })
     }
 
@@ -214,7 +222,14 @@ impl JRTIndex {
     pub fn get_resource(&self, path: &FsPath) -> Option<Vec<u8>> {
         let path_text = path.to_java_string().to_string().replace('\\', "/");
         let name = path_text.strip_prefix("/modules/").unwrap_or(&path_text);
-        self.image.find_resource(name)
+        if let Some(bytes) = self.resource_cache.borrow().get(name) {
+            return Some(bytes.clone());
+        }
+        let bytes = self.image.find_resource(name)?;
+        self.resource_cache
+            .borrow_mut()
+            .insert(name.to_string(), bytes.clone());
+        Some(bytes)
     }
 
 

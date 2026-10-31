@@ -18,6 +18,7 @@ pub mod cp437;
 
 use std::collections::HashMap;
 use std::fmt;
+use std::hash::{BuildHasherDefault, Hasher};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
@@ -45,6 +46,31 @@ const FLAG_UTF8: u16 = 0x0800;
 
 const ZIP64_SENTINEL_16: u16 = 0xFFFF;
 const ZIP64_SENTINEL_32: u32 = 0xFFFF_FFFF;
+
+/// A fast, non-cryptographic hasher for archive entry names.
+///
+/// Performance adapter: the map only performs name lookups (no iteration
+/// order is observable), so a simpler hasher keeps java.util.zip lookup
+/// semantics without the SipHash cost. Map behavior is unchanged.
+#[derive(Default)]
+struct FxHasher {
+    hash: u64,
+}
+
+impl Hasher for FxHasher {
+    fn finish(&self) -> u64 {
+        self.hash
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.hash = (self.hash.rotate_left(5) ^ u64::from(byte))
+                .wrapping_mul(0x517c_c1b7_2722_0a95);
+        }
+    }
+}
+
+type FxBuildHasher = BuildHasherDefault<FxHasher>;
 
 /// A central directory entry.
 ///
@@ -143,7 +169,7 @@ pub struct ZipArchive {
     /// central directory offsets (which are relative to the zip data) need this base.
     archive_offset: u64,
     entries: Vec<Entry>,
-    entry_index: HashMap<String, usize>,
+    entry_index: HashMap<String, usize, FxBuildHasher>,
 }
 
 impl fmt::Debug for ZipArchive {
@@ -173,7 +199,7 @@ impl ZipArchive {
             file,
             archive_offset: 0,
             entries: Vec::new(),
-            entry_index: HashMap::new(),
+            entry_index: HashMap::default(),
         };
 
         // Search the end of central directory record in the trailing window (it can be followed

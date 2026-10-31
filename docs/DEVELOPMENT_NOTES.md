@@ -86,3 +86,11 @@ classpath 扫描的跳过列表从：
 - 未实现官方完整 TypeEnter Phase 树（`HierarchyPhase` 的 Completer 排序、`AbstractMembersPhase` 的 todo/completing 重入队列）；只对齐可观察的 `finishImports` 时序。
 - `speculativeTypes` 用 `Vec` 保留插入序（官方 `HashMap` 依 identity hash）；put 已按 `ResultInfo` 身份覆盖，当前语义对齐，迭代序差异已登记。
 - Rust 用 panic 适配 Java 受检异常，catch 时 panic hook 会打印 `resolve.rs:4220` 噪音；非行为失败。
+### 性能优化（2026-10-31 第二轮，samply profiling）
+
+- samply 在本机崩溃根因：ETW `ImageFileName` 为 GBK（“哔哩哔哩.exe”），samply 0.13.1 用严格 UTF-8 解析导致 panic；本地补丁版 samply 把 `parser.rs` 的 `String::from_utf8` 改为 `from_utf8_lossy`（工具修复，不入库）。
+- 热点与修复（官方依据：`Symtab` 直接比较 `Name`；`Modules.addVisiblePackages` 原地 `visiblePackages.put`；zip entry 查找语义不变）：
+  1. `symtab.rs` 10 处 `name.to_java_string() == other.to_java_string()` 改为直接比较 `Name`（原实现每次比较都解码 UTF-8→UTF-16 并分配，profile 占 22%+）；
+  2. `enter.rs` 的 `visible_packages.clone()` 改为借用；`modules.rs` 的 `module_visible_packages()` clone+insert+写回改为 `sym_mut` 原地 insert；
+  3. `javac-zip` 的 `entry_index` 改用 FxHasher（查找语义不变）。
+- 结果（仅编译）：Gson release **0.973 s**（官方 2.40 s）；okhttp release **24.28 s**（旧 release 51.84 s，官方 8.17 s）；Gson debug 23.2→6.48 s。

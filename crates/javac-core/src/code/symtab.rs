@@ -488,9 +488,12 @@ fn append_enclosed_package(ctx: &mut CompilerContext, module: SymbolId, package:
 }
 
 fn get_package_in(maps: &SymtabMaps, module: SymbolId, fullname: &Name) -> Option<SymbolId> {
+    // Java: packages.get(fullname) compares Name values directly; decoding both
+    // Names to JavaString on every comparison is not observable but allocates a
+    // UTF-16 buffer per candidate (profile: utf2chars_range hot path).
     maps.packages
         .iter()
-        .find(|(name, _)| name.to_java_string() == fullname.to_java_string())
+        .find(|(name, _)| name == fullname)
         .and_then(|(_, modules)| {
             modules
                 .iter()
@@ -516,7 +519,7 @@ fn do_enter_package(
     if let Some((_, modules)) = maps
         .packages
         .iter_mut()
-        .find(|(name, _)| name.to_java_string() == fullname.to_java_string())
+        .find(|(name, _)| name == &fullname)
     {
         if let Some(entry) = modules.iter_mut().find(|(candidate, _)| *candidate == module) {
             entry.1 = package;
@@ -551,9 +554,11 @@ fn add_root_package_for(
 }
 
 fn get_class_in(maps: &SymtabMaps, module: SymbolId, flat_name: &Name) -> Option<SymbolId> {
+    // Java: classes.get(flatName) compares Name values directly (Symtab.java);
+    // to_java_string() allocated a UTF-16 copy per candidate (profile hot path).
     maps.classes
         .iter()
-        .find(|(name, _)| name.to_java_string() == flat_name.to_java_string())
+        .find(|(name, _)| name == flat_name)
         .and_then(|(_, modules)| {
             modules
                 .iter()
@@ -566,7 +571,7 @@ fn do_enter_class(maps: &mut SymtabMaps, module: SymbolId, class: SymbolId, flat
     if let Some((_, modules)) = maps
         .classes
         .iter_mut()
-        .find(|(name, _)| name.to_java_string() == flatname.to_java_string())
+        .find(|(name, _)| *name == flatname)
     {
         if let Some(entry) = modules.iter_mut().find(|(candidate, _)| *candidate == module) {
             entry.1 = class;
@@ -633,7 +638,7 @@ fn enter_class_full(
         // flat names.
         let needs_reassign = {
             let node = ctx.sym(class);
-            let same_name = node.name.to_java_string() == name.to_java_string();
+            let same_name = node.name == name;
             let same_owner = node.owner == owner;
             let owner_is_type = owner
                 .map(|owner| ctx.symbol_kind(owner) == Kind::TYP)
@@ -915,7 +920,7 @@ fn visible_package(ctx: &CompilerContext, module: SymbolId, flatname: &Name) -> 
             visible_packages, ..
         } => visible_packages
             .iter()
-            .find(|(name, _)| name.to_java_string() == flatname.to_java_string())
+            .find(|(name, _)| *name == flatname)
             .map(|(_, package)| *package),
         _ => None,
     }
@@ -953,7 +958,7 @@ fn module_reads_module(ctx: &CompilerContext, module: SymbolId, other: SymbolId)
 fn get_module_in(maps: &SymtabMaps, name: &Name) -> Option<SymbolId> {
     maps.modules
         .iter()
-        .find(|(candidate, _)| candidate.to_java_string() == name.to_java_string())
+        .find(|(candidate, _)| candidate == name)
         .map(|(_, module)| *module)
 }
 
@@ -1749,7 +1754,7 @@ impl Symtab {
         if let Some((_, modules)) = maps
             .classes
             .iter_mut()
-            .find(|(name, _)| name.to_java_string() == flatname.to_java_string())
+            .find(|(name, _)| *name == *flatname)
         {
             modules.retain(|(candidate, _)| *candidate != msym);
         }
@@ -1814,7 +1819,7 @@ impl Symtab {
         let maps = self.maps.borrow();
         maps.classes
             .iter()
-            .find(|(name, _)| name.to_java_string() == candidate.to_java_string())
+            .find(|(name, _)| name == candidate)
             .map(|(_, modules)| modules.iter().map(|(_, class)| *class).collect())
             .unwrap_or_default()
     }
@@ -1859,7 +1864,7 @@ impl Symtab {
         let maps = self.maps.borrow();
         maps.packages
             .iter()
-            .find(|(name, _)| name.to_java_string() == candidate.to_java_string())
+            .find(|(name, _)| name == candidate)
             .map(|(_, modules)| modules.iter().map(|(_, package)| *package).collect())
             .unwrap_or_default()
     }
@@ -1877,7 +1882,7 @@ impl Symtab {
         let modules = maps
             .packages
             .iter()
-            .find(|(name, _)| name.to_java_string() == package_name.to_java_string())
+            .find(|(name, _)| name == package_name)
             .map(|(_, modules)| modules.clone())?;
         let mut found: Option<SymbolId> = None;
         for (module, package) in modules {
@@ -1906,7 +1911,7 @@ impl Symtab {
         if let Some((_, modules)) = maps
             .packages
             .iter()
-            .find(|(name, _)| name.to_java_string() == package_name.to_java_string())
+            .find(|(name, _)| name == package_name)
         {
             for (module, _) in modules.iter().rev() {
                 result = result.prepend(*module);

@@ -31,6 +31,21 @@ pub trait BaseFileManagerApi {
     /// JRTIndex (registered adapter).
     fn jrt_read_resource(&self, path: &FsPath) -> Option<Vec<u8>>;
 
+    /// Read a jar/zip entry through the manager's per-archive reader.
+    ///
+    /// Adapter: the upstream PathFileObject reads through the FileSystem held
+    /// by JavacFileManager.ArchiveContainer (JavacFileManager.java:557-575,
+    /// PathFileObject.java:459); this lets JavacFileManager reuse one opened
+    /// archive per path instead of reopening it for every entry. The default
+    /// returns None so other managers keep their existing read path.
+    fn open_jar_entry(
+        &self,
+        _archive_path: &FsPath,
+        _entry_name: &str,
+    ) -> std::option::Option<Vec<u8>> {
+        None
+    }
+
     /// Java: BaseFileManager.decode(ByteBuffer, boolean).
     fn decode(&self, inbuf: &[u8], ignore_encoding_errors: bool) -> javac_strings::JavaString;
 
