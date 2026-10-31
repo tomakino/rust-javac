@@ -392,9 +392,14 @@ impl ClassWriter {
 }
 
 /// Return the original enclosing method of a symbol.
+/// Java: ((MethodSymbol)c.owner).originalEnclosingMethod() (ClassWriter.java:335);
+/// a lambda synthetic method carries the original enclosing method
+/// (LambdaToMethod.java:1944-1951, Symbol.java:2295-2298).
 fn original_enclosing_method(ctx: &CompilerContext, owner: SymbolId) -> Option<SymbolId> {
     if ctx.sym(owner).kind == crate::code::kinds::Kind::MTH {
-        Some(owner)
+        // Java: MethodSymbol.originalEnclosingMethod() returns the override
+        // installed by lambda translation, or the symbol itself.
+        Some(crate::code::symbol::original_enclosing_method(ctx, owner))
     } else {
         None
     }
