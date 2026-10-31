@@ -9293,16 +9293,28 @@ impl Attr {
             _ => false,
         };
         if var_implicitly_typed {
-            let var_name = match &ctx.tree(var).kind {
-                TreeKind::VariableDecl { name, .. } => name.clone(),
-                _ => self.names.empty.clone(),
+            // Java: tree.var.vartype = make.at(tree.var.pos).Type(itype);
+            //       tree.var.vartype.type = itype; (Attr.java:1552-1554).
+            // The synthesized type tree is positioned at the variable so the
+            // declaration is no longer considered implicitly typed.
+            let mut make = self.make.borrow_mut();
+            make.at(ctx.tree(var).pos);
+            let vartype = if ctx.typ(elemtype).has_tag(TypeTag::ERROR) {
+                make.erroneous_empty(ctx)
+            } else {
+                make.type_from_type(ctx, syms, elemtype)
             };
-            let inferred_type = {
-                let chk_rc = Rc::clone(&self.chk);
-                let chk = Rc::clone(&chk_rc);
-                chk.check_local_var_type(ctx, syms, ctx.tree(var).pos, elemtype, var_name)
-            };
-            self.set_synthetic_variable_type(ctx, syms, var, inferred_type);
+            if let TreeKind::VariableDecl {
+                vartype: slot,
+                declared_using_var,
+                ..
+            } = &mut ctx.tree_mut(var).kind
+            {
+                *slot = Some(vartype);
+                // The synthesized type makes the declaration explicitly typed;
+                // the later attribStat must not report a missing initializer.
+                *declared_using_var = false;
+            }
         }
         self.attrib_stat(ctx, syms, var, &loop_env);
         // Java: chk.checkType(tree.expr.pos(), elemtype, tree.var.sym.type);

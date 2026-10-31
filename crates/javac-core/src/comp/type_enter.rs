@@ -3787,9 +3787,13 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
                 } = &ctx.tree(field).kind
                 {
                     let field_ty = ctx.sym(*field_sym).ty.expect("record field type");
-                    let is_last = current.is_empty();
-                    let ty = if is_last && self.last_is_varargs {
-                        types.elemtype(ctx, syms, field_ty)
+                    // Java: if (field.sym.isVarargs()) fieldType =
+                    // types.makeVarargsArray(fieldType); lastIsVarargs = true.
+                    let is_varargs =
+                        (ctx.sym(*field_sym).flags_field & flags::VARARGS as i64) != 0;
+                    self.last_is_varargs = is_varargs;
+                    let ty = if is_varargs {
+                        types.make_varargs(ctx, field_ty)
                     } else {
                         field_ty
                     };
@@ -3841,8 +3845,11 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
                 let mut parameter_flags = (flags::GENERATED_MEMBER as i64)
                     | (flags::PARAMETER)
                     | (flags::RECORD);
-                if is_last && self.last_is_varargs {
+                let is_varargs =
+                    (ctx.sym(*field_sym).flags_field & flags::VARARGS as i64) != 0;
+                if is_varargs {
                     parameter_flags |= flags::VARARGS;
+                    self.last_is_varargs = true;
                 }
                 let symbol = crate::code::symbol::Symbol::new_var_symbol(
                     parameter_flags,
@@ -3855,6 +3862,10 @@ impl DefaultConstructorHelper for RecordConstructorHelper {
         }
         ctx.sym_mut(csym).set_params(params);
         ctx.sym_mut(csym).flags_field |= flags::RECORD;
+        if self.last_is_varargs {
+            // Java: if (lastIsVarargs) csym.flags_field |= VARARGS;
+            ctx.sym_mut(csym).flags_field |= flags::VARARGS;
+        }
         self.base.constructor_symbol = Some(csym);
         Some(csym)
     }

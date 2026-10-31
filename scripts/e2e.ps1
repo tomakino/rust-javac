@@ -13,6 +13,7 @@ param(
     [string]$GsonSources = '',
     [string]$OkhttpRoot = '',
     [switch]$IncludeOkhttp,
+    [switch]$IncludeFeatureMatrix,
     [switch]$Perf
 )
 $ErrorActionPreference = 'Stop'
@@ -84,6 +85,13 @@ if ($IncludeOkhttp) {
         if ((Get-FileHash $c.FullName -Algorithm SHA256).Hash -ne (Get-FileHash $jf -Algorithm SHA256).Hash) { $diff++ }
     }
     Record 'L3 okhttp bytes' (($je -eq 0) -and ($re -eq 0) -and ($diff -eq 0)) ("classes={0} sha_diff={1}" -f $classes.Count, $diff)
+}
+# ---- L3.5: Java 9-17 feature matrix ----
+if ($IncludeFeatureMatrix) {
+    $fm = Join-Path $PSScriptRoot 'feature-matrix.ps1'
+    & pwsh -NoProfile -File $fm -JdkHome $JdkHome -Repo $Repo -DebugBinary $DebugBinary 2>&1 | Out-String -Width 200
+    $fmOk = $LASTEXITCODE -eq 0
+    Record 'L3.5 feature-matrix' $fmOk $(if (-not $fmOk) { 'see the feature-matrix output above' } else { '' })
 }
 # ---- L4: CLI behavior ----
 $hl = Join-Path $tmp 'help-lint.txt'

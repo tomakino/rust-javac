@@ -1695,30 +1695,37 @@ impl MiniCompiler {
         module: Option<SymbolId>,
     ) -> Result<(), String> {
         let class_out = StandardLocation::location_for(&js("CLASS_OUTPUT"));
-        // Java: ClassWriter uses getJavaFileForOutputForModule in multi-module
-        // mode; the ported file manager has no module-output API, so the module
-        // directory is prepended to the output name instead (the same layout).
-        let output_name = match module {
-            Some(module) if self.modules.multi_module_mode => format!(
-                "{}/{}",
-                self.ctx
-                    .sym(module)
-                    .name
-                    .to_java_string()
-                    .to_string_lossy(),
-                name
-            ),
-            _ => name.to_string(),
-        };
+        // Java: ClassWriter writes module classes through the module output
+        // location (getLocationForModule), so the module directory keeps its
+        // original name (a module name may contain dots) while the class name
+        // is still resolved as a package path below it.
+        let mut output_location: Rc<dyn javac_tools::tools::java_file_manager::Location> =
+            Rc::clone(&class_out) as Rc<dyn javac_tools::tools::java_file_manager::Location>;
+        if let Some(module) = module
+            && self.modules.multi_module_mode
+        {
+            let module_name = self
+                .ctx
+                .sym(module)
+                .name
+                .to_java_string()
+                .to_string_lossy();
+            if let Ok(location) = self
+                .file_manager
+                .get_location_for_module(&*class_out, &js(&module_name))
+            {
+                output_location = location;
+            }
+        }
         let file = self
             .file_manager
             .get_java_file_for_output(
-                &*class_out,
-                &js(&output_name),
+                &*output_location,
+                &js(name),
                 javac_tools::tools::java_file_object::Kind::CLASS,
                 sibling,
             )
-            .map_err(|error| format!("cannot get the output file for {output_name}: {error:?}"))?;
+            .map_err(|error| format!("cannot get the output file for {name}: {error:?}"))?;
         let mut stream = file
             .open_output_stream()
             .map_err(|error| format!("cannot open the output file for {name}: {error:?}"))?;

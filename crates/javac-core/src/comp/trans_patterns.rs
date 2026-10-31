@@ -1997,8 +1997,10 @@ impl TreeVisitor for TransPatterns {    fn visit_top_level(&mut self, ctx: &mut 
                         .sym(sym)
                         .owner
                         .map(|owner| {
-                            crate::code::kinds::KindSelector::VAL_MTH
-                                .subset(ctx.sym(owner).kind.to_selector())
+                            // Java: exprSym.owner.kind.matches(KindSelector.VAL_MTH)
+                            ctx.sym(owner)
+                                .kind
+                                .matches(crate::code::kinds::KindSelector::VAL_MTH)
                         })
                         .unwrap_or(false)
             })

@@ -4108,6 +4108,25 @@ impl Lower {
             TreeKind::MethodDecl { body: Some(body), .. } => *body,
             _ => return,
         };
+        // Java: TreeInfo.recordFields(tree) walks the class tree, i.e. the
+        // declaration order. The member scope iteration order is not the
+        // declaration order, so reorder the fields by their record components.
+        if let crate::code::symbol::SymbolKind::ClassSymbol {
+            record_components, ..
+        } = &ctx.sym(current_class).kind_data
+        {
+            let component_names: Vec<crate::util::name::Name> = record_components
+                .iter()
+                .map(|component| ctx.sym(component).name.clone())
+                .collect();
+            record_fields.sort_by_key(|field| {
+                let name = &ctx.sym(*field).name;
+                component_names
+                    .iter()
+                    .position(|component| component == name)
+                    .unwrap_or(usize::MAX)
+            });
+        }
         for field in record_fields {
             let field_name = ctx.sym(field).name.clone();
             let mut param_sym: Option<SymbolId> = None;

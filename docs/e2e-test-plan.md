@@ -70,7 +70,7 @@
 ## 8. 执行节奏与门禁
 
 - **每次提交**：L1（846）必须全绿；
-- **每日/大改**：L2（fail=0、skip=67）+ L3（Gson 207/207）+ L4 CLI 用例；
+- **每日/大改**：L2（fail=0、skip=67）+ L3（Gson 207/207、okhttp 547/547）+ L3.5（feature-matrix 23 个单元，当前 21/23，见其 README 的两个已知差异）+ L4 CLI 用例；
 - **发布前**：全量 L1–L5 + 性能基准 + 冷启动；
 - **失败处理**：L2 失败按 `DIAG_EXAMPLES_VERBOSE=1` 看首个差异行；L3 失败用 `javap -v` 做常量池/指令 diff。
 
@@ -81,5 +81,6 @@
 ```powershell
 pwsh ./scripts/e2e.ps1                 # L3(Gson) + L4
 pwsh ./scripts/e2e.ps1 -IncludeOkhttp  # 加上 okhttp 字节对比
+pwsh ./scripts/e2e.ps1 -IncludeFeatureMatrix  # 加上 Java 9-17 feature-matrix
 pwsh ./scripts/e2e.ps1 -Perf           # 加上 L5 性能基准
 ```
