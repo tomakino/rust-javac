@@ -8683,6 +8683,12 @@ impl LambdaToMethod {
 
     /// Creates the body block of the translated lambda method (upstream makeLambdaBody).
     fn make_lambda_body(&mut self, ctx: &mut CompilerContext, tree: TreeId, lambda_method_decl: TreeId) -> TreeId {
+        // Java: LambdaToMethod.visitLambda positions the TreeMaker at the
+        // lambda expression before building the synthetic body, so the body's
+        // return/exec statements carry the lambda's position (and the
+        // generated method gets the matching LineNumberTable line).
+        let lambda_pos = ctx.tree(tree).pos;
+        self.make.borrow_mut().at(lambda_pos);
         let (body, can_complete_normally) = match &ctx.tree(tree).kind {
             TreeKind::Lambda { body: Some(body), can_complete_normally, .. } => (*body, *can_complete_normally),
             _ => panic!("expected a lambda body"),
