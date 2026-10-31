@@ -7164,6 +7164,10 @@ fn symbol_clone_with_owner(
         original.kind_data.clone(),
     );
     cloned.erasure_field = original.erasure_field;
+    // Java: Symbol.clone(Symbol) overrides baseSymbol() to return the cloned
+    // symbol (Symbol.java:1928-1942); poolKey is then
+    // Pair<>(newOwner, baseSymbol()).
+    cloned.base_symbol_override = Some(sym);
     ctx.alloc_symbol(cloned)
 }
 
