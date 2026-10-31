@@ -4411,7 +4411,10 @@ impl Lower {
             stats = stats.append(decl);
             (ident, false)
         };
-        let old_pos = ctx.tree(block).pos;
+        // Java: int oldPos = make.pos (Lower.java:1628) — the position of the
+        // enclosing try statement, restored before the exceptional close so that
+        // synthesized close calls carry the try statement's line.
+        let old_pos = self.make.borrow().pos;
         let block_end = tree_info::end_pos(ctx, block);
         self.make.borrow_mut().at(block_end);
         let mut body_close = self.make_resource_close_invocation(ctx, resource_use);
