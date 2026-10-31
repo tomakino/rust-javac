@@ -1774,7 +1774,9 @@ impl AnnotateServices {
         if repeated.is_empty() {
             return Ok(None);
         }
-        repeated.reverse();
+        // The port keeps sym.raw_attributes in source order (javac keeps them
+        // reversed and reverses here), so the repeated annotations are already
+        // in source order and must not be reversed again.
         let pos = context.pos.get(&first_occurrence).copied().unwrap_or(crate::util::position::NOPOS);
         let pair = Pair::new(container_value_symbol.expect("container value symbol"), {
             let values: Vec<AttributeId> = repeated.clone();

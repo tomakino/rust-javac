@@ -3934,7 +3934,13 @@ impl Attr {
             while a.non_empty() {
                 let at = *a.head();
                 let bt = *b.head();
-                if bt != Some(at) {
+                // Java: types.isSameTypes(argTypes, TreeInfo.types(tree.params)),
+                // i.e. type equivalence, not TypeId identity.
+                let same_type = match bt {
+                    Some(bt) => self.types.is_same_type(ctx, syms, at, bt),
+                    None => false,
+                };
+                if !same_type {
                     same = false;
                     break;
                 }

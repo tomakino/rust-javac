@@ -833,7 +833,9 @@ impl ClassWriter {
             }
         }
         let loc = TypeAnnotationPosition::get_binary_from_type_path(p.location.clone());
-        self.databuf.append_byte(loc.length());
+        // Java: appendByte(loc.length() / 2) — type_path.path_length counts
+        // entries, while getBinaryFromTypePath returns two bytes per entry.
+        self.databuf.append_byte(loc.length() / 2);
         let mut current = loc;
         while current.non_empty() {
             let code = *current.head();

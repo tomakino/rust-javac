@@ -51,6 +51,9 @@ pub fn string2long(s: &JavaString, radix: i32) -> Result<i64, NumberFormatExcept
         return parse_long(s, radix);
     }
     let cs = s.as_units();
+    // Java: Convert.string2long (jdk.compiler) uses limit = MAX/(radix/2) and
+    // lets n * radix wrap like Java's long arithmetic, so hexadecimal literals
+    // such as 0xFFFF_FFFF_FFFF_FFFFL decode to -1 instead of failing.
     let limit = i64::MAX / (radix as i64 / 2);
     let mut n: i64 = 0;
     for &c in cs {
@@ -58,7 +61,7 @@ pub fn string2long(s: &JavaString, radix: i32) -> Result<i64, NumberFormatExcept
         if n < 0 || n > limit || n.wrapping_mul(radix as i64) > i64::MAX.wrapping_sub(d) {
             return Err(NumberFormatException);
         }
-        n = n * (radix as i64) + d;
+        n = n.wrapping_mul(radix as i64).wrapping_add(d);
     }
     Ok(n)
 }

@@ -2372,22 +2372,40 @@ impl InferenceGraph {
             }
         }
         // merge cyclic nodes
+        //
+        // The SCC heads become the new node list; every dependency edge is
+        // remapped from the pre-merge ids to the compacted ids (merged members
+        // map to their root), so the edges never point past the list.
         let sccs = graph.tarjan_scc();
         let mut acyclic_nodes: Vec<Option<GraphNode>> = Vec::new();
-        for scc in sccs {
+        let mut old_to_new: Vec<Option<usize>> = vec![None; count];
+        for scc in &sccs {
             if scc.len() > 1 {
                 let root = scc[0];
                 let tail: Vec<usize> = scc[1..].to_vec();
                 graph.merge_with(root, &tail, count);
-                for n in &scc {
+                for n in scc {
                     graph.notify_update(*n, Some(root), count);
                 }
             }
             let head = scc[0];
+            let new_index = acyclic_nodes.len();
+            for n in scc {
+                old_to_new[*n] = Some(new_index);
+            }
             acyclic_nodes.push(graph.nodes[head].take());
         }
-        // The acyclic node list keeps the original node ids in the Vec
-        // positions (None for merged/deleted nodes), preserving dependency ids.
+        for node in acyclic_nodes.iter_mut().flatten() {
+            let mut new_deps: Vec<usize> = Vec::new();
+            for dep in &node.deps {
+                if let Some(Some(new_dep)) = old_to_new.get(*dep) {
+                    if !new_deps.contains(new_dep) {
+                        new_deps.push(*new_dep);
+                    }
+                }
+            }
+            node.deps = new_deps;
+        }
         graph.nodes = acyclic_nodes;
         graph
     }

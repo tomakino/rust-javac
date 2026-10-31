@@ -45,11 +45,22 @@ pwsh ./scripts/feature-matrix.ps1 -EnablePreview   # include --enable-preview un
 | 17 | runtime annotations | `java17/annotations` |
 | 17 | records: generic / varargs / empty | `java17/records-advanced` |
 | 17 | lambda capture | `java17/lambda-capture` |
+| 17 | extreme: literal / unicode / numeric limits | `java17/edge-literals` |
+| 17 | extreme: recursive generics / bridges | `java17/edge-generics` |
+| 17 | extreme: repeatable + TYPE_USE annotations | `java17/edge-annotations` |
+| 17 | extreme: generic / varargs records | `java17/edge-records` |
+| 17 | extreme: nested sealed hierarchy | `java17/edge-sealed` |
+| 17 | extreme: method / constructor references | `java17/edge-lambdas` |
+| 17 | extreme: string / enum / nested switch | `java17/edge-switches` |
+| 17 | extreme: try-with-resources / finally order | `java17/edge-twr` |
+| 17 | extreme: inner / local / anonymous classes | `java17/edge-inner` |
+| 17 | extreme: initialization order | `java17/edge-init` |
+| 17 | extreme: text block escapes | `java17/edge-textblocks` |
 
 Preview features (17 pattern switch, 15/16 preview syntax) are intentionally
 not included by default; `-EnablePreview` is reserved for those units.
 
 ## Known gaps
 
-None: all 23 units currently compile to byte-identical classes, with identical
+None: all 34 units currently compile to byte-identical classes, with identical
 diagnostics and exit codes.
