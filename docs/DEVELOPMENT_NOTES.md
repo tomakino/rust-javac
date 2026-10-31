@@ -132,6 +132,11 @@ classpath 扫描的跳过列表从：
 - **问题**：旧实现每次 `read_entry` 都通过 `FileReader` 读 local header + 压缩数据（同一 jar 被间断频繁读取时每条目两次系统调用）。
 - **优化**：`ZipArchive::open` 用 `std::fs::read` 一次读入整个 zip，`rawzip::ZipArchive::<()>::from_slice`（零拷贝 slice）解析；`read_entry` 用 `ZipSliceEntry::data()` 直接切片，**运行时零文件读取**；`archive_offset` 直接在内存字节上计算。
 - 验证：`javac-zip` 10/10、Gson 208/208 + IDENTICAL、`javac-core --lib` 846；Gson debug CPU **3.828–4.094 s（min 3.828，mean 3.953）**，此前切片前为 4.688/5.052（-16%～-21%）。
+### 性能：本机 CPU 优化（2026-10-31 第十一轮）
+
+- `.cargo/config.toml` 增加 `[target.x86_64-pc-windows-gnu] rustflags = ["-C", "target-cpu=native"]`（本机专用；与同机 javac 对比一致）。
+- Gson debug CPU：3.656 / 3.943 / 4.047（min 3.656，mean 3.943），此前 3.828/3.953。
+- `ids::index` 的 `#[inline(always)]` 在 debug 下实测更慢（4.000 vs 3.828），未采用；release 由编译器内联。
 - 行为验证：Gson 208/208 字节一致 + 诊断 IDENTICAL；`javac-core --lib` 846 passed。
 - PGO 与 mimalloc 仍不可行（见上一轮记录）。
 ### 性能优化（2026-10-31 第二轮，samply profiling）

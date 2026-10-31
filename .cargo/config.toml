@@ -1,2 +1,7 @@
 [alias]
 xtask = "run --package xtask --"
+
+# Build for this machine's CPU (AVX2 and friends). The JDK's javac runs on the
+# same machine in the benchmarks, so the comparison stays like-for-like.
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "target-cpu=native"]
