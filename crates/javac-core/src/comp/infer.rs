@@ -589,6 +589,7 @@ impl Infer {
         types: &Types,
         tv: TypeId,
     ) -> TypeId {
+
         let listener = self.incorporation_engine();
         let uv = types.undet_var_new(ctx, syms, tv, Some(listener));
         let tsym = ctx.typ(tv).tsym;
@@ -3031,15 +3032,14 @@ fn check_bound(
     ib_t: InferenceBound,
     warn: &mut Warner,
 ) -> Result<bool, InferenceException> {
-    if ib_s.less_than(ib_t) {
-        // Java: isSubtype(s, t, warn) -> doIncorporationOp(IS_SUBTYPE,...)
-        // — the bound check records unchecked lint on the shared Warner.
-        Ok(types.is_subtype_unchecked_with_warn(ctx, syms, s, t, warn))
+    let r = if ib_s.less_than(ib_t) {
+        types.is_subtype_unchecked_with_warn(ctx, syms, s, t, warn)
     } else if ib_t.less_than(ib_s) {
-        Ok(types.is_subtype_unchecked_with_warn(ctx, syms, t, s, warn))
+        types.is_subtype_unchecked_with_warn(ctx, syms, t, s, warn)
     } else {
-        Ok(types.is_same_type(ctx, syms, s, t))
-    }
+        types.is_same_type(ctx, syms, s, t)
+    };
+    Ok(r)
 }
 
 /// Java: void reportInstError(UndetVar uv, InferenceBound ib)
@@ -3101,23 +3101,6 @@ fn report_bound_error_two(
     ib1: InferenceBound,
     ib2: InferenceBound,
 ) -> Result<(), InferenceException> {
-    if std::env::var_os("DSH_DEBUG_INFER").is_some() {
-        let show = |ib: InferenceBound| -> Vec<String> {
-            types
-                .undet_var_get_bounds(ctx, uv, &[ib])
-                .iter()
-                .map(|t| crate::comp::attr::type_display_of(ctx, t))
-                .collect()
-        };
-        eprintln!(
-            "[INCOMPAT] uv={} ib1={:?} b1={:?} ib2={:?} b2={:?}",
-            crate::comp::attr::type_display_of(ctx, uv),
-            ib1,
-            show(ib1),
-            ib2,
-            show(ib2),
-        );
-    }
     let frag1 = get_bound_fragment(ctx, types, uv, ib1);
     let frag2 = get_bound_fragment(ctx, types, uv, ib2);
     let qtype = match &ctx.typ(uv).kind {
@@ -3315,7 +3298,6 @@ impl Infer {
         warn: &mut Warner,
     ) -> Result<TypeId, InferenceException> {
         let _ = (allow_boxing, use_varargs);
-
         // Port adapter: upstream Infer.instantiateMethod passes the caller's
         // Warner through the deferred contexts and the min listeners
         // (Infer.java:180, InferenceContext.java:380-395); the Rc keeps the
@@ -3401,6 +3383,8 @@ impl Infer {
                 &inference_context,
                 &mut warn_shared.borrow_mut(),
             )?;
+            // Java: instantiateMethod finally (Infer.java:241-246).
+            inference_context.notify_change(ctx, syms, types)?;
             return Ok(partially_inferred_method_type(
                 ctx,
                 mt,
@@ -3484,6 +3468,8 @@ impl Infer {
                     crate::code::symbol::throw_completion_failure(failure)
                 }
             })?;
+            // Java: instantiateMethod finally (Infer.java:241-246).
+            inference_context.notify_change(ctx, syms, types)?;
                     return Ok(new_mt);
                 }
                 let _ = new_mt;
@@ -3501,65 +3487,6 @@ impl Infer {
                     crate::code::symbol::throw_completion_failure(failure)
                 }
             })?;
-        // Java: Attr final check (ResultInfo.check / checkContext.compatible)
-        // uses the speculative actual of a still-deferred argument so that the
-        // formal's undetvar receives actual as a lower bound before solve.
-        // This mirrors DeferredType.check speculating the tree even when the
-        // overload phase leaves the node stuck.
-        //
-        // Port adapter: upstream DeferredType.check has no
-        // bounded-formal/non-varargs/speculative-actual filters. They are kept
-        // here to avoid over-constraining unresolved deferred arguments and
-        // F-bounded varargs (EnumSet.of); remove them once the recursive-bound
-        // case is aligned with the upstream check path.
-        {
-            let formals = types.get_parameter_types_public(ctx, mt);
-            let mut arg_current = argtypes_for_final_check.clone();
-            let mut formal_current = formals;
-            let cc = crate::comp::resolve::MethodCheckContext {
-                strict: true,
-                deferred_attr_context: Rc::clone(&deferred_context),
-                rs_warner: Rc::new(RefCell::new(crate::util::warner::Warner::new(None))),
-                pending_inference: None,
-                most_specific: false,
-            };
-            let check_context: Rc<dyn crate::comp::check::CheckContext> = Rc::new(cc);
-            while arg_current.non_empty() && formal_current.non_empty() {
-                let arg = *arg_current.head();
-                let formal = *formal_current.head();
-                let formal_bounded = ctx.typ(formal).has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
-                    && ctx
-                        .typ(formal)
-                        .get_upper_bound()
-                        .map(|b| b != syms.object_type)
-                        .unwrap_or(false);
-                if formal_bounded
-                    && (ctx.sym(msym).flags_field & crate::code::flags::VARARGS) == 0
-                    && ctx.typ(arg).has_tag(crate::code::type_tag::TypeTag::DEFERRED)
-                    && let Some(actual) = crate::comp::deferred_attr::deferred_type_speculative_type(
-                        ctx,
-                        attr,
-                        arg,
-                        Some(msym),
-                        deferred_context.phase,
-                    )
-                    && !ctx.typ(actual).has_tag(crate::code::type_tag::TypeTag::NONE)
-                    && !ctx.typ(actual).has_tag(crate::code::type_tag::TypeTag::ERROR)
-                    && !ctx.typ(actual).has_tag(crate::code::type_tag::TypeTag::DEFERRED)
-                {
-                    let _ = check_context.compatible(
-                        ctx,
-                        syms,
-                        types,
-                        actual,
-                        formal,
-                        &mut warn_shared.borrow_mut(),
-                    );
-                }
-                arg_current = arg_current.tail();
-                formal_current = formal_current.tail();
-            }
-        }
         // minimize as yet undetermined type variables
         if self.allow_graph_inference {
             let context = Rc::clone(&inference_context);
@@ -3640,6 +3567,10 @@ impl Infer {
                 &crate::comp::infer::legacy_inference_steps_eq_upper(),
                 &mut warn_shared.borrow_mut(),
             )?;
+            // Java: instantiateMethod finally { if (resultInfo != null ||
+            // !allowGraphInference) inferenceContext.notifyChange(); }
+            // (Infer.java:241-246) — the legacy return path still notifies.
+            inference_context.notify_change(ctx, syms, types)?;
             return Ok(inference_context.as_inst_type(ctx, syms, types, mt));
         }
         // Java: if (resultInfo != null || !allowGraphInference) notifyChange();

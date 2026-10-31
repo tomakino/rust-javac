@@ -85,6 +85,21 @@ pub struct TypeEnter {
     /// Java: private final ImportsPhase completeClass = new ImportsPhase()
     /// (expressed as phase state; registered adapter for Java inner classes).
     pub top_level_phase: std::cell::Cell<Option<Phase>>,
+    /// Java: depth of nested TypeEnter.complete invocations. Official
+    /// TypeEnter.complete runs finishImports only after the full completion
+    /// cascade of the outermost call (TypeEnter.java:204-217); the port keeps
+    /// the same boundary so a class completed from inside another class's
+    /// member enter is checked after its members are entered.
+    pub completion_depth: std::cell::Cell<usize>,
+    /// Compilation units whose finishImports is pending until the outermost
+    /// completion returns.
+    pub pending_import_checks: std::cell::RefCell<Vec<TreeId>>,
+    /// The classes whose TypeEnter.complete is currently on the stack. A
+    /// checkImportsResolvable for a toplevel whose static-import origin is
+    /// still being completed must wait for the outermost boundary (official
+    /// TypeEnter.finishImports runs after the completeEnvs cascade,
+    /// TypeEnter.java:204-217).
+    pub completion_stack: std::cell::RefCell<Vec<SymbolId>>,
     /// ImportsPhase state (Java: inner class fields).
     pub imports_env: std::cell::RefCell<Option<Rc<Env<AttrContext>>>>,
     pub static_import_filter: std::cell::RefCell<Option<crate::code::scope::FilterImportFn>>,
@@ -113,6 +128,7 @@ pub struct Phase {
     pub next: Option<Rc<Phase>>,
     pub phase_name: CompletionCause,
 }
+
 
 impl TypeEnter {
     /// Java: protected TypeEnter(Context context) — injected dependencies.
@@ -153,6 +169,9 @@ impl TypeEnter {
             allow_deprecation_on_import: false,
             completion_enabled: std::cell::Cell::new(true),
             top_level_phase: std::cell::Cell::new(None),
+            completion_depth: std::cell::Cell::new(0),
+            pending_import_checks: std::cell::RefCell::new(Vec::new()),
+            completion_stack: std::cell::RefCell::new(Vec::new()),
             imports_env: std::cell::RefCell::new(None),
             static_import_filter: std::cell::RefCell::new(None),
             type_import_filter: std::cell::RefCell::new(None),
@@ -203,6 +222,79 @@ impl TypeEnter {
             }
             current = current.tail();
         }
+    }
+
+    /// Port adapter for the official finishImports boundary: true when one of
+    /// the toplevel's named static imports has an origin class whose member
+    /// enter is still in progress on the completion stack.
+    fn imports_resolvable_blocked(
+        &self,
+        ctx: &mut CompilerContext,
+        toplevel: TreeId,
+    ) -> bool {
+        let stack = self.completion_stack.borrow().clone();
+        if stack.is_empty() {
+            return false;
+        }
+        let defs = match &ctx.tree(toplevel).kind {
+            TreeKind::CompilationUnit { defs, .. } => defs.clone(),
+            _ => return false,
+        };
+        let mut current = defs;
+        while current.non_empty() {
+            let imp = *current.head();
+            current = current.tail();
+            let (static_import, qualid) = match &ctx.tree(imp).kind {
+                TreeKind::Import {
+                    static_import,
+                    qualid,
+                    ..
+                } => (*static_import, *qualid),
+                _ => continue,
+            };
+            if !static_import {
+                continue;
+            }
+            let Some(qualid) = qualid else { continue };
+            let access = match &ctx.tree(qualid).kind {
+                TreeKind::FieldAccess {
+                    selected: Some(selected),
+                    name,
+                    ..
+                } => Some((*selected, name.clone())),
+                _ => None,
+            };
+            let Some((selected, name)) = access else {
+                continue;
+            };
+            if name == self.names.asterisk {
+                continue;
+            }
+            let site = ctx.tree(selected).ty.and_then(|ty| ctx.typ(ty).tsym);
+            let Some(site) = site else { continue };
+            if stack.contains(&site) {
+                // The origin's member enter is in progress. Defer only when
+                // the imported member has not been entered yet (fields are
+                // entered in declaration order and methods after the fields),
+                // so unrelated checks keep the eager finishImports timing.
+                let members = ctx.sym(site).members();
+                let missing = match members {
+                    None => true,
+                    Some(members) => ctx
+                        .scope_get_symbols_by_name(
+                            members,
+                            &name,
+                            crate::code::scope::LookupKind::NON_RECURSIVE,
+                            &|_| true,
+                        )
+                        .is_empty(),
+                };
+                if missing {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Java: void finishImports(JCCompilationUnit toplevel, Runnable resolve)
@@ -301,6 +393,9 @@ impl TypeEnter {
         {
             self.mark_unit_deprecated(ctx, toplevel);
         }
+        let depth = self.completion_depth.get() + 1;
+        self.completion_depth.set(depth);
+        self.completion_stack.borrow_mut().push(sym);
         let queue = match env {
             Some(env) => {
                 let queue = self.phase_imports_complete_envs(ctx, syms, vec![env], attr);
@@ -328,6 +423,8 @@ impl TypeEnter {
             }
             None => Vec::new(),
         };
+        self.completion_stack.borrow_mut().pop();
+        self.completion_depth.set(depth - 1);
         self.dependencies.borrow_mut().pop();
         if !queue.is_empty() {
             let mut seen: HashSet<TreeId> = HashSet::new();
@@ -338,7 +435,25 @@ impl TypeEnter {
                     .map(|class| compilation_unit_defs(ctx, toplevel).iter().any(|d| d == class))
                     .unwrap_or(false);
                 if in_defs && seen.insert(toplevel) {
-                    self.finish_imports(ctx, syms, toplevel, None, attr);
+                    if self.imports_resolvable_blocked(ctx, toplevel) {
+                        self.pending_import_checks.borrow_mut().push(toplevel);
+                    } else {
+                        self.finish_imports(ctx, syms, toplevel, None, attr);
+                    }
+                }
+            }
+        }
+        if self.completion_depth.get() == 0 {
+            loop {
+                let pending = std::mem::take(&mut *self.pending_import_checks.borrow_mut());
+                if pending.is_empty() {
+                    break;
+                }
+                let mut seen: HashSet<TreeId> = HashSet::new();
+                for toplevel in pending {
+                    if seen.insert(toplevel) {
+                        self.finish_imports(ctx, syms, toplevel, None, attr);
+                    }
                 }
             }
         }
@@ -351,8 +466,10 @@ impl TypeEnter {
     // ------------------------------------------------------------------
     // Java: TypeEnter.Phase machinery (the inner Phase subclasses are the
     // phase_* methods below; registered adapter).
-    // ------------------------------------------------------------------
-
+    /// Java: TypeEnter.Phase.doCompleteEnvs/drain for the imports phase
+    /// (TypeEnter.java:249-297): runs the imports phase for every environment
+    /// and returns the queue of environments that continue with the following
+    /// phases.
     fn phase_imports_complete_envs(
         &self,
         ctx: &mut CompilerContext,
@@ -826,12 +943,12 @@ impl TypeEnter {
     fn import_named_static(
         &self,
         ctx: &mut CompilerContext,
-        _syms: &Symtab,
+        syms: &Symtab,
         tree: TreeId,
         tsym: SymbolId,
         name: crate::util::name::Name,
         env: &Rc<Env<AttrContext>>,
-        _attr: &mut crate::comp::attr::Attr,
+        attr: &mut crate::comp::attr::Attr,
     ) {
         if ctx.sym(tsym).kind != Kind::TYP {
             // Java: log.error(DiagnosticFlag.RECOVERABLE, imp.pos(),

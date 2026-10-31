@@ -88,11 +88,13 @@ pub struct ArgumentTypeData {
     pub kind: ArgumentKind,
     /// Java: T speculativeTree
     pub speculative_tree: TreeId,
-    /// Java: Map<ResultInfo, Type> speculativeTypes (Porting rules: the ResultInfo
-    /// identity is kept as Rc<ResultInfo> because the speculativeType scan
-    /// reads each entry's DeferredAttrContext; insertion order preserved
-    /// (upstream HashMap iteration order is unspecified)).
-    pub speculative_types: Vec<(Rc<ResultInfo>, TypeId)>,
+    /// Java: Map<ResultInfo, Type> speculativeTypes. Java keys by ResultInfo
+    /// object identity and shares the map object across dup(...) calls; the
+    /// port keeps (ResultInfo.id, ResultInfo, Type) triples behind a shared
+    /// Rc<RefCell<...>> so the cached argument type and every dup observe the
+    /// same entries (ArgumentAttr.java:343-348, 357, 419, 454, 510, 622, 687,
+    /// 717).
+    pub speculative_types: Rc<RefCell<Vec<(u64, Rc<ResultInfo>, TypeId)>>>,
     /// Java: SwitchExpressionType.yieldExpressions (Optional<List<JCYield>>)
     pub yield_expressions: Option<List<TreeId>>,
     /// Java: ExplicitLambdaType.argtypes (Optional<List<Type>>)
@@ -473,7 +475,17 @@ impl ArgumentAttr {
         tree: TreeId,
     ) -> ResultInfo {
         let pos = UniquePos::new(ctx, &log.borrow(), tree);
-        let mut info = attr.method_attr_info.clone();
+        // Java: ArgumentAttr.processArg uses attr.new MethodAttrInfo() — the
+        // Attr.MethodAttrInfo() no-arg constructor calls
+        // MethodAttrInfo(Attr.this.basicHandler) (Attr.java:563-596), NOT the
+        // enclosing methodAttrInfo. The basic handler's inference context is the
+        // empty context; cloning methodAttrInfo would carry the enclosing
+        // method's MethodCheckContext and make shouldPropagate() see a generic
+        // enclosing context that does not exist for this argument.
+        let mut info = crate::comp::attr::ResultInfo::method_attr_info(
+            Rc::clone(&attr.basic_handler),
+            attr.infer.any_poly,
+        );
         info.argument_attr_exclude = Some(pos);
         info
     }
@@ -491,7 +503,7 @@ impl ArgumentAttr {
             ArgumentTypeData {
                 kind: ArgumentKind::Parens,
                 speculative_tree,
-                speculative_types: Vec::new(),
+                speculative_types: Rc::new(RefCell::new(Vec::new())),
                 yield_expressions: None,
                 argtypes: None,
                 return_expressions: None,
@@ -512,7 +524,7 @@ impl ArgumentAttr {
             ArgumentTypeData {
                 kind: ArgumentKind::Conditional,
                 speculative_tree,
-                speculative_types: Vec::new(),
+                speculative_types: Rc::new(RefCell::new(Vec::new())),
                 yield_expressions: None,
                 argtypes: None,
                 return_expressions: None,
@@ -534,7 +546,7 @@ impl ArgumentAttr {
             ArgumentTypeData {
                 kind: ArgumentKind::SwitchExpression,
                 speculative_tree,
-                speculative_types: Vec::new(),
+                speculative_types: Rc::new(RefCell::new(Vec::new())),
                 yield_expressions: None,
                 argtypes: None,
                 return_expressions: None,
@@ -560,7 +572,7 @@ impl ArgumentAttr {
                 ArgumentTypeData {
                     kind: ArgumentKind::ResolvedMethod,
                     speculative_tree,
-                    speculative_types: Vec::new(),
+                    speculative_types: Rc::new(RefCell::new(Vec::new())),
                     yield_expressions: None,
                     argtypes: None,
                     return_expressions: None,
@@ -594,7 +606,7 @@ impl ArgumentAttr {
                 ArgumentTypeData {
                     kind: ArgumentKind::ResolvedConstructor,
                     speculative_tree,
-                    speculative_types: Vec::new(),
+                    speculative_types: Rc::new(RefCell::new(Vec::new())),
                     yield_expressions: None,
                     argtypes: None,
                     return_expressions: None,
@@ -629,6 +641,7 @@ impl ArgumentAttr {
             }
             _ => panic!("ClassCastException: JCLambda expected"),
         };
+
         if explicit {
             self.process_arg_with_lambda_speculation(ctx, syms, attr, log, tree)
         } else {
@@ -848,7 +861,7 @@ impl ArgumentAttr {
         let data = ArgumentTypeData {
             kind: ArgumentKind::ExplicitLambda,
             speculative_tree: speculative_lambda,
-            speculative_types: Vec::new(),
+            speculative_types: Rc::new(RefCell::new(Vec::new())),
             yield_expressions: None,
             argtypes: None,
             return_expressions: None,
@@ -878,7 +891,7 @@ impl ArgumentAttr {
             let data = ArgumentTypeData {
                 kind: cached.kind,
                 speculative_tree: cached.speculative_tree,
-                speculative_types: cached.speculative_types.clone(),
+                speculative_types: Rc::clone(&cached.speculative_types),
                 yield_expressions: cached.yield_expressions.clone(),
                 argtypes: cached.argtypes.clone(),
                 return_expressions: cached.return_expressions.clone(),
@@ -1000,7 +1013,16 @@ impl ArgumentAttr {
             } else {
                 self.overload_check(ctx, syms, attr, data, result_info, deferred_attr_context)?
             };
-            data.borrow_mut().speculative_types.push((Rc::new(result_info.clone()), tt));
+            let key = result_info.id;
+            {
+                let data_ref = data.borrow();
+                let mut types = data_ref.speculative_types.borrow_mut();
+                if let Some(entry) = types.iter_mut().find(|(k, _, _)| *k == key) {
+                    entry.2 = tt;
+                } else {
+                    types.push((key, Rc::new(result_info.clone()), tt));
+                }
+            }
             Ok(tt)
         } else {
             let env = match &ctx.typ(t).kind {
@@ -1065,7 +1087,8 @@ impl ArgumentAttr {
             let entry = cache.borrow().get(msym, phase)?;
             return ctx.tree(entry.speculative_tree).ty;
         }
-        for (result_info, ty) in &data.speculative_types {
+        let speculative_types = data.speculative_types.borrow();
+        for (_key, result_info, ty) in speculative_types.iter() {
             let deferred_attr_context = result_info.check_context.deferred_attr_context();
             if deferred_attr_context.phase == phase
                 && deferred_attr_context.msym == msym
@@ -1338,7 +1361,14 @@ impl ArgumentAttr {
                     crate::comp::resolve::throw_inapplicable_method_exception(None);
                 }
                 let local_info = match kind {
-                    ArgumentKind::ResolvedMethod => result_info.clone(),
+                    ArgumentKind::ResolvedMethod => {
+                        // Java: ResolvedMethodType.resultInfo(resultInfo) returns
+                        // the same ResultInfo object (ArgumentAttr.java:675-678),
+                        // so the speculativeTypes key is resultInfo's identity.
+                        let mut info = result_info.clone();
+                        info.id = result_info.id;
+                        info
+                    }
                     _ => {
                         let clazz = match &ctx.tree(speculative_tree).kind {
                             crate::tree::jc_tree::TreeKind::NewClass { clazz, .. } => {
@@ -1348,20 +1378,15 @@ impl ArgumentAttr {
                         };
                         let clazz_type = ctx.tree(clazz).ty.expect("new class clazz type");
                         let tsym = ctx.typ(clazz_type).tsym.expect("clazz type symbol");
-                        let mut local_info =
-                            result_info.dup_context(attr.diamond_context(
+                        // Java: ResolvedConstructorType.resultInfo(resultInfo)
+                        // (ArgumentAttr.java:704-707) returns
+                        // resultInfo.dup(attr.diamondContext(...)); the target
+                        // pt is kept unchanged (including type/inference vars).
+                        result_info.dup_context(attr.diamond_context(
                             clazz,
                             tsym,
                             Rc::clone(&result_info.check_context),
-                        ));
-                        if local_info.pt.map(|pt| {
-                            ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
-                                || ctx.typ(pt).has_tag(crate::code::type_tag::TypeTag::UNDETVAR)
-                        }) == Some(true)
-                        {
-                            local_info.pt = Some(crate::code::symtab::no_type_id(ctx));
-                        }
-                        local_info
+                        ))
                     }
                 };
                 let t = match mtype {
@@ -1434,7 +1459,10 @@ impl ArgumentAttr {
                     );
                 }
                 let local_info = Rc::new(local_info);
-                data.borrow_mut().speculative_types.push((local_info, t));
+                let key = local_info.id;
+                let data_ref = data.borrow();
+                data_ref.speculative_types.borrow_mut()
+                    .push((key, local_info, t));
                 Ok(t)
             }
         }

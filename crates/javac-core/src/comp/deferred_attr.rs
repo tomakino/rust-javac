@@ -223,7 +223,8 @@ pub fn deferred_type_speculative_type(
             .expect("AssertionError: argumentAttr service must be installed");
         let argument_attr = argument_attr.borrow();
         let data = data.borrow();
-        return argument_attr.argument_type_speculative_type(ctx, &data, t, msym, phase);
+        let selected = argument_attr.argument_type_speculative_type(ctx, &data, t, msym, phase);
+        return selected;
     }
     let entry = cache.borrow().get(msym, phase)?;
     ctx.tree(entry.speculative_tree).ty
@@ -661,7 +662,11 @@ fn process_deferred_attr_node(
                     .borrow()
                     .clone()
                     .expect("AssertionError: deferredAttr service must be installed");
-                let mut svc = svc_rc.borrow_mut();
+                // Java: DeferredAttr.StructuralStuckChecker holds the shared
+                // DeferredAttr instance (DeferredAttr.java:757-800). The port
+                // must not hold a mutable RefCell borrow across the recursive
+                // speculative attribution below (it re-enters this service).
+                let svc = svc_rc.borrow();
                 let result = svc
                     .structural_stuck_check(ctx, syms, attr, node.dt, &node.result_info, deferred_attr_context);
                 match result {
@@ -2699,7 +2704,7 @@ impl DeferredAttrService {
     /// 
     ///    Upstream: DeferredAttr.java:808-816.
     pub fn structural_stuck_check(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: &mut Attr,
@@ -2723,7 +2728,7 @@ impl DeferredAttrService {
     /// Java: StructuralStuckChecker tree navigation (TreeScanner default bodies;
     /// the overridden visits are the special cases below).
     fn structural_check_tree(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: &mut Attr,
@@ -2776,7 +2781,7 @@ impl DeferredAttrService {
 
     /// Java: StructuralStuckChecker.visitLambda (DeferredAttr.java:820-880)
     fn structural_check_lambda(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: &mut Attr,
@@ -2908,7 +2913,7 @@ impl DeferredAttrService {
 
     /// Java: StructuralStuckChecker.visitReference (DeferredAttr.java:900-955)
     fn structural_check_reference(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: &mut Attr,
@@ -3044,7 +3049,7 @@ impl DeferredAttrService {
     /// Java: StructuralStuckChecker.canLambdaBodyCompleteNormally(JCLambda)
     /// (DeferredAttr.java:885-900)
     fn can_lambda_body_complete_normally(
-        &mut self,
+        &self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
         attr: &mut Attr,
@@ -3072,6 +3077,15 @@ impl DeferredAttrService {
                 }
                 _ => panic!("ClassCastException: JCVariableDecl expected"),
             };
+            // Java: make.VarDef(vd.mods, vd.name, make.Erroneous(), null).
+            // The Erroneous type tree makes the copied parameter explicitly
+            // typed (with the error type), so the speculative lambda body can
+            // resolve references to it instead of treating it as an implicit
+            // parameter with no type.
+            use crate::tree::tree_maker::TreeFactory;
+            let err_type_tree = self.make.borrow_mut().erroneous(ctx, List::nil());
+            ctx.tree_mut(err_type_tree).pos = ctx.tree(vd).pos;
+            ctx.tree_mut(err_type_tree).ty = Some(err_type);
             let new_vd = ctx.alloc_tree(crate::tree::jc_tree::JCTree {
                 pos: ctx.tree(vd).pos,
                 ty: Some(err_type),
@@ -3080,7 +3094,7 @@ impl DeferredAttrService {
                     mods,
                     name,
                     nameexpr: None,
-                    vartype: None,
+                    vartype: Some(err_type_tree),
                     init: None,
                     sym: None,
                     start_pos: 0,
@@ -3113,6 +3127,17 @@ impl DeferredAttrService {
             .clone()
             .and_then(|argument_attr| argument_attr.borrow().flow.borrow().clone())
             .expect("flow service");
+        // Java: DeferredAttr.java:876-885 wraps the speculative lambda
+        // attribution in ArgumentAttr.withLocalCacheContext()/leave(), so the
+        // Erroneous-parameter run does not pollute the argument cache used by
+        // the real attribution of the same lambda body.
+        let argument_attr_rc = attr
+            .argument_attr
+            .borrow()
+            .clone()
+            .expect("argument attr service");
+        let argument_attr = argument_attr_rc.borrow();
+        let mut local_cache = argument_attr.with_local_cache_context();
         let result = self.attrib_speculative_lambda(
             ctx,
             syms,
@@ -3134,6 +3159,8 @@ impl DeferredAttrService {
         {
             *params = old_params;
         }
+        local_cache.leave(&argument_attr);
+        drop(argument_attr);
         let speculative_lambda = result.map_err(|failure| match failure {
             DeferredAttrFailure::Completion(failure) => failure,
             other => panic!("unexpected speculative lambda failure: {:?}", other),

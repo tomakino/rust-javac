@@ -10957,6 +10957,7 @@ impl Attr {
         let env = self.env.clone().expect("env");
         let result_info = self.result_info.clone().expect("resultInfo");
         let pt = result_info.pt.unwrap_or_else(|| self.no_type(ctx));
+
         let recovery_type = syms.recovery_type;
         let mut wrong_context = false;
         let pt_is_erroneous = ctx.typ(pt).has_tag(TypeTag::ERROR);

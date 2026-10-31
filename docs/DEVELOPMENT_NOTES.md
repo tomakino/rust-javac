@@ -55,3 +55,34 @@ classpath 扫描的跳过列表从：
 - `-J-Duser.language` 原来只影响帮助文本，不影响编译诊断；修复：`set_default_locale()`
   在 CLI 解析后注入进程级默认 locale，编译器诊断跟随。
 - 单元测试里 `default_locale()` 固定返回 `en`，避免测试结果随宿主语言变化。
+
+## 2026-10-31：okhttp3 全量编译 0 错误与 P5 根因
+
+### 结果
+
+- okhttp3 全量（229 个 Java 源）编译 **0 错误**；okhttp JUnit 默认 4 类 416 tests、internal 15 类 256 tests 全部 ok。
+- Gson 2.10.1 主源码 **208/208 class 逐字节一致**、诊断 IDENTICAL；Gson JUnit 1258/2（与官方一致）。
+- `javac-core --lib` 846；`diag_examples` 612/3/54（3 个已知接受项）。
+
+### 根因与修复（官方依据）
+
+1. `Infer.instantiateMethod` 末尾的“最终参数检查”是移植版自加适配块（无官方对应），会给有界形参额外加约束；删除后 P5 通过（官方 `Infer.java:215-224` 只有 `deferredAttrContext.complete()` 后 `solve`）。
+2. `TypeEnter.finishImports` 应等完成级联返回后再执行；移植版在嵌套完成中提前执行，导致 `TlsUtil` 静态导入只看到 1/7 成员。改为按完成栈延迟到最外层边界（官方 `TypeEnter.java:204-217/223-237/249-297`）。
+3. `ResolvedConstructorType.overloadCheck` 把 `localInfo.pt` 的 TYPEVAR/UNDETVAR 改成 `noType` 是非官方特判；删除后 diamond 的返回约束才能进入主推断上下文（官方 `ArgumentAttr.java:704-707`）。
+4. 官方 `InferenceException extends InapplicableMethodException`（`Infer.java:138`）；`catch_inapplicable_method_exception` 必须同时接住 `InferenceExceptionPayload`（如 `Resolve.instantiate`，`Resolve.java:673-690`）。
+5. `ArgumentAttr.speculativeTypes` 改为跨 `dup` 共享、按 `ResultInfo.id` 为键（替代栈指针地址），`ResolvedMethod` 复用 resultInfo 身份（官方 `ArgumentAttr.java:343-348/357/675-678`）。
+
+### 性能（仅编译，不含运行）
+
+| 数据集 | debug | release | 官方 javac（warmup 后） |
+|---|---|---|---|
+| Gson 全量 | mean 23.21 s | mean **6.47 s** | 2.40 s |
+| okhttp 全量 | mean 150.12 s | mean **51.84 s** | 8.17 s |
+
+- release 比 debug 快约 3.6×/2.9×；与官方 javac 比仍慢约 2.7×/6.3×，待 profiling（`samply`/`cargo flamegraph`）。
+
+### 已知偏差（登记，未实现）
+
+- 未实现官方完整 TypeEnter Phase 树（`HierarchyPhase` 的 Completer 排序、`AbstractMembersPhase` 的 todo/completing 重入队列）；只对齐可观察的 `finishImports` 时序。
+- `speculativeTypes` 用 `Vec` 保留插入序（官方 `HashMap` 依 identity hash）；put 已按 `ResultInfo` 身份覆盖，当前语义对齐，迭代序差异已登记。
+- Rust 用 panic 适配 Java 受检异常，catch 时 panic hook 会打印 `resolve.rs:4220` 噪音；非行为失败。

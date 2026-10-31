@@ -725,10 +725,9 @@ impl Types {
                 self.is_same_type_visit_undet_var(ctx, syms, t, s)
             }
             TypeKindData::Deferred { .. } => {
-                // Java: isSameTypeVisitor.visitType default branch throws
-                // AssertionError for DEFERRED (deferred types are mapped
-                // through DeferredTypeMap before a relation is computed).
-                panic!("AssertionError: isSameType DEFERRED")
+                // Java: Types.SameType.visitType (Types.java:1106-1108):
+                // return t == s; — reference equality, no DEFERRED special case.
+                t == s
             }
             TypeKindData::PartiallyInferredMethodType { .. } => {
                 // Java: PartiallyInferredMethodType extends MethodType
@@ -3245,18 +3244,19 @@ impl Types {
     }
 
     pub fn cvar_upper_bound(&self, ctx: &mut CompilerContext, t: TypeId) -> TypeId {
-        // Java: Types.cvarUpperBound: while (t.hasTag(TYPEVAR)) t = t.getUpperBound();
-        // Captured types expose their wildcard bound through the same field.
-        let mut result = t;
-        while ctx.typ(result).has_tag(TypeTag::TYPEVAR) {
-            result = match &ctx.typ(result).kind {
-                crate::code::type_::TypeKindData::TypeVar { bound, .. } => {
-                    bound.expect("type variable bound")
-                }
-                _ => break,
-            };
+        // Java: Types.cvarUpperBound (Types.java:149-155):
+        //   if (t.hasTag(TYPEVAR)) {
+        //       TypeVar v = (TypeVar) t;
+        //       return v.isCaptured() ? cvarUpperBound(v.getUpperBound()) : v;
+        //   } else return t;
+        if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
+            if ctx.typ(t).is_captured() {
+                let upper = ctx.typ(t).get_upper_bound().expect("type variable bound");
+                return self.cvar_upper_bound(ctx, upper);
+            }
+            return t;
         }
-        result
+        t
     }
 
     /// Java: public Type elemtype(Type t) (Types.java)

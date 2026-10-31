@@ -4243,6 +4243,16 @@ pub fn catch_inapplicable_method_exception<R>(
                 Err(MethodCheckFailure::Inapplicable(
                     InapplicableMethodException::new(diagnostic),
                 ))
+            } else if payload.is::<InferenceExceptionPayload>() {
+                // Java: Infer.InferenceException extends
+                // InapplicableMethodException (Infer.java:138), so every
+                // catch (InapplicableMethodException) also catches an
+                // inference failure and treats the candidate as inapplicable
+                // (e.g. Resolve.instantiate returns null, Resolve.java:680-684).
+                let exception = INFERENCE_EXCEPTIONS
+                    .with(|stack| stack.borrow_mut().pop())
+                    .expect("inference exception payload");
+                Err(MethodCheckFailure::Inference(exception))
             } else {
                 std::panic::resume_unwind(payload)
             }
@@ -5094,7 +5104,9 @@ impl Resolve {
             tvars = appended;
             mt = types.subst_type(ctx, syms, pmt_qtype, &pmt_tvars, &tvars1, None);
         }
-        // find out whether we need to go the slow route via infer
+        // Java: Resolve.java:612-618 — instNeeded is true when the method is
+        // generic (tvars nonEmpty) or any of the argument types (all but the
+        // last, as the loop stops when l.tail == null) is a ForAll type.
         let mut inst_needed = !tvars.is_empty();
         let mut current = argtypes.clone();
         while current.non_empty() {
