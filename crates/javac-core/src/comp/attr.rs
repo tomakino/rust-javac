@@ -13862,15 +13862,6 @@ impl Attr {
             );
             let prev_return_res = env.info.borrow().return_result.clone();
             let mut failure: Option<crate::code::symbol::CompletionFailure> = None;
-            {
-                let deferred_rc = Rc::clone(&self.deferred_lint_handler);
-                let mut deferred = deferred_rc.borrow_mut();
-                let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
-                    Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
-                        ctx.tree(env_tree).pos,
-                    ));
-                deferred.flush(&position);
-            }
             env.info.borrow_mut().return_result = None;
             // java.lang.Enum may not be subclassed by a non-enum
             let st_tsym = ctx.typ(st).tsym;
@@ -13929,6 +13920,13 @@ impl Attr {
                 chk.check_leaks_not_accessible(ctx, syms, &env, env_tree);
             }
             // finally
+            // Java: deferredLintHandler.flush(tree.pos()) in the Attr.visitClassDef
+            // finally block (after attribClassBody).
+            {
+                let deferred_rc = Rc::clone(&self.deferred_lint_handler);
+                let mut deferred = deferred_rc.borrow_mut();
+                deferred.flush_tree(env_tree);
+            }
             env.info.borrow_mut().return_result = prev_return_res;
             crate::util::abstract_log::AbstractLog::use_source(
                 &mut *self.log.borrow_mut(),
@@ -15792,6 +15790,15 @@ impl Attr {
         tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
         use crate::code::flags;
+        let _deferred_decl = {
+            let handler = Rc::clone(&self.deferred_lint_handler);
+            let prev = handler.borrow_mut().set_pos_tree(tree);
+            DeferredDeclarationGuard {
+                handler,
+                prev,
+                tree,
+            }
+        };
         let env = self.env.clone().expect("Attr.env (visitMethodDef)");
         let (mods, typarams, restype, recvparam, params, thrown, body, default_value, m) =
             match &ctx.tree(tree).kind {
@@ -15835,10 +15842,6 @@ impl Attr {
         let lint_rc = Rc::new(lint);
         let prev_lint = self.chk.set_lint(Rc::clone(&lint_rc));
         let prev_method = self.chk.set_method(Some(m));
-        let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> = Rc::new(
-            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
-        );
-        self.deferred_lint_handler.borrow_mut().flush(&position);
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
@@ -16530,6 +16533,15 @@ impl Attr {
         tree: TreeId,
     ) -> Result<TypeId, CompletionFailure> {
         use crate::code::flags;
+        let _deferred_decl = {
+            let handler = Rc::clone(&self.deferred_lint_handler);
+            let prev = handler.borrow_mut().set_pos_tree(tree);
+            DeferredDeclarationGuard {
+                handler,
+                prev,
+                tree,
+            }
+        };
         let env = self.env.clone().expect("Attr.env (visitVarDef)");
         let (mods, name, vartype, init, mut sym_opt, declared_using_var, start_pos) =
             match &ctx.tree(tree).kind {
@@ -16674,10 +16686,6 @@ impl Attr {
             chk.validate_with(ctx, syms, &env, vartype, check_raw);
         }
         let _ = ctx.symbol_get_const_value(syms, v, self);
-        let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> = Rc::new(
-            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
-        );
-        self.deferred_lint_handler.borrow_mut().flush(&position);
         {
             let chk_rc = Rc::clone(&self.chk);
             let chk = Rc::clone(&chk_rc);
@@ -17082,12 +17090,28 @@ impl Attr {
             .check_deprecated_annotation(ctx, syms, ctx.tree(tree).pos, msym);
         // Java: try { deferredLintHandler.flush(tree.pos()); }
         //       finally { chk.setLint(prevLint); }
-        let pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> = Rc::new(
-            crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
-        );
+        let pos: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
+            Rc::new(crate::util::jc_diagnostic::TreeDiagnosticPosition::new(ctx, tree));
         self.deferred_lint_handler.borrow_mut().flush(&pos);
         self.chk.set_lint(prev_lint);
         Ok(self.no_type(ctx))
+    }
+}
+
+/// Java: the try/finally around deferredLintHandler.setPos(tree.pos()) in
+/// Attr.visitMethodDef/visitVarDef: the declaration tree is the queue key and
+/// the queue is flushed when the declaration has been attributed.
+struct DeferredDeclarationGuard {
+    handler: Rc<RefCell<crate::code::deferred_lint_handler::DeferredLintHandler>>,
+    prev: crate::code::deferred_lint_handler::CurrentPos,
+    tree: TreeId,
+}
+
+impl Drop for DeferredDeclarationGuard {
+    fn drop(&mut self) {
+        self.handler.borrow_mut().flush_tree(self.tree);
+        let prev = self.prev.clone();
+        self.handler.borrow_mut().set_pos_state(prev);
     }
 }
 

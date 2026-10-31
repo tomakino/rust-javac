@@ -62,7 +62,7 @@
 
 ## 7. 已知缺口（不纳入门禁）
 
-1. okhttp 诊断的**内容、位置、数量**已与 javac 完全一致；仅剩 **2 条 warning 的相对顺序**不同（`RecordedRequest.java:139:17` 与 `FakeSSLSession.java:73:10`）。根因：javac 的 Attr 处理顺序来自 `TypeEnvs.values()`，而官方 `TypeEnvs.java:52` 用 `HashMap`，其迭代序取决于 JVM 的 `identityHashCode`（对象身份），**跨语言不可复现**；端口 `type_envs.rs:19` 同样用 `HashMap`（源码层面与官方一致）。此项不纳入门禁，也不应通过排序等特判手段"修复"；
+1. okhttp 诊断（`-XDrawDiagnostics`）的**内容、位置、数量与顺序**已与 javac 完全一致（11 行，逐行 positional diff = 0）。此前的 2 条顺序差异（`RecordedRequest.java:139:17`、`FakeSSLSession.java:73:10`）根因**不是** `HashMap` 迭代序，而是两处源码级偏差：(a) 端口缺少官方 `TypeEnter` 的阶段队列语义（`Phase.completeEnvs` 的 `firstToComplete`、`AbstractMembersPhase` 的 `todo/completing`、`HierarchyPhase` 作为 class completer）以及 `Symbol.members()` 的完成副作用；(b) 延迟 lint 队列的键：官方以 `JCTree` 对象身份（`tree.pos()`）为键，端口原以数值位置为键，跨文件同偏移会误合并/误 flush。两处均已按官方源码修复（`type_enter.rs`、`resolve.rs`、`member_enter.rs`、`deferred_lint_handler.rs`、`attr.rs`、`check.rs`），建议将 okhttp 原始诊断（11 行逐行一致）补充进 L2 门禁命令；
 2. diag-corpus 的 67 个 SKIP：47 个注解处理、1 个插件、1 个 `-verbose`、1 个 `-doe`、2 个自动模块、2 个自定义 FileManager、2 个废弃机制；
 3. `-proc:none`/`-proc:only` 未支持（JVM 处理器）；
 4. expected 为固化文本，随 JDK 升级可能过时（建议加实时对照）。

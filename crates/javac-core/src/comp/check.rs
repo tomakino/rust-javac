@@ -68,6 +68,86 @@ use crate::util::name::Name;
 use crate::util::names::Names;
 
 /// Java: public class Check (Enter subset; see the file header).
+/// Java: the deferred warning payload of Check.checkDeprecated
+/// (Check.java:3553-3564); the report runs on the deferred-lint flush.
+struct DeprecatedWarning {
+    removal: bool,
+    is_module: bool,
+    sym_text: String,
+    sym_qualified_text: String,
+    loc_text: String,
+    loc_qualified_text: String,
+    lint: Rc<crate::code::lint::Lint>,
+    deprecation_handler: Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
+    removal_handler: Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
+    position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>,
+}
+
+impl DeprecatedWarning {
+    /// Java: Check.warnDeprecated (Check.java:227-243).
+    fn report(&self) {
+        if self.removal {
+            if !self.lint.is_suppressed(LintCategory::REMOVAL) {
+                if self.is_module {
+                    self.removal_handler.borrow_mut().report(
+                        Some(Rc::clone(&self.position)),
+                        crate::util::jc_diagnostic::Warning::from(
+                            crate::resources::compiler_properties::warnings::
+                                has_been_deprecated_for_removal_module(
+                                    SymbolArg::placeholder(self.sym_text.clone()),
+                                ),
+                        ),
+                    );
+                } else {
+                    self.removal_handler.borrow_mut().report(
+                        Some(Rc::clone(&self.position)),
+                        crate::util::jc_diagnostic::Warning::from(
+                            crate::resources::compiler_properties::warnings::
+                                has_been_deprecated_for_removal(
+                                    DiagnosticArg::Symbol(SymbolArgValue::new(
+                                        self.sym_text.clone(),
+                                        self.sym_qualified_text.clone(),
+                                    )),
+                                    DiagnosticArg::Symbol(SymbolArgValue::new(
+                                        self.loc_text.clone(),
+                                        self.loc_qualified_text.clone(),
+                                    )),
+                                ),
+                        ),
+                    );
+                }
+            }
+        } else if !self.lint.is_suppressed(LintCategory::DEPRECATION) {
+            if self.is_module {
+                self.deprecation_handler.borrow_mut().report(
+                    Some(Rc::clone(&self.position)),
+                    crate::util::jc_diagnostic::Warning::from(
+                        crate::resources::compiler_properties::warnings::
+                            has_been_deprecated_module(SymbolArg::placeholder(self.sym_text.clone())),
+                    ),
+                );
+            } else {
+                self.deprecation_handler.borrow_mut().report(
+                    Some(Rc::clone(&self.position)),
+                    crate::util::jc_diagnostic::Warning::from(
+                        crate::resources::compiler_properties::warnings::
+                            has_been_deprecated(
+                                DiagnosticArg::Symbol(SymbolArgValue::new(
+                                    self.sym_text.clone(),
+                                    self.sym_qualified_text.clone(),
+                                )),
+                                DiagnosticArg::Symbol(SymbolArgValue::new(
+                                    self.loc_text.clone(),
+                                    self.loc_qualified_text.clone(),
+                                )),
+                            ),
+                    ),
+                );
+            }
+        }
+    }
+}
+
 pub struct Check {
     pub names: Rc<Names>,
     pub log: Rc<RefCell<Log>>,
@@ -10780,6 +10860,17 @@ impl Check {
         pos: i32,
         sym: SymbolId,
     ) {
+        self.prepare_deprecated_warning(ctx, pos, sym).report();
+    }
+
+    /// Capture the symbol data for Check.warnDeprecated: the deferred lint
+    /// flush has no compiler context, so every rendering is resolved here.
+    fn prepare_deprecated_warning(
+        &self,
+        ctx: &CompilerContext,
+        pos: i32,
+        sym: SymbolId,
+    ) -> DeprecatedWarning {
         let removal = ctx.sym(sym).is_deprecated_for_removal();
         let is_module = ctx.sym(sym).kind == Kind::MDL;
         // Java: Warnings.HasBeenDeprecatedForRemoval(sym, sym.location())
@@ -10812,74 +10903,17 @@ impl Check {
             .map(|loc| crate::code::symbol::symbol_to_string(ctx, loc))
             .filter(|name| !name.is_empty())
             .unwrap_or_else(|| String::from("unnamed package"));
-        let lint = Rc::clone(&self.lint.borrow());
-        let deprecation_handler = Rc::clone(&self.deprecation_handler);
-        let removal_handler = Rc::clone(&self.removal_handler);
-        let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
-            Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
-        // Java: Check.warnDeprecated (Check.java:227-243) reports through the
-        // MandatoryWarningHandler immediately; there is no deferred step (the
-        // deferral would move the warning to the flush source and reorder it).
-        {
-            if removal {
-                if !lint.is_suppressed(LintCategory::REMOVAL) {
-                    if is_module {
-                        removal_handler.borrow_mut().report(
-                            Some(Rc::clone(&position)),
-                            crate::util::jc_diagnostic::Warning::from(
-                                crate::resources::compiler_properties::warnings::
-                                    has_been_deprecated_for_removal_module(
-                                        SymbolArg::placeholder(sym_text.clone()),
-                                    ),
-                            ),
-                        );
-                    } else {
-                        removal_handler.borrow_mut().report(
-                            Some(Rc::clone(&position)),
-                            crate::util::jc_diagnostic::Warning::from(
-                                crate::resources::compiler_properties::warnings::
-                                    has_been_deprecated_for_removal(
-                                        DiagnosticArg::Symbol(SymbolArgValue::new(
-                                            sym_text.clone(),
-                                            sym_qualified_text.clone(),
-                                        )),
-                                        DiagnosticArg::Symbol(SymbolArgValue::new(
-                                            loc_text.clone(),
-                                            loc_qualified_text.clone(),
-                                        )),
-                                    ),
-                            ),
-                        );
-                    }
-                }
-            } else if !lint.is_suppressed(LintCategory::DEPRECATION) {
-                if is_module {
-                    deprecation_handler.borrow_mut().report(
-                        Some(Rc::clone(&position)),
-                        crate::util::jc_diagnostic::Warning::from(
-                            crate::resources::compiler_properties::warnings::
-                                has_been_deprecated_module(SymbolArg::placeholder(sym_text.clone())),
-                        ),
-                    );
-                } else {
-                    deprecation_handler.borrow_mut().report(
-                        Some(Rc::clone(&position)),
-                        crate::util::jc_diagnostic::Warning::from(
-                            crate::resources::compiler_properties::warnings::
-                                has_been_deprecated(
-                                    DiagnosticArg::Symbol(SymbolArgValue::new(
-                                        sym_text.clone(),
-                                        sym_qualified_text.clone(),
-                                    )),
-                                    DiagnosticArg::Symbol(SymbolArgValue::new(
-                                        loc_text.clone(),
-                                        loc_qualified_text.clone(),
-                                    )),
-                                ),
-                        ),
-                    );
-                }
-            }
+        DeprecatedWarning {
+            removal,
+            is_module,
+            sym_text,
+            sym_qualified_text,
+            loc_text,
+            loc_qualified_text,
+            lint: Rc::clone(&self.lint.borrow()),
+            deprecation_handler: Rc::clone(&self.deprecation_handler),
+            removal_handler: Rc::clone(&self.removal_handler),
+            position: Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos)),
         }
     }
 
@@ -11105,12 +11139,10 @@ impl Check {
     fn warn_on_explicit_strictfp(&self, pos: i32) {
         let position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition> =
             Rc::new(SimpleDiagnosticPosition::new(pos));
-        let previous_pos = self
-            .deferred_lint_handler
-            .borrow_mut()
-            .set_pos(Rc::clone(&position));
         let log = Rc::clone(&self.log);
         let lint = Rc::clone(&self.lint.borrow());
+        // Java: deferredLintHandler.report(...) only; the queue key is the
+        // enclosing declaration position installed by the caller.
         self.deferred_lint_handler
             .borrow_mut()
             .report(Box::new(move || {
@@ -11122,9 +11154,6 @@ impl Check {
                     );
                 }
             }));
-        self.deferred_lint_handler
-            .borrow_mut()
-            .set_pos_state(previous_pos);
     }
 
     /// Java: void checkDeprecated(final DiagnosticPosition pos,
@@ -11176,7 +11205,12 @@ impl Check {
             && (s_outermost != other_outermost || s_outermost.is_none())
             && ctx.sym(s).kind != Kind::PCK
         {
-            self.warn_deprecated(ctx, pos, s);
+            // Java: deferredLintHandler.report(() -> warnDeprecated(pos, s))
+            // (Check.java:3557-3563).
+            let warning = self.prepare_deprecated_warning(ctx, pos, s);
+            self.deferred_lint_handler
+                .borrow_mut()
+                .report(Box::new(move || warning.report()));
         }
     }
 

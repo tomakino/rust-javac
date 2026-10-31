@@ -44,7 +44,6 @@ use crate::ids::{SymbolId, TreeId, TypeId};
 use crate::tree::jc_tree::{Tag, TreeKind};
 use crate::tree::tree_info;
 use crate::util::abstract_log::AbstractLog;
-use crate::util::jc_diagnostic::SimpleDiagnosticPosition;
 use crate::util::list::List;
 use crate::util::log::Log;
 use crate::util::name::Name;
@@ -331,9 +330,6 @@ impl MemberEnter {
             ctx.sym_mut(owner).flags_field |= flags::DEFAULT;
         }
         let local_env = self.method_env(ctx, tree, &env);
-        let prev_lint = self.deferred_lint_handler.borrow_mut().set_pos(Rc::new(
-            SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
-        ));
         let signature = self.signature(
             ctx,
             syms,
@@ -346,7 +342,6 @@ impl MemberEnter {
             &local_env,
             attr,
         );
-        self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint);
         ctx.sym_mut(m).ty = Some(signature);
         if self.types.is_signature_polymorphic(ctx, syms, m) {
             ctx.sym_mut(m).flags_field |= flags::SIGNATURE_POLYMORPHIC;
@@ -490,9 +485,6 @@ impl MemberEnter {
                 base_clause: env.base_clause,
             });
         }
-        let prev_lint = self.deferred_lint_handler.borrow_mut().set_pos(Rc::new(
-            SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
-        ));
         {
             if tree_info::is_enum_init(ctx, tree) {
                 let vartype = var_decl_vartype(ctx, tree).expect("enum init vartype");
@@ -556,7 +548,6 @@ impl MemberEnter {
                 }
             }
         }
-        self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint);
         if (mods_flags & flags::VARARGS) != 0 {
             // Java: ArrayType atype = (ArrayType) tree.vartype.type;
             //       tree.vartype.type = atype.makeVarargs();

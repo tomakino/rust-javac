@@ -272,10 +272,11 @@ impl Phase {
         self.queue.borrow_mut().push(Rc::clone(&env));
         let sourcefile = compilation_unit_sourcefile(ctx, toplevel(&env));
         let prev_source = ty.log.borrow_mut().use_source(sourcefile);
-        let prev_lint = ty
-            .deferred_lint_handler
-            .borrow_mut()
-            .set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(tree).pos)));
+        // Java: deferredLintHandler.setPos(tree.pos()) — the tree is the
+        // DiagnosticPosition identity (JCTree.pos() returns the tree itself), so
+        // the deferred queue must be keyed by the tree, not by a bare numeric
+        // position (numeric keys collide across files).
+        let prev_lint = ty.deferred_lint_handler.borrow_mut().set_pos_tree(tree);
         ty.dependencies
             .borrow_mut()
             .push(ctx, sym, self.phase_name);

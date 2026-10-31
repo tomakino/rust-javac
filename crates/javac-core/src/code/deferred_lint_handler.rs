@@ -61,6 +61,26 @@ impl DiagnosticPosition for ImmediatePosition {
     }
 }
 
+/// A deferred-lint queue key that carries only the tree identity (Java uses the
+/// JCTree itself as DiagnosticPosition; the numeric position is not part of the
+/// identity).
+struct TreeKeyPosition(TreeId);
+
+impl DiagnosticPosition for TreeKeyPosition {
+    fn get_tree(&self) -> Option<TreeId> {
+        Some(self.0)
+    }
+    fn get_start_position(&self) -> i32 {
+        0
+    }
+    fn get_preferred_position(&self) -> i32 {
+        0
+    }
+    fn get_end_position(&self, _end_pos_table: Option<&dyn EndPosTable>) -> i32 {
+        0
+    }
+}
+
 /// Java: the queue keys are DiagnosticPosition objects; the ported call sites
 /// recreate equivalent positions, so identity is extended to the position value
 /// (registered adapter for the object-identity porting rule).
@@ -68,10 +88,14 @@ fn same_position(a: &Rc<dyn DiagnosticPosition>, b: &Rc<dyn DiagnosticPosition>)
     if Rc::ptr_eq(a, b) {
         return true;
     }
-    if let (Some(a_tree), Some(b_tree)) = (a.get_tree(), b.get_tree()) {
-        return a_tree == b_tree;
+    match (a.get_tree(), b.get_tree()) {
+        (Some(a_tree), Some(b_tree)) => a_tree == b_tree,
+        // Java compares the DiagnosticPosition objects by identity: the tree
+        // positions (JCTree.pos() returns the tree itself) are only equal to
+        // the same tree, never to a bare numeric position of another file.
+        (None, None) => a.get_preferred_position() == b.get_preferred_position(),
+        _ => false,
     }
-    a.get_preferred_position() == b.get_preferred_position()
 }
 
 /// Java: public class DeferredLintHandler
@@ -123,6 +147,17 @@ impl DeferredLintHandler {
                 logger.report();
             }
         }
+    }
+
+    /// Java: setPos(tree.pos()) — key the deferred queue by the tree identity.
+    pub fn set_pos_tree(&mut self, tree: TreeId) -> CurrentPos {
+        self.set_pos(Rc::new(TreeKeyPosition(tree)))
+    }
+
+    /// Java: flush(tree.pos()) — run the deferred queue of the tree identity.
+    pub fn flush_tree(&mut self, tree: TreeId) {
+        let pos: Rc<dyn DiagnosticPosition> = Rc::new(TreeKeyPosition(tree));
+        self.flush(&pos);
     }
 
     /// Java: public DiagnosticPosition setPos(DiagnosticPosition currentPos)
