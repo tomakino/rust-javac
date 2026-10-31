@@ -115,6 +115,11 @@ classpath 扫描的跳过列表从：
 - **`rawzip` 解析层**：已接入验证，但 10 个 port zip 测试中 6 个失败（zip64 拒绝、CP437 名称、`archive_offset`、未知压缩方法值），按行为等价要求回滚。
 - **`libdeflater`**：无法构建（`libdeflate-sys` 需要 C 工具链；本机缺 MinGW `cc1`/Windows SDK，便携 MinGW 下载不可用）。
 - 验证：`javac-zip` 10/10、Gson 208/208 + IDENTICAL、`javac-core --lib` 846；Gson debug CPU 3.953–4.516 s（当前负载下与 zune/miniz 同档，历史低负载 3.406 s）。
+### javac_zip：rawzip + zlib-rs 落地（2026-10-31 第八轮）
+
+- `ZipArchive` 现在持有 **rawzip reader**（`rawzip::ZipArchive<FileReader>`）与每个 central-directory 条目的 `wayfinder`；`read_entry` 用 `raw.get_entry(wayfinder)` + `ZipEntry::reader()` 读取压缩字节，再用 **`zlib_rs::Inflate`（raw deflate）解压**。
+- **central directory 仍由 port 的解析器读取**（`parse_central_directory`）：保留既有 zip 契约（zip64 拒绝、CP437/UTF-8 名称、压缩方法原值、`archive_offset`、`NotAZip` 错误），这正是之前纯 rawzip 版本 6/10 测试失败的原因；rawzip 负责 local header/数据定位读取。
+- 验证：`javac-zip` 10/10、Gson 208/208 + IDENTICAL、`javac-core --lib` 846；Gson debug CPU 4.078–4.359 s（与 zlib-rs-only 3.953 同档；历史低负载 3.406 s）。
 - 行为验证：Gson 208/208 字节一致 + 诊断 IDENTICAL；`javac-core --lib` 846 passed。
 - PGO 与 mimalloc 仍不可行（见上一轮记录）。
 ### 性能优化（2026-10-31 第二轮，samply profiling）

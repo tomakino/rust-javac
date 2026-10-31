@@ -47,6 +47,11 @@ const FLAG_UTF8: u16 = 0x0800;
 const ZIP64_SENTINEL_16: u16 = 0xFFFF;
 const ZIP64_SENTINEL_32: u32 = 0xFFFF_FFFF;
 
+/// Map a rawzip structural error to the ported zip error type.
+fn rawzip_error(error: rawzip::Error) -> Error {
+    Error::Corrupted(format!("zip: {error}"))
+}
+
 /// A fast, non-cryptographic hasher for archive entry names.
 ///
 /// Performance adapter: the map only performs name lookups (no iteration
@@ -170,6 +175,12 @@ pub struct ZipArchive {
     archive_offset: u64,
     entries: Vec<Entry>,
     entry_index: HashMap<String, usize, FxBuildHasher>,
+    /// rawzip reader used to locate and read each entry's local data (rawzip
+    /// parses the local file headers and exposes the compressed byte range).
+    raw: Option<rawzip::ZipArchive<rawzip::FileReader>>,
+    /// rawzip wayfinder for each central-directory entry (same order as
+    /// `entries`).
+    wayfinders: Vec<rawzip::ZipArchiveEntryWayfinder>,
 }
 
 impl fmt::Debug for ZipArchive {
@@ -200,6 +211,8 @@ impl ZipArchive {
             archive_offset: 0,
             entries: Vec::new(),
             entry_index: HashMap::default(),
+            raw: None,
+            wayfinders: Vec::new(),
         };
 
         // Search the end of central directory record in the trailing window (it can be followed
@@ -271,6 +284,30 @@ impl ZipArchive {
 
         archive.archive_offset = archive_offset;
         archive.parse_central_directory(&central, usize::from(total_entries))?;
+
+        // rawzip reads the local file header and the compressed byte range of
+        // each entry (the central directory above remains the source of truth
+        // for names, methods and sizes, preserving the ported zip contract).
+        let raw_file = File::open(path).map_err(Error::Io)?;
+        let mut raw_buffer = vec![0u8; rawzip::RECOMMENDED_BUFFER_SIZE];
+        let mut raw = rawzip::ZipArchive::<()>::from_file(raw_file, &mut raw_buffer)
+            .map_err(rawzip_error)?;
+        let mut wayfinders = Vec::with_capacity(archive.entries.len());
+        {
+            let mut iter = raw.entries(&mut raw_buffer);
+            while let Some(header) = iter.next_entry().map_err(rawzip_error)? {
+                wayfinders.push(header.wayfinder());
+            }
+        }
+        if wayfinders.len() != archive.entries.len() {
+            return Err(Error::Corrupted(format!(
+                "central directory entry count {} does not match rawzip's {}",
+                archive.entries.len(),
+                wayfinders.len()
+            )));
+        }
+        archive.raw = Some(raw);
+        archive.wayfinders = wayfinders;
         Ok(archive)
     }
 
@@ -304,22 +341,19 @@ impl ZipArchive {
             ));
         }
 
-        let local_header_offset = self.archive_offset + entry.local_header_offset;
-        let header = self.read_at(local_header_offset, LOCAL_HEADER_SIZE)?;
-        if require_u32(&header, 0)? != LOCAL_HEADER_SIGNATURE {
-            return Err(Error::Corrupted(format!(
-                "bad local file header signature for entry {}",
-                entry.name
-            )));
-        }
-        let name_len = u64::from(require_u16(&header, 26)?);
-        let extra_len = u64::from(require_u16(&header, 28)?);
-        let data_offset =
-            local_header_offset + LOCAL_HEADER_SIZE as u64 + name_len + extra_len;
-        let compressed_len = usize::try_from(entry.compressed_size).map_err(|_| {
-            Error::Corrupted("entry compressed size does not fit in memory".to_string())
+        let raw = self
+            .raw
+            .as_ref()
+            .ok_or_else(|| Error::Corrupted("zip archive has no rawzip reader".to_string()))?;
+        let wayfinder = *self.wayfinders.get(index).ok_or_else(|| {
+            Error::Corrupted(format!("entry index {} has no rawzip locator", index))
         })?;
-        let data = self.read_at(data_offset, compressed_len)?;
+        let raw_entry = raw.get_entry(wayfinder).map_err(rawzip_error)?;
+        let mut data = Vec::with_capacity(entry.compressed_size as usize);
+        raw_entry
+            .reader()
+            .read_to_end(&mut data)
+            .map_err(Error::Io)?;
 
         match entry.compression_method {
             METHOD_STORED => {

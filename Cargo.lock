@@ -104,6 +104,7 @@ name = "javac-zip"
 version = "0.1.0"
 dependencies = [
  "miniz_oxide",
+ "rawzip",
  "zlib-rs",
 ]
 
@@ -115,6 +116,12 @@ checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
 ]
+
+[[package]]
+name = "rawzip"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac9999039f74cd73c03158cddfe4362991703c74efe5ce5c8073026f80a5e48c"
 
 [[package]]
 name = "rust-javac"
