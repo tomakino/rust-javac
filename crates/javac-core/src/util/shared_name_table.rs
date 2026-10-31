@@ -22,7 +22,6 @@
 //! implementation is a memory optimization with no observable effect; Rust
 //! creates a fresh table (registered deviation, see docs/STATUS.md).
 
-use std::rc::Rc;
 
 use crate::util::array_utils;
 use crate::util::convert;
@@ -64,7 +63,7 @@ impl SharedNameTable {
     }
 
     /// Java: public Name fromChars(char[] cs, int start, int len)
-    pub fn from_chars(&mut self, cs: &[u16], start: i32, len: i32) -> (i32, Rc<[u8]>) {
+    pub fn from_chars(&mut self, cs: &[u16], start: i32, len: i32) -> (i32, i32) {
         let nc = self.nc;
         self.bytes = array_utils::ensure_capacity_bytes(std::mem::take(&mut self.bytes), nc + len * 3);
         let nbytes = convert::chars2utf_into(cs, start, &mut self.bytes, nc, len) - nc;
@@ -75,7 +74,7 @@ impl SharedNameTable {
             if node.length == nbytes
                 && NameTableHandle::equals(&self.bytes, node.index, &self.bytes, nc, nbytes)
             {
-                return snapshot(node.index, nbytes, &self.bytes);
+                return (node.index, nbytes);
             }
             cur = node.next;
         }
@@ -90,11 +89,11 @@ impl SharedNameTable {
         if nbytes == 0 {
             self.nc += 1;
         }
-        snapshot(index, nbytes, &self.bytes)
+        (index, nbytes)
     }
 
     /// Java: public Name fromUtf(byte[] cs, int start, int len)
-    pub fn from_utf(&mut self, cs: &[u8], start: i32, len: i32) -> (i32, Rc<[u8]>) {
+    pub fn from_utf(&mut self, cs: &[u8], start: i32, len: i32) -> (i32, i32) {
         let h = (NameTableHandle::hash_value(cs, start, len) & self.hash_mask) as usize;
         let mut cur = self.hashes[h];
         while let Some(node_idx) = cur {
@@ -102,7 +101,7 @@ impl SharedNameTable {
             if node.length == len
                 && NameTableHandle::equals(&self.bytes, node.index, cs, start, len)
             {
-                return snapshot(node.index, len, &self.bytes);
+                return (node.index, len);
             }
             cur = node.next;
         }
@@ -119,7 +118,7 @@ impl SharedNameTable {
         if len == 0 {
             self.nc += 1;
         }
-        snapshot(nc, len, &self.bytes)
+        (nc, len)
     }
 
     pub fn dispose(&mut self) {
@@ -129,8 +128,3 @@ impl SharedNameTable {
     }
 }
 
-fn snapshot(index: i32, length: i32, bytes: &[u8]) -> (i32, Rc<[u8]>) {
-    let start = index as usize;
-    let end = start + length as usize;
-    (index, Rc::from(&bytes[start..end]))
-}

@@ -52,14 +52,14 @@ impl UnsharedNameTable {
     }
 
     /// Java: public Name fromChars(char[] cs, int start, int len)
-    pub fn from_chars(&mut self, cs: &[u16], start: i32, len: i32) -> (i32, Rc<[u8]>) {
+    pub fn from_chars(&mut self, cs: &[u16], start: i32, len: i32) -> (i32, i32) {
         let mut name = vec![0u8; (len * 3) as usize];
         let nbytes = convert::chars2utf_into(cs, start, &mut name, 0, len);
         self.from_utf(&name, 0, nbytes)
     }
 
     /// Java: public Name fromUtf(byte[] cs, int start, int len)
-    pub fn from_utf(&mut self, cs: &[u8], start: i32, len: i32) -> (i32, Rc<[u8]>) {
+    pub fn from_utf(&mut self, cs: &[u8], start: i32, len: i32) -> (i32, i32) {
         let h = (NameTableHandle::hash_value(cs, start, len) & (self.hashes.len() as i32 - 1)) as usize;
         let mut cur = self.hashes[h];
         while let Some(node_idx) = cur {
@@ -67,7 +67,7 @@ impl UnsharedNameTable {
             if node.bytes.len() == len as usize
                 && NameTableHandle::equals(&node.bytes, 0, cs, start, len)
             {
-                return (node_idx as i32, Rc::from(node.bytes.as_slice()));
+                return (node_idx as i32, len);
             }
             cur = node.next;
         }
@@ -75,11 +75,16 @@ impl UnsharedNameTable {
         let index = self.index;
         self.nodes.push(UnsharedNameNode {
             next: self.hashes[h],
-            bytes: bytes.clone(),
+            bytes,
         });
         self.hashes[h] = Some((self.nodes.len() - 1) as u32);
         self.index += 1;
-        (index, Rc::from(bytes))
+        (index, len)
+    }
+
+    /// Java: the name bytes are read through the shared table entry.
+    pub(crate) fn bytes_at(&self, index: i32, len: i32) -> &[u8] {
+        &self.nodes[index as usize].bytes[..len as usize]
     }
 
     pub fn dispose(&mut self) {

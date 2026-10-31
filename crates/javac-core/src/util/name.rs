@@ -73,14 +73,14 @@ impl NameTableHandle {
 
     /// Java: Name.Table.fromChars(char[] cs, int start, int len)
     pub fn from_chars(self: &Rc<Self>, cs: &[u16], start: i32, len: i32) -> Name {
-        let (index, bytes) = {
+        let (index, length) = {
             let mut inner = self.inner.borrow_mut();
             match &mut *inner {
                 NameTableInner::Shared(t) => t.from_chars(cs, start, len),
                 NameTableInner::Unshared(t) => t.from_chars(cs, start, len),
             }
         };
-        Name::new(Rc::clone(self), index, bytes)
+        Name::new(Rc::clone(self), index, length)
     }
 
     /// Java: Name.Table.fromString(String s)
@@ -95,14 +95,24 @@ impl NameTableHandle {
 
     /// Java: Name.Table.fromUtf(byte[] cs, int start, int len)
     pub fn from_utf(self: &Rc<Self>, cs: &[u8], start: i32, len: i32) -> Name {
-        let (index, bytes) = {
+        let (index, length) = {
             let mut inner = self.inner.borrow_mut();
             match &mut *inner {
                 NameTableInner::Shared(t) => t.from_utf(cs, start, len),
                 NameTableInner::Unshared(t) => t.from_utf(cs, start, len),
             }
         };
-        Name::new(Rc::clone(self), index, bytes)
+        Name::new(Rc::clone(self), index, length)
+    }
+
+    /// Access the bytes of a name stored in this table (Java: NameImpl reads
+    /// through the shared table; no per-name byte copy).
+    pub(crate) fn with_bytes<R>(&self, index: i32, length: i32, f: impl FnOnce(&[u8]) -> R) -> R {
+        let inner = self.inner.borrow();
+        match &*inner {
+            NameTableInner::Shared(t) => f(&t.bytes[index as usize..(index + length) as usize]),
+            NameTableInner::Unshared(t) => f(t.bytes_at(index, length)),
+        }
     }
 
     /// Java: Name.Table.dispose()
@@ -141,12 +151,24 @@ impl NameTableHandle {
 pub struct Name {
     pub table: Rc<NameTableHandle>,
     index: i32,
-    bytes: Rc<[u8]>,
+    length: i32,
 }
 
 impl Name {
-    pub(crate) fn new(table: Rc<NameTableHandle>, index: i32, bytes: Rc<[u8]>) -> Name {
-        Name { table, index, bytes }
+    pub(crate) fn new(table: Rc<NameTableHandle>, index: i32, length: i32) -> Name {
+        Name {
+            table,
+            index,
+            length,
+        }
+    }
+
+    /// Access this name's bytes in the owning table (Java: Name.getByteArray()
+    /// + getByteOffset(); the shared table stores the bytes, as in
+    /// SharedNameTable.NameImpl). Callers must not intern new names inside `f`
+    /// (that would re-enter the table's mutable borrow).
+    pub(crate) fn with_bytes<R>(&self, f: impl FnOnce(&[u8]) -> R) -> R {
+        self.table.with_bytes(self.index, self.length, f)
     }
 
     /// Java: public boolean contentEquals(CharSequence cs)
@@ -178,17 +200,17 @@ impl Name {
     /// Java: public Name append(Name n)
     pub fn append(&self, n: &Name) -> Name {
         let mut bs = Vec::with_capacity(self.get_byte_length() as usize + n.get_byte_length() as usize);
-        bs.extend_from_slice(&self.bytes);
-        bs.extend_from_slice(&n.bytes);
+        self.with_bytes(|b| bs.extend_from_slice(b));
+        n.with_bytes(|b| bs.extend_from_slice(b));
         self.table.from_utf(&bs, 0, bs.len() as i32)
     }
 
     /// Java: public Name append(char c, Name n)
     pub fn append_char(&self, c: u8, n: &Name) -> Name {
         let mut bs = Vec::with_capacity(self.get_byte_length() as usize + 1 + n.get_byte_length() as usize);
-        bs.extend_from_slice(&self.bytes);
+        self.with_bytes(|b| bs.extend_from_slice(b));
         bs.push(c);
-        bs.extend_from_slice(&n.bytes);
+        n.with_bytes(|b| bs.extend_from_slice(b));
         self.table.from_utf(&bs, 0, bs.len() as i32)
     }
 
@@ -204,40 +226,38 @@ impl Name {
 
     /// Java: public int lastIndexOf(byte b)
     pub fn last_index_of(&self, b: u8) -> i32 {
-        let mut i = self.get_byte_length() - 1;
-        while i >= 0 {
-            if self.bytes[i as usize] == b {
-                return i;
-            }
-            i -= 1;
-        }
-        -1
+        self.with_bytes(|bytes| {
+            bytes
+                .iter()
+                .rposition(|candidate| *candidate == b)
+                .map(|index| index as i32)
+                .unwrap_or(-1)
+        })
     }
 
     /// Java: public boolean startsWith(Name prefix)
     pub fn starts_with(&self, prefix: &Name) -> bool {
-        let this_length = self.get_byte_length();
-        let prefix_length = prefix.get_byte_length();
-        if this_length < prefix_length {
+        if self.get_byte_length() < prefix.get_byte_length() {
             return false;
         }
-        self.bytes[..prefix_length as usize] == prefix.bytes[..prefix_length as usize]
+        prefix.with_bytes(|prefix_bytes| self.with_bytes(|bytes| bytes[..prefix_bytes.len()] == *prefix_bytes))
     }
 
     /// Java: public Name subName(int start, int end)
     pub fn sub_name(&self, start: i32, end: i32) -> Name {
         let end = if end < start { start } else { end };
-        self.table.from_utf(&self.bytes, start, end - start)
+        let bytes = self.with_bytes(|bytes| bytes[start as usize..end as usize].to_vec());
+        self.table.from_utf(&bytes, 0, end - start)
     }
 
     /// Java: public String toString() { return Convert.utf2string(getByteArray(), getByteOffset(), getByteLength()); }
     pub fn to_java_string(&self) -> JavaString {
-        convert::utf2string_range(&self.bytes, 0, self.get_byte_length())
+        self.with_bytes(|bytes| convert::utf2string_range(bytes, 0, self.length))
     }
 
     /// Java: public byte[] toUtf()
     pub fn to_utf(&self) -> Vec<u8> {
-        self.bytes.to_vec()
+        self.with_bytes(|bytes| bytes.to_vec())
     }
 
     /// Java: public abstract int getIndex()
@@ -247,22 +267,24 @@ impl Name {
 
     /// Java: public abstract int getByteLength()
     pub fn get_byte_length(&self) -> i32 {
-        self.bytes.len() as i32
+        self.length
     }
 
     /// Java: public abstract byte getByteAt(int i)
     pub fn get_byte_at(&self, i: i32) -> u8 {
-        self.bytes[i as usize]
+        self.with_bytes(|bytes| bytes[i as usize])
     }
 
     /// Java: public void getBytes(byte cs[], int start)
     pub fn get_bytes(&self, cs: &mut [u8], start: i32) {
-        cs[start as usize..start as usize + self.bytes.len()].copy_from_slice(&self.bytes);
+        self.with_bytes(|bytes| {
+            cs[start as usize..start as usize + bytes.len()].copy_from_slice(bytes)
+        });
     }
 
     /// Java: public abstract byte[] getByteArray()
-    pub fn get_byte_array(&self) -> &[u8] {
-        &self.bytes
+    pub fn get_byte_array(&self) -> Vec<u8> {
+        self.to_utf()
     }
 
     /// Java: public abstract int getByteOffset() — 0 for a snapshot handle.
@@ -270,9 +292,17 @@ impl Name {
         0
     }
 
+    /// Java: Name.getByteArray() as a borrowed slice, for the few callers that
+    /// only need to inspect the bytes without copying (must not intern names
+    /// inside the callback).
+    pub fn with_byte_array<R>(&self, f: impl FnOnce(&[u8]) -> R) -> R {
+        self.with_bytes(f)
+    }
+
     /// Java: public <X> X map(NameMapper<X> mapper)
     pub fn map<X>(&self, mapper: impl FnOnce(&[u8], i32, i32) -> X) -> X {
-        mapper(&self.bytes, 0, self.get_byte_length())
+        let bytes = self.to_utf();
+        mapper(&bytes, 0, self.get_byte_length())
     }
 
     /// PORTING_RULES adapter: access to the standard names table (Java:

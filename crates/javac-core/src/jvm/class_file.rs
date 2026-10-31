@@ -164,11 +164,7 @@ pub fn externalize(buf: &[u8], offset: i32, len: i32) -> Vec<u8> {
 ///   - none.
 ///
 pub fn internalize_name(name: &crate::util::name::Name) -> Vec<u8> {
-    internalize(
-        name.get_byte_array(),
-        name.get_byte_offset(),
-        name.get_byte_length(),
-    )
+    name.with_byte_array(|bytes| internalize(bytes, name.get_byte_offset(), name.get_byte_length()))
 }
 
 /// Return the external representation of `name`, converting '.' to '/'.
@@ -186,11 +182,7 @@ pub fn internalize_name(name: &crate::util::name::Name) -> Vec<u8> {
 ///   - none.
 ///
 pub fn externalize_name(name: &crate::util::name::Name) -> Vec<u8> {
-    externalize(
-        name.get_byte_array(),
-        name.get_byte_offset(),
-        name.get_byte_length(),
-    )
+    name.with_byte_array(|bytes| externalize(bytes, name.get_byte_offset(), name.get_byte_length()))
 }
 #[cfg(test)]
 mod tests {

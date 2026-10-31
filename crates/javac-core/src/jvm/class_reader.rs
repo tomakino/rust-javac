@@ -2196,10 +2196,10 @@ impl ClassReader {
         };
         // Java: name.map(ClassReader.this::sigToType) — NameMapper over the
         // name UTF-8 byte array (sigToType(byte[], offset, len)).
-        let sig = name.get_byte_array();
+        let sig = name.to_utf();
         let offset = name.get_byte_offset();
         let len = name.get_byte_length();
-        self.sig_to_type_bytes(ctx, syms, sig, offset, len)
+        self.sig_to_type_bytes(ctx, syms, &sig, offset, len)
     }
 
     /// Java: List<CompoundAnnotationProxy> readAnnotations()

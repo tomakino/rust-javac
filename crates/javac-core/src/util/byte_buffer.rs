@@ -156,11 +156,9 @@ impl ByteBuffer {
     ///     appendBytes(name.getByteArray(), name.getByteOffset(), name.getByteLength());
     /// }
     pub fn append_name(&mut self, name: &Name) {
-        self.append_bytes_from(
-            name.get_byte_array(),
-            name.get_byte_offset(),
-            name.get_byte_length(),
-        );
+        name.with_byte_array(|bytes| {
+            self.append_bytes_from(bytes, name.get_byte_offset(), name.get_byte_length())
+        });
     }
 
     /// Append the content of a given input stream.

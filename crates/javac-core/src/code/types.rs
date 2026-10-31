@@ -152,8 +152,7 @@ fn tag_ordinal(tag: TypeTag) -> i32 {
 
 /// Java: Name.hashCode() (stable name-table hash; see the module doc).
 fn name_hash(name: &Name) -> i32 {
-    let bytes = name.get_byte_array();
-    NameTableHandle::hash_value(bytes, 0, bytes.len() as i32)
+    name.with_byte_array(|bytes| NameTableHandle::hash_value(bytes, 0, bytes.len() as i32))
 }
 
 /// Java: Symbol.flatName() for a type symbol.
