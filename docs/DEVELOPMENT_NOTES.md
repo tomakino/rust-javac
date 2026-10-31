@@ -93,6 +93,12 @@ classpath 扫描的跳过列表从：
 - **mimalloc 不可行**：`libmimalloc-sys` 需要完整 MinGW `gcc`（本机只有 rust-mingw 的驱动，缺 `cc1.exe`），已回滚依赖与 `global_allocator`。
 - **`Name` 去 bytes（对齐官方 `NameImpl`）**：实现后 Gson `exit=4`（`RefCell` 借用重入）、`javac-core --lib` 72 fail，已回滚；后续如需重做，应改用不重入借用表的方案（例如 `Name` 持有 `Rc<RefCell<Vec<u8>>>` 或表访问闭包严格禁止重入 `from_*`）。
 - 结论：当前可复现的低风险优化空间已基本用尽；剩余差距主要是 JVM JIT/成熟缓存与 Rust 运行模型差异。
+### 性能榨取第二阶段（2026-10-31 第四轮）
+
+- **`Name` 去 bytes（对齐官方 `NameImpl`）**：`Name` 改为 `(table, index, length)`，字节经 `NameTableHandle::with_bytes` 读取；消除每次驻留的字节拷贝与一个 `Rc` 分配。首次实现因 `RefCell` 借用重入回归（Gson exit=4、lib 72 fail），修正版（可能重入的调用点先复制字节）通过：Gson 208/208 + IDENTICAL、lib 846。
+- **`FxNameMap`**：为 `Name` 键的高频 map（visible_packages、NamedImportScope name2_scopes、parser tag_parsers、module seen-packages）引入 Fx 风格 hasher（查找/插入语义不变）。
+- 结果（Gson debug，3 次 CPU）：min **5.531 s**、mean 5.615 s。
+- PGO 与 mimalloc 仍不可行（见上一轮记录）。
 ### 性能优化（2026-10-31 第二轮，samply profiling）
 
 - samply 在本机崩溃根因：ETW `ImageFileName` 为 GBK（“哔哩哔哩.exe”），samply 0.13.1 用严格 UTF-8 解析导致 panic；本地补丁版 samply 把 `parser.rs` 的 `String::from_utf8` 改为 `from_utf8_lossy`（工具修复，不入库）。
