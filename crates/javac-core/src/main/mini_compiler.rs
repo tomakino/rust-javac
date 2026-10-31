@@ -785,7 +785,17 @@ impl MiniCompiler {
                 self_ref.clone(),
             )
         });
-        let debug_lines_or_vars = options.is_set("g");
+        // Java: LambdaToMethod.java:168-175 — lineDebugInfo defaults to true
+        // when -g: is unset (javac's default), varDebugInfo follows -g/-g:vars.
+        // Deduplication is disabled whenever lines or vars debug info is on.
+        let line_debug_info = options.is_unset_option(crate::main::option::Option::G_CUSTOM)
+            || options.is_set_choice(crate::main::option::Option::G_CUSTOM, "lines");
+        let var_debug_info = if options.is_unset_option(crate::main::option::Option::G_CUSTOM) {
+            options.is_set("g")
+        } else {
+            options.is_set_choice(crate::main::option::Option::G_CUSTOM, "vars")
+        };
+        let debug_lines_or_vars = line_debug_info || var_debug_info;
         let lambda_to_method = Rc::new(RefCell::new(LambdaToMethod::new(
             Rc::clone(&attr),
             Rc::clone(&diags),
