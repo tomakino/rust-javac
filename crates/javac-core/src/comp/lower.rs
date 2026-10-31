@@ -6830,6 +6830,11 @@ impl Lower {
     ) -> TreeId {
         let alternatives = case_list.length();
         let pos = ctx.tree(tree).pos;
+        // Java: visitStringSwitch enters with make.pos == tree.pos (Lower.java:3746),
+        // and the empty-switch branch makes that explicit (Lower.java:3750).
+        // Re-establish it here so every synthesized node carries the switch
+        // statement's position, as upstream does.
+        self.make.borrow_mut().at(pos);
         if alternatives == 0 {
             let checked = self.attr.borrow_mut().make_null_check(ctx, &mut self.syms.borrow_mut(), selector);
             return self.make.borrow_mut().exec(ctx, checked);
