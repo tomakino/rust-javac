@@ -133,11 +133,13 @@ pub enum Option {
     MULTIRELEASE,
     DOE,
     PROMPT,
+    HELP_LINT,
+    XSTDOUT,
 }
 
 impl Option {
     /// Java: Option.values() (the trimmed constants are absent, see the header).
-    pub fn values() -> [Option; 42] {
+    pub fn values() -> [Option; 44] {
         [
             Option::G,
             Option::G_NONE,
@@ -181,6 +183,8 @@ impl Option {
             Option::SOURCEFILE,
             Option::H,
             Option::MULTIRELEASE,
+            Option::HELP_LINT,
+            Option::XSTDOUT,
         ]
     }
 
@@ -231,6 +235,8 @@ impl Option {
             Option::MULTIRELEASE => &["--multi-release"],
             Option::DOE => &["-doe"],
             Option::PROMPT => &["-prompt"],
+            Option::HELP_LINT => &["--help-lint"],
+            Option::XSTDOUT => &["-Xstdout"],
         }
     }
 
@@ -266,6 +272,7 @@ impl Option {
             Option::MODULE_VERSION => Some("opt.arg.module.version"),
             Option::AT => Some("opt.arg.file"),
             Option::MULTIRELEASE => Some("opt.arg.multi-release"),
+            Option::XSTDOUT => Some("opt.arg.file"),
             _ => None,
         }
     }
@@ -317,6 +324,8 @@ impl Option {
             Option::SOURCEFILE => None,
             Option::MULTIRELEASE => Some("opt.multi-release"),
             Option::DOE | Option::PROMPT => None,
+            Option::HELP_LINT => Some("opt.help.lint"),
+            Option::XSTDOUT => Some("opt.Xstdout"),
         }
     }
 
@@ -358,7 +367,9 @@ impl Option {
             | Option::XMAXWARNS
             | Option::XDIAGS
             | Option::ADD_EXPORTS
-            | Option::ADD_READS => OptionKind::EXTENDED,
+            | Option::ADD_READS
+            | Option::HELP_LINT
+            | Option::XSTDOUT => OptionKind::EXTENDED,
             Option::FULLVERSION
             | Option::XD
             | Option::SOURCEFILE
@@ -415,7 +426,9 @@ impl Option {
             | Option::HELP
             | Option::X
             | Option::AT
-            | Option::SOURCEFILE => OptionGroup::INFO,
+            | Option::SOURCEFILE
+            | Option::HELP_LINT
+            | Option::XSTDOUT => OptionGroup::INFO,
         }
     }
 
@@ -436,7 +449,8 @@ impl Option {
             | Option::X
             | Option::WERROR
             | Option::XD
-            | Option::SOURCEFILE => ArgKind::NONE,
+            | Option::SOURCEFILE
+            | Option::HELP_LINT => ArgKind::NONE,
             Option::AT => ArgKind::ADJACENT,
             _ => ArgKind::REQUIRED,
         }
@@ -992,11 +1006,11 @@ mod tests {
     #[test]
     fn kept_options_are_complete_and_in_declaration_order() {
         let values = Option::values();
-        assert_eq!(values.len(), 42);
+        assert_eq!(values.len(), 44);
         assert_eq!(values[0], Option::G);
-        assert_eq!(values[values.len() - 1], Option::MULTIRELEASE);
-        // 83 upstream constants - 42 kept = 41 trimmed (see the file header).
-        assert_eq!(42 + 41, 83);
+        assert_eq!(values[values.len() - 1], Option::XSTDOUT);
+        // 83 upstream constants - 44 kept = 39 trimmed (see the file header).
+        assert_eq!(44 + 39, 83);
     }
 
     #[test]
@@ -1063,7 +1077,7 @@ mod tests {
         assert!(tool.iter().all(|option| !file_manager.contains(option)));
         // BASIC + FILEMANAGER + INFO = all kept options.
         assert_eq!(tool.len() + file_manager.len(), 36);
-        assert_eq!(Option::get_java_compiler_options().len(), 42);
+        assert_eq!(Option::get_java_compiler_options().len(), 44);
         assert!(Option::get_java_compiler_options().contains(&Option::VERSION));
         assert!(Option::get_java_compiler_options().contains(&Option::SOURCEFILE));
         assert_eq!(Option::get_javac_file_manager_options()[0], Option::CLASS_PATH);
@@ -1207,7 +1221,6 @@ mod tests {
             "-prompt",
             "-printsource",
             "-warnunchecked",
-            "-Xstdout",
             "-Xprint",
             "-XprintRounds",
             "-XprintProcessorInfo",
@@ -1223,7 +1236,6 @@ mod tests {
             "--add-opens",
             "--default-module-for-created-files",
             "--inherit-runtime-environment",
-            "--help-lint",
         ] {
             assert_eq!(Option::lookup(trimmed), None, "{trimmed} must be trimmed");
         }

@@ -75,6 +75,43 @@ use crate::util::raw_diagnostic_formatter::RawDiagnosticFormatter;
 /// handle type).
 pub type WriterHandle = Rc<RefCell<Box<dyn Write>>>;
 
+/// Java: `new PrintWriter(new FileWriter(arg), true)` writes the platform line
+/// separator. The file writer behind -Xstdout must match it (\r\n on Windows).
+pub struct LineSeparatorWriter<W: Write> {
+    inner: W,
+}
+
+impl<W: Write> LineSeparatorWriter<W> {
+    pub fn new(inner: W) -> LineSeparatorWriter<W> {
+        LineSeparatorWriter { inner }
+    }
+}
+
+impl<W: Write> Write for LineSeparatorWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        #[cfg(windows)]
+        {
+            let mut out = Vec::with_capacity(buf.len());
+            for &byte in buf {
+                if byte == b'\n' {
+                    out.push(b'\r');
+                }
+                out.push(byte);
+            }
+            self.inner.write_all(&out)?;
+            Ok(buf.len())
+        }
+        #[cfg(not(windows))]
+        {
+            self.inner.write(buf)
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 /// A Context value carrying the normal-output writer
 /// (Java: Context.Key<PrintWriter> Log.outKey; Rust context keys are type based,
 /// so a newtype distinguishes the two streams).

@@ -378,6 +378,17 @@ impl MiniCompiler {
         // Java: Log is constructed after the command-line options are installed
         // (Log.initOptions reads -Xmaxerrs/-Xmaxwarns/-doe/--diags).
         let log = Log::instance(&mut util_context);
+        // Java: Option.XSTDOUT.process (Option.java:553-564) redirects every
+        // diagnostic to the named file (Log.setWriters).
+        if let Some(path) = options.get("-Xstdout")
+            && let Ok(file) = std::fs::File::create(&path)
+        {
+            let writer: crate::util::log::WriterHandle = Rc::new(RefCell::new(
+                Box::new(crate::util::log::LineSeparatorWriter::new(file))
+                    as Box<dyn std::io::Write>,
+            ));
+            log.borrow_mut().set_writers(writer);
+        }
         let lint = Lint::instance(&mut util_context);
         let preview = Preview::instance(&mut util_context);
         // JavaCompiler: Source/Target.instance read --source/--target;

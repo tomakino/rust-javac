@@ -78,7 +78,11 @@ fn info_option(args: &[String]) -> Option<JavacOption> {
         if let Some(option) = JavacOption::lookup(arg)
             && matches!(
                 option,
-                JavacOption::HELP | JavacOption::X | JavacOption::VERSION | JavacOption::FULLVERSION
+                JavacOption::HELP
+                    | JavacOption::X
+                    | JavacOption::HELP_LINT
+                    | JavacOption::VERSION
+                    | JavacOption::FULLVERSION
             )
         {
             return Some(option);
@@ -298,6 +302,32 @@ fn render_help_entry(
 
 /// Render the option table exactly like Option.showHelp: sort by primary name,
 /// then each Option.help(row).
+/// Java: Option.HELP_LINT.process (Option.java:485-508) prints the supported
+/// -Xlint keys, one per line, with their descriptions, to standard output.
+fn help_lint_text(messages: &JavacMessages) -> String {
+    // Java: LINT_KEY_FORMAT = SMALL_INDENT + SMALL_INDENT + "%-" +
+    // (DEFAULT_SYNOPSIS_WIDTH - LARGE_INDENT.length()) + "s %s"; the observed
+    // javac output pads the key to 21 columns after four spaces.
+    let mut out = String::new();
+    out.push_str(&messages.get_localized_string("javac.opt.help.lint.header", &[]));
+    out.push('\n');
+    let row = |key: &str, descr: &str| format!("    {key:<20} {descr}\n");
+    out.push_str(&row(
+        "all",
+        &messages.get_localized_string("javac.opt.Xlint.all", &[]),
+    ));
+    for category in javac_core::code::lint::LintCategory::values() {
+        let key = category.option();
+        let descr = messages.get_localized_string(&format!("javac.opt.Xlint.desc.{key}"), &[]);
+        out.push_str(&row(key, &descr));
+    }
+    out.push_str(&row(
+        "none",
+        &messages.get_localized_string("javac.opt.Xlint.none", &[]),
+    ));
+    out
+}
+
 fn help_text(messages: &JavacMessages, extra: bool) -> String {
     let usage = messages.get_localized_string("javac.msg.usage.header", &["javac".to_string()]);
     // Java: Option.getHelp substitutes the supported source/target releases
@@ -329,6 +359,17 @@ fn help_text(messages: &JavacMessages, extra: bool) -> String {
             })
         })
         .collect();
+    // Java: -J is consumed by the launcher and never reaches the Option
+    // parser, but Option.J still documents it in the standard help table.
+    if !extra {
+        entries.push(HelpEntry {
+            names: vec!["-J"],
+            args_name_key: Some("opt.arg.flag"),
+            descr_key: "opt.J",
+            adjacent: true,
+            choices: Vec::new(),
+        });
+    }
     entries.sort_by(|a, b| sort_key(a).cmp(&sort_key(b)));
     let mut out = String::new();
     // Java: HELP.process prints msg.usage.header; X (--help-extra) only prints
@@ -607,6 +648,11 @@ fn compile(args: &[String]) -> Result<i32, String> {
             JavacOption::VERSION | JavacOption::FULLVERSION => {
                 println!("javac 17.0.19");
             }
+            JavacOption::HELP_LINT => {
+                let messages =
+                    JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
+                print!("{}", help_lint_text(&messages));
+            }
             _ => {
                 let messages =
                     JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
@@ -720,6 +766,39 @@ fn compile(args: &[String]) -> Result<i32, String> {
         } else {
             helper.add_file(&javac_fs::Path::from_path_buf(PathBuf::from(arg)));
             index += 1;
+        }
+    }
+
+    // Java: Option.XSTDOUT.process (Option.java:553-564): redirect every
+    // diagnostic to the named file (Log.setWriters) before compilation starts.
+    if let Some(path) = helper.get(JavacOption::XSTDOUT) {
+        match std::fs::File::create(&path) {
+            Ok(file) => {
+                let writer: javac_core::util::log::WriterHandle = Rc::new(RefCell::new(
+                    Box::new(javac_core::util::log::LineSeparatorWriter::new(file))
+                        as Box<dyn std::io::Write>,
+                ));
+                helper
+                    .get_log()
+                    .expect("command line log")
+                    .borrow_mut()
+                    .set_writers(writer);
+            }
+            Err(error) => {
+                let info = javac_core::resources::compiler_properties::errors::error_writing_file(
+                    javac_strings::JavaString::from(path.as_str()),
+                    javac_strings::JavaString::from(error.to_string().as_str()),
+                );
+                let exception = helper.new_invalid_value_exception(info);
+                let messages =
+                    JavacMessages::with_locale(JAVAC_BUNDLE_NAME, Some(locale.clone()));
+                eprintln!("error: {}", exception.get_message());
+                eprintln!(
+                    "{}",
+                    messages.get_localized_string("javac.msg.usage", &["javac".to_string()])
+                );
+                return Ok(CMDERR);
+            }
         }
     }
 
@@ -1023,16 +1102,16 @@ fn compile(args: &[String]) -> Result<i32, String> {
         } else {
             "compiler.misc.count.error.plural"
         };
-        eprintln!("{}", messages.get_localized_string(key, &[errors.to_string()]));
+        compiler
+            .log
+            .borrow()
+            .print_raw_lines(&messages.get_localized_string(key, &[errors.to_string()]));
         let suppressed = compiler.suppressed_error_count();
         if suppressed > 0 {
-            eprintln!(
-                "{}",
-                messages.get_localized_string(
-                    "compiler.misc.count.error.recompile",
-                    &[errors.to_string(), (errors + suppressed).to_string()],
-                )
-            );
+            compiler.log.borrow().print_raw_lines(&messages.get_localized_string(
+                "compiler.misc.count.error.recompile",
+                &[errors.to_string(), (errors + suppressed).to_string()],
+            ));
         }
     }
     let warnings = compiler.warning_count() + option_warnings;
@@ -1042,16 +1121,16 @@ fn compile(args: &[String]) -> Result<i32, String> {
         } else {
             "compiler.misc.count.warn.plural"
         };
-        eprintln!("{}", messages.get_localized_string(key, &[warnings.to_string()]));
+        compiler
+            .log
+            .borrow()
+            .print_raw_lines(&messages.get_localized_string(key, &[warnings.to_string()]));
         let suppressed = compiler.suppressed_warning_count();
         if suppressed > 0 {
-            eprintln!(
-                "{}",
-                messages.get_localized_string(
-                    "compiler.misc.count.warn.recompile",
-                    &[warnings.to_string(), (warnings + suppressed).to_string()],
-                )
-            );
+            compiler.log.borrow().print_raw_lines(&messages.get_localized_string(
+                "compiler.misc.count.warn.recompile",
+                &[warnings.to_string(), (warnings + suppressed).to_string()],
+            ));
         }
     }
     if errors > 0 || result.is_err() {
