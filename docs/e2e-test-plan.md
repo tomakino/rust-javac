@@ -62,7 +62,7 @@
 
 ## 7. 已知缺口（不纳入门禁）
 
-1. okhttp 诊断仍有 3 类差异：`unknown.enum.constant`（rust 多 2 条）、`FakeSSLSession.java:73:10` 漏 1 条、诊断顺序；
+1. okhttp 诊断的**内容、位置、数量**已与 javac 完全一致；仅剩 **2 条 warning 的相对顺序**不同（`RecordedRequest.java:139:17` 与 `FakeSSLSession.java:73:10`）。根因：javac 的 Attr 处理顺序来自 `TypeEnvs.values()`，而官方 `TypeEnvs.java:52` 用 `HashMap`，其迭代序取决于 JVM 的 `identityHashCode`（对象身份），**跨语言不可复现**；端口 `type_envs.rs:19` 同样用 `HashMap`（源码层面与官方一致）。此项不纳入门禁，也不应通过排序等特判手段"修复"；
 2. diag-corpus 的 67 个 SKIP：47 个注解处理、1 个插件、1 个 `-verbose`、1 个 `-doe`、2 个自动模块、2 个自定义 FileManager、2 个废弃机制；
 3. `-proc:none`/`-proc:only` 未支持（JVM 处理器）；
 4. expected 为固化文本，随 JDK 升级可能过时（建议加实时对照）。
