@@ -1578,7 +1578,7 @@ impl Modules {
         self.init_add_exports(ctx, syms);
         set_module_visible_packages(ctx, msym, crate::util::fx_hasher::FxNameMap::default());
         set_module_read_modules(ctx, msym, readable.to_vec());
-        let mut seen: crate::util::fx_hasher::FxNameMap<SymbolId> = crate::util::fx_hasher::FxNameMap::default();
+        let mut seen: crate::util::fx_hasher::FxNameMap<SymbolId> = crate::util::fx_hasher::fx_map_with_capacity(64);
         for rm in readable {
             if *rm == syms.unnamed_module {
                 continue;

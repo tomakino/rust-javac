@@ -324,7 +324,7 @@ impl Scope {
                 sub_scopes: List::nil(),
                 mark: 0,
                 listeners: ScopeListenerList::new(),
-                name2_scopes: crate::util::fx_hasher::FxNameMap::default(),
+                name2_scopes: crate::util::fx_hasher::fx_map_with_capacity(8),
             },
         }
     }

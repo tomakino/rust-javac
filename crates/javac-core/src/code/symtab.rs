@@ -95,7 +95,7 @@ impl SymtabMaps {
     fn new() -> SymtabMaps {
         SymtabMaps {
             classes: Vec::new(),
-            class_index: crate::util::fx_hasher::FxNameMap::default(),
+            class_index: crate::util::fx_hasher::fx_map_with_capacity(1024),
             packages: Vec::new(),
             modules: Vec::new(),
         }
@@ -370,7 +370,7 @@ fn new_module_symbol(
             uses: List::nil(),
             module_info: None,
             unnamed_package: None,
-            visible_packages: crate::util::fx_hasher::FxNameMap::default(),
+            visible_packages: crate::util::fx_hasher::fx_map_with_capacity(32),
             read_modules: Vec::new(),
             enclosed_packages: List::nil(),
             flags: Vec::new(),

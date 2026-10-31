@@ -464,7 +464,7 @@ mod tests {
             uses: List::nil(),
             module_info: None,
             unnamed_package: None,
-            visible_packages: crate::util::fx_hasher::FxNameMap::default(),
+            visible_packages: crate::util::fx_hasher::fx_map_with_capacity(32),
             read_modules: Vec::new(),
             enclosed_packages: List::nil(),
             flags: Vec::new(),

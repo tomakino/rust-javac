@@ -182,7 +182,7 @@ impl DocCommentParser {
             text_start: -1,
             last_non_white: -1,
             newline: true,
-            tag_parsers: crate::util::fx_hasher::FxNameMap::default(),
+            tag_parsers: crate::util::fx_hasher::fx_map_with_capacity(25),
         };
         parser.tag_parsers = parser.create_tag_parsers();
         parser.m.borrow_mut().set_reference_parser(Rc::new(
@@ -1713,7 +1713,7 @@ impl DocCommentParser {
                 retain_white_space: false,
             },
         ];
-        let mut tag_parsers = crate::util::fx_hasher::FxNameMap::default();
+        let mut tag_parsers = crate::util::fx_hasher::fx_map_with_capacity(25);
         for spec in specs {
             let tag_name = spec
                 .tree_kind

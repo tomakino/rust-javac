@@ -47,3 +47,9 @@ pub type FxBuildHasher = BuildHasherDefault<FxHasher>;
 
 /// `HashMap<Name, V>` backed by [FxHasher].
 pub type FxNameMap<V> = std::collections::HashMap<Name, V, FxBuildHasher>;
+
+/// Build an [FxNameMap] with room for `capacity` entries (avoids the
+/// repeated rehash of the small hot maps).
+pub fn fx_map_with_capacity<V>(capacity: usize) -> FxNameMap<V> {
+    std::collections::HashMap::with_capacity_and_hasher(capacity, FxBuildHasher::default())
+}
