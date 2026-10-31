@@ -98,6 +98,12 @@ classpath 扫描的跳过列表从：
 - **`Name` 去 bytes（对齐官方 `NameImpl`）**：`Name` 改为 `(table, index, length)`，字节经 `NameTableHandle::with_bytes` 读取；消除每次驻留的字节拷贝与一个 `Rc` 分配。首次实现因 `RefCell` 借用重入回归（Gson exit=4、lib 72 fail），修正版（可能重入的调用点先复制字节）通过：Gson 208/208 + IDENTICAL、lib 846。
 - **`FxNameMap`**：为 `Name` 键的高频 map（visible_packages、NamedImportScope name2_scopes、parser tag_parsers、module seen-packages）引入 Fx 风格 hasher（查找/插入语义不变）。
 - 结果（Gson debug，3 次 CPU）：min **5.531 s**、mean 5.615 s。
+### 性能榨取第三阶段（2026-10-31 第五轮）
+
+- **inapplicable 失败通道（Result 化）**：`MethodCheckContext.report` 不再 panic，改为记录 thread-local 失败；`catch_inapplicable_method_exception` 在 body 返回后检查记录并返回 `MethodCheckFailure::Inapplicable`（panic 通道保留给其余 throw 点）。Gson debug CPU **5.531 → 4.562 s（-17.5%）**。
+- **Symtab 类索引**：官方 `Symtab.java:250` 的 `classes` 是 `HashMap<Name, Map<ModuleSymbol,ClassSymbol>>`；port 原为 `Vec` 线性查找。增加 `class_index: FxNameMap<Name, usize>`（保持 `classes` Vec 的插入顺序用于遍历），`get_class_in`/`do_enter_class`/`get_classes_for_name` 走索引。Gson debug CPU **4.562 → 3.984 s（-12.7%）**。
+- 采样残留热点：`miniz_oxide` inflate（javac_zip，三方库内部）、`SymbolId/TypeId/TreeId::index`（debug 未内联，release 会内联）、`TypeEnter::resolve_imports`、`FxNameMap` rehash（少量）。
+- 累计：Gson debug CPU 5.531 → **3.984 s（-28%）**；行为验证全过（Gson 208/208、诊断 IDENTICAL、lib 846）。
 - PGO 与 mimalloc 仍不可行（见上一轮记录）。
 ### 性能优化（2026-10-31 第二轮，samply profiling）
 
