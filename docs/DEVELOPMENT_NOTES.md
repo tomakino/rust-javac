@@ -132,6 +132,14 @@ classpath 扫描的跳过列表从：
 - **问题**：旧实现每次 `read_entry` 都通过 `FileReader` 读 local header + 压缩数据（同一 jar 被间断频繁读取时每条目两次系统调用）。
 - **优化**：`ZipArchive::open` 用 `std::fs::read` 一次读入整个 zip，`rawzip::ZipArchive::<()>::from_slice`（零拷贝 slice）解析；`read_entry` 用 `ZipSliceEntry::data()` 直接切片，**运行时零文件读取**；`archive_offset` 直接在内存字节上计算。
 - 验证：`javac-zip` 10/10、Gson 208/208 + IDENTICAL、`javac-core --lib` 846；Gson debug CPU **3.828–4.094 s（min 3.828，mean 3.953）**，此前切片前为 4.688/5.052（-16%～-21%）。
+### okhttp 字节差异调查（2026-10-31 第十二轮）
+
+- okhttp（229 源、547 class）与官方 javac 对比：**69 个 class 字节不一致**（此前只验证了“0 错误”，未比对字节）。
+- 差异类型（抽样确认）：
+  - **`InnerClasses` 缺少被引用成员类条目**：如 `Cache$2` 引用 `DiskLruCache$Snapshot`，javac 的 `InnerClasses` 含 `Snapshot`，port 缺（`Cache$2` 2074 vs javac 2097 字节）。
+  - **lambda 合成方法的 `LineNumberTable`**：`lambda$static$0` 的 port 写 `line 1`，javac 写 lambda 所在行（如 `line 100`）。
+- 已修：`PoolWriter.put_signature` 现在把 `SignatureGenerator` 收集的类引用合并进 `inner_classes`（官方 `SignatureGenerator.classReference` → `enterInner`）；Gson 仍 208/208 + IDENTICAL、lib 846。**尚不足以修复 `Cache$2`**（需要继续查 `write_member_attrs`/`Signature` 路径）。
+- 另发现性能问题：`PoolWriter.keys_to_pos` 是 `Vec` 线性扫描（官方 `HashMap`，`PoolWriter.java:334`），常量池查找 O(n²)。
 ### 性能：本机 CPU 优化（2026-10-31 第十一轮）
 
 - `.cargo/config.toml` 增加 `[target.x86_64-pc-windows-gnu] rustflags = ["-C", "target-cpu=native"]`（本机专用；与同机 javac 对比一致）。

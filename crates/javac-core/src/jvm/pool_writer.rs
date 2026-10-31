@@ -223,6 +223,10 @@ impl PoolWriter {
             let ty = ctx.sym(s).ty.expect("symbol type");
             self.type_sig(ctx, syms, ty)
         };
+        // Java: SignatureGenerator.classReference calls PoolWriter.enterInner
+        // (PoolWriter.java:318-319, 223-231); the shared generator defers the
+        // class references, so merge them whenever a signature is put.
+        self.signature_gen.take_inner_classes_into(ctx, &mut self.inner_classes);
         self.put_name(name)
     }
 
