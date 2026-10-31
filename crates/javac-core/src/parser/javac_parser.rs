@@ -3963,7 +3963,14 @@ impl JavacParser {
         mut vdefs: Vec<TreeId>,
         local_decl: bool,
     ) -> Vec<TreeId> {
-        let pos = self.token.pos;
+        // Java: the declaration position is the first modifier/annotation for a
+        // field (so field initializers get the annotation line) and the name
+        // token for a local declaration.
+        let pos = if local_decl {
+            self.token.pos
+        } else {
+            ctx.tree(mods).pos
+        };
         let name = self.ident(ctx);
         vdefs =
             self.variable_declarators_rest(ctx, pos, mods, type_, name, false, None, vdefs, local_decl);
@@ -5553,9 +5560,23 @@ impl JavacParser {
                 )]
             } else if !is_void && typarams.is_empty() {
                 if !is_record || (mods_flags & Flags::STATIC) != 0 {
+                    // Java: a static field declaration position is its name token
+                    // (JavacParser.memberDecl reuses token.pos); an instance
+                    // field starts at its first modifier/annotation when there is
+                    // one, otherwise at the name token.
+                    let field_pos = if (mods_flags & Flags::STATIC) != 0 {
+                        pos
+                    } else {
+                        let mods_pos = ctx.tree(mods).pos;
+                        if mods_pos != crate::util::position::NOPOS {
+                            mods_pos
+                        } else {
+                            pos
+                        }
+                    };
                     let defs = self.variable_declarators_rest(
                         ctx,
-                        pos,
+                        field_pos,
                         mods,
                         type_,
                         name,
@@ -5572,9 +5593,17 @@ impl JavacParser {
                     defs
                 } else {
                     let err_pos = pos;
+                    let field_pos = {
+                        let mods_pos = ctx.tree(mods).pos;
+                        if mods_pos != crate::util::position::NOPOS {
+                            mods_pos
+                        } else {
+                            pos
+                        }
+                    };
                     let _ = self.variable_declarators_rest(
                         ctx,
-                        pos,
+                        field_pos,
                         mods,
                         type_,
                         name,
@@ -5842,7 +5871,14 @@ impl JavacParser {
         lambda_parameter: bool,
         record_component: bool,
     ) -> TreeId {
-        let pos = self.token.pos;
+        // Java: the declaration starts at the first modifier/annotation when
+        // there is one (mods.pos), otherwise at the name token.
+        let mods_pos = ctx.tree(mods).pos;
+        let pos = if mods_pos != crate::util::position::NOPOS {
+            mods_pos
+        } else {
+            self.token.pos
+        };
         let name: Name;
         if lambda_parameter && self.token.kind == TokenKind::UNDERSCORE {
             let key = JCDiagnosticError::from(errors::underscore_as_identifier_in_lambda());

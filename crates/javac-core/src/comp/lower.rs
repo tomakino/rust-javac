@@ -4090,11 +4090,11 @@ impl Lower {
         );
         let mut record_fields: Vec<SymbolId> = Vec::new();
         for field in fields {
+            // Java: Lower.visitMethodDef iterates TreeInfo.recordFields(tree),
+            // i.e. every record field in declaration order; the Flow-only
+            // UNINITIALIZED_FIELD marker is not part of that selection.
             if ctx.sym(field).kind == Kind::VAR
                 && (ctx.sym(field).flags_field & crate::code::flags::RECORD) != 0
-                && (ctx.sym(field).flags_field
-                    & crate::code::flags::UNINITIALIZED_FIELD)
-                    != 0
             {
                 record_fields.push(field);
             }

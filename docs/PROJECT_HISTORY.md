@@ -160,7 +160,7 @@
 | okhttp `-XDrawDiagnostics` | **11 行，逐行一致** |
 | okhttp append 顺序（探针） | **229/229** |
 | `javac-core --lib` | **846 passed, 0 failed** |
-| Java 9–17 feature-matrix（23 单元） | **21/23**（2 个已知差异见 `testdata/feature-matrix/README.md`） |
+| Java 9–17 feature-matrix（23 单元） | **23/23** |
 | CLI 集成（cli/cli_parity/diag_examples/diagnostic_corpus） | 5 / 18 / 1 / 1 全过 |
 | diag-corpus | **602 pass, 0 fail, 67 skip**（共 669） |
 | `scripts/e2e.ps1 -IncludeOkhttp` | **8/8** |
@@ -211,8 +211,7 @@
 - 把 okhttp `-XDrawDiagnostics` 11 行逐行对比加入 L2 门禁命令。
 - okhttp release 性能基准纳入 L5，建立回归阈值。
 - diag-corpus 实时对照模式（防止 JDK 升级后 expected 漂移）。
-- feature-matrix 的 2 个已知差异（同一根因）：默认构造器 LineNumberTable 行号。
-  字段声明的 pos 仍取名字 token，官方取 `mods.pos`；改成 `mods.pos` 会连锁暴露
-  端口对 NOPOS 声明的处理（Flow trackable/adr、`Lower` 构造器体），需要单独对齐。
-  （TYPE_USE 参数注解的调用点参数计数已修：`TypeAnnotations.separateAnnotationsKinds`。）
+- feature-matrix 已 23/23。声明位置按官方规则区分：实例字段取 `mods.pos`（有注解时），
+  static 字段取名字 token；`Lower.lower_compact_record_ctor` 改用 `TreeInfo.recordFields`
+  语义（不依赖 Flow 的 `UNINITIALIZED_FIELD`）；`Flow.initParam/visitLambda` 跳过未分配 adr 的变量。
 - CI 串联 L1-L4。

@@ -852,6 +852,9 @@ impl Gen {
                         match const_value {
                             None => {
                                 let make = Rc::clone(&self.make);
+                                // Java: Gen.normalizeDefs positions the
+                                // initializer at vdef.pos() (the field
+                                // declaration position).
                                 let stmt = make.borrow_mut().at(pos).assignment(ctx, sym, init);
                                 clinit_code.push(stmt);
                                 self.end_pos_table_replaced(ctx, def, stmt);

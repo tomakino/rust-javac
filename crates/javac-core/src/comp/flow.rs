@@ -4860,6 +4860,9 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
             self.scan(ctx, Some(param));
             if let Some(sym) = var_sym(ctx, param) {
                 let adr = var_symbol_adr(ctx, sym);
+                if adr < 0 {
+                    continue;
+                }
                 self.inits.incl(adr);
                 self.uninits.excl(adr);
             }
@@ -5096,6 +5099,9 @@ impl<'a> AssignAnalyzer<'a> {
             return;
         };
         let adr = var_symbol_adr(ctx, sym);
+        if adr < 0 {
+            return;
+        }
         self.inits.incl(adr);
         self.uninits.excl(adr);
     }

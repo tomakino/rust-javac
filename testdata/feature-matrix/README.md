@@ -49,15 +49,7 @@ pwsh ./scripts/feature-matrix.ps1 -EnablePreview   # include --enable-preview un
 Preview features (17 pattern switch, 15/16 preview syntax) are intentionally
 not included by default; `-EnablePreview` is reserved for those units.
 
-## Known gaps (current failures)
+## Known gaps
 
-- `java17/type-annotations`: the call-site arity bug is fixed
-  (`TypeAnnotations.separateAnnotationsKinds` did not consume one old argument
-  for the formal it replaced, so a `TYPE_USE` parameter annotation made the
-  method look like it had three `String` parameters); what is left is the same
-  default-constructor `LineNumberTable` line as `java17/annotations`.
-- `java17/annotations`: the synthesized default constructor's second
-  `LineNumberTable` entry is `line 17` instead of javac's `line 16` (the
-  field declaration position is the name token instead of `mods.pos`; switching
-  to `mods.pos` currently trips the Flow `AssignAnalyzer.init_param`
-  assertion until the parser modifier positions are complete).
+None: all 23 units currently compile to byte-identical classes, with identical
+diagnostics and exit codes.
