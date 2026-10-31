@@ -30,7 +30,10 @@ fn version_prints_release_and_exits_zero() {
 
 #[test]
 fn help_prints_usage_and_exits_zero() {
-    let output = Command::new(cli()).arg("-help").output().expect("run cli");
+    let output = Command::new(cli())
+        .args(["-J-Duser.language=en", "-J-Duser.country=US", "-help"])
+        .output()
+        .expect("run cli");
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains("Usage: javac"));
 }
@@ -41,6 +44,7 @@ fn error_source_reports_diagnostic_and_exit_one() {
     let source = dir.join("T.java");
     std::fs::write(&source, "class T { int x = \"s\"; }").expect("source");
     let output = Command::new(cli())
+        .args(["-J-Duser.language=en", "-J-Duser.country=US"])
         .arg("-d")
         .arg(&dir)
         .arg(&source)
