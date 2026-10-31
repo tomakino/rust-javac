@@ -51,11 +51,11 @@ not included by default; `-EnablePreview` is reserved for those units.
 
 ## Known gaps (current failures)
 
-- `java17/type-annotations`: a `TYPE_USE` annotation on a parameter makes the
-  *call site* see the method with three `String` parameters
-  (`required: String,String,String`), while the attributed signature itself has
-  two parameters; the annotation/receiver handling at the call site still needs
-  the upstream `Kind`/receiver distinction.
+- `java17/type-annotations`: the call-site arity bug is fixed
+  (`TypeAnnotations.separateAnnotationsKinds` did not consume one old argument
+  for the formal it replaced, so a `TYPE_USE` parameter annotation made the
+  method look like it had three `String` parameters); what is left is the same
+  default-constructor `LineNumberTable` line as `java17/annotations`.
 - `java17/annotations`: the synthesized default constructor's second
   `LineNumberTable` entry is `line 17` instead of javac's `line 16` (the
   field declaration position is the name token instead of `mods.pos`; switching

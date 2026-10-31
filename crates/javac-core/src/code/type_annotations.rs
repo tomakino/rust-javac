@@ -1247,19 +1247,19 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                 let mut new_args: List<crate::ids::TypeId> = List::nil();
                 let mut params_current = method_params;
                 let mut old_args_current = old_args;
-                while params_current.non_empty() {
+                // Java: for (Symbol p : methodSymbol.params) {
+                //           Type t = p == sym ? annotated : oldArgs.head;
+                //           oldArgs = oldArgs.tail;
+                //           newArgs.append(t);
+                //       }
+                // Every formal consumes one old argument, including the one that
+                // is replaced by the annotated type.
+                while params_current.non_empty() && old_args_current.non_empty() {
                     let param = *params_current.head();
                     params_current = params_current.tail();
-                    let arg = if param == sym {
-                        annotated
-                    } else if old_args_current.non_empty() {
-                        let arg = *old_args_current.head();
-                        old_args_current = old_args_current.tail();
-                        arg
-                    } else {
-                        break;
-                    };
-                    new_args = new_args.append(arg);
+                    let old_arg = *old_args_current.head();
+                    old_args_current = old_args_current.tail();
+                    new_args = new_args.append(if param == sym { annotated } else { old_arg });
                 }
                 // Java: methType.argtypes = newArgs.toList();
                 while old_args_current.non_empty() {
