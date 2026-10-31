@@ -1153,9 +1153,9 @@ impl Gen {
         } else if let TreeKind::Block { stats, .. } = &mut ctx.tree_mut(body).kind {
             *stats = new_stats_list;
         }
-        let mut symbol = ctx.sym(sym).clone();
-        symbol.append_unique_type_attributes(init_tas);
-        *ctx.sym_mut(sym) = symbol;
+        // Java: sym.appendUniqueTypeAttributes(initTAs); — update the symbol in
+        // place (Symbol::clone deliberately drops the arena id).
+        ctx.sym_mut(sym).append_unique_type_attributes(init_tas);
     }
 
     /// Scan a tree for class references to be added to the constant pool.
