@@ -104,6 +104,12 @@ classpath 扫描的跳过列表从：
 - **Symtab 类索引**：官方 `Symtab.java:250` 的 `classes` 是 `HashMap<Name, Map<ModuleSymbol,ClassSymbol>>`；port 原为 `Vec` 线性查找。增加 `class_index: FxNameMap<Name, usize>`（保持 `classes` Vec 的插入顺序用于遍历），`get_class_in`/`do_enter_class`/`get_classes_for_name` 走索引。Gson debug CPU **4.562 → 3.984 s（-12.7%）**。
 - 采样残留热点：`miniz_oxide` inflate（javac_zip，三方库内部）、`SymbolId/TypeId/TreeId::index`（debug 未内联，release 会内联）、`TypeEnter::resolve_imports`、`FxNameMap` rehash（少量）。
 - 累计：Gson debug CPU 5.531 → **3.984 s（-28%）**；行为验证全过（Gson 208/208、诊断 IDENTICAL、lib 846）。
+### 性能榨取第四阶段（2026-10-31 第六轮）
+
+- **FxNameMap 预分配**：`fx_map_with_capacity` 用于 class 索引（1024）、visible_packages（32）、name2_scopes（8）、tag_parsers（25）、module seen（64），消除 `reserve_rehash`。Gson debug CPU **3.984 → 3.406 s（-14%）**。
+- 累计：Gson debug CPU **5.531 → 3.406 s（-38%）**。
+- 采样残留（debug 固有/三方库）：`miniz_oxide` inflate（javac_zip 依赖）、`SymbolId/TypeId/TreeId::index` 与 `copy_nonoverlapping::precondition_check`（debug 未内联/边界检查，release 会优化）、`TypeEnter::finish_class`、`FxNameMap` 插入。
+- 行为验证：Gson 208/208 字节一致 + 诊断 IDENTICAL；`javac-core --lib` 846 passed。
 - PGO 与 mimalloc 仍不可行（见上一轮记录）。
 ### 性能优化（2026-10-31 第二轮，samply profiling）
 
