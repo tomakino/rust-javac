@@ -1151,12 +1151,19 @@ impl Check {
     pub fn local_class_name(&self, ctx: &mut CompilerContext, c: SymbolId) -> Name {
         let owner = ctx.sym(c).owner.expect("local class owner");
         let encl_class = symbol_encl_class(ctx, owner).expect("enclosing class");
-        let encl_flatname = match &ctx.sym(encl_class).kind_data {
-            SymbolKind::ClassSymbol { flatname, .. } => flatname.to_java_string().to_string(),
+        let (encl_flatname, encl_flatname_name) = match &ctx.sym(encl_class).kind_data {
+            SymbolKind::ClassSymbol { flatname, .. } => (
+                flatname.to_java_string().to_string(),
+                flatname.clone(),
+            ),
             _ => panic!("class symbol expected"),
         };
         let name = ctx.sym(c).name.clone();
-        let key = (ctx.sym(encl_class).name.clone(), name.clone());
+        // Java: Pair<Name, Name> key = new Pair<>(enclFlatname, c.name)
+        // (Check.java:456); clearLocalClassNameIndexes uses the same key
+        // (Check.java:470-471). Both sides must use the enclosing class's
+        // flatname, not its simple name.
+        let key = (encl_flatname_name, name.clone());
         let mut index = *self
             .local_class_name_indexes
             .borrow()
