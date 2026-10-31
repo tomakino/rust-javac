@@ -109,6 +109,12 @@ classpath 扫描的跳过列表从：
 - **FxNameMap 预分配**：`fx_map_with_capacity` 用于 class 索引（1024）、visible_packages（32）、name2_scopes（8）、tag_parsers（25）、module seen（64），消除 `reserve_rehash`。Gson debug CPU **3.984 → 3.406 s（-14%）**。
 - 累计：Gson debug CPU **5.531 → 3.406 s（-38%）**。
 - 采样残留（debug 固有/三方库）：`miniz_oxide` inflate（javac_zip 依赖）、`SymbolId/TypeId/TreeId::index` 与 `copy_nonoverlapping::precondition_check`（debug 未内联/边界检查，release 会优化）、`TypeEnter::finish_class`、`FxNameMap` 插入。
+### javac_zip 解压层（2026-10-31 第七轮）
+
+- **采用 `zlib-rs`**（纯 Rust，zlib 兼容 inflate）：`ZipArchive::read_entry` 的 DEFLATED 分支用 `zlib_rs::Inflate::new(false, 15)`（raw deflate）+ `decompress(..., InflateFlush::Finish)`，输出按 `uncompressed_size` 预分配并校验 `total_out`。
+- **`rawzip` 解析层**：已接入验证，但 10 个 port zip 测试中 6 个失败（zip64 拒绝、CP437 名称、`archive_offset`、未知压缩方法值），按行为等价要求回滚。
+- **`libdeflater`**：无法构建（`libdeflate-sys` 需要 C 工具链；本机缺 MinGW `cc1`/Windows SDK，便携 MinGW 下载不可用）。
+- 验证：`javac-zip` 10/10、Gson 208/208 + IDENTICAL、`javac-core --lib` 846；Gson debug CPU 3.953–4.516 s（当前负载下与 zune/miniz 同档，历史低负载 3.406 s）。
 - 行为验证：Gson 208/208 字节一致 + 诊断 IDENTICAL；`javac-core --lib` 846 passed。
 - PGO 与 mimalloc 仍不可行（见上一轮记录）。
 ### 性能优化（2026-10-31 第二轮，samply profiling）

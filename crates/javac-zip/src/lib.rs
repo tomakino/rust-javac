@@ -332,17 +332,31 @@ impl ZipArchive {
                 Ok(data)
             }
             METHOD_DEFLATED => {
-                let mut decoder = zune_inflate::DeflateDecoder::new(&data);
-                let payload = decoder.decode_deflate().map_err(|err| {
-                    Error::Corrupted(format!("deflate error in {}: {:?}", entry.name, err))
+                let size = usize::try_from(entry.uncompressed_size).map_err(|_| {
+                    Error::Corrupted("entry size does not fit in memory".to_string())
                 })?;
-                if payload.len() as u64 != entry.uncompressed_size {
+                let mut output = vec![0u8; size];
+                let mut inflate = zlib_rs::Inflate::new(false, 15);
+                let status = inflate
+                    .decompress(&data, &mut output, zlib_rs::InflateFlush::Finish)
+                    .map_err(|err| {
+                        Error::Corrupted(format!("deflate error in {}: {err:?}", entry.name))
+                    })?;
+                if status != zlib_rs::Status::StreamEnd {
+                    return Err(Error::Corrupted(format!(
+                        "deflate error in {}: {status:?}",
+                        entry.name
+                    )));
+                }
+                let produced = inflate.total_out() as usize;
+                output.truncate(produced);
+                if output.len() as u64 != entry.uncompressed_size {
                     return Err(Error::Corrupted(format!(
                         "deflated entry {} has an inconsistent size",
                         entry.name
                     )));
                 }
-                Ok(payload)
+                Ok(output)
             }
             other => Err(Error::UnsupportedCompression(other)),
         }
