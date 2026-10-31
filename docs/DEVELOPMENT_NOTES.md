@@ -127,6 +127,11 @@ classpath 扫描的跳过列表从：
 - **zip64 现在被接受**（rawzip 支持；`java.util.zip.ZipFile` 也支持），port 的 `UnsupportedZip64` 仅保留 API 变体；对应测试改为 `supports_zip64_central_directory_fields`。
 - `archive_offset` 仍由 tail EOCD 位置推导（jmod 前缀 = 4），保持 port 的 jmod 契约。
 - 验证：`javac-zip` 10/10、Gson 208/208 + IDENTICAL、`javac-core --lib` 846；Gson debug CPU 4.5–5.1 s（当前负载波动大，与历史 3.4–5.8 范围重叠）。
+### javac_zip：整文件驻留 + rawzip slice（2026-10-31 第十轮）
+
+- **问题**：旧实现每次 `read_entry` 都通过 `FileReader` 读 local header + 压缩数据（同一 jar 被间断频繁读取时每条目两次系统调用）。
+- **优化**：`ZipArchive::open` 用 `std::fs::read` 一次读入整个 zip，`rawzip::ZipArchive::<()>::from_slice`（零拷贝 slice）解析；`read_entry` 用 `ZipSliceEntry::data()` 直接切片，**运行时零文件读取**；`archive_offset` 直接在内存字节上计算。
+- 验证：`javac-zip` 10/10、Gson 208/208 + IDENTICAL、`javac-core --lib` 846；Gson debug CPU **3.828–4.094 s（min 3.828，mean 3.953）**，此前切片前为 4.688/5.052（-16%～-21%）。
 - 行为验证：Gson 208/208 字节一致 + 诊断 IDENTICAL；`javac-core --lib` 846 passed。
 - PGO 与 mimalloc 仍不可行（见上一轮记录）。
 ### 性能优化（2026-10-31 第二轮，samply profiling）

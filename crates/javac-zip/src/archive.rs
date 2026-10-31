@@ -2,9 +2,7 @@
 //! file headers; zlib-rs inflates DEFLATE payloads.
 
 use std::collections::HashMap;
-use std::fs::File;
 use std::hash::{BuildHasherDefault, Hasher};
-use std::io::Read;
 use std::path::Path;
 
 use crate::decompress;
@@ -52,9 +50,11 @@ fn corrupted(error: rawzip::Error) -> Error {
     Error::Corrupted(format!("zip: {error}"))
 }
 
-/// A read-only view of a zip archive.
+/// A read-only view of a zip archive. The whole file is resident in memory
+/// (`ZipSliceArchive`), so entry reads never touch the file system again: the
+/// compiler opens each jar once and then reads classes at random.
 pub struct ZipArchive {
-    raw: rawzip::ZipArchive<rawzip::FileReader>,
+    raw: rawzip::ZipSliceArchive<Vec<u8>>,
     entries: Vec<Entry>,
     entry_index: HashMap<String, usize, FxBuildHasher>,
     wayfinders: Vec<rawzip::ZipArchiveEntryWayfinder>,
@@ -73,18 +73,15 @@ impl std::fmt::Debug for ZipArchive {
 impl ZipArchive {
     /// Opens a zip archive and reads its central directory.
     pub fn open(path: &Path) -> Result<ZipArchive, Error> {
-        let file = File::open(path).map_err(Error::Io)?;
-        let archive_offset = compute_archive_offset(path);
-        // The central directory is parsed once per archive; a large buffer lets
-        // rawzip read it in a few positioned reads instead of per-entry reads.
-        let mut buffer = vec![0u8; 1024 * 1024];
-        let mut raw = rawzip::ZipArchive::<()>::from_file(file, &mut buffer)
+        let data = std::fs::read(path).map_err(Error::Io)?;
+        let archive_offset = compute_archive_offset(&data);
+        let mut raw = rawzip::ZipArchive::<()>::from_slice(data)
             .map_err(|error| Error::NotAZip(format!("zip: {error}")))?;
         let mut entries = Vec::new();
         let mut entry_index: HashMap<String, usize, FxBuildHasher> = HashMap::default();
         let mut wayfinders = Vec::new();
         {
-            let mut iter = raw.entries(&mut buffer);
+            let mut iter = raw.entries();
             while let Some(header) = iter.next_entry().map_err(corrupted)? {
                 let name = decode_entry_name(header.file_path().as_ref(), header_flags(header.flags()))?;
                 let index = entries.len();
@@ -139,11 +136,7 @@ impl ZipArchive {
             Error::Corrupted(format!("entry index {} has no locator", index))
         })?;
         let raw_entry = self.raw.get_entry(wayfinder).map_err(corrupted)?;
-        let mut data = Vec::with_capacity(entry.compressed_size as usize);
-        raw_entry
-            .reader()
-            .read_to_end(&mut data)
-            .map_err(Error::Io)?;
+        let data = raw_entry.data();
         match entry.compression_method {
             METHOD_STORED => {
                 if data.len() as u64 != entry.uncompressed_size {
@@ -152,7 +145,7 @@ impl ZipArchive {
                         entry.name
                     )));
                 }
-                Ok(data)
+                Ok(data.to_vec())
             }
             METHOD_DEFLATED => {
                 let size = usize::try_from(entry.uncompressed_size).map_err(|_| {
@@ -187,35 +180,21 @@ fn header_flags(flags: rawzip::EntryFlags) -> u16 {
 /// Derives the offset of the zip data inside the file from the EOCD position
 /// (jmod files prepend a 4-byte header). Returns 0 when the record cannot be
 /// located; rawzip remains the authority for the actual parse.
-fn compute_archive_offset(path: &Path) -> u64 {
-    let Ok(file) = File::open(path) else {
-        return 0;
-    };
-    let Ok(len) = file.metadata().map(|meta| meta.len()) else {
-        return 0;
-    };
-    if len < EOCD_SIZE as u64 {
+fn compute_archive_offset(bytes: &[u8]) -> u64 {
+    let len = bytes.len();
+    if len < EOCD_SIZE {
         return 0;
     }
-    let tail_len = len.min((EOCD_SIZE + EOCD_MAX_COMMENT_SIZE) as u64) as usize;
-    let mut tail = vec![0u8; tail_len];
-    let Ok(mut reader) = file.try_clone() else {
-        return 0;
-    };
-    use std::io::Seek;
-    if reader.seek(std::io::SeekFrom::Start(len - tail_len as u64)).is_err()
-        || reader.read_exact(&mut tail).is_err()
-    {
-        return 0;
-    }
+    let tail_len = len.min(EOCD_SIZE + EOCD_MAX_COMMENT_SIZE);
+    let tail = &bytes[len - tail_len..];
     let mut index = tail_len - EOCD_SIZE;
     loop {
-        if read_u32(&tail, index) == Some(EOCD_SIGNATURE) {
-            let comment_len = read_u16(&tail, index + 20).unwrap_or(0) as usize;
+        if read_u32(tail, index) == Some(EOCD_SIGNATURE) {
+            let comment_len = read_u16(tail, index + 20).unwrap_or(0) as usize;
             if index + EOCD_SIZE + comment_len == tail_len {
-                let eocd_file_pos = (len - tail_len as u64) + index as u64;
-                let cd_size = read_u32(&tail, index + 12).unwrap_or(0) as u64;
-                let cd_offset = read_u32(&tail, index + 16).unwrap_or(0) as u64;
+                let eocd_file_pos = (len - tail_len + index) as u64;
+                let cd_size = read_u32(tail, index + 12).unwrap_or(0) as u64;
+                let cd_offset = read_u32(tail, index + 16).unwrap_or(0) as u64;
                 let Some(cd_start) = eocd_file_pos.checked_sub(cd_size) else {
                     return 0;
                 };
