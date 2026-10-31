@@ -2838,6 +2838,28 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                 self.error_uncaught(ctx);
             }
         }
+        if anonymous_class {
+            // Java: Flow.java:1094-1105 — in an anonymous class, add the set of
+            // thrown exceptions collected from the initializers to the implicit
+            // constructor (javac emits them as the constructor's Exceptions
+            // attribute, e.g. an anonymous iterator whose field initializer
+            // throws IOException).
+            if let Some(init_def) = defs.iter().find(|def| {
+                ctx.tree(*def).has_tag(Tag::METHODDEF)
+                    && tree_info::is_initial_constructor(ctx, *def)
+            }) {
+                if let Some(init_sym) = method_symbol(ctx, init_def) {
+                    if let Some(mty) = ctx.sym(init_sym).ty {
+                        let updated = self.flow.types.create_method_type_with_thrown(
+                            ctx,
+                            mty,
+                            self.thrown.clone(),
+                        );
+                        ctx.sym_mut(init_sym).ty = Some(updated);
+                    }
+                }
+            }
+        }
         self.pending_exits = pending_prev;
         self.class_def = class_def_prev;
         self.caught = caught_prev;
