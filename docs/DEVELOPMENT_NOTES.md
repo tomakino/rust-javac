@@ -120,6 +120,13 @@ classpath 扫描的跳过列表从：
 - `ZipArchive` 现在持有 **rawzip reader**（`rawzip::ZipArchive<FileReader>`）与每个 central-directory 条目的 `wayfinder`；`read_entry` 用 `raw.get_entry(wayfinder)` + `ZipEntry::reader()` 读取压缩字节，再用 **`zlib_rs::Inflate`（raw deflate）解压**。
 - **central directory 仍由 port 的解析器读取**（`parse_central_directory`）：保留既有 zip 契约（zip64 拒绝、CP437/UTF-8 名称、压缩方法原值、`archive_offset`、`NotAZip` 错误），这正是之前纯 rawzip 版本 6/10 测试失败的原因；rawzip 负责 local header/数据定位读取。
 - 验证：`javac-zip` 10/10、Gson 208/208 + IDENTICAL、`javac-core --lib` 846；Gson debug CPU 4.078–4.359 s（与 zlib-rs-only 3.953 同档；历史低负载 3.406 s）。
+### javac_zip 整体重构（2026-10-31 第九轮）
+
+- 模块化：`error.rs`（Error）、`entry.rs`（Entry + UTF-8/CP437 名称解码）、`decompress.rs`（zlib-rs 解压）、`archive.rs`（ZipArchive：rawzip 解析 central directory 与 local header，zlib-rs 解压）、`cp437.rs`。
+- **central directory 改为 rawzip 解析**（此前保留 port 的解析器）：条目名（UTF-8 flag / CP437）、压缩方法（STORE/DEFLATE 映射，未知 → `u16::MAX`）、sizes、crc、flags（原始位）均来自 rawzip `ZipFileHeaderRecord`；`read_entry` 用 wayfinder + `ZipEntry::reader()`。
+- **zip64 现在被接受**（rawzip 支持；`java.util.zip.ZipFile` 也支持），port 的 `UnsupportedZip64` 仅保留 API 变体；对应测试改为 `supports_zip64_central_directory_fields`。
+- `archive_offset` 仍由 tail EOCD 位置推导（jmod 前缀 = 4），保持 port 的 jmod 契约。
+- 验证：`javac-zip` 10/10、Gson 208/208 + IDENTICAL、`javac-core --lib` 846；Gson debug CPU 4.5–5.1 s（当前负载波动大，与历史 3.4–5.8 范围重叠）。
 - 行为验证：Gson 208/208 字节一致 + 诊断 IDENTICAL；`javac-core --lib` 846 passed。
 - PGO 与 mimalloc 仍不可行（见上一轮记录）。
 ### 性能优化（2026-10-31 第二轮，samply profiling）

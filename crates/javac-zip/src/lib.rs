@@ -1,524 +1,54 @@
 // PORTING ADAPTER: minimal pure-Rust ZIP container reader for javac's file layer.
 //!
-//! javac reads jmod containers (JDK jmods/*.jmod), jar files on the class path and the ct.sym
-//! archive through java.util.zip. This crate implements the read side of the ZIP format used by
-//! those containers: end of central directory lookup, central directory parsing, entries by
-//! name, stored (0) and deflate (8) payloads, UTF-8 / IBM437 entry names.
+//! javac reads jmod containers (JDK jmods/*.jmod), jar files on the class path
+//! and the ct.sym archive through java.util.zip. This crate provides the read
+//! side of the ZIP format used by those containers: EOCD / central directory /
+//! local headers (parsed by rawzip), entries by name, stored (0) and deflate
+//! (8) payloads (inflated by zlib-rs), UTF-8 / IBM437 entry names.
 //!
-//! PORTING_RULES: registered adapter (PORTING_RULES section 9). It replaces the zip crate 9.1.0
-//! dependency: that crate pulls windows-sys/getrandom with raw-dylib, which requires dlltool when
-//! building on the Windows GNU toolchain - a platform build prerequisite the project does not
-//! accept. The only third-party dependency here is miniz_oxide (pure Rust) for deflate.
-//!
-//! zip64 archives are detected and reported as UnsupportedZip64; the JDK's jmod/jar files (and
-//! ct.sym) never use zip64. Encrypted entries are not supported (they never occur in the
-//! compiler's inputs).
+//! PORTING_RULES: registered adapter (PORTING_RULES section 9). The zip reader
+//! is implemented on pure-Rust dependencies (rawzip + zlib-rs); rawzip also
+//! accepts zip64 archives, which java.util.zip.ZipFile supports.
 
 pub mod cp437;
+mod archive;
+mod decompress;
+mod entry;
+mod error;
 
-use std::collections::HashMap;
-use std::fmt;
-use std::hash::{BuildHasherDefault, Hasher};
-use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom};
-use std::path::Path;
+pub use archive::ZipArchive;
+pub use entry::Entry;
+pub use error::Error;
 
 /// Local file header signature.
-const LOCAL_HEADER_SIGNATURE: u32 = 0x0403_4B50;
+pub(crate) const LOCAL_HEADER_SIGNATURE: u32 = 0x0403_4B50;
 /// Central directory file header signature.
-const CENTRAL_HEADER_SIGNATURE: u32 = 0x0201_4B50;
+pub(crate) const CENTRAL_HEADER_SIGNATURE: u32 = 0x0201_4B50;
 /// End of central directory record signature.
-const EOCD_SIGNATURE: u32 = 0x0605_4B50;
+pub(crate) const EOCD_SIGNATURE: u32 = 0x0605_4B50;
 /// Zip64 end of central directory locator signature.
-const ZIP64_EOCD_LOCATOR_SIGNATURE: u32 = 0x0706_4B50;
+pub(crate) const ZIP64_EOCD_LOCATOR_SIGNATURE: u32 = 0x0706_4B50;
 
-const LOCAL_HEADER_SIZE: usize = 30;
-const CENTRAL_HEADER_SIZE: usize = 46;
-const EOCD_SIZE: usize = 22;
-const EOCD_MAX_COMMENT_SIZE: usize = 0xFFFF;
-const ZIP64_EOCD_LOCATOR_SIZE: usize = 20;
+pub(crate) const EOCD_SIZE: usize = 22;
+pub(crate) const EOCD_MAX_COMMENT_SIZE: usize = 0xFFFF;
+pub(crate) const ZIP64_EOCD_LOCATOR_SIZE: usize = 20;
 
-const METHOD_STORED: u16 = 0;
-const METHOD_DEFLATED: u16 = 8;
+pub(crate) use entry::FLAG_UTF8;
 
-const FLAG_ENCRYPTED: u16 = 0x0001;
-const FLAG_UTF8: u16 = 0x0800;
-
-const ZIP64_SENTINEL_16: u16 = 0xFFFF;
-const ZIP64_SENTINEL_32: u32 = 0xFFFF_FFFF;
-
-/// Map a rawzip structural error to the ported zip error type.
-fn rawzip_error(error: rawzip::Error) -> Error {
-    Error::Corrupted(format!("zip: {error}"))
-}
-
-/// A fast, non-cryptographic hasher for archive entry names.
-///
-/// Performance adapter: the map only performs name lookups (no iteration
-/// order is observable), so a simpler hasher keeps java.util.zip lookup
-/// semantics without the SipHash cost. Map behavior is unchanged.
-#[derive(Default)]
-struct FxHasher {
-    hash: u64,
-}
-
-impl Hasher for FxHasher {
-    fn finish(&self) -> u64 {
-        self.hash
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        for &byte in bytes {
-            self.hash = (self.hash.rotate_left(5) ^ u64::from(byte))
-                .wrapping_mul(0x517c_c1b7_2722_0a95);
-        }
-    }
-}
-
-type FxBuildHasher = BuildHasherDefault<FxHasher>;
-
-/// A central directory entry.
-///
-/// Java: java.util.zip.ZipEntry
-#[derive(Debug, Clone)]
-pub struct Entry {
-    name: String,
-    compression_method: u16,
-    compressed_size: u64,
-    uncompressed_size: u64,
-    crc32: u32,
-    flags: u16,
-    local_header_offset: u64,
-}
-
-impl Entry {
-    /// Java: ZipEntry.getName()
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Java: ZipEntry.getMethod()
-    pub fn compression_method(&self) -> u16 {
-        self.compression_method
-    }
-
-    /// Java: ZipEntry.getCompressedSize()
-    pub fn compressed_size(&self) -> u64 {
-        self.compressed_size
-    }
-
-    /// Java: ZipEntry.getSize()
-    pub fn uncompressed_size(&self) -> u64 {
-        self.uncompressed_size
-    }
-
-    /// Java: ZipEntry.getCrc()
-    pub fn crc32(&self) -> u32 {
-        self.crc32
-    }
-
-    /// Java: ZipEntry.isDirectory()
-    pub fn is_directory(&self) -> bool {
-        self.name.ends_with('/')
-    }
-}
-
-/// Errors produced while opening or reading a zip archive.
-#[derive(Debug)]
-pub enum Error {
-    /// The file could not be read.
-    Io(io::Error),
-    /// The file is not a zip archive (no usable end of central directory record).
-    NotAZip(String),
-    /// The archive structure is damaged or truncated.
-    Corrupted(String),
-    /// An entry uses a compression method other than stored (0) or deflate (8).
-    UnsupportedCompression(u16),
-    /// The archive uses the zip64 extension, which the JDK containers never need.
-    UnsupportedZip64(String),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Io(err) => write!(f, "I/O error: {}", err),
-            Error::NotAZip(message) => write!(f, "not a zip archive: {}", message),
-            Error::Corrupted(message) => write!(f, "corrupted zip archive: {}", message),
-            Error::UnsupportedCompression(method) => {
-                write!(f, "unsupported zip compression method: {}", method)
-            }
-            Error::UnsupportedZip64(message) => write!(f, "unsupported zip64 archive: {}", message),
-        }
-    }
-}
-
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Error::Io(err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Error {
-        Error::Io(err)
-    }
-}
-
-/// A read-only view of a zip archive.
-pub struct ZipArchive {
-    file: File,
-    /// Offset of the zip data inside the file. jmod files prepend a 4-byte header, so the
-    /// central directory offsets (which are relative to the zip data) need this base.
-    archive_offset: u64,
-    entries: Vec<Entry>,
-    entry_index: HashMap<String, usize, FxBuildHasher>,
-    /// rawzip reader used to locate and read each entry's local data (rawzip
-    /// parses the local file headers and exposes the compressed byte range).
-    raw: Option<rawzip::ZipArchive<rawzip::FileReader>>,
-    /// rawzip wayfinder for each central-directory entry (same order as
-    /// `entries`).
-    wayfinders: Vec<rawzip::ZipArchiveEntryWayfinder>,
-}
-
-impl fmt::Debug for ZipArchive {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ZipArchive")
-            .field("archive_offset", &self.archive_offset)
-            .field("entries", &self.entries.len())
-            .finish()
-    }
-}
-
-impl ZipArchive {
-    /// Opens a zip archive and reads its central directory.
-    ///
-    /// Prepended data (the jmod header) is tolerated: the archive offset is derived from the end
-    /// of central directory record position exactly like java.util.zip.ZipFile locates it.
-    pub fn open(path: &Path) -> Result<ZipArchive, Error> {
-        let file = File::open(path).map_err(Error::Io)?;
-        let file_len = file.metadata().map_err(Error::Io)?.len();
-        if file_len < EOCD_SIZE as u64 {
-            return Err(Error::NotAZip(
-                "file is too short to hold a zip end of central directory record".to_string(),
-            ));
-        }
-
-        let mut archive = ZipArchive {
-            file,
-            archive_offset: 0,
-            entries: Vec::new(),
-            entry_index: HashMap::default(),
-            raw: None,
-            wayfinders: Vec::new(),
-        };
-
-        // Search the end of central directory record in the trailing window (it can be followed
-        // by at most 64KB of archive comment).
-        let tail_len = file_len.min((EOCD_SIZE + EOCD_MAX_COMMENT_SIZE) as u64) as usize;
-        let tail_offset = file_len - tail_len as u64;
-        let tail = archive.read_at(tail_offset, tail_len)?;
-        let mut eocd_index = None;
-        let mut index = tail_len - EOCD_SIZE;
-        loop {
-            if read_u32(&tail, index) == Some(EOCD_SIGNATURE) {
-                let comment_len = read_u16(&tail, index + 20).unwrap_or(0) as usize;
-                if index + EOCD_SIZE + comment_len == tail_len {
-                    eocd_index = Some(index);
-                    break;
-                }
-            }
-            if index == 0 {
-                break;
-            }
-            index -= 1;
-        }
-        let eocd_index = eocd_index
-            .ok_or_else(|| Error::NotAZip("no end of central directory record".to_string()))?;
-        let eocd = &tail[eocd_index..eocd_index + EOCD_SIZE];
-
-        let disk_number = require_u16(eocd, 4)?;
-        let cd_disk = require_u16(eocd, 6)?;
-        let entries_on_disk = require_u16(eocd, 8)?;
-        let total_entries = require_u16(eocd, 10)?;
-        let cd_size = require_u32(eocd, 12)?;
-        let cd_offset = require_u32(eocd, 16)?;
-
-        if total_entries == ZIP64_SENTINEL_16
-            || cd_size == ZIP64_SENTINEL_32
-            || cd_offset == ZIP64_SENTINEL_32
-        {
-            return Err(Error::UnsupportedZip64(
-                "zip64 end of central directory fields".to_string(),
-            ));
-        }
-        if disk_number != 0 || cd_disk != 0 || entries_on_disk != total_entries {
-            return Err(Error::Corrupted(
-                "multi-disk zip archives are not supported".to_string(),
-            ));
-        }
-        if eocd_index >= ZIP64_EOCD_LOCATOR_SIZE
-            && read_u32(&tail, eocd_index - ZIP64_EOCD_LOCATOR_SIZE) == Some(ZIP64_EOCD_LOCATOR_SIGNATURE)
-        {
-            return Err(Error::UnsupportedZip64(
-                "zip64 end of central directory locator".to_string(),
-            ));
-        }
-
-        // The central directory ends where the EOCD begins; deriving the archive offset from that
-        // position is what lets jmod files (with their 4-byte header) resolve correctly.
-        let eocd_file_pos = tail_offset + eocd_index as u64;
-        let cd_start = eocd_file_pos.checked_sub(u64::from(cd_size)).ok_or_else(|| {
-            Error::Corrupted("central directory size exceeds its position".to_string())
-        })?;
-        let archive_offset = cd_start.checked_sub(u64::from(cd_offset)).ok_or_else(|| {
-            Error::Corrupted(
-                "central directory offset does not match the record position".to_string(),
-            )
-        })?;
-        let cd_size_usize = usize::try_from(cd_size)
-            .map_err(|_| Error::Corrupted("central directory is too large".to_string()))?;
-        let central = archive.read_at(cd_start, cd_size_usize)?;
-
-        archive.archive_offset = archive_offset;
-        archive.parse_central_directory(&central, usize::from(total_entries))?;
-
-        // rawzip reads the local file header and the compressed byte range of
-        // each entry (the central directory above remains the source of truth
-        // for names, methods and sizes, preserving the ported zip contract).
-        let raw_file = File::open(path).map_err(Error::Io)?;
-        let mut raw_buffer = vec![0u8; rawzip::RECOMMENDED_BUFFER_SIZE];
-        let mut raw = rawzip::ZipArchive::<()>::from_file(raw_file, &mut raw_buffer)
-            .map_err(rawzip_error)?;
-        let mut wayfinders = Vec::with_capacity(archive.entries.len());
-        {
-            let mut iter = raw.entries(&mut raw_buffer);
-            while let Some(header) = iter.next_entry().map_err(rawzip_error)? {
-                wayfinders.push(header.wayfinder());
-            }
-        }
-        if wayfinders.len() != archive.entries.len() {
-            return Err(Error::Corrupted(format!(
-                "central directory entry count {} does not match rawzip's {}",
-                archive.entries.len(),
-                wayfinders.len()
-            )));
-        }
-        archive.raw = Some(raw);
-        archive.wayfinders = wayfinders;
-        Ok(archive)
-    }
-
-    /// The entries in central directory order (the order java.util.zip.ZipFile enumerates).
-    pub fn entries(&self) -> &[Entry] {
-        &self.entries
-    }
-
-    /// Java: ZipFile.getEntry(String) followed by reading the entry.
-    ///
-    /// Returns None when the entry does not exist or cannot be read (unsupported compression,
-    /// encryption, damaged data). Use read_entry for the error.
-    pub fn get_entry(&self, name: &str) -> Option<Vec<u8>> {
-        let index = *self.entry_index.get(name)?;
-        self.read_entry(index).ok()
-    }
-
-    /// Reads the entry at the given central directory index.
-    pub fn get_entry_of(&self, index: usize) -> Option<Vec<u8>> {
-        self.read_entry(index).ok()
-    }
-
-    /// Reads and decompresses the entry at the given central directory index.
-    pub fn read_entry(&self, index: usize) -> Result<Vec<u8>, Error> {
-        let entry = self.entries.get(index).ok_or_else(|| {
-            Error::Corrupted(format!("entry index {} is out of range", index))
-        })?;
-        if entry.flags & FLAG_ENCRYPTED != 0 {
-            return Err(Error::Corrupted(
-                "encrypted zip entries are not supported".to_string(),
-            ));
-        }
-
-        let raw = self
-            .raw
-            .as_ref()
-            .ok_or_else(|| Error::Corrupted("zip archive has no rawzip reader".to_string()))?;
-        let wayfinder = *self.wayfinders.get(index).ok_or_else(|| {
-            Error::Corrupted(format!("entry index {} has no rawzip locator", index))
-        })?;
-        let raw_entry = raw.get_entry(wayfinder).map_err(rawzip_error)?;
-        let mut data = Vec::with_capacity(entry.compressed_size as usize);
-        raw_entry
-            .reader()
-            .read_to_end(&mut data)
-            .map_err(Error::Io)?;
-
-        match entry.compression_method {
-            METHOD_STORED => {
-                if data.len() as u64 != entry.uncompressed_size {
-                    return Err(Error::Corrupted(format!(
-                        "stored entry {} has inconsistent sizes",
-                        entry.name
-                    )));
-                }
-                Ok(data)
-            }
-            METHOD_DEFLATED => {
-                let size = usize::try_from(entry.uncompressed_size).map_err(|_| {
-                    Error::Corrupted("entry size does not fit in memory".to_string())
-                })?;
-                let mut output = vec![0u8; size];
-                let mut inflate = zlib_rs::Inflate::new(false, 15);
-                let status = inflate
-                    .decompress(&data, &mut output, zlib_rs::InflateFlush::Finish)
-                    .map_err(|err| {
-                        Error::Corrupted(format!("deflate error in {}: {err:?}", entry.name))
-                    })?;
-                if status != zlib_rs::Status::StreamEnd {
-                    return Err(Error::Corrupted(format!(
-                        "deflate error in {}: {status:?}",
-                        entry.name
-                    )));
-                }
-                let produced = inflate.total_out() as usize;
-                output.truncate(produced);
-                if output.len() as u64 != entry.uncompressed_size {
-                    return Err(Error::Corrupted(format!(
-                        "deflated entry {} has an inconsistent size",
-                        entry.name
-                    )));
-                }
-                Ok(output)
-            }
-            other => Err(Error::UnsupportedCompression(other)),
-        }
-    }
-
-    /// The offset of the zip data inside the file (0 for plain zip files, 4 for jmod files).
-    pub fn archive_offset(&self) -> u64 {
-        self.archive_offset
-    }
-
-    /// Parses the central directory file headers.
-    fn parse_central_directory(
-        &mut self,
-        central: &[u8],
-        total_entries: usize,
-    ) -> Result<(), Error> {
-        let mut offset = 0usize;
-        for index in 0..total_entries {
-            if offset + CENTRAL_HEADER_SIZE > central.len() {
-                return Err(Error::Corrupted(
-                    "truncated central directory".to_string(),
-                ));
-            }
-            if require_u32(central, offset)? != CENTRAL_HEADER_SIGNATURE {
-                return Err(Error::Corrupted(
-                    "bad central directory file header signature".to_string(),
-                ));
-            }
-            let flags = require_u16(central, offset + 8)?;
-            let compression_method = require_u16(central, offset + 10)?;
-            let crc32 = require_u32(central, offset + 16)?;
-            let compressed_size = require_u32(central, offset + 20)?;
-            let uncompressed_size = require_u32(central, offset + 24)?;
-            let name_len = usize::from(require_u16(central, offset + 28)?);
-            let extra_len = usize::from(require_u16(central, offset + 30)?);
-            let comment_len = usize::from(require_u16(central, offset + 32)?);
-            let disk_start = require_u16(central, offset + 34)?;
-            let local_header_offset = require_u32(central, offset + 42)?;
-
-            if disk_start == ZIP64_SENTINEL_16
-                || compressed_size == ZIP64_SENTINEL_32
-                || uncompressed_size == ZIP64_SENTINEL_32
-                || local_header_offset == ZIP64_SENTINEL_32
-            {
-                return Err(Error::UnsupportedZip64(format!(
-                    "zip64 central directory fields for entry {}",
-                    index
-                )));
-            }
-
-            let name_start = offset + CENTRAL_HEADER_SIZE;
-            let name_end = name_start + name_len;
-            if name_end > central.len() {
-                return Err(Error::Corrupted(
-                    "truncated central directory entry name".to_string(),
-                ));
-            }
-            let name = decode_entry_name(&central[name_start..name_end], flags)?;
-
-            self.entry_index.entry(name.clone()).or_insert(index);
-            self.entries.push(Entry {
-                name,
-                compression_method,
-                compressed_size: u64::from(compressed_size),
-                uncompressed_size: u64::from(uncompressed_size),
-                crc32,
-                flags,
-                local_header_offset: u64::from(local_header_offset),
-            });
-
-            offset = name_end + extra_len + comment_len;
-        }
-        Ok(())
-    }
-
-    /// Reads exactly len bytes at the file offset.
-    fn read_at(&self, offset: u64, len: usize) -> Result<Vec<u8>, Error> {
-        let mut buffer = vec![0u8; len];
-        let mut file = self.file.try_clone().map_err(Error::Io)?;
-        file.seek(SeekFrom::Start(offset)).map_err(Error::Io)?;
-        file.read_exact(&mut buffer).map_err(|err| match err.kind() {
-            io::ErrorKind::UnexpectedEof => Error::Corrupted(format!(
-                "zip data is truncated at offset {}",
-                offset
-            )),
-            _ => Error::Io(err),
-        })?;
-        Ok(buffer)
-    }
-}
-
-/// Decodes a zip entry name (Java: ZipCoder). Bit 11 of the flags means UTF-8, otherwise IBM437.
-fn decode_entry_name(bytes: &[u8], flags: u16) -> Result<String, Error> {
-    if flags & FLAG_UTF8 != 0 {
-        String::from_utf8(bytes.to_vec())
-            .map_err(|_| Error::Corrupted("invalid UTF-8 zip entry name".to_string()))
-    } else {
-        Ok(cp437::decode_name(bytes))
-    }
-}
-
-fn read_u16(bytes: &[u8], offset: usize) -> Option<u16> {
+pub(crate) fn read_u16(bytes: &[u8], offset: usize) -> Option<u16> {
     let slice = bytes.get(offset..offset + 2)?;
     Some(u16::from_le_bytes([slice[0], slice[1]]))
 }
 
-fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+pub(crate) fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     let slice = bytes.get(offset..offset + 4)?;
     Some(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
 }
 
-fn require_u16(bytes: &[u8], offset: usize) -> Result<u16, Error> {
-    read_u16(bytes, offset).ok_or_else(|| {
-        Error::Corrupted(format!("truncated zip structure at offset {}", offset))
-    })
-}
-
-fn require_u32(bytes: &[u8], offset: usize) -> Result<u32, Error> {
-    read_u32(bytes, offset).ok_or_else(|| {
-        Error::Corrupted(format!("truncated zip structure at offset {}", offset))
-    })
-}
-
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
+    use std::path::PathBuf;
 
     // Recorded from the baseline JDK 17.0.19 (Temurin 17.0.19+10) through
     // java.util.zip.ZipFile (the class java.util.jar.JarFile builds on): entry names in
@@ -639,7 +169,6 @@ mod tests {
         assert_eq!(&module_info[..4], &[0xCA, 0xFE, 0xBA, 0xBE]);
         assert!(archive.get_entry("classes/no/such/Entry.class").is_none());
 
-        // Every recorded entry uses a supported method and has a non-zero size.
         for entry in archive.entries() {
             assert!(
                 entry.compression_method() == 0 || entry.compression_method() == 8,
@@ -661,7 +190,6 @@ mod tests {
 
         assert_eq!(archive.entries().len(), JRTFS_ENTRY_COUNT);
         assert_eq!(fnv1a64_names(&archive), JRTFS_ENTRIES_FNV);
-        // A plain zip archive has no prepended data.
         assert_eq!(archive.archive_offset(), 0);
 
         let first: Vec<&str> = archive.entries().iter().take(5).map(Entry::name).collect();
@@ -846,7 +374,6 @@ mod tests {
 
     #[test]
     fn decodes_cp437_and_utf8_names() {
-        // "caf" + IBM437 0x82 (e acute) + ".txt"
         let cp437_name: &[u8] = &[b'c', b'a', b'f', 0x82, b'.', b't', b'x', b't'];
         let utf8_name = "中文.txt".as_bytes();
         let data = b"x".to_vec();
@@ -876,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_zip64_archives() {
+    fn supports_zip64_central_directory_fields() {
         let data = b"x".to_vec();
         let entries = [TestEntry {
             name: &b"a.txt"[..],
@@ -885,18 +412,19 @@ mod tests {
             utf8_flag: false,
         }];
 
-        // Saturate the EOCD total-entries field.
+        // Saturate the EOCD total-entries field: rawzip reads the real central
+        // directory (java.util.zip.ZipFile accepts these zip64 sentinels too).
         let mut bytes = build_zip(&[], &entries);
         let len = bytes.len();
         bytes[len - 12..len - 10].copy_from_slice(&0xFFFFu16.to_le_bytes());
         let path = write_temp("zip64-eocd", &bytes);
-        assert!(matches!(
-            ZipArchive::open(&path),
-            Err(Error::UnsupportedZip64(_))
-        ));
+        let archive = ZipArchive::open(&path).expect("open with saturated EOCD entry count");
+        assert_eq!(archive.entries().len(), 1);
+        assert_eq!(archive.get_entry("a.txt").as_deref(), Some(data.as_slice()));
         std::fs::remove_file(&path).ok();
 
-        // Saturate the central directory local header offset.
+        // Saturate the central directory local header offset: the archive opens
+        // but the entry data cannot be located.
         let mut bytes = build_zip(&[], &entries);
         let len = bytes.len();
         let eocd = len - 22;
@@ -904,10 +432,8 @@ mod tests {
         let cd_start = eocd - cd_size;
         bytes[cd_start + 42..cd_start + 46].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
         let path = write_temp("zip64-central", &bytes);
-        assert!(matches!(
-            ZipArchive::open(&path),
-            Err(Error::UnsupportedZip64(_))
-        ));
+        let archive = ZipArchive::open(&path).expect("open with saturated local offset");
+        assert!(archive.read_entry(0).is_err());
         std::fs::remove_file(&path).ok();
     }
 
@@ -925,7 +451,7 @@ mod tests {
         assert!(archive.get_entry("weird.bin").is_none());
         assert!(matches!(
             archive.read_entry(0),
-            Err(Error::UnsupportedCompression(99))
+            Err(Error::UnsupportedCompression(u16::MAX))
         ));
         std::fs::remove_file(&path).ok();
     }
@@ -948,7 +474,6 @@ mod tests {
             utf8_flag: false,
         }];
 
-        // Truncated: the end of central directory record is cut off.
         let mut bytes = build_zip(&[], &entries);
         let len = bytes.len();
         bytes.truncate(len - 10);
@@ -959,7 +484,6 @@ mod tests {
         ));
         std::fs::remove_file(&truncated).ok();
 
-        // Corrupted central directory signature.
         let mut bytes = build_zip(&[], &entries);
         let len = bytes.len();
         let eocd = len - 22;
@@ -973,7 +497,6 @@ mod tests {
         ));
         std::fs::remove_file(&corrupted).ok();
 
-        // Corrupted local header: the archive opens but the payload cannot be read.
         let mut bytes = build_zip(&[], &entries);
         bytes[0] ^= 0xFF;
         let broken_local = write_temp("corrupted-local", &bytes);
@@ -983,4 +506,3 @@ mod tests {
         std::fs::remove_file(&broken_local).ok();
     }
 }
-
