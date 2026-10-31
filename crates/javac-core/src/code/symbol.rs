@@ -3531,9 +3531,19 @@ pub fn symbol_pool_key(
                 // Java: baseSymbol() returns the symbol that was cloned (the
                 // immediate base, not its transitive base); poolKey is
                 // Pair(newOwner, baseSymbol()) (Symbol.java:1684-1686, 1936-1938).
+                // Only re-owned clones carry that override; Types.mergeAbstracts
+                // returns an anonymous MethodSymbol that overrides baseSymbol()
+                // only, so its poolKey stays the identity key (Symbol.poolKey).
                 Some(base) => {
                     let owner = ctx.sym(sym).owner.expect("member owner");
-                    PoolKey::Pair(Box::new(PoolKey::Symbol(owner)), Box::new(PoolKey::Symbol(base)))
+                    if ctx.sym(base).owner != Some(owner) {
+                        PoolKey::Pair(
+                            Box::new(PoolKey::Symbol(owner)),
+                            Box::new(PoolKey::Symbol(base)),
+                        )
+                    } else {
+                        PoolKey::Symbol(sym)
+                    }
                 }
                 None => PoolKey::Symbol(sym),
             }

@@ -8792,7 +8792,10 @@ impl Types {
                         all_thrown = chk.intersect(ctx, syms, &all_thrown, &thrown2);
                     }
                 }
-                if all_thrown == crate::code::types::get_thrown_types(ctx, mt) {
+                // Java: `allThrown == mt.getThrownTypes()` is a reference
+                // comparison (Types.java:2913): intersect() builds a fresh list,
+                // so an unchanged thrown clause still yields the merged symbol.
+                if all_thrown.ptr_eq(&crate::code::types::get_thrown_types(ctx, mt)) {
                     return Some(MergeAbstractsResult {
                         symbol: *s,
                         base_symbol: *s,
