@@ -4202,6 +4202,13 @@ thread_local! {
     /// Inference exceptions currently unwinding on this thread (same adapter).
     static INFERENCE_EXCEPTIONS: std::cell::RefCell<Vec<crate::comp::infer::InferenceException>> =
         const { std::cell::RefCell::new(Vec::new()) };
+    /// Inapplicable-method reports recorded without a panic (the Result-style
+    /// failure channel; MethodCheckContext.report pushes here and
+    /// catch_inapplicable_method_exception turns it into an Err).
+    static INAPPLICABLE_FAILURES: std::cell::RefCell<
+    Vec<Option<crate::util::jc_diagnostic::JCDiagnostic>>,
+> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// The panic payload of a Java InapplicableMethodException throw (Resolve.java).
@@ -4233,8 +4240,27 @@ pub fn throw_inference_exception(exception: crate::comp::infer::InferenceExcepti
 pub fn catch_inapplicable_method_exception<R>(
     body: impl FnOnce() -> R,
 ) -> Result<R, MethodCheckFailure> {
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
-        Ok(value) => Ok(value),
+    // Result-style failure channel: reports pushed by MethodCheckContext.report
+    // (without a panic) are collected after the body returns.
+    let mark = INAPPLICABLE_FAILURES.with(|stack| stack.borrow().len());
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(body));
+    let recorded = INAPPLICABLE_FAILURES.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        let recorded = if stack.len() > mark {
+            Some(stack[mark].clone())
+        } else {
+            None
+        };
+        stack.truncate(mark);
+        recorded
+    });
+    match outcome {
+        Ok(value) => match recorded {
+            Some(Some(diagnostic)) => Err(MethodCheckFailure::Inapplicable(
+                InapplicableMethodException::new(Some(diagnostic)),
+            )),
+            _ => Ok(value),
+        },
         Err(payload) => {
             if payload.is::<InapplicableMethodExceptionPayload>() {
                 let diagnostic = INAPPLICABLE_DIAGNOSTICS
@@ -4743,7 +4769,9 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         details: &crate::util::jc_diagnostic::JCDiagnostic,
     ) {
         // Java: throw new InapplicableMethodException(details) (Resolve.java:1040-1042).
-        throw_inapplicable_method_exception(Some(details));
+        // Port: record the failure for the Result-style channel instead of a
+        // panic; catch_inapplicable_method_exception turns it into an Err.
+        INAPPLICABLE_FAILURES.with(|stack| stack.borrow_mut().push(Some(details.clone())));
     }
 
     fn check_warner(
