@@ -84,7 +84,14 @@ pub struct TypeEnter {
     pub completion_enabled: std::cell::Cell<bool>,
     /// Java: private final ImportsPhase completeClass = new ImportsPhase()
     /// (expressed as phase state; registered adapter for Java inner classes).
-    pub top_level_phase: std::cell::Cell<Option<Phase>>,
+    pub complete_class: Rc<Phase>,
+    /// Java: the HierarchyPhase instance (registered as a class completer).
+    pub hierarchy_phase: Rc<Phase>,
+    /// Java: private Phase topLevelPhase;
+    pub top_level_phase: RefCell<Option<Rc<Phase>>>,
+    /// The shared TypeEnter cell (Weak breaks the completer -> TypeEnter cycle).
+    pub self_ref: RefCell<std::rc::Weak<RefCell<TypeEnter>>>,
+    /// Java: private Phase topLevelPhase (kept as the official field above).
     /// Java: depth of nested TypeEnter.complete invocations. Official
     /// TypeEnter.complete runs finishImports only after the full completion
     /// cascade of the outermost call (TypeEnter.java:204-217); the port keeps
@@ -121,12 +128,165 @@ pub struct TypeEnter {
     pub check_clash: bool,
 }
 
-/// Java: TypeEnter.Phase (the inner subclasses are expressed as TypeEnter phase
-/// methods; registered adapter).
+/// Java: the TypeEnter inner phase classes (TypeEnter.java:302-1018).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PhaseKind {
+    Imports,
+    Hierarchy,
+    Permits,
+    Header,
+    Record,
+    Members,
+}
+
+/// Java: TypeEnter.Phase (the inner subclasses are selected through
+/// PhaseKind; registered adapter for Java inner classes).
 pub struct Phase {
-    pub queue: Vec<Rc<Env<AttrContext>>>,
+    pub kind: PhaseKind,
+    /// Java: Phase.queue
+    pub queue: RefCell<Vec<Rc<Env<AttrContext>>>>,
     pub next: Option<Rc<Phase>>,
     pub phase_name: CompletionCause,
+    /// Java: AbstractMembersPhase.completing
+    pub completing: std::cell::Cell<bool>,
+    /// Java: AbstractMembersPhase.todo
+    pub todo: RefCell<Vec<Rc<Env<AttrContext>>>>,
+}
+
+impl Phase {
+    fn new(kind: PhaseKind, phase_name: CompletionCause, next: Option<Rc<Phase>>) -> Phase {
+        Phase {
+            kind,
+            queue: RefCell::new(Vec::new()),
+            next,
+            phase_name,
+            completing: std::cell::Cell::new(false),
+            todo: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// Java: Phase.completeEnvs(List<Env<AttrContext>> envs) (TypeEnter.java:249-276).
+    fn complete_envs(
+        self: &Rc<Self>,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ty: &TypeEnter,
+        envs: Vec<Rc<Env<AttrContext>>>,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> Vec<Rc<Env<AttrContext>>> {
+        let first_to_complete = self.queue.borrow().is_empty();
+        let prev = ty.top_level_phase.replace(Some(Rc::clone(self)));
+        self.do_complete_envs(ctx, syms, ty, envs, attr);
+        ty.top_level_phase.replace(prev);
+        if first_to_complete {
+            let out = std::mem::take(&mut *self.queue.borrow_mut());
+            match &self.next {
+                Some(next) => next.complete_envs(ctx, syms, ty, out, attr),
+                None => out,
+            }
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Java: the virtual Phase.doCompleteEnvs (TypeEnter.java:278-297 and the
+    /// overrides at 757-769/917-933).
+    fn do_complete_envs(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ty: &TypeEnter,
+        envs: Vec<Rc<Env<AttrContext>>>,
+        attr: &mut crate::comp::attr::Attr,
+    ) {
+        match self.kind {
+            PhaseKind::Hierarchy => {
+                // Java: HierarchyPhase.doCompleteEnvs (TypeEnter.java:757-769):
+                // register the hierarchy phase as the completer for every class
+                // first, then complete the classes so the supertypes are
+                // processed in dependency order.
+                for env in &envs {
+                    let tree = env.encl_class.expect("class tree");
+                    let sym = class_tree_symbol(ctx, tree).expect("class symbol");
+                    let hierarchy = HierarchyCompleter {
+                        type_enter: ty.self_ref.borrow().clone(),
+                        phase: Rc::clone(&ty.hierarchy_phase),
+                    };
+                    ctx.sym_mut(sym).completer = Some(Rc::new(RefCell::new(hierarchy)));
+                }
+                for env in envs {
+                    let tree = env.encl_class.expect("class tree");
+                    let sym = class_tree_symbol(ctx, tree).expect("class symbol");
+                    if let Err(failure) = ctx.complete_symbol_with_attr(syms, sym, Some(&mut *attr)) {
+                        ty.chk
+                            .completion_error(ctx, ctx.tree(tree).pos, &failure, syms);
+                    }
+                }
+            }
+            PhaseKind::Record | PhaseKind::Members => {
+                // Java: AbstractMembersPhase.doCompleteEnvs
+                // (TypeEnter.java:917-933): prepend the new environments and
+                // only the top-level invocation drains the shared todo list.
+                {
+                    let mut todo = self.todo.borrow_mut();
+                    let mut combined = envs;
+                    combined.append(&mut todo);
+                    *todo = combined;
+                    if self.completing.get() {
+                        return;
+                    }
+                }
+                let prev_completing = self.completing.get();
+                self.completing.set(true);
+                loop {
+                    let head = {
+                        let mut todo = self.todo.borrow_mut();
+                        if todo.is_empty() {
+                            break;
+                        }
+                        todo.remove(0)
+                    };
+                    self.phase_do_complete_envs_one(ctx, syms, ty, head, &mut *attr);
+                }
+                self.completing.set(prev_completing);
+            }
+            _ => {
+                for env in envs {
+                    self.phase_do_complete_envs_one(ctx, syms, ty, env, &mut *attr);
+                }
+            }
+        }
+    }
+
+    /// Java: Phase.doCompleteEnvs single-environment body (TypeEnter.java:279-296).
+    fn phase_do_complete_envs_one(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        ty: &TypeEnter,
+        env: Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
+    ) {
+        let tree = env.encl_class.expect("class tree");
+        let sym = class_tree_symbol(ctx, tree).expect("class symbol");
+        self.queue.borrow_mut().push(Rc::clone(&env));
+        let sourcefile = compilation_unit_sourcefile(ctx, toplevel(&env));
+        let prev_source = ty.log.borrow_mut().use_source(sourcefile);
+        let prev_lint = ty
+            .deferred_lint_handler
+            .borrow_mut()
+            .set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(tree).pos)));
+        ty.dependencies
+            .borrow_mut()
+            .push(ctx, sym, self.phase_name);
+        if let Err(failure) = ty.run_phase(self.kind, ctx, syms, &env, attr) {
+            ty.chk
+                .completion_error(ctx, ctx.tree(tree).pos, &failure, syms);
+        }
+        ty.dependencies.borrow_mut().pop();
+        ty.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint);
+        ty.log.borrow_mut().use_source(prev_source);
+    }
 }
 
 
@@ -149,6 +309,39 @@ impl TypeEnter {
         annotate: Rc<RefCell<Option<Rc<Annotate>>>>,
         todo: Rc<RefCell<crate::comp::todo::Todo>>,
     ) -> TypeEnter {
+        // Java: the phase chain completeClass -> HierarchyPhase ->
+        // PermitsPhase -> HeaderPhase -> RecordPhase -> MembersPhase
+        // (TypeEnter.java:302-1058).
+        let members_phase = Rc::new(Phase::new(
+            PhaseKind::Members,
+            CompletionCause::MEMBERS_PHASE,
+            None,
+        ));
+        let record_phase = Rc::new(Phase::new(
+            PhaseKind::Record,
+            CompletionCause::RECORD_PHASE,
+            Some(Rc::clone(&members_phase)),
+        ));
+        let header_phase = Rc::new(Phase::new(
+            PhaseKind::Header,
+            CompletionCause::HEADER_PHASE,
+            Some(Rc::clone(&record_phase)),
+        ));
+        let permits_phase = Rc::new(Phase::new(
+            PhaseKind::Permits,
+            CompletionCause::HIERARCHY_PHASE,
+            Some(Rc::clone(&header_phase)),
+        ));
+        let hierarchy_phase = Rc::new(Phase::new(
+            PhaseKind::Hierarchy,
+            CompletionCause::HIERARCHY_PHASE,
+            Some(Rc::clone(&permits_phase)),
+        ));
+        let imports_phase = Rc::new(Phase::new(
+            PhaseKind::Imports,
+            CompletionCause::IMPORTS_PHASE,
+            Some(Rc::clone(&hierarchy_phase)),
+        ));
         TypeEnter {
             names,
             enter,
@@ -168,7 +361,10 @@ impl TypeEnter {
             // source 9+ (the compiler default) must not warn on imports.
             allow_deprecation_on_import: false,
             completion_enabled: std::cell::Cell::new(true),
-            top_level_phase: std::cell::Cell::new(None),
+            complete_class: imports_phase,
+            hierarchy_phase,
+            top_level_phase: RefCell::new(None),
+            self_ref: RefCell::new(std::rc::Weak::new()),
             completion_depth: std::cell::Cell::new(0),
             pending_import_checks: std::cell::RefCell::new(Vec::new()),
             completion_stack: std::cell::RefCell::new(Vec::new()),
@@ -367,6 +563,12 @@ impl TypeEnter {
         // (Java: sym.completer = this;), so a deferred class is retried on the
         // next completion attempt.
         if !self.completion_enabled.get() {
+            // Java: sym.completer = this; (TypeEnter.java:189-194). The
+            // completer was taken by complete_symbol before this call, so it
+            // must be re-installed for the next completion attempt.
+            if let Some(type_enter) = self.self_ref.borrow().upgrade() {
+                crate::comp::enter::install_type_enter_completer(ctx, sym, type_enter);
+            }
             return Ok(());
         }
         let annotate = self
@@ -396,31 +598,13 @@ impl TypeEnter {
         let depth = self.completion_depth.get() + 1;
         self.completion_depth.set(depth);
         self.completion_stack.borrow_mut().push(sym);
+        // Java: queue = completeClass.completeEnvs(List.of(typeEnvs.get(sym)))
+        // (TypeEnter.java:204). The phase chain installs and checks the source
+        // and lint position around every phase.
         let queue = match env {
-            Some(env) => {
-                let queue = self.phase_imports_complete_envs(ctx, syms, vec![env], attr);
-                for queued_env in &queue {
-                    // Java: TypeEnter.Phase.doCompleteEnvs installs the
-                    // compilation unit source and the class position around
-                    // every phase; diagnostics raised by MemberEnter/Hierarchy
-                    // must keep their file/line and lint position.
-                    let tree = queued_env.encl_class.expect("class tree");
-                    let sourcefile = compilation_unit_sourcefile(ctx, toplevel(queued_env));
-                    let prev_source = self.log.borrow_mut().use_source(sourcefile);
-                    let prev_lint = self
-                        .deferred_lint_handler
-                        .borrow_mut()
-                        .set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(tree).pos)));
-                    self.hierarchy_phase_run(ctx, syms, queued_env, attr);
-                    self.permits_phase_run(ctx, syms, queued_env);
-                    self.header_phase_run(ctx, syms, queued_env, attr);
-                    self.record_phase_run(ctx, syms, queued_env, attr);
-                    self.members_phase_run(ctx, syms, queued_env, attr);
-                    self.deferred_lint_handler.borrow_mut().set_pos_state(prev_lint);
-                    self.log.borrow_mut().use_source(prev_source);
-                }
-                queue
-            }
+            Some(env) => self
+                .complete_class
+                .complete_envs(ctx, syms, self, vec![env], attr),
             None => Vec::new(),
         };
         self.completion_stack.borrow_mut().pop();
@@ -461,6 +645,98 @@ impl TypeEnter {
             .unblock_annotations_with_attr(ctx, syms, attr)
             .expect("unblockAnnotations flush");
         Ok(())
+    }
+
+    /// Register the shared cell so a re-installed HierarchyPhase completer can
+    /// reach this service (Java: the inner class captures the outer instance).
+    pub fn set_self_ref(&self, weak: std::rc::Weak<RefCell<TypeEnter>>) {
+        *self.self_ref.borrow_mut() = weak;
+    }
+
+    /// Java: the TypeEnter inner phase runPhase bodies (TypeEnter.java:320-1055).
+    fn run_phase(
+        &self,
+        kind: PhaseKind,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        env: &Rc<Env<AttrContext>>,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> Result<(), CompletionFailure> {
+        match kind {
+            PhaseKind::Imports => self.run_imports_phase(ctx, syms, env, attr),
+            PhaseKind::Hierarchy => {
+                self.hierarchy_phase_run(ctx, syms, env, attr);
+                Ok(())
+            }
+            PhaseKind::Permits => {
+                self.permits_phase_run(ctx, syms, env);
+                Ok(())
+            }
+            PhaseKind::Header => {
+                self.header_phase_run(ctx, syms, env, attr);
+                Ok(())
+            }
+            PhaseKind::Record => {
+                self.record_phase_run(ctx, syms, env, attr);
+                Ok(())
+            }
+            PhaseKind::Members => {
+                self.members_phase_run(ctx, syms, env, attr);
+                Ok(())
+            }
+        }
+    }
+
+    /// Java: HierarchyPhase.complete(Symbol sym) (TypeEnter.java:809-823).
+    fn hierarchy_complete_with_attr(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: SymbolId,
+        phase: &Rc<Phase>,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> Result<(), CompletionFailure> {
+        let is_current = self
+            .top_level_phase
+            .borrow()
+            .as_ref()
+            .map(|current| Rc::ptr_eq(current, phase))
+            .unwrap_or(false);
+        if !is_current {
+            // only do the processing based on dependencies in the HierarchyPhase
+            let completer = HierarchyCompleter {
+                type_enter: self.self_ref.borrow().clone(),
+                phase: Rc::clone(phase),
+            };
+            ctx.sym_mut(sym).completer = Some(Rc::new(RefCell::new(completer)));
+            return Ok(());
+        }
+        let env = { self.type_envs.borrow().get(sym) };
+        if let Some(env) = env {
+            phase.phase_do_complete_envs_one(ctx, syms, self, env, attr);
+        }
+        Ok(())
+    }
+
+    /// Java: HierarchyPhase.complete(Symbol sym) without an explicit Attr.
+    fn hierarchy_complete_no_attr(
+        &self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: SymbolId,
+        phase: &Rc<Phase>,
+    ) -> Result<(), CompletionFailure> {
+        let attr_rc = self
+            .attr
+            .borrow()
+            .clone()
+            .expect("TypeEnter.attr must be injected");
+        if let Ok(mut attr) = attr_rc.try_borrow_mut() {
+            return self.hierarchy_complete_with_attr(ctx, syms, sym, phase, &mut attr);
+        }
+        let attr_ptr = attr_rc.as_ptr();
+        // SAFETY: the same re-entrancy adapter used by TypeEnter.complete.
+        self.hierarchy_complete_with_attr(ctx, syms, sym, phase, unsafe { &mut *attr_ptr })
     }
 
     // ------------------------------------------------------------------
@@ -4109,6 +4385,41 @@ fn synthesize_class(
     };
     let class = crate::code::symtab::new_class_symbol(ctx, flags, name, owner, no_type);
     types.create_error_type_class(ctx, class, Some(original))
+}
+
+/// Java: HierarchyPhase implements Completer (TypeEnter.java:750-825).
+struct HierarchyCompleter {
+    type_enter: std::rc::Weak<RefCell<TypeEnter>>,
+    phase: Rc<Phase>,
+}
+
+impl crate::code::symbol::Completer for HierarchyCompleter {
+    fn complete(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: SymbolId,
+    ) -> Result<(), CompletionFailure> {
+        let Some(type_enter) = self.type_enter.upgrade() else {
+            return Ok(());
+        };
+        let type_enter = type_enter.borrow();
+        type_enter.hierarchy_complete_no_attr(ctx, syms, sym, &self.phase)
+    }
+
+    fn complete_with_attr(
+        &mut self,
+        ctx: &mut CompilerContext,
+        syms: &Symtab,
+        sym: SymbolId,
+        attr: &mut crate::comp::attr::Attr,
+    ) -> Result<(), CompletionFailure> {
+        let Some(type_enter) = self.type_enter.upgrade() else {
+            return Ok(());
+        };
+        let type_enter = type_enter.borrow();
+        type_enter.hierarchy_complete_with_attr(ctx, syms, sym, &self.phase, attr)
+    }
 }
 
 #[cfg(test)]

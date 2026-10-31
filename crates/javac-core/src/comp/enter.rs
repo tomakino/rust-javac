@@ -1348,6 +1348,17 @@ fn package_fullname_of(ctx: &CompilerContext, sym: SymbolId) -> crate::util::nam
     }
 }
 
+/// Java: sym.completer = this (TypeEnter.complete when completion is disabled,
+/// TypeEnter.java:189-194). Exposed so the shared TypeEnter can install the
+/// deferred completer again after taking it.
+pub(crate) fn install_type_enter_completer(
+    ctx: &mut CompilerContext,
+    sym: SymbolId,
+    type_enter: Rc<RefCell<crate::comp::type_enter::TypeEnter>>,
+) {
+    ctx.sym_mut(sym).completer = Some(Rc::new(RefCell::new(TypeEnterCompleter { type_enter })));
+}
+
 /// Java: the TypeEnter completer installed as ClassSymbol.completer
 /// (Enter.java:523). The local TypeEnter is a shared RefCell service.
 struct TypeEnterCompleter {

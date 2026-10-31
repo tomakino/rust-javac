@@ -2799,6 +2799,7 @@ struct UnusedFileManager;
             Rc::clone(&annotate_cell),
             Rc::clone(&todo)
         )));
+        type_enter.borrow().set_self_ref(Rc::downgrade(&type_enter));
         let basic_handler = Rc::clone(&check.basic_handler);
         let infer = crate::comp::infer::Infer::new(
             &mut ctx,

@@ -501,12 +501,52 @@ impl MemberEnter {
                 let vartype = var_decl_vartype(ctx, tree).expect("variable type");
                 // Port note: when the enclosing Attr pass already attributed the
                 // vartype (reentrancy adapter), keep that type instead of
-                // re-attributing through the attr service.
+                // re-attributing through the attr service. Java's
+                // attr.attribType(tree.vartype, env) re-resolves the type and
+                // thereby completes the referenced class; that completion side
+                // effect is reproduced here without re-attributing the tree.
                 let ty = match ctx.tree(vartype).ty {
-                    Some(ty) => ty,
+                    Some(ty) => {
+                        let mut referenced = ctx.typ(ty).tsym;
+                        if referenced.is_none()
+                            && ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::ARRAY)
+                        {
+                            let elem = self.types.elemtype(ctx, syms, ty);
+                            referenced = ctx.typ(elem).tsym;
+                        }
+                        if let Some(referenced) = referenced
+                            && ctx.sym(referenced).completer.is_some()
+                            && let Err(failure) =
+                                ctx.complete_symbol_with_attr(syms, referenced, Some(&mut *attr))
+                        {
+                            let _ = self.chk.completion_error(
+                                ctx,
+                                ctx.tree(vartype).pos,
+                                &failure,
+                                syms,
+                            );
+                        }
+                        ty
+                    }
                     None => {
                         let ty = self.attrib_type(ctx, syms, vartype, &local_env, attr);
                         set_tree_type(ctx, vartype, ty);
+                        // Java's attribType resolves the referenced class; the
+                        // ported attr service may leave the source class symbol
+                        // installed (completer still present), so complete it
+                        // here as the resolution side effect.
+                        if let Some(referenced) = ctx.typ(ty).tsym
+                            && ctx.sym(referenced).completer.is_some()
+                            && let Err(failure) =
+                                ctx.complete_symbol_with_attr(syms, referenced, Some(&mut *attr))
+                        {
+                            let _ = self.chk.completion_error(
+                                ctx,
+                                ctx.tree(vartype).pos,
+                                &failure,
+                                syms,
+                            );
+                        }
                         ty
                     }
                 };

@@ -585,6 +585,7 @@ impl MiniCompiler {
             Rc::clone(&annotate_cell),
             Rc::clone(&todo),
         )));
+        type_enter.borrow().set_self_ref(Rc::downgrade(&type_enter));
         *enter.borrow().type_enter.borrow_mut() = Some(Rc::clone(&type_enter));
         // Java: Enter constructor builds predefClassDef from
         // Symtab.predefClass (Enter.java:130-134).

@@ -8165,21 +8165,15 @@ impl Resolve {
         syms: &Symtab,
         sym: SymbolId,
     ) -> Option<crate::ids::ScopeId> {
-        // Java: PackageSymbol.members() calls complete() before returning
-        // members_field (Symbol.java:1175-1178); complete even when a scope is
-        // already installed (the package completer may still be pending).
-        if matches!(
-            ctx.sym(sym).kind_data,
-            crate::code::symbol::SymbolKind::PackageSymbol { .. }
-                | crate::code::symbol::SymbolKind::RootPackageSymbol { .. }
-        ) && let Err(failure) = ctx.complete_symbol(syms, sym)
+        // Java: Symbol.members() (Symbol.java:1100-1110): when a completer is
+        // still installed the symbol is completed first; this covers classes as
+        // well as packages (PackageSymbol.members() calls complete() before
+        // returning members_field, Symbol.java:1175-1178) and must not be
+        // skipped just because an (uncompleted) member scope is already
+        // installed by Enter.
+        if ctx.sym(sym).completer.is_some()
+            && let Err(failure) = ctx.complete_symbol(syms, sym)
         {
-            crate::code::symbol::throw_completion_failure(failure);
-        }
-        if let Some(members) = ctx.sym(sym).members() {
-            return Some(members);
-        }
-        if let Err(failure) = ctx.complete_symbol(syms, sym) {
             crate::code::symbol::throw_completion_failure(failure);
         }
         ctx.sym(sym).members()

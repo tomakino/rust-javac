@@ -15608,7 +15608,7 @@ impl Attr {
         }
         let type_enter = Rc::clone(&self.type_enter);
         let result = type_enter
-            .borrow_mut()
+            .borrow()
             .complete_with_attr(ctx, syms, sym, self);
         match result {
             Ok(()) => Ok(()),
@@ -17877,6 +17877,7 @@ mod tests {
             Rc::new(RefCell::new(None)),
             Rc::clone(&todo),
         )));
+        type_enter.borrow().set_self_ref(Rc::downgrade(&type_enter));
         let basic_handler = Rc::clone(&chk.basic_handler);
         let infer = crate::comp::infer::Infer::new(
             &mut ctx,
