@@ -9198,7 +9198,7 @@ impl ReferenceLookupHelper {
                         })
                         .unwrap_or(false);
                     if has_none || first_subtype {
-                        Some(ReferenceLookupHelper::new_unbound_method(
+                        let mut helper = ReferenceLookupHelper::new_unbound_method(
                             self.reference_tree,
                             self.name.clone(),
                             self.original_site,
@@ -9206,7 +9206,26 @@ impl ReferenceLookupHelper {
                             self.typeargtypes.clone(),
                             self.max_phase,
                             self.original_site,
-                        ))
+                        );
+                        // Java: UnboundMethodReferenceLookupHelper (Resolve.java:3599-3605):
+                        // when the qualifier is raw, the lookup site becomes the
+                        // receiver type seen as a supertype of the raw qualifier.
+                        // Without this the helper keeps the raw qualifier, and the
+                        // member type of an instance method of that raw type is
+                        // erased (Map.Entry::getValue would lose its type variable).
+                        if types.is_raw_type_public(ctx, self.original_site)
+                            && !self.argtypes.is_empty()
+                        {
+                            let head = *self.argtypes.head();
+                            if !ctx.typ(head).has_tag(crate::code::type_tag::TypeTag::NONE) {
+                                let site_tsym =
+                                    ctx.typ(self.original_site).tsym.expect("site tsym");
+                                if let Some(as_super) = types.as_super(ctx, syms, head, site_tsym) {
+                                    helper.site = types.capture(ctx, syms, as_super);
+                                }
+                            }
+                        }
+                        Some(helper)
                     } else {
                         let mut dummy = ReferenceLookupHelper::new_method(
                             self.reference_tree,
