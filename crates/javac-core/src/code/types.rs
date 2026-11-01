@@ -4436,27 +4436,50 @@ fn is_parameterized_type(ctx: &CompilerContext, t: TypeId) -> bool {
         TypeKindData::ClassType {
             allparams_field,
             typarams_field,
+            outer_field,
             ..
         }
         | TypeKindData::ErasedClassType {
             allparams_field,
             typarams_field,
+            outer_field,
             ..
         }
         | TypeKindData::UnionClassType {
             allparams_field,
             typarams_field,
+            outer_field,
             ..
         }
         | TypeKindData::IntersectionClassType {
             allparams_field,
             typarams_field,
+            outer_field,
             ..
-        } => allparams_field
-            .clone()
-            .or_else(|| typarams_field.clone())
-            .map(|params| params.non_empty())
-            .unwrap_or(false),
+        } => {
+            // Java: allparams() = getTypeArguments().prependList(enclosing.allparams())
+            // (Type.java:1104-1109), so a member class of a parameterized class is
+            // itself parameterized. allparams_field is the authoritative cache;
+            // without it, the member's own type arguments are prepended to the
+            // enclosing chain.
+            if let Some(params) = allparams_field {
+                return params.non_empty();
+            }
+            if typarams_field
+                .as_ref()
+                .map(|params| params.non_empty())
+                .unwrap_or(false)
+            {
+                return true;
+            }
+            match outer_field {
+                Some(outer) => is_parameterized_type(ctx, *outer),
+                None => false,
+            }
+        }
+        TypeKindData::ArrayType {
+            elemtype: Some(elem), ..
+        } => is_parameterized_type(ctx, *elem),
         _ => false,
     }
 }
