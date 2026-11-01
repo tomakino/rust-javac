@@ -1221,9 +1221,7 @@ impl Types {
                 }
             }
             TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
-                let upper = ctx
-                    .typ(t)
-                    .get_upper_bound()
+                let upper = ctx.upper_bound_of(t)
                     .expect("type variable upper bound");
                 self.erasure_recurse(ctx, syms, upper, recurse)
             }
@@ -1358,9 +1356,7 @@ impl Types {
                 };
                 match bound {
                     None => syms.object_type,
-                    Some(bound) => ctx
-                        .typ(bound)
-                        .get_upper_bound()
+                    Some(bound) => ctx.upper_bound_of(bound)
                         .expect("wildcard bound upper bound"),
                 }
             } else {
@@ -1533,7 +1529,7 @@ impl Types {
             return result;
         }
         if tag == TypeTag::TYPEVAR {
-            let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+            let upper = ctx.upper_bound_of(t).expect("type var upper bound");
             let upper_is_compound = self.is_compound(ctx, upper);
             let upper_is_interface = type_is_interface(ctx, upper);
             if ctx.typ(upper).has_tag(TypeTag::TYPEVAR)
@@ -1630,7 +1626,7 @@ impl Types {
             return declared.unwrap_or_else(List::nil);
         }
         if tag == TypeTag::TYPEVAR {
-            let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+            let upper = ctx.upper_bound_of(t).expect("type var upper bound");
             let upper_is_compound = self.is_compound(ctx, upper);
             let upper_is_interface = type_is_interface(ctx, upper);
             if upper_is_compound {
@@ -1863,7 +1859,7 @@ impl Types {
         let mut current = tvars1.clone();
         while current.non_empty() {
             let tvar = *current.head();
-            let upper = ctx.typ(tvar).get_upper_bound().expect("type var upper bound");
+            let upper = ctx.upper_bound_of(tvar).expect("type var upper bound");
             let substituted = self.subst_type(ctx, syms, upper, tvars, &tvars1, None);
             if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(tvar).kind {
                 *bound = Some(substituted);
@@ -1952,7 +1948,7 @@ impl Types {
         let mut current = tvars.clone();
         while current.non_empty() {
             let tvar = *current.head();
-            let upper = ctx.typ(tvar).get_upper_bound().expect("type var upper bound");
+            let upper = ctx.upper_bound_of(tvar).expect("type var upper bound");
             let bound = self.subst_type(ctx, syms, upper, from, to, None);
             if bound != upper {
                 changed = true;
@@ -2243,7 +2239,7 @@ impl Types {
                 if ctx.typ(t).tsym == Some(sym) {
                     Some(t)
                 } else {
-                    let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+                    let upper = ctx.upper_bound_of(t).expect("type var upper bound");
                     self.as_super_visit(ctx, syms, upper, sym, seen)
                 }
             }
@@ -2418,7 +2414,7 @@ impl Types {
                 ctx.sym(sym).ty.expect("member type")
             }
             TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
-                let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+                let upper = ctx.upper_bound_of(t).expect("type var upper bound");
                 self.member_type(ctx, syms, upper, sym)
             }
             _ => ctx.sym(sym).ty.expect("member type"),
@@ -2480,9 +2476,7 @@ impl Types {
                 let head_a = *current_a.head();
                 let wildcard = head_t;
                 // Ui = A.head.getUpperBound() (or Object when absent)
-                let ui = ctx
-                    .typ(head_a)
-                    .get_upper_bound()
+                let ui = ctx.upper_bound_of(head_a)
                     .unwrap_or(syms.object_type);
                 let kind = match &ctx.typ(wildcard).kind {
                     TypeKindData::WildcardType { kind, .. } => *kind,
@@ -2522,9 +2516,7 @@ impl Types {
                     *b = Some(upper);
                     *l = Some(lower);
                 }
-                let upper = ctx
-                    .typ(head_s)
-                    .get_upper_bound()
+                let upper = ctx.upper_bound_of(head_s)
                     .expect("captured upper bound");
                 let lower = match &ctx.typ(head_s).kind {
                     TypeKindData::CapturedType { lower, .. } => {
@@ -2896,7 +2888,7 @@ impl Types {
                 }
                 TypeTag::WILDCARD | TypeTag::NONE => false,
                 TypeTag::TYPEVAR => {
-                    let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+                    let upper = ctx.upper_bound_of(t).expect("type var upper bound");
                     self.is_subtype_no_capture(ctx, syms, upper, s)
                 }
                 tag => panic!("AssertionError: isSubtype {tag:?}"),
@@ -2916,7 +2908,7 @@ impl Types {
                 // Java: IsSubtype.visitType (Types.java:1117-1118) — IsSubtype
                 // does not override visitTypeVar, so type variables fall through
                 // to the TYPEVAR case of visitType.
-                let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+                let upper = ctx.upper_bound_of(t).expect("type var upper bound");
                 self.is_subtype_no_capture(ctx, syms, upper, s)
             }
             TypeKindData::ClassType { .. }
@@ -3079,7 +3071,7 @@ impl Types {
         from: &List<TypeId>,
         to: &List<TypeId>,
     ) -> TypeId {
-        let bound = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+        let bound = ctx.upper_bound_of(t).expect("type var upper bound");
         let bound1 = self.subst_type(ctx, syms, bound, from, to, None);
         if bound1 == bound {
             return t;
@@ -3115,13 +3107,9 @@ impl Types {
         let mut l1 = t_tvars.clone();
         let mut l2 = s_tvars.clone();
         while l1.non_empty() && l2.non_empty() {
-            let b1 = ctx
-                .typ(*l1.head())
-                .get_upper_bound()
+            let b1 = ctx.upper_bound_of(*l1.head())
                 .expect("type var upper bound");
-            let b2 = ctx
-                .typ(*l2.head())
-                .get_upper_bound()
+            let b2 = ctx.upper_bound_of(*l2.head())
                 .expect("type var upper bound");
             let substituted = self.subst_type(ctx, syms, b2, s_tvars, t_tvars, None);
             if !self.is_same_type(ctx, syms, b1, substituted) {
@@ -3263,7 +3251,7 @@ impl Types {
         //   } else return t;
         if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
             if ctx.typ(t).is_captured() {
-                let upper = ctx.typ(t).get_upper_bound().expect("type variable bound");
+                let upper = ctx.upper_bound_of(t).expect("type variable bound");
                 return self.cvar_upper_bound(ctx, upper);
             }
             return t;
@@ -3797,7 +3785,7 @@ impl Types {
             return true;
         }
         if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
-            let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+            let upper = ctx.upper_bound_of(t).expect("type var upper bound");
             return self.is_subtype_unchecked_internal(ctx, syms, upper, s, false, warn);
         }
         if !is_raw_type(ctx, s) {
@@ -3823,7 +3811,7 @@ impl Types {
     fn skip_type_vars(&self, ctx: &mut CompilerContext, site: TypeId) -> TypeId {
         let mut site = site;
         while ctx.typ(site).has_tag(TypeTag::TYPEVAR) {
-            site = ctx.typ(site).get_upper_bound().expect("type var upper bound");
+            site = ctx.upper_bound_of(site).expect("type var upper bound");
         }
         site
     }
@@ -3929,7 +3917,7 @@ impl Types {
                 if tag == TypeTag::ERROR || tag == TypeTag::BOT {
                     return true;
                 }
-                let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+                let upper = ctx.upper_bound_of(t).expect("type var upper bound");
                 if tag == TypeTag::TYPEVAR {
                     if self.is_subtype(ctx, syms, t, s) {
                         return true;
@@ -3988,7 +3976,7 @@ impl Types {
                 if tag == TypeTag::TYPEVAR {
                     // Java: if (isCastable(t, s.getUpperBound(), noWarnings)) {
                     // warnStack.head.warn(UNCHECKED); return true; } else false;
-                    let upper = ctx.typ(s).get_upper_bound().expect("type var upper bound");
+                    let upper = ctx.upper_bound_of(s).expect("type var upper bound");
                     let mut no_warnings = crate::util::warner::Warner::new(None);
                     if self.is_castable_with_warn(ctx, syms, t, upper, &mut no_warnings) {
                         warn.warn(crate::code::lint::LintCategory::UNCHECKED);
@@ -4620,7 +4608,7 @@ fn elemtype_of(
 fn cvar_upper_bound(ctx: &CompilerContext, t: TypeId) -> TypeId {
     if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
         if ctx.typ(t).is_captured() {
-            let upper = ctx.typ(t).get_upper_bound().expect("captured type upper bound");
+            let upper = ctx.upper_bound_of(t).expect("captured type upper bound");
             cvar_upper_bound(ctx, upper)
         } else {
             t
@@ -4633,7 +4621,7 @@ fn cvar_upper_bound(ctx: &CompilerContext, t: TypeId) -> TypeId {
 /// Java: Types.cvarLowerBound(Type t)
 pub(crate) fn cvar_lower_bound(ctx: &CompilerContext, t: TypeId) -> TypeId {
     if ctx.typ(t).has_tag(TypeTag::TYPEVAR) && ctx.typ(t).is_captured() {
-        let lower = ctx.typ(t).get_lower_bound().expect("captured type lower bound");
+        let lower = ctx.lower_bound_of(t).expect("captured type lower bound");
         cvar_lower_bound(ctx, lower)
     } else {
         t
@@ -6165,7 +6153,7 @@ impl Types {
             }
             TypeKindData::TypeVar { .. } => {
                 if rewrite_type_vars {
-                    let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+                    let upper = ctx.upper_bound_of(t).expect("type var upper bound");
                     let bound = if self.type_contains(ctx, syms, upper, t) {
                         self.erasure(ctx, syms, upper)
                     } else {
@@ -6340,7 +6328,7 @@ impl Types {
             return false;
         }
         if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
-            let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+            let upper = ctx.upper_bound_of(t).expect("type var upper bound");
             let relaxed = self.relax_bound(ctx, syms, s);
             return !self.is_castable(ctx, syms, upper, relaxed);
         }
@@ -6702,7 +6690,7 @@ impl Types {
 impl Types {
     /// Java: public List<Type> getBounds(TypeVar t) (Types.java:2731-2742)
     pub fn get_bounds(&self, ctx: &mut CompilerContext, syms: &Symtab, t: TypeId) -> List<TypeId> {
-        let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+        let upper = ctx.upper_bound_of(t).expect("type var upper bound");
         if ctx.typ(upper).has_tag(TypeTag::NONE) {
             return List::nil();
         }
@@ -6840,7 +6828,7 @@ impl Types {
             );
         }
         if captured {
-            let lower = ctx.typ(origin).get_lower_bound().expect("captured lower bound");
+            let lower = ctx.lower_bound_of(origin).expect("captured lower bound");
             if !ctx.typ(lower).has_tag(TypeTag::BOT) {
                 self.undet_var_add_bound(
                     ctx,
@@ -7612,7 +7600,7 @@ impl Types {
                 }
                 TypeTag::TYPEVAR => {
                     while ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
-                        t = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+                        t = ctx.upper_bound_of(t).expect("type var upper bound");
                     }
                     if ctx.typ(t).has_tag(TypeTag::ARRAY) {
                         kinds[index] = ARRAY_BOUND;
@@ -8385,7 +8373,7 @@ impl Types {
                 closure_scope
             }
             TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
-                let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+                let upper = ctx.upper_bound_of(t).expect("type var upper bound");
                 self.members_closure_visit(ctx, syms, upper)
             }
             _ => {
@@ -9218,9 +9206,7 @@ impl Types {
         while current.non_empty() {
             let actual = *current.head();
             let formal = *formals_iter.head();
-            let bound = ctx
-                .typ(formal)
-                .get_upper_bound()
+            let bound = ctx.upper_bound_of(formal)
                 .expect("formal upper bound");
             if ctx.typ(actual).has_tag(wildcard_tag) {
                 // Java: WildcardType wt = (WildcardType)actual;
@@ -9600,7 +9586,7 @@ impl Types {
             return true;
         }
         if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
-            let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
+            let upper = ctx.upper_bound_of(t).expect("type var upper bound");
             return self.is_subtype_unchecked_internal_warn(ctx, syms, upper, s, false, warn);
         }
         if !is_raw_type(ctx, s) {
@@ -9918,7 +9904,7 @@ impl Types {
                     let actual = *current.head();
                     let declared_bound = if formals.non_empty() {
                         let formal = *formals.head();
-                        ctx.typ(formal).get_upper_bound().unwrap_or(syms.object_type)
+                        ctx.upper_bound_of(formal).unwrap_or(syms.object_type)
                     } else {
                         syms.object_type
                     };
@@ -10334,7 +10320,7 @@ impl Types {
         buf: &mut String,
     ) {
         buf.push_str(&crate::code::type_::type_to_string(ctx, t));
-        let Some(bound) = ctx.typ(t).get_upper_bound() else {
+        let Some(bound) = ctx.upper_bound_of(t) else {
             return;
         };
         let object_tsym = ctx.typ(syms.object_type).tsym;

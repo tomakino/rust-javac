@@ -7203,7 +7203,7 @@ fn skip_type_vars(
     let mut current = t;
     loop {
         if ctx.typ(current).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
-            if let Some(upper) = ctx.typ(current).get_upper_bound() {
+            if let Some(upper) = ctx.upper_bound_of(current) {
                 current = upper;
                 continue;
             }
@@ -9724,7 +9724,7 @@ impl Resolve {
     ) -> TypeId {
         let mut site = site;
         while ctx.typ(site).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
-            site = ctx.typ(site).get_upper_bound().expect("type var upper bound");
+            site = ctx.upper_bound_of(site).expect("type var upper bound");
         }
         types.capture(ctx, syms, site)
     }

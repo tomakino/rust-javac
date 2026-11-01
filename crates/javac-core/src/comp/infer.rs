@@ -762,7 +762,7 @@ impl Infer {
             let inst = types
                 .undet_var_get_inst(ctx, uv)
                 .expect("fresh tvar instance");
-            let ct_upper = ctx.typ(inst).get_upper_bound().expect("tvar upper bound");
+            let ct_upper = ctx.upper_bound_of(inst).expect("tvar upper bound");
             // Java: types.getBounds(ct) (Infer.java:541). Keep compound
             // components; fall back to the upper bound only when the local
             // bound list is empty (glb(nil) otherwise).

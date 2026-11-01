@@ -4242,7 +4242,7 @@ fn rewrite_type_parameters(
     use crate::code::type_::TypeKindData;
     let mut result = List::nil();
     for (type_variable_index, tvar) in tvars.iter().enumerate() {
-        let mut bound = ctx.typ(tvar).get_upper_bound().expect("type variable bound");
+        let mut bound = ctx.upper_bound_of(tvar).expect("type variable bound");
         let type_variable_index_current = type_variable_index as i32;
         // Java: bound.isCompound() (Type.java): true for an intersection and for
         // a union whose lub is an intersection.

@@ -1300,7 +1300,7 @@ fn type_to_string_into(ctx: &CompilerContext, ty: TypeId, sb: &mut String) {
                 is_printing_bound.set(true);
                 sb.push_str("{:");
                 if let Some(bound) = bound
-                    && let Some(upper) = ctx.typ(*bound).get_upper_bound()
+                    && let Some(upper) = ctx.upper_bound_of(*bound)
                 {
                     type_to_string_into(ctx, upper, sb);
                 }

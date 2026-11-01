@@ -3018,9 +3018,7 @@ impl Check {
         let mut forms_iter = forms;
         while args_iter.non_empty() && forms_iter.non_empty() {
             let form = *forms_iter.head();
-            let upper = ctx
-                .typ(form)
-                .get_upper_bound()
+            let upper = ctx.upper_bound_of(form)
                 .expect("type variable upper bound");
             let subst_list =
                 self.types
@@ -3074,8 +3072,7 @@ impl Check {
                 && self.types.is_erroneous(
                     ctx,
                     syms,
-                    ctx.typ(arg)
-                        .get_upper_bound()
+                    ctx.upper_bound_of(arg)
                         .expect("captured type variable upper bound"),
                 )
                 && !self.types.is_erroneous(ctx, syms, bound)
@@ -3107,29 +3104,16 @@ impl Check {
                 // later. Reading kind.bound directly would see the stale None
                 // captured at clone time.
                 let t = ctx.type_no_metadata_id(t);
-                let upper = match ctx.typ(t).get_upper_bound() {
-                    Some(upper) => upper,
-                    None => {
-                        if std::env::var_os("DSH_DEBUG_TVAR").is_some() {
-                            let name = ctx
-                                .typ(t)
-                                .tsym
-                                .map(|tsym| format!("{:?}", ctx.sym(tsym).name))
-                                .unwrap_or_else(|| "<no tsym>".to_string());
-                            eprintln!("[NO-BOUND-TVAR] name={} id={:?}", name, t);
-                        }
-                        panic!("type var upper bound");
-                    }
-                };
+                let upper = ctx.upper_bound_of(t).expect("type var upper bound");
                 self.is_type_arg_erroneous(ctx, syms, upper)
             }
             TypeKindData::CapturedType { .. } => {
                 let t = ctx.type_no_metadata_id(t);
-                let upper = ctx.typ(t).get_upper_bound().expect("captured upper bound");
+                let upper = ctx.upper_bound_of(t).expect("captured upper bound");
                 if self.is_type_arg_erroneous(ctx, syms, upper) {
                     return true;
                 }
-                let lower = ctx.typ(t).get_lower_bound().expect("captured lower bound");
+                let lower = ctx.lower_bound_of(t).expect("captured lower bound");
                 self.is_type_arg_erroneous(ctx, syms, lower)
             }
             TypeKindData::WildcardType { type_, .. } => type_
@@ -5444,9 +5428,7 @@ fn collect_where_vars(
                     })
                     .unwrap_or_default();
                 if !out.iter().any(|v| v.name == name && v.owner == owner) {
-                    let bound_text = ctx
-                        .typ(ty)
-                        .get_upper_bound()
+                    let bound_text = ctx.upper_bound_of(ty)
                         .map(|bound| {
                             if let crate::code::type_::TypeKindData::IntersectionClassType {
                                 supertype_field,

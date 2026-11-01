@@ -2947,7 +2947,7 @@ impl LambdaAnalyzerPreprocessor {
                 return ctx.typ(ty).is_intersection() || ctx.typ(ty).is_union();
             }
             TypeTag::TYPEVAR => {
-                let upper = ctx.typ(ty).get_upper_bound();
+                let upper = ctx.upper_bound_of(ty);
                 upper.map(|upper| self.is_intersection_or_union_type(ctx, upper)).unwrap_or(false)
             }
             _ => false,
@@ -9115,7 +9115,7 @@ impl MemberReferenceToLambda {
                     parm_type = *sam_rest.head();
                 }
                 if ctx.typ(desc_head).has_tag(TypeTag::TYPEVAR) {
-                    if let Some(upper) = ctx.typ(desc_head).get_upper_bound() {
+                    if let Some(upper) = ctx.upper_bound_of(desc_head) {
                         if ctx.typ(upper).is_intersection() {
                             parm_type = *sam_rest.head();
                         }

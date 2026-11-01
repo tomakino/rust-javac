@@ -479,9 +479,7 @@ impl Operators {
         {
             t
         } else if ctx.typ(t).has_tag(TypeTag::TYPEVAR) {
-            let upper = ctx
-                .typ(t)
-                .get_upper_bound()
+            let upper = ctx.upper_bound_of(t)
                 .expect("type variable upper bound");
             self.string_promotion(ctx, syms, types, upper)
         } else {

@@ -2292,9 +2292,7 @@ pub fn is_accessible_in(
                 .typ(sup_ty)
                 .has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
             {
-                let upper = ctx
-                    .typ(sup_ty)
-                    .get_upper_bound()
+                let upper = ctx.upper_bound_of(sup_ty)
                     .expect("type var upper bound");
                 let Some(tsym) = ctx.typ(upper).tsym else { break };
                 sup = Some(tsym);

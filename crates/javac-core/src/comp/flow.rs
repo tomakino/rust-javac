@@ -1733,8 +1733,7 @@ impl<'a> AliveAnalyzer<'a> {
                 }
             }
             TypeTag::TYPEVAR => {
-                let upper = ctx.typ(seltype)
-                    .get_upper_bound()
+                let upper = ctx.upper_bound_of(seltype)
                     .expect("type variable upper bound");
                 self.is_exhaustive(ctx, upper, covered)
             }

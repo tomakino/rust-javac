@@ -68,7 +68,25 @@ impl CompilerContext {
 
     /// Allocates a type in the type arena and returns its ID.
     pub fn alloc_type(&mut self, ty: Type) -> TypeId {
-        TypeId::new(self.types.push(ty))
+        let id = TypeId::new(self.types.push(ty));
+        id
+    }
+
+    /// Upper bound of a type variable, resolved through its un-annotated base.
+    ///
+    /// Java: TypeVar.cloneWithMetadata returns an anonymous subclass whose
+    /// getUpperBound() delegates to the original TypeVar (Type.java:1662-1675),
+    /// so an annotated clone observes a bound that is set on the original after
+    /// cloning. Reading kind.bound directly would return the None captured at
+    /// clone time, so every caller must go through here.
+    pub fn upper_bound_of(&self, id: TypeId) -> Option<TypeId> {
+        self.typ(self.type_no_metadata_id(id)).get_upper_bound()
+    }
+
+    /// Lower bound of a type variable, resolved through its un-annotated base.
+    /// Same delegation rule as upper_bound_of.
+    pub fn lower_bound_of(&self, id: TypeId) -> Option<TypeId> {
+        self.typ(self.type_no_metadata_id(id)).get_lower_bound()
     }
 
     /// Java: protected Type typeNoMetadata() (Type.java:347-349).
