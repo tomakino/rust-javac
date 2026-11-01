@@ -1,3 +1,0 @@
-[submodule "internal/reference/jdk17u"]
-	path = internal/reference/jdk17u
-	url = https://github.com/openjdk/jdk17u.git
