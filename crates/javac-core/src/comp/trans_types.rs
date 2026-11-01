@@ -649,6 +649,12 @@ impl TransTypes {
             let param = ctx.alloc_symbol(Symbol::new_var_symbol(flags_value, name, arg_type, bridge));
             let impl_param_symbol = ctx.sym(impl_param).clone();
             let mut param_symbol = ctx.sym(param).clone();
+            // Symbol::clone deliberately drops the arena id (a clone normally
+            // heads for alloc_symbol). Here the clone is an edit of an existing
+            // arena entry: setAttributes() lazily builds SymbolMetadata bound to
+            // the id, so restore it before the copy replaces the slot -- javac's
+            // new VarSymbol already carries its sym.
+            param_symbol.id = std::cell::Cell::new(Some(param));
             param_symbol.set_attributes(ctx, &impl_param_symbol);
             *ctx.sym_mut(param) = param_symbol;
             bridge_params = bridge_params.append(param);

@@ -652,11 +652,13 @@ impl Symbol {
 }
 
 impl Clone for Symbol {
-    /// Clones the symbol fields; the arena id is not copied because a clone
-    /// is only usable after it enters the symbol arena through the unique
-    /// allocation entry point (CompilerContext::alloc_symbol records the id and
-    /// rebinds a copied metadata). Registered adapter: Java Symbols have no clone
-    /// path; the ported phases clone-and-allocate synthetic symbols.
+    /// Clones the symbol fields, arena id included. Java symbols are never
+    /// cloned, so the port fills that role with a by-value copy: phases either
+    /// (a) clone, edit and write the copy back into the same arena slot, or
+    /// (b) clone and hand the copy to CompilerContext::alloc_symbol. Case (a)
+    /// needs the id, because lazily built SymbolMetadata is bound to it -- the
+    /// bridge-parameter and <clinit> attribute paths panicked without it. Case
+    /// (b) is unaffected because alloc_symbol always overwrites the id.
     fn clone(&self) -> Symbol {
         Symbol {
             kind: self.kind,
@@ -671,7 +673,7 @@ impl Clone for Symbol {
             display_override: self.display_override,
             no_module: self.no_module,
             kind_data: self.kind_data.clone(),
-            id: std::cell::Cell::new(None),
+            id: self.id.clone(),
         }
     }
 }
