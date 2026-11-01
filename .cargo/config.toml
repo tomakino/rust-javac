@@ -3,5 +3,12 @@ xtask = "run --package xtask --"
 
 # Build for this machine's CPU (AVX2 and friends). The JDK's javac runs on the
 # same machine in the benchmarks, so the comparison stays like-for-like.
+#
+# -Zunstable-options + --jobs-frontend: type/borrow checking on all cores rather
+# than one. Requires the nightly toolchain pinned in rust-toolchain.toml.
 [target.x86_64-pc-windows-gnu]
-rustflags = ["-C", "target-cpu=native"]
+rustflags = [
+    "-C", "target-cpu=native",
+    "-Zunstable-options",
+    "--jobs-frontend=16",
+]

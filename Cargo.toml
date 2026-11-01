@@ -39,10 +39,14 @@ javac-fs = { path = "crates/javac-fs" }
 
 # The compiler is a tight, allocation-heavy tree walk; at opt-level 0 the
 # debug build spends more than half its time in non-inlined accessors and
-# bounds checks. opt-level 1 keeps full debug info and all debug assertions
-# while restoring register allocation and basic inlining.
+# bounds checks. opt-level 1 restores register allocation and basic inlining.
+#
+# debug = 1 keeps line tables (so panics and backtraces still name the source
+# line) but drops the type/variable information and the macro expansions. Full
+# debug info was 156 MB of the 159 MB executable and dominated link time.
 [profile.dev]
 opt-level = 1
+debug = 1
 
 [profile.release]
 lto = "fat"
