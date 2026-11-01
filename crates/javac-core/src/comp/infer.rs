@@ -1679,6 +1679,11 @@ impl InferenceContext {
         steps: &[InferenceStep],
     ) -> Result<List<TypeId>, InferenceException> {
         let restvars = self.restvars(ctx, syms, types);
+        if std::env::var_os("DSH_DEBUG_SB").is_some() {
+            eprintln!("[SB] ctxvars={} tosolve={}",
+                self.inner.borrow().inferencevars.length(),
+                vars_to_solve.length());
+        }
         let infer = self.infer.clone().expect("InferenceContext.infer");
         let mut solved_vars: List<TypeId> = List::nil();
         let mut current = vars_to_solve;
@@ -2732,7 +2737,7 @@ impl ReachabilityVisitor {
                 let mut current = bounds;
                 while current.non_empty() {
                     let b = *current.head();
-                    let undet = inference_context_free_placeholder(ctx, syms, types, b);
+                    let undet = self.context.as_undet_var(ctx, syms, types, b);
                     if !matches!(&ctx.typ(undet).kind, TypeKindData::UndetVar { .. }) {
                         self.visit(ctx, syms, types, undet)?;
                     } else if self.is_equiv(ctx, syms, types, t, b, bound_kind)? {
@@ -2763,7 +2768,7 @@ impl ReachabilityVisitor {
         t: TypeId,
         bound_kind: InferenceBound,
     ) -> Result<bool, InferenceException> {
-        let uv = inference_context_free_placeholder(ctx, syms, types, t);
+        let uv = self.context.as_undet_var(ctx, syms, types, t);
         for ib in InferenceBound::values() {
             let mut b1 = types.undet_var_get_bounds(ctx, from, &[ib]);
             if ib == bound_kind {
