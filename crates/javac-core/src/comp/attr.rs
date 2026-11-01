@@ -1763,7 +1763,12 @@ impl Attr {
                         .check_for_bad_auxiliary_class_access(ctx, syms, pos, env, sym);
                     let own_outer = ctx.typ(own).get_enclosing_type();
                     let sym_type = ctx.sym(sym).ty.expect("symbol type");
-                    let sym_type_args = type_arguments(ctx, sym_type);
+                    // Java: owntype.tsym.type.getTypeArguments() lazily completes
+                    // the class symbol (Type.java:1068-1080); the raw
+                    // typarams_field is null until then, so the non-completing
+                    // accessor would miss the erasure below.
+                    let sym_type_args =
+                        crate::code::types::get_type_arguments_completed(ctx, syms, sym_type, None);
                     if !sym_type_args.is_empty() {
                         own = self.types.erasure(ctx, syms, own);
                     } else if let Some(own_outer) = own_outer.filter(|own_outer| {
