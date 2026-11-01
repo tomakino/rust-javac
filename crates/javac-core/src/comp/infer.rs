@@ -2104,8 +2104,15 @@ impl BestLeafSolver {
                     continue;
                 }
                 let subpath = self.compute_tree_to_leafs(ctx, syms, types, graph, n2);
-                let mut combined = path.0.clone();
-                combined.extend(subpath.0);
+                // Java: path.fst.prependList(subpath.fst) (Infer.java:1371) puts
+                // the subpath *before* this node, so the resulting list starts at
+                // a leaf. BestLeafSolver.pickNode then returns bestPath.fst.head
+                // (Infer.java:1409) — the leaf, not the node it was reached
+                // from. Appending the subpath instead would make every pick the
+                // dependent node, solving it before the variables in its bounds
+                // were instantiated.
+                let mut combined = subpath.0.clone();
+                combined.extend(path.0.clone());
                 path = (combined, path.1 + subpath.1);
             }
             path
