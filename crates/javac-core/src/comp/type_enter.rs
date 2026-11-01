@@ -1664,7 +1664,7 @@ impl TypeEnter {
         let sym = class_tree_symbol(ctx, tree).expect("class symbol");
         let sym_ty = ctx.sym(sym).ty.expect("class type");
         let base_env = self.base_env(ctx, tree, env);
-        self.attrib_super_types(ctx, syms, env, attr, &base_env);
+        self.attrib_super_types(ctx, syms, env, attr, &base_env, true);
         if class_fullname(ctx, sym) == Some(self.names.java_lang_Object.clone()) {
             let (extending, implementing) = match &ctx.tree(tree).kind {
                 TreeKind::ClassDecl {
@@ -1744,6 +1744,7 @@ impl TypeEnter {
         env: &Rc<Env<AttrContext>>,
         attr: &mut crate::comp::attr::Attr,
         base_env: &Rc<Env<AttrContext>>,
+        strip_type_args: bool,
     ) {
         use crate::code::flags;
         let tree = env.encl_class.expect("env.enclClass");
@@ -1752,7 +1753,11 @@ impl TypeEnter {
         let (extending_tree, implementing, permitting) = class_decl_clauses(ctx, tree);
         let mut extending: Option<TreeId> = None;
         let supertype = if let Some(extending_tree) = extending_tree {
-            let cleared = self.clear_type_params_base(ctx, extending_tree);
+            let cleared = if strip_type_args {
+                self.clear_type_params(ctx, extending_tree)
+            } else {
+                self.clear_type_params_base(ctx, extending_tree)
+            };
             extending = Some(cleared);
             let supertype = attr.attrib_base(
                 ctx,
@@ -1803,7 +1808,11 @@ impl TypeEnter {
         while iface_trees.non_empty() {
             let iface = *iface_trees.head();
             iface_trees = iface_trees.tail();
-            let cleared = self.clear_type_params_base(ctx, iface);
+            let cleared = if strip_type_args {
+                self.clear_type_params(ctx, iface)
+            } else {
+                self.clear_type_params_base(ctx, iface)
+            };
             let it = attr.attrib_base(
                 ctx,
                 syms,
@@ -2021,7 +2030,7 @@ impl TypeEnter {
             );
         }
         annotate.flush_with_attr(ctx, syms, attr).expect("annotation flush");
-        self.attrib_super_types(ctx, syms, env, attr, &base_env);
+        self.attrib_super_types(ctx, syms, env, attr, &base_env, false);
         let mut interfaces_seen: std::collections::HashSet<TypeId> =
             std::collections::HashSet::new();
         let mut impls = implementing.clone();
