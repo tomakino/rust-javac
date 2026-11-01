@@ -2703,20 +2703,23 @@ impl JavacParser {
         }
         let first = lit_buf[0];
         let pos = tree_info::get_start_pos(ctx, first);
-        let mut text = String::new();
+        // Join the UTF-16 code units directly: routing through Rust's String
+        // would replace unpaired surrogates with U+FFFD, while javac keeps
+        // them in the constant pool (Modified UTF-8).
+        let mut text = JavaString::new();
         for lit in lit_buf.iter() {
             if let TreeKind::Literal {
                 value: Some(LiteralValue::String(s)),
                 ..
             } = &ctx.tree(*lit).kind
             {
-                text.push_str(&s.to_string_lossy());
+                text.as_units_mut().extend_from_slice(s.as_units());
             }
         }
         let merged = self.F.at(pos).literal(
             ctx,
             TypeTag::CLASS,
-            Some(LiteralValue::String(JavaString::from(text.as_str()))),
+            Some(LiteralValue::String(text)),
         );
         let last = *lit_buf.last().expect("non-empty");
         let end = self.get_end_pos(last);
