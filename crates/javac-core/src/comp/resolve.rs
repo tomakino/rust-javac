@@ -4855,11 +4855,16 @@ impl MethodResultInfo {
     ) -> Result<TypeId, MethodCheckFailure> {
         let _ = chk;
         if ctx.typ(found).has_tag(crate::code::type_tag::TypeTag::DEFERRED) {
-            let result_info = crate::comp::attr::ResultInfo::new(
+            // Java: MethodResultInfo.check passes itself to DeferredType.check
+            // (Resolve.java:1073-1076), so the deferred completion keeps the
+            // U(found) + re-capture normalisation. Carry the same flavour in the
+            // ported ResultInfo.
+            let mut result_info = crate::comp::attr::ResultInfo::new(
                 crate::code::kinds::KindSelector::VAL,
                 Some(self.pt),
                 Rc::clone(&self.check_context),
             );
+            result_info.method_diag = Some(self.method_diag);
             return crate::comp::deferred_attr::deferred_type_check(
                 ctx, syms, types, attr, found, &result_info,
             )

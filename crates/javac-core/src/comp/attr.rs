@@ -87,6 +87,13 @@ pub struct ResultInfo {
     /// Java: Attr.RecoveryInfo overrides check() to wrap the result in
     /// chk.checkNonVoid (Attr.java:598-620); expressed as a flag (adapter registered).
     pub check_non_void: bool,
+    /// Java: Resolve.MethodResultInfo overrides check() so that the found type
+    /// is normalised through U(found) and a re-capture before the compatibility
+    /// test (Resolve.java:1072-1084). The port has a single ResultInfo
+    /// structure, so the MethodResultInfo flavour is carried by the diagnostic
+    /// kind that only the method-check path sets; check() reproduces the
+    /// upstream normalisation when it is present (registered adapter).
+    pub method_diag: Option<crate::comp::resolve::MethodCheckDiag>,
     /// The identity of this ResultInfo (the upstream ArgumentType.speculativeTypes
     /// map is keyed by ResultInfo object identity; Rust needs an explicit id).
     /// adapter registered adapter: unique ids are assigned by new_with_mode, so every
@@ -139,6 +146,7 @@ impl ResultInfo {
             check_mode,
             check_non_void: false,
             kind: ResultInfoKind::Normal,
+            method_diag: None,
             argument_attr_exclude: None,
             id: NEXT_RESULT_INFO_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
@@ -185,6 +193,22 @@ impl ResultInfo {
         let pt = match self.pt {
             Some(pt) => pt,
             None => crate::code::symtab::no_type_id(ctx),
+        };
+        // Java: Resolve.MethodResultInfo.check (Resolve.java:1072-1084) replaces
+        // the found type with U(found) and re-captures its upper bound before
+        // the compatibility test. Without it a captured variable such as
+        // "capture of ? extends Class<X>" reaches compatible() unexpanded and is
+        // rejected although its upper bound satisfies the formal.
+        let found = match self.method_diag {
+            Some(_) => {
+                let u_result = if found == pt {
+                    found
+                } else {
+                    chk.types.cvar_upper_bound_of(ctx, found)
+                };
+                chk.types.capture(ctx, syms, u_result)
+            }
+            None => found,
         };
         let result = chk.check_type(ctx, syms, pos, found, pt, Rc::clone(&self.check_context));
         if self.check_non_void {
