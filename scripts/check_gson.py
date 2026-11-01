@@ -87,9 +87,12 @@ def main() -> int:
         print("javac not found (set JAVA_HOME or add it to PATH)", file=sys.stderr)
         return 2
 
+    t_start = time.perf_counter()
+    t_scan = time.perf_counter()
     sources = sorted(str(p) for p in gson_root.rglob("*.java"))
     if generated.is_dir():
         sources += sorted(str(p) for p in generated.rglob("*.java"))
+    t_scan = time.perf_counter() - t_scan
     print("gson sources={}".format(len(sources)))
 
     tmp_root = root / "target" / "tmp"
@@ -104,13 +107,33 @@ def main() -> int:
         for out_dir in (j_out, r_out):
             lines = ["-d", str(out_dir)] + sources
             (temp / (out_dir.name + ".args")).write_text("\n".join(lines), encoding="utf-8")
-        t_javac = time.perf_counter()
-        _, j_err, j_code = run(javac, common + ["@" + str(temp / "javac.args")], temp)
-        t_javac = time.perf_counter() - t_javac
-
+        # The two compilers are independent processes writing to separate output
+        # directories, so run them at the same time: the wall clock is then the
+        # slower of the two (javac) instead of their sum.
+        t_parallel = time.perf_counter()
+        p_javac = subprocess.Popen(
+            [javac] + common + ["@" + str(temp / "javac.args")],
+            cwd=str(temp),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
         t_rust = time.perf_counter()
-        _, r_err, r_code = run(str(rust), common + ["@" + str(temp / "rust.args")], temp)
+        p_rust = subprocess.Popen(
+            [str(rust)] + common + ["@" + str(temp / "rust.args")],
+            cwd=str(temp),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        r_out_bytes, r_err_bytes = p_rust.communicate()
         t_rust = time.perf_counter() - t_rust
+        j_out_bytes, j_err_bytes = p_javac.communicate()
+        t_parallel = time.perf_counter() - t_parallel
+
+        j_err = j_err_bytes.decode("utf-8", "replace")
+        r_err = r_err_bytes.decode("utf-8", "replace")
+        j_code = p_javac.returncode
+        r_code = p_rust.returncode
+        t_javac = t_parallel
 
         print("javac exit={} rust exit={}".format(j_code, r_code))
         # Timings cover one run each, including process start and I/O; the first
@@ -127,8 +150,10 @@ def main() -> int:
             if r_err:
                 print("rust stderr (head): " + r_err.splitlines()[0])
 
+        t_hash = time.perf_counter()
         j_classes = hash_dir(j_out, ".class")
         r_classes = hash_dir(r_out, ".class")
+        t_hash = time.perf_counter() - t_hash
         print("javac classes={} rust classes={}".format(len(j_classes), len(r_classes)))
 
         missing = sorted(set(j_classes) - set(r_classes))
@@ -158,6 +183,14 @@ def main() -> int:
             and not extra
             and not differing
             and len(j_classes) == len(r_classes)
+        )
+        t_total = time.perf_counter() - t_start
+        t_setup = t_total - t_scan - t_parallel - t_hash
+        print(
+            "breakdown: scan={:.2f}s compile={:.2f}s (rust={:.2f}s) hash={:.2f}s "
+            "other={:.2f}s total={:.2f}s".format(
+                t_scan, t_parallel, t_rust, t_hash, t_setup, t_total
+            )
         )
         print("result: {}".format("PASS" if ok else "FAIL"))
         return 0 if ok else 1
