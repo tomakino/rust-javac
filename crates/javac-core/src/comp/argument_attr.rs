@@ -1426,18 +1426,47 @@ impl ArgumentAttr {
                     }
                     _ => {
                         // Java: localInfo.check(tree.pos(), speculativeTree.type)
+                        //
+                        // For a method candidate localInfo is the Resolve.MethodResultInfo
+                        // itself (ArgumentAttr.java:675-678), and its check() replaces the
+                        // found type with U(found) and re-captures the upper bound before
+                        // the compatibility test (Resolve.java:1077-1098). The port's
+                        // ResultInfo is a single structure, so the same normalisation has
+                        // to be applied here; without it a captured variable such as
+                        // "capture of ? extends Class<X>" reaches compatible() unexpanded
+                        // and is rejected even though its upper bound satisfies the formal.
                         let chk_rc = Rc::clone(&attr.chk);
                         let chk = Rc::clone(&chk_rc);
                         let speculative_type = ctx
                             .tree(speculative_tree)
                             .ty
                             .unwrap_or_else(|| no_type_of(ctx));
+                        let normalized = if kind == ArgumentKind::ResolvedMethod {
+                            let types_rc2 = Rc::clone(&types_rc);
+                            let u_result = match local_info.pt {
+                                Some(pt) if speculative_type != pt => {
+                                    types_rc2.cvar_upper_bound_of(ctx, speculative_type)
+                                }
+                                _ => speculative_type,
+                            };
+                            let inference_context = local_info.check_context.inference_context();
+                            inference_context.cached_capture(
+                                ctx,
+                                syms,
+                                &types_rc2,
+                                speculative_tree,
+                                u_result,
+                                true,
+                            )
+                        } else {
+                            speculative_type
+                        };
                         local_info.check(
                             ctx,
                             syms,
                             &chk,
                             ctx.tree(speculative_tree).pos,
-                            speculative_type,
+                            normalized,
                         )
                     }
                 };
