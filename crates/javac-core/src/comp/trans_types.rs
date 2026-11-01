@@ -916,7 +916,9 @@ impl TransTypes {
         }
         // Java: super.visitClassDef(tree) (TreeTranslator default navigation).
         self.default_visit_class_def(ctx, tree);
-        let pos = ctx.tree(tree).pos;
+        // Java: visitClassDef passes tree.pos(), a DiagnosticPosition, so the
+        // maker position is TreeInfo.getStartPos(tree) — mods.pos for a class.
+        let pos = crate::tree::tree_info::get_start_pos(ctx, tree);
         self.make.borrow_mut().at(pos);
         let mut bridges: Vec<TreeId> = Vec::new();
         let is_interface = (ctx.sym(c).flags_field & crate::code::flags::INTERFACE as i64) != 0;
