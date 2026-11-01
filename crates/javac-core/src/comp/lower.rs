@@ -3400,7 +3400,10 @@ impl Lower {
 
     /// Translate an enum class body.
     fn visit_enum_def(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let pos = ctx.tree(tree).pos;
+        // Java: make_at(tree.pos()) goes through JCTree.pos() -> DiagnosticPosition
+        // -> TreeInfo.getStartPos, whose CLASSDEF case returns mods.pos (the
+        // first annotation/modifier), not the class keyword position.
+        let pos = crate::tree::tree_info::get_start_pos(ctx, tree);
         self.make.borrow_mut().at(pos);
         let tree_sym = match &ctx.tree(tree).kind {
             TreeKind::ClassDecl { sym: Some(sym), .. } => *sym,
