@@ -4727,8 +4727,24 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         // Occurs-check guard: Bar<T> <: T must not add the self-referential
         // lower bound T <- Bar<T>.  Java's inference avoids this through its
         // free-variable handling (Infer.checkBounds).
+        //
+        // This must stay side-effect free: Types.containsType dispatches an
+        // undet var to isSameType (Types.java:1593-1599), which records an
+        // equality bound. Using it here bound T to B whenever the guard looked
+        // at a type variable, and the later real constraint then collided with
+        // that spurious EQ. containsAny is the plain occurrence test the check
+        // actually needs.
+        //
+        // The occurrence test itself must also stay off inference variables:
+        // Types.contains walks an undet var through isSameType, so probing a
+        // bare variable would compare it against the required type and record
+        // an equality bound. The guard only exists for a compound found type
+        // that mentions the variable.
         if ctx.typ(req).has_tag(crate::code::type_tag::TypeTag::TYPEVAR)
-            && types.contains_type(ctx, syms, found, req)
+            && !ctx
+                .typ(found)
+                .has_tag(crate::code::type_tag::TypeTag::UNDETVAR)
+            && types.contains_any(ctx, syms, found, &crate::util::list::List::of(req))
         {
             return true;
         }
