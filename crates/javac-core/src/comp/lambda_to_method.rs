@@ -829,6 +829,33 @@ impl LambdaToMethod {
         let filter = sym
             .map(|sym| self.analyzer.lambda_ident_symbol_filter(ctx, sym))
             .unwrap_or(false);
+        if self.context.is_none()
+            && filter
+            && let Some(s) = sym
+        {
+            // A translated copy of a lambda body can be visited by the
+            // enclosing traversal after its lambda was replaced, so the
+            // current context is empty even though the symbol belongs to a
+            // lambda context's LOCAL_VAR map (LambdaToMethod.java:605-614
+            // rewrites the declaration; the uses must follow it).
+            let candidates: Vec<TreeId> = self.context_map.borrow().keys().copied().collect();
+            for candidate in candidates {
+                let mapped = {
+                    let contexts = self.context_map.borrow();
+                    match contexts.get(&candidate).map(|c| &c.kind) {
+                        Some(TranslationContextKind::Lambda(lambda)) => {
+                            context_symbol(lambda, LambdaSymbolKind::LOCAL_VAR, s)
+                        }
+                        _ => None,
+                    }
+                };
+                if let Some(mapped) = mapped {
+                    let ident = self.make.borrow_mut().ident_symbol(ctx, mapped);
+                    self.result = Some(ident);
+                    return;
+                }
+            }
+        }
         if self.context.is_none() || !filter {
             self.default_visit_ident(ctx, tree);
             return;
