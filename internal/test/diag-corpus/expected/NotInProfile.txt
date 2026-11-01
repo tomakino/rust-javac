@@ -1,0 +1,4 @@
+<src>/NotInProfile.java:28: error: Frame is not available in profile 'compact1'
+    Class<?> c = java.awt.Frame.class;
+                         ^
+1 error

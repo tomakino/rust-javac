@@ -1,0 +1,7 @@
+<src>/KindnameRecord.java:32: error: record component i is already defined in record R
+record R(int i, int i) {}
+                    ^
+<src>/KindnameRecord.java:32: error: method i() is already defined in record R
+record R(int i, int i) {}
+         ^
+2 errors

@@ -1,0 +1,4 @@
+<src>/WithExpected\module-info.java:27: error: 'with' expected
+    provides p.C;
+                ^
+1 error

@@ -1,0 +1,4 @@
+<src>/ImproperTypeInnerRawParam.java:32: error: improperly formed type, type arguments given on a raw type
+        Object o = (Outer.Inner<?>)null;
+                               ^
+1 error

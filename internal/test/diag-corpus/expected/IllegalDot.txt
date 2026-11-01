@@ -1,0 +1,4 @@
+<src>/IllegalDot.java:27: error: illegal '.'
+    void m(Object.. args) { }
+                  ^
+1 error

@@ -1,0 +1,7 @@
+warning: [options] system modules path not set in conjunction with -source 14
+<src>/TextBlockSource.java:31: error: text blocks are not supported in -source 14
+        return """
+               ^
+  (use -source 15 or higher to enable text blocks)
+1 error
+1 warning

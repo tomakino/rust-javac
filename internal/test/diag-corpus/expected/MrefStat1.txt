@@ -1,0 +1,5 @@
+<src>/MrefStat1.java:32: Note: Translating method reference
+        Runnable r = super::m;
+                     ^
+  alternate metafactory = false
+  bridge method = lambda$new$0()

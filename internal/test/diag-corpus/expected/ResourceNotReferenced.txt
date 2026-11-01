@@ -1,0 +1,4 @@
+<src>/ResourceNotReferenced.java:31: warning: [try] auto-closeable resource out is never referenced in body of corresponding try statement
+        try (Writer out = new StringWriter()) {
+                    ^
+1 warning

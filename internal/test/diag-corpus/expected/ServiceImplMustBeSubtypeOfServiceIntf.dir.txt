@@ -1,0 +1,7 @@
+<src>/ServiceImplMustBeSubtypeOfServiceIntf\module-info.java:28: error: the service implementation type must be a subtype of the service interface type, or have a public static no-args method named "provider" returning the service implementation
+    provides java.lang.String with java.io.File;
+                                          ^
+<src>/ServiceImplMustBeSubtypeOfServiceIntf\module-info.java:28: error: service implementation must be defined in the same module as the provides directive
+    provides java.lang.String with java.io.File;
+    ^
+2 errors

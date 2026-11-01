@@ -1,0 +1,7 @@
+<src>/VarargsArgumentMismatch.java:30: error: method m in class VarargsArgumentMismatch cannot be applied to given types;
+    { this.m("1", "2", "3"); }
+          ^
+  required: String,Integer[]
+  found:    String,String,String
+  reason: varargs mismatch; String cannot be converted to Integer
+1 error

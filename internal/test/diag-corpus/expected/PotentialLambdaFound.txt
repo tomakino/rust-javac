@@ -1,0 +1,4 @@
+<src>/PotentialLambdaFound.java:33: warning: This anonymous inner class creation can be turned into a lambda expression.
+    SAM s = new SAM() { public void m() { } };
+                      ^
+1 warning

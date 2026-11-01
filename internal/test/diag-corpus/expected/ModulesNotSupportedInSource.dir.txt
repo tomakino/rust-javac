@@ -1,0 +1,5 @@
+<src>/ModulesNotSupportedInSource\module-info.java:28: error: modules are not supported in -source 8
+module ModulesNotSupportedInSource {
+^
+  (use -source 9 or higher to enable modules)
+1 error

@@ -1371,7 +1371,9 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
             return self.rewrite_array_type(ctx, ty, annotations, pos);
         }
         if ctx.typ(ty).has_tag(crate::code::type_tag::TypeTag::TYPEVAR) {
-            return ctx.alloc_type(ctx.typ(ty).annotated_type(only_type_annotations));
+            // Java: type.annotatedType(onlyTypeAnnotations) — cloneWithMetadata
+            // installs the baseType() link used by equalsIgnoreMetadata.
+            return ctx.annotated_type_id(ty, &only_type_annotations);
         }
         if matches!(&ctx.typ(ty).kind, TypeKindData::UnionClassType { .. }) {
             let first = match &ctx.tree(typetree).kind {
@@ -1560,7 +1562,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
         let metadata = without.combine(crate::code::type_metadata::Entry::Annotations(
             crate::code::type_metadata::Annotations::new(combined),
         ));
-        let new_elem = ctx.alloc_type(ctx.typ(tmp_ty).clone_with_metadata(metadata));
+        let new_elem = ctx.clone_type_with_metadata(tmp_ty, metadata);
         if let TypeKindData::ArrayType { elemtype, .. } = &mut ctx.typ_mut(tomodify).kind {
             *elemtype = Some(new_elem);
         }
@@ -1586,7 +1588,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
     ) -> crate::ids::TypeId {
         use crate::code::type_::TypeKindData;
         if ty == stop_at || ctx.typ(ty).get_enclosing_type().is_none() {
-            return ctx.alloc_type(ctx.typ(ty).annotated_type(annotations));
+            return ctx.annotated_type_id(ty, annotations);
         }
         let ty_kind = ctx.typ(ty).kind.clone();
         match &ty_kind {
@@ -1629,10 +1631,10 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                     TypeKindData::ArrayType { elemtype: Some(new_elem), varargs: *varargs },
                 ))
             }
-            TypeKindData::WildcardType { .. } => ctx.alloc_type(ctx.typ(ty).annotated_type(annotations)),
-            TypeKindData::TypeVar { .. } => ctx.alloc_type(ctx.typ(ty).annotated_type(annotations)),
-            TypeKindData::ErrorType { .. } => ctx.alloc_type(ctx.typ(ty).annotated_type(annotations)),
-            _ => ctx.alloc_type(ctx.typ(ty).annotated_type(annotations)),
+            TypeKindData::WildcardType { .. }
+            | TypeKindData::TypeVar { .. }
+            | TypeKindData::ErrorType { .. }
+            | _ => ctx.annotated_type_id(ty, annotations),
         }
     }
 }

@@ -1,0 +1,5 @@
+<src>/SubtypeDoesntExtendSealed.java:27: error: invalid permits clause
+sealed class Sealed permits Sub {}
+                            ^
+  (subclass Sub must extend sealed class)
+1 error

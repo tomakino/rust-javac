@@ -1,0 +1,4 @@
+<src>/RepeatedModifier.java:27: error: repeated modifier
+    public public String toString() { return "??"; }
+           ^
+1 error

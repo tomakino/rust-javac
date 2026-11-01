@@ -1,0 +1,5 @@
+<src>/CantApplySymbolFragment.java:39: error: incompatible types: invalid method reference
+        SAM s = CantApplySymbolFragment::f;
+                ^
+    incompatible types: Integer cannot be converted to String
+1 error

@@ -1,0 +1,5 @@
+<src>/PreviewFeatureDisabled.java:32: error: diamond operator is a preview feature and is disabled by default.
+        new ArrayList<>();
+                      ^
+  (use --enable-preview to enable diamond operator)
+1 error

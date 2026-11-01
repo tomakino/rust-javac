@@ -4620,15 +4620,15 @@ fn reannotate_type(
         .map(|entry| match entry {
             Entry::Annotations(annotations) => annotations.get_annotations(),
         });
-    let new_type = if let Some(existing) = existing {
+    let new_ty = if let Some(existing) = existing {
         let combined = Entry::Annotations(Annotations::new(existing.append_list(&attributes)));
         let without = metadata.without(EntryKind::ANNOTATIONS);
         let new_metadata = without.combine(combined);
-        ctx.typ(ty).clone_with_metadata(new_metadata)
+        ctx.clone_type_with_metadata(ty, new_metadata)
     } else {
-        ctx.typ(ty).annotated_type(&attributes)
+        ctx.annotated_type_id(ty, &attributes)
     };
-    Ok(ctx.alloc_type(new_type))
+    Ok(new_ty)
 }
 
 fn types_width(ctx: &CompilerContext, types: List<TypeId>) -> i32 {

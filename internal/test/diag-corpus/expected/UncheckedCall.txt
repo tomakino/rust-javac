@@ -1,0 +1,6 @@
+<src>/UncheckedCall.java:32: warning: [unchecked] unchecked call to add(E) as a member of the raw type List
+        l.add(1);
+             ^
+  where E is a type-variable:
+    E extends Object declared in interface List
+1 warning

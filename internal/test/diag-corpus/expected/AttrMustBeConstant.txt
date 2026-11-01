@@ -1,0 +1,4 @@
+<src>/AttrMustBeConstant.java:30: error: expression not allowed as annotation value
+@Anno(System.getProperty("user.dir"))
+                        ^
+1 error

@@ -1,0 +1,4 @@
+<src>/ThrowsNotAllowedInAnno.java:27: error: throws clause not allowed in @interface members
+    String value() throws NullPointerException;
+                          ^
+1 error

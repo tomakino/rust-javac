@@ -1,0 +1,1 @@
+error: module source path must be specified if -m option is used

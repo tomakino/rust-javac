@@ -1,0 +1,4 @@
+<src>/ExpectedModule.java:26: error: expected 'module'
+open class ExpectedModule { }
+     ^
+1 error

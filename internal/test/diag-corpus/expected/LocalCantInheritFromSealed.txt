@@ -1,0 +1,7 @@
+<src>/LocalCantInheritFromSealed.java:28: error: sealed class must have subclasses
+sealed class C {
+       ^
+<src>/LocalCantInheritFromSealed.java:30: error: local classes must not extend sealed classes
+        final class D extends C { }
+              ^
+2 errors

@@ -1,0 +1,5 @@
+<src>/DiamondMethodDoesNotOverride.java:34: error: method does not override or implement a method from a supertype
+          void someMethod() { }
+               ^
+  (due to <>, every non-private method declared in this anonymous class must override or implement a method from a supertype)
+1 error

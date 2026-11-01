@@ -1,0 +1,4 @@
+<src>/EnumAsIdentifier2.java:27: error: as of release 5, 'enum' is a keyword, and may not be used as an identifier
+    int enum;
+        ^
+1 error

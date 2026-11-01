@@ -1,0 +1,4 @@
+<src>/AnonClassImplInterfaceNoTypeArgs.java:27: error: anonymous class implements interface; cannot have type arguments
+    Runnable r = new<Integer> Runnable() {
+                     ^
+1 error

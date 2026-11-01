@@ -1,0 +1,5 @@
+<src>/IncompatibleRetTypeInMref.java:35: error: incompatible types: bad return type in method reference
+    SAM s = IncompatibleRetTypeInMref::f;
+            ^
+    String cannot be converted to Integer
+1 error

@@ -1,0 +1,7 @@
+<src>/IllegalQualNotIcls.java:30: error: qualified new of static class
+    C c = x.new C() { };
+          ^
+<src>/IllegalQualNotIcls.java:30: error: illegal qualifier; C is not an inner class
+    C c = x.new C() { };
+                    ^
+2 errors

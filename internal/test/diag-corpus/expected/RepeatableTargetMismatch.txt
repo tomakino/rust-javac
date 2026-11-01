@@ -1,0 +1,4 @@
+<src>/RepeatableTargetMismatch.java:28: error: containing annotation type (Annos) is applicable to more targets than repeatable annotation type (Anno)
+@Repeatable(Annos.class)
+^
+1 error

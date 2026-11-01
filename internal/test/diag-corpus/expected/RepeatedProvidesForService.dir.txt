@@ -1,0 +1,4 @@
+<src>/RepeatedProvidesForService\modulesourcepath\m\module-info.java:4: error: multiple 'provides' for service I
+    provides p.I with p.B;
+              ^
+1 error

@@ -1,0 +1,5 @@
+<src>/IncompatibleTypesInSwitchExpression.java:34: error: incompatible types: bad type in switch expression
+    B b = switch (0) { case 0 -> (A)null; default -> (B)null; };
+                                 ^
+    A cannot be converted to B
+1 error

@@ -1,0 +1,16 @@
+<src>/DiamondAndNonDenotableTypes.java:39: error: cannot infer type arguments for DiamondAndNonDenotableTypes<>
+        new DiamondAndNonDenotableTypes<>(wl, wl) {};
+                                       ^
+  reason: type arguments List<CAP#1>,List<CAP#2> inferred for DiamondAndNonDenotableTypes<> are not allowed in this context
+    inferred arguments are not expressible in the Signature attribute
+  where CAP#1,CAP#2 are fresh type-variables:
+    CAP#1 extends Object from capture of ?
+    CAP#2 extends Object from capture of ?
+<src>/DiamondAndNonDenotableTypes.java:40: error: cannot infer type arguments for DiamondAndNonDenotableType<>
+        new DiamondAndNonDenotableType<>(wl) {};
+                                      ^
+  reason: type argument List<CAP#1> inferred for DiamondAndNonDenotableType<> is not allowed in this context
+    inferred argument is not expressible in the Signature attribute
+  where CAP#1 is a fresh type-variable:
+    CAP#1 extends Object from capture of ?
+2 errors

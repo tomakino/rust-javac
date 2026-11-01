@@ -1,0 +1,4 @@
+<src>/NotAFunctionalIntf.java:33: error: incompatible types: NotAFunctionalIntf.SAM is not a functional interface
+    SAM s = x-> { };
+            ^
+1 error

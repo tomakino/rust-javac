@@ -1,0 +1,2 @@
+error: exporting a package from system module java.base is not allowed with --release
+1 error

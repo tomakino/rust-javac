@@ -1,0 +1,4 @@
+<src>/TypeNoParams.java:27: error: type Object does not take parameters
+    Object<Integer> obj;
+          ^
+1 error

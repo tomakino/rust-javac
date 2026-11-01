@@ -1,0 +1,4 @@
+<src>/NonStaticCantBeRef.java:30: error: non-static variable i cannot be referenced from a static context
+        return i;
+               ^
+1 error

@@ -1,0 +1,4 @@
+<src>/BreakOutsideSwitchExpression.java:30: error: attempt to break out of a switch expression
+                case 0: break OUT;
+                        ^
+1 error

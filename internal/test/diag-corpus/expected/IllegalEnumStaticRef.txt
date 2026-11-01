@@ -1,0 +1,4 @@
+<src>/IllegalEnumStaticRef.java:27: error: illegal reference to static field from initializer
+    A() { Object o = B; },
+                     ^
+1 error

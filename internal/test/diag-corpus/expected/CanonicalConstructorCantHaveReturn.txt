@@ -1,0 +1,5 @@
+<src>/CanonicalConstructorCantHaveReturn.java:29: error: invalid compact constructor in record <init>
+    public R {
+           ^
+  (compact constructor must not have return statements)
+1 error

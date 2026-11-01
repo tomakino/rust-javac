@@ -1,0 +1,9 @@
+<src>/StaticImportOnlyClassesAndInterfaces\StaticImportOnlyClassesAndInterfaces.java:28: error: cannot find symbol
+import static p.Other.array.length;
+                     ^
+  symbol:   class array
+  location: class Other
+<src>/StaticImportOnlyClassesAndInterfaces\StaticImportOnlyClassesAndInterfaces.java:28: error: static import only from classes and interfaces
+import static p.Other.array.length;
+^
+2 errors

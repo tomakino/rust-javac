@@ -1,0 +1,4 @@
+<src>/ReceiverParameterNotApplicableConstructor.java:27: error: receiver parameter not applicable for constructor of top-level class
+    ReceiverParameterNotApplicableConstructor(ReceiverParameterNotApplicableConstructor this) { }
+                                                                                        ^
+1 error

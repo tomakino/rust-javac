@@ -1,0 +1,6 @@
+<src>/ConcreteInheritanceConflict.java:31: error: methods m(T) from Base<String> and m(String) from Base<String> are inherited with the same signature
+class ConcreteInheritanceConflict extends Base<String> { }
+^
+  where T is a type-variable:
+    T extends Object declared in class Base
+1 error

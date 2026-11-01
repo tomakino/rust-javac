@@ -1,0 +1,4 @@
+<src>/NotAllowedClass.java:29: error: class, interface or enum declaration not allowed here
+            class X {}
+            ^
+1 error

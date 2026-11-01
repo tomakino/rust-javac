@@ -1,0 +1,4 @@
+<src>/QualifiedNewStaticClass.java:29: error: qualified new of static class
+    C c = x.new C();
+          ^
+1 error

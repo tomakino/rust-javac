@@ -1,1 +1,0 @@
-class Main { void f() { if ("a" < 1) {} } }

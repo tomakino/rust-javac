@@ -1,0 +1,8 @@
+<src>/CountWarnRecompile.java:39: warning: [rawtypes] found raw type: List
+    List x1;
+    ^
+  missing type arguments for generic class List<E>
+  where E is a type-variable:
+    E extends Object declared in interface List
+1 warning
+only showing the first 1 warnings, of 2 total; use -Xmaxwarns if you would like to see more

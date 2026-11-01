@@ -1,0 +1,5 @@
+<src>/NotDefAccessNotExportedFromUnnamed\NotDefAccessNotExportedFromUnnamed.java:29: error: package api is not visible
+     api.Api api;
+     ^
+  (package api is declared in module api, which does not export it)
+1 error

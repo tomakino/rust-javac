@@ -1,0 +1,5 @@
+<src>/IllegalStaticIntfMethCall.java:32: error: illegal static interface method call
+        a.m();
+           ^
+  the receiver expression should be replaced with the type qualifier 'A'
+1 error

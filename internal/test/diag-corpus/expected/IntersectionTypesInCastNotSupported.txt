@@ -1,0 +1,5 @@
+<src>/IntersectionTypesInCastNotSupported.java:29: error: intersection types are not supported in -source 7
+    Object o = (A & B)null;
+                  ^
+  (use -source 8 or higher to enable intersection types)
+1 error

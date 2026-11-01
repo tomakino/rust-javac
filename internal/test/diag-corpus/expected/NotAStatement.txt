@@ -1,0 +1,4 @@
+<src>/NotAStatement.java:28: error: not a statement
+        x + 1;
+          ^
+1 error

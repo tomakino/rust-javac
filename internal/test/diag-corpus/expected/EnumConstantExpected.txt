@@ -1,0 +1,4 @@
+<src>/EnumConstantExpected.java:28: error: enum constant expected here
+    void test() {}
+    ^
+1 error

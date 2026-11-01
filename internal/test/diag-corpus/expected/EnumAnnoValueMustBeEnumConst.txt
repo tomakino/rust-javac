@@ -1,0 +1,4 @@
+<src>/EnumAnnoValueMustBeEnumConst.java:32: error: expression not allowed as annotation value
+@Anno(E.valueOf("A"))
+               ^
+1 error

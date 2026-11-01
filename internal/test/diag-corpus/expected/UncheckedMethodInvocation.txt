@@ -1,0 +1,15 @@
+<src>/UncheckedMethodInvocation.java:35: warning: [unchecked] unchecked method invocation: method m in class UncheckedMethodInvocation is applied to given types
+        m(new X<X<Integer>>(), new X());
+         ^
+  required: UncheckedMethodInvocation.X<T>,T
+  found:    UncheckedMethodInvocation.X<UncheckedMethodInvocation.X<Integer>>,UncheckedMethodInvocation.X
+  where T is a type-variable:
+    T extends Object declared in method <T>m(UncheckedMethodInvocation.X<T>,T)
+<src>/UncheckedMethodInvocation.java:35: warning: [unchecked] unchecked conversion
+        m(new X<X<Integer>>(), new X());
+                               ^
+  required: T
+  found:    UncheckedMethodInvocation.X
+  where T is a type-variable:
+    T extends Object declared in method <T>m(UncheckedMethodInvocation.X<T>,T)
+2 warnings

@@ -1,0 +1,4 @@
+<src>/TrustMeOnNonVarargsMeth.java:29: error: Invalid SafeVarargs annotation. Method m(String[]) is not a varargs method.
+    @SafeVarargs static void m(String[] args) { }
+                             ^
+1 error

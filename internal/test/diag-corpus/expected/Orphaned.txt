@@ -1,0 +1,4 @@
+<src>/Orphaned.java:28: error: orphaned case
+        case 3:
+        ^
+1 error

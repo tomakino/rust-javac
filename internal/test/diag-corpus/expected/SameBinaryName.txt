@@ -1,0 +1,4 @@
+<src>/SameBinaryName.java:30: error: classes: Foo$Bar and Bar have the same binary name
+        private static final class Bar {}
+                             ^
+1 error

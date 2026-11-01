@@ -1,0 +1,4 @@
+<src>/TryWithResourcesExprNeedsVar.java:28: error: the try-with-resources resource must either be a variable declaration or an expression denoting a reference to a final or effectively final variable
+        try (new CloseableImpl()) {
+             ^
+1 error

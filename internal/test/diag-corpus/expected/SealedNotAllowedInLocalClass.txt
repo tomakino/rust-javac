@@ -1,0 +1,4 @@
+<src>/SealedNotAllowedInLocalClass.java:28: error: sealed or non-sealed local classes are not allowed
+        sealed class S { }
+        ^
+1 error

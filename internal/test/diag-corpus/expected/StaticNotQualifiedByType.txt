@@ -1,0 +1,4 @@
+<src>/StaticNotQualifiedByType.java:29: warning: [static] static variable should be qualified by type name, Other, instead of by an expression
+        return other.i;
+                    ^
+1 warning

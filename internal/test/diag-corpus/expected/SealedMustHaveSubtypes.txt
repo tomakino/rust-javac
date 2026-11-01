@@ -1,0 +1,4 @@
+<src>/SealedMustHaveSubtypes.java:26: error: sealed class must have subclasses
+sealed class Sealed {}
+       ^
+1 error

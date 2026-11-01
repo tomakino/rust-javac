@@ -1,0 +1,4 @@
+<src>/IllegalUnicodeEscape.java:27: error: illegal unicode escape
+    int i = \u;
+              ^
+1 error

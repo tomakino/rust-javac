@@ -1,0 +1,5 @@
+<src>/OverrideMeth.java:32: error: m() in OverrideMeth cannot override m() in Base
+    void m() { }
+         ^
+  overridden method is static
+1 error

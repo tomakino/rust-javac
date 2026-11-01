@@ -1,0 +1,7 @@
+<src>/ExplicitParamsDoNotConformToBounds.java:29: error: method m in class ExplicitParamsDoNotConformToBounds cannot be applied to given types;
+    { this.<String>m(); }
+          ^
+  required: no arguments
+  found:    no arguments
+  reason: explicit type argument String does not conform to declared bound(s) Number
+1 error

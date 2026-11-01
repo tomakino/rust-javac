@@ -1,1 +1,0 @@
-class Main { final int x; Main() { x = 1; x = 2; } }

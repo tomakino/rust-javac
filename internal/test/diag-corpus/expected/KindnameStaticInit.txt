@@ -1,0 +1,4 @@
+<src>/KindnameStaticInit.java:35: error: variable i is already defined in static initializer of class KindnameStaticInit
+        int i;
+            ^
+1 error

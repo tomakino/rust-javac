@@ -1,0 +1,2 @@
+error: --add-modules ALL-MODULE-PATH can only be used when compiling the unnamed module or when compiling in the context of an automatic module
+1 error

@@ -1,0 +1,5 @@
+<src>/LambdaStat.java:28: Note: Translating lambda expression
+    Runnable r = ()->{};
+                 ^
+  alternate metafactory = false
+  synthetic method = lambda$new$0()

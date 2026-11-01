@@ -1,0 +1,4 @@
+<src>/InstanceofReifiableNotSafe.java:30: error: Object cannot be safely cast to List<String>
+        return o instanceof List<String> l;
+               ^
+1 error

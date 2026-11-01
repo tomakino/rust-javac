@@ -1,0 +1,5 @@
+<src>/ReportAccessFragment.java:30: error: incompatible types: invalid method reference
+        Runnable r = o::clone;
+                     ^
+    clone() has protected access in Object
+1 error

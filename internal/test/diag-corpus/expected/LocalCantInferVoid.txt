@@ -1,0 +1,5 @@
+<src>/LocalCantInferVoid.java:29: error: cannot infer type for local variable s
+        var s = test();
+            ^
+  (variable initializer is 'void')
+1 error

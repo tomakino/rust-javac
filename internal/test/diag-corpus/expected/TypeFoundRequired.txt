@@ -1,0 +1,8 @@
+<src>/TypeFoundRequired.java:31: error: unexpected type
+    List<T<Integer>> list;
+         ^
+  required: class
+  found:    type parameter T
+  where T is a type-variable:
+    T extends Object declared in class X
+1 error

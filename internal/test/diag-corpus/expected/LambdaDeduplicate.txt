@@ -1,0 +1,3 @@
+<src>/LambdaDeduplicate.java:32: Note: deduplicating lambda implementation method lambda$new$0(Integer)
+  Function<Integer, Integer> f2 = x -> x;
+                                  ^

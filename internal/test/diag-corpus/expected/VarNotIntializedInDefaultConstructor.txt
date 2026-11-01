@@ -1,0 +1,4 @@
+<src>/VarNotIntializedInDefaultConstructor.java:27: error: variable j not initialized in the default constructor
+    final int j;
+              ^
+1 error

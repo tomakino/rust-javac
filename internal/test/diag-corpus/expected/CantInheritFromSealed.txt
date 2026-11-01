@@ -1,0 +1,7 @@
+<src>/CantInheritFromSealed.java:31: error: sealed, non-sealed or final modifiers expected
+class Sub1 implements SealedInterface {
+^
+<src>/CantInheritFromSealed.java:35: error: class is not allowed to extend sealed class: SealedInterface (as it is not listed in its permits clause)
+class CantInheritFromSealed implements SealedInterface {
+^
+2 errors

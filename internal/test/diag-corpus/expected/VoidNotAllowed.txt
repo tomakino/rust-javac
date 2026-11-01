@@ -1,0 +1,4 @@
+<src>/VoidNotAllowed.java:30: error: 'void' type not allowed here
+        System.err.println(m());
+                            ^
+1 error

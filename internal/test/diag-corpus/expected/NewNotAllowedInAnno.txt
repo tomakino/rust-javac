@@ -1,0 +1,4 @@
+<src>/NewNotAllowedInAnno.java:30: error: 'new' not allowed in an annotation
+@Anno(new int[] { 1, 2, 3 })
+          ^
+1 error

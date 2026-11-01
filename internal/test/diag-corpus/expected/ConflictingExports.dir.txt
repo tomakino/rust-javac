@@ -1,0 +1,4 @@
+<src>/ConflictingExports\module-info.java:28: error: duplicate or conflicting exports: exported
+     exports exported;
+             ^
+1 error

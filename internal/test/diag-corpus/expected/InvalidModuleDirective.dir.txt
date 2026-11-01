@@ -1,0 +1,4 @@
+<src>/InvalidModuleDirective\module-info.java:28: error: module directive keyword or '}' expected
+  resuires javax.interceptor.javax.interceptor.api;
+  ^
+1 error

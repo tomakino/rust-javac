@@ -1,0 +1,4 @@
+<src>/CyclicInheritance.java:26: error: cyclic inheritance involving CyclicInheritance
+class CyclicInheritance extends CyclicInheritance { }
+^
+1 error

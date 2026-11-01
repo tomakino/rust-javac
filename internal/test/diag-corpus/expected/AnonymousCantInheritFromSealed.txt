@@ -1,0 +1,7 @@
+<src>/AnonymousCantInheritFromSealed.java:30: error: anonymous classes must not extend sealed classes
+        Shape shape = new Shape() {};
+                                  ^
+<src>/AnonymousCantInheritFromSealed.java:34: error: sealed class must have subclasses
+sealed interface Shape {}
+       ^
+2 errors

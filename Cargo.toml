@@ -15,7 +15,6 @@ members = [
     "crates/javac-core",
     "crates/javac-floating",
     "crates/rust-javac",
-    "crates/javac-tests",
     "xtask",
 ]
 

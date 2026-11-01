@@ -1,0 +1,4 @@
+<src>/MulticatchCantBeAssigned.java:35: error: multi-catch parameter e may not be assigned
+            e = new RuntimeException();
+            ^
+1 error

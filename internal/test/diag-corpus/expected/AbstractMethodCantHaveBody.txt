@@ -1,0 +1,4 @@
+<src>/AbstractMethodCantHaveBody.java:27: error: abstract methods cannot have a body
+    abstract void m() { }
+                  ^
+1 error

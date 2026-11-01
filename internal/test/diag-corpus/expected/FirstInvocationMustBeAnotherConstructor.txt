@@ -1,0 +1,4 @@
+<src>/FirstInvocationMustBeAnotherConstructor.java:27: error: constructor is not canonical, so its first statement must invoke another constructor of class R
+    public R(int x, int y) { this.x = x; }
+           ^
+1 error

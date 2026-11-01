@@ -1,0 +1,5 @@
+<src>/NoAbstracts.java:32: error: incompatible types: SAM is not a functional interface
+    SAM s = x-> { };
+            ^
+    no abstract method found in interface SAM
+1 error

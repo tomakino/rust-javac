@@ -1,0 +1,4 @@
+<src>/FinallyWithoutTry.java:28: error: 'finally' without 'try'
+        finally {
+        ^
+1 error

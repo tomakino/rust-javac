@@ -1,0 +1,5 @@
+<src>/InferredDoNotConformToUpper.java:33: error: incompatible types: List<Integer> cannot be converted to List<? super String>
+    { this.m("", Arrays.asList(1)); }
+                              ^
+Note: Some messages have been simplified; recompile with -Xdiags:verbose to get full output
+1 error

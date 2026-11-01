@@ -1,0 +1,5 @@
+<src>/OverriddenDefault.java:33: error: bad type qualifier K in default super call
+        void foo() { K.super.m(); }
+                              ^
+  method m() is overridden in J
+1 error

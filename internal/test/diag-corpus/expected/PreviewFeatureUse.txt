@@ -1,0 +1,7 @@
+<src>/PreviewFeatureUse.java:34: warning: [preview] diamond operator is a preview feature and may be removed in a future release.
+        new ArrayList<>();
+                      ^
+<src>/PreviewFeatureUse.java:35: warning: [preview] lambda expressions are a preview feature and may be removed in a future release.
+        Runnable r = () -> {};
+                        ^
+2 warnings

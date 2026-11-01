@@ -1,0 +1,4 @@
+<src>/AlreadyDefined.java:28: error: variable i is already defined in class X
+    int i;
+        ^
+1 error

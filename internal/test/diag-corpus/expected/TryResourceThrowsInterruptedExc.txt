@@ -1,0 +1,4 @@
+<src>/TryResourceThrowsInterruptedExc.java:27: warning: [try] auto-closeable resource TryResourceThrowsInterruptedException has a member method close() that could throw InterruptedException
+class TryResourceThrowsInterruptedException implements AutoCloseable {
+^
+1 warning

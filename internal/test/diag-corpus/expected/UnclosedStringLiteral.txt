@@ -1,0 +1,4 @@
+<src>/UnclosedStringLiteral.java:27: error: unclosed string literal
+    String s = "abc;
+               ^
+1 error

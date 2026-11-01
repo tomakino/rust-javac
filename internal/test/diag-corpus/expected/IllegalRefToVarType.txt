@@ -1,0 +1,4 @@
+<src>/IllegalRefToVarType.java:29: error: illegal reference to restricted type 'var'
+    var<String> list() { return null; }
+    ^
+1 error

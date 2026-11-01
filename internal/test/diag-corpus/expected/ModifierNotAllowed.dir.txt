@@ -1,0 +1,4 @@
+<src>/ModifierNotAllowed\module-info.java:27: error: modifier transitive not allowed here
+     requires transitive java.base;
+     ^
+1 error

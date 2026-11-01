@@ -1,0 +1,4 @@
+<src>/CyclicAnnoElement.java:27: error: type of element X is cyclic
+    X value();
+      ^
+1 error

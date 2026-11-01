@@ -1,0 +1,4 @@
+<src>/AbstractCantBeInstantiated.java:30: error: AbstractCantBeInstantiated.C is abstract; cannot be instantiated
+        new C();
+        ^
+1 error

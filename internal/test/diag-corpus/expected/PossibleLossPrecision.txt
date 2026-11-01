@@ -1,0 +1,4 @@
+<src>/PossibleLossPrecision.java:29: error: incompatible types: possible lossy conversion from long to int
+    int i = l;
+            ^
+1 error

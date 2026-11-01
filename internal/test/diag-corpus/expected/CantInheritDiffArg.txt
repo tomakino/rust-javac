@@ -1,0 +1,4 @@
+<src>/CantInheritDiffArg.java:28: error: List cannot be inherited with different arguments: <java.lang.Integer> and <java.lang.String>
+class CantInheritDiffArg extends ArrayList<String> implements List<Integer> { }
+^
+1 error

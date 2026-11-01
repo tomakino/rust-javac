@@ -1,0 +1,5 @@
+<src>/VarNotAllowedExplicitLambda.java:28: error: invalid lambda parameter declaration
+    F f = (String s, var v)->{};
+          ^
+  (cannot mix 'var' and explicitly-typed parameters)
+1 error

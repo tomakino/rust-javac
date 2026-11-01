@@ -1,0 +1,4 @@
+<src>/AuxiliaryClassWarning\ClassUsingAuxiliary.java:28: warning: auxiliary class AuxiliaryClass in <src>/AuxiliaryClassWarning\ClassWithAuxiliary.java should not be accessed from outside its own source file
+    AuxiliaryClass ahem;
+    ^
+1 warning

@@ -1,0 +1,5 @@
+<src>/BadInstanceMethodInUnboundLookup.java:37: error: incompatible types: invalid method reference
+        SAM s = BadInstanceMethodInUnboundLookup::f;
+                ^
+    unexpected instance method f(Integer) found in unbound lookup
+1 error

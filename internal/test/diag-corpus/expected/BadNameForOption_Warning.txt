@@ -1,0 +1,2 @@
+warning: bad name in value for --add-exports option: 'Bad!Name'
+1 warning

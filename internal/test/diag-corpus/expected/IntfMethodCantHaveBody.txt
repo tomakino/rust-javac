@@ -1,0 +1,4 @@
+<src>/IntfMethodCantHaveBody.java:27: error: interface abstract methods cannot have body
+    void m() { }
+             ^
+1 error

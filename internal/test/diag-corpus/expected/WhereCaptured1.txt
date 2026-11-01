@@ -1,0 +1,12 @@
+<src>/WhereCaptured1.java:41: error: method m in class WhereCaptured cannot be applied to given types;
+        m(list, list);
+        ^
+  required: List<T>,List<T>
+  found:    List<CAP#1>,List<CAP#2>
+  reason: inference variable T has incompatible equality constraints CAP#2,CAP#1
+  where T is a type-variable:
+    T extends Object declared in method <T>m(List<T>,List<T>)
+  where CAP#1,CAP#2 are fresh type-variables:
+    CAP#1 extends WhereCaptured from capture of ? extends WhereCaptured
+    CAP#2 extends WhereCaptured from capture of ? extends WhereCaptured
+1 error

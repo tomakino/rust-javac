@@ -1,0 +1,5 @@
+<src>/UnclosedComment.java:28: error: unclosed comment
+    /*
+    ^
+<src>/UnclosedComment.java:31: error: reached end of file while parsing
+2 errors

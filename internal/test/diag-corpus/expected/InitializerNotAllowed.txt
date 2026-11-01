@@ -1,0 +1,4 @@
+<src>/InitializerNotAllowed.java:27: error: initializers not allowed in interfaces
+    {
+    ^
+1 error

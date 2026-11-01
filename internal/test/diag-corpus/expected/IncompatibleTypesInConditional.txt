@@ -1,0 +1,5 @@
+<src>/IncompatibleTypesInConditional.java:33: error: incompatible types: bad type in conditional expression
+    B b = true ? (A)null : (B)null;
+                 ^
+    A cannot be converted to B
+1 error

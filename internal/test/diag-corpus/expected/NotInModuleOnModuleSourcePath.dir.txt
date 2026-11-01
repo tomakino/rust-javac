@@ -1,0 +1,4 @@
+<src>/NotInModuleOnModuleSourcePath\NotInModuleOnModuleSourcePath.java:26: error: not in a module on the module source path
+package p; class C { }
+^
+1 error

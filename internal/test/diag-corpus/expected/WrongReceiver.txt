@@ -1,0 +1,4 @@
+<src>/WrongReceiver.java:28: error: wrong receiver parameter name
+    void f(WrongReceiver wr.wr) {}
+                              ^
+1 error

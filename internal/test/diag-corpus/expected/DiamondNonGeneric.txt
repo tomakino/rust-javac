@@ -1,0 +1,5 @@
+<src>/DiamondNonGeneric.java:28: error: cannot infer type arguments for String
+    String s = new String<>("foo");
+                         ^
+  reason: cannot use '<>' with non-generic class String
+1 error

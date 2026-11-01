@@ -1,1 +1,0 @@
-class Main { void f() { new String(1, 2, 3); } }

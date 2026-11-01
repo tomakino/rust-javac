@@ -1,0 +1,4 @@
+<src>/CaseNull.java:31: warning: [preview] null in switch cases is a preview feature and may be removed in a future release.
+            case null: break;
+                 ^
+1 warning

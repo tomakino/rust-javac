@@ -1,0 +1,4 @@
+<src>/StringConstRequired.java:33: error: constant string expression required
+            case s:     return 3;
+                 ^
+1 error

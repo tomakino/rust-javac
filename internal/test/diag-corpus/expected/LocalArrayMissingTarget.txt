@@ -1,0 +1,5 @@
+<src>/LocalArrayMissingTarget.java:29: error: cannot infer type for local variable x
+        var x = { 1, 2, 3 };
+            ^
+  (array initializer needs an explicit target-type)
+1 error

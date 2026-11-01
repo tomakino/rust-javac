@@ -1,0 +1,4 @@
+<src>/ModuleNameMismatch\modulesourcepath\m\module-info.java:24: error: module name other does not match expected name m
+module other {
+       ^
+1 error

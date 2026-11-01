@@ -1,0 +1,4 @@
+<src>/PossibleFallThrough.java:32: warning: [fallthrough] possible fall-through into case
+            case 1:
+            ^
+1 warning

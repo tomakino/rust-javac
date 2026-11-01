@@ -1,0 +1,6 @@
+<src>/NotWithinBounds.java:30: error: type argument String is not within bounds of type-variable X
+    Foo<String> f1 = null;
+        ^
+  where X is a type-variable:
+    X extends Number declared in class Foo
+1 error

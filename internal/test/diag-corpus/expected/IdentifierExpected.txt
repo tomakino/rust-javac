@@ -1,0 +1,4 @@
+<src>/IdentifierExpected.java:30: error: <identifier> expected
+class {
+     ^
+1 error

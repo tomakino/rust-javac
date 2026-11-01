@@ -1,0 +1,4 @@
+<src>/ClassPublicInFile.java:26: error: class C is public, should be declared in a file named C.java
+public class C { }
+       ^
+1 error

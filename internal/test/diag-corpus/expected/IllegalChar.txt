@@ -1,0 +1,4 @@
+<src>/IllegalChar.java:27: error: illegal character: '#'
+    int i = #;
+            ^
+1 error

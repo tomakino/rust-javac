@@ -1,0 +1,4 @@
+<src>/IntfAnnotationMemberClash.java:27: error: annotation type Annotation declares an element with the same name as method toString()
+    String toString();
+           ^
+1 error

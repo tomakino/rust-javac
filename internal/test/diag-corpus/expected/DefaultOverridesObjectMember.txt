@@ -1,0 +1,4 @@
+<src>/DefaultOverridesObjectMember.java:27: error: default method toString in interface DefaultOverridesObjectMember overrides a member of java.lang.Object
+    default String toString() { return ""; }
+                   ^
+1 error

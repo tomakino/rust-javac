@@ -1,0 +1,5 @@
+<src>/LambdaNotSupported.java:29: error: lambda expressions are not supported in -source 7
+    S s = ()->{};
+            ^
+  (use -source 8 or higher to enable lambda expressions)
+1 error

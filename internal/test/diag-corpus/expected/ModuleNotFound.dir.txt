@@ -1,0 +1,4 @@
+<src>/ModuleNotFound\module-info.java:27: error: module not found: does.not.exist
+     requires does.not.exist;
+                      ^
+1 error

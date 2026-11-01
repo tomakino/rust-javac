@@ -1,0 +1,4 @@
+<src>/ServiceImplementationNoArgsConstructorNotPublic\module-info.java:28: error: the no arguments constructor of the service implementation is not public: ServiceImplementation
+     provides exported.Service with impl.ServiceImplementation;
+                                        ^
+1 error

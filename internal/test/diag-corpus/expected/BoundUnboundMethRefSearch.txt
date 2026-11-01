@@ -1,0 +1,10 @@
+<src>/BoundUnboundMethRefSearch.java:39: Note: bound search results for BoundUnboundMethRefSearch::foo, with most specific 0
+        Function<String, String> f = BoundUnboundMethRefSearch::foo;
+                                     ^
+  applicable candidates:
+      #0 applicable method found: static foo(String)
+      #1 applicable method found: non-static foo(Object)
+<src>/BoundUnboundMethRefSearch.java:39: Note: unbound search results for BoundUnboundMethRefSearch::foo, with most specific -1
+        Function<String, String> f = BoundUnboundMethRefSearch::foo;
+                                     ^
+  applicable candidates:

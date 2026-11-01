@@ -1,0 +1,4 @@
+<src>/RecordsCantDeclareComponentModifiers.java:26: error: record components cannot have modifiers
+record R(final int x) {}
+         ^
+1 error

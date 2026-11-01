@@ -1,0 +1,4 @@
+<src>/ImproperSVUID.java:30: warning: [serial] serialVersionUID must be declared static final in class ImproperSVUID
+    int serialVersionUID;
+        ^
+1 warning

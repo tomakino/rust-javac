@@ -1,0 +1,4 @@
+<src>/ImportRequiresCanonical\ImportRequiresCanonical.java:26: error: import requires canonical name for Entry
+import java.util.HashMap.Entry;
+                        ^
+1 error

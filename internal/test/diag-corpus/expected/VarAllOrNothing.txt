@@ -1,0 +1,5 @@
+<src>/VarAllOrNothing.java:30: error: invalid lambda parameter declaration
+    IntBinaryOperator f = (x, var y) -> x + y;
+                          ^
+  (cannot mix 'var' and implicitly-typed parameters)
+1 error

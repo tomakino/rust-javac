@@ -1,0 +1,7 @@
+<src>/BadSourceFileHeader\BadSourceFileHeader.java:29: error: cannot access A
+    p.A a;
+     ^
+  bad source file: <src>/BadSourceFileHeader\sourcepath\p\A.java
+    file does not contain class p.A
+    Please remove or make sure it appears in the correct subdirectory of the sourcepath.
+1 error

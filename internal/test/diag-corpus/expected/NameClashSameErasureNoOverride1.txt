@@ -1,0 +1,6 @@
+<src>/NameClashSameErasureNoOverride1.java:37: error: name clash: class B has two methods with the same erasure, yet neither overrides the other
+        public void m(Integer l) {}
+                    ^
+  first method:  m(Integer) in I
+  second method: m(Object) in NameClashSameErasureNoOverride1.A
+1 error

@@ -1,0 +1,4 @@
+<src>/InstanceofPatternNoSubtype.java:28: error: expression type Object is a subtype of pattern type Object
+        return o instanceof Object obj;
+                 ^
+1 error

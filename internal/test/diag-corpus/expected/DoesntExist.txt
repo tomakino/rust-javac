@@ -1,0 +1,4 @@
+<src>/DoesntExist.java:26: error: package DoesntExist does not exist
+import DoesntExist.*;
+^
+1 error

@@ -1,0 +1,8 @@
+<src>/DiamondAndAnonClass.java:33: error: cannot infer type arguments for ArrayList<E>
+        List<String> list = new ArrayList<>() {};
+                                         ^
+  reason: '<>' with anonymous inner classes is not supported in -source 8
+    (use -source 9 or higher to enable '<>' with anonymous inner classes)
+  where E is a type-variable:
+    E extends Object declared in class ArrayList
+1 error

@@ -1,0 +1,4 @@
+<src>/NameClashSameErasure.java:30: error: name clash: m(List<String>) and m(List<Integer>) have the same erasure
+    void m(List<String> list) { }
+         ^
+1 error

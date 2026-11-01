@@ -1,0 +1,6 @@
+<src>/CantResolveLocationArgsParams.java:31: error: cannot find symbol
+        Object o = List.<String>unknown();
+                       ^
+  symbol:   method <String>unknown()
+  location: interface List
+1 error

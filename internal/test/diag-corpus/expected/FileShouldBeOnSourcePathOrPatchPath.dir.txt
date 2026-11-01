@@ -1,0 +1,4 @@
+<src>/FileShouldBeOnSourcePathOrPatchPath\FileShouldBeOnSourcePathOrModulePath.java:26: error: file should be on source path, or on patch path for module
+public class FileShouldBeOnSourcePathOrModulePath {
+^
+1 error

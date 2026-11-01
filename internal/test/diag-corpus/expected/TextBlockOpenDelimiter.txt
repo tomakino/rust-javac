@@ -1,0 +1,7 @@
+<src>/TextBlockOpenDelimiter.java:28: error: illegal text block open delimiter sequence, missing line terminator
+        return """xxxx
+                  ^
+<src>/TextBlockOpenDelimiter.java:29: error: illegal text block open delimiter sequence, missing line terminator
+               """;
+                  ^
+2 errors

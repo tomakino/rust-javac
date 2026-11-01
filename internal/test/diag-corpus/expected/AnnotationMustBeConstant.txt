@@ -1,0 +1,4 @@
+<src>/AnnotationMustBeConstant.java:32: error: expression not allowed as annotation value
+@Anno(value = AnnotationMustBeConstant.m(x -> x))
+                                        ^
+1 error

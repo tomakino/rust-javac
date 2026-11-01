@@ -1,0 +1,4 @@
+<src>/UnnamedPackageInNamedModule\modulesourcepath\m1x\UnnamedPackageInNamedModule.java:24: error: unnamed package is not allowed in named modules
+class UnnamedPackageInNamedModule {}
+^
+1 error

@@ -1,0 +1,4 @@
+<src>/TypeAnnoNotApplicableInTypeContext.java:28: error: annotation @A not applicable in this type context
+    TypeAnnoNotApplicableInTypeContext<@A String> m;
+                                       ^
+1 error

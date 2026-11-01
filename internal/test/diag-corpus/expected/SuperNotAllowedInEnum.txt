@@ -1,0 +1,4 @@
+<src>/SuperNotAllowedInEnum.java:31: error: call to super not allowed in enum constructor
+        super();
+        ^
+1 error

@@ -1,0 +1,9 @@
+<src>/LambdaBodyNeitherValueNorVoidCompatible.java:38: error: lambda body is neither value nor void compatible
+        foo((x) -> {
+                   ^
+<src>/LambdaBodyNeitherValueNorVoidCompatible.java:38: error: incompatible types: bad return type in lambda expression
+        foo((x) -> {
+            ^
+    missing return value
+Note: Some messages have been simplified; recompile with -Xdiags:verbose to get full output
+2 errors

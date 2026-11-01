@@ -1,0 +1,7 @@
+<src>/OverrideUncheckedThrown.java:33: warning: [unchecked] m() in OverrideUncheckedThrown cannot override <T>m() in Base
+     void m() throws Exception { }
+          ^
+  overridden method does not throw Exception
+  where T is a type-variable:
+    T extends Exception declared in method <T>m()
+1 warning

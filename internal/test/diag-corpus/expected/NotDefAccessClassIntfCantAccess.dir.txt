@@ -1,0 +1,4 @@
+<src>/NotDefAccessClassIntfCantAccess\NotDefAccessClassIntfCantAccess.java:31: error: Array.length is defined in an inaccessible class or interface
+        return c.array.length; // array is public, but the type of the array is not
+                      ^
+1 error

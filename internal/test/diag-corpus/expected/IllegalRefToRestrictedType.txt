@@ -1,0 +1,10 @@
+<src>/IllegalRefToRestrictedType.java:29: warning: as of release 14, 'yield' is a restricted type name and cannot be used for type declarations or as the element type of an array
+    yield list() { return null; }
+    ^
+<src>/IllegalRefToRestrictedType.java:30: warning: as of release 14, 'yield' is a restricted type name and cannot be used for type declarations or as the element type of an array
+    public class yield {}
+                 ^
+<src>/IllegalRefToRestrictedType.java:29: warning: illegal reference to restricted type 'yield'
+    yield list() { return null; }
+    ^
+3 warnings

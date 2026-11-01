@@ -1,0 +1,4 @@
+<src>/IllegalRecordComponentName.java:26: error: illegal record component name hashCode
+record R(int hashCode) {}
+             ^
+1 error

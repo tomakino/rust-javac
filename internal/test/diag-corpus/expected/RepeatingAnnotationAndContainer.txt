@@ -1,0 +1,4 @@
+<src>/RepeatingAnnotationAndContainer.java:35: error: container Annos must not be present at the same time as the element it contains
+@Annos(@Anno)
+^
+1 error

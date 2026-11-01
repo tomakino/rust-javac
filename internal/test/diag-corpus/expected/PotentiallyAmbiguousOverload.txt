@@ -1,0 +1,4 @@
+<src>/PotentiallyAmbiguousOverload.java:36: warning: [overloads] m(F1) in PotentiallyAmbiguousOverload is potentially ambiguous with m(F2) in PotentiallyAmbiguousOverload
+    void m(F1 f1) { }
+         ^
+1 warning

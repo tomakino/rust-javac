@@ -1,0 +1,4 @@
+<src>/LeaksNotAccessible\modulesourcepath\m1x\api\Api.java:27: warning: [exports] class Impl in module m1x is not accessible to clients that require this module
+     public Impl getImpl() {
+            ^
+1 warning

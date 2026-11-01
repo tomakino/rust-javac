@@ -1,0 +1,5 @@
+<src>/BadFunctionalIntfAnno.java:27: error: Unexpected @FunctionalInterface annotation
+@FunctionalInterface
+^
+  BadFunctionalIntfAnno is not a functional interface
+1 error

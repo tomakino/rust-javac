@@ -1,0 +1,6 @@
+<src>/Location1.java:29: error: cannot find symbol
+    { Object o2 = o.v; }
+                   ^
+  symbol:   variable v
+  location: variable o of type Object
+1 error

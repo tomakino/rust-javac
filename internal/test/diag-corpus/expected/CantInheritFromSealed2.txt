@@ -1,0 +1,4 @@
+<src>/CantInheritFromSealed2.java:29: error: sealed or non-sealed modifiers expected
+interface Sub1 extends SealedInterface {}
+^
+1 error

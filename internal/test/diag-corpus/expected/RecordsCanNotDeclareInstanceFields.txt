@@ -1,0 +1,5 @@
+<src>/RecordsCanNotDeclareInstanceFields.java:27: error: field declaration must be static
+    private final int y = 0;
+                      ^
+  (consider replacing field with record component)
+1 error

@@ -1,0 +1,4 @@
+<src>/ReportAccess.java:27: error: x has private access in Other
+    int i = new Other().x;
+                       ^
+1 error

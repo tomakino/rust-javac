@@ -1,0 +1,6 @@
+<src>/PatternExpected.java:32: error: type pattern expected
+            case String: break;
+                 ^
+Note: <src>/PatternExpected.java uses preview features of Java SE 17.
+Note: Recompile with -Xlint:preview for details.
+1 error

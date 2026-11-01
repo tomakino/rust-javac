@@ -1,0 +1,8 @@
+<src>/DuplicateModule\modulesourcepath\m2x\module-info.java:24: error: duplicate module: blah
+module blah {}
+^
+<src>/DuplicateModule\modulesourcepath\m1x\module-info.java:24: error: module name blah does not match expected name m1x
+module blah {}
+       ^
+2 errors
+printing javac parameters to: <tmp>\javac.20261101_092346.args

@@ -1,0 +1,5 @@
+<src>/StatExprExpected.java:29: error: incompatible types: lambda body is not compatible with a void functional interface
+        Runnable r = () -> (foo());
+                               ^
+    (consider using a block lambda body, or use a statement expression instead)
+1 error

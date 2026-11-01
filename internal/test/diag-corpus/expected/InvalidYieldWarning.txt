@@ -1,0 +1,5 @@
+<src>/InvalidYieldWarning.java:30: warning: 'yield' may become a restricted identifier in a future release
+            yield(1, 2);
+            ^
+  (to invoke a method called yield, qualify the yield with a receiver or type name)
+1 warning

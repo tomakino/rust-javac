@@ -1,0 +1,4 @@
+<src>/CantRefBeforeConstr.java:34: error: cannot reference i before supertype constructor has been called
+        super(i);
+              ^
+1 error

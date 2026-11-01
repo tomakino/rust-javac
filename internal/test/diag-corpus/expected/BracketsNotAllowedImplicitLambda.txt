@@ -1,0 +1,4 @@
+<src>/BracketsNotAllowedImplicitLambda.java:29: error: 'var' is not allowed as an element type of an array
+    BiFunction<String[], String, String> f = (var s1[], var s2) -> s2;
+                                                  ^
+1 error

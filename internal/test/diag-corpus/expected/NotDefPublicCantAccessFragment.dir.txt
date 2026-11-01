@@ -1,0 +1,5 @@
+<src>/NotDefPublicCantAccessFragment\NotDefPublicCantAccessFragment.java:34: error: incompatible types: invalid method reference
+        SAM s = c::m;
+                ^
+    m() is not public in C; cannot be accessed from outside package
+1 error

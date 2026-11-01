@@ -1,0 +1,4 @@
+<src>/IllegalComboModifiers.java:27: error: illegal combination of modifiers: public and private
+    public private int x;
+                       ^
+1 error

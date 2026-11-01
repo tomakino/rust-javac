@@ -1,0 +1,5 @@
+<src>/NotDefAccessClassIntfCantAccessReason\modulesourcepath\impl\impl\Impl.java:28: error: Api.test() in package api1 is not accessible
+        api2.Api.get().test();
+                      ^
+  (package api1 is declared in module apia, but module impl does not read it)
+1 error

@@ -7,7 +7,7 @@
 3. **官方诊断示例** —— `cargo test -p rust-javac --test diag_examples`：运行上游 langtools 语料中的 669 个示例，与固化的 expected 输出归一化比对。
    - 环境变量：`DIAG_EXAMPLES_FILTER`、`DIAG_EXAMPLES_VERBOSE`、`DIAG_EXAMPLES_TIMEOUT_SECS`。
    - 当前：612 通过 / 3 失败 / 54 跳过。
-4. **语料 / oracle 工具** —— `crates/javac-tests` 提供 `gen-diagnostics-oracle`、`gen-corpus-baselines`、`diff_runner`，用于和本地安装的 JDK 比对。
+4. **语料 / oracle 工具** —— `crates/javac-tests` 提供 `gen-corpus-baselines`、`diff_runner`，用于和本地安装的 JDK 比对。
 5. **真实项目** —— Gson 2.10.1 与 OkHttp 3.14.9 会被编译，并与官方 javac 输出比对。
 
 ## 规则

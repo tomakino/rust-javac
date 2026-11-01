@@ -1,0 +1,4 @@
+<src>/AlreadyDefinedImport.java:27: error: a type with the same simple name is already defined by the single-type-import of List
+import java.util.List;
+^
+1 error

@@ -1,0 +1,4 @@
+<src>/AnonymousClass.java:34: error: incompatible types: <anonymous ArrayList<Object>> cannot be converted to ArrayList<String>
+         return (ArrayList<String>) new ArrayList<Object>() { };
+                                    ^
+1 error

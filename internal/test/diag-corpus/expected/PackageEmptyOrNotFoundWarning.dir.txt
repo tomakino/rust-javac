@@ -1,0 +1,4 @@
+<src>/PackageEmptyOrNotFoundWarning\modulesourcepath\m1x\module-info.java:25: warning: package is empty or does not exist: p1
+    opens p1;
+          ^
+1 warning

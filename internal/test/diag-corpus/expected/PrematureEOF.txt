@@ -1,0 +1,4 @@
+<src>/PrematureEOF.java:26: error: reached end of file while parsing
+class PrematureEOF {
+                    ^
+1 error

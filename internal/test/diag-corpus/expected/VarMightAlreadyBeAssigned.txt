@@ -1,0 +1,4 @@
+<src>/VarMightAlreadyBeAssigned.java:31: error: variable i might already have been assigned
+        i = 4;
+        ^
+1 error

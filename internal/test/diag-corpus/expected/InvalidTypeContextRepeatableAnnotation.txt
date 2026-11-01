@@ -1,0 +1,4 @@
+<src>/InvalidTypeContextRepeatableAnnotation.java:38: error: container TC is not applicable in this type context
+        this.<@T(1) @T(2) String>method2();
+              ^
+1 error

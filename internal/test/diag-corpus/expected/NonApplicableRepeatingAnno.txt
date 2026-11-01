@@ -1,0 +1,4 @@
+<src>/NonApplicableRepeatingAnno.java:37: error: container Foos is not applicable to element f
+    @Foo @Foo int f = 0;
+    ^
+1 error

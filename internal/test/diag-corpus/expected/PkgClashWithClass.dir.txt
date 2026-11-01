@@ -1,0 +1,7 @@
+<src>/PkgClashWithClass\p\q\C.java:24: error: package p.q clashes with class of same name
+package p.q;
+^
+<src>/PkgClashWithClass\p\q.java:31: error: class q clashes with package of same name
+public class q { }
+       ^
+2 errors

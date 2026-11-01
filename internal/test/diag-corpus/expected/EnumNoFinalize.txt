@@ -1,0 +1,4 @@
+<src>/EnumNoFinalize.java:31: error: enums cannot have finalize methods
+    public void finalize() { }
+                ^
+1 error

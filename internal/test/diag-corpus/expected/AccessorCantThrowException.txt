@@ -1,0 +1,5 @@
+<src>/AccessorCantThrowException.java:28: error: invalid accessor method in record R
+    public int i() throws ArithmeticException {
+               ^
+  (throws clause not allowed for accessor method)
+1 error

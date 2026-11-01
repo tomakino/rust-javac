@@ -1,0 +1,4 @@
+<src>/ResourceClosed.java:32: warning: [try] explicit call to close() on an auto-closeable resource
+            out.close();
+               ^
+1 warning

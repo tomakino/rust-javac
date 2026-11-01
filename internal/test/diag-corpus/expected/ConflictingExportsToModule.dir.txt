@@ -1,0 +1,4 @@
+<src>/ConflictingExportsToModule\module-info.java:27: error: duplicate or conflicting exports to module: java.base
+     exports exported to java.base, java.base;
+                                        ^
+1 error

@@ -1,0 +1,5 @@
+<src>/RefAmbiguous.java:31: error: reference to m is ambiguous
+      m(1, 2);
+      ^
+  both method m(int,double) in X and method m(double,int) in X match
+1 error

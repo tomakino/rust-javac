@@ -1,0 +1,4 @@
+<src>/SwitchExpressionEmpty.java:28: error: switch expression does not have any case clauses
+        return switch (e) {
+               ^
+1 error

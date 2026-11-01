@@ -1,0 +1,4 @@
+<src>/OverrideVarargsExtra.java:33: warning: m(Object[]) in OverrideVarargsExtra overrides m(Object...) in Base; overriding method is missing '...'
+    void m(Object[] x) { }
+         ^
+1 warning

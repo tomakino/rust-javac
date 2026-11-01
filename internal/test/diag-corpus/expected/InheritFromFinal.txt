@@ -1,0 +1,4 @@
+<src>/InheritFromFinal.java:28: error: cannot inherit from final Base
+class InheritFromFinal extends Base { }
+                               ^
+1 error

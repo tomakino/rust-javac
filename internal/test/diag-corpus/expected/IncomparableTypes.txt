@@ -1,0 +1,4 @@
+<src>/IncomparableTypes.java:27: error: incomparable types: X and String
+    boolean b = (this == "");
+                      ^
+1 error

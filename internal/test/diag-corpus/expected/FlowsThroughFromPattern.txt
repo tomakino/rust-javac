@@ -1,0 +1,11 @@
+<src>/FlowsThroughFromPattern.java:32: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+            case String str:
+                 ^
+<src>/FlowsThroughFromPattern.java:31: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+        switch (o) {
+               ^
+<src>/FlowsThroughFromPattern.java:33: error: illegal fall-through from a pattern
+            default: break;
+                   ^
+1 error
+2 warnings

@@ -1,8 +1,0 @@
-SAMPLE E1
-ERR E1 compiler.err.cant.resolve.location
-SAMPLE E2
-ERR E2 compiler.err.cant.resolve.location
-SAMPLE E3
-ERR E3 compiler.err.non-static.cant.be.ref
-SAMPLE E4
-ERR E4 compiler.err.report.access

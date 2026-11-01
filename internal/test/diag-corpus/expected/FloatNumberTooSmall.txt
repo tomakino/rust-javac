@@ -1,0 +1,4 @@
+<src>/FloatNumberTooSmall.java:27: error: floating-point number too small
+    float f = 1e-9999;
+              ^
+1 error

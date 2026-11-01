@@ -1,0 +1,6 @@
+<src>/KindnameVariable.java:33: error: cannot find symbol
+    Object o = not_found;
+               ^
+  symbol:   variable not_found
+  location: class KindnameVariable
+1 error

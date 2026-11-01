@@ -1,0 +1,4 @@
+<src>/EmptyIf.java:29: warning: [empty] empty statement after if
+        if (a == b) ;
+                    ^
+1 warning

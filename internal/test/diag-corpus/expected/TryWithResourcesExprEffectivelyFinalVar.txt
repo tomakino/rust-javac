@@ -1,0 +1,4 @@
+<src>/TryWithResourcesExprEffectivelyFinalVar.java:30: error: variable ac used as a try-with-resources resource neither final nor effectively final
+        try (ac) {
+             ^
+1 error

@@ -1,0 +1,4 @@
+<src>/NoPkgInModuleInfoJava\module-info.java:26: error: package declarations not allowed in file module-info.java
+package p;
+^
+1 error

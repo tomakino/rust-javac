@@ -1,0 +1,5 @@
+<src>/PrivateInterfaceMethodsNotSupported.java:29: error: private interface methods are not supported in -source 8
+    private void foo() {}
+                    ^
+  (use -source 9 or higher to enable private interface methods)
+1 error

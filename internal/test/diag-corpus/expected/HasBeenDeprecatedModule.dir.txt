@@ -1,0 +1,4 @@
+<src>/HasBeenDeprecatedModule\modulesourcepath\m2x\module-info.java:25: warning: [deprecation] module m1x has been deprecated
+    requires m1x;
+             ^
+1 warning

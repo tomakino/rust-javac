@@ -1,0 +1,4 @@
+<src>/Expected2.java:30: error: '(' or '[' expected
+        new x1;
+              ^
+1 error

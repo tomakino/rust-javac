@@ -1,0 +1,6 @@
+<src>/NotExhaustiveStatement.java:31: error: the switch statement does not cover all possible input values
+        switch (o) {
+        ^
+Note: <src>/NotExhaustiveStatement.java uses preview features of Java SE 17.
+Note: Recompile with -Xlint:preview for details.
+1 error

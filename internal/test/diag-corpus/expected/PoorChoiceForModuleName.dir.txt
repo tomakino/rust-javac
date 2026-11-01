@@ -1,0 +1,4 @@
+<src>/PoorChoiceForModuleName\module-info.java:27: warning: [module] module name component mango19 should avoid terminal digits
+module mango19 {}
+       ^
+1 warning

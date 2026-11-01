@@ -1,0 +1,4 @@
+<src>/AlreadyDefinedClinit.java:29: error: variable i is already defined in static initializer of class AlreadyDefinedClinit
+        int i;
+            ^
+1 error

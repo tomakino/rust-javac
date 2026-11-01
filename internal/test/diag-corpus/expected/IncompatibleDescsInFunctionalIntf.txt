@@ -1,0 +1,10 @@
+<src>/IncompatibleDescsInFunctionalIntf.java:40: error: types B and A are incompatible;
+    interface SAM extends A,B { }
+    ^
+  both define m(String), but with unrelated return types
+<src>/IncompatibleDescsInFunctionalIntf.java:42: error: incompatible types: incompatible function descriptors found in interface SAM
+    SAM s = x-> { };
+            ^
+      descriptor: String m(String)
+      descriptor: Integer m(String) throws Exception
+2 errors

@@ -1,0 +1,2 @@
+error: Annotation processor 'AnnoProc' not found
+1 error

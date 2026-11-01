@@ -1,0 +1,4 @@
+<src>/NoAnnotationsOnDotClass.java:30: error: no annotations are allowed in the type of a class literal
+    Object o = @A Object.class;
+                              ^
+1 error

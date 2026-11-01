@@ -1,0 +1,6 @@
+<src>/KindnameMethod.java:33: error: cannot find symbol
+    Object o = not_found();
+               ^
+  symbol:   method not_found()
+  location: class KindnameMethod
+1 error

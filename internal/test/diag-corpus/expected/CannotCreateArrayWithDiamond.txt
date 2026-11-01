@@ -1,0 +1,4 @@
+<src>/CannotCreateArrayWithDiamond.java:27: error: cannot create array with '<>'
+    Object[] array = new Object<>[3];
+                               ^
+1 error

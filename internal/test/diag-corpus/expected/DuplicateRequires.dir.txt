@@ -1,0 +1,4 @@
+<src>/DuplicateRequires\module-info.java:28: error: duplicate requires: java.se
+     requires java.se;
+                  ^
+1 error

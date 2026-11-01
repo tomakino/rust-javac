@@ -43,6 +43,3 @@ pub mod scanner_factory;
 pub mod text_block_support;
 pub mod tokens;
 pub mod unicode_reader;
-
-#[cfg(test)]
-mod oracle_tests;

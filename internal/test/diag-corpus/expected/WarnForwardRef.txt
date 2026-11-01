@@ -1,0 +1,4 @@
+<src>/WarnForwardRef.java:28: warning: reference to variable 'y' before it has been initialized
+    static int x = X.y;
+                    ^
+1 warning

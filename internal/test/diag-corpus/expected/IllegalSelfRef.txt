@@ -1,0 +1,4 @@
+<src>/IllegalSelfRef.java:27: error: self-reference in initializer
+    int i = i;
+            ^
+1 error

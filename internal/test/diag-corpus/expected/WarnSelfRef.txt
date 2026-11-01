@@ -1,0 +1,4 @@
+<src>/WarnSelfRef.java:28: warning: self-reference in initializer of variable 'x'
+    static int x = X.x;
+                    ^
+1 warning

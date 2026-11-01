@@ -86,13 +86,31 @@ impl<A> Drop for ListNode<A> {
 
 impl<A> ListNode<A> {
     /// Java: read of the tail field.
+    #[inline]
     fn tail(&self) -> Option<Rc<ListNode<A>>> {
-        let tail = self.tail.take();
-        self.tail.set(tail.clone());
-        tail
+        // Read the shared tail without the take/clone/set round trip: the Cell
+        // is only mutated through set_tail on freshly built nodes, so reading
+        // it by pointer and cloning the Rc is observationally identical while
+        // avoiding two writes on every node visit in hot list walks.
+        // SAFETY: the Cell always holds a valid Option<Rc<ListNode<A>>>, and
+        // List is single-threaded (not Sync), so no concurrent mutation occurs.
+        unsafe { (*self.tail.as_ptr()).clone() }
+    }
+
+    /// Borrow the tail chain for read-only walks, so a walk does not bump a
+    /// refcount per node.
+    ///
+    /// SAFETY (caller contract): the Cell always holds a valid
+    /// Option<Rc<ListNode<A>>>; List is single-threaded and set_tail only runs
+    /// on freshly built nodes, so the returned borrow stays valid as long as
+    /// the list owning this node is alive.
+    #[inline]
+    fn tail_ref(&self) -> Option<&ListNode<A>> {
+        unsafe { (*self.tail.as_ptr()).as_deref() }
     }
 
     /// Java: this.tail = tail.
+    #[inline]
     fn set_tail(&self, tail: Option<Rc<ListNode<A>>>) {
         self.tail.set(tail);
     }
@@ -126,6 +144,7 @@ impl<A> List<A> {
     }
 
     /// Java: reference comparison between two List values, i.e. the Java == operator.
+    #[inline]
     pub fn ptr_eq(&self, other: &List<A>) -> bool {
         match (&self.node, &other.node) {
             (None, None) => true,
@@ -144,13 +163,16 @@ impl<A> List<A> {
         // Java: Assert.checkNonNull(elem); — a Rust reference cannot be null. Java's element
         // null check (a != null) is provided by the element type: null elements are represented
         // as Option values, whose PartialEq compares them correctly.
-        let mut res = List::nil();
+        // Java builds this by prepending then reversing; ListBuffer already
+        // appends in O(1) with a single chained construction, so skip the
+        // double allocation.
+        let mut buf: ListBuffer<A> = ListBuffer::new();
         for a in l.iter() {
             if &a != elem {
-                res = res.prepend(a);
+                buf.append(a);
             }
         }
-        res.reverse()
+        buf.to_list()
     }
 
     /// Java: public List<A> intersect(List<A> that)
@@ -280,6 +302,7 @@ impl<A> List<A> {
     /// Does list have no elements?
     ///
     /// Java: public boolean isEmpty() { return tail == null; }
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.node.is_none()
     }
@@ -287,6 +310,7 @@ impl<A> List<A> {
     /// Does list have elements?
     ///
     /// Java: public boolean nonEmpty() { return tail != null; }
+    #[inline]
     pub fn non_empty(&self) -> bool {
         self.node.is_some()
     }
@@ -296,10 +320,10 @@ impl<A> List<A> {
     /// Java: public int length()
     pub fn length(&self) -> i32 {
         let mut len = 0;
-        let mut cur = self.node.clone();
+        let mut cur = self.node.as_deref();
         while let Some(node) = cur {
             len += 1;
-            cur = node.tail();
+            cur = node.tail_ref();
         }
         len
     }
@@ -324,6 +348,7 @@ impl<A> List<A> {
     ///
     /// Java: public A head; — reading the field on the null sentinel is a
     /// NullPointerException, which is what the empty-list panic models.
+    #[inline]
     pub fn head(&self) -> &A {
         match &self.node {
             Some(node) => &node.head,
@@ -334,6 +359,7 @@ impl<A> List<A> {
     /// Returns the remainder of the list except for its first element.
     ///
     /// Java: public List<A> tail; — null on the sentinel.
+    #[inline]
     pub fn tail(&self) -> List<A> {
         match &self.node {
             Some(node) => List { node: node.tail() },
@@ -345,6 +371,7 @@ impl<A> List<A> {
     /// a new list.
     ///
     /// Java: public List<A> prepend(A x) { return new List<>(x, this); }
+    #[inline]
     pub fn prepend(&self, x: A) -> List<A> {
         List::cons(x, self)
     }
@@ -396,12 +423,16 @@ impl<A> List<A> {
             return self.clone();
         }
 
+        // Walk the shared nodes by reference: only the element is cloned, so a
+        // reversal no longer bumps the refcount of every node on the way.
         let mut rev = List::nil();
-        let mut l = self.clone();
-        while l.non_empty() {
+        let mut cur = self.node.as_deref();
+        while let Some(node) = cur {
             // Java: rev = new List<>(l.head, rev);
-            rev = List::cons(l.head().clone(), &rev);
-            l = l.tail();
+            rev = List::cons(node.head.clone(), &rev);
+            // SAFETY: same invariant as ListNode::tail; the Cell is only mutated
+            // on freshly built nodes and `self` keeps the chain alive here.
+            cur = node.tail_ref();
         }
         rev
     }
@@ -445,11 +476,11 @@ impl<A> List<A> {
     where
         A: Clone,
     {
-        let mut result = Vec::with_capacity(self.length() as usize);
-        let mut cur = self.node.clone();
+        let mut result = Vec::new();
+        let mut cur = self.node.as_deref();
         while let Some(node) = cur {
             result.push(node.head.clone());
-            cur = node.tail();
+            cur = node.tail_ref();
         }
         result
     }
@@ -461,16 +492,17 @@ impl<A> List<A> {
     where
         A: fmt::Display,
     {
-        if self.is_empty() {
+        let Some(first) = self.node.as_ref() else {
             return String::new();
-        }
+        };
+        use std::fmt::Write;
         let mut buf = String::new();
-        buf.push_str(&format!("{}", self.head()));
-        let mut l = self.tail();
-        while l.non_empty() {
+        let _ = write!(buf, "{}", first.head);
+        let mut cur = first.tail_ref();
+        while let Some(node) = cur {
             buf.push_str(sep);
-            buf.push_str(&format!("{}", l.head()));
-            l = l.tail();
+            let _ = write!(buf, "{}", node.head);
+            cur = node.tail_ref();
         }
         buf
     }
@@ -482,18 +514,23 @@ impl<A> List<A> {
     where
         A: PartialEq,
     {
-        let mut xs = xs.clone();
-        let mut ys = ys.clone();
-        while xs.non_empty() && ys.non_empty() {
-            // Java: xs.head == null ? ys.head == null : xs.head.equals(ys.head) — the Option
-            // element type handles the null case through PartialEq.
-            if xs.head() != ys.head() {
-                return false;
+        let mut x = xs.node.as_deref();
+        let mut y = ys.node.as_deref();
+        loop {
+            match (x, y) {
+                (None, None) => return true,
+                (Some(xn), Some(yn)) => {
+                    // Java: xs.head == null ? ys.head == null : xs.head.equals(ys.head) — the
+                    // Option element type handles the null case through PartialEq.
+                    if xn.head != yn.head {
+                        return false;
+                    }
+                    x = xn.tail_ref();
+                    y = yn.tail_ref();
+                }
+                _ => return false,
             }
-            xs = xs.tail();
-            ys = ys.tail();
         }
-        xs.is_empty() && ys.is_empty()
     }
 
     /// Does the list contain the specified element?
@@ -503,12 +540,12 @@ impl<A> List<A> {
     where
         A: PartialEq,
     {
-        let mut l = self.clone();
-        while l.non_empty() {
-            if l.head() == x {
+        let mut cur = self.node.as_deref();
+        while let Some(node) = cur {
+            if &node.head == x {
                 return true;
             }
-            l = l.tail();
+            cur = node.tail_ref();
         }
         false
     }
@@ -526,10 +563,10 @@ impl<A> List<A> {
         A: Clone,
     {
         let mut last = None;
-        let mut t = self.clone();
-        while t.non_empty() {
-            last = Some(t.head().clone());
-            t = t.tail();
+        let mut cur = self.node.as_deref();
+        while let Some(node) = cur {
+            last = Some(node.head.clone());
+            cur = node.tail_ref();
         }
         last
     }
@@ -571,18 +608,20 @@ impl<A> List<A> {
             panic!("java.lang.IndexOutOfBoundsException: {}", index);
         }
 
-        let mut l = self.clone();
         // Java: for (int i = index; i-- > 0 && !l.isEmpty(); l = l.tail);
+        let mut cur = self.node.as_deref();
         let mut i = index;
-        while {
-            i -= 1;
-            i >= 0
-        } && l.non_empty()
-        {
-            l = l.tail();
+        while i > 0 {
+            match cur {
+                Some(node) => {
+                    cur = node.tail_ref();
+                    i -= 1;
+                }
+                None => break,
+            }
         }
 
-        if l.is_empty() {
+        if cur.is_none() {
             // Java: throw new IndexOutOfBoundsException("Index: " + index + ", Size: " + size());
             panic!(
                 "java.lang.IndexOutOfBoundsException: Index: {}, Size: {}",
@@ -590,7 +629,7 @@ impl<A> List<A> {
                 self.size()
             );
         }
-        l.head().clone()
+        cur.expect("get checked non-empty").head.clone()
     }
 
     /// Java: public int indexOf(Object o)
@@ -599,12 +638,12 @@ impl<A> List<A> {
         A: PartialEq,
     {
         let mut i = 0;
-        let mut l = self.clone();
-        while l.non_empty() {
-            if l.head() == o {
+        let mut cur = self.node.as_deref();
+        while let Some(node) = cur {
+            if &node.head == o {
                 return i;
             }
-            l = l.tail();
+            cur = node.tail_ref();
             i += 1;
         }
         -1
@@ -617,12 +656,12 @@ impl<A> List<A> {
     {
         let mut last = -1;
         let mut i = 0;
-        let mut l = self.clone();
-        while l.non_empty() {
-            if l.head() == o {
+        let mut cur = self.node.as_deref();
+        while let Some(node) = cur {
+            if &node.head == o {
                 last = i;
             }
-            l = l.tail();
+            cur = node.tail_ref();
             i += 1;
         }
         last
@@ -631,15 +670,10 @@ impl<A> List<A> {
     /// An enumeration of all elements in this list.
     ///
     /// Java: public Iterator<A> iterator()
-    pub fn iter(&self) -> ListIter<A>
-    where
-        A: Clone,
-    {
-        if self.is_empty() {
-            // Java: return emptyIterator();
-            return ListIter { elems: List::nil() };
+    pub fn iter(&self) -> ListIter<'_, A> {
+        ListIter {
+            cur: self.node.as_deref(),
         }
-        ListIter { elems: self.clone() }
     }
 }
 
@@ -658,28 +692,30 @@ impl<A> Default for List<A> {
 }
 
 /// Java: the Iterator<A> returned by List.iterator().
-pub struct ListIter<A> {
-    /// List<A> elems = List.this;
-    elems: List<A>,
+/// The iterator borrows the shared nodes instead of owning a `List` copy, so
+/// walking a list no longer bumps a refcount per element.
+pub struct ListIter<'a, A> {
+    /// Java: List<A> elems = List.this;
+    cur: Option<&'a ListNode<A>>,
 }
 
-impl<A: Clone> ListIter<A> {
+impl<A> ListIter<'_, A> {
     /// Java: public boolean hasNext() { return elems.tail != null; }
+    #[inline]
     pub fn has_next(&self) -> bool {
-        self.elems.non_empty()
+        self.cur.is_some()
     }
 }
 
-impl<A: Clone> Iterator for ListIter<A> {
+impl<A: Clone> Iterator for ListIter<'_, A> {
     type Item = A;
 
+    #[inline]
     fn next(&mut self) -> Option<A> {
-        if self.elems.is_empty() {
-            // Java: throw new NoSuchElementException();
-            return None;
-        }
-        let result = self.elems.head().clone();
-        self.elems = self.elems.tail();
+        // Java: throw new NoSuchElementException(); the None result models it.
+        let node = self.cur.take()?;
+        let result = node.head.clone();
+        self.cur = node.tail_ref();
         Some(result)
     }
 }

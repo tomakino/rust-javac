@@ -1,0 +1,5 @@
+<src>/SwitchExpressionTargetCantBeVoid.java:35: error: incompatible types: bad return type in lambda expression
+        SAM s = ()-> switch (cond) { case 0 -> o1; case 1 -> o2; default -> o3; };
+                     ^
+    target-type for switch expression cannot be void
+1 error

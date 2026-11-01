@@ -1,0 +1,5 @@
+<src>/AccessorReturnTypeDoesntMatch.java:29: error: invalid accessor method in record R
+    public List<Object> x() { return null; };
+                        ^
+  (return type of accessor method x() must match the type of record component x)
+1 error

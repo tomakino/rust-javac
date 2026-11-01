@@ -1,0 +1,6 @@
+<src>/RefAmbiguousFragment.java:38: error: incompatible types: invalid method reference
+        SAM s = RefAmbiguousFragment::f;
+                ^
+    reference to f is ambiguous
+      both method f(Number,Integer) in RefAmbiguousFragment and method f(Integer,Number) in RefAmbiguousFragment match
+1 error

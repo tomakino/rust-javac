@@ -1,0 +1,4 @@
+<src>/DoesNotOverride.java:30: error: DoesNotOverride is not abstract and does not override abstract method m() in Base
+class DoesNotOverride extends Base { }
+^
+1 error

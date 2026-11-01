@@ -1,0 +1,4 @@
+<src>/EnumConstantNotExpected.java:28: error: enum constant not expected here
+    A;
+    ^
+1 error

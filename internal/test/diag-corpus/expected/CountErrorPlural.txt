@@ -1,0 +1,7 @@
+<src>/CountErrorPlural.java:30: error: unreported exception Exception; must be caught or declared to be thrown
+    void m1() { throw new Exception(); }
+                ^
+<src>/CountErrorPlural.java:31: error: unreported exception Exception; must be caught or declared to be thrown
+    void m2() { throw new Exception(); }
+                ^
+2 errors

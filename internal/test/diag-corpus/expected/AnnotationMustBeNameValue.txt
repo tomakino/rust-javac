@@ -1,0 +1,8 @@
+<src>/AnnotationMustBeNameValue.java:32: error: annotation values must be of the form 'name=value'
+@Anno(name == "fred", address = "there")
+           ^
+<src>/AnnotationMustBeNameValue.java:32: error: cannot find symbol
+@Anno(name == "fred", address = "there")
+      ^
+  symbol: variable name
+2 errors

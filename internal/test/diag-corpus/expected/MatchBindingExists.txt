@@ -1,0 +1,4 @@
+<src>/MatchBindingExists.java:28: error: illegal attempt to redefine an existing match binding
+        if (o1 instanceof String k && o2 instanceof Integer k) {}
+                                                            ^
+1 error

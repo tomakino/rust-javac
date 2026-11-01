@@ -1,0 +1,5 @@
+<src>/AnnotationsAfterTypeParamsNotSupportedInSource.java:31: error: annotations after method type parameters are not supported in -source 7
+    <T> @Anno int m() {
+        ^
+  (use -source 8 or higher to enable annotations after method type parameters)
+1 error

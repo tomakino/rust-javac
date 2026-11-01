@@ -152,6 +152,11 @@ pub struct Type {
     /// Java: protected final TypeMetadata metadata (TypeMetadata.java:89;
     /// Java null -> None for the default value).
     pub metadata: Option<crate::code::type_metadata::TypeMetadata>,
+    /// Java: the baseType() override installed by cloneWithMetadata (Type.java
+    /// anonymous subclasses, e.g. TypeVar.java:1664-1665). It points at the
+    /// un-annotated instance this type was derived from, so typeNoMetadata()
+    /// can return the original identity instead of a fresh copy.
+    pub base: Option<TypeId>,
 }
 
 impl Type {
@@ -164,6 +169,7 @@ impl Type {
             kind,
             const_value: None,
             metadata: None,
+            base: None,
         }
     }
 
@@ -220,6 +226,7 @@ impl Type {
             },
             const_value: None,
             metadata: None,
+            base: None,
         }
     }
 
@@ -237,19 +244,11 @@ impl Type {
         self.metadata.as_ref().and_then(|metadata| metadata.get(kind))
     }
 
-    /// Java: protected Type typeNoMetadata() (Type.java:348-350).
-    ///
-    /// PORTING_RULES Porting rules adapter: the upstream baseType() default returns this
-    /// for most subclasses; the port returns a clone without metadata.
-    pub fn type_no_metadata(&self) -> Type {
-        if self.metadata.is_none() {
-            self.clone()
-        } else {
-            let mut stripped = self.clone();
-            stripped.metadata = None;
-            stripped
-        }
-    }
+    // Java: protected Type typeNoMetadata() (Type.java:347-349) lives on
+    // CompilerContext::type_no_metadata_id, because the upstream contract
+    // ("metadata == EMPTY ? this : baseType()") returns the original instance
+    // and therefore needs the arena id — a value-level clone would compare
+    // unequal and break equalsIgnoreMetadata.
 
     /// Java: public abstract Type cloneWithMetadata(TypeMetadata metadata)
     /// (Type.java:354-356).
@@ -1546,7 +1545,7 @@ mod tests {
                 None,
             ),
         );
-        let annotated = Type::new(
+        let plain = ctx.alloc_type(Type::new(
             TypeTag::CLASS,
             ctx.typ(syms.string_type).tsym,
             TypeKindData::ClassType {
@@ -1557,9 +1556,8 @@ mod tests {
                 interfaces_field: None,
                 all_interfaces_field: None,
             },
-        )
-        .annotated_type(&List::of(annotation));
-        let annotated = ctx.alloc_type(annotated);
+        ));
+        let annotated = ctx.annotated_type_id(plain, &List::of(annotation));
         assert_eq!(
             type_to_string(&ctx, annotated),
             "@java.lang.String java.lang.String"

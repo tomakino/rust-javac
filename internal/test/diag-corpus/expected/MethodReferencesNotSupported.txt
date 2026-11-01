@@ -1,0 +1,5 @@
+<src>/MethodReferencesNotSupported.java:29: error: method references are not supported in -source 7
+    S s = A::foo;
+             ^
+  (use -source 8 or higher to enable method references)
+1 error

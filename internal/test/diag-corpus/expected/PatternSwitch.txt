@@ -1,0 +1,7 @@
+<src>/PatternSwitch.java:31: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+            case String str: break;
+                 ^
+<src>/PatternSwitch.java:30: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+        switch (o) {
+               ^
+2 warnings

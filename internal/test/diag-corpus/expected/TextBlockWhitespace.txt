@@ -1,0 +1,7 @@
+<src>/TextBlockWhitespace.java:30: warning: [text-blocks] inconsistent white space indentation
+        return """
+               ^
+<src>/TextBlockWhitespace.java:30: warning: [text-blocks] trailing white space will be removed
+        return """
+               ^
+2 warnings

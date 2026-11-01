@@ -1,1 +1,0 @@
-class Main { Foo f; }

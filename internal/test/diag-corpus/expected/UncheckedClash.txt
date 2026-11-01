@@ -1,0 +1,5 @@
+<src>/UncheckedClash.java:35: warning: [unchecked] m() in UncheckedClash overrides m() in Intf
+    public List m();
+                ^
+  return type requires unchecked conversion from List to List<String>
+1 warning

@@ -1,0 +1,5 @@
+<src>/UnreportedExceptionImplicitClose.java:31: error: unreported exception Exception; must be caught or declared to be thrown
+        try (MyCloseable x = new MyCloseable()) {  }
+                         ^
+  exception thrown from implicit call to close() on resource variable 'x'
+1 error

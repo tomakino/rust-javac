@@ -1,0 +1,4 @@
+<src>/UnderscoreAsIdentifierWarning.java:28: warning: as of release 9, '_' is a keyword, and may not be used as an identifier
+    String _ = null;
+           ^
+1 warning

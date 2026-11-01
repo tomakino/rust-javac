@@ -1,0 +1,4 @@
+<src>/OperatorCantBeApplied.java:28: error: bad operand type String for unary operator '++'
+    { s++; }
+       ^
+1 error

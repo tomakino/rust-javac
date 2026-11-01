@@ -1,0 +1,4 @@
+<src>/MissingMethodBody.java:27: error: missing method body, or declare abstract
+    void m();
+         ^
+1 error

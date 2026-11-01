@@ -1,0 +1,4 @@
+<src>/AttemptToSynchronizeOnInstanceOfVbc.java:29: warning: [synchronization] attempt to synchronize on an instance of a value-based class
+        synchronized(i) {
+        ^
+1 warning

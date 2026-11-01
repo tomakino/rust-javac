@@ -1,0 +1,4 @@
+<src>/ResourceMayNotBeAssigned.java:31: error: auto-closeable resource out may not be assigned
+            out = null;
+            ^
+1 error

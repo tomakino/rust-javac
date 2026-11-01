@@ -1,0 +1,4 @@
+<src>/AnnoNotValidForType.java:30: error: annotation not valid for an element of type int
+@Anno(@Deprecated)
+      ^
+1 error

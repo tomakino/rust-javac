@@ -1,0 +1,5 @@
+<src>/SwitchExpressions.java:30: error: switch expressions are not supported in -source 13
+        return switch (i) {
+               ^
+  (use -source 14 or higher to enable switch expressions)
+1 error

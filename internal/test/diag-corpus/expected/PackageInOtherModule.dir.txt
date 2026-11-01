@@ -1,0 +1,4 @@
+<src>/PackageInOtherModule\PackageInOtherModule.java:26: error: package exists in another module: java.base
+package java.util;
+^
+1 error

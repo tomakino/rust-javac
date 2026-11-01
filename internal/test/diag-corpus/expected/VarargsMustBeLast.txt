@@ -1,0 +1,4 @@
+<src>/VarargsMustBeLast.java:27: error: varargs parameter must be the last parameter
+    public void invalidVarArg(String... invalidVarArg, String extra) { }
+                                        ^
+1 error

@@ -1,0 +1,4 @@
+<src>/MissingReturnValue.java:29: error: incompatible types: missing return value
+        return;
+        ^
+1 error

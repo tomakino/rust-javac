@@ -1,0 +1,4 @@
+<src>/EmptyCharLiteral.java:27: error: empty character literal
+    char c = '';
+             ^
+1 error

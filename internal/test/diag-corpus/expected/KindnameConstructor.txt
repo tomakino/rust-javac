@@ -1,0 +1,7 @@
+<src>/KindnameConstructor.java:39: error: constructor KindnameConstructor in class KindnameConstructor cannot be applied to given types;
+        new KindnameConstructor(""){};
+        ^
+  required: Integer
+  found:    String
+  reason: argument mismatch; String cannot be converted to Integer
+1 error

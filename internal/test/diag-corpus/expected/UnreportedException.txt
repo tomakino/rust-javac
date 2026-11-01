@@ -1,0 +1,4 @@
+<src>/UnreportedException.java:28: error: unreported exception Exception; must be caught or declared to be thrown
+        throw new Exception();
+        ^
+1 error

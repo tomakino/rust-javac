@@ -1,0 +1,4 @@
+<src>/AnnoValueMustBeAnnotation.java:34: error: annotation value must be an annotation
+@Anno2("3")
+       ^
+1 error

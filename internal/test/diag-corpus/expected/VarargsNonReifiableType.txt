@@ -1,0 +1,6 @@
+<src>/VarargsNonReifiableType.java:28: warning: [unchecked] Possible heap pollution from parameterized vararg type T
+    void m(T... items) {
+                ^
+  where T is a type-variable:
+    T extends Object declared in class VarargsNonReifiableType
+1 warning

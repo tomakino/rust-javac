@@ -1,0 +1,7 @@
+<src>/IllegalStartOfStmt.java:29: error: illegal start of statement
+        if (true) }
+                  ^
+<src>/IllegalStartOfStmt.java:31: error: class, interface, enum, or record expected
+}
+^
+2 errors

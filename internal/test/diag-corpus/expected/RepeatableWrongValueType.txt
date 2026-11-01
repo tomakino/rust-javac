@@ -1,0 +1,10 @@
+<src>/RepeatableWrongValueType.java:33: error: containing annotation type (Annos) must declare an element named 'value' of type Anno[]
+@Anno
+^
+<src>/RepeatableWrongValueType.java:34: error: containing annotation type (Annos) must declare an element named 'value' of type Anno[]
+@Anno
+^
+<src>/RepeatableWrongValueType.java:28: error: containing annotation type (Annos) must declare an element named 'value' of type Anno[]
+@Repeatable(Annos.class)
+^
+3 errors

@@ -1,0 +1,5 @@
+<src>/AccessorCantBeGeneric.java:28: error: invalid accessor method in record R
+    public <T> int i() {
+                   ^
+  (accessor method must not be generic)
+1 error

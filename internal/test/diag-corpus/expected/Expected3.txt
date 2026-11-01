@@ -1,0 +1,6 @@
+warning: [options] system modules path not set in conjunction with -source 15
+<src>/Expected3.java:28: error: class, interface, or enum expected
+int Expected3;
+^
+1 error
+1 warning

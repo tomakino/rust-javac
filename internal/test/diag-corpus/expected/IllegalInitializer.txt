@@ -1,0 +1,4 @@
+<src>/IllegalInitializer.java:27: error: illegal initializer for int
+    int i = { 1 };
+            ^
+1 error

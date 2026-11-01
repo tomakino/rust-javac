@@ -1,0 +1,5 @@
+<src>/TypesIncompatible.java:35: error: types B and A are incompatible;
+interface TypesIncompatible extends A, B { }
+^
+  both define m(), but with unrelated return types
+1 error

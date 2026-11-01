@@ -1,0 +1,4 @@
+<src>/EnumAnnoValueMustBeEnumConst2.java:37: error: an enum annotation value must be an enum constant
+@Anno(E.e)
+       ^
+1 error

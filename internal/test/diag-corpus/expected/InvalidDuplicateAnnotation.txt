@@ -1,0 +1,7 @@
+<src>/InvalidDuplicateAnnotation.java:37: error: annotation Anno is not a valid repeatable annotation
+@Anno
+^
+<src>/InvalidDuplicateAnnotation.java:32: error: containing annotation type (Annos) does not have a default value for element foo()
+@Repeatable(Annos.class)
+^
+2 errors

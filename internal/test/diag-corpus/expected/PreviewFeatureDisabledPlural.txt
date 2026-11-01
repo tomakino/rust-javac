@@ -1,0 +1,5 @@
+<src>/PreviewFeatureDisabledPlural.java:30: error: lambda expressions are a preview feature and are disabled by default.
+        Runnable r = () -> {};
+                        ^
+  (use --enable-preview to enable lambda expressions)
+1 error

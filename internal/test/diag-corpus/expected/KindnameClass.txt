@@ -1,0 +1,6 @@
+<src>/KindnameClass.java:32: error: cannot find symbol
+    NotFound x;
+    ^
+  symbol:   class NotFound
+  location: class KindnameClass
+1 error

@@ -1,0 +1,5 @@
+<src>/UnreachableCatch1.java:41: warning: unreachable catch clause
+        catch(IOException ex) { } //unreachable
+        ^
+  thrown types FileNotFoundException,EOFException have already been caught
+1 warning

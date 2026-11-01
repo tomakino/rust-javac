@@ -1,0 +1,4 @@
+<src>/LongSVUID.java:30: warning: [serial] serialVersionUID must be of type long in class LongSVUID
+    private static final int serialVersionUID = 0;
+                             ^
+1 warning

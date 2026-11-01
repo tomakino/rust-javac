@@ -1,0 +1,6 @@
+<src>/ForeachNotApplicable.java:29: error: for-each not applicable to expression type
+        for (String a: arg) {
+                       ^
+  required: array or java.lang.Iterable
+  found:    String
+1 error

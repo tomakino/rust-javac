@@ -1,0 +1,5 @@
+<src>/NonSealedWithNoSealedSuper.java:28: error: non-sealed modifier not allowed here
+non-sealed class Sub extends C {}
+           ^
+  (class Sub does not have any sealed supertypes)
+1 error

@@ -1,0 +1,5 @@
+<src>/ErrSyntheticNameConflict.java:33: error: error while generating class Outer
+    public class Inner extends Outer { }
+           ^
+  (the symbol this$0 conflicts with a compiler-synthesized symbol in Outer)
+1 error

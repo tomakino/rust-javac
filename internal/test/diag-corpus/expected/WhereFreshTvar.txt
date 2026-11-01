@@ -1,0 +1,6 @@
+<src>/WhereFreshTvar.java:36: error: incompatible types: T cannot be converted to List<String>
+    { Object o = (List<String>)m(); }
+                                ^
+  where T is a type-variable:
+    T extends List<T>
+1 error

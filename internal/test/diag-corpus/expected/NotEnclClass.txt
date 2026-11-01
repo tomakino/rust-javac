@@ -1,0 +1,4 @@
+<src>/NotEnclClass.java:27: error: not an enclosing class: Object
+    Object o = Object.this;
+                     ^
+1 error

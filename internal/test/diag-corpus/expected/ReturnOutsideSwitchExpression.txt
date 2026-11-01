@@ -1,0 +1,4 @@
+<src>/ReturnOutsideSwitchExpression.java:29: error: attempt to return out of a switch expression
+            case 0: return -1;
+                    ^
+1 error

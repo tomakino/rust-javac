@@ -1,0 +1,4 @@
+<src>/DeprecatedAnnotationHasNoEffect\DeprecatedAnnotationHasNoEffect.java:28: warning: [deprecation] @Deprecated annotation has no effect on this variable declaration
+    void foo(@Deprecated int p) {}
+                             ^
+1 warning

@@ -1,0 +1,4 @@
+<src>/RedundantCast.java:28: warning: [cast] redundant cast to int
+    int i = (int) 0;
+            ^
+1 warning

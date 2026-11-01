@@ -1,0 +1,9 @@
+<src>/WhereIntersection.java:37: error: incompatible types: inferred type does not conform to upper bound(s)
+        return f(a, b);
+                ^
+    inferred: INT#1
+    upper bound(s): Object[],Object
+  where INT#1,INT#2 are intersection types:
+    INT#1 extends Number,Comparable<? extends INT#2>,Constable,ConstantDesc
+    INT#2 extends Number,Comparable<?>,Constable,ConstantDesc
+1 error

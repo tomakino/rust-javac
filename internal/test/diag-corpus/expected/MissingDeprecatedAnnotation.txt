@@ -1,0 +1,4 @@
+<src>/MissingDeprecatedAnnotation.java:28: warning: [dep-ann] deprecated item is not annotated with @Deprecated
+class MissingDeprecatedAnnotation {
+^
+1 warning

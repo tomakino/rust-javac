@@ -2576,33 +2576,29 @@ impl Code {
     }
 
     /// Mark a register as being undefined.
+    ///
+    /// Java: public void setUndefined(int adr) (Code.java:2067-2084): the
+    /// closed original `v` is the one put into the var buffer and used to fill
+    /// the type annotation positions; the slot keeps a fresh empty dup.
     pub fn set_undefined(&mut self, ctx: &mut CompilerContext, adr: i32) {
         self.state.defined.excl(adr);
         if (adr as usize) < self.lvar.len()
-            && self.lvar[adr as usize].is_some()
             && self.lvar[adr as usize]
                 .as_ref()
-                .expect("local var")
-                .is_last_range_initialized()
+                .is_some_and(|var| var.is_last_range_initialized())
         {
-            let start_pc = {
-                let var = self.lvar[adr as usize].as_ref().expect("local var");
-                var.last_range().expect("last range").start_pc
-            };
-            let cp_now = self.cur_cp(ctx);
-            let length = cp_now - start_pc;
+            let var = self.lvar[adr as usize]
+                .as_ref()
+                .expect("local var")
+                .clone();
+            let start_pc = var.last_range().expect("last range").start_pc;
+            let length = self.cur_cp(ctx) - start_pc;
             if length < u16::MAX as i32 {
-                let mut v = self.lvar[adr as usize].as_ref().expect("local var").dup();
-                let old = self.lvar[adr as usize]
-                    .as_ref()
-                    .expect("local var")
-                    .clone();
+                self.lvar[adr as usize] = Some(var.dup());
+                let mut v = var;
                 v.close_range(length);
-                self.lvar[adr as usize] = Some(v.clone());
-                let mut old = old;
-                old.close_range(length);
-                self.put_var(ctx, &old);
-                self.fill_local_var_position(ctx, &old);
+                self.put_var(ctx, &v);
+                self.fill_local_var_position(ctx, &v);
             } else {
                 if let Some(var) = &mut self.lvar[adr as usize] {
                     var.remove_last_range();
@@ -2612,27 +2608,21 @@ impl Code {
     }
 
     /// End the scope of a variable.
+    ///
+    /// Java: private void endScope(int adr) (Code.java:2086-2106): the closed
+    /// range belongs to the variable that is being dropped, so the positions
+    /// must be filled before the slot is cleared.
     fn end_scope(&mut self, ctx: &mut CompilerContext, adr: i32) {
         let lv = self.lvar[adr as usize].clone();
         if let Some(var) = lv {
             if var.is_last_range_initialized() {
-                let start_pc = {
-                    let var = self.lvar[adr as usize].as_ref().expect("local var");
-                    var.last_range().expect("last range").start_pc
-                };
-                let cp_now = self.cur_cp(ctx);
-                let length = cp_now - start_pc;
+                let start_pc = var.last_range().expect("last range").start_pc;
+                let length = self.cur_cp(ctx) - start_pc;
                 if length < u16::MAX as i32 {
-                    let mut v = self.lvar[adr as usize].as_ref().expect("local var").dup();
+                    let mut v = var;
                     v.close_range(length);
-                    self.lvar[adr as usize] = Some(v.clone());
-                    let mut old = self.lvar[adr as usize]
-                        .as_ref()
-                        .expect("local var")
-                        .clone();
-                    old.close_range(length);
-                    self.put_var(ctx, &old);
-                    self.fill_local_var_position(ctx, &old);
+                    self.put_var(ctx, &v);
+                    self.fill_local_var_position(ctx, &v);
                 }
             }
             // the call to curCP() can implicitly adjust the current cp; the
@@ -2679,6 +2669,7 @@ impl Code {
             {
                 *position = Some(pos);
             }
+
         }
     }
 

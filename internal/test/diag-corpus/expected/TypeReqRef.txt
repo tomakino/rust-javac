@@ -1,0 +1,6 @@
+<src>/TypeReqRef.java:29: error: unexpected type
+    boolean b = (i instanceof Object);
+                 ^
+  required: reference
+  found:    int
+1 error

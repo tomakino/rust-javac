@@ -1,0 +1,5 @@
+<src>/NotDefAccessDoesNotReadUnnamed\modulesourcepath\impl\impl\Impl.java:28: error: Api.test() in package api is not accessible
+        auxiliary.Auxiliary.get().test();
+                                 ^
+  (package api is declared in the unnamed module, but module impl does not read it)
+1 error

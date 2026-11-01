@@ -1,0 +1,4 @@
+<src>/NotLoopLabel.java:32: error: not a loop label: label
+                    continue label;
+                    ^
+1 error

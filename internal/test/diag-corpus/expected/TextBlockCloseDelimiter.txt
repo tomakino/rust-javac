@@ -1,0 +1,4 @@
+<src>/TextBlockCloseDelimiter.java:28: error: unclosed text block
+        return """
+               ^
+1 error

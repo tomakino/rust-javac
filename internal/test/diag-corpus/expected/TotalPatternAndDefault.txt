@@ -1,0 +1,11 @@
+<src>/TotalPatternAndDefault.java:32: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+            case Object obj: break;
+                 ^
+<src>/TotalPatternAndDefault.java:31: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+        switch (o) {
+               ^
+<src>/TotalPatternAndDefault.java:33: error: switch has both a total pattern and a default label
+            default: break;
+                   ^
+1 error
+2 warnings

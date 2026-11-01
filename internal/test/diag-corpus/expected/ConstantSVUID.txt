@@ -1,0 +1,4 @@
+<src>/ConstantSVUID.java:30: warning: [serial] serialVersionUID must be constant in class ConstantSVUID
+    private static final long serialVersionUID = Integer.parseInt("0");
+                              ^
+1 warning

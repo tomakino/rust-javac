@@ -1,0 +1,4 @@
+<src>/RepeatableInheritedMismatch.java:29: error: repeatable annotation type (Anno) is @Inherited while containing annotation type (Annos) is not
+@Repeatable(Annos.class)
+^
+1 error

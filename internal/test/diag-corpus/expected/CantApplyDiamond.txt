@@ -1,0 +1,4 @@
+<src>/CantApplyDiamond.java:32: error: cannot infer type arguments for CantApplyDiamond<>
+        CantApplyDiamond<?> x = new CantApplyDiamond<>("");
+                                ^
+1 error

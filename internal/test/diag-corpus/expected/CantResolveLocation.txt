@@ -1,0 +1,6 @@
+<src>/CantResolveLocation.java:28: error: cannot find symbol
+    Unknown y;
+    ^
+  symbol:   class Unknown
+  location: class CantResolveLocation
+1 error

@@ -1,0 +1,4 @@
+<src>/IntfAnnotationsCantHaveParams.java:27: error: elements in annotation type declarations cannot declare formal parameters
+    String value(int i);
+                     ^
+1 error

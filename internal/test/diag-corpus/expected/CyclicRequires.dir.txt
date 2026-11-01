@@ -1,0 +1,7 @@
+<src>/CyclicRequires\modulesourcepath\m1x\module-info.java:25: error: cyclic dependence involving m2x
+     requires m2x;
+              ^
+<src>/CyclicRequires\modulesourcepath\m2x\module-info.java:25: error: cyclic dependence involving m1x
+     requires m1x;
+              ^
+2 errors

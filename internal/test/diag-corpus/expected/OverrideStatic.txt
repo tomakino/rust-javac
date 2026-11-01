@@ -1,0 +1,5 @@
+<src>/OverrideStatic.java:32: error: m() in OverrideStatic cannot override m() in Base
+    static void m() { }
+                ^
+  overriding method is static
+1 error

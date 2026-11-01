@@ -1,0 +1,6 @@
+warning: [options] system modules path not set in conjunction with -source 15
+<src>/LocalEnum.java:30: error: enum types must not be local
+        enum E { a, b, c};
+        ^
+1 error
+1 warning

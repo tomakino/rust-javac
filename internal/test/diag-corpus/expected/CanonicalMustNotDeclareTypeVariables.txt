@@ -1,0 +1,5 @@
+<src>/CanonicalMustNotDeclareTypeVariables.java:29: error: invalid canonical constructor in record R
+    public <T> R(int i) {
+               ^
+  (canonical constructor must not declare type variables)
+1 error

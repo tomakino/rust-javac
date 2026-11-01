@@ -317,10 +317,7 @@ impl<A> ListBuffer<A> {
     /// An enumeration of all elements in this buffer.
     ///
     /// Java: public Iterator<A> iterator()
-    pub fn iterator(&self) -> ListIter<A>
-    where
-        A: Clone,
-    {
+    pub fn iterator(&self) -> ListIter<'_, A> {
         self.elems.iter()
     }
 

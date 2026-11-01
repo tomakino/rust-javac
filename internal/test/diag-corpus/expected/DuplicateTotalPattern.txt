@@ -1,0 +1,14 @@
+<src>/DuplicateTotalPattern.java:32: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+            case Object obj: break;
+                 ^
+<src>/DuplicateTotalPattern.java:33: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+            case Object obj: break;
+                 ^
+<src>/DuplicateTotalPattern.java:31: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+        switch (o) {
+               ^
+<src>/DuplicateTotalPattern.java:33: error: duplicate total pattern
+            case Object obj: break;
+                 ^
+1 error
+3 warnings

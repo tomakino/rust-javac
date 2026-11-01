@@ -1,0 +1,4 @@
+<src>/IntNumberTooLarge.java:27: error: integer number too large
+    int i = 12345678901234567890;
+            ^
+1 error

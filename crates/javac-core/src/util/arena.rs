@@ -38,7 +38,10 @@ impl<T> Arena<T> {
             "arena index out of range: {index} (len {})",
             self.values.len()
         );
-        &self.values[index as usize]
+        // SAFETY: debug builds assert the range above; in release the ID/arena
+        // contract (ADR 0001 rule 8) guarantees the index came from this arena,
+        // and an out-of-range index is an internal error, not user input.
+        unsafe { self.values.get_unchecked(index as usize) }
     }
 
     /// Read an element mutably by index; out-of-bounds is an internal error, asserted in debug builds (ADR 0001 rule 8).
@@ -48,7 +51,8 @@ impl<T> Arena<T> {
             "arena index out of range: {index} (len {})",
             self.values.len()
         );
-        &mut self.values[index as usize]
+        // SAFETY: see Arena::get.
+        unsafe { self.values.get_unchecked_mut(index as usize) }
     }
 
     /// Number of elements.

@@ -1,0 +1,4 @@
+<src>/UnclosedCharLiteral.java:27: error: unclosed character literal
+    char c = 'a;
+             ^
+1 error

@@ -1,0 +1,4 @@
+<src>/InvalidSuperTypeRecord.java:27: error: classes cannot directly extend Record
+class R extends Record {}
+^
+1 error

@@ -1,0 +1,4 @@
+<src>/DuplicateDefaultLabel.java:32: error: duplicate default label
+            default: return "??";
+                   ^
+1 error

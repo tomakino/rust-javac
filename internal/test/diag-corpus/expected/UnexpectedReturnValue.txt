@@ -1,0 +1,4 @@
+<src>/UnexpectedReturnValue.java:29: error: incompatible types: unexpected return value
+        return 3;
+               ^
+1 error

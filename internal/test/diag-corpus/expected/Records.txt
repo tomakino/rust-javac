@@ -1,0 +1,7 @@
+warning: [options] system modules path not set in conjunction with -source 15
+<src>/Records.java:29: error: records are not supported in -source 15
+record R() {}
+^
+  (use -source 16 or higher to enable records)
+1 error
+1 warning

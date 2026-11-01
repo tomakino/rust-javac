@@ -1,0 +1,4 @@
+<src>/BadArgTypesInLambda.java:36: error: incompatible types: Integer cannot be converted to String
+        g(x->{ String s = x; });
+                          ^
+1 error

@@ -1,0 +1,5 @@
+<src>/OverrideIncompatibleReturn.java:34: error: m() in OverrideIncompatibleReturn cannot override m() in Base
+    String m() {
+           ^
+  return type String is not compatible with int
+1 error

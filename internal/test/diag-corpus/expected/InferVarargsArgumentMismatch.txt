@@ -1,0 +1,10 @@
+<src>/InferVarargsArgumentMismatch.java:30: error: method m in class InferVarargsArgumentMismatch cannot be applied to given types;
+    { this.m("", 1); }
+          ^
+  required: X,String[]
+  found:    String,int
+  reason: cannot infer type-variable(s) X
+    (varargs mismatch; int cannot be converted to String)
+  where X is a type-variable:
+    X extends Object declared in method <X>m(X,String...)
+1 error

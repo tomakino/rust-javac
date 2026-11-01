@@ -1,0 +1,4 @@
+<src>/NotDefPublicCantAccess\NotDefPublicCantAccess.java:27: error: C is not public in p; cannot be accessed from outside package
+    Object o = new p.C();
+                    ^
+1 error

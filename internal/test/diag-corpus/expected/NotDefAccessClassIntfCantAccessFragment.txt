@@ -1,0 +1,5 @@
+<src>/NotDefAccessClassIntfCantAccessFragment.java:44: error: incompatible types: invalid method reference
+        SAM s = new NotDefAccessClassIntfCantAccessFragment().getPrivate()::m;
+                ^
+    NotDefAccessClassIntfCantAccessFragment.Private.m() is defined in an inaccessible class or interface
+1 error

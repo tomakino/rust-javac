@@ -1,0 +1,5 @@
+<src>/OverrideDoesntThrow.java:32: error: m() in OverrideDoesntThrow cannot override m() in Base
+    void m() throws Exception { }
+         ^
+  overridden method does not throw Exception
+1 error

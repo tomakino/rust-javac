@@ -1,0 +1,5 @@
+<src>/ExplicitImplicitLambda.java:30: error: invalid lambda parameter declaration
+    IntBinaryOperator f = (int x, y) -> x + y;
+                          ^
+  (cannot mix implicitly-typed and explicitly-typed parameters)
+1 error

@@ -1,0 +1,4 @@
+<src>/VarargsAndOldArraySyntax.java:27: error: legacy array notation not allowed on variable-arity parameter
+    void  m1 (Integer... i[]) { }
+                          ^
+1 error

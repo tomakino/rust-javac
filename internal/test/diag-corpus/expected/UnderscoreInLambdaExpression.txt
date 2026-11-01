@@ -1,0 +1,5 @@
+<src>/UnderscoreInLambdaExpression.java:26: error: '_' used as an identifier
+    java.util.function.Function<String,String> f = _ -> "x";
+                                                   ^
+  (use of '_' as an identifier is forbidden for lambda parameters)
+1 error

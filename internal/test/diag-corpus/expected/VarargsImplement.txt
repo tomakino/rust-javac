@@ -1,0 +1,4 @@
+<src>/VarargsImplement.java:33: warning: m(Object[]) in VarargsImplement implements m(Object...) in Base; overriding method is missing '...'
+    public void m(Object[] x) { }
+                ^
+1 warning

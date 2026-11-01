@@ -1,0 +1,4 @@
+<src>/ForeachBadInitialization.java:29: error: bad initializer for for-loop
+        for (a : s) {}
+             ^
+1 error

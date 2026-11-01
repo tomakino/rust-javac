@@ -1,0 +1,6 @@
+<src>/NotDefAccessClassIntfCantAccessReasonFragment\modulesourcepath\impl\impl\Impl.java:28: error: incompatible types: invalid method reference
+        Runnable r = a2.get() :: test;
+                     ^
+    Api.test() in package api1 is not accessible
+      (package api1 is declared in module apia, but module impl does not read it)
+1 error

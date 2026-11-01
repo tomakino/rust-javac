@@ -1,0 +1,4 @@
+<src>/TryWithoutCatchOrFinallyOrResource.java:28: error: 'try' without 'catch', 'finally' or resource declarations
+        try {
+        ^
+1 error

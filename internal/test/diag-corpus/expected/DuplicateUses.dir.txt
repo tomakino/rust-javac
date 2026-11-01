@@ -1,0 +1,4 @@
+<src>/DuplicateUses\module-info.java:29: error: duplicate uses: Service
+     uses exported.Service;
+     ^
+1 error

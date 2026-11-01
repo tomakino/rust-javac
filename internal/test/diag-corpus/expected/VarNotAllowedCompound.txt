@@ -1,0 +1,4 @@
+<src>/VarNotAllowedCompound.java:28: error: 'var' is not allowed in a compound declaration
+        var x = 1, y = 2;
+        ^
+1 error

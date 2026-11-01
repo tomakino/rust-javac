@@ -1,0 +1,5 @@
+<src>/TypesIncompatibleUnrelatedDefaults.java:36: error: types A and B are incompatible;
+    interface AB extends A, B { }
+    ^
+  interface AB inherits unrelated defaults for m() from types A and B
+1 error

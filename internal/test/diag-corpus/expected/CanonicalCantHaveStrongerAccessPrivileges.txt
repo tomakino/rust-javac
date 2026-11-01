@@ -1,0 +1,5 @@
+<src>/CanonicalCantHaveStrongerAccessPrivileges.java:29: error: invalid canonical constructor in record CanonicalCantHaveStrongerAccessPrivileges
+    private CanonicalCantHaveStrongerAccessPrivileges {}
+            ^
+  (attempting to assign stronger access privileges; was public)
+1 error

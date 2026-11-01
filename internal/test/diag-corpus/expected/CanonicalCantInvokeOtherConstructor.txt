@@ -1,0 +1,5 @@
+<src>/CanonicalCantInvokeOtherConstructor.java:29: error: invalid canonical constructor in record R
+    public R(int x) { super(); this.x = x; }
+           ^
+  (canonical constructor must not contain explicit constructor invocation)
+1 error

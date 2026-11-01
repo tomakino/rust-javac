@@ -1,0 +1,4 @@
+<src>/NoSuperclass\patchmodule\java.base\java\lang\Object.java:28: error: Object has no superclass.
+        super();
+        ^
+1 error

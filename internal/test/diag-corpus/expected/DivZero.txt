@@ -1,0 +1,4 @@
+<src>/DivZero.java:29: warning: [divzero] division by zero
+        return a / 0 ;
+                   ^
+1 warning

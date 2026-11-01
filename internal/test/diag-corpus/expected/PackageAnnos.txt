@@ -1,0 +1,4 @@
+<src>/PackageAnnos.java:26: error: package annotations should be in file package-info.java
+@Deprecated
+^
+1 error

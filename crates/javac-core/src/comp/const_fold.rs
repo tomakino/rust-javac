@@ -184,7 +184,7 @@ impl ConstFold {
             )),
             _ => None,
         };
-        result.map(|(ty, value)| self.const_type(ctx, syms, ty, value))
+        result.map(|(ty, value)| self.const_type(ctx, syms, ty, Self::normalize_nan(value)))
     }
 
     /// Java: Type fold2(int opcode, Type left, Type right)
@@ -220,12 +220,33 @@ impl ConstFold {
                 syms.int_type,
                 ConstantValue::Integer(Self::int_value(&l).wrapping_mul(Self::int_value(&r))),
             )),
-            byte_codes::IDIV => Self::int_value(&l)
-                .checked_div(Self::int_value(&r))
-                .map(|v| (syms.int_type, ConstantValue::Integer(v))),
-            byte_codes::IMOD => Self::int_value(&l)
-                .checked_rem(Self::int_value(&r))
-                .map(|v| (syms.int_type, ConstantValue::Integer(v))),
+            // Java: ConstFold.fold2 wraps the whole switch in
+            // "catch (ArithmeticException e) { return null; }" (ConstFold.java:303).
+            // Only division by zero throws; MIN_VALUE / -1 overflows to
+            // MIN_VALUE and MIN_VALUE % -1 is 0 (JLS 15.17.2 / 15.17.3), which
+            // is exactly what overflowing_div/rem report.
+            byte_codes::IDIV => {
+                let d = Self::int_value(&r);
+                if d == 0 {
+                    None
+                } else {
+                    Some((
+                        syms.int_type,
+                        ConstantValue::Integer(Self::int_value(&l).overflowing_div(d).0),
+                    ))
+                }
+            }
+            byte_codes::IMOD => {
+                let d = Self::int_value(&r);
+                if d == 0 {
+                    None
+                } else {
+                    Some((
+                        syms.int_type,
+                        ConstantValue::Integer(Self::int_value(&l).overflowing_rem(d).0),
+                    ))
+                }
+            }
             byte_codes::IAND => {
                 let ty = if ctx.typ(left).has_tag(TypeTag::BOOLEAN) {
                     syms.boolean_type
@@ -317,12 +338,28 @@ impl ConstFold {
                 syms.long_type,
                 ConstantValue::Long(Self::long_value(&l).wrapping_mul(Self::long_value(&r))),
             )),
-            byte_codes::LDIV => Self::long_value(&l)
-                .checked_div(Self::long_value(&r))
-                .map(|v| (syms.long_type, ConstantValue::Long(v))),
-            byte_codes::LMOD => Self::long_value(&l)
-                .checked_rem(Self::long_value(&r))
-                .map(|v| (syms.long_type, ConstantValue::Long(v))),
+            byte_codes::LDIV => {
+                let d = Self::long_value(&r);
+                if d == 0 {
+                    None
+                } else {
+                    Some((
+                        syms.long_type,
+                        ConstantValue::Long(Self::long_value(&l).overflowing_div(d).0),
+                    ))
+                }
+            }
+            byte_codes::LMOD => {
+                let d = Self::long_value(&r);
+                if d == 0 {
+                    None
+                } else {
+                    Some((
+                        syms.long_type,
+                        ConstantValue::Long(Self::long_value(&l).overflowing_rem(d).0),
+                    ))
+                }
+            }
             byte_codes::LAND => Some((
                 syms.long_type,
                 ConstantValue::Long(Self::long_value(&l) & Self::long_value(&r)),
@@ -431,8 +468,8 @@ impl ConstFold {
             byte_codes::IF_ACMPEQ => Some((syms.boolean_type, Self::b2i(l == r))),
             byte_codes::IF_ACMPNE => Some((syms.boolean_type, Self::b2i(l != r))),
             byte_codes::STRING_ADD => {
-                let ls = ConstFold::string_value(&l);
-                let rs = ConstFold::string_value(&r);
+                let ls = ConstFold::string_value(ctx, left, &l);
+                let rs = ConstFold::string_value(ctx, right, &r);
                 Some((
                     syms.string_type,
                     ConstantValue::String(JavaString::from(
@@ -442,12 +479,48 @@ impl ConstFold {
             }
             _ => None,
         };
-        result.map(|(ty, value)| self.const_type(ctx, syms, ty, value))
+        result.map(|(ty, value)| self.const_type(ctx, syms, ty, Self::normalize_nan(value)))
     }
 
-    /// The constant value converted to a String.
-    fn string_value(value: &ConstantValue) -> JavaString {
-        JavaString::from(value.display().as_str())
+    /// Canonicalize a folded NaN.
+    ///
+    /// HotSpot folds the floating-point instructions with
+    /// `SharedRuntime::dadd/dsub/dmul/ddiv`, which all return the positive
+    /// quiet NaN (0x7ff8000000000000) when an operand or the result is NaN.
+    /// The raw SSE `divsd`/... produce the sign-set NaN 0xfff8000000000000,
+    /// so the result is pinned to `f64::NAN`/`f32::NAN` here.
+    fn normalize_nan(value: ConstantValue) -> ConstantValue {
+        match value {
+            ConstantValue::Double(v) if v.is_nan() => ConstantValue::Double(f64::NAN),
+            ConstantValue::Float(v) if v.is_nan() => ConstantValue::Float(f32::NAN),
+            other => other,
+        }
+    }
+
+    /// Java: JCPrimitiveType.stringValue() (Type.java:763-774).
+    ///
+    /// The constant is stored as an Integer for both BOOLEAN and CHAR; the tag
+    /// decides how it is rendered, so `'x' + 1` concatenates as "y" rather
+    /// than "121".
+    fn string_value(
+        ctx: &crate::compiler_context::CompilerContext,
+        ty: TypeId,
+        value: &ConstantValue,
+    ) -> JavaString {
+        match (ctx.typ(ty).get_tag(), value) {
+            (TypeTag::BOOLEAN, ConstantValue::Integer(v)) => {
+                if *v == 0 {
+                    JavaString::from("false")
+                } else {
+                    JavaString::from("true")
+                }
+            }
+            (TypeTag::CHAR, ConstantValue::Integer(v)) => {
+                let ch = String::from_utf16_lossy(&[*v as u16]);
+                JavaString::from(ch.as_str())
+            }
+            _ => JavaString::from(value.display().as_str()),
+        }
     }
 
     /// Java: Type coerce(Type etype, Type ttype) (ConstFold.java:345-372)

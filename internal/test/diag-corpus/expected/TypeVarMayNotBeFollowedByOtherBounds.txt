@@ -1,0 +1,4 @@
+<src>/TypeVarMayNotBeFollowedByOtherBounds.java:28: error: a type variable may not be followed by other bounds
+class X<T, U, V extends T & U> { }
+                            ^
+1 error

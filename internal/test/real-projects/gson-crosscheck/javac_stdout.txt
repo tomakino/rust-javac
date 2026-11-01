@@ -1,0 +1,13 @@
+Gson.java:21:32: compiler.err.cant.resolve.location: kindname.class, GsonBuildConfig, , , (compiler.misc.location: kindname.package, com.google.gson.internal, null)
+ReflectionHelper.java:4:32: compiler.err.cant.resolve.location: kindname.class, GsonBuildConfig, , , (compiler.misc.location: kindname.package, com.google.gson.internal, null)
+Gson.java:571:53: compiler.err.cant.resolve.location: kindname.variable, GsonBuildConfig, , , (compiler.misc.location: kindname.class, com.google.gson.Gson, null)
+Gson.java:846:58: compiler.err.cant.resolve.location: kindname.variable, GsonBuildConfig, , , (compiler.misc.location: kindname.class, com.google.gson.Gson, null)
+Gson.java:949:58: compiler.err.cant.resolve.location: kindname.variable, GsonBuildConfig, , , (compiler.misc.location: kindname.class, com.google.gson.Gson, null)
+Gson.java:1243:58: compiler.err.cant.resolve.location: kindname.variable, GsonBuildConfig, , , (compiler.misc.location: kindname.class, com.google.gson.Gson, null)
+TypeAdapters.java:869:34: compiler.warn.has.been.deprecated.for.removal: java.security.AccessController, java.security
+ReflectionHelper.java:153:86: compiler.err.cant.resolve.location: kindname.variable, GsonBuildConfig, , , (compiler.misc.location: kindname.class, com.google.gson.internal.reflect.ReflectionHelper, null)
+ReflectionHelper.java:163:27: compiler.err.cant.resolve.location: kindname.variable, GsonBuildConfig, , , (compiler.misc.location: kindname.class, com.google.gson.internal.reflect.ReflectionHelper, null)
+8 errors
+1 warning
+
+[exit 1]

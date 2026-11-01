@@ -1,0 +1,4 @@
+<src>/ArrayAndVarargs.java:28: error: cannot declare both m(int...) and m(int[]) in ArrayAndVarags
+    void m(int... args) { }
+         ^
+1 error

@@ -1,0 +1,4 @@
+<src>/IllegalEscapeChar.java:27: error: illegal escape character
+    String s = "\!";
+                 ^
+1 error

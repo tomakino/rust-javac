@@ -1,0 +1,7 @@
+<src>/InvalidGenericLambdaTarget.java:33: error: incompatible types: invalid functional descriptor for lambda expression
+    SAM s = x-> { };
+            ^
+    method <Z>()void in interface SAM is generic
+  where Z is a type-variable:
+    Z extends Object declared in method <Z>m()
+1 error

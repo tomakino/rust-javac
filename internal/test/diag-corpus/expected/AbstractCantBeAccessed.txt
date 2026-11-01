@@ -1,0 +1,4 @@
+<src>/AbstractCantBeAccessed.java:32: error: abstract method m() in Base cannot be accessed directly
+        super.m();
+             ^
+1 error

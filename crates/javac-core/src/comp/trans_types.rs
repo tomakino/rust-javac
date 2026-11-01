@@ -1781,7 +1781,7 @@ impl TreeVisitor for TransTypes {
         let mirrors = self.annotate.from_annotations(ctx, &annotations);
         let underlying_type = self.translate_with_pt(ctx, underlying_type, None);
         let underlying_ty = underlying_type.and_then(|underlying| ctx.tree(underlying).ty);
-        let new_ty = underlying_ty.map(|ty| ctx.alloc_type(ctx.typ(ty).annotated_type(&mirrors)));
+        let new_ty = underlying_ty.map(|ty| ctx.annotated_type_id(ty, &mirrors));
         if let TreeKind::AnnotatedType { underlying_type: u, .. } = &mut ctx.tree_mut(tree).kind {
             *u = underlying_type;
         }

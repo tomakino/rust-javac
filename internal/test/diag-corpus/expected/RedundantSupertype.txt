@@ -1,0 +1,5 @@
+<src>/RedundantSupertype.java:32: error: bad type qualifier I in default super call
+        void foo() { I.super.m(); }
+                      ^
+  redundant interface I is extended by J
+1 error

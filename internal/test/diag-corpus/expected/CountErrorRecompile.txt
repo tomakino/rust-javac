@@ -1,0 +1,7 @@
+<src>/CountErrorRecompile.java:35: error: cannot find symbol
+    NoSuchSymbol1 f1;
+    ^
+  symbol:   class NoSuchSymbol1
+  location: class CountErrorRecompile
+1 error
+only showing the first 1 errors, of 2 total; use -Xmaxerrs if you would like to see more

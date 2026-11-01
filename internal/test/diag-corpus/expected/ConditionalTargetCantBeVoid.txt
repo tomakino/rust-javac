@@ -1,0 +1,5 @@
+<src>/ConditionalTargetCantBeVoid.java:35: error: incompatible types: bad return type in lambda expression
+        SAM s = ()-> cond ? o1 : o2;
+                          ^
+    target-type for conditional expression cannot be void
+1 error

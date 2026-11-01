@@ -1,0 +1,7 @@
+<src>/InaccessibleVarargsType\InaccessibleVarargsType.java:30: error: method foo in class B cannot be applied to given types;
+    { new B().foo(new B(), new B()); }
+                 ^
+  required: A[]
+  found:    B,B
+  reason: formal varargs element type A is not accessible from class InaccessibleVarargsType
+1 error

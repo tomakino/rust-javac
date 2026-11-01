@@ -1,0 +1,4 @@
+<src>/EnumLabelUnqualified.java:32: error: an enum switch case label must be the unqualified name of an enumeration constant
+            case E.A:
+                  ^
+1 error

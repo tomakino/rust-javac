@@ -1,0 +1,4 @@
+<src>/OverrideVarargsMissing.java:33: warning: m(Object...) in OverrideVarargsMissing overrides m(Object[]) in Base; overridden method has no '...'
+    void m(Object... x) { }
+         ^
+1 warning

@@ -1,0 +1,4 @@
+<src>/InvalidBinaryNumber.java:27: error: binary numbers must contain at least one binary digit
+    int i = 0b201000010;
+            ^
+1 error

@@ -1,0 +1,4 @@
+<src>/InconvertibleTypes.java:33: error: incompatible types: InconvertibleTypes.Outer<Integer>.Inner<Long> cannot be converted to InconvertibleTypes.Outer<? super Number>.Inner<Long>
+        Object o = (Outer<? super Number>.Inner<Long>)p;
+                                                      ^
+1 error

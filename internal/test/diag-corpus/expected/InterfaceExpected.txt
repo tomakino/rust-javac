@@ -1,0 +1,4 @@
+<src>/InterfaceExpected.java:26: error: interface expected here
+class InterfaceExpected implements String { }
+                                   ^
+1 error

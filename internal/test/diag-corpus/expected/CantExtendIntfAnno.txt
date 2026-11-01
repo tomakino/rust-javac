@@ -1,0 +1,4 @@
+<src>/CantExtendIntfAnno.java:28: error: 'extends' not allowed for @interfaces
+@interface CantExtendIntfAnno extends Anno { }
+                                      ^
+1 error

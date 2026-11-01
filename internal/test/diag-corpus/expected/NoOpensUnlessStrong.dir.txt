@@ -1,0 +1,4 @@
+<src>/NoOpensUnlessStrong\module-info.java:27: error: 'opens' only allowed in strong modules
+     opens exported;
+     ^
+1 error

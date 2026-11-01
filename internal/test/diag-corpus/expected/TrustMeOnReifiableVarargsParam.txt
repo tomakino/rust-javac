@@ -1,0 +1,4 @@
+<src>/TrustMeOnReifiableVarargsParam.java:29: warning: [varargs] Redundant SafeVarargs annotation. Varargs element type String is reifiable.
+    @SafeVarargs static void m(String... args) { }
+                             ^
+1 warning

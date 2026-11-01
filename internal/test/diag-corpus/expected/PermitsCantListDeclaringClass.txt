@@ -1,0 +1,5 @@
+<src>/PermitsCantListDeclaringClass.java:27: error: invalid permits clause
+sealed class C permits C {}
+                       ^
+  (illegal self-reference in permits clause)
+1 error

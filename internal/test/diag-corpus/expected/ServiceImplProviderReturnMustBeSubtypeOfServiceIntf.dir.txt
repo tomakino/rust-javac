@@ -1,0 +1,4 @@
+<src>/ServiceImplProviderReturnMustBeSubtypeOfServiceIntf\modulesourcepath\m\module-info.java:25: error: the "provider" method return type must be a subtype of the service interface type
+    provides java.lang.String with impl.Impl;
+                                       ^
+1 error

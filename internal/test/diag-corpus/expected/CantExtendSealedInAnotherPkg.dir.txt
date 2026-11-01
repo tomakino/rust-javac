@@ -1,0 +1,4 @@
+<src>/CantExtendSealedInAnotherPkg\p1\Sealed.java:28: error: class Sealed in unnamed module cannot extend a sealed class in a different package
+public sealed class Sealed permits p2.Sub {}
+                                     ^
+1 error

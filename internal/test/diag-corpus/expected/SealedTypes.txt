@@ -1,0 +1,7 @@
+warning: [options] system modules path not set in conjunction with -source 16
+<src>/SealedTypes.java:29: error: sealed classes are not supported in -source 16
+sealed class Sealed {}
+^
+  (use -source 17 or higher to enable sealed classes)
+1 error
+1 warning

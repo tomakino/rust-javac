@@ -1,0 +1,4 @@
+<src>/CantExtendSealedInAnotherModule\modulesourcepath\mSealed\a\Base.java:26: error: class Base in module mSealed cannot extend a sealed class in a different module
+public sealed class Base permits b.Impl {}
+                                  ^
+1 error

@@ -1,0 +1,9 @@
+<src>/UncheckedCast.java:32: warning: [unchecked] unchecked cast
+        return (List<U>) l;
+                         ^
+  required: List<U>
+  found:    List<T>
+  where T,U are type-variables:
+    T extends Object declared in method <T,U>m(List<T>)
+    U extends Object declared in method <T,U>m(List<T>)
+1 warning

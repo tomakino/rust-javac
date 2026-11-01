@@ -1,0 +1,4 @@
+<src>/SwitchMixingCaseTypes.java:31: error: different case kinds used in the switch
+            case 1 -> System.out.println();
+            ^
+1 error

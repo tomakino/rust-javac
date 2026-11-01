@@ -1,0 +1,4 @@
+<src>/UndefinedLabel.java:31: error: undefined label: label
+                continue label;
+                ^
+1 error

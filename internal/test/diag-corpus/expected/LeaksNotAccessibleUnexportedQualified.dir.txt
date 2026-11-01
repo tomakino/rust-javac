@@ -1,0 +1,4 @@
+<src>/LeaksNotAccessibleUnexportedQualified\modulesourcepath\m1x\api\Api.java:27: warning: [exports] class QApi in module m1x may not be visible to all clients that require this module
+     public qapi.QApi get() {
+                ^
+1 warning

@@ -1,0 +1,3 @@
+warning: [options] bootstrap class path not set in conjunction with -source 5
+error: Source option 5 is no longer supported. Use 7 or later.
+error: Target option 5 is no longer supported. Use 7 or later.

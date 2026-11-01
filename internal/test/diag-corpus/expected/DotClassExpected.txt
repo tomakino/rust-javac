@@ -1,0 +1,4 @@
+<src>/DotClassExpected.java:27: error: '.class' expected
+    int f = int[] + 3;
+                  ^
+1 error

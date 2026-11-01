@@ -1,0 +1,5 @@
+<src>/CantResolveArgsParams.java:28: error: cannot find symbol
+        { this.<Integer,Double>m2(1, ""); }
+              ^
+  symbol: method <Integer,Double>m2(int,String)
+1 error

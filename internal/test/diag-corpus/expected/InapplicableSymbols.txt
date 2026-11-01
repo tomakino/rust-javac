@@ -1,0 +1,8 @@
+<src>/InapplicableSymbols.java:31: error: no suitable method found for m(no arguments)
+    { this.m(); }
+          ^
+    method ExplicitParamsDoNotConformToBounds.m(int) is not applicable
+      (actual and formal argument lists differ in length)
+    method ExplicitParamsDoNotConformToBounds.m(int,int) is not applicable
+      (actual and formal argument lists differ in length)
+1 error

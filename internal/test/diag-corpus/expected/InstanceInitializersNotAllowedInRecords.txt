@@ -1,0 +1,4 @@
+<src>/InstanceInitializersNotAllowedInRecords.java:27: error: instance initializers not allowed in records
+    {}
+    ^
+1 error

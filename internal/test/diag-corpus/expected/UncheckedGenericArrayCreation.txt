@@ -1,0 +1,11 @@
+<src>/UncheckedGenericArrayCreation.java:30: warning: [unchecked] unchecked generic array creation for varargs parameter of type T[]
+        show(t1, t2, t3);
+            ^
+  where T is a type-variable:
+    T extends Object declared in class UncheckedGenericArrayCreation
+<src>/UncheckedGenericArrayCreation.java:33: warning: [unchecked] Possible heap pollution from parameterized vararg type T
+    void show(T... items) {
+                   ^
+  where T is a type-variable:
+    T extends Object declared in class UncheckedGenericArrayCreation
+2 warnings

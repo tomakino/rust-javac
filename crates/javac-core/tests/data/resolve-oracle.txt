@@ -1,4 +1,0 @@
-SAMPLE Sample.java
-REF f1 FIELD Sample
-REF f3 FIELD Sample
-REF Inner CLASS Sample

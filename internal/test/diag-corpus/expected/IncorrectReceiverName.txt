@@ -1,0 +1,6 @@
+<src>/IncorrectReceiverName.java:28: error: the receiver name does not match the enclosing class type
+        void m(Inner IncorrectReceiverName.this) { }
+                                          ^
+  required: IncorrectReceiverName.Inner
+  found:    IncorrectReceiverName
+1 error

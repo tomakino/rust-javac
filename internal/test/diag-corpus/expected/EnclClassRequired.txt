@@ -1,0 +1,4 @@
+<src>/EnclClassRequired.java:30: error: an enclosing instance that contains Base.Nested is required
+class EnclClassRequired extends Base.Nested { }
+^
+1 error

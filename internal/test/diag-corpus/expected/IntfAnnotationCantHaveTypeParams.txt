@@ -1,0 +1,4 @@
+<src>/IntfAnnotationCantHaveTypeParams.java:26: error: annotation type X cannot be generic
+@interface X<T> { }
+             ^
+1 error

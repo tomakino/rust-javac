@@ -1,0 +1,5 @@
+<src>/MethodMustBePublic.java:28: error: invalid accessor method in record R
+    private int x() { return x; }
+                ^
+  (accessor method must be public)
+1 error

@@ -1,0 +1,4 @@
+<src>/FinallyCannotComplete.java:32: warning: [finally] finally clause cannot complete normally
+        }
+        ^
+1 warning

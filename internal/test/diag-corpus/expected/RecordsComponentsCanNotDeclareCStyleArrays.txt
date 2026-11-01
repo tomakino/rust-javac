@@ -1,0 +1,4 @@
+<src>/RecordsComponentsCanNotDeclareCStyleArrays.java:26: error: legacy array notation not allowed on record components
+record R(int i[]) {}
+              ^
+1 error

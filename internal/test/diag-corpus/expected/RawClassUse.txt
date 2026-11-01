@@ -1,0 +1,7 @@
+<src>/RawClassUse.java:30: warning: [rawtypes] found raw type: ArrayList
+    ArrayList l;
+    ^
+  missing type arguments for generic class ArrayList<E>
+  where E is a type-variable:
+    E extends Object declared in class ArrayList
+1 warning

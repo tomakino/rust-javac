@@ -1,0 +1,4 @@
+<src>/ModuleDeclSbInModuleInfoJava.java:26: error: module declarations should be in a file named module-info.java
+module ModuleDeclSbInModuleInfoJava {
+^
+1 error

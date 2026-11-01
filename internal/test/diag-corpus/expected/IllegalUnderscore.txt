@@ -1,0 +1,4 @@
+<src>/IllegalUnderscore.java:27: error: illegal underscore
+    int i = 1_;
+             ^
+1 error

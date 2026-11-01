@@ -1,0 +1,4 @@
+<src>/ModifierNotAllowed.java:26: error: modifier synchronized not allowed here
+synchronized interface ModifierNotAllowed { }
+             ^
+1 error

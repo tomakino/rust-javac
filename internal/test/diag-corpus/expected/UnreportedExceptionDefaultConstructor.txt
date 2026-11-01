@@ -1,0 +1,4 @@
+<src>/UnreportedExceptionDefaultConstructor.java:30: error: unreported exception Exception in default constructor
+class UnreportedExceptionDefaultConstructor extends Base { }
+^
+1 error

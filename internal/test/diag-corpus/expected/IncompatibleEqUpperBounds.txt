@@ -1,0 +1,12 @@
+<src>/IncompatibleEqUpperBounds.java:35: error: method m in class IncompatibleEqUpperBounds cannot be applied to given types;
+        m(li, ls);
+        ^
+  required: List<? super S>,T
+  found:    List<Integer>,List<String>
+  reason: inference variable S has incompatible bounds
+    equality constraints: String
+    lower bounds: Integer,Object
+  where S,T are type-variables:
+    S extends Object declared in method <S,T>m(List<? super S>,T)
+    T extends List<S> declared in method <S,T>m(List<? super S>,T)
+1 error

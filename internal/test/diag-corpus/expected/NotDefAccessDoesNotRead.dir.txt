@@ -1,0 +1,5 @@
+<src>/NotDefAccessDoesNotRead\modulesourcepath\impl\impl\Impl.java:27: error: package api is not visible
+    api.Api api;
+    ^
+  (package api is declared in module api, but module impl does not read it)
+1 error

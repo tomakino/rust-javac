@@ -1,0 +1,4 @@
+<src>/VarargsClash.java:33: warning: m(Object[]) in VarargsClash overrides m(Object...) in Base; overriding method is missing '...'
+    void m(Object[] x);
+         ^
+1 warning

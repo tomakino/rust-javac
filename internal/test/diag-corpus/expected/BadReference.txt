@@ -1,0 +1,6 @@
+<src>/BadReference.java:30: error: invalid method reference
+        Runnable test2 = ((new I() {}))::test;
+                         ^
+  cannot find symbol
+    symbol: method test()
+1 error

@@ -1,0 +1,4 @@
+<src>/UnexpectedLambda.java:27: error: lambda expression not expected here
+    { (()-> { })++; }
+       ^
+1 error

@@ -1,0 +1,5 @@
+<src>/VarInImplicitLambda.java:31: error: var syntax in implicit lambdas are not supported in -source 10
+    IntBinaryOperator f2 = (var x, y) -> x + y;
+                                ^
+  (use -source 11 or higher to enable var syntax in implicit lambdas)
+1 error

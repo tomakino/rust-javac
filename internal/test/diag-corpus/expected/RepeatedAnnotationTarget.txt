@@ -1,0 +1,4 @@
+<src>/RepeatedAnnotationTarget.java:28: error: repeated annotation target
+@Target({ElementType.FIELD, ElementType.FIELD})
+                                       ^
+1 error

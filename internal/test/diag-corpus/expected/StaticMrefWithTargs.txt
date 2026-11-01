@@ -1,0 +1,5 @@
+<src>/StaticMrefWithTargs.java:29: error: invalid method reference
+    Runnable r = StaticMrefWithTargs<String>::m;
+                                    ^
+  parameterized qualifier on static method reference
+1 error

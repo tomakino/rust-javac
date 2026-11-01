@@ -1,0 +1,4 @@
+<src>/UncheckedAssignToVar.java:34: warning: [unchecked] unchecked assignment to variable t as member of raw type Foo
+        f.t = "??";
+         ^
+1 warning

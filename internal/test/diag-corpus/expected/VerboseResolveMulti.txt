@@ -1,0 +1,8 @@
+<src>/VerboseResolveMulti.java:32: Note: resolving method m in type VerboseResolveMulti to candidate 0
+    { m(); }
+      ^
+  phase: BASIC
+  with actuals: no arguments
+  with type-args: no arguments
+  candidates:
+      #0 applicable method found: m()

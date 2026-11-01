@@ -1,0 +1,5 @@
+<src>/VarInTryWithResourcesNotSupportedInSource.java:32: error: variables in try-with-resources are not supported in -source 8
+        try (ac) {
+               ^
+  (use -source 9 or higher to enable variables in try-with-resources)
+1 error

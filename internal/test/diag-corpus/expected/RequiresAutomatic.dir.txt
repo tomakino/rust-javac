@@ -1,0 +1,4 @@
+<src>/RequiresAutomatic\module-info.java:27: error: module not found: a
+    requires a;
+             ^
+1 error

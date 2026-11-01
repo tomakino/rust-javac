@@ -1,0 +1,5 @@
+<src>/DuplicateTypeInPermits.java:27: error: invalid permits clause
+sealed class Sealed permits Sub, Sub {}
+                                 ^
+  (must not contain duplicates: Sub)
+1 error

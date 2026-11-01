@@ -1,0 +1,4 @@
+<src>/NameClashSameErasureNoOverride.java:32: error: name clash: m(NameClashSameErasureNoOverride<Integer>) in B and m(NameClashSameErasureNoOverride<String>) in A have the same erasure, yet neither overrides the other
+        void m(NameClashSameErasureNoOverride<Integer> l) {}
+             ^
+1 error

@@ -1,0 +1,4 @@
+<src>/InvalidAnnoMemberType.java:27: error: invalid type for annotation type element
+    Object value();
+    ^
+1 error

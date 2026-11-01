@@ -1,0 +1,4 @@
+<src>/RecursiveConstrInvocation.java:27: error: recursive constructor invocation
+    X() {
+    ^
+1 error

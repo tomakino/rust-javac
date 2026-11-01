@@ -1,0 +1,8 @@
+<src>/ConstantLabelNotCompatible.java:31: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+        switch (o) {
+               ^
+<src>/ConstantLabelNotCompatible.java:32: error: constant label of type int is not compatible with switch selector type Object
+            case 0:
+                 ^
+1 error
+1 warning

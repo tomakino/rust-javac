@@ -1,0 +1,4 @@
+<src>/CantDeref.java:28: error: int cannot be dereferenced
+        return i.x;
+                ^
+1 error

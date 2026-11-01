@@ -1,0 +1,6 @@
+<src>/UncheckedAssign.java:32: warning: [unchecked] unchecked conversion
+        l2 = l1;
+             ^
+  required: List<String>
+  found:    List
+1 warning

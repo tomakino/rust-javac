@@ -1,0 +1,5 @@
+<src>/PreviewFilenameAdditional.java:33: warning: [preview] diamond operator is a preview feature and may be removed in a future release.
+        new ArrayList<>();
+                      ^
+Note: <src>/PreviewFilenameAdditional.java has additional uses of preview features of Java SE 17.
+1 warning

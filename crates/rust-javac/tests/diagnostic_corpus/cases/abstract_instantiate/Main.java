@@ -1,1 +1,0 @@
-abstract class A {} class Main { A a = new A(); }

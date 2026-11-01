@@ -1,0 +1,4 @@
+<src>/TrustMeOnVirtualMethod.java:31: error: Invalid SafeVarargs annotation. Instance method m(List<String>...) is neither final nor private.
+    @SafeVarargs void m(List<String>... args) { }
+                      ^
+1 error

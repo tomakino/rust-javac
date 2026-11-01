@@ -1,0 +1,5 @@
+<src>/StaticIntfMethodInvokeNotSupported.java:31: error: static interface method invocations are not supported in -source 7
+        Stream.empty();
+              ^
+  (use -source 8 or higher to enable static interface method invocations)
+1 error

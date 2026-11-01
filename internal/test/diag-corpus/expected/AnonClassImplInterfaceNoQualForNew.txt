@@ -1,0 +1,4 @@
+<src>/AnonClassImplInterfaceNoQualForNew.java:30: error: anonymous class implements interface; cannot have qualifier for new
+    Object o = x.new Intf() { };
+               ^
+1 error

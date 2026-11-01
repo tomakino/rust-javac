@@ -1,0 +1,4 @@
+<src>/IncompatibleThrownTypesInMref.java:33: error: incompatible thrown types Exception in functional expression
+    SAM s = IncompatibleThrownTypesInMref::f;
+            ^
+1 error

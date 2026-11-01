@@ -2406,12 +2406,15 @@ impl<'a> ModuleVisitor<'a> {
     }
 
     fn check_duplicate_exports_to_module(&mut self, name: TreeId, msym: SymbolId, d: DirectiveId) {
-        if let Directive::Exports { modules: Some(modules), .. } = self.ctx.directive(d) {
-            for other in modules.iter() {
-                if other == msym {
-                    self.report_exports_conflict_to_module(name, msym);
-                }
-            }
+        // Java: for (Symbol other : modules) if (other == msym) log.error(...);
+        // Check membership first so the immutable borrow of ctx ends before the
+        // mutable borrow needed to report the diagnostic.
+        let duplicate = matches!(
+            self.ctx.directive(d),
+            Directive::Exports { modules: Some(modules), .. } if modules.contains(&msym)
+        );
+        if duplicate {
+            self.report_exports_conflict_to_module(name, msym);
         }
     }
 
@@ -2432,12 +2435,12 @@ impl<'a> ModuleVisitor<'a> {
     }
 
     fn check_duplicate_opens_to_module(&mut self, name: TreeId, msym: SymbolId, d: DirectiveId) {
-        if let Directive::Opens { modules: Some(modules), .. } = self.ctx.directive(d) {
-            for other in modules.iter() {
-                if other == msym {
-                    self.report_opens_conflict_to_module(name, msym);
-                }
-            }
+        let duplicate = matches!(
+            self.ctx.directive(d),
+            Directive::Opens { modules: Some(modules), .. } if modules.contains(&msym)
+        );
+        if duplicate {
+            self.report_opens_conflict_to_module(name, msym);
         }
     }
 

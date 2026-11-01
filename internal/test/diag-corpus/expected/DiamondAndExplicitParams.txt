@@ -1,0 +1,7 @@
+<src>/DiamondAndExplicitParams.java:32: error: cannot infer type arguments for Foo<X>
+        Foo<String> foo = new <Integer> Foo<>();
+                                           ^
+  reason: cannot use '<>' with explicit type parameters for constructor
+  where X is a type-variable:
+    X extends Object declared in class Foo
+1 error

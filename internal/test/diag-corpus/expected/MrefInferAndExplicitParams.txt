@@ -1,0 +1,5 @@
+<src>/MrefInferAndExplicitParams.java:34: error: invalid constructor reference
+    Supplier<Foo<String>> sfs = Foo::<Number>new;
+                                ^
+  cannot use raw constructor reference with explicit type parameters for constructor
+1 error

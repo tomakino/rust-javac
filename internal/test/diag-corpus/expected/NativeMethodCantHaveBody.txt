@@ -1,0 +1,4 @@
+<src>/NativeMethodCantHaveBody.java:27: error: native methods cannot have a body
+    native void m() { }
+                ^
+1 error

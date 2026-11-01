@@ -1,0 +1,4 @@
+<src>/CantAssignToFinal.java:30: error: cannot assign a value to final variable i
+        i = 3;
+        ^
+1 error

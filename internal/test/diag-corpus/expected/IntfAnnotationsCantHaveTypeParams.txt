@@ -1,0 +1,4 @@
+<src>/IntfAnnotationsCantHaveTypeParams.java:27: error: elements in annotation type declarations cannot be generic methods
+    <T> String value();
+     ^
+1 error

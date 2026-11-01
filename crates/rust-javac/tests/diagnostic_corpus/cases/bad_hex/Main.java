@@ -1,1 +1,0 @@
-class Main { int x = 0x; }

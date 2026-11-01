@@ -1,0 +1,7 @@
+<src>/EnumTypesNotExtensible.java:29: error: cannot inherit from final E
+class EnumTypesNotExtensible extends E { }
+                                     ^
+<src>/EnumTypesNotExtensible.java:29: error: enum types are not extensible
+class EnumTypesNotExtensible extends E { }
+^
+2 errors

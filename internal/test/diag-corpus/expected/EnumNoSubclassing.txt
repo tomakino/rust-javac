@@ -1,0 +1,6 @@
+<src>/EnumNoSubclassing.java:28: error: classes cannot directly extend java.lang.Enum
+class EnumNoSubclassing extends Enum { }
+^
+Note: <src>/EnumNoSubclassing.java uses unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+1 error

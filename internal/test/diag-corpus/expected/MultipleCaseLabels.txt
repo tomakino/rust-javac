@@ -1,0 +1,5 @@
+<src>/MultipleCaseLabels.java:31: error: multiple case labels are not supported in -source 13
+            case 0, 1, 2: break;
+                    ^
+  (use -source 14 or higher to enable multiple case labels)
+1 error

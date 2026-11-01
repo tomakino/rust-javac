@@ -1,0 +1,4 @@
+<src>/MrefStat.java:28: Note: Translating method reference
+    Runnable r = MrefStat::m;
+                 ^
+  alternate metafactory = false

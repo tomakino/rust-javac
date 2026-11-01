@@ -1,0 +1,4 @@
+<src>/IllegalNonAsciiDigit.java:27: error: illegal non-ASCII digit
+    int i = 0\u0660; // Zero followed by Arabic-Indic Digit Zero
+             ^
+1 error

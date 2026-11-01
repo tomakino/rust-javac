@@ -1,0 +1,4 @@
+<src>/LocalVarNeedsFinal.java:32: error: local variable i is accessed from within inner class; needs to be declared final
+                System.out.println(i);
+                                   ^
+1 error

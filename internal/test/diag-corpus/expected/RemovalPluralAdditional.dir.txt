@@ -1,0 +1,5 @@
+<src>/RemovalPluralAdditional\RemovalFilename.java:25: warning: [removal] RemovalClass in unnamed package has been deprecated and marked for removal
+    RemovalClass d;
+    ^
+Note: Some input files additionally use or override a deprecated API that is marked for removal.
+1 warning

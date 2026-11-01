@@ -1,0 +1,11 @@
+<src>/ApplicableMethodFound1.java:33: Note: resolving method m in type ApplicableMethodFound1 to candidate 0
+    { m(1); }
+      ^
+  phase: BOX
+  with actuals: int
+  with type-args: no arguments
+  candidates:
+      #0 applicable method found: <X>m(X)
+        (partially instantiated to: (Integer)void)
+  where X is a type-variable:
+    X extends Object declared in method <X>m(X)

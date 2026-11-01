@@ -1,0 +1,4 @@
+<src>/PackageClashFromRequires\modulesourcepath\use\module-info.java:24: error: module use reads package exported from both lib1x and lib2x
+module use {
+^
+1 error

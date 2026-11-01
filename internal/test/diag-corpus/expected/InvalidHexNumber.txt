@@ -1,0 +1,10 @@
+<src>/InvalidHexNumber.java:28: error: hexadecimal numbers must contain at least one hexadecimal digit
+    int i = 0xz1357abc;
+            ^
+<src>/InvalidHexNumber.java:28: error: ';' expected
+    int i = 0xz1357abc;
+              ^
+<src>/InvalidHexNumber.java:28: error: <identifier> expected
+    int i = 0xz1357abc;
+                      ^
+3 errors

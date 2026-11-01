@@ -1,0 +1,4 @@
+<src>/SafeVarargsNotApplicableToRecordAccessors.java:27: error: Invalid SafeVarargs annotation. Accessor s() is not a varargs method.
+record R(@SafeVarargs String... s) {}
+         ^
+1 error

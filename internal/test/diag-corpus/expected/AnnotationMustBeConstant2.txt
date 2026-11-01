@@ -1,0 +1,4 @@
+<src>/AnnotationMustBeConstant2.java:26: error: element value must be a constant expression
+@T(a = AnnotationMustBeConstant2.x)
+                                ^
+1 error

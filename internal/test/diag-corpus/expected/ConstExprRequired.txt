@@ -1,0 +1,4 @@
+<src>/ConstExprRequired.java:33: error: constant expression required
+            case i: return "i";
+                 ^
+1 error

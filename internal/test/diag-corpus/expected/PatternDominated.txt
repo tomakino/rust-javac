@@ -1,0 +1,14 @@
+<src>/PatternDominated.java:32: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+            case CharSequence cs: break;
+                 ^
+<src>/PatternDominated.java:33: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+            case String str: break;
+                 ^
+<src>/PatternDominated.java:31: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+        switch (o) {
+               ^
+<src>/PatternDominated.java:33: error: this case label is dominated by a preceding case label
+            case String str: break;
+                 ^
+1 error
+3 warnings

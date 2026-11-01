@@ -1,0 +1,6 @@
+<src>/CantAccessInnerClsConstr.java:36: error: invalid constructor reference
+        SAM s = Outer::new;
+                ^
+  cannot access constructor Outer()
+    an enclosing instance of type CantAccessInnerClsConstructor is not in scope
+1 error

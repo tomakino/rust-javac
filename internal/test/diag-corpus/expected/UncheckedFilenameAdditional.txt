@@ -1,0 +1,17 @@
+<src>/UncheckedFilenameAdditional.java:32: warning: [unchecked] unchecked conversion
+    List<String> list1 = new ArrayList();
+                         ^
+  required: List<String>
+  found:    ArrayList
+<src>/UncheckedFilenameAdditional.java:33: warning: [unchecked] unchecked conversion
+    List<String> list2 = new ArrayList();
+                         ^
+  required: List<String>
+  found:    ArrayList
+<src>/UncheckedFilenameAdditional.java:34: warning: [unchecked] unchecked conversion
+    List<String> list3 = new ArrayList();
+                         ^
+  required: List<String>
+  found:    ArrayList
+Note: <src>/UncheckedFilenameAdditional.java has additional unchecked or unsafe operations.
+3 warnings

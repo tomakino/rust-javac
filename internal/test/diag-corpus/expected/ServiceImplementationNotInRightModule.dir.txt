@@ -1,0 +1,4 @@
+<src>/ServiceImplementationNotInRightModule\modulesourcepath\m2x\module-info.java:26: error: service implementation must be defined in the same module as the provides directive
+     provides exported.Service with exported.ServiceImplementation;
+     ^
+1 error

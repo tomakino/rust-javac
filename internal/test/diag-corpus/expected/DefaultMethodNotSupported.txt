@@ -1,0 +1,5 @@
+<src>/DefaultMethodNotSupported.java:29: error: default methods are not supported in -source 7
+    default void m() { }
+    ^
+  (use -source 8 or higher to enable default methods)
+1 error

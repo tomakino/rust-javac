@@ -1,0 +1,4 @@
+<src>/CantAssignToThis.java:28: error: cannot assign to 'this'
+        this = null;
+        ^
+1 error

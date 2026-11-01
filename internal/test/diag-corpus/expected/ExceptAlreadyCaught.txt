@@ -1,0 +1,4 @@
+<src>/ExceptAlreadyCaught.java:33: error: exception Exception has already been caught
+        } catch (Exception e) {
+          ^
+1 error

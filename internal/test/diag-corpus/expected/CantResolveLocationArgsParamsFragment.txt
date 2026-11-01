@@ -1,0 +1,7 @@
+<src>/CantResolveLocationArgsParamsFragment.java:35: error: invalid method reference
+        SAM s = CantResolveLocationArgsParamsFragment::<String>f;
+                ^
+  cannot find symbol
+    symbol:   method <String>f(Integer)
+    location: class CantResolveLocationArgsParamsFragment
+1 error

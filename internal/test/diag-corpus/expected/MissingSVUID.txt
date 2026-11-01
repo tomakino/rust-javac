@@ -1,0 +1,4 @@
+<src>/MissingSVUID.java:29: warning: [serial] serializable class MissingSVUID has no definition of serialVersionUID
+class MissingSVUID implements Serializable {
+^
+1 warning

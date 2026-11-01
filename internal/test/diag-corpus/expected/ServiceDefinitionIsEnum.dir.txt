@@ -1,0 +1,4 @@
+<src>/ServiceDefinitionIsEnum\module-info.java:27: error: the service definition is an enum: EnumST
+    uses pkg.EnumST;
+            ^
+1 error

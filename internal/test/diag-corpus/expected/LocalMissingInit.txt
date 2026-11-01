@@ -1,0 +1,5 @@
+<src>/LocalMissingInit.java:29: error: cannot infer type for local variable s
+        var s;
+            ^
+  (cannot use 'var' on variable without initializer)
+1 error

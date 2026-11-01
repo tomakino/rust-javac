@@ -1,0 +1,4 @@
+<src>/TooManyModules\p2\module-info.java:24: error: too many module declarations found
+module m2x {}
+^
+1 error

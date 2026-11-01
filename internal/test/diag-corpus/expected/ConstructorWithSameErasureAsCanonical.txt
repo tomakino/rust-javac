@@ -1,0 +1,5 @@
+<src>/ConstructorWithSameErasureAsCanonical.java:32: error: invalid canonical constructor in record R
+    public R(List x) { this.x = x; }
+                  ^
+  (type and arity must match that of the corresponding record component)
+1 error

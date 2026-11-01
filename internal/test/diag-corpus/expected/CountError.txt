@@ -1,0 +1,4 @@
+<src>/CountError.java:30: error: unreported exception Exception; must be caught or declared to be thrown
+    void m() { throw new Exception(); }
+               ^
+1 error

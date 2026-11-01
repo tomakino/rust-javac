@@ -1,0 +1,18 @@
+<src>/DeferredMethodInst.java:34: Note: resolving method m in type DeferredMethodInst to candidate 0
+    { Integer i = m(); }
+                  ^
+  phase: BASIC
+  with actuals: no arguments
+  with type-args: no arguments
+  candidates:
+      #0 applicable method found: <X>m()
+        (partially instantiated to: ()Object)
+  where X is a type-variable:
+    X extends Object declared in method <X>m()
+<src>/DeferredMethodInst.java:34: Note: Deferred instantiation of method <X>m()
+    { Integer i = m(); }
+                   ^
+  instantiated signature: ()Integer
+  target-type: Integer
+  where X is a type-variable:
+    X extends Object declared in method <X>m()

@@ -1,0 +1,4 @@
+<src>/NoInterfaceHere.java:28: error: no interface expected here
+class InterfaceNotExpected extends I { }
+                                   ^
+1 error

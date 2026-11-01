@@ -1,0 +1,4 @@
+<src>/MethodRedundantTypeargs.java:31: warning: Redundant type arguments in method call.
+        String s = this.<String>id("");
+                                  ^
+1 warning

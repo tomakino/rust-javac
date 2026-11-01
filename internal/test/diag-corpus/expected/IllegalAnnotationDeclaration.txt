@@ -1,0 +1,4 @@
+<src>/IllegalAnnotationDeclaration.java:28: error: annotation type declaration not allowed here
+        @interface SomeAnnotation { }
+         ^
+1 error

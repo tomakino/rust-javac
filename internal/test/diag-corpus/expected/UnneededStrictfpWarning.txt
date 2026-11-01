@@ -1,0 +1,4 @@
+<src>/UnneededStrictfpWarning.java:27: warning: [strictfp] as of release 17, all floating-point expressions are evaluated strictly and 'strictfp' is not required
+strictfp class UnneededStrictfpWarning {
+         ^
+1 warning

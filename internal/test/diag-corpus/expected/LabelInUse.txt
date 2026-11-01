@@ -1,0 +1,4 @@
+<src>/LabelInUse.java:30: error: label label already in use
+            label:
+            ^
+1 error

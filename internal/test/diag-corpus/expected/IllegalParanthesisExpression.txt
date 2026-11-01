@@ -1,0 +1,4 @@
+<src>/IllegalParanthesisExpression.java:27: error: illegal parenthesized expression
+    String s = (Integer).toString(123);
+               ^
+1 error

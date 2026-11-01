@@ -1,0 +1,10 @@
+<src>/RepeatableNoValue.java:33: error: Annos is not a valid @Repeatable, no value element method declared
+@Anno
+^
+<src>/RepeatableNoValue.java:34: error: Annos is not a valid @Repeatable, no value element method declared
+@Anno
+^
+<src>/RepeatableNoValue.java:28: error: Annos is not a valid @Repeatable, no value element method declared
+@Repeatable(Annos.class)
+^
+3 errors

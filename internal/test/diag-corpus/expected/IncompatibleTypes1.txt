@@ -1,0 +1,6 @@
+<src>/IncompatibleTypes1.java:32: error: incompatible types: no instance(s) of type variable(s) T exist so that IncompatibleTypes1<Integer> conforms to IncompatibleTypes1<? extends String>
+    IncompatibleTypes1<? extends String> o = m();
+                                              ^
+  where T is a type-variable:
+    T extends Object declared in method <T>m()
+1 error

@@ -1,0 +1,2 @@
+warning: [path] bad path element "<src>/DirPathElementNotDirectory\modulesourcepath": not a directory
+error: no source files

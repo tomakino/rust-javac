@@ -1,0 +1,4 @@
+<src>/VarMightNotHaveBeenInitialized.java:31: error: variable i might not have been initialized
+    }
+    ^
+1 error

@@ -1,0 +1,4 @@
+<src>/CatchWithoutTry.java:28: error: 'catch' without 'try'
+        catch (Exception e) {
+        ^
+1 error

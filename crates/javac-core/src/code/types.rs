@@ -772,6 +772,11 @@ impl Types {
         {
             return true;
         }
+        if ctx.typ(s).has_tag(TypeTag::BOT) {
+            // Java: if 's' is 'null' there's no instantiated type U for which
+            // U <: s (but 'null' itself, which is not a valid type)
+            return false;
+        }
         self.undet_var_add_bound(
             ctx,
             syms,
@@ -842,8 +847,8 @@ impl Types {
             | TypeTag::NONE => ctx.typ(t).has_tag(ctx.typ(s).get_tag()),
             TypeTag::TYPEVAR => {
                 if ctx.typ(s).has_tag(TypeTag::TYPEVAR) {
-                    // type-substitution does not preserve type-var types; check
-                    // that type var symbols and bounds are indeed the same.
+                    // type-substitution does not preserve type-var types
+                    // check that type var symbols and bounds are indeed the same
                     t == s
                 } else {
                     // special case for s == ? super X, where upper(s) = u; check
@@ -1410,13 +1415,18 @@ impl Types {
         }
     }
 
-    /// Java: Type.equalsIgnoreMetadata (Type.equals is identity except the
-    /// ArrayType override).
+    /// Java: Type.equalsIgnoreMetadata (Type.java:512-514).
     ///
-    /// PORTING_RULES: Type.equals is "this == t" (Type.java) and ArrayType
-    /// overrides it as "(this == arrayType || elemtype.equals(arrayType.elemtype))";
-    /// both are reproduced here (TypeMetadata is not ported).
+    /// `typeNoMetadata().equals(t.typeNoMetadata())`: both sides are first
+    /// reduced to the un-annotated instance, so an annotated clone still
+    /// compares identity-equal with the type it was derived from (this is what
+    /// lets `@A T` satisfy an assignment target of plain `T`).
+    ///
+    /// Type.equals itself is "this == t" (Type.java:508-510); ArrayType
+    /// overrides it structurally (Type.java:1150) and is reproduced below.
     fn equals_ignore_metadata(&self, ctx: &CompilerContext, t: TypeId, s: TypeId) -> bool {
+        let t = ctx.type_no_metadata_id(t);
+        let s = ctx.type_no_metadata_id(s);
         if t == s {
             return true;
         }
@@ -2903,6 +2913,9 @@ impl Types {
                 panic!("AssertionError: isSubtype DEFERRED")
             }
             TypeKindData::TypeVar { .. } | TypeKindData::CapturedType { .. } => {
+                // Java: IsSubtype.visitType (Types.java:1117-1118) — IsSubtype
+                // does not override visitTypeVar, so type variables fall through
+                // to the TYPEVAR case of visitType.
                 let upper = ctx.typ(t).get_upper_bound().expect("type var upper bound");
                 self.is_subtype_no_capture(ctx, syms, upper, s)
             }
@@ -6991,30 +7004,6 @@ impl Types {
         bound: TypeId,
         update: bool,
     ) {
-        if std::env::var_os("DSH_DEBUG_INFER").is_some()
-            && ib == crate::code::type_::InferenceBound::LOWER
-            && ctx
-                .typ(bound)
-                .tsym
-                .map(|tsym| ctx.sym(tsym).name.to_java_string().to_string_lossy() == "Bar")
-                .unwrap_or(false)
-            && ctx
-                .typ(uv)
-                .tsym
-                .map(|tsym| ctx.sym(tsym).name.to_java_string().to_string_lossy() == "T")
-                .unwrap_or(false)
-        {
-            let bt = std::backtrace::Backtrace::force_capture().to_string();
-            let head: Vec<&str> = bt.lines().take(22).collect();
-            eprintln!(
-                "[ADDBOUND] uv=V bound=Map args={:?}\n{}",
-                get_type_arguments_completed(ctx, syms, bound, None)
-                    .iter()
-                    .map(|t| ctx.typ(t).get_tag())
-                    .collect::<Vec<_>>(),
-                head.join("\n")
-            );
-        }
         if self.map_captures_to_bounds && !update {
             let mut bound = bound;
             match ib {

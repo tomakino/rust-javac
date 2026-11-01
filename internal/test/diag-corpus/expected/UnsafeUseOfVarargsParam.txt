@@ -1,0 +1,4 @@
+<src>/UnsafeUseOfVarargsParam.java:29: warning: [varargs] Varargs method could cause heap pollution from non-reifiable varargs parameter x
+        Object[] o = x;
+                     ^
+1 warning

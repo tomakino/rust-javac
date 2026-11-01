@@ -1,0 +1,4 @@
+<src>/DuplicateAnnotationMemberValue.java:30: error: duplicate element 'value' in annotation @Anno.
+@Anno(value=1, value=2)
+               ^
+1 error

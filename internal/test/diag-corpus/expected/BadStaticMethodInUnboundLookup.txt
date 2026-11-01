@@ -1,0 +1,5 @@
+<src>/BadStaticMethodInUnboundLookup.java:34: error: incompatible types: invalid method reference
+    SAM s = BadStaticMethodInUnboundLookup::m;
+            ^
+    unexpected static method m() found in unbound lookup
+1 error

@@ -1,0 +1,4 @@
+error: Annotation processor 'AnnoProc' not found
+warning: Annotation processing without compilation requested but no processors were found.
+1 error
+1 warning

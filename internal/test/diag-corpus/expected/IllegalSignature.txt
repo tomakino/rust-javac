@@ -1,0 +1,5 @@
+error: error while generating class <anonymous IllegalSignature$1>
+  (illegal signature attribute for type CAP#1)
+  where CAP#1 is a fresh type-variable:
+    CAP#1 extends Object from capture of ?
+1 error

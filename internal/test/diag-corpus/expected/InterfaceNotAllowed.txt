@@ -1,0 +1,6 @@
+warning: [options] system modules path not set in conjunction with -source 15
+<src>/InterfaceNotAllowed.java:30: error: interface not allowed here
+        interface I { }
+        ^
+1 error
+1 warning

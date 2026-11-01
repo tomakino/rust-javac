@@ -1,0 +1,4 @@
+<src>/IllegalArrayCreation.java:27: error: array creation with both dimension expression and initialization is illegal
+    int[] foo = new int[10] { 1, 2, 3 };
+                            ^
+1 error

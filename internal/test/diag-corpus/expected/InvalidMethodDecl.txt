@@ -1,0 +1,4 @@
+<src>/InvalidMethodDecl.java:27: error: invalid method declaration; return type required
+    m() { }
+    ^
+1 error

@@ -1,0 +1,9 @@
+<src>/WarningAndWerror.java:31: warning: [rawtypes] found raw type: List
+    List l;
+    ^
+  missing type arguments for generic class List<E>
+  where E is a type-variable:
+    E extends Object declared in interface List
+error: warnings found and -Werror specified
+1 error
+1 warning

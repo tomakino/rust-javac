@@ -1,0 +1,5 @@
+<src>/FeatureReifiableTypesInstanceof.java:32: error: reifiable types in instanceof are not supported in -source 15
+    boolean b = (o instanceof List<String>);
+                   ^
+  (use -source 16 or higher to enable reifiable types in instanceof)
+1 error

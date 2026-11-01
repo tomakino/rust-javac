@@ -1,0 +1,4 @@
+<src>/NoInterfaceExpected.java:26: error: no interface expected here
+class NoInterfaceExpected extends Runnable { }
+                                  ^
+1 error

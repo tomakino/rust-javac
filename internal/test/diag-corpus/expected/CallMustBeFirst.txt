@@ -1,0 +1,4 @@
+<src>/CallMustBeFirst.java:29: error: call to super must be first statement in constructor
+        super();
+             ^
+1 error

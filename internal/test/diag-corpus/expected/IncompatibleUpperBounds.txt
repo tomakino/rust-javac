@@ -1,0 +1,10 @@
+<src>/IncompatibleUpperBounds.java:36: error: method m in class IncompatibleUpperBounds cannot be applied to given types;
+        m(li, ls);
+        ^
+  required: List<? super S>,List<? super S>
+  found:    List<Integer>,List<String>
+  reason: inference variable S has incompatible upper bounds String,Integer,Object
+  where S is a type-variable:
+    S extends Object declared in method <S>m(List<? super S>,List<? super S>)
+Note: Some messages have been simplified; recompile with -Xdiags:verbose to get full output
+1 error

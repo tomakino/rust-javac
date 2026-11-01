@@ -1,0 +1,20 @@
+<src>/CantRefNonEffectivelyFinalVar.java:51: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+            case String s && s.length() == i++: break;
+                 ^
+<src>/CantRefNonEffectivelyFinalVar.java:51: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+            case String s && s.length() == i++: break;
+                          ^
+<src>/CantRefNonEffectivelyFinalVar.java:50: warning: [preview] patterns in switch statements are a preview feature and may be removed in a future release.
+        switch (o) {
+               ^
+<src>/CantRefNonEffectivelyFinalVar.java:35: error: local variables referenced from an inner class must be final or effectively final
+        new Object() { int j = i; };
+                               ^
+<src>/CantRefNonEffectivelyFinalVar.java:45: error: local variables referenced from a lambda expression must be final or effectively final
+        SAM s = ()-> { int j = i; };
+                               ^
+<src>/CantRefNonEffectivelyFinalVar.java:51: error: local variables referenced from a guard must be final or effectively final
+            case String s && s.length() == i++: break;
+                                           ^
+3 errors
+3 warnings

@@ -1,0 +1,5 @@
+<src>/TypesIncompatibleAbstractDefault.java:36: error: types A and B are incompatible;
+    interface AB extends A, B { }
+    ^
+  interface AB inherits abstract and default for m() from types A and B
+1 error

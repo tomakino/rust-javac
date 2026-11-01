@@ -1,0 +1,5 @@
+error: Annotation processor 'AnnoProc' not found
+warning: Annotation processing without compilation requested but no processors were found.
+error: Class names, 'UnknownClass', are only accepted if annotation processing is explicitly requested
+2 errors
+1 warning

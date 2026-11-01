@@ -1,0 +1,4 @@
+<src>/RepeatableNonDefault.java:28: error: containing annotation type (Annos) does not have a default value for element foo()
+@Repeatable(Annos.class)
+^
+1 error

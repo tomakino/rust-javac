@@ -1,0 +1,6 @@
+warning: [options] module name in --add-exports option not found: undefModule
+<src>/ModuleForOptionNotFound.java:29: error: package undefPackage does not exist
+import undefPackage.Any;
+                   ^
+1 error
+1 warning

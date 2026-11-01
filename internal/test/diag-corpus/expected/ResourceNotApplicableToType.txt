@@ -1,0 +1,5 @@
+<src>/ResourceNotApplicableToType.java:30: error: incompatible types: try-with-resources not applicable to variable type
+        try (String s = "") {
+                    ^
+    (String cannot be converted to AutoCloseable)
+1 error

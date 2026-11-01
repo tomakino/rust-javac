@@ -1,0 +1,4 @@
+<src>/IllegalLineEndInCharLit.java:27: error: illegal line end in character literal
+    char c = '
+             ^
+1 error

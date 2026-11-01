@@ -1,0 +1,4 @@
+<src>/ImproperTypeParamMissing.java:32: error: improperly formed type, some parameters are missing
+        Object o = (Outer<?>.Inner)null;
+                            ^
+1 error

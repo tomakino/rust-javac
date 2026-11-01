@@ -1,0 +1,4 @@
+<src>/MightBeAssignedInLoop.java:30: error: variable i might be assigned in loop
+            i = 3;
+            ^
+1 error

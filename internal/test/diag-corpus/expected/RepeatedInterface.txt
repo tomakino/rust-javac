@@ -1,0 +1,4 @@
+<src>/RepeatedInterface.java:29: error: repeated interface
+  implements I, I
+                ^
+1 error

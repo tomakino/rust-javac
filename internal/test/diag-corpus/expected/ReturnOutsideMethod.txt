@@ -1,0 +1,4 @@
+<src>/ReturnOutsideMethod.java:27: error: return outside method
+    { return; }
+      ^
+1 error

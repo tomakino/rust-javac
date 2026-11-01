@@ -1,0 +1,4 @@
+<src>/ServiceProvidedButNotExportedOrUsed\modulesourcepath\m\module-info.java:25: warning: service interface provided but not exported or used
+    provides p1.C1 with p2.C2;
+    ^
+1 warning

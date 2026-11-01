@@ -1,0 +1,5 @@
+<src>/CantResolveArgs.java:31: error: cannot find symbol
+            { unknown(); }
+              ^
+  symbol: method unknown()
+1 error

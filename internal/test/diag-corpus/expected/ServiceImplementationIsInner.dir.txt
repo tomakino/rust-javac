@@ -1,0 +1,4 @@
+<src>/ServiceImplementationIsInner\module-info.java:28: error: the service implementation is an inner class: ServiceImplementation.Inner
+     provides exported.Service with impl.ServiceImplementation.Inner;
+                                                              ^
+1 error

@@ -1,0 +1,5 @@
+<src>/BadStaticMethodInBoundLookup.java:30: error: incompatible types: invalid method reference
+    Runnable r = new BadStaticMethodInBoundLookup()::m;
+                 ^
+    unexpected static method m() found in bound lookup
+1 error

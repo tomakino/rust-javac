@@ -1,0 +1,2 @@
+error: the unnamed module reads package exported from both lib2x and lib1x
+1 error

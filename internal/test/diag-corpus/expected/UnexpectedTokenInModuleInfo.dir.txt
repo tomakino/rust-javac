@@ -1,0 +1,4 @@
+<src>/UnexpectedTokenInModuleInfo\module-info.java:26: error: 'module' or 'open' expected
+weak module m {}
+^
+1 error

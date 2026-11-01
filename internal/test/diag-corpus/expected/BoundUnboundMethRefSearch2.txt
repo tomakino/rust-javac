@@ -1,0 +1,12 @@
+<src>/BoundUnboundMethRefSearch2.java:44: Note: bound search results for BoundUnboundMethRefSearch2::<Integer>foo, with most specific 0
+        SAM <Integer> mRef = BoundUnboundMethRefSearch2::<Integer>foo;
+                             ^
+  applicable candidates:
+      #0 applicable method found: static <T>foo(T,T)
+        (partially instantiated to: (Integer,Integer)boolean)
+  where T is a type-variable:
+    T extends Object declared in method <T>foo(T,T)
+<src>/BoundUnboundMethRefSearch2.java:44: Note: unbound search results for BoundUnboundMethRefSearch2::<Integer>foo, with most specific -1
+        SAM <Integer> mRef = BoundUnboundMethRefSearch2::<Integer>foo;
+                             ^
+  applicable candidates:

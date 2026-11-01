@@ -1,0 +1,4 @@
+<src>/WarnDefaultCtor\modulesourcepath\defaultctor\pkg\Foo.java:26: warning: [missing-explicit-ctor] class Foo in exported package pkg declares no explicit constructors, thereby exposing a default constructor to clients of module defaultctor
+public class Foo {
+       ^
+1 warning

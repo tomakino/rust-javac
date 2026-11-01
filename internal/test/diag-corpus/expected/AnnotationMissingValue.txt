@@ -1,0 +1,4 @@
+<src>/AnnotationMissingValue.java:30: error: annotation @Anno is missing a default value for the element 'value'
+@Anno
+^
+1 error

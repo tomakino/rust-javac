@@ -1,0 +1,5 @@
+<src>/AccessorMethodCantBeStatic.java:29: error: invalid accessor method in record R
+    static public int x() { return j; }
+                      ^
+  (accessor method must not be static)
+1 error

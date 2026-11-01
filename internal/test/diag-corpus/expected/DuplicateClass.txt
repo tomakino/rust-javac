@@ -1,0 +1,4 @@
+<src>/DuplicateClass.java:28: error: duplicate class: DuplicateClass
+class DuplicateClass { }
+^
+1 error

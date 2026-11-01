@@ -1,0 +1,5 @@
+<src>/CanonicalConstructorCantHaveThrowsClause.java:29: error: invalid canonical constructor in record R
+    public R(int i) throws Exception {
+           ^
+  (throws clause not allowed for canonical constructor)
+1 error

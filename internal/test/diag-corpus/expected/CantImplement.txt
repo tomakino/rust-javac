@@ -1,0 +1,5 @@
+<src>/CantImplement.java:32: error: m() in CantImplement cannot implement m() in Interface
+    void m() { }
+         ^
+  attempting to assign weaker access privileges; was public
+1 error

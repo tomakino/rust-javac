@@ -1,0 +1,4 @@
+<src>/DuplicateCaseLabel.java:31: error: duplicate case label
+            case 1: return "one";
+            ^
+1 error

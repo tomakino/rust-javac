@@ -1,0 +1,4 @@
+<src>/AnnoNotApplicable.java:32: error: annotation type not applicable to this kind of declaration
+@Anno
+^
+1 error

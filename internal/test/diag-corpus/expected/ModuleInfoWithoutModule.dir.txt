@@ -1,0 +1,2 @@
+<src>/ModuleInfoWithoutModule\modulesourcepath\m1x\module-info.java:25: error: expected 'module'
+1 error

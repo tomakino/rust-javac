@@ -917,9 +917,11 @@ impl Attr {
         let env = self.env.clone().expect("env");
         self.attrib_annotation_types(ctx, syms, annotations.clone(), &env);
         let underlying_ty = self.attrib_type_use(ctx, syms, underlying, &env);
-        // Java: underlyingType.annotatedType(Annotations.TO_BE_SET). The
-        // placeholder is a fresh clone filled by annotateTypeSecondStage below.
-        let annotated_ty = ctx.alloc_type(ctx.typ(underlying_ty).clone());
+        // Java: underlyingType.annotatedType(Annotations.TO_BE_SET) (Attr.java:5117).
+        // The placeholder entry is filled in place by annotateTypeSecondStage
+        // below; the clone keeps a baseType() link to underlyingType so
+        // equalsIgnoreMetadata still treats the pair as the same type.
+        let annotated_ty = ctx.annotated_type_to_be_set(underlying_ty);
         if !env.info.borrow().is_new_class
             && let Some(annotate) = self.annotate.borrow().clone()
         {

@@ -1,0 +1,5 @@
+<src>/InferredDoNotConformToEq.java:33: error: incompatible types: List<String> cannot be converted to List<Integer>
+    { this.m(Arrays.asList(""), Arrays.asList(1)); }
+                          ^
+Note: Some messages have been simplified; recompile with -Xdiags:verbose to get full output
+1 error

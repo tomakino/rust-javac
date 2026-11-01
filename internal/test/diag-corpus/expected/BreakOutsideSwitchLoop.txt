@@ -1,0 +1,4 @@
+<src>/BreakOutsideSwitchLoop.java:28: error: break outside switch or loop
+        break;
+        ^
+1 error

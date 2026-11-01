@@ -1,0 +1,2 @@
+Note: Some input files use or override a deprecated API that is marked for removal.
+Note: Recompile with -Xlint:removal for details.

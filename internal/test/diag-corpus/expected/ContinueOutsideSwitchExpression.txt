@@ -1,0 +1,4 @@
+<src>/ContinueOutsideSwitchExpression.java:30: error: attempt to continue out of a switch expression
+                case 0: continue OUT;
+                        ^
+1 error

@@ -1,0 +1,4 @@
+<src>/DefaultAllowedInIntfAnnotationMember.java:27: error: default value only allowed in an annotation type declaration
+    String value() default "";
+           ^
+1 error

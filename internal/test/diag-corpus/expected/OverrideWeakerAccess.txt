@@ -1,0 +1,5 @@
+<src>/OverrideWeakerAccess.java:28: error: toString() in OverrideWeakerAccess cannot override toString() in Object
+    String toString() { return "?"; }
+           ^
+  attempting to assign weaker access privileges; was public
+1 error

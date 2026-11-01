@@ -1,0 +1,30 @@
+<src>/NotApplicableMethodFound.java:35: Note: erroneous resolution for method m in type NotApplicableMethodFound
+    { m(""); }
+      ^
+  phase: BASIC
+  with actuals: String
+  with type-args: no arguments
+  candidates:
+      #0 not applicable method found: m(int)
+        (argument mismatch; String cannot be converted to int)
+<src>/NotApplicableMethodFound.java:35: Note: erroneous resolution for method m in type NotApplicableMethodFound
+    { m(""); }
+      ^
+  phase: BOX
+  with actuals: String
+  with type-args: no arguments
+  candidates:
+      #0 not applicable method found: m(int)
+        (argument mismatch; String cannot be converted to int)
+<src>/NotApplicableMethodFound.java:35: Note: erroneous resolution for method m in type NotApplicableMethodFound
+    { m(""); }
+      ^
+  phase: VARARITY
+  with actuals: String
+  with type-args: no arguments
+  candidates:
+<src>/NotApplicableMethodFound.java:35: error: incompatible types: String cannot be converted to int
+    { m(""); }
+        ^
+Note: Some messages have been simplified; recompile with -Xdiags:verbose to get full output
+1 error

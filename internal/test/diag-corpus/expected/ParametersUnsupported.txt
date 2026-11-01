@@ -1,0 +1,5 @@
+warning: [options] source value 7 is obsolete and will be removed in a future release
+warning: [options] target value 7 is obsolete and will be removed in a future release
+warning: -parameters is not supported for target value 7. Use 8 or later.
+warning: [options] To suppress warnings about obsolete options, use -Xlint:-options.
+4 warnings

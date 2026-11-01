@@ -1,0 +1,4 @@
+<src>/GenericThrowable.java:26: error: a generic class may not extend java.lang.Throwable
+class GenericThrowable<T> extends Exception { }
+                                  ^
+1 error

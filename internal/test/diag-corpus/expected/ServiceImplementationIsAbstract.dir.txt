@@ -1,0 +1,4 @@
+<src>/ServiceImplementationIsAbstract\module-info.java:28: error: the service implementation is an abstract class: ServiceImplementation
+     provides exported.Service with impl.ServiceImplementation;
+                                        ^
+1 error

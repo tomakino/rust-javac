@@ -1,0 +1,5 @@
+<src>/PatternMatchingInstanceof.java:30: error: pattern matching in instanceof is not supported in -source 15
+        return o instanceof String s && s.isEmpty();
+                                   ^
+  (use -source 16 or higher to enable pattern matching in instanceof)
+1 error

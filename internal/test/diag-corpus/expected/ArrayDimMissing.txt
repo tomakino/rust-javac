@@ -1,0 +1,4 @@
+<src>/ArrayDimMissing.java:27: error: array dimension missing
+    int[] array = new int[];
+                           ^
+1 error

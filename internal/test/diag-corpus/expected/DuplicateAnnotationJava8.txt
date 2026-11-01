@@ -1,0 +1,4 @@
+<src>/DuplicateAnnotationJava8.java:29: error: Anno is not a repeatable annotation type
+@Anno
+^
+1 error

@@ -1,0 +1,5 @@
+<src>/LocalSelfRef.java:29: error: cannot infer type for local variable x
+        var x = m(x);
+            ^
+  (cannot use 'var' on self-referencing variable)
+1 error

@@ -1,0 +1,5 @@
+<src>/DeprecatedPluralAdditional\DeprecatedFilename.java:25: warning: [deprecation] DeprecatedClass in unnamed package has been deprecated
+    DeprecatedClass d;
+    ^
+Note: Some input files additionally use or override a deprecated API.
+1 warning

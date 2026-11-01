@@ -1,0 +1,5 @@
+<src>/IncompatibleArgTypesInMethodRef.java:39: error: incompatible types: incompatible parameter types in method reference
+        m(this::g);
+          ^
+Note: Some messages have been simplified; recompile with -Xdiags:verbose to get full output
+1 error

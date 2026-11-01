@@ -1,0 +1,4 @@
+<src>/LeaksNotAccessibleUnexported\modulesourcepath\m1x\api\Api.java:27: warning: [exports] class Impl in module m1x is not exported
+     public impl.Impl getImpl() {
+                ^
+1 warning

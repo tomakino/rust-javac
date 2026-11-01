@@ -1,0 +1,4 @@
+<src>/PackageInfoAlreadySeen\package-info.java:26: warning: a package-info.java file has already been seen for package p
+package p;
+        ^
+1 warning

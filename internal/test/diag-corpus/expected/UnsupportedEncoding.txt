@@ -1,0 +1,18 @@
+error: unsupported encoding: UNSUPPORTED
+java.lang.RuntimeException
+	at jdk.compiler/com.sun.tools.javac.util.Log.writeDiagnostic(Log.java:738)
+	at jdk.compiler/com.sun.tools.javac.util.Log$DefaultDiagnosticHandler.report(Log.java:702)
+	at jdk.compiler/com.sun.tools.javac.util.Log.report(Log.java:660)
+	at jdk.compiler/com.sun.tools.javac.util.AbstractLog.error(AbstractLog.java:107)
+	at jdk.compiler/com.sun.tools.javac.file.BaseFileManager.decode(BaseFileManager.java:322)
+	at jdk.compiler/com.sun.tools.javac.file.PathFileObject.getCharContent(PathFileObject.java:486)
+	at jdk.compiler/com.sun.tools.javac.main.JavaCompiler.readSource(JavaCompiler.java:594)
+	at jdk.compiler/com.sun.tools.javac.main.JavaCompiler.parse(JavaCompiler.java:657)
+	at jdk.compiler/com.sun.tools.javac.main.JavaCompiler.parseFiles(JavaCompiler.java:1006)
+	at jdk.compiler/com.sun.tools.javac.main.JavaCompiler.parseFiles(JavaCompiler.java:993)
+	at jdk.compiler/com.sun.tools.javac.main.JavaCompiler.compile(JavaCompiler.java:919)
+	at jdk.compiler/com.sun.tools.javac.main.Main.compile(Main.java:317)
+	at jdk.compiler/com.sun.tools.javac.main.Main.compile(Main.java:176)
+	at jdk.compiler/com.sun.tools.javac.Main.compile(Main.java:64)
+	at jdk.compiler/com.sun.tools.javac.Main.main(Main.java:50)
+1 error

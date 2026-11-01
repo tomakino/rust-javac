@@ -1,0 +1,5 @@
+<src>/PermitsInNoSealedClass.java:27: error: invalid permits clause
+class C permits Sub {}
+        ^
+  (class must be sealed)
+1 error

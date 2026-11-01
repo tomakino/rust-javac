@@ -83,10 +83,6 @@ name = "javac-strings"
 version = "0.1.0"
 
 [[package]]
-name = "javac-tests"
-version = "0.1.0"
-
-[[package]]
 name = "javac-tools"
 version = "0.1.0"
 dependencies = [

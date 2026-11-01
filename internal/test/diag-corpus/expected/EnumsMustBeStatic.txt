@@ -1,0 +1,6 @@
+warning: [options] system modules path not set in conjunction with -source 15
+<src>/EnumsMustBeStatic.java:30: error: static declarations not allowed in inner classes
+        enum E { A, B, C }
+        ^
+1 error
+1 warning

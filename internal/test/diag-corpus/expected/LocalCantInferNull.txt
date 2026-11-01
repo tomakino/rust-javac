@@ -1,0 +1,5 @@
+<src>/LocalCantInferNull.java:29: error: cannot infer type for local variable s
+        var s = null;
+            ^
+  (variable initializer is 'null')
+1 error

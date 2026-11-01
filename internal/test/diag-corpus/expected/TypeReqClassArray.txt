@@ -1,0 +1,6 @@
+<src>/TypeReqClassArray.java:30: error: unexpected type
+    boolean b = (this instanceof int);
+                                 ^
+  required: class or array
+  found:    int
+1 error

@@ -1,0 +1,4 @@
+<src>/LeaksNotAccessibleNotRequiredTransitive\modulesourcepath\m2x\api2\Api2.java:27: warning: [exports] class Api1 in module m1x is not indirectly exported using requires transitive
+     public api1.Api1 getApi1() {
+                ^
+1 warning

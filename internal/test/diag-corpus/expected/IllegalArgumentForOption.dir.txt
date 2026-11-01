@@ -1,0 +1,1 @@
+error: illegal argument for --module-source-path: illegal use of * in abc*def

@@ -1,0 +1,4 @@
+<src>/IllegalStartOfType.java:27: error: illegal start of type
+    public void test(int i,) { }
+                           ^
+1 error

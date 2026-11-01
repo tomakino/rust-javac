@@ -1,0 +1,4 @@
+<src>/CannotCreateArrayWithTypeArgs.java:27: error: cannot create array with type arguments
+    Object[] array = new<Integer> Object[3];
+                         ^
+1 error

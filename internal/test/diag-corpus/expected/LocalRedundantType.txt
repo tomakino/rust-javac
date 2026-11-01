@@ -1,0 +1,4 @@
+<src>/LocalRedundantType.java:29: warning: Redundant type for local variable (replace explicit type with 'var').
+        String s = "";
+               ^
+1 warning

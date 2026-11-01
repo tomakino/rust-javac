@@ -1,0 +1,1 @@
+error: bad name in value for --add-modules option: 'Bad!Name'

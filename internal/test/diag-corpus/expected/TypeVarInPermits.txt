@@ -1,0 +1,7 @@
+<src>/TypeVarInPermits.java:28: error: invalid permits clause
+    sealed class Sealed permits T {}
+                                ^
+  (must not include type variables: T)
+  where T is a type-variable:
+    T extends Object declared in class Outer
+1 error

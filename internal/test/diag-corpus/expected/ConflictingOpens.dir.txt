@@ -1,0 +1,4 @@
+<src>/ConflictingOpens\module-info.java:28: error: duplicate or conflicting opens: opened
+     opens opened;
+           ^
+1 error

@@ -1,0 +1,4 @@
+<src>/EnumCantBeInstantiated.java:29: error: enum types may not be instantiated
+    E e = new E("a");
+          ^
+1 error

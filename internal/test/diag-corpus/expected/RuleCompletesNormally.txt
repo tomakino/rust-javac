@@ -1,0 +1,5 @@
+<src>/RuleCompletesNormally.java:29: error: switch rule completes without providing a value
+            case 0 -> {}
+                       ^
+  (switch rules in switch expressions must either provide a value or throw)
+1 error

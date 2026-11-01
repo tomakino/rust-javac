@@ -1,0 +1,5 @@
+<src>/ClashesWith.java:32: error: m() in ClashesWith clashes with m() in Base
+    String m();
+           ^
+  return type String is not compatible with int
+1 error

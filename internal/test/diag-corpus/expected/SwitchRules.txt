@@ -1,0 +1,5 @@
+<src>/SwitchRules.java:31: error: switch rules are not supported in -source 13
+            default -> { break; }
+                    ^
+  (use -source 14 or higher to enable switch rules)
+1 error

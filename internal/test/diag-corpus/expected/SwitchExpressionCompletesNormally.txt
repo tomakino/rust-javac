@@ -1,0 +1,5 @@
+<src>/SwitchExpressionCompletesNormally.java:31: error: switch expression completes without providing a value
+        };
+        ^
+  (switch expressions must either provide a value or throw for all possible input values)
+1 error

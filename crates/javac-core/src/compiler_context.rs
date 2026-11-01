@@ -71,6 +71,70 @@ impl CompilerContext {
         TypeId::new(self.types.push(ty))
     }
 
+    /// Java: protected Type typeNoMetadata() (Type.java:347-349).
+    ///
+    /// `metadata == TypeMetadata.EMPTY ? this : baseType()`. The baseType()
+    /// override installed by cloneWithMetadata points back at the un-annotated
+    /// instance, which is what keeps "@A T" and "T" reference-identical for
+    /// equalsIgnoreMetadata (Type.java:512-514).
+    pub fn type_no_metadata_id(&self, ty: TypeId) -> TypeId {
+        let stored = self.typ(ty);
+        match &stored.metadata {
+            None => ty,
+            Some(metadata) if metadata.is_empty_metadata() => ty,
+            Some(_) => stored.base.unwrap_or(ty),
+        }
+    }
+
+    /// Java: public abstract Type cloneWithMetadata(TypeMetadata metadata)
+    /// (Type.java:354-356) together with the baseType() override that every
+    /// concrete clone installs.
+    pub fn clone_type_with_metadata(
+        &mut self,
+        ty: TypeId,
+        metadata: crate::code::type_metadata::TypeMetadata,
+    ) -> TypeId {
+        let base = self.type_no_metadata_id(ty);
+        let mut cloned = self.typ(ty).clone();
+        cloned.metadata = Some(metadata);
+        cloned.base = Some(base);
+        self.alloc_type(cloned)
+    }
+
+    /// Java: public Type annotatedType(final List<Attribute.TypeCompound> annos)
+    /// (Type.java:400-404) — `cloneWithMetadata(metadata.combine(annoMetadata))`.
+    pub fn annotated_type_id(
+        &mut self,
+        ty: TypeId,
+        annos: &crate::util::list::List<crate::ids::AttributeId>,
+    ) -> TypeId {
+        let entry = crate::code::type_metadata::Entry::Annotations(
+            crate::code::type_metadata::Annotations::new(annos.clone()),
+        );
+        let combined = self
+            .typ(ty)
+            .metadata
+            .clone()
+            .unwrap_or_else(crate::code::type_metadata::TypeMetadata::empty)
+            .combine(entry);
+        self.clone_type_with_metadata(ty, combined)
+    }
+
+    /// Java: underlyingType.annotatedType(Annotations.TO_BE_SET) (Attr.java:5117).
+    /// The placeholder entry is filled in place by annotateTypeSecondStage.
+    pub fn annotated_type_to_be_set(&mut self, ty: TypeId) -> TypeId {
+        let entry = crate::code::type_metadata::Entry::Annotations(
+            crate::code::type_metadata::Annotations::to_be_set(),
+        );
+        let combined = self
+            .typ(ty)
+            .metadata
+            .clone()
+            .unwrap_or_else(crate::code::type_metadata::TypeMetadata::empty)
+            .combine(entry);
+        self.clone_type_with_metadata(ty, combined)
+    }
+
     /// The canonical missing type, Type.noType (a per-context singleton).
     pub fn no_type_id(&mut self) -> TypeId {
         if let Some(no_type) = self.no_type {

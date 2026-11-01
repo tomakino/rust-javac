@@ -1,0 +1,5 @@
+<src>/PermitsCantListSuperType.java:29: error: invalid permits clause
+sealed class C implements I permits I {}
+                                    ^
+  (illegal reference to supertype I)
+1 error

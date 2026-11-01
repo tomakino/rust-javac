@@ -1,0 +1,4 @@
+<src>/UnnamedPackage.java:30: error: class UnnamedPackage is already defined in package unnamed package
+    class UnnamedPackage { }
+    ^
+1 error

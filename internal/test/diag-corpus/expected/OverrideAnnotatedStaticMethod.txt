@@ -1,0 +1,4 @@
+<src>/OverrideAnnotatedStaticMethod.java:31: error: static methods cannot be annotated with @Override
+    @Override
+    ^
+1 error

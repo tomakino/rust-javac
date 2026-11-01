@@ -1,0 +1,4 @@
+<src>/NameClashSameErasureNoHide.java:32: error: name clash: m(NameClashSameErasureNoHide<Integer>) in B and m(NameClashSameErasureNoHide<String>) in A have the same erasure, yet neither hides the other
+        static void m(NameClashSameErasureNoHide<Integer> l) {}
+                    ^
+1 error

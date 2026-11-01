@@ -1,0 +1,4 @@
+<src>/NoSuitableFunctionalIntfInst.java:33: error: incompatible types: cannot infer functional interface descriptor for SAM<?>
+    SAM<?> ss = (String s)-> { };
+                ^
+1 error

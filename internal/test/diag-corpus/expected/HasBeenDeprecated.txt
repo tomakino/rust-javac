@@ -1,0 +1,4 @@
+<src>/HasBeenDeprecated.java:30: warning: [deprecation] DeprecatedClass in p has been deprecated
+    DeprecatedClass d;
+    ^
+1 warning

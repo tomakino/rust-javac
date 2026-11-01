@@ -1,0 +1,6 @@
+<src>/CantResolveLocationArgs.java:29: error: cannot find symbol
+        unknown(1);
+        ^
+  symbol:   method unknown(int)
+  location: class X
+1 error

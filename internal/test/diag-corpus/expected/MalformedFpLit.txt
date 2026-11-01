@@ -1,0 +1,7 @@
+<src>/MalformedFpLit.java:28: error: malformed floating-point literal
+    float f = 0e*;
+              ^
+<src>/MalformedFpLit.java:28: error: illegal start of expression
+    float f = 0e*;
+                 ^
+2 errors

@@ -1,0 +1,4 @@
+<src>/VarNotAllowedHere.java:27: error: 'var' is not allowed here
+    var s = "";
+    ^
+1 error

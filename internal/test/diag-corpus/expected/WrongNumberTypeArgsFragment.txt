@@ -1,0 +1,9 @@
+<src>/WrongNumberTypeArgsFragment.java:31: error: method asList in class Arrays cannot be applied to given types;
+        Arrays.<String, Integer>asList("");
+              ^
+  required: T[]
+  found:    String
+  reason: wrong number of type arguments; required 1
+  where T is a type-variable:
+    T extends Object declared in method <T>asList(T...)
+1 error

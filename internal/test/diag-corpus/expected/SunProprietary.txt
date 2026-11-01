@@ -1,0 +1,4 @@
+<src>/SunProprietary.java:27: warning: Unsafe is internal proprietary API and may be removed in a future release
+    sun.misc.Unsafe x;
+            ^
+1 warning

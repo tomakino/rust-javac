@@ -1,0 +1,4 @@
+<src>/NotExhaustive.java:28: error: the switch expression does not cover all possible input values
+        return switch (i) {
+               ^
+1 error

@@ -1,0 +1,4 @@
+<src>/VarargsFinalOnly.java:31: error: Invalid SafeVarargs annotation. Instance method m(List<String>...) is not final.
+    @SafeVarargs void m(List<String>... args) { }
+                      ^
+1 error

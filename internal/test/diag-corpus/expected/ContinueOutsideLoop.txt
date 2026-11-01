@@ -1,0 +1,4 @@
+<src>/ContinueOutsideLoop.java:28: error: continue outside of loop
+        continue;
+        ^
+1 error

@@ -1,0 +1,4 @@
+<src>/TypeVarCantBeDeref.java:28: error: cannot select from a type variable
+class TypeVarCantBeDeref<T> extends Base<T.foo> {}
+                                          ^
+1 error

@@ -1,0 +1,4 @@
+<src>/WrongNumberTypeArgs.java:29: error: wrong number of type arguments; required 1
+    List<Integer,String> list;
+        ^
+1 error

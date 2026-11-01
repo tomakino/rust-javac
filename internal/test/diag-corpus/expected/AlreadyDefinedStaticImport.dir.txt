@@ -1,0 +1,4 @@
+<src>/AlreadyDefinedStaticImport\AlreadDefinedStaticImport.java:27: error: a type with the same simple name is already defined by the static single-type-import of A
+import p.E2.A;
+^
+1 error

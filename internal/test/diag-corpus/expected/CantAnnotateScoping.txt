@@ -1,0 +1,4 @@
+<src>/CantAnnotateScoping.java:39: error: scoping construct cannot be annotated with type-use annotations: @CantAnnotateScoping.TA,@CantAnnotateScoping.TB
+    @TA @TB Outer.Inner f;
+                 ^
+1 error

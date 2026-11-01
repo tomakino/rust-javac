@@ -1,0 +1,5 @@
+<src>/MulticatchTypesMustBeDisjoint.java:37: error: Alternatives in a multi-catch statement cannot be related by subclassing
+        } catch (E1 | E2 e) { }
+                      ^
+  Alternative MulticatchTypesMustBeDisjoint.E2 is a subclass of alternative MulticatchTypesMustBeDisjoint.E1
+1 error

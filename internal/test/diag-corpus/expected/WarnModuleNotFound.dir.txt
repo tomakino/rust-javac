@@ -1,0 +1,4 @@
+<src>/WarnModuleNotFound\modulesourcepath\m\module-info.java:25: warning: [module] module not found: does.not.exist
+     exports api to does.not.exist;
+                            ^
+1 warning

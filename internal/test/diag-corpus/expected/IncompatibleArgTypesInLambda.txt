@@ -1,0 +1,4 @@
+<src>/IncompatibleArgTypesInLambda.java:32: error: incompatible types: incompatible parameter types in lambda expression
+    SAM s = (String x)-> {};
+            ^
+1 error

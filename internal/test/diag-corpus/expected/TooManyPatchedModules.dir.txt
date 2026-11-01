@@ -1,0 +1,2 @@
+error: too many patched modules (java.compiler,jdk.compiler), use --module-source-path
+1 error

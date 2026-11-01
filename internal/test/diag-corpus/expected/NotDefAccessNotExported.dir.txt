@@ -1,0 +1,5 @@
+<src>/NotDefAccessNotExported\modulesourcepath\impl\impl\Impl.java:27: error: package api is not visible
+    api.Api api;
+    ^
+  (package api is declared in module api, which does not export it)
+1 error

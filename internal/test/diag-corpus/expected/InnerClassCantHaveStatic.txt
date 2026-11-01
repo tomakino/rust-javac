@@ -1,0 +1,7 @@
+warning: [options] system modules path not set in conjunction with -source 15
+<src>/InnerClassCantHaveStatic.java:30: error: Illegal static declaration in inner class InnerClassCantHaveStatic.Inner
+        static int i;
+                   ^
+  modifier 'static' is only allowed in constant variable declarations
+1 error
+1 warning

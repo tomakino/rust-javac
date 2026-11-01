@@ -1,0 +1,4 @@
+<src>/RequiresTransitiveAutomatic\module-info.java:26: error: module not found: a
+    requires transitive a;
+                        ^
+1 error

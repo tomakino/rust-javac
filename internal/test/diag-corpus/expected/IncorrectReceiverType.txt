@@ -1,0 +1,6 @@
+<src>/IncorrectReceiverType.java:27: error: the receiver type does not match the enclosing class type
+    void m(Object this) {}
+           ^
+  required: IncorrectReceiverType
+  found:    Object
+1 error

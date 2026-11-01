@@ -1,0 +1,8 @@
+<src>/WhereTypeVar.java:35: error: incompatible types: T#1 cannot be converted to T#2
+        m(t);
+          ^
+  where T#1,T#2 are type-variables:
+    T#1 extends Integer declared in method <T#1>test(T#1)
+    T#2 extends String declared in class WhereTypeVar
+Note: Some messages have been simplified; recompile with -Xdiags:verbose to get full output
+1 error

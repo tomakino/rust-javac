@@ -1,0 +1,9 @@
+<src>/CantApplyDiamond1.java:36: error: incompatible types: cannot infer type arguments for CantApplyDiamond1<>
+       CantApplyDiamond1<String> ls = new CantApplyDiamond1<>(li);
+                                                           ^
+    reason: inference variable X has incompatible bounds
+      equality constraints: String
+      lower bounds: Integer,Object
+  where X is a type-variable:
+    X extends Object declared in class CantApplyDiamond1
+1 error

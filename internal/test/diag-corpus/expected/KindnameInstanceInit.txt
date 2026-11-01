@@ -1,0 +1,4 @@
+<src>/KindnameInstanceInit.java:35: error: variable i is already defined in instance initializer of class KindnameInstanceInit
+        int i;
+            ^
+1 error

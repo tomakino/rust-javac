@@ -1,0 +1,8 @@
+<src>/WhereTypeVar2.java:41: error: incompatible types: inference variable Z has incompatible bounds
+            A a = m(new A(), new B());
+                   ^
+    lower bounds: WhereTypeVar2.A,Object
+    lower bounds: WhereTypeVar2.B,WhereTypeVar2.A
+  where Z is a type-variable:
+    Z extends Object declared in method <Z>m(Z,Z)
+1 error

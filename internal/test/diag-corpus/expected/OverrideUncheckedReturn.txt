@@ -1,0 +1,5 @@
+<src>/OverrideUncheckedReturn.java:35: warning: [unchecked] m() in OverrideUncheckedReturn overrides m() in Base
+    List m() { return null; }
+         ^
+  return type requires unchecked conversion from List to List<String>
+1 warning

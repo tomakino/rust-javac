@@ -1,0 +1,4 @@
+<src>/VarargsAndReceiver.java:27: error: varargs notation not allowed on receiver parameter
+    void m(VarargsAndReceiver... this) { }
+                                     ^
+1 error

@@ -1,0 +1,5 @@
+<src>/NoSwitchExpressionQualify.java:29: error: yield outside of switch expression
+            yield(1 + 1);
+            ^
+  (to invoke a method called yield, qualify the yield with a receiver or type name)
+1 error

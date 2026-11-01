@@ -1,0 +1,4 @@
+<src>/DiamondRedundantArgs.java:28: warning: Redundant type arguments in new expression (use diamond operator instead).
+   DiamondRedundantArgs<String> fs = new DiamondRedundantArgs<String>();
+                                                             ^
+1 warning

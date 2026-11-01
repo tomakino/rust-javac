@@ -1,0 +1,4 @@
+<src>/UnexpectedMref.java:27: error: method reference not expected here
+    { (Foo::bar)++; }
+       ^
+1 error

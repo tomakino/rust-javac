@@ -1,0 +1,4 @@
+<src>/UnreachableStatement.java:29: error: unreachable statement
+        m();
+        ^
+1 error

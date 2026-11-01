@@ -1,0 +1,4 @@
+<src>/VarNotAllowedArray.java:28: error: 'var' is not allowed as an element type of an array
+        var[] x = s;
+        ^
+1 error

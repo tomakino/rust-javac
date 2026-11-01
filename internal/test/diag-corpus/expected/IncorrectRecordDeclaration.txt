@@ -1,0 +1,4 @@
+<src>/IncorrectRecordDeclaration.java:26: error: record header expected
+record R {}
+^
+1 error

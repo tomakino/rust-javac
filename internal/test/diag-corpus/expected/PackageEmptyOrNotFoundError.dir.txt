@@ -1,0 +1,4 @@
+<src>/PackageEmptyOrNotFoundError\modulesourcepath\m1x\module-info.java:25: error: package is empty or does not exist: p1
+    exports p1;
+            ^
+1 error

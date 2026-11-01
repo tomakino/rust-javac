@@ -1,0 +1,4 @@
+<src>/ModuleNotOnModuleSourcePath\modulesourcepath\m\extra\module-info.java:24: error: module not found on module source path
+module m { }
+^
+1 error

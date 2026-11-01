@@ -1,0 +1,6 @@
+<src>/OperatorCantBeApplied1.java:27: error: bad operand types for binary operator '-'
+    String s = ("a" - "b");
+                    ^
+  first type:  String
+  second type: String
+1 error

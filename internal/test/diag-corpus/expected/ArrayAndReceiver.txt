@@ -1,0 +1,4 @@
+<src>/ArrayAndReceiver.java:27: error: legacy array notation not allowed on receiver parameter
+    void m(ArrayAndReceiver this[]) { }
+                                ^
+1 error

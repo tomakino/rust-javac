@@ -1,0 +1,5 @@
+<src>/NotDefAccessDoesNotReadFromUnnamed\NotDefAccessDoesNotReadFromUnnamed.java:28: error: package api is not visible
+     api.Api api;
+     ^
+  (package api is declared in module api, which is not in the module graph)
+1 error

@@ -1,0 +1,4 @@
+<src>/WarnSerializableLambda.java:34: warning: access to member packageField from serializable element can be publicly accessible to untrusted code
+                packageField = "";
+                ^
+1 warning

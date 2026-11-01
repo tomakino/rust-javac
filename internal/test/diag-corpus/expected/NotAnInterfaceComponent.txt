@@ -1,0 +1,7 @@
+<src>/NotAnInterfaceComponent.java:29: error: incompatible types: INT#1 is not a functional interface
+    Object o = (String & Runnable) ()-> { };
+                                   ^
+    multiple non-overriding abstract methods found in interface INT#1
+  where INT#1 is an intersection type:
+    INT#1 extends String,Runnable
+1 error

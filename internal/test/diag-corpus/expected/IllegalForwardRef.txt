@@ -1,0 +1,4 @@
+<src>/IllegalForwardRef.java:27: error: illegal forward reference
+    int x = y;
+            ^
+1 error

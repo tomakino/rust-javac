@@ -1,0 +1,6 @@
+<src>/IncorrectConstructorReceiverType.java:28: error: the receiver type does not match the enclosing outer class type
+        Inner(Object IncorrectConstructorReceiverType.this) { }
+              ^
+  required: IncorrectConstructorReceiverType
+  found:    Object
+1 error

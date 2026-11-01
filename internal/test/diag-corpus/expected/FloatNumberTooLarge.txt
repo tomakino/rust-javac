@@ -1,0 +1,4 @@
+<src>/FloatNumberTooLarge.java:27: error: floating-point number too large
+    float f = 1e9999;
+              ^
+1 error

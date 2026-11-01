@@ -1,0 +1,4 @@
+<src>/ArrayRequired.java:28: error: array required, but int found
+    int j = i[0];
+             ^
+1 error

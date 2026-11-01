@@ -1,0 +1,4 @@
+<src>/ServiceImplNotPublic\module-info.java:26: error: ServiceImpl is not public in example
+    provides example.SomeService with example.ServiceImpl;
+                                             ^
+1 error

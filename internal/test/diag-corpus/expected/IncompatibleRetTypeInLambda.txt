@@ -1,0 +1,5 @@
+<src>/IncompatibleRetTypeInLambda.java:33: error: incompatible types: bad return type in lambda expression
+    SAM s = ()-> "";
+                 ^
+    String cannot be converted to Integer
+1 error

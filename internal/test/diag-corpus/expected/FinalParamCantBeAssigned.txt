@@ -1,0 +1,4 @@
+<src>/FinalParamCantBeAssigned.java:28: error: final parameter i may not be assigned
+        i++;
+        ^
+1 error

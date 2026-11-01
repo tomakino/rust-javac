@@ -1,0 +1,5 @@
+<src>/HideStatic.java:32: error: func() in HideStatic cannot hide func() in Base
+   static int func() { return 0; }
+              ^
+  return type int is not compatible with void
+1 error

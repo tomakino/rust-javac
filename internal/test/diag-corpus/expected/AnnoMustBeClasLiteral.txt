@@ -1,0 +1,4 @@
+<src>/AnnoMustBeClasLiteral.java:33: error: annotation value must be a class literal
+    @ClassAnno(c)
+               ^
+1 error

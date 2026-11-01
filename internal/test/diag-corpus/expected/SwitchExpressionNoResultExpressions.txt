@@ -1,0 +1,4 @@
+<src>/SwitchExpressionNoResultExpressions.java:28: error: switch expression does not have any result expressions
+        return switch (i) {
+               ^
+1 error

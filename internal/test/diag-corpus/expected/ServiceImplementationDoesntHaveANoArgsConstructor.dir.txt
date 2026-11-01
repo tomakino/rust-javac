@@ -1,0 +1,4 @@
+<src>/ServiceImplementationDoesntHaveANoArgsConstructor\module-info.java:28: error: the service implementation does not have a default constructor: ServiceImplementation
+     provides exported.Service with impl.ServiceImplementation;
+                                        ^
+1 error

@@ -1,0 +1,4 @@
+<src>/RepeatableRetentionMismatch.java:29: error: retention of containing annotation type (Annos) is shorter than the retention of repeatable annotation type (Anno)
+@Repeatable(Annos.class)
+^
+1 error

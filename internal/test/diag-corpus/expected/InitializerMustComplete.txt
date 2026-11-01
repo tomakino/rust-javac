@@ -1,0 +1,4 @@
+<src>/InitializerMustComplete.java:27: error: initializer must be able to complete normally
+    {
+    ^
+1 error

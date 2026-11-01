@@ -1,0 +1,4 @@
+<src>/DuplicateProvides\module-info.java:29: error: duplicate provides: service Service, implementation ServiceImplementation
+        with impl.ServiceImplementation, impl.ServiceImplementation;
+                                             ^
+1 error

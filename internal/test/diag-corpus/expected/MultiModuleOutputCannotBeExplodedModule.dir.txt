@@ -1,0 +1,1 @@
+error: in multi-module mode, the output directory cannot be an exploded module: <tmp>\classes

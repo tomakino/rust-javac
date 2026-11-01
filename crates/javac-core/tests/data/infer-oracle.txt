@@ -1,6 +1,0 @@
-ORACLE infer-constraints
-SCENARIO eq_string EXPECT java.lang.String ACTUAL java.lang.String
-SCENARIO lower_string EXPECT java.lang.String ACTUAL java.lang.String
-SCENARIO upper_string EXPECT java.lang.String ACTUAL java.lang.String
-SCENARIO upper_object EXPECT java.lang.Object ACTUAL java.lang.Object
-SCENARIO throws_runtime EXPECT java.lang.RuntimeException ACTUAL java.lang.RuntimeException

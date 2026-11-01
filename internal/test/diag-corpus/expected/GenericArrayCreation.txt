@@ -1,0 +1,4 @@
+<src>/GenericArrayCreation.java:29: error: generic array creation
+    ArrayList<T>[] array = new ArrayList<T>[5];
+                           ^
+1 error

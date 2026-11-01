@@ -1,0 +1,2 @@
+warning: [options] --add-opens has no effect at compile time
+1 warning

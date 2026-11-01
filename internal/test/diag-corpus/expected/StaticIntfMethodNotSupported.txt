@@ -1,0 +1,5 @@
+<src>/StaticIntfMethodNotSupported.java:29: error: static interface methods are not supported in -source 7
+    static void m() { }
+                 ^
+  (use -source 8 or higher to enable static interface methods)
+1 error

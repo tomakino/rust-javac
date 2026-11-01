@@ -1,0 +1,5 @@
+<src>/InferNoConformingAssignment.java:32: error: incompatible types: int cannot be converted to String
+    { this.m(1); }
+             ^
+Note: Some messages have been simplified; recompile with -Xdiags:verbose to get full output
+1 error

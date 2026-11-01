@@ -1,0 +1,5 @@
+<src>/MissingReturnValueFragment.java:34: error: incompatible types: bad return type in lambda expression
+        SAM s = ()->{};
+                ^
+    missing return value
+1 error

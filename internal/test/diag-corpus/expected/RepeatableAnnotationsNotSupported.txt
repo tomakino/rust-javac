@@ -1,0 +1,5 @@
+<src>/RepeatableAnnotationsNotSupported.java:31: error: repeated annotations are not supported in -source 7
+@Anno
+^
+  (use -source 8 or higher to enable repeated annotations)
+1 error
