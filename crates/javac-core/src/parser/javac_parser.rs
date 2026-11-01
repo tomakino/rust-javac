@@ -3815,14 +3815,23 @@ impl JavacParser {
                             || self.peek_token_at(lookahead, TokenKind::AMP)
                         {
                             return ParensResult::Cast;
-                        } else if (self.is_lax_identifier_kind_at(lookahead + 1)
-                            && self.peek_token_at(lookahead, TokenKind::COMMA))
-                            || (self.is_lax_identifier_kind_at(lookahead + 1)
-                                && self.peek_token_at2(
-                                    lookahead,
-                                    TokenKind::RPAREN,
-                                    TokenKind::ARROW,
-                                ))
+                        }
+                        // Java (JavacParser.java:1812-1818):
+                        //   peekToken(lookahead, LAX_IDENTIFIER, COMMA)
+                        //   peekToken(lookahead, LAX_IDENTIFIER, RPAREN, ARROW)
+                        // Both look one past the '>' for the identifier and then
+                        // one further. is_lax_identifier_kind_at(n) inspects token
+                        // n, while peek_token_at(n, ..) inspects token n+1, so the
+                        // identifier test must NOT reuse the same offset as the
+                        // followers; the previous code compared token(n+1) against
+                        // both LAX_IDENTIFIER and COMMA, which is never true.
+                        let ident_after = self.is_lax_identifier_kind_at(lookahead + 1);
+                        let comma_after =
+                            ident_after && self.S.lookahead_token(lookahead + 2).kind == TokenKind::COMMA;
+                        let arrow_after = ident_after
+                            && self.peek_token_at2(lookahead + 1, TokenKind::RPAREN, TokenKind::ARROW);
+                        if comma_after
+                            || arrow_after
                             || self.peek_token_at(lookahead, TokenKind::ELLIPSIS)
                         {
                             return ParensResult::ExplicitLambda;
