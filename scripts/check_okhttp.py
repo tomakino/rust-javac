@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 MODULES = [
@@ -98,6 +99,8 @@ def main() -> int:
         print("javac not found (set JAVA_HOME or add it to PATH)", file=sys.stderr)
         return 2
 
+    t_start = time.perf_counter()
+    t_scan = time.perf_counter()
     modules = list(MODULES) if args.main_only else MODULES + TEST_MODULES
     sources = []
     for module in modules:
@@ -106,6 +109,7 @@ def main() -> int:
             sources += sorted(str(p) for p in directory.rglob("*.java") if p.name != "module-info.java")
     jars = sorted(str(p) for p in deps.glob("*.jar")) if deps.is_dir() else []
     classpath = os.pathsep.join(jars)
+    t_scan = time.perf_counter() - t_scan
     print("okhttp modules={} sources={} jars={}".format(len(modules), len(sources), len(jars)))
 
     tmp_root = root / "target" / "tmp"
@@ -123,8 +127,32 @@ def main() -> int:
                 lines += ["-cp", classpath]
             lines += ["-d", str(out_dir)] + sources
             (temp / (out_dir.name + ".args")).write_text("\n".join(lines), encoding="utf-8")
-        _, j_err, j_code = run(javac, before + ["@" + str(temp / "javac.args")], temp)
-        _, r_err, r_code = run(str(rust), before + ["@" + str(temp / "rust.args")], temp)
+        # The two compilers are independent processes writing to separate output
+        # directories, so start them together: the wall clock is the slower of
+        # the two instead of their sum.
+        t_parallel = time.perf_counter()
+        p_javac = subprocess.Popen(
+            [javac] + before + ["@" + str(temp / "javac.args")],
+            cwd=str(temp),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        t_rust = time.perf_counter()
+        p_rust = subprocess.Popen(
+            [str(rust)] + before + ["@" + str(temp / "rust.args")],
+            cwd=str(temp),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        _, r_err_bytes = p_rust.communicate()
+        t_rust = time.perf_counter() - t_rust
+        _, j_err_bytes = p_javac.communicate()
+        t_parallel = time.perf_counter() - t_parallel
+
+        j_err = j_err_bytes.decode("utf-8", "replace")
+        r_err = r_err_bytes.decode("utf-8", "replace")
+        j_code = p_javac.returncode
+        r_code = p_rust.returncode
         print("javac exit={} rust exit={}".format(j_code, r_code))
         if j_err:
             print("javac stderr (tail):")
@@ -140,8 +168,10 @@ def main() -> int:
             for line in r_err.splitlines()[-4:]:
                 print("  " + line)
 
+        t_hash = time.perf_counter()
         j_classes = hash_dir(j_out, ".class")
         r_classes = hash_dir(r_out, ".class")
+        t_hash = time.perf_counter() - t_hash
         print("javac classes={} rust classes={}".format(len(j_classes), len(r_classes)))
 
         missing = sorted(set(j_classes) - set(r_classes))
@@ -166,6 +196,14 @@ def main() -> int:
             and not extra
             and not differing
             and len(j_classes) == len(r_classes)
+        )
+        t_total = time.perf_counter() - t_start
+        t_setup = t_total - t_scan - t_parallel - t_hash
+        print(
+            "breakdown: scan={:.2f}s compile={:.2f}s (rust={:.2f}s) hash={:.2f}s "
+            "other={:.2f}s total={:.2f}s".format(
+                t_scan, t_parallel, t_rust, t_hash, t_setup, t_total
+            )
         )
         print("result: {}".format("PASS" if ok else "FAIL"))
         return 0 if ok else 1
