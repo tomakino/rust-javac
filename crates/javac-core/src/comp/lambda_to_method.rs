@@ -8754,6 +8754,9 @@ impl LambdaToMethod {
             self.types.is_same_type(ctx, &syms, restype, boxed_void_ty)
         };
         let previous_pos = self.make.borrow().pos;
+        // Java: every branch starts with make.at(expr), so the synthesized
+        // statement/block carries the body expression's position.
+        self.make.borrow_mut().at(ctx.tree(expr).pos);
         let result = if is_target_void {
             let exec = {
                 let mut make = self.make.borrow_mut();
