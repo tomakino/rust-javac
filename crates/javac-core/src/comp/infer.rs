@@ -998,6 +998,21 @@ impl InferenceContext {
         types: &Types,
         inferencevars: List<TypeId>,
     ) -> Rc<InferenceContext> {
+        if std::env::var_os("DSH_DEBUG_NEW").is_some() {
+            let names: Vec<String> = inferencevars
+                .iter()
+                .map(|t| crate::comp::attr::type_display_of(ctx, t))
+                .collect();
+            let mut dup: Vec<String> = Vec::new();
+            let mut seen: Vec<String> = Vec::new();
+            for n in &names {
+                if seen.contains(n) && !dup.contains(n) {
+                    dup.push(n.clone());
+                }
+                seen.push(n.clone());
+            }
+            eprintln!("[NEW] vars=[{}] dup=[{}]", names.join(","), dup.join(","));
+        }
         let mut undetvars: List<TypeId> = List::nil();
         let mut current = inferencevars.clone();
         while current.non_empty() {
@@ -1410,13 +1425,26 @@ impl InferenceContext {
         clone_undets: bool,
     ) {
         let this_inferencevars = self.inner.borrow().inferencevars.clone();
+        if std::env::var_os("DSH_DEBUG_DUP").is_some() {
+            let names: Vec<String> = this_inferencevars
+                .iter()
+                .map(|t| crate::comp::attr::type_display_of(ctx, t))
+                .collect();
+            eprintln!("[DUP] this=[{}]", names.join(","));
+        }
         {
             let mut that_state = that.inner.borrow_mut();
             let mut missing: List<TypeId> = List::nil();
             let mut current = this_inferencevars.clone();
             while current.non_empty() {
                 let t = *current.head();
-                if !that_state.inferencevars.iter().any(|existing| existing == t) {
+                // Skip variables that are already present in either the target
+                // context or this batch: upstream appends inferencevars.diff(...)
+                // (a set difference), so a repeated entry in this context must not
+                // be propagated twice (InferenceContext.java:330-333).
+                if !that_state.inferencevars.iter().any(|existing| existing == t)
+                    && !missing.iter().any(|existing| existing == t)
+                {
                     missing = missing.append(t);
                 }
                 current = current.tail();
