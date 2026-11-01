@@ -990,7 +990,15 @@ pub struct LambdaAnalyzerPreprocessor {
 impl LambdaToMethod {
     /// Translates a list of trees (TreeTranslator view of the pass).
     pub fn translate_list(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
-        self.translate_list_with_context(ctx, trees, self.context)
+        // Each element may be a nested lambda with its own context; translate()
+        // picks it up from context_map, so a plain translate_list_with_context
+        // (which reuses the enclosing context) would lose it.
+        let mut translated: List<TreeId> = List::nil();
+        for tree in trees.iter() {
+            let one = self.translate(ctx, Some(tree)).expect("translated tree");
+            translated = translated.append(one);
+        }
+        translated
     }
     /// Translates a list of variable declarations.
     pub fn translate_var_defs(&mut self, ctx: &mut CompilerContext, trees: &List<TreeId>) -> List<TreeId> {
