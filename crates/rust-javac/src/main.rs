@@ -56,15 +56,29 @@ fn main() {
         .stack_size(64 * 1024 * 1024)
         .spawn(|| {
             let args: Vec<String> = std::env::args().skip(1).collect();
-            compile(&args)
+            let code = match compile(&args) {
+                Ok(code) => code,
+                Err(message) => {
+                    eprintln!("javac: {message}");
+                    CMDERR
+                }
+            };
+            // The driver owns the whole compiler object graph: the arenas, the
+            // symbol tables, the parse forest, every Rc. The process exits one
+            // instruction later, so unwinding that graph buys nothing - the OS
+            // reclaims it in one step - and it cost about a sixth of the wall
+            // clock. Every class file is written with File::create + write_all
+            // and every diagnostic goes through unbuffered stderr, so no state
+            // depends on Drop.
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+            let _ = std::io::stderr().flush();
+            std::process::exit(code);
         })
         .expect("cannot spawn compiler thread");
+    // Reached only when the worker panicked instead of exiting.
     let code = match handle.join() {
-        Ok(Ok(code)) => code,
-        Ok(Err(message)) => {
-            eprintln!("javac: {message}");
-            CMDERR
-        }
+        Ok(()) => ABNORMAL,
         Err(_) => {
             eprintln!("javac: internal error");
             ABNORMAL
