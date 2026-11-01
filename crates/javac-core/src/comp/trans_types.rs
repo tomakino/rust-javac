@@ -1922,7 +1922,18 @@ impl TreeVisitor for TransTypes {
             TreeKind::FieldAccess { selected, sym, .. } => (*selected, *sym),
             _ => panic!("field access expected"),
         };
-        let selected_ty = selected.and_then(|selected| ctx.tree(selected).ty).expect("selected type");
+        // A bare qualifier that resolves to a synthetic member of the
+        // enclosing type (notably super) carries no tree type of its own;
+        // the qualifier type is the type that owns the symbol.
+        let selected_ty = match selected.and_then(|s| ctx.tree(s).ty) {
+            Some(t) => t,
+            None => {
+                let sel = selected.expect("selected tree");
+                let sel_sym = crate::tree::tree_info::symbol(ctx, sel).expect("selected symbol");
+                let owner = ctx.sym(sel_sym).owner.expect("selected owner");
+                ctx.sym(owner).ty.expect("selected owner type")
+            }
+        };
         let t = self.types.skip_type_vars_public(ctx, selected_ty);
         let is_compound = self.types.is_compound_public(ctx, t);
         let translated = if is_compound {
@@ -1937,7 +1948,16 @@ impl TreeVisitor for TransTypes {
             let t_erasure = self.erasure(ctx, t);
             self.translate_with_pt(ctx, selected, Some(t_erasure))
         };
-        let tree_ty = ctx.tree(tree).ty.expect("field type");
+        let tree_ty = match ctx.tree(tree).ty {
+            Some(t) => t,
+            None => {
+                // The selection's own type is missing when the qualifier was
+                // a synthetic super; the field symbol's erasure is what the
+                // selection denotes.
+                let s = sym.expect("field symbol for untyped select");
+                self.symbol_erasure(ctx, s)
+            }
+        };
         if ctx.typ(tree_ty).const_value().is_some() {
             self.result = Some(tree);
         } else if sym.map(|sym| ctx.sym(sym).kind == Kind::VAR).unwrap_or(false) {
