@@ -199,11 +199,10 @@ public class Platform {
 
   /** Attempt to match the host runtime to a capable Platform implementation. */
   private static Platform findPlatform() {
-    if (isAndroid()) {
-      return findAndroidPlatform();
-    } else {
-      return findJvmPlatform();
-    }
+    // Porting note: the Android platform implementations are not part of this
+    // source set (the Robolectric android-all jar is not vendored), so the JVM
+    // path is always taken.
+    return findJvmPlatform();
   }
 
   public static boolean isAndroid() {
@@ -235,22 +234,6 @@ public class Platform {
 
     // Probably an Oracle JDK like OpenJDK.
     return new Platform();
-  }
-
-  private static Platform findAndroidPlatform() {
-    Platform android10 = Android10Platform.buildIfSupported();
-
-    if (android10 != null) {
-      return android10;
-    }
-
-    Platform android = AndroidPlatform.buildIfSupported();
-
-    if (android == null) {
-      throw new NullPointerException("No platform found on Android");
-    }
-
-    return android;
   }
 
   /**
