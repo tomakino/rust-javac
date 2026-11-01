@@ -2235,8 +2235,12 @@ impl LambdaAnalyzerPreprocessor {
                     return Some(outer);
                 }
             } else if let Some((_, translated)) = map.iter().find(|(original, _)| *original == sym) {
+                // Java: LambdaAnalyzerPreprocessor.translateLambdaIdent ends with
+                // make.at(tree.pos).Ident(sym), so the replacement keeps the
+                // reference's position instead of the maker's stale one.
                 let ident = {
                     let mut make = self.make.borrow_mut();
+                    make.at(ctx.tree(tree).pos);
                     make.ident_symbol(ctx, *translated)
                 };
                 ctx.tree_mut(ident).ty = ty;
