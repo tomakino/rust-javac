@@ -1646,6 +1646,12 @@ impl InferenceContext {
             }
             current = current.tail();
         }
+        // Java: if (!intersect.isEmpty()) solve(intersect, warn)
+        // (InferenceContext.java:517-525) -- an empty intersection is a no-op,
+        // not a best-leaf solve over an empty variable set.
+        if intersect.is_empty() {
+            return Ok(());
+        }
         let strategy = Rc::new(BestLeafSolver {
             context: Rc::downgrade(self),
             vars_to_solve: intersect,
@@ -2238,7 +2244,12 @@ impl<'a> GraphSolver<'a> {
                 self.inference_context,
             ) {
                 Ok(node) => node,
-                Err(_) => return Err(infer.error(None)),
+                Err(e) => {
+                    if std::env::var_os("DSH_DEBUG_GS").is_some() {
+                        eprintln!("[GS] pick_node failed: {e:?}");
+                    }
+                    return Err(infer.error(None));
+                }
             };
             let vars_to_solve = graph.nodes[node_to_solve]
                 .as_ref()
