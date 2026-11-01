@@ -754,17 +754,8 @@ impl Types {
             return true;
         }
         if qtype == s {
-            // Two distinct undet vars that are already linked by qtype still
-            // need the EQ bound recorded in this inference context
-            // (Infer.isSameType on undet vars).
-            self.undet_var_add_bound(
-                ctx,
-                syms,
-                t,
-                crate::code::type_::InferenceBound::EQ,
-                s,
-                false,
-            );
+            // Java: t == s || t.qtype == s returns true without recording a
+            // bound (Types.java:1469-1471).
             return true;
         }
         if ctx.typ(s).has_tag(TypeTag::ERROR)
