@@ -1,7 +1,4 @@
 /target
 .idea/
 
-# The reference JDK tree is a local checkout, not part of this repository.
-/internal/reference/
-
 *.class
