@@ -522,23 +522,13 @@ impl DeferredAttrContext {
                     Some(warn) => warn,
                     None => &mut default_warn,
                 };
-                let solve_any_result = context.solve_any(
+                context.solve_any(
                     ctx,
                     syms,
                     types,
                     List::from_iterable(stuck_vars),
                     warn_ref,
-                );
-                match solve_any_result {
-                    Ok(()) => {}
-                    // Java: catch (Infer.GraphStrategy.NodeNotFoundException ex) {
-                    //     break; } (DeferredAttr.java:627-632) -- the
-                    // constraints are too tight to make progress; leave the
-                    // remaining deferred expressions stuck instead of failing
-                    // the whole method resolution.
-                    Err(e) if e.node_not_found => break,
-                    Err(e) => return Err(DeferredAttrFailure::Inference(e)),
-                }
+                )?;
                 let context = Rc::clone(&self.inference_context);
                 context.notify_change(ctx, syms, types)?;
             }
