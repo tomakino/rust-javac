@@ -336,6 +336,13 @@ impl crate::code::class_finder::SourceFileReader for SourceFileCompleter {
     }
 }
 
+/// Stage timing for the parallelisation experiments; enabled by DSH_TIMING.
+fn report_timing(label: &str, start: std::time::Instant) {
+    if std::env::var_os("DSH_TIMING").is_some() {
+        eprintln!("[timing] {label}={} ms", start.elapsed().as_millis());
+    }
+}
+
 impl MiniCompiler {
     /// Create the compiler services.
     ///
@@ -1152,15 +1159,18 @@ impl MiniCompiler {
             self.last_compiled_classes = Vec::new();
             return Ok(Vec::new());
         }
+        let t_parse = std::time::Instant::now();
         let mut roots: Vec<TreeId> = Vec::new();
         for path in source_paths {
             roots.push(self.parse_file(path)?);
         }
+        report_timing("parse", t_parse);
         // JavaCompiler.compile2: stopIfError(CompileState.ENTER, initModules(...)).
         if self.should_stop(crate::comp::compile_states::CompileState::ENTER) {
             self.last_compiled_classes = Vec::new();
             return Ok(Vec::new());
         }
+        let t_enter = std::time::Instant::now();
         // JavaCompiler.initModules (JavaCompiler.java:1020-1026).
         {
             let syms_rc = Rc::clone(&self.syms);
@@ -1202,6 +1212,7 @@ impl MiniCompiler {
                 .expect("enterDone annotation flush");
         }
         self.enter_done = true;
+        report_timing("enter", t_enter);
         for root in &roots {
             self.check_enum_tree(*root);
         }
@@ -1220,6 +1231,7 @@ impl MiniCompiler {
             }
         }
         // JavaCompiler.attribute(todo)
+        let t_attr = std::time::Instant::now();
         let mut envs: Vec<Rc<Env<AttrContext>>> = Vec::new();
         loop {
             let env = self.todo.borrow_mut().poll(&self.ctx);
@@ -1251,6 +1263,7 @@ impl MiniCompiler {
                 analyzer.borrow_mut().flush(&mut self.ctx, &syms, env);
             }
         }
+        report_timing("attribute", t_attr);
         if self.should_stop(crate::comp::compile_states::CompileState::FLOW) {
             self.last_compiled_classes = Vec::new();
             return Ok(Vec::new());
@@ -1258,6 +1271,7 @@ impl MiniCompiler {
         if self.error_count() > 0 {
             return Err(self.error_message());
         }
+        let t_flow = std::time::Instant::now();
         // JavaCompiler.flow(envs)
         for env in &envs {
                         if std::env::var_os("DSH_DEBUG_ENV").is_some() {
@@ -1303,9 +1317,13 @@ impl MiniCompiler {
         if self.error_count() > 0 {
             return Err(self.error_message());
         }
+        report_timing("flow", t_flow);
+        let t_desugar = std::time::Instant::now();
         // JavaCompiler.desugar(envs): TransTypes then Lower.
         let mut classes: Vec<CompiledClass> = Vec::new();
+        let mut t_gen_total = std::time::Duration::ZERO;
         for env in envs {
+            let t_one = std::time::Instant::now();
                         if std::env::var_os("DSH_DEBUG_ENV").is_some() {
                 let sf = env
                     .toplevel
