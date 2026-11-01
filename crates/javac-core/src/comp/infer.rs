@@ -3466,7 +3466,13 @@ impl Infer {
                     // changes which variables min() has to clone and therefore which
                     // variables get propagated outwards.
                     let roots = self.roots(ctx, syms, types, mt, Some(&deferred_context));
-                    inference_context.min(ctx, syms, types, roots, false, &warn_shared)?
+                    // Java: inferenceContext.min(roots(mt, deferredAttrContext), true, warn)
+                    // (Infer.java:198) -- shouldSolve is TRUE. min() then registers a
+                    // listener that solves the definitively unreachable variables and
+                    // calls notifyChange() again (InferenceContext.java:397-404), which
+                    // is what lets the variables left behind in the original context
+                    // (and the free-type listeners registered on them) make progress.
+                    inference_context.min(ctx, syms, types, roots, true, &warn_shared)?
                 } else {
                     Rc::clone(&inference_context)
                 };
