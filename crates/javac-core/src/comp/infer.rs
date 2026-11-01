@@ -1456,7 +1456,7 @@ impl InferenceContext {
         while current.non_empty() {
             let t = *current.head();
             let listener = Rc::new(NotifyChangeListener {
-                target: Rc::downgrade(self),
+                target: Rc::clone(self),
             });
             that.inner
                 .borrow_mut()
@@ -2799,7 +2799,14 @@ fn inference_context_free_placeholder(
 /// Java: void dupTo free-type listener "inferenceContext ->
 /// InferenceContext.this.notifyChange()" (InferenceContext.java:330-333)
 struct NotifyChangeListener {
-    target: std::rc::Weak<InferenceContext>,
+    /// Java: the dupTo listener is a lambda that captures InferenceContext.this,
+    /// i.e. a strong reference to the context being propagated to
+    /// (InferenceContext.java:330-333). Holding a Weak here instead let the
+    /// context die before the target context ever notified it -- the address was
+    /// then reused by a later context, so upgrade() failed while the *current*
+    /// context was still alive, and the free-type listeners registered on the
+    /// original context were never notified (R35).
+    target: Rc<InferenceContext>,
 }
 
 impl FreeTypeListener for NotifyChangeListener {
@@ -2810,11 +2817,7 @@ impl FreeTypeListener for NotifyChangeListener {
         types: &Types,
         _inference_context: &InferenceContext,
     ) -> Result<(), InferenceException> {
-        if let Some(target) = self.target.upgrade() {
-            target.notify_change(ctx, syms, types)
-        } else {
-            Ok(())
-        }
+        self.target.notify_change(ctx, syms, types)
     }
 }
 
