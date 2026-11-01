@@ -37,6 +37,13 @@ javac-classpath = { path = "crates/javac-classpath" }
 javac-charset = { path = "crates/javac-charset" }
 javac-fs = { path = "crates/javac-fs" }
 
+# The compiler is a tight, allocation-heavy tree walk; at opt-level 0 the
+# debug build spends more than half its time in non-inlined accessors and
+# bounds checks. opt-level 1 keeps full debug info and all debug assertions
+# while restoring register allocation and basic inlining.
+[profile.dev]
+opt-level = 1
+
 [profile.release]
 lto = "fat"
 codegen-units = 1

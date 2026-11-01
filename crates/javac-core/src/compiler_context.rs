@@ -172,31 +172,37 @@ impl CompilerContext {
     }
 
     /// Java: ctx.sym(id) (ADR 0001 rule 3).
+    #[inline]
     pub fn sym(&self, id: SymbolId) -> &Symbol {
         self.symbols.get(id.index())
     }
 
     /// Java: ctx.sym_mut(id).
+    #[inline]
     pub fn sym_mut(&mut self, id: SymbolId) -> &mut Symbol {
         self.symbols.get_mut(id.index())
     }
 
     /// Java: ctx.typ(id).
+    #[inline]
     pub fn typ(&self, id: TypeId) -> &Type {
         self.types.get(id.index())
     }
 
     /// Java: ctx.typ_mut(id).
+    #[inline]
     pub fn typ_mut(&mut self, id: TypeId) -> &mut Type {
         self.types.get_mut(id.index())
     }
 
     /// Java: ctx.tree(id).
+    #[inline]
     pub fn tree(&self, id: TreeId) -> &JCTree {
         self.trees.get(id.index())
     }
 
     /// Java: ctx.tree_mut(id).
+    #[inline]
     pub fn tree_mut(&mut self, id: TreeId) -> &mut JCTree {
         self.trees.get_mut(id.index())
     }

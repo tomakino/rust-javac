@@ -17,11 +17,13 @@ macro_rules! arena_id {
 
         impl $name {
             /// Build an ID from an arena index (the caller guarantees the index comes from the matching arena).
+            #[inline]
             pub const fn new(index: u32) -> $name {
                 $name(index)
             }
 
             /// Return the arena index.
+            #[inline]
             pub const fn index(self) -> u32 {
                 self.0
             }

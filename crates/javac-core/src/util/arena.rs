@@ -32,26 +32,41 @@ impl<T> Arena<T> {
     }
 
     /// Read an element by index; out-of-bounds is an internal error, asserted in debug builds (ADR 0001 rule 8).
+    ///
+    /// The debug path indexes the slice directly: a debug_assert followed by
+    /// get_unchecked would perform two bounds checks, because debug-assertions
+    /// also enables the ub_checks that get_unchecked carries. One check is
+    /// enough and produces the same panic message.
+    #[inline]
+    #[cfg(debug_assertions)]
     pub fn get(&self, index: u32) -> &T {
-        debug_assert!(
-            (index as usize) < self.values.len(),
-            "arena index out of range: {index} (len {})",
-            self.values.len()
-        );
-        // SAFETY: debug builds assert the range above; in release the ID/arena
-        // contract (ADR 0001 rule 8) guarantees the index came from this arena,
-        // and an out-of-range index is an internal error, not user input.
+        &self.values[index as usize]
+    }
+
+    /// Read an element by index (release: no bounds check).
+    ///
+    /// SAFETY: the ID/arena contract (ADR 0001 rule 8) guarantees the index
+    /// came from this arena, and an out-of-range index is an internal error,
+    /// not user input.
+    #[inline]
+    #[cfg(not(debug_assertions))]
+    pub fn get(&self, index: u32) -> &T {
         unsafe { self.values.get_unchecked(index as usize) }
     }
 
     /// Read an element mutably by index; out-of-bounds is an internal error, asserted in debug builds (ADR 0001 rule 8).
+    #[inline]
+    #[cfg(debug_assertions)]
     pub fn get_mut(&mut self, index: u32) -> &mut T {
-        debug_assert!(
-            (index as usize) < self.values.len(),
-            "arena index out of range: {index} (len {})",
-            self.values.len()
-        );
-        // SAFETY: see Arena::get.
+        &mut self.values[index as usize]
+    }
+
+    /// Read an element mutably by index (release: no bounds check).
+    ///
+    /// SAFETY: see Arena::get.
+    #[inline]
+    #[cfg(not(debug_assertions))]
+    pub fn get_mut(&mut self, index: u32) -> &mut T {
         unsafe { self.values.get_unchecked_mut(index as usize) }
     }
 
