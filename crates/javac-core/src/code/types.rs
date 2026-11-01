@@ -2527,11 +2527,26 @@ impl Types {
                     }
                     _ => crate::util::assert::error(),
                 };
+                // Java: Type tmpBound = Si.getUpperBound().hasTag(UNDETVAR) ?
+                //     ((UndetVar)Si.getUpperBound()).qtype : Si.getUpperBound();
+                // (Types.java:4436-4437) — the capture check compares the
+                // *qtypes*, so an inference variable bound never records an EQ
+                // bound here through isSameType/visitUndetVar.
+                let tmp_bound = if ctx.typ(upper).has_tag(TypeTag::UNDETVAR) {
+                    self.undet_var_qtype(ctx, upper)
+                } else {
+                    upper
+                };
+                let tmp_lower = if ctx.typ(lower).has_tag(TypeTag::UNDETVAR) {
+                    self.undet_var_qtype(ctx, lower)
+                } else {
+                    lower
+                };
                 let tmp_bound_err = ctx.typ(upper).has_tag(TypeTag::ERROR);
                 let tmp_lower_err = ctx.typ(lower).has_tag(TypeTag::ERROR);
                 if !tmp_bound_err
                     && !tmp_lower_err
-                    && self.is_same_type(ctx, syms, upper, lower)
+                    && self.is_same_type(ctx, syms, tmp_bound, tmp_lower)
                 {
                     current_s = current_s.tail().prepend(upper);
                 }
