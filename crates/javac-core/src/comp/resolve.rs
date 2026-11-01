@@ -4746,14 +4746,33 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
                 .has_tag(crate::code::type_tag::TypeTag::UNDETVAR)
             && types.contains_any(ctx, syms, found, &crate::util::list::List::of(req))
         {
-            return true;
+            // Types.isSubtype(Bar<T>, T) is false: asSuper cannot answer for a
+            // type-variable symbol, so the relation never records the
+            // self-referential bound. The guard only exists to keep that probe
+            // free of the equality bound Types.containsType would add, so it
+            // must answer like the relation it replaces: an actual type that is
+            // the formal itself is compatible (the same type variable reached
+            // through different instantiations), while one that merely mentions
+            // the variable ('List<K>' against 'K') is not -- answering true for
+            // both made every formal variable accept such an actual and turned
+            // a valid single-candidate call into an overload ambiguity.
+            return types.is_same_type(ctx, syms, found, req);
         }
         let inference_context = &self.deferred_attr_context.inference_context;
         if self.most_specific {
             // Java: MostSpecificCheckContext.compatible (Resolve.java:1182-1187)
             // has no pendingInference branch; that belongs to MethodReferenceCheck.
             let req = inference_context.as_undet_var(ctx, syms, types, req);
-            return types.is_subtype_no_capture(ctx, syms, found, req);
+            let r = types.is_subtype_no_capture(ctx, syms, found, req);
+            if std::env::var_os("DSH_DEBUG_ALL").is_some() {
+                eprintln!(
+                    "[CMP-MS] found={} req={} result={}",
+                    crate::comp::attr::type_display_of(ctx, found),
+                    crate::comp::attr::type_display_of(ctx, req),
+                    r
+                );
+            }
+            return r;
         }
         if let Some(pending) = &self.pending_inference {
             // Java: found = pendingInferenceContext.asUndetVar(found);
@@ -4771,11 +4790,21 @@ impl crate::comp::check::CheckContext for MethodCheckContext {
         // Java: argumentsAcceptable compares the instantiated argument type
         // against the (instantiated) formal; the wildcard bound may still be a
         // method type-variable that inference has already solved.
-        if self.strict {
+        let result = if self.strict {
             types.is_subtype_unchecked_with_warn(ctx, syms, found, req, warn)
         } else {
             types.is_convertible_with_warn(ctx, syms, found, req, warn)
+        };
+        if std::env::var_os("DSH_DEBUG_ALL").is_some() {
+            eprintln!(
+                "[CMP] found={} req={} strict={} result={}",
+                crate::comp::attr::type_display_of(ctx, found),
+                crate::comp::attr::type_display_of(ctx, req),
+                self.strict,
+                result
+            );
         }
+        result
     }
 
     fn report(
@@ -4891,6 +4920,14 @@ impl MethodResultInfo {
                 .inference_context()
                 .cached_capture(ctx, syms, types, tree, u_result, true),
         };
+        if std::env::var_os("DSH_DEBUG_ALL").is_some() {
+            eprintln!(
+                "[MRC] captured={} pt={} ctx={:p}",
+                crate::comp::attr::type_display_of(ctx, captured_type),
+                crate::comp::attr::type_display_of(ctx, self.pt),
+                std::rc::Rc::as_ptr(&self.check_context) as *const ()
+            );
+        }
         if !self
             .check_context
             .compatible(ctx, syms, types, captured_type, self.pt, warn)
