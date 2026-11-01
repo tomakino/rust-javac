@@ -3459,7 +3459,13 @@ impl Infer {
                     );
                 }
                 let min_context = if should {
-                    let roots = self.roots(ctx, syms, types, mt, None);
+                    // Java: inferenceContext.min(roots(mt, deferredAttrContext), true, warn)
+                    // (Infer.java:197-198). In CHECK mode roots() also collects the
+                    // stuck/dependency variables of the deferred attribute nodes
+                    // (Infer.java:264-280); passing None here dropped them, which
+                    // changes which variables min() has to clone and therefore which
+                    // variables get propagated outwards.
+                    let roots = self.roots(ctx, syms, types, mt, Some(&deferred_context));
                     inference_context.min(ctx, syms, types, roots, false, &warn_shared)?
                 } else {
                     Rc::clone(&inference_context)
