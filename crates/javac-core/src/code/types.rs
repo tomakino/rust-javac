@@ -1654,7 +1654,14 @@ impl Types {
             let mut from = from.clone();
             let mut to = to.clone();
             while from.non_empty() {
-                if type_equals_ignore_metadata(self, ctx, t, *from.head()) {
+                // Java: Subst.visitTypeVar compares with `==` (reference
+                // identity, Types.java:3433). A type variable and its
+                // cloneWithMetadata copy are the same variable for this
+                // purpose, so compare the un-annotated bases; two TypeVars
+                // that merely share a symbol are NOT interchangeable.
+                if t == *from.head()
+                    || ctx.type_no_metadata_id(t) == ctx.type_no_metadata_id(*from.head())
+                {
                     return with_type_var(ctx, *to.head(), t);
                 }
                 from = from.tail();
