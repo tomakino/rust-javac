@@ -1756,13 +1756,25 @@ impl TreeMaker {
         syms: &crate::code::symtab::Symtab,
         sym: crate::ids::SymbolId,
     ) -> TreeId {
-        if self.is_unqualifiable(ctx, syms, sym) {
+        let tree = if self.is_unqualifiable(ctx, syms, sym) {
             self.ident_symbol(ctx, sym)
         } else {
             let owner = ctx.sym(sym).owner.expect("qualified symbol owner");
             let base = self.qual_ident(ctx, syms, owner);
             self.select_symbol(ctx, base, sym)
+        };
+        // Java: TreeMaker.QualIdent only builds the tree; Attr types it later,
+        // and that typing erases the qualifier of a nested member type. A
+        // Validator pass can visit the synthesized tree before Attr runs, so
+        // store the type Attr would produce: Check.Validator tests
+        // tree.selected.type.isParameterized(), and javac sees the qualifier of
+        // Map.Entry (the Map) as raw.
+        let ty = ctx.tree(tree).ty;
+        if let (Some(ty), Some(types)) = (ty, self.types.clone()) {
+            let erased = types.erasure(ctx, syms, ty);
+            ctx.tree_mut(tree).ty = Some(erased);
         }
+        tree
     }
 
     /// Java: public JCExpression Ident(JCVariableDecl param)
