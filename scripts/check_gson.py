@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -103,9 +104,23 @@ def main() -> int:
         for out_dir in (j_out, r_out):
             lines = ["-d", str(out_dir)] + sources
             (temp / (out_dir.name + ".args")).write_text("\n".join(lines), encoding="utf-8")
+        t_javac = time.perf_counter()
         _, j_err, j_code = run(javac, common + ["@" + str(temp / "javac.args")], temp)
+        t_javac = time.perf_counter() - t_javac
+
+        t_rust = time.perf_counter()
         _, r_err, r_code = run(str(rust), common + ["@" + str(temp / "rust.args")], temp)
+        t_rust = time.perf_counter() - t_rust
+
         print("javac exit={} rust exit={}".format(j_code, r_code))
+        # Timings cover one run each, including process start and I/O; the first
+        # run after a cold boot is slower because the JDK modules are not yet in
+        # the file cache.
+        print("timing: javac={:.2f}s rust={:.2f}s ratio={:.2f}x".format(
+            t_javac,
+            t_rust,
+            (t_javac / t_rust) if t_rust > 0 else 0.0,
+        ))
         if args.verbose:
             if j_err:
                 print("javac stderr (head): " + j_err.splitlines()[0])
