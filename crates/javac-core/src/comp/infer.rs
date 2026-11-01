@@ -71,6 +71,10 @@ pub const MAX_INCORPORATION_STEPS: i32 = 10000;
 pub struct InferenceException {
     /// Java: transient List<JCDiagnostic> messages = List.nil();
     pub messages: List<JCDiagnostic>,
+    /// Port marker for Infer.GraphStrategy.NodeNotFoundException: DeferredAttr
+    /// context treats it as "cannot make progress" and leaves the remaining
+    /// expressions stuck (DeferredAttr.java:627-632), not as a failure.
+    pub node_not_found: bool,
 }
 
 impl InferenceException {
@@ -78,6 +82,15 @@ impl InferenceException {
     pub fn new() -> InferenceException {
         InferenceException {
             messages: List::nil(),
+            node_not_found: false,
+        }
+    }
+
+    /// Port helper: the Infer.GraphStrategy.NodeNotFoundException case.
+    pub fn node_not_found() -> InferenceException {
+        InferenceException {
+            messages: List::nil(),
+            node_not_found: true,
         }
     }
 
@@ -2244,12 +2257,9 @@ impl<'a> GraphSolver<'a> {
                 self.inference_context,
             ) {
                 Ok(node) => node,
-                Err(e) => {
-                    if std::env::var_os("DSH_DEBUG_GS").is_some() {
-                        eprintln!("[GS] pick_node failed: {e:?}");
-                    }
-                    return Err(infer.error(None));
-                }
+                // Java: throw new NodeNotFoundException(); (the caller
+                // DeferredAttrContext.complete treats it as "no progress").
+                Err(_) => return Err(InferenceException::node_not_found()),
             };
             let vars_to_solve = graph.nodes[node_to_solve]
                 .as_ref()
