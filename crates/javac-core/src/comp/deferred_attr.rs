@@ -2669,8 +2669,12 @@ impl DeferredAttrService {
                 // The recover service is re-entrant: attribution inside
                 // preFlow may call checkId -> recoverMethodInvocation again.
                 // Hold the RefCell borrow only for the doRecovery call.
-                let mut attr_recover = attr_recover_rc.borrow_mut();
-                attr.pre_flow(ctx, syms, &mut attr_recover, rs, &self.infer, chk, diags, env, speculative_lambda);
+                // do_recovery takes &self (its queue lives in a RefCell), and the
+                // attribution it performs can re-enter this service, so the
+                // borrow must be shared: a borrow_mut held across pre_flow deadlocks
+                // the moment checkId -> recoverMethodInvocation runs again.
+                let attr_recover = attr_recover_rc.borrow();
+                attr.pre_flow(ctx, syms, &attr_recover, rs, &self.infer, chk, diags, env, speculative_lambda);
             }
             flow.analyze_lambda(ctx, syms, env, speculative_lambda, &self.make, false);
             Ok(speculative_lambda)

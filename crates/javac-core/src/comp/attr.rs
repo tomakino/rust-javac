@@ -5440,7 +5440,7 @@ impl Attr {
         &mut self,
         ctx: &mut CompilerContext,
         syms: &Symtab,
-        attr_recover: &mut crate::comp::attr_recover::AttrRecover,
+        attr_recover: &crate::comp::attr_recover::AttrRecover,
         rs: &crate::comp::resolve::Resolve,
         infer: &Rc<crate::comp::infer::Infer>,
         chk: &crate::comp::check::Check,
@@ -11812,7 +11812,10 @@ impl Attr {
                     .borrow()
                     .clone()
                     .expect("AssertionError: rs service must be installed");
-                let rs = rs_rc2.borrow_mut();
+                // resolve_implicit_this takes &self, so a shared borrow is
+                // enough; borrow_mut deadlocks when an enclosing speculative
+                // attribution already holds a shared borrow of the service.
+                let rs = rs_rc2.borrow();
                 let types_rc = Rc::clone(&self.types);
                 rs.resolve_implicit_this(
                     ctx,
