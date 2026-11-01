@@ -3327,10 +3327,18 @@ impl Infer {
         }
         impl Drop for WarnSync<'_> {
             fn drop(&mut self) {
-                *self.target = std::mem::take(&mut *self.shared.borrow_mut());
+                // Java: instantiateMethod passes the caller's Warner object
+                // reference through to the deferred contexts and keeps it
+                // reachable from a returned PartiallyInferredMethodType
+                // (Infer.java:166-370). The state must therefore be *copied*
+                // back on the way out, never moved: a mem::take here would
+                // leave the shared Warner empty for every later
+                // PartiallyInferredMethodType.check (which is what decides
+                // between the unchecked-erasure path and shouldPropagate).
+                *self.target = self.shared.borrow().clone();
             }
         }
-        let warn_shared = Rc::new(RefCell::new(std::mem::take(warn)));
+        let warn_shared = Rc::new(RefCell::new(warn.clone()));
         let _warn_sync = WarnSync {
             target: warn,
             shared: Rc::clone(&warn_shared),
