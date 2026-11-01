@@ -5078,12 +5078,26 @@ impl<'a> AssignAnalyzer<'a> {
                 && let PendingExit::Assign { exit_inits, .. } = &exit {
                     let exit_inits = clone_bits(&exit_inits.borrow());
                     self.inits.assign(&mut clone_bits(&exit_inits));
-                    let var_decls: Vec<SymbolId> = self
-                        .vardecls
-                        .iter()
-                        .filter_map(|var_decl| *var_decl)
-                        .filter_map(|var_decl| var_sym(ctx, var_decl))
-                        .collect();
+                    // Java: for (int i = firstadr; i < nextadr; i++)
+                    //     checkInit(exit.tree.pos(), vardecls[i].sym);
+                    // (Flow.java:2232-2234). Only the variables still in scope at
+                    // the exit are checked: nextadr has already been restored by
+                    // the enclosing visitBlock, so locals of nested blocks (for
+                    // example a for-each variable) are outside the range. Walking
+                    // every recorded vardecls entry instead made a for-each
+                    // variable look uninitialized at a later 'return'.
+                    let first_adr = self.first_adr;
+                    let next_adr = self.next_adr;
+                    let mut var_decls: Vec<SymbolId> = Vec::new();
+                    let mut adr = first_adr;
+                    while adr < next_adr {
+                        if let Some(Some(var_decl)) = self.vardecls.get(adr as usize)
+                            && let Some(sym) = var_sym(ctx, *var_decl)
+                        {
+                            var_decls.push(sym);
+                        }
+                        adr += 1;
+                    }
                     for var in var_decls {
                         self.check_init(ctx, ctx.tree(tree_id).pos, var);
                     }
