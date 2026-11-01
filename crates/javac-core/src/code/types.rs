@@ -2399,8 +2399,13 @@ impl Types {
                     if let Some(base) = base {
                         let sym_type = ctx.sym(sym).ty.expect("member type");
                         let owner_type = ctx.sym(owner).ty.expect("owner type");
-                        let owner_params = allparams_of(ctx, owner_type);
-                        let base_params = allparams_of(ctx, base);
+                        // Java: owner.type.allparams() / base.allparams() go through
+                        // getTypeArguments(), which lazily calls complete() when
+                        // typarams_field is still null (Type.java:1068-1080). The
+                        // non-completing helper would read an unfilled field and
+                        // yield the wrong parameter list.
+                        let owner_params = allparams_of_completed(ctx, syms, owner_type, None);
+                        let base_params = allparams_of_completed(ctx, syms, base, None);
                         if owner_params.non_empty() {
                             if base_params.is_empty() {
                                 // then base is a raw type
