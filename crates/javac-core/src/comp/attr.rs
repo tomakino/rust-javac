@@ -9221,6 +9221,15 @@ impl Attr {
         }
         let elemtype: TypeId = if ctx.typ(expr_type).has_tag(TypeTag::ARRAY) {
             self.types.elemtype(ctx, syms, expr_type)
+        } else if ctx.typ(expr_type).has_tag(TypeTag::ERROR) {
+            // Java: Types.elemtype returns the operand itself for an ERROR type
+            // (Types.java elemtype, case ERROR: return t), so the Iterable branch
+            // below -- including its resolveInternalMethod(iterator) probe -- is
+            // skipped. Without this an erroneous for-each expression (for example
+            // one inside a lambda whose parameters were made erroneous by
+            // DeferredAttr.canLambdaBodyCompleteNormally) reached the internal
+            // iterator lookup with an error site and turned into a fatal error.
+            expr_type
         } else {
             // or perhaps expr implements Iterable<T>?
             let iterable_tsym = ctx
