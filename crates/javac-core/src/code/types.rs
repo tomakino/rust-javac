@@ -2933,7 +2933,15 @@ impl Types {
             | TypeKindData::ErasedClassType { .. }
             | TypeKindData::UnionClassType { .. }
             | TypeKindData::IntersectionClassType { .. } => {
-                // Java: IsSubtype.visitClassType (Types.java:1159-1172)
+                // Java: IsSubtype.visitClassType (Types.java:1159-1172) checks
+                // a super-bounded target before the ordinary parameterized
+                // comparison:
+                //     if (s.isSuperBound() && !s.isExtendsBound())
+                //         return visit(t, wildUpperBound(s)) && visit(t, wildLowerBound(s));
+                // Without it the parameterized path compares the type arguments
+                // against the capture variable and records an equality bound
+                // (K = capture of ? super Entry<R,V>) that later collides with
+                // the real constraint from the call.
                 let Some(s_tsym) = ctx.typ(s).tsym else {
                     return false;
                 };
@@ -3405,7 +3413,13 @@ impl Types {
             }
             return false;
         }
-        if self.is_same_type(ctx, syms, t, s) {
+        // Java: Type.contains(Type t) is equalsIgnoreMetadata on the base type
+        // (Type.java), i.e. a plain identity/equality test. Reaching for
+        // isSameType here dispatched an inference variable through
+        // isSameTypeVisitor.visitUndetVar, which *records* an equality bound:
+        // asking "does Entry<K,V> contain the capture of ? super Entry<R,V>"
+        // silently bound K to that capture variable.
+        if crate::code::types::type_equals_ignore_metadata(self, ctx, t, s) {
             return true;
         }
         match ctx.typ(t).kind.clone() {
