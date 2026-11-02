@@ -441,17 +441,15 @@ pub trait BaseAnalyzer: FlowVisitor {
         jk: JumpKind,
     ) -> Liveness {
         let mut resolved = false;
-        let mut exits = std::mem::replace(self.pending_exits_mut(), old_pending_exits);
-        while exits.non_empty() {
-            let exit = exits.head().clone();
-            let target = Self::jump_target(ctx, &exit.tree(), jk);
-            if ctx.tree(exit.tree()).has_tag(jk.tree_tag()) && target == Some(tree) {
-                self.resolve_pending_exit(&exit);
-                resolved = true;
-            } else {
-                *self.pending_exits_mut() = self.pending_exits_mut().append(exit);
-            }
-            exits = exits.tail();
+        let exits = std::mem::replace(self.pending_exits_mut(), old_pending_exits);
+        for exit in &exits {
+        let target = Self::jump_target(ctx, &exit.tree(), jk);
+        if ctx.tree(exit.tree()).has_tag(jk.tree_tag()) && target == Some(tree) {
+            self.resolve_pending_exit(&exit);
+            resolved = true;
+        } else {
+            *self.pending_exits_mut() = self.pending_exits_mut().append(exit);
+        }
         }
         Liveness::from_bool(resolved)
     }
@@ -1559,16 +1557,14 @@ impl<'a> AliveAnalyzer<'a> {
     /// Java: private void clearPendingExits(boolean inMethod) (Flow.java:585-592)
     fn clear_pending_exits(&mut self, ctx: &mut CompilerContext, in_method: bool) {
         let exits = std::mem::take(&mut self.pending_exits);
-        let mut current = exits;
-        while current.non_empty() {
-            let exit = current.head().clone();
-            let tree = exit.tree();
-            let is_return = in_method && ctx.tree(tree).has_tag(Tag::RETURN);
-            let has_error = self.flow.log.borrow().has_error_on(Some(Rc::new(
-                SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
-            )));
-            assert!(is_return || has_error, "AssertionError: clearPendingExits (Flow.java:590)");
-            current = current.tail();
+        let current = exits;
+        for exit in &current {
+        let tree = exit.tree();
+        let is_return = in_method && ctx.tree(tree).has_tag(Tag::RETURN);
+        let has_error = self.flow.log.borrow().has_error_on(Some(Rc::new(
+            SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
+        )));
+        assert!(is_return || has_error, "AssertionError: clearPendingExits (Flow.java:590)");
         }
     }
 
@@ -2599,49 +2595,40 @@ impl<'a> FlowAnalyzer<'a> {
     /// Java: void errorUncaught() (Flow.java:1000-1018)
     fn error_uncaught(&mut self, ctx: &mut CompilerContext) {
         let pending = std::mem::take(&mut self.pending_exits);
-        let mut current = pending;
-        while current.non_empty() {
-            let exit = current.head().clone();
-            match &exit {
-                PendingExit::Thrown { tree, thrown } => {
-                    let class_def_pos = self.class_def.map(|class_def| ctx.tree(class_def).pos);
-                    if self.class_def.is_some() && class_def_pos == Some(ctx.tree(*tree).pos) {
+        let current = pending;
+        for exit in &current {
+        match &exit {
+            PendingExit::Thrown { tree, thrown } => {
+                let class_def_pos = self.class_def.map(|class_def| ctx.tree(class_def).pos);
+                if self.class_def.is_some() && class_def_pos == Some(ctx.tree(*tree).pos) {
+                    self.flow.error(
+                        ctx.tree(*tree).pos,
+                        errors::unreported_exception_default_constructor(type_place(
+                            ctx, *thrown,
+                        )),
+                    );
+                } else if ctx.tree(*tree).has_tag(Tag::VARDEF) {
+                    let sym = var_sym(ctx, *tree);
+                    let is_resource = sym
+                        .map(|sym| {
+                            matches!(
+                                &ctx.sym(sym).kind_data,
+                                crate::code::symbol::SymbolKind::VarSymbol {
+                                    data_kind: Some(ElementKind::RESOURCE_VARIABLE),
+                                    ..
+                                }
+                            )
+                        })
+                        .unwrap_or(false);
+                    if is_resource {
+                        let name = ctx.sym(sym.expect("resource symbol")).name.clone();
                         self.flow.error(
                             ctx.tree(*tree).pos,
-                            errors::unreported_exception_default_constructor(type_place(
-                                ctx, *thrown,
-                            )),
+                            errors::unreported_exception_implicit_close(
+                                type_place(ctx, *thrown),
+                                name,
+                            ),
                         );
-                    } else if ctx.tree(*tree).has_tag(Tag::VARDEF) {
-                        let sym = var_sym(ctx, *tree);
-                        let is_resource = sym
-                            .map(|sym| {
-                                matches!(
-                                    &ctx.sym(sym).kind_data,
-                                    crate::code::symbol::SymbolKind::VarSymbol {
-                                        data_kind: Some(ElementKind::RESOURCE_VARIABLE),
-                                        ..
-                                    }
-                                )
-                            })
-                            .unwrap_or(false);
-                        if is_resource {
-                            let name = ctx.sym(sym.expect("resource symbol")).name.clone();
-                            self.flow.error(
-                                ctx.tree(*tree).pos,
-                                errors::unreported_exception_implicit_close(
-                                    type_place(ctx, *thrown),
-                                    name,
-                                ),
-                            );
-                        } else {
-                            self.flow.error(
-                                ctx.tree(*tree).pos,
-                                errors::unreported_exception_need_to_catch_or_throw(type_place(
-                                    ctx, *thrown,
-                                )),
-                            );
-                        }
                     } else {
                         self.flow.error(
                             ctx.tree(*tree).pos,
@@ -2650,17 +2637,24 @@ impl<'a> FlowAnalyzer<'a> {
                             )),
                         );
                     }
-                }
-                _ => {
-                    assert!(
-                        self.flow.log.borrow().has_error_on(Some(Rc::new(
-                            SimpleDiagnosticPosition::new(ctx.tree(exit.tree()).pos),
-                        ))),
-                        "AssertionError: errorUncaught (Flow.java:1014)"
+                } else {
+                    self.flow.error(
+                        ctx.tree(*tree).pos,
+                        errors::unreported_exception_need_to_catch_or_throw(type_place(
+                            ctx, *thrown,
+                        )),
                     );
                 }
             }
-            current = current.tail();
+            _ => {
+                assert!(
+                    self.flow.log.borrow().has_error_on(Some(Rc::new(
+                        SimpleDiagnosticPosition::new(ctx.tree(exit.tree()).pos),
+                    ))),
+                    "AssertionError: errorUncaught (Flow.java:1014)"
+                );
+            }
+        }
         }
     }
 
@@ -2900,25 +2894,23 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
         }
         self.scan(ctx, Some(body));
         let exits = std::mem::take(&mut self.pending_exits);
-        let mut current = exits;
-        while current.non_empty() {
-            let exit = current.head().clone();
-            match &exit {
-                PendingExit::Thrown { .. } => {
-                    self.pending_exits = self.pending_exits.clone().append(exit);
-                }
-                _ => {
-                    let tree_id = exit.tree();
-                    assert!(
-                        ctx.tree(tree_id).has_tag(Tag::RETURN)
-                            || self.flow.log.borrow().has_error_on(Some(Rc::new(
-                                SimpleDiagnosticPosition::new(ctx.tree(tree_id).pos),
-                            ))),
-                        "AssertionError: visitMethodDef exit (Flow.java:1185)"
-                    );
-                }
+        let current = exits;
+        for exit in &current {
+        match &exit {
+            PendingExit::Thrown { .. } => {
+                self.pending_exits = self.pending_exits.clone().append(exit);
             }
-            current = current.tail();
+            _ => {
+                let tree_id = exit.tree();
+                assert!(
+                    ctx.tree(tree_id).has_tag(Tag::RETURN)
+                        || self.flow.log.borrow().has_error_on(Some(Rc::new(
+                            SimpleDiagnosticPosition::new(ctx.tree(tree_id).pos),
+                        ))),
+                    "AssertionError: visitMethodDef exit (Flow.java:1185)"
+                );
+            }
+        }
         }
         self.caught = caught_prev;
         self.thrown = thrown_prev;
@@ -4653,24 +4645,22 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
                 let mut uninits_combined = clone_bits(&uninits_end);
                 uninits_combined.and_set(&self.uninits);
                 self.uninits.assign(&mut clone_bits(&uninits_combined));
-                let mut current = exits;
-                while current.non_empty() {
-                    let exit = current.head().clone();
-                    if let PendingExit::Assign {
-                        exit_inits,
-                        exit_uninits,
-                        ..
-                    } = &exit
-                    {
-                        let mut inits_copy = clone_bits(&exit_inits.borrow());
-                        inits_copy.or_set(&self.inits);
-                        *exit_inits.borrow_mut() = inits_copy;
-                        let mut uninits_copy = clone_bits(&exit_uninits.borrow());
-                        uninits_copy.and_set(&self.uninits);
-                        *exit_uninits.borrow_mut() = uninits_copy;
-                    }
-                    self.pending_exits = self.pending_exits.clone().append(exit);
-                    current = current.tail();
+                let current = exits;
+                for exit in &current {
+                if let PendingExit::Assign {
+                    exit_inits,
+                    exit_uninits,
+                    ..
+                } = &exit
+                {
+                    let mut inits_copy = clone_bits(&exit_inits.borrow());
+                    inits_copy.or_set(&self.inits);
+                    *exit_inits.borrow_mut() = inits_copy;
+                    let mut uninits_copy = clone_bits(&exit_uninits.borrow());
+                    uninits_copy.and_set(&self.uninits);
+                    *exit_uninits.borrow_mut() = uninits_copy;
+                }
+                self.pending_exits = self.pending_exits.clone().append(exit);
                 }
                 let mut inits_copy = clone_bits(&inits_end);
                 inits_copy.or_set(&self.inits);
@@ -5065,44 +5055,42 @@ impl<'a> AssignAnalyzer<'a> {
     /// (Flow.java:2242-2263)
     fn clear_pending_exits(&mut self, ctx: &mut CompilerContext, in_method: bool) {
         let exits = std::mem::take(&mut self.pending_exits);
-        let mut current = exits;
-        while current.non_empty() {
-            let exit = current.head().clone();
-            let tree_id = exit.tree();
-            let is_return = in_method && ctx.tree(tree_id).has_tag(Tag::RETURN);
-            let has_error = self.flow.log.borrow().has_error_on(Some(Rc::new(
-                SimpleDiagnosticPosition::new(ctx.tree(tree_id).pos),
-            )));
-            assert!(is_return || has_error, "AssertionError: clearPendingExits");
-            if in_method && self.is_initial_constructor
-                && let PendingExit::Assign { exit_inits, .. } = &exit {
-                    let exit_inits = clone_bits(&exit_inits.borrow());
-                    self.inits.assign(&mut clone_bits(&exit_inits));
-                    // Java: for (int i = firstadr; i < nextadr; i++)
-                    //     checkInit(exit.tree.pos(), vardecls[i].sym);
-                    // (Flow.java:2232-2234). Only the variables still in scope at
-                    // the exit are checked: nextadr has already been restored by
-                    // the enclosing visitBlock, so locals of nested blocks (for
-                    // example a for-each variable) are outside the range. Walking
-                    // every recorded vardecls entry instead made a for-each
-                    // variable look uninitialized at a later 'return'.
-                    let first_adr = self.first_adr;
-                    let next_adr = self.next_adr;
-                    let mut var_decls: Vec<SymbolId> = Vec::new();
-                    let mut adr = first_adr;
-                    while adr < next_adr {
-                        if let Some(Some(var_decl)) = self.vardecls.get(adr as usize)
-                            && let Some(sym) = var_sym(ctx, *var_decl)
-                        {
-                            var_decls.push(sym);
-                        }
-                        adr += 1;
+        let current = exits;
+        for exit in &current {
+        let tree_id = exit.tree();
+        let is_return = in_method && ctx.tree(tree_id).has_tag(Tag::RETURN);
+        let has_error = self.flow.log.borrow().has_error_on(Some(Rc::new(
+            SimpleDiagnosticPosition::new(ctx.tree(tree_id).pos),
+        )));
+        assert!(is_return || has_error, "AssertionError: clearPendingExits");
+        if in_method && self.is_initial_constructor
+            && let PendingExit::Assign { exit_inits, .. } = &exit {
+                let exit_inits = clone_bits(&exit_inits.borrow());
+                self.inits.assign(&mut clone_bits(&exit_inits));
+                // Java: for (int i = firstadr; i < nextadr; i++)
+                //     checkInit(exit.tree.pos(), vardecls[i].sym);
+                // (Flow.java:2232-2234). Only the variables still in scope at
+                // the exit are checked: nextadr has already been restored by
+                // the enclosing visitBlock, so locals of nested blocks (for
+                // example a for-each variable) are outside the range. Walking
+                // every recorded vardecls entry instead made a for-each
+                // variable look uninitialized at a later 'return'.
+                let first_adr = self.first_adr;
+                let next_adr = self.next_adr;
+                let mut var_decls: Vec<SymbolId> = Vec::new();
+                let mut adr = first_adr;
+                while adr < next_adr {
+                    if let Some(Some(var_decl)) = self.vardecls.get(adr as usize)
+                        && let Some(sym) = var_sym(ctx, *var_decl)
+                    {
+                        var_decls.push(sym);
                     }
-                    for var in var_decls {
-                        self.check_init(ctx, ctx.tree(tree_id).pos, var);
-                    }
+                    adr += 1;
                 }
-            current = current.tail();
+                for var in var_decls {
+                    self.check_init(ctx, ctx.tree(tree_id).pos, var);
+                }
+            }
         }
     }
 

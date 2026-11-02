@@ -387,37 +387,35 @@ impl TypeEnter {
         syms: &Symtab,
         trees: List<TreeId>,
     ) {
-        let mut current = trees;
-        while current.non_empty() {
-            let tree = *current.head();
-            let star_scope = compilation_unit_star_import_scope(ctx, tree);
-            let filled = star_scope
-                .map(|scope| ctx.scope_is_filled(scope))
-                .unwrap_or(false);
-            if !filled {
-                let top_env = self.enter.borrow().get_top_level_env(ctx, tree);
-                {
-                    let attr_rc = self
-                        .attr
-                        .borrow()
-                        .clone()
-                        .expect("TypeEnter.attr must be injected");
-                    // Java: TypeEnter.attr is a plain field, so the import check
-                    // can re-enter Attr while an enclosing Attr call is running.
-                    // Rust's RefCell would reject that; reuse the active mutable
-                    // Attr the same way TypeEnter.complete does above.
-                    let attr_ptr = attr_rc.as_ptr();
-                    let mut borrowed = attr_rc.try_borrow_mut();
-                    let attr: &mut crate::comp::attr::Attr = match borrowed {
-                        Ok(ref mut guard) => &mut **guard,
-                        // SAFETY: see the re-entrancy note above; the enclosing
-                        // Attr call suspends no iterator/borrow state here.
-                        Err(_) => unsafe { &mut *attr_ptr },
-                    };
-                    self.finish_imports(ctx, syms, tree, Some(&top_env), attr);
-                }
+        let current = trees;
+        for tree in &current {
+        let star_scope = compilation_unit_star_import_scope(ctx, tree);
+        let filled = star_scope
+            .map(|scope| ctx.scope_is_filled(scope))
+            .unwrap_or(false);
+        if !filled {
+            let top_env = self.enter.borrow().get_top_level_env(ctx, tree);
+            {
+                let attr_rc = self
+                    .attr
+                    .borrow()
+                    .clone()
+                    .expect("TypeEnter.attr must be injected");
+                // Java: TypeEnter.attr is a plain field, so the import check
+                // can re-enter Attr while an enclosing Attr call is running.
+                // Rust's RefCell would reject that; reuse the active mutable
+                // Attr the same way TypeEnter.complete does above.
+                let attr_ptr = attr_rc.as_ptr();
+                let mut borrowed = attr_rc.try_borrow_mut();
+                let attr: &mut crate::comp::attr::Attr = match borrowed {
+                    Ok(ref mut guard) => &mut **guard,
+                    // SAFETY: see the re-entrancy note above; the enclosing
+                    // Attr call suspends no iterator/borrow state here.
+                    Err(_) => unsafe { &mut *attr_ptr },
+                };
+                self.finish_imports(ctx, syms, tree, Some(&top_env), attr);
             }
-            current = current.tail();
+        }
         }
     }
 
@@ -1561,14 +1559,12 @@ impl TypeEnter {
         }
         // import current type-parameters into base scope
         if let Some(typarams) = class_tree_typarams(ctx, tree) {
-            let mut current = typarams;
-            while current.non_empty() {
-                let typaram = *current.head();
-                if let Some(ty) = ctx.tree(typaram).ty
-                    && let Some(tsym) = ctx.typ(ty).tsym {
-                        ctx.scope_enter(base_scope, tsym);
-                    }
-                current = current.tail();
+            let current = typarams;
+            for typaram in &current {
+            if let Some(ty) = ctx.tree(typaram).ty
+                && let Some(tsym) = ctx.typ(ty).tsym {
+                    ctx.scope_enter(base_scope, tsym);
+                }
             }
         }
         // the base clause can't see members of this class
@@ -3723,14 +3719,12 @@ impl DefaultConstructorHelper for AnonClassConstructorHelper {
             current = current.tail();
         }
         let mut result: List<crate::util::name::Name> = List::nil();
-        while current.non_empty() {
-            let param = *current.head();
-            let name = match &ctx.tree(param).kind {
-                TreeKind::VariableDecl { name, .. } => name.clone(),
-                _ => names.empty.clone(),
-            };
-            result = result.append(name);
-            current = current.tail();
+        for param in &current {
+        let name = match &ctx.tree(param).kind {
+            TreeKind::VariableDecl { name, .. } => name.clone(),
+            _ => names.empty.clone(),
+        };
+        result = result.append(name);
         }
         result
     }

@@ -317,16 +317,14 @@ fn incorporation_action_apply(
             // Java: SubstBounds.apply: replace undetvars in bounds and check the
             // inferred type against all bounds.
             let inst = types.undet_var_get_inst(ctx, *uv);
-            let mut undets = inference_context.undet_vars();
-            while undets.non_empty() {
-                let undet = *undets.head();
-                if let Some(inst) = inst {
-                    let from = List::of(types.undet_var_qtype(ctx, *uv));
-                    let to = List::of(inst);
-                    types.undet_var_subst_bounds(ctx, syms, undet, &from, &to);
-                }
-                check_compatible_upper_bounds(infer, ctx, syms, types, inference_context, undet)?;
-                undets = undets.tail();
+            let undets = inference_context.undet_vars();
+            for undet in &undets {
+            if let Some(inst) = inst {
+                let from = List::of(types.undet_var_qtype(ctx, *uv));
+                let to = List::of(inst);
+                types.undet_var_subst_bounds(ctx, syms, undet, &from, &to);
+            }
+            check_compatible_upper_bounds(infer, ctx, syms, types, inference_context, undet)?;
             }
             let action = IncorporationAction::CheckInst {
                 uv: *uv,
@@ -342,39 +340,37 @@ fn incorporation_action_apply(
             // Java: CheckUpperBounds.apply (Infer.java:922-950)
             let upper_bounds = types.undet_var_get_bounds(ctx, *uv, &[InferenceBound::UPPER]);
             let bound_list = types.closure_collect(ctx, syms, upper_bounds);
-            let mut bounds_current = bound_list;
-            while bounds_current.non_empty() {
-                let b2 = *bounds_current.head();
-                if t != &b2 && !ctx.typ(*t).has_tag(TypeTag::WILDCARD) && !ctx.typ(b2).has_tag(TypeTag::WILDCARD) {
-                    let common_supers = infer.get_parameterized_supers(ctx, syms, types, *t, b2);
-                    let mut supers_current = common_supers;
-                    while supers_current.non_empty() {
-                        let Pair { fst: sup1, snd: sup2 } = supers_current.head().clone();
-                        let mut all1 = types.class_allparams(ctx, sup1);
-                        let mut all2 = types.class_allparams(ctx, sup2);
-                        while all1.non_empty() && all2.non_empty() {
-                            let p1 = *all1.head();
-                            let p2 = *all2.head();
-                            if !ctx.typ(p1).has_tag(TypeTag::WILDCARD)
-                                && !ctx.typ(p2).has_tag(TypeTag::WILDCARD)
-                            {
-                                let u1 = inference_context.as_undet_var(ctx, syms, types, p1);
-                                let u2 = inference_context.as_undet_var(ctx, syms, types, p2);
-                                if !types.is_same_type(ctx, syms, u1, u2) {
-                                    infer.report_bound_error_upper(ctx, syms, types, *uv)?;
-                                }
+            let bounds_current = bound_list;
+            for b2 in &bounds_current {
+            if t != &b2 && !ctx.typ(*t).has_tag(TypeTag::WILDCARD) && !ctx.typ(b2).has_tag(TypeTag::WILDCARD) {
+                let common_supers = infer.get_parameterized_supers(ctx, syms, types, *t, b2);
+                let mut supers_current = common_supers;
+                while supers_current.non_empty() {
+                    let Pair { fst: sup1, snd: sup2 } = supers_current.head().clone();
+                    let mut all1 = types.class_allparams(ctx, sup1);
+                    let mut all2 = types.class_allparams(ctx, sup2);
+                    while all1.non_empty() && all2.non_empty() {
+                        let p1 = *all1.head();
+                        let p2 = *all2.head();
+                        if !ctx.typ(p1).has_tag(TypeTag::WILDCARD)
+                            && !ctx.typ(p2).has_tag(TypeTag::WILDCARD)
+                        {
+                            let u1 = inference_context.as_undet_var(ctx, syms, types, p1);
+                            let u2 = inference_context.as_undet_var(ctx, syms, types, p2);
+                            if !types.is_same_type(ctx, syms, u1, u2) {
+                                infer.report_bound_error_upper(ctx, syms, types, *uv)?;
                             }
-                            all1 = all1.tail();
-                            all2 = all2.tail();
                         }
-                        assert!(
-                            all1.is_empty() && all2.is_empty(),
-                            "AssertionError: CheckUpperBounds arity"
-                        );
-                        supers_current = supers_current.tail();
+                        all1 = all1.tail();
+                        all2 = all2.tail();
                     }
+                    assert!(
+                        all1.is_empty() && all2.is_empty(),
+                        "AssertionError: CheckUpperBounds arity"
+                    );
+                    supers_current = supers_current.tail();
                 }
-                bounds_current = bounds_current.tail();
+            }
             }
             Ok(())
         }
@@ -585,26 +581,24 @@ impl Infer {
         let mut round = 0;
         while progress && round < MAX_INCORPORATION_STEPS {
             progress = false;
-            let mut undets = inference_context.undet_vars();
-            while undets.non_empty() {
-                let uv = *undets.head();
-                let actions = types.undet_var_actions(ctx, uv);
-                if !actions.is_empty() {
-                    progress = true;
-                    let action = types.undet_var_pop_action(ctx, uv);
-                    if let Some(action) = action {
-                        incorporation_action_apply(
-                            self,
-                            &action,
-                            ctx,
-                            syms,
-                            types,
-                            inference_context,
-                            warn,
-                        )?;
-                    }
+            let undets = inference_context.undet_vars();
+            for uv in &undets {
+            let actions = types.undet_var_actions(ctx, uv);
+            if !actions.is_empty() {
+                progress = true;
+                let action = types.undet_var_pop_action(ctx, uv);
+                if let Some(action) = action {
+                    incorporation_action_apply(
+                        self,
+                        &action,
+                        ctx,
+                        syms,
+                        types,
+                        inference_context,
+                        warn,
+                    )?;
                 }
-                undets = undets.tail();
+            }
             }
             round += 1;
         }
@@ -632,17 +626,15 @@ impl Infer {
             List::of(lub_result)
         };
         let mut common_supertypes: List<Pair<TypeId, TypeId>> = List::nil();
-        let mut current = supertypes_to_check;
-        while current.non_empty() {
-            let sup = *current.head();
-            if types.is_parameterized_type_of(ctx, sup) {
-                let as_super_of_t = self.as_super(ctx, syms, types, t, sup);
-                let as_super_of_s = self.as_super(ctx, syms, types, s, sup);
-                if let (Some(a), Some(b)) = (as_super_of_t, as_super_of_s) {
-                    common_supertypes = common_supertypes.append(Pair { fst: a, snd: b });
-                }
+        let current = supertypes_to_check;
+        for sup in &current {
+        if types.is_parameterized_type_of(ctx, sup) {
+            let as_super_of_t = self.as_super(ctx, syms, types, t, sup);
+            let as_super_of_s = self.as_super(ctx, syms, types, s, sup);
+            if let (Some(a), Some(b)) = (as_super_of_t, as_super_of_s) {
+                common_supertypes = common_supertypes.append(Pair { fst: a, snd: b });
             }
-            current = current.tail();
+        }
         }
         common_supertypes
     }
@@ -678,69 +670,65 @@ impl Infer {
     ) -> Result<(), InferenceException> {
         let mut todo: List<TypeId> = List::nil();
         // step 1 - create fresh tvars
-        let mut current = vars.clone();
-        while current.non_empty() {
-            let t = *current.head();
-            let uv = inference_context.as_undet_var(ctx, syms, types, t);
-            let upper_bounds = types.undet_var_get_bounds(ctx, uv, &[InferenceBound::UPPER]);
-            if contains_any_list(ctx, syms, types, upper_bounds.clone(), vars.clone()) {
-                let qtype = types.undet_var_qtype(ctx, uv);
-                let qtype_tsym = ctx.typ(qtype).tsym.expect("undet var qtype symbol");
-                let qtype_name = ctx.sym(qtype_tsym).name.clone();
-                let owner = ctx.sym(qtype_tsym).owner.expect("qtype owner");
-                let fresh_tvar = new_type_variable_symbol(ctx, syms, qtype_name, owner);
-                let names = Rc::clone(&self.names);
-                let intersection = types.make_intersection_type(
-                    ctx,
-                    syms,
-                    &names,
-                    upper_bounds,
-                    false,
-                );
-                let fresh_type = ctx.alloc_type(crate::code::type_::Type::new(
-                    TypeTag::TYPEVAR,
-                    Some(fresh_tvar),
-                    TypeKindData::TypeVar {
-                        bound: Some(intersection),
-                        lower: Some(syms.bot_type),
-                    },
-                ));
-                ctx.sym_mut(fresh_tvar).ty = Some(fresh_type);
-                todo = todo.append(uv);
-                types.undet_var_set_inst(ctx, syms, uv, fresh_type);
-            } else if upper_bounds.non_empty() {
-                let glb = types.glb_list(ctx, syms, upper_bounds);
-                types.undet_var_set_inst(ctx, syms, uv, glb);
-            } else {
-                types.undet_var_set_inst(ctx, syms, uv, syms.object_type);
-            }
-            current = current.tail();
+        let current = vars.clone();
+        for t in &current {
+        let uv = inference_context.as_undet_var(ctx, syms, types, t);
+        let upper_bounds = types.undet_var_get_bounds(ctx, uv, &[InferenceBound::UPPER]);
+        if contains_any_list(ctx, syms, types, upper_bounds.clone(), vars.clone()) {
+            let qtype = types.undet_var_qtype(ctx, uv);
+            let qtype_tsym = ctx.typ(qtype).tsym.expect("undet var qtype symbol");
+            let qtype_name = ctx.sym(qtype_tsym).name.clone();
+            let owner = ctx.sym(qtype_tsym).owner.expect("qtype owner");
+            let fresh_tvar = new_type_variable_symbol(ctx, syms, qtype_name, owner);
+            let names = Rc::clone(&self.names);
+            let intersection = types.make_intersection_type(
+                ctx,
+                syms,
+                &names,
+                upper_bounds,
+                false,
+            );
+            let fresh_type = ctx.alloc_type(crate::code::type_::Type::new(
+                TypeTag::TYPEVAR,
+                Some(fresh_tvar),
+                TypeKindData::TypeVar {
+                    bound: Some(intersection),
+                    lower: Some(syms.bot_type),
+                },
+            ));
+            ctx.sym_mut(fresh_tvar).ty = Some(fresh_type);
+            todo = todo.append(uv);
+            types.undet_var_set_inst(ctx, syms, uv, fresh_type);
+        } else if upper_bounds.non_empty() {
+            let glb = types.glb_list(ctx, syms, upper_bounds);
+            types.undet_var_set_inst(ctx, syms, uv, glb);
+        } else {
+            types.undet_var_set_inst(ctx, syms, uv, syms.object_type);
+        }
         }
         // step 2 - replace fresh tvars in their bounds
-        let mut current = todo;
-        while current.non_empty() {
-            let uv = *current.head();
-            let inst = types
-                .undet_var_get_inst(ctx, uv)
-                .expect("fresh tvar instance");
-            let ct_upper = ctx.upper_bound_of(inst).expect("tvar upper bound");
-            // Java: types.getBounds(ct) (Infer.java:541). Keep compound
-            // components; fall back to the upper bound only when the local
-            // bound list is empty (glb(nil) otherwise).
-            let mut bounds = types.get_bounds_of_type(ctx, syms, inst);
-            if bounds.is_empty() {
-                bounds = crate::util::list::List::of(ct_upper);
-            }
-            let as_inst = inference_context.as_inst_types(ctx, syms, types, bounds);
-            let glb = types.glb_list(ctx, syms, as_inst);
-            if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(inst).kind {
-                *bound = Some(glb);
-            }
-            if types.is_erroneous_type(ctx, syms, glb) {
-                self.report_bound_error(ctx, syms, types, uv, InferenceBound::UPPER)?;
-            }
-            let _ = ct_upper;
-            current = current.tail();
+        let current = todo;
+        for uv in &current {
+        let inst = types
+            .undet_var_get_inst(ctx, uv)
+            .expect("fresh tvar instance");
+        let ct_upper = ctx.upper_bound_of(inst).expect("tvar upper bound");
+        // Java: types.getBounds(ct) (Infer.java:541). Keep compound
+        // components; fall back to the upper bound only when the local
+        // bound list is empty (glb(nil) otherwise).
+        let mut bounds = types.get_bounds_of_type(ctx, syms, inst);
+        if bounds.is_empty() {
+            bounds = crate::util::list::List::of(ct_upper);
+        }
+        let as_inst = inference_context.as_inst_types(ctx, syms, types, bounds);
+        let glb = types.glb_list(ctx, syms, as_inst);
+        if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(inst).kind {
+            *bound = Some(glb);
+        }
+        if types.is_erroneous_type(ctx, syms, glb) {
+            self.report_bound_error(ctx, syms, types, uv, InferenceBound::UPPER)?;
+        }
+        let _ = ct_upper;
         }
         Ok(())
     }
@@ -960,12 +948,10 @@ impl InferenceContext {
         inferencevars: List<TypeId>,
     ) -> Rc<InferenceContext> {
         let mut undetvars: List<TypeId> = List::nil();
-        let mut current = inferencevars.clone();
-        while current.non_empty() {
-            let t = *current.head();
-            let uv = infer.from_type_var_fun(ctx, syms, types, t);
-            undetvars = undetvars.append(uv);
-            current = current.tail();
+        let current = inferencevars.clone();
+        for t in &current {
+        let uv = infer.from_type_var_fun(ctx, syms, types, t);
+        undetvars = undetvars.append(uv);
         }
         InferenceContext::with_undet_vars(Some(infer), inferencevars, undetvars)
     }
@@ -1015,13 +1001,11 @@ impl InferenceContext {
             let upper = types.undet_var_get_bounds(ctx, uv, &[InferenceBound::UPPER]);
             let declared = types.undet_var_get_declared_bounds(ctx, uv);
             let mut extra: List<TypeId> = List::nil();
-            let mut current = upper;
-            while current.non_empty() {
-                let t = *current.head();
-                if !declared.iter().any(|d| d == t) {
-                    extra = extra.append(t);
-                }
-                current = current.tail();
+            let current = upper;
+            for t in &current {
+            if !declared.iter().any(|d| d == t) {
+                extra = extra.append(t);
+            }
             }
             let eq_lower = types.undet_var_get_bounds(
                 ctx,
@@ -1042,13 +1026,11 @@ impl InferenceContext {
     ) -> List<TypeId> {
         let undetvars = self.inner.borrow().undetvars.clone();
         let mut result: List<TypeId> = List::nil();
-        let mut current = undetvars;
-        while current.non_empty() {
-            let uv = *current.head();
-            if predicate(ctx, uv, types) {
-                result = result.append(types.undet_var_qtype(ctx, uv));
-            }
-            current = current.tail();
+        let current = undetvars;
+        for uv in &current {
+        if predicate(ctx, uv, types) {
+            result = result.append(types.undet_var_qtype(ctx, uv));
+        }
         }
         let _ = syms;
         result
@@ -1088,13 +1070,11 @@ impl InferenceContext {
     ) -> List<TypeId> {
         let inferencevars = self.inner.borrow().inferencevars.clone();
         let mut result: List<TypeId> = List::nil();
-        let mut current = inferencevars;
-        while current.non_empty() {
-            let iv = *current.head();
-            if types.contains(ctx, syms, t, iv) {
-                result = result.append(iv);
-            }
-            current = current.tail();
+        let current = inferencevars;
+        for iv in &current {
+        if types.contains(ctx, syms, t, iv) {
+            result = result.append(iv);
+        }
         }
         result
     }
@@ -1108,19 +1088,17 @@ impl InferenceContext {
         ts: List<TypeId>,
     ) -> List<TypeId> {
         let mut result: List<TypeId> = List::nil();
-        let mut current = ts;
-        while current.non_empty() {
-            let t = *current.head();
-            let vars = self.free_vars_in(ctx, syms, types, t);
-            let mut vars_current = vars;
-            while vars_current.non_empty() {
-                let var = *vars_current.head();
-                if !result.iter().any(|existing| existing == var) {
-                    result = result.append(var);
-                }
-                vars_current = vars_current.tail();
+        let current = ts;
+        for t in &current {
+        let vars = self.free_vars_in(ctx, syms, types, t);
+        let mut vars_current = vars;
+        while vars_current.non_empty() {
+            let var = *vars_current.head();
+            if !result.iter().any(|existing| existing == var) {
+                result = result.append(var);
             }
-            current = current.tail();
+            vars_current = vars_current.tail();
+        }
         }
         result
     }
@@ -1164,14 +1142,12 @@ impl InferenceContext {
     pub fn inst_types(&self, ctx: &mut CompilerContext, types: &Types) -> List<TypeId> {
         let undetvars = self.inner.borrow().undetvars.clone();
         let mut result: List<TypeId> = List::nil();
-        let mut current = undetvars;
-        while current.non_empty() {
-            let uv = *current.head();
-            let inst = types
-                .undet_var_get_inst(ctx, uv)
-                .unwrap_or_else(|| types.undet_var_qtype(ctx, uv));
-            result = result.append(inst);
-            current = current.tail();
+        let current = undetvars;
+        for uv in &current {
+        let inst = types
+            .undet_var_get_inst(ctx, uv)
+            .unwrap_or_else(|| types.undet_var_qtype(ctx, uv));
+        result = result.append(inst);
         }
         result
     }
@@ -1239,13 +1215,11 @@ impl InferenceContext {
         let restvars = self.restvars(ctx, syms, types);
         let inferencevars = self.inner.borrow().inferencevars.clone();
         let mut inferred_vars: List<TypeId> = List::nil();
-        let mut current = inferencevars;
-        while current.non_empty() {
-            let t = *current.head();
-            if !restvars.iter().any(|r| r == t) {
-                inferred_vars = inferred_vars.append(t);
-            }
-            current = current.tail();
+        let current = inferencevars;
+        for t in &current {
+        if !restvars.iter().any(|r| r == t) {
+            inferred_vars = inferred_vars.append(t);
+        }
         }
         self.notify_change_list(ctx, syms, types, inferred_vars)
     }
@@ -1264,26 +1238,22 @@ impl InferenceContext {
         };
         let inferencevars = self.inner.borrow().inferencevars.clone();
         let mut remaining_vars: List<TypeId> = List::nil();
-        let mut current = inferencevars;
-        while current.non_empty() {
-            let t = *current.head();
-            if !inferred_vars.iter().any(|i| i == t) {
-                remaining_vars = remaining_vars.append(t);
-            }
-            current = current.tail();
+        let current = inferencevars;
+        for t in &current {
+        if !inferred_vars.iter().any(|i| i == t) {
+            remaining_vars = remaining_vars.append(t);
+        }
         }
         let mut thrown: Option<InferenceException> = None;
         let mut kept: Vec<(Rc<dyn FreeTypeListener>, List<TypeId>)> = Vec::new();
         for (listener, vars) in listeners {
             let mut still_free = false;
-            let mut vars_current = vars.clone();
-            while vars_current.non_empty() {
-                let v = *vars_current.head();
-                if contains_any_list(ctx, syms, types, remaining_vars.clone(), List::of(v)) {
-                    still_free = true;
-                    break;
-                }
-                vars_current = vars_current.tail();
+            let vars_current = vars.clone();
+            for v in &vars_current {
+            if contains_any_list(ctx, syms, types, remaining_vars.clone(), List::of(v)) {
+                still_free = true;
+                break;
+            }
             }
             if still_free {
                 kept.push((listener, vars.clone()));
@@ -1314,11 +1284,9 @@ impl InferenceContext {
     ) -> List<TypeId> {
         let undetvars = self.inner.borrow().undetvars.clone();
         let mut result: List<TypeId> = List::nil();
-        let mut current = undetvars;
-        while current.non_empty() {
-            let uv = *current.head();
-            result = result.append(types.undet_var_dup(ctx, syms, uv));
-            current = current.tail();
+        let current = undetvars;
+        for uv in &current {
+        result = result.append(types.undet_var_dup(ctx, syms, uv));
         }
         result
     }
@@ -1374,13 +1342,11 @@ impl InferenceContext {
         {
             let mut that_state = that.inner.borrow_mut();
             let mut missing: List<TypeId> = List::nil();
-            let mut current = this_inferencevars.clone();
-            while current.non_empty() {
-                let t = *current.head();
-                if !that_state.inferencevars.iter().any(|existing| existing == t) {
-                    missing = missing.append(t);
-                }
-                current = current.tail();
+            let current = this_inferencevars.clone();
+            for t in &current {
+            if !that_state.inferencevars.iter().any(|existing| existing == t) {
+                missing = missing.append(t);
+            }
             }
             that_state.inferencevars = that_state.inferencevars.append_list(&missing);
         }
@@ -1392,38 +1358,34 @@ impl InferenceContext {
         {
             let mut that_state = that.inner.borrow_mut();
             let mut missing: List<TypeId> = List::nil();
-            let mut current = undets_to_propagate;
-            while current.non_empty() {
-                let t = *current.head();
-                let mut present = false;
-                let mut existing = that_state.undetvars.clone();
-                while existing.non_empty() {
-                    if *existing.head() == t {
-                        present = true;
-                        break;
-                    }
-                    existing = existing.tail();
+            let current = undets_to_propagate;
+            for t in &current {
+            let mut present = false;
+            let mut existing = that_state.undetvars.clone();
+            while existing.non_empty() {
+                if *existing.head() == t {
+                    present = true;
+                    break;
                 }
-                if !present {
-                    missing = missing.append(t);
-                }
-                current = current.tail();
+                existing = existing.tail();
+            }
+            if !present {
+                missing = missing.append(t);
+            }
             }
             that_state.undetvars = that_state.undetvars.append_list(&missing);
         }
         // set up listeners to notify the original inference context as
         // propagated vars are inferred in the new context
-        let mut current = this_inferencevars;
-        while current.non_empty() {
-            let t = *current.head();
-            let listener = Rc::new(NotifyChangeListener {
-                target: Rc::clone(self),
-            });
-            that.inner
-                .borrow_mut()
-                .free_type_listeners
-                .push((listener, List::of(t)));
-            current = current.tail();
+        let current = this_inferencevars;
+        for t in &current {
+        let listener = Rc::new(NotifyChangeListener {
+            target: Rc::clone(self),
+        });
+        that.inner
+            .borrow_mut()
+            .free_type_listeners
+            .push((listener, List::of(t)));
         }
     }
 
@@ -1443,13 +1405,11 @@ impl InferenceContext {
             return Ok(Rc::clone(self));
         }
         // if any of the inference vars is a captured variable bail out
-        let mut current = inferencevars;
-        while current.non_empty() {
-            let iv = *current.head();
-            if ctx.typ(iv).has_tag(TypeTag::TYPEVAR) && ctx.typ(iv).is_captured() {
-                return Ok(Rc::clone(self));
-            }
-            current = current.tail();
+        let current = inferencevars;
+        for iv in &current {
+        if ctx.typ(iv).has_tag(TypeTag::TYPEVAR) && ctx.typ(iv).is_captured() {
+            return Ok(Rc::clone(self));
+        }
         }
         let mut reachability = ReachabilityVisitor::new(self);
         reachability.scan(ctx, syms, types, roots)?;
@@ -1460,51 +1420,47 @@ impl InferenceContext {
         let redundant_vars = list_diff(&self.inner.borrow().inferencevars, &min_vars);
         // compute new undet variables
         let mut min_undet_vars: List<TypeId> = List::nil();
-        let mut current = min_vars.clone();
-        while current.non_empty() {
-            let min_var = *current.head();
-            let uv = self.as_undet_var(ctx, syms, types, min_var);
-            assert!(
-                types.undet_var_actions(ctx, uv).is_empty(),
-                "AssertionError: min requires empty incorporation actions"
-            );
-            let uv2 = types.undet_var_dup(ctx, syms, uv);
-            for ib in InferenceBound::values() {
-                let bounds = types.undet_var_get_bounds(ctx, uv, &[ib]);
-                let mut filtered: List<TypeId> = List::nil();
-                let mut bounds_current = bounds;
-                while bounds_current.non_empty() {
-                    let b = *bounds_current.head();
-                    if !redundant_vars.iter().any(|r| r == b) {
-                        filtered = filtered.append(b);
-                    }
-                    bounds_current = bounds_current.tail();
+        let current = min_vars.clone();
+        for min_var in &current {
+        let uv = self.as_undet_var(ctx, syms, types, min_var);
+        assert!(
+            types.undet_var_actions(ctx, uv).is_empty(),
+            "AssertionError: min requires empty incorporation actions"
+        );
+        let uv2 = types.undet_var_dup(ctx, syms, uv);
+        for ib in InferenceBound::values() {
+            let bounds = types.undet_var_get_bounds(ctx, uv, &[ib]);
+            let mut filtered: List<TypeId> = List::nil();
+            let mut bounds_current = bounds;
+            while bounds_current.non_empty() {
+                let b = *bounds_current.head();
+                if !redundant_vars.iter().any(|r| r == b) {
+                    filtered = filtered.append(b);
                 }
-                types.undet_var_set_bounds(ctx, uv2, ib, filtered);
+                bounds_current = bounds_current.tail();
             }
-            min_undet_vars = min_undet_vars.append(uv2);
-            current = current.tail();
+            types.undet_var_set_bounds(ctx, uv2, ib, filtered);
+        }
+        min_undet_vars = min_undet_vars.append(uv2);
         }
         let min_context = InferenceContext::with_undet_vars(Some(infer_clone(self)), min_vars.clone(), min_undet_vars);
         // add listener that forwards notifications to the original context
         let min_inferencevars = min_context.inner.borrow().inferencevars.clone();
-        let mut current = min_inferencevars;
-        while current.non_empty() {
-            let t = *current.head();
-            let original = Rc::downgrade(&Rc::clone(self));
-            let min_map = reachability.min_map.clone();
-            let listener = Rc::new(PropagateListener {
-                original,
-                var: t,
-                min_map,
-                warn: Rc::clone(warn),
-            });
-            min_context
-                .inner
-                .borrow_mut()
-                .free_type_listeners
-                .push((listener, List::of(t)));
-            current = current.tail();
+        let current = min_inferencevars;
+        for t in &current {
+        let original = Rc::downgrade(&Rc::clone(self));
+        let min_map = reachability.min_map.clone();
+        let listener = Rc::new(PropagateListener {
+            original,
+            var: t,
+            min_map,
+            warn: Rc::clone(warn),
+        });
+        min_context
+            .inner
+            .borrow_mut()
+            .free_type_listeners
+            .push((listener, List::of(t)));
         }
         if should_solve {
             // solve definitively unreachable variables
@@ -1599,13 +1555,11 @@ impl InferenceContext {
     ) -> Result<(), InferenceException> {
         let restvars = self.restvars(ctx, syms, types);
         let mut intersect: List<TypeId> = List::nil();
-        let mut current = vars_to_solve;
-        while current.non_empty() {
-            let t = *current.head();
-            if restvars.iter().any(|r| r == t) {
-                intersect = intersect.append(t);
-            }
-            current = current.tail();
+        let current = vars_to_solve;
+        for t in &current {
+        if restvars.iter().any(|r| r == t) {
+            intersect = intersect.append(t);
+        }
         }
         // Java: if (!intersect.isEmpty()) solve(intersect, warn)
         // (InferenceContext.java:517-525) -- an empty intersection is a no-op,
@@ -1653,26 +1607,24 @@ impl InferenceContext {
         }
         let infer = self.infer.clone().expect("InferenceContext.infer");
         let mut solved_vars: List<TypeId> = List::nil();
-        let mut current = vars_to_solve;
-        while current.non_empty() {
-            let t = *current.head();
-            if restvars.iter().any(|r| r == t) {
-                let uv = self.as_undet_var(ctx, syms, types, t);
-                for step in steps {
-                    if step.accepts(ctx, syms, types, uv, self)? {
-                        let inst = step.solve(&infer, ctx, syms, types, uv, self)?;
-                        types.undet_var_set_inst(
-                            ctx,
-                            syms,
-                            uv,
-                            inst,
-                        );
-                        solved_vars = solved_vars.append(types.undet_var_qtype(ctx, uv));
-                        break;
-                    }
+        let current = vars_to_solve;
+        for t in &current {
+        if restvars.iter().any(|r| r == t) {
+            let uv = self.as_undet_var(ctx, syms, types, t);
+            for step in steps {
+                if step.accepts(ctx, syms, types, uv, self)? {
+                    let inst = step.solve(&infer, ctx, syms, types, uv, self)?;
+                    types.undet_var_set_inst(
+                        ctx,
+                        syms,
+                        uv,
+                        inst,
+                    );
+                    solved_vars = solved_vars.append(types.undet_var_qtype(ctx, uv));
+                    break;
                 }
             }
-            current = current.tail();
+        }
         }
         Ok(solved_vars)
     }
@@ -1699,11 +1651,9 @@ impl InferenceContext {
                 break;
             } else {
                 let inst_types = self.as_inst_types(ctx, syms, types, solved_vars.clone());
-                let mut undets = self.undet_vars();
-                while undets.non_empty() {
-                    let uv = *undets.head();
-                    types.undet_var_subst_bounds(ctx, syms, uv, &solved_vars, &inst_types);
-                    undets = undets.tail();
+                let undets = self.undet_vars();
+                for uv in &undets {
+                types.undet_var_subst_bounds(ctx, syms, uv, &solved_vars, &inst_types);
                 }
             }
         }
@@ -1802,21 +1752,19 @@ impl InferenceStep {
                 if !types.undet_var_is_throws(ctx, uv) {
                     return Ok(false);
                 }
-                let mut bounds =
+                let bounds =
                     types.undet_var_get_bounds(ctx, uv, &[InferenceBound::UPPER]);
-                while bounds.non_empty() {
-                    let b = *bounds.head();
-                    if !inference_context.free(ctx, syms, types, b)
-                        && !types.is_subtype(
-                            ctx,
-                            syms,
-                            syms.runtime_exception_type,
-                            b,
-                        )
-                    {
-                        return Ok(false);
-                    }
-                    bounds = bounds.tail();
+                for b in &bounds {
+                if !inference_context.free(ctx, syms, types, b)
+                    && !types.is_subtype(
+                        ctx,
+                        syms,
+                        syms.runtime_exception_type,
+                        b,
+                    )
+                {
+                    return Ok(false);
+                }
                 }
                 Ok(true)
             }
@@ -1948,13 +1896,11 @@ impl InferenceStep {
     ) -> Result<List<TypeId>, InferenceException> {
         let bounds = types.undet_var_get_bounds(ctx, uv, &[self.ib()]);
         let mut result: List<TypeId> = List::nil();
-        let mut current = bounds;
-        while current.non_empty() {
-            let t = *current.head();
-            if bound_filter(ctx, syms, types, inference_context, t) {
-                result = result.append(t);
-            }
-            current = current.tail();
+        let current = bounds;
+        for t in &current {
+        if bound_filter(ctx, syms, types, inference_context, t) {
+            result = result.append(t);
+        }
         }
         Ok(result)
     }
@@ -2717,23 +2663,21 @@ impl ReachabilityVisitor {
                 .unwrap_or_else(|| vec![qtype]);
             for bound_kind in InferenceBound::values() {
                 let bounds = types.undet_var_get_bounds(ctx, t, &[bound_kind]);
-                let mut current = bounds;
-                while current.non_empty() {
-                    let b = *current.head();
-                    let undet = self.context.as_undet_var(ctx, syms, types, b);
-                    if !matches!(&ctx.typ(undet).kind, TypeKindData::UndetVar { .. }) {
-                        self.visit(ctx, syms, types, undet)?;
-                    } else if self.is_equiv(ctx, syms, types, t, b, bound_kind)? {
-                        if !deps.contains(&b) {
-                            deps.push(b);
-                        }
-                        if !self.equiv.contains(&b) {
-                            self.equiv.push(b);
-                        }
-                    } else {
-                        self.visit(ctx, syms, types, undet)?;
+                let current = bounds;
+                for b in &current {
+                let undet = self.context.as_undet_var(ctx, syms, types, b);
+                if !matches!(&ctx.typ(undet).kind, TypeKindData::UndetVar { .. }) {
+                    self.visit(ctx, syms, types, undet)?;
+                } else if self.is_equiv(ctx, syms, types, t, b, bound_kind)? {
+                    if !deps.contains(&b) {
+                        deps.push(b);
                     }
-                    current = current.tail();
+                    if !self.equiv.contains(&b) {
+                        self.equiv.push(b);
+                    }
+                } else {
+                    self.visit(ctx, syms, types, undet)?;
+                }
                 }
             }
             self.min_map.push((qtype, deps));
@@ -2889,26 +2833,22 @@ impl FreeTypeListener for UnreachableVarsListener {
 
 fn list_diff(ts: &List<TypeId>, ss: &List<TypeId>) -> List<TypeId> {
     let mut result: List<TypeId> = List::nil();
-    let mut current = ts.clone();
-    while current.non_empty() {
-        let t = *current.head();
-        if !ss.iter().any(|s| s == t) {
-            result = result.append(t);
-        }
-        current = current.tail();
+    let current = ts.clone();
+    for t in &current {
+    if !ss.iter().any(|s| s == t) {
+        result = result.append(t);
+    }
     }
     result
 }
 
 fn list_remove(ts: &List<TypeId>, t: TypeId) -> List<TypeId> {
     let mut result: List<TypeId> = List::nil();
-    let mut current = ts.clone();
-    while current.non_empty() {
-        let x = *current.head();
-        if x != t {
-            result = result.append(x);
-        }
-        current = current.tail();
+    let current = ts.clone();
+    for x in &current {
+    if x != t {
+        result = result.append(x);
+    }
     }
     result
 }
@@ -2925,17 +2865,15 @@ fn contains_any_list(
     ts1: List<TypeId>,
     ts2: List<TypeId>,
 ) -> bool {
-    let mut current = ts1;
-    while current.non_empty() {
-        let t = *current.head();
-        let mut other = ts2.clone();
-        while other.non_empty() {
-            if types.contains(ctx, syms, t, *other.head()) {
-                return true;
-            }
-            other = other.tail();
+    let current = ts1;
+    for t in &current {
+    let mut other = ts2.clone();
+    while other.non_empty() {
+        if types.contains(ctx, syms, t, *other.head()) {
+            return true;
         }
-        current = current.tail();
+        other = other.tail();
+    }
     }
     false
 }
@@ -3183,13 +3121,11 @@ fn check_compatible_upper_bounds(
 ) -> Result<(), InferenceException> {
     let upper_bounds = types.undet_var_get_bounds(ctx, uv, &[InferenceBound::UPPER]);
     let mut hibounds: List<TypeId> = List::nil();
-    let mut current = upper_bounds;
-    while current.non_empty() {
-        let t = *current.head();
-        if bound_filter(ctx, syms, types, inference_context, t) {
-            hibounds = hibounds.append(t);
-        }
-        current = current.tail();
+    let current = upper_bounds;
+    for t in &current {
+    if bound_filter(ctx, syms, types, inference_context, t) {
+        hibounds = hibounds.append(t);
+    }
     }
     let hb = if hibounds.is_empty() {
         syms.object_type
@@ -3712,13 +3648,11 @@ impl Infer {
                     }
                 }
             }
-            let mut current = thrown_vars;
-            while current.non_empty() {
-                let var = *current.head();
-                if !roots.iter().any(|r| r == var) {
-                    roots = roots.append(var);
-                }
-                current = current.tail();
+            let current = thrown_vars;
+            for var in &current {
+            if !roots.iter().any(|r| r == var) {
+                roots = roots.append(var);
+            }
             }
         }
         roots

@@ -1134,12 +1134,10 @@ impl Attr {
         env: &Rc<Env<AttrContext>>,
     ) -> List<TypeId> {
         let mut result: List<TypeId> = List::nil();
-        let mut current = trees.clone();
-        while current.non_empty() {
-            let tree = *current.head();
-            let ty = self.attrib_type_use(ctx, syms, tree, env);
-            result = result.append(ty);
-            current = current.tail();
+        let current = trees.clone();
+        for tree in &current {
+        let ty = self.attrib_type_use(ctx, syms, tree, env);
+        result = result.append(ty);
         }
         // Java: return chk.checkRefTypes(trees, types); (Attr.java:800-810)
         let chk_rc = Rc::clone(&self.chk);
@@ -1160,59 +1158,57 @@ impl Attr {
         };
         let mut multicatch_types: List<TypeId> = List::nil();
         let mut all_multicatch_types: Option<List<TypeId>> = None;
-        let mut current = alternatives;
-        while current.non_empty() {
-            let type_tree = *current.head();
-            let env = self.env.clone().expect("env");
-            let ctype = self.attrib_type_use(ctx, syms, type_tree, &env);
-            let pos = ctx.tree(type_tree).pos;
-            let ctype = {
+        let current = alternatives;
+        for type_tree in &current {
+        let env = self.env.clone().expect("env");
+        let ctype = self.attrib_type_use(ctx, syms, type_tree, &env);
+        let pos = ctx.tree(type_tree).pos;
+        let ctype = {
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = Rc::clone(&chk_rc);
+            let class_type = chk.check_class_type(ctx, syms, pos, ctype);
+            chk.check_type_basic(ctx, syms, pos, class_type, syms.throwable_type)
+        };
+        if !ctx.typ(ctype).has_tag(TypeTag::ERROR) {
+            // Check that alternatives of a union type are pairwise unrelated
+            // w.r.t. subtyping.
+            let intersects = {
                 let chk_rc = Rc::clone(&self.chk);
                 let chk = Rc::clone(&chk_rc);
-                let class_type = chk.check_class_type(ctx, syms, pos, ctype);
-                chk.check_type_basic(ctx, syms, pos, class_type, syms.throwable_type)
+                chk.intersects(ctx, syms, ctype, &multicatch_types)
             };
-            if !ctx.typ(ctype).has_tag(TypeTag::ERROR) {
-                // Check that alternatives of a union type are pairwise unrelated
-                // w.r.t. subtyping.
-                let intersects = {
-                    let chk_rc = Rc::clone(&self.chk);
-                    let chk = Rc::clone(&chk_rc);
-                    chk.intersects(ctx, syms, ctype, &multicatch_types)
-                };
-                if intersects {
-                    for other in multicatch_types.iter() {
-                        let sub = self.types.is_subtype(ctx, syms, ctype, other);
-                        let sup = self.types.is_subtype(ctx, syms, other, ctype);
-                        if sub || sup {
-                            let a = if sub { ctype } else { other };
-                            let b = if sub { other } else { ctype };
-                            let info = crate::resources::compiler_properties::errors::multicatch_types_must_be_disjoint(
-                                crate::resources::diagnostic_contract::TypeArg::placeholder(
-                                    crate::code::type_::type_to_string(ctx, a),
-                                ),
-                                crate::resources::diagnostic_contract::TypeArg::placeholder(
-                                    crate::code::type_::type_to_string(ctx, b),
-                                ),
-                            );
-                            crate::util::abstract_log::AbstractLog::error_at(
-                                &mut *self.log.borrow_mut(),
-                                pos,
-                                crate::util::jc_diagnostic::Error::from(info),
-                            );
-                        }
+            if intersects {
+                for other in multicatch_types.iter() {
+                    let sub = self.types.is_subtype(ctx, syms, ctype, other);
+                    let sup = self.types.is_subtype(ctx, syms, other, ctype);
+                    if sub || sup {
+                        let a = if sub { ctype } else { other };
+                        let b = if sub { other } else { ctype };
+                        let info = crate::resources::compiler_properties::errors::multicatch_types_must_be_disjoint(
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::code::type_::type_to_string(ctx, a),
+                            ),
+                            crate::resources::diagnostic_contract::TypeArg::placeholder(
+                                crate::code::type_::type_to_string(ctx, b),
+                            ),
+                        );
+                        crate::util::abstract_log::AbstractLog::error_at(
+                            &mut *self.log.borrow_mut(),
+                            pos,
+                            crate::util::jc_diagnostic::Error::from(info),
+                        );
                     }
                 }
-                multicatch_types = multicatch_types.append(ctype);
-                if let Some(all) = all_multicatch_types.as_mut() {
-                    *all = all.append(ctype);
-                }
-            } else if let Some(all) = all_multicatch_types.as_mut() {
-                *all = all.append(ctype);
-            } else {
-                all_multicatch_types = Some(multicatch_types.clone().append(ctype));
             }
-            current = current.tail();
+            multicatch_types = multicatch_types.append(ctype);
+            if let Some(all) = all_multicatch_types.as_mut() {
+                *all = all.append(ctype);
+            }
+        } else if let Some(all) = all_multicatch_types.as_mut() {
+            *all = all.append(ctype);
+        } else {
+            all_multicatch_types = Some(multicatch_types.clone().append(ctype));
+        }
         }
         let types: Vec<TypeId> = multicatch_types.iter().collect();
         let lub = self.types.lub(ctx, syms, &self.names, &types);
@@ -1398,26 +1394,24 @@ impl Attr {
                     return checked_head;
                 }
             } else {
-                let mut current = bounds.tail();
-                while current.non_empty() {
-                    let bound = *current.head();
-                    let bound_type = ctx.tree(bound).ty.expect("bound tree.type");
-                    let checked = self.check_base(ctx, syms, bound_type, bound, false, true, false);
-                    ctx.tree_mut(bound).ty = Some(checked);
-                    if ctx
-                        .typ(checked)
-                        .has_tag(crate::code::type_tag::TypeTag::ERROR)
-                    {
-                        effective_bounds = List::of(bound);
-                    } else if ctx
-                        .typ(checked)
-                        .has_tag(crate::code::type_tag::TypeTag::CLASS)
-                    {
-                        let erased = self.types.erasure(ctx, syms, checked);
-                        self.chk
-                            .check_not_repeated(ctx.tree(bound).pos, erased, &mut bound_set);
-                    }
-                    current = current.tail();
+                let current = bounds.tail();
+                for bound in &current {
+                let bound_type = ctx.tree(bound).ty.expect("bound tree.type");
+                let checked = self.check_base(ctx, syms, bound_type, bound, false, true, false);
+                ctx.tree_mut(bound).ty = Some(checked);
+                if ctx
+                    .typ(checked)
+                    .has_tag(crate::code::type_tag::TypeTag::ERROR)
+                {
+                    effective_bounds = List::of(bound);
+                } else if ctx
+                    .typ(checked)
+                    .has_tag(crate::code::type_tag::TypeTag::CLASS)
+                {
+                    let erased = self.types.erasure(ctx, syms, checked);
+                    self.chk
+                        .check_not_repeated(ctx.tree(bound).pos, erased, &mut bound_set);
+                }
                 }
             }
         }
@@ -1428,11 +1422,9 @@ impl Attr {
             return ctx.tree(head).ty.expect("bound tree.type");
         }
         let mut bound_types: List<TypeId> = List::nil();
-        let mut current = effective_bounds.clone();
-        while current.non_empty() {
-            let bound = *current.head();
-            bound_types = bound_types.append(ctx.tree(bound).ty.expect("bound tree.type"));
-            current = current.tail();
+        let current = effective_bounds.clone();
+        for bound in &current {
+        bound_types = bound_types.append(ctx.tree(bound).ty.expect("bound tree.type"));
         }
         let head = *effective_bounds.head();
         let head_type = ctx.tree(head).ty.expect("bound tree.type");
@@ -2045,14 +2037,12 @@ impl Attr {
             TreeKind::Erroneous { errs } => errs.clone(),
             _ => panic!("ClassCastException: JCErroneous expected"),
         };
-        let mut current = errs;
-        while current.non_empty() {
-            let err = *current.head();
-            let env = self.env.clone().expect("env");
-            let error_info =
-                ResultInfo::new(KindSelector::ERR, self.pt(), Rc::clone(&self.basic_handler));
-            let _ = self.attrib_tree_with(ctx, syms, err, &env, error_info);
-            current = current.tail();
+        let current = errs;
+        for err in &current {
+        let env = self.env.clone().expect("env");
+        let error_info =
+            ResultInfo::new(KindSelector::ERR, self.pt(), Rc::clone(&self.basic_handler));
+        let _ = self.attrib_tree_with(ctx, syms, err, &env, error_info);
         }
         ctx.tree_mut(tree).ty = Some(syms.err_type);
         Ok(syms.err_type)
@@ -2173,11 +2163,9 @@ impl Attr {
         trees: List<TreeId>,
         env: &Rc<Env<AttrContext>>,
     ) {
-        let mut current = trees;
-        while current.non_empty() {
-            let tree = *current.head();
-            self.attrib_stat(ctx, syms, tree, env);
-            current = current.tail();
+        let current = trees;
+        for tree in &current {
+        self.attrib_stat(ctx, syms, tree, env);
         }
     }
 
@@ -2192,11 +2180,9 @@ impl Attr {
         pt: Option<TypeId>,
     ) -> List<TypeId> {
         let mut result: List<TypeId> = List::nil();
-        let mut current = trees;
-        while current.non_empty() {
-            let tree = *current.head();
-            result = result.append(self.attrib_expr_with_type(ctx, syms, tree, env, pt));
-            current = current.tail();
+        let current = trees;
+        for tree in &current {
+        result = result.append(self.attrib_expr_with_type(ctx, syms, tree, env, pt));
         }
         result
     }
@@ -2211,11 +2197,9 @@ impl Attr {
         env: &Rc<Env<AttrContext>>,
     ) -> List<TypeId> {
         let mut result: List<TypeId> = List::nil();
-        let mut current = trees;
-        while current.non_empty() {
-            let tree = *current.head();
-            result = result.append(self.attrib_type(ctx, syms, tree, env));
-            current = current.tail();
+        let current = trees;
+        for tree in &current {
+        result = result.append(self.attrib_type(ctx, syms, tree, env));
         }
         result
     }
@@ -2989,17 +2973,15 @@ impl Attr {
         annotations: List<TreeId>,
         env: &Rc<Env<AttrContext>>,
     ) {
-        let mut current = annotations;
-        while current.non_empty() {
-            let annotation = *current.head();
-            let annotation_type = match &ctx.tree(annotation).kind {
-                TreeKind::Annotation {
-                    annotation_type, ..
-                } => annotation_type.expect("annotation type"),
-                _ => panic!("ClassCastException: JCAnnotation expected"),
-            };
-            self.attrib_type_use(ctx, syms, annotation_type, env);
-            current = current.tail();
+        let current = annotations;
+        for annotation in &current {
+        let annotation_type = match &ctx.tree(annotation).kind {
+            TreeKind::Annotation {
+                annotation_type, ..
+            } => annotation_type.expect("annotation type"),
+            _ => panic!("ClassCastException: JCAnnotation expected"),
+        };
+        self.attrib_type_use(ctx, syms, annotation_type, env);
         }
     }
 
@@ -3013,58 +2995,54 @@ impl Attr {
         env: &Rc<Env<AttrContext>>,
         check_cyclic: bool,
     ) {
-        let mut current = typarams.clone();
-        while current.non_empty() {
-            let tvar = *current.head();
-            let ty = ctx.tree(tvar).ty;
-            if let Some(type_var) = ty {
-                let Some(tsym) = ctx.typ(type_var).tsym else {
-                    panic!("type parameter tsym");
-                };
-                ctx.sym_mut(tsym).flags_field |= crate::code::flags::UNATTRIBUTED as i64;
-                let no_type = self.no_type(ctx);
-                set_upper_bound(ctx, type_var, no_type);
-                let bounds = type_parameter_bounds(ctx, tvar);
-                if !bounds.is_empty() {
-                    let mut result: List<TypeId> = List::nil();
-                    let mut bounds_current = bounds;
-                    while bounds_current.non_empty() {
-                        let bound = *bounds_current.head();
-                        let bound_type = self.attrib_type_use(ctx, syms, bound, env);
-                        result = result.prepend(bound_type);
-                        bounds_current = bounds_current.tail();
-                    }
-                    // Java: types.setBounds(a, bounds.reverse())
-                    let reversed = list_reverse(result);
-                    self.types
-                        .set_bounds(ctx, syms, &self.names, type_var, reversed, false);
-                } else {
-                    // if no bounds are given, assume a single bound of
-                    // java.lang.Object.
-                    self.types.set_bounds(
-                        ctx,
-                        syms,
-                        &self.names,
-                        type_var,
-                        List::of(syms.object_type),
-                        false,
-                    );
+        let current = typarams.clone();
+        for tvar in &current {
+        let ty = ctx.tree(tvar).ty;
+        if let Some(type_var) = ty {
+            let Some(tsym) = ctx.typ(type_var).tsym else {
+                panic!("type parameter tsym");
+            };
+            ctx.sym_mut(tsym).flags_field |= crate::code::flags::UNATTRIBUTED as i64;
+            let no_type = self.no_type(ctx);
+            set_upper_bound(ctx, type_var, no_type);
+            let bounds = type_parameter_bounds(ctx, tvar);
+            if !bounds.is_empty() {
+                let mut result: List<TypeId> = List::nil();
+                let mut bounds_current = bounds;
+                while bounds_current.non_empty() {
+                    let bound = *bounds_current.head();
+                    let bound_type = self.attrib_type_use(ctx, syms, bound, env);
+                    result = result.prepend(bound_type);
+                    bounds_current = bounds_current.tail();
                 }
-                ctx.sym_mut(tsym).flags_field &= !(crate::code::flags::UNATTRIBUTED as i64);
+                // Java: types.setBounds(a, bounds.reverse())
+                let reversed = list_reverse(result);
+                self.types
+                    .set_bounds(ctx, syms, &self.names, type_var, reversed, false);
+            } else {
+                // if no bounds are given, assume a single bound of
+                // java.lang.Object.
+                self.types.set_bounds(
+                    ctx,
+                    syms,
+                    &self.names,
+                    type_var,
+                    List::of(syms.object_type),
+                    false,
+                );
             }
-            current = current.tail();
+            ctx.sym_mut(tsym).flags_field &= !(crate::code::flags::UNATTRIBUTED as i64);
+        }
         }
         if check_cyclic {
-            let mut current = typarams;
-            while current.non_empty() {
-                let tvar = *current.head();
-                // Java: chk.checkNonCyclic(tvar.pos(), (TypeVar)tvar.type)
-                // (Attr.java:828-832).
-                let tvar_type = ctx.tree(tvar).ty.expect("type parameter tree.type");
-                let tvar_pos = ctx.tree(tvar).pos;
-                let chk = Rc::clone(&self.chk);
-                chk.check_non_cyclic_typevar(ctx, syms, Some(tvar_pos), tvar_type);
-                current = current.tail();
+            let current = typarams;
+            for tvar in &current {
+            // Java: chk.checkNonCyclic(tvar.pos(), (TypeVar)tvar.type)
+            // (Attr.java:828-832).
+            let tvar_type = ctx.tree(tvar).ty.expect("type parameter tree.type");
+            let tvar_pos = ctx.tree(tvar).pos;
+            let chk = Rc::clone(&self.chk);
+            chk.check_non_cyclic_typevar(ctx, syms, Some(tvar_pos), tvar_type);
             }
         }
     }
@@ -6052,24 +6030,22 @@ impl Attr {
     ) -> (KindSelector, List<TypeId>) {
         let mut kind = initial_kind;
         let mut argtypes: List<TypeId> = List::nil();
-        let mut current = trees;
-        while current.non_empty() {
-            let arg = *current.head();
-            let info = if self.allow_poly {
-                self.method_attr_info.clone()
-            } else {
-                self.unknown_expr_info.clone()
-            };
-            let argtype = self.attrib_tree_use(ctx, syms, arg, env, info);
-            let chk_rc = Rc::clone(&self.chk);
-            let chk = Rc::clone(&chk_rc);
-            let argtype = chk.check_non_void(ctx, syms, ctx.tree(arg).pos, argtype);
-            drop(chk);
-            if ctx.typ(argtype).has_tag(TypeTag::DEFERRED) {
-                kind = KindSelector::of(&[KindSelector::POLY, kind]);
-            }
-            argtypes = argtypes.append(argtype);
-            current = current.tail();
+        let current = trees;
+        for arg in &current {
+        let info = if self.allow_poly {
+            self.method_attr_info.clone()
+        } else {
+            self.unknown_expr_info.clone()
+        };
+        let argtype = self.attrib_tree_use(ctx, syms, arg, env, info);
+        let chk_rc = Rc::clone(&self.chk);
+        let chk = Rc::clone(&chk_rc);
+        let argtype = chk.check_non_void(ctx, syms, ctx.tree(arg).pos, argtype);
+        drop(chk);
+        if ctx.typ(argtype).has_tag(TypeTag::DEFERRED) {
+            kind = KindSelector::of(&[KindSelector::POLY, kind]);
+        }
+        argtypes = argtypes.append(argtype);
         }
         (kind, argtypes)
     }
@@ -7260,15 +7236,13 @@ impl Attr {
                 chk.validate(ctx, syms, &local_env, elemtype_tree);
             }
             owntype = elemtype;
-            let mut l = dims.clone();
-            while l.non_empty() {
-                let dim = *l.head();
-                self.attrib_expr_with_type(ctx, syms, dim, &local_env, Some(syms.int_type));
-                owntype = ctx.alloc_type(crate::code::type_::Type::new_array_type(
-                    owntype,
-                    syms.array_class,
-                ));
-                l = l.tail();
+            let l = dims.clone();
+            for dim in &l {
+            self.attrib_expr_with_type(ctx, syms, dim, &local_env, Some(syms.int_type));
+            owntype = ctx.alloc_type(crate::code::type_::Type::new_array_type(
+                owntype,
+                syms.array_class,
+            ));
             }
         } else {
             // we are seeing an untyped aggregate {... }
@@ -8488,12 +8462,10 @@ impl Attr {
             List::nil()
         };
         if let Some(scope) = env.info.borrow().scope {
-            let mut current = after_if_bindings;
-            while current.non_empty() {
-                let binding = *current.head();
-                ctx.scope_enter(scope, binding);
-                crate::code::symbol::binding_symbol_preserve(ctx, binding);
-                current = current.tail();
+            let current = after_if_bindings;
+            for binding in &current {
+            ctx.scope_enter(scope, binding);
+            crate::code::symbol::binding_symbol_preserve(ctx, binding);
             }
         }
         Ok(self.no_type(ctx))
@@ -8895,48 +8867,46 @@ impl Attr {
             Rc::clone(&local_env)
         };
         // Attribute resource declarations.
-        let mut current = resources;
-        while current.non_empty() {
-            let resource = *current.head();
-            let twr_context: Rc<dyn crate::comp::check::CheckContext> = Rc::new(TryCheckContext {
-                enclosing: Rc::clone(&self.result_info.as_ref().expect("resultInfo").check_context),
-                basic_handler: Rc::clone(&self.basic_handler),
-                diags: Rc::clone(&self.diags),
-            });
-            let twr_result = ResultInfo::new(
-                KindSelector::VAR,
-                Some(syms.auto_closeable_type),
-                twr_context,
+        let current = resources;
+        for resource in &current {
+        let twr_context: Rc<dyn crate::comp::check::CheckContext> = Rc::new(TryCheckContext {
+            enclosing: Rc::clone(&self.result_info.as_ref().expect("resultInfo").check_context),
+            basic_handler: Rc::clone(&self.basic_handler),
+            diags: Rc::clone(&self.diags),
+        });
+        let twr_result = ResultInfo::new(
+            KindSelector::VAR,
+            Some(syms.auto_closeable_type),
+            twr_context,
+        );
+        if ctx.tree(resource).tag == Tag::VARDEF {
+            let resource_type = self.attrib_stat(ctx, syms, resource, &try_env);
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = Rc::clone(&chk_rc);
+            twr_result.check(ctx, syms, &chk, ctx.tree(resource).pos, resource_type);
+            drop(chk);
+            // check that resource type cannot throw InterruptedException
+            self.check_auto_closeable(
+                ctx,
+                syms,
+                ctx.tree(resource).pos,
+                &local_env,
+                resource_type,
             );
-            if ctx.tree(resource).tag == Tag::VARDEF {
-                let resource_type = self.attrib_stat(ctx, syms, resource, &try_env);
-                let chk_rc = Rc::clone(&self.chk);
-                let chk = Rc::clone(&chk_rc);
-                twr_result.check(ctx, syms, &chk, ctx.tree(resource).pos, resource_type);
-                drop(chk);
-                // check that resource type cannot throw InterruptedException
-                self.check_auto_closeable(
-                    ctx,
-                    syms,
-                    ctx.tree(resource).pos,
-                    &local_env,
-                    resource_type,
-                );
-                let var = match &ctx.tree(resource).kind {
-                    TreeKind::VariableDecl { sym: Some(sym), .. } => Some(*sym),
-                    _ => None,
-                };
-                if let Some(var) = var {
-                    if let crate::code::symbol::SymbolKind::VarSymbol { data_kind, .. } =
-                        &mut ctx.sym_mut(var).kind_data
-                    {
-                        *data_kind = Some(crate::code::symbol::ElementKind::RESOURCE_VARIABLE);
-                    }
+            let var = match &ctx.tree(resource).kind {
+                TreeKind::VariableDecl { sym: Some(sym), .. } => Some(*sym),
+                _ => None,
+            };
+            if let Some(var) = var {
+                if let crate::code::symbol::SymbolKind::VarSymbol { data_kind, .. } =
+                    &mut ctx.sym_mut(var).kind_data
+                {
+                    *data_kind = Some(crate::code::symbol::ElementKind::RESOURCE_VARIABLE);
                 }
-            } else {
-                self.attrib_tree_use(ctx, syms, resource, &try_env, twr_result);
             }
-            current = current.tail();
+        } else {
+            self.attrib_tree_use(ctx, syms, resource, &try_env, twr_result);
+        }
         }
         // Attribute body.
         self.attrib_stat(ctx, syms, body, &try_env);
@@ -8945,66 +8915,64 @@ impl Attr {
             ctx.scope_leave(try_scope);
         }
         // Attribute catch clauses.
-        let mut c = catchers;
-        while c.non_empty() {
-            let catch = *c.head();
-            let catch_env = {
-                let scope = local_env.info.borrow().scope.expect("local env scope");
-                let new_scope = ctx.scope_dup(scope, None);
-                let info = local_env.info.borrow().dup(Some(new_scope));
-                local_env.dup(Some(catch), info)
-            };
-            let (param, catch_body) = match &ctx.tree(catch).kind {
-                TreeKind::Catch { param, body } => {
-                    (param.expect("catch param"), body.expect("catch body"))
-                }
-                _ => panic!("ClassCastException: JCCatch expected"),
-            };
-            let ctype = self.attrib_stat(ctx, syms, param, &catch_env);
-            if crate::tree::tree_info::is_multi_catch(ctx, catch) {
-                // multi-catch parameter is implicitly marked as final
-                let sym = match &ctx.tree(param).kind {
-                    TreeKind::VariableDecl { sym: Some(sym), .. } => Some(*sym),
-                    _ => None,
-                };
-                if let Some(sym) = sym {
-                    ctx.sym_mut(sym).flags_field |=
-                        crate::code::flags::FINAL as i64 | crate::code::flags::UNION;
-                }
+        let c = catchers;
+        for catch in &c {
+        let catch_env = {
+            let scope = local_env.info.borrow().scope.expect("local env scope");
+            let new_scope = ctx.scope_dup(scope, None);
+            let info = local_env.info.borrow().dup(Some(new_scope));
+            local_env.dup(Some(catch), info)
+        };
+        let (param, catch_body) = match &ctx.tree(catch).kind {
+            TreeKind::Catch { param, body } => {
+                (param.expect("catch param"), body.expect("catch body"))
             }
-            let param_sym = match &ctx.tree(param).kind {
+            _ => panic!("ClassCastException: JCCatch expected"),
+        };
+        let ctype = self.attrib_stat(ctx, syms, param, &catch_env);
+        if crate::tree::tree_info::is_multi_catch(ctx, catch) {
+            // multi-catch parameter is implicitly marked as final
+            let sym = match &ctx.tree(param).kind {
                 TreeKind::VariableDecl { sym: Some(sym), .. } => Some(*sym),
                 _ => None,
             };
-            if let Some(param_sym) = param_sym {
-                if let crate::code::symbol::SymbolKind::VarSymbol { data_kind, .. } =
-                    &mut ctx.sym_mut(param_sym).kind_data
-                {
-                    *data_kind = Some(crate::code::symbol::ElementKind::EXCEPTION_PARAMETER);
-                }
-                let vartype_pos = match &ctx.tree(param).kind {
-                    TreeKind::VariableDecl {
-                        vartype: Some(vartype),
-                        ..
-                    } => ctx.tree(*vartype).pos,
-                    _ => ctx.tree(param).pos,
-                };
-                let chk_rc = Rc::clone(&self.chk);
-                let chk = Rc::clone(&chk_rc);
-                let class_type = chk.check_class_type(ctx, syms, vartype_pos, ctype);
-                chk.check_type(
-                    ctx,
-                    syms,
-                    vartype_pos,
-                    class_type,
-                    syms.throwable_type,
-                    Rc::clone(&self.basic_handler),
-                );
+            if let Some(sym) = sym {
+                ctx.sym_mut(sym).flags_field |=
+                    crate::code::flags::FINAL as i64 | crate::code::flags::UNION;
             }
-            self.attrib_stat(ctx, syms, catch_body, &catch_env);
-            let catch_scope = catch_env.info.borrow().scope.expect("catch env scope");
-            ctx.scope_leave(catch_scope);
-            c = c.tail();
+        }
+        let param_sym = match &ctx.tree(param).kind {
+            TreeKind::VariableDecl { sym: Some(sym), .. } => Some(*sym),
+            _ => None,
+        };
+        if let Some(param_sym) = param_sym {
+            if let crate::code::symbol::SymbolKind::VarSymbol { data_kind, .. } =
+                &mut ctx.sym_mut(param_sym).kind_data
+            {
+                *data_kind = Some(crate::code::symbol::ElementKind::EXCEPTION_PARAMETER);
+            }
+            let vartype_pos = match &ctx.tree(param).kind {
+                TreeKind::VariableDecl {
+                    vartype: Some(vartype),
+                    ..
+                } => ctx.tree(*vartype).pos,
+                _ => ctx.tree(param).pos,
+            };
+            let chk_rc = Rc::clone(&self.chk);
+            let chk = Rc::clone(&chk_rc);
+            let class_type = chk.check_class_type(ctx, syms, vartype_pos, ctype);
+            chk.check_type(
+                ctx,
+                syms,
+                vartype_pos,
+                class_type,
+                syms.throwable_type,
+                Rc::clone(&self.basic_handler),
+            );
+        }
+        self.attrib_stat(ctx, syms, catch_body, &catch_env);
+        let catch_scope = catch_env.info.borrow().scope.expect("catch env scope");
+        ctx.scope_leave(catch_scope);
         }
         // Attribute finalizer.
         if let Some(finalizer) = finalizer {
@@ -9880,22 +9848,20 @@ impl Attr {
                 true
             } else {
                 let mut found = false;
-                let mut case_current = cases.clone();
-                while case_current.non_empty() {
-                    let case = *case_current.head();
-                    let labels = match &ctx.tree(case).kind {
-                        TreeKind::Case { labels, .. } => labels.clone(),
-                        _ => List::nil(),
-                    };
-                    let mut label_current = labels;
-                    while label_current.non_empty() {
-                        let label = *label_current.head();
-                        if is_pattern_label(ctx, label) {
-                            found = true;
-                        }
-                        label_current = label_current.tail();
+                let case_current = cases.clone();
+                for case in &case_current {
+                let labels = match &ctx.tree(case).kind {
+                    TreeKind::Case { labels, .. } => labels.clone(),
+                    _ => List::nil(),
+                };
+                let mut label_current = labels;
+                while label_current.non_empty() {
+                    let label = *label_current.head();
+                    if is_pattern_label(ctx, label) {
+                        found = true;
                     }
-                    case_current = case_current.tail();
+                    label_current = label_current.tail();
+                }
                 }
                 found
             };
@@ -9910,336 +9876,331 @@ impl Attr {
         let mut prev_bindings: Option<crate::comp::match_bindings::MatchBindings> = None;
         let mut yield_positions: Vec<i32> = Vec::new();
         let mut yield_types: Vec<TypeId> = Vec::new();
-        let mut case_current = cases.clone();
-        while case_current.non_empty() {
-            let case = *case_current.head();
-            let (case_labels, this_kind, case_stats) = match &ctx.tree(case).kind {
-                TreeKind::Case {
-                    labels,
-                    case_kind,
-                    stats,
-                    ..
-                } => (labels.clone(), *case_kind, stats.clone()),
-                _ => {
-                    case_current = case_current.tail();
-                    continue;
-                }
-            };
-            if case_kind.is_none() {
-                case_kind = Some(this_kind);
-            } else if case_kind != Some(this_kind) && !was_error {
-                self.attr_error(
-                    ctx.tree(case).pos,
-                    crate::resources::compiler_properties::errors::switch_mixing_case_types(),
-                );
-                was_error = true;
-            }
-            let mut current_bindings = prev_bindings.clone();
-            let was_total_pattern = has_total_pattern;
-            let mut label_current = case_labels;
-            while label_current.non_empty() {
-                let pat = *label_current.head();
-                let is_expr_label =
-                    !ctx.tree(pat).has_tag(Tag::DEFAULTCASELABEL) && !is_pattern_label(ctx, pat);
-                if is_expr_label {
-                    if crate::tree::tree_info::is_null(ctx, pat) {
-                        // Java: preview.checkSourceLevel(expr.pos(), Feature.CASE_NULL);
-                        // (Attr.java:1715). Position translation as for PATTERN_SWITCH.
-                        self.preview.check_source_level(
-                            &crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
-                                ctx.tree(pat).pos,
-                            ),
-                            Feature::CASE_NULL,
-                        );
-                        if has_null_pattern {
-                            self.attr_error(
-                                ctx.tree(pat).pos,
-                                crate::resources::compiler_properties::errors::duplicate_case_label(
-                                ),
-                            );
-                        } else if was_total_pattern {
-                            self.attr_error(
-                                ctx.tree(pat).pos,
-                                crate::resources::compiler_properties::errors::pattern_dominated(),
-                            );
-                        }
-                        has_null_pattern = true;
-                        self.attrib_expr_with_type(ctx, syms, pat, &switch_env, Some(seltype));
-                        let bindings = self.match_bindings.clone();
-                        self.match_bindings =
-                            crate::comp::match_bindings::MatchBindings::new_with_null(
-                                bindings.bindings_when_true.clone(),
-                                bindings.bindings_when_false.clone(),
-                                true,
-                            );
-                    } else if enum_switch {
-                        let sym = self.enum_constant(ctx, syms, pat, seltype);
-                        match sym {
-                            None => {
-                                self.attr_error(
-                                    ctx.tree(pat).pos,
-                                    crate::resources::compiler_properties::errors::enum_label_must_be_unqualified_enum(),
-                                );
-                            }
-                            Some(sym) => {
-                                let sym_ty = ctx.sym(sym).ty.expect("enum constant type");
-                                if labels_seen_enum.contains(&sym) {
-                                    self.attr_error(
-                                        ctx.tree(pat).pos,
-                                        crate::resources::compiler_properties::errors::duplicate_case_label(),
-                                    );
-                                } else {
-                                    labels_seen_enum.push(sym);
-                                    self.check_case_label_dominated(
-                                        ctx,
-                                        syms,
-                                        ctx.tree(pat).pos,
-                                        &covered_types,
-                                        sym_ty,
-                                    );
-                                }
-                            }
-                        }
-                    } else if error_enum_switch {
-                        // Java: error recovery: the selector is erroneous, and all the
-                        // case labels are identifiers. This could be an enum switch -
-                        // don't report resolve error for the case label:
-                        //     var prevResolveHelper = rs.basicLogResolveHelper;
-                        //     try {
-                        //         rs.basicLogResolveHelper = rs.silentLogResolveHelper;
-                        //         attribExpr(pat, switchEnv, seltype);
-                        //     } finally {
-                        //         rs.basicLogResolveHelper = prevResolveHelper;
-                        //     }
-                        // (Attr.java:1733-1743). The Java mutable field is the ported
-                        // Resolve.basic_log_resolve_helper Cell (Resolve.java:2610).
-                        let rs_rc = self
-                            .rs
-                            .borrow()
-                            .clone()
-                            .expect("AssertionError: rs service must be installed");
-                        let prev_resolve_helper = rs_rc.borrow().basic_log_resolve_helper.get();
-                        rs_rc
-                            .borrow()
-                            .basic_log_resolve_helper
-                            .set(crate::comp::resolve::LogResolveHelper::Silent);
-                        // The upstream finally restores the helper on every exit.
-                        let attribution =
-                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                self.attrib_expr_with_type(
-                                    ctx,
-                                    syms,
-                                    pat,
-                                    &switch_env,
-                                    Some(seltype),
-                                );
-                            }));
-                        rs_rc
-                            .borrow()
-                            .basic_log_resolve_helper
-                            .set(prev_resolve_helper);
-                        if let Err(payload) = attribution {
-                            std::panic::resume_unwind(payload);
-                        }
-                    } else {
-                        let val_typ_info = ResultInfo::new(
-                            KindSelector::VAL_TYP,
-                            Some(if !ctx.typ(seltype).has_tag(TypeTag::ERROR) {
-                                seltype
-                            } else {
-                                self.no_type(ctx)
-                            }),
-                            Rc::clone(&self.basic_handler),
-                        );
-                        let pattype =
-                            self.attrib_tree_use(ctx, syms, pat, &switch_env, val_typ_info);
-                        if !ctx.typ(pattype).has_tag(TypeTag::ERROR) {
-                            let const_value = ctx.typ(pattype).const_value().cloned();
-                            if const_value.is_none() {
-                                let symbol = crate::tree::tree_info::symbol(ctx, pat);
-                                let is_type_sym = symbol
-                                    .map(|symbol| {
-                                        ctx.sym(symbol).kind == crate::code::kinds::Kind::TYP
-                                    })
-                                    .unwrap_or(false);
-                                if is_type_sym && self.allow_pattern_switch {
-                                    self.attr_error(
-                                        ctx.tree(pat).pos,
-                                        crate::resources::compiler_properties::errors::pattern_expected(),
-                                    );
-                                } else {
-                                    self.attr_error(
-                                        ctx.tree(pat).pos,
-                                        if string_switch {
-                                            crate::resources::compiler_properties::errors::string_const_req()
-                                        } else {
-                                            crate::resources::compiler_properties::errors::const_expr_req()
-                                        },
-                                    );
-                                }
-                            } else if !string_switch && !is_int_switch {
-                                self.attr_error(
-                                    ctx.tree(pat).pos,
-                                    crate::resources::compiler_properties::errors::constant_label_not_compatible(
-                                        Self::type_arg_placeholder(ctx, pattype),
-                                        Self::type_arg_placeholder(ctx, seltype),
-                                    ),
-                                );
-                            } else if let Some(const_value) = const_value {
-                                if labels_seen_consts.contains(&const_value) {
-                                    self.attr_error(
-                                        ctx.tree(case).pos,
-                                        crate::resources::compiler_properties::errors::duplicate_case_label(),
-                                    );
-                                } else {
-                                    labels_seen_consts.push(const_value);
-                                    let boxed = self.types.boxed_type_or_type(ctx, syms, pattype);
-                                    self.check_case_label_dominated(
-                                        ctx,
-                                        syms,
-                                        ctx.tree(pat).pos,
-                                        &covered_types,
-                                        boxed,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                } else if ctx.tree(pat).has_tag(Tag::DEFAULTCASELABEL) {
-                    if has_default {
+        let case_current = cases.clone();
+        for case in &case_current {
+        let (case_labels, this_kind, case_stats) = match &ctx.tree(case).kind {
+            TreeKind::Case {
+                labels,
+                case_kind,
+                stats,
+                ..
+            } => (labels.clone(), *case_kind, stats.clone()),
+            _ => continue,
+        };
+        if case_kind.is_none() {
+            case_kind = Some(this_kind);
+        } else if case_kind != Some(this_kind) && !was_error {
+            self.attr_error(
+                ctx.tree(case).pos,
+                crate::resources::compiler_properties::errors::switch_mixing_case_types(),
+            );
+            was_error = true;
+        }
+        let mut current_bindings = prev_bindings.clone();
+        let was_total_pattern = has_total_pattern;
+        let mut label_current = case_labels;
+        while label_current.non_empty() {
+            let pat = *label_current.head();
+            let is_expr_label =
+                !ctx.tree(pat).has_tag(Tag::DEFAULTCASELABEL) && !is_pattern_label(ctx, pat);
+            if is_expr_label {
+                if crate::tree::tree_info::is_null(ctx, pat) {
+                    // Java: preview.checkSourceLevel(expr.pos(), Feature.CASE_NULL);
+                    // (Attr.java:1715). Position translation as for PATTERN_SWITCH.
+                    self.preview.check_source_level(
+                        &crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
+                            ctx.tree(pat).pos,
+                        ),
+                        Feature::CASE_NULL,
+                    );
+                    if has_null_pattern {
                         self.attr_error(
                             ctx.tree(pat).pos,
-                            crate::resources::compiler_properties::errors::duplicate_default_label(
+                            crate::resources::compiler_properties::errors::duplicate_case_label(
                             ),
                         );
                     } else if was_total_pattern {
                         self.attr_error(
                             ctx.tree(pat).pos,
+                            crate::resources::compiler_properties::errors::pattern_dominated(),
+                        );
+                    }
+                    has_null_pattern = true;
+                    self.attrib_expr_with_type(ctx, syms, pat, &switch_env, Some(seltype));
+                    let bindings = self.match_bindings.clone();
+                    self.match_bindings =
+                        crate::comp::match_bindings::MatchBindings::new_with_null(
+                            bindings.bindings_when_true.clone(),
+                            bindings.bindings_when_false.clone(),
+                            true,
+                        );
+                } else if enum_switch {
+                    let sym = self.enum_constant(ctx, syms, pat, seltype);
+                    match sym {
+                        None => {
+                            self.attr_error(
+                                ctx.tree(pat).pos,
+                                crate::resources::compiler_properties::errors::enum_label_must_be_unqualified_enum(),
+                            );
+                        }
+                        Some(sym) => {
+                            let sym_ty = ctx.sym(sym).ty.expect("enum constant type");
+                            if labels_seen_enum.contains(&sym) {
+                                self.attr_error(
+                                    ctx.tree(pat).pos,
+                                    crate::resources::compiler_properties::errors::duplicate_case_label(),
+                                );
+                            } else {
+                                labels_seen_enum.push(sym);
+                                self.check_case_label_dominated(
+                                    ctx,
+                                    syms,
+                                    ctx.tree(pat).pos,
+                                    &covered_types,
+                                    sym_ty,
+                                );
+                            }
+                        }
+                    }
+                } else if error_enum_switch {
+                    // Java: error recovery: the selector is erroneous, and all the
+                    // case labels are identifiers. This could be an enum switch -
+                    // don't report resolve error for the case label:
+                    //     var prevResolveHelper = rs.basicLogResolveHelper;
+                    //     try {
+                    //         rs.basicLogResolveHelper = rs.silentLogResolveHelper;
+                    //         attribExpr(pat, switchEnv, seltype);
+                    //     } finally {
+                    //         rs.basicLogResolveHelper = prevResolveHelper;
+                    //     }
+                    // (Attr.java:1733-1743). The Java mutable field is the ported
+                    // Resolve.basic_log_resolve_helper Cell (Resolve.java:2610).
+                    let rs_rc = self
+                        .rs
+                        .borrow()
+                        .clone()
+                        .expect("AssertionError: rs service must be installed");
+                    let prev_resolve_helper = rs_rc.borrow().basic_log_resolve_helper.get();
+                    rs_rc
+                        .borrow()
+                        .basic_log_resolve_helper
+                        .set(crate::comp::resolve::LogResolveHelper::Silent);
+                    // The upstream finally restores the helper on every exit.
+                    let attribution =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            self.attrib_expr_with_type(
+                                ctx,
+                                syms,
+                                pat,
+                                &switch_env,
+                                Some(seltype),
+                            );
+                        }));
+                    rs_rc
+                        .borrow()
+                        .basic_log_resolve_helper
+                        .set(prev_resolve_helper);
+                    if let Err(payload) = attribution {
+                        std::panic::resume_unwind(payload);
+                    }
+                } else {
+                    let val_typ_info = ResultInfo::new(
+                        KindSelector::VAL_TYP,
+                        Some(if !ctx.typ(seltype).has_tag(TypeTag::ERROR) {
+                            seltype
+                        } else {
+                            self.no_type(ctx)
+                        }),
+                        Rc::clone(&self.basic_handler),
+                    );
+                    let pattype =
+                        self.attrib_tree_use(ctx, syms, pat, &switch_env, val_typ_info);
+                    if !ctx.typ(pattype).has_tag(TypeTag::ERROR) {
+                        let const_value = ctx.typ(pattype).const_value().cloned();
+                        if const_value.is_none() {
+                            let symbol = crate::tree::tree_info::symbol(ctx, pat);
+                            let is_type_sym = symbol
+                                .map(|symbol| {
+                                    ctx.sym(symbol).kind == crate::code::kinds::Kind::TYP
+                                })
+                                .unwrap_or(false);
+                            if is_type_sym && self.allow_pattern_switch {
+                                self.attr_error(
+                                    ctx.tree(pat).pos,
+                                    crate::resources::compiler_properties::errors::pattern_expected(),
+                                );
+                            } else {
+                                self.attr_error(
+                                    ctx.tree(pat).pos,
+                                    if string_switch {
+                                        crate::resources::compiler_properties::errors::string_const_req()
+                                    } else {
+                                        crate::resources::compiler_properties::errors::const_expr_req()
+                                    },
+                                );
+                            }
+                        } else if !string_switch && !is_int_switch {
+                            self.attr_error(
+                                ctx.tree(pat).pos,
+                                crate::resources::compiler_properties::errors::constant_label_not_compatible(
+                                    Self::type_arg_placeholder(ctx, pattype),
+                                    Self::type_arg_placeholder(ctx, seltype),
+                                ),
+                            );
+                        } else if let Some(const_value) = const_value {
+                            if labels_seen_consts.contains(&const_value) {
+                                self.attr_error(
+                                    ctx.tree(case).pos,
+                                    crate::resources::compiler_properties::errors::duplicate_case_label(),
+                                );
+                            } else {
+                                labels_seen_consts.push(const_value);
+                                let boxed = self.types.boxed_type_or_type(ctx, syms, pattype);
+                                self.check_case_label_dominated(
+                                    ctx,
+                                    syms,
+                                    ctx.tree(pat).pos,
+                                    &covered_types,
+                                    boxed,
+                                );
+                            }
+                        }
+                    }
+                }
+            } else if ctx.tree(pat).has_tag(Tag::DEFAULTCASELABEL) {
+                if has_default {
+                    self.attr_error(
+                        ctx.tree(pat).pos,
+                        crate::resources::compiler_properties::errors::duplicate_default_label(
+                        ),
+                    );
+                } else if was_total_pattern {
+                    self.attr_error(
+                        ctx.tree(pat).pos,
+                        crate::resources::compiler_properties::errors::total_pattern_and_default(),
+                    );
+                }
+                has_default = true;
+                self.match_bindings = crate::comp::match_bindings::MatchBindings::empty();
+            } else {
+                // binding pattern
+                self.attrib_expr(ctx, syms, pat, &switch_env);
+                let primary = crate::tree::tree_info::primary_pattern_type(ctx, pat);
+                let primary_type = primary.ty().unwrap_or_else(|| self.no_type(ctx));
+                let primary_type = if !ctx.typ(primary_type).has_tag(TypeTag::TYPEVAR) {
+                    let chk_rc = Rc::clone(&self.chk);
+                    let chk = Rc::clone(&chk_rc);
+                    chk.check_class_or_array_type(ctx, syms, ctx.tree(pat).pos, primary_type)
+                } else {
+                    primary_type
+                };
+                self.check_castable_pattern(
+                    ctx,
+                    syms,
+                    ctx.tree(pat).pos,
+                    seltype,
+                    primary_type,
+                );
+                let pattern_type = self.types.erasure(ctx, syms, primary_type);
+                let seltype_erased = self.types.erasure(ctx, syms, seltype);
+                let is_total = primary.unconditional
+                    && !ctx.typ(pattern_type).has_tag(TypeTag::ERROR)
+                    && self
+                        .types
+                        .is_subtype(ctx, syms, seltype_erased, pattern_type);
+                if is_total {
+                    if has_total_pattern {
+                        self.attr_error(
+                            ctx.tree(pat).pos,
+                            crate::resources::compiler_properties::errors::duplicate_total_pattern(),
+                        );
+                    } else if has_default {
+                        self.attr_error(
+                            ctx.tree(pat).pos,
                             crate::resources::compiler_properties::errors::total_pattern_and_default(),
                         );
                     }
-                    has_default = true;
-                    self.match_bindings = crate::comp::match_bindings::MatchBindings::empty();
-                } else {
-                    // binding pattern
-                    self.attrib_expr(ctx, syms, pat, &switch_env);
-                    let primary = crate::tree::tree_info::primary_pattern_type(ctx, pat);
-                    let primary_type = primary.ty().unwrap_or_else(|| self.no_type(ctx));
-                    let primary_type = if !ctx.typ(primary_type).has_tag(TypeTag::TYPEVAR) {
-                        let chk_rc = Rc::clone(&self.chk);
-                        let chk = Rc::clone(&chk_rc);
-                        chk.check_class_or_array_type(ctx, syms, ctx.tree(pat).pos, primary_type)
-                    } else {
-                        primary_type
-                    };
-                    self.check_castable_pattern(
-                        ctx,
-                        syms,
-                        ctx.tree(pat).pos,
-                        seltype,
-                        primary_type,
-                    );
-                    let pattern_type = self.types.erasure(ctx, syms, primary_type);
-                    let seltype_erased = self.types.erasure(ctx, syms, seltype);
-                    let is_total = primary.unconditional
-                        && !ctx.typ(pattern_type).has_tag(TypeTag::ERROR)
-                        && self
-                            .types
-                            .is_subtype(ctx, syms, seltype_erased, pattern_type);
-                    if is_total {
-                        if has_total_pattern {
-                            self.attr_error(
-                                ctx.tree(pat).pos,
-                                crate::resources::compiler_properties::errors::duplicate_total_pattern(),
-                            );
-                        } else if has_default {
-                            self.attr_error(
-                                ctx.tree(pat).pos,
-                                crate::resources::compiler_properties::errors::total_pattern_and_default(),
-                            );
-                        }
-                        has_total_pattern = true;
-                    }
-                    self.check_case_label_dominated(
-                        ctx,
-                        syms,
-                        ctx.tree(pat).pos,
-                        &covered_types,
-                        pattern_type,
-                    );
-                    if primary.unconditional && !ctx.typ(pattern_type).has_tag(TypeTag::ERROR) {
-                        covered_types = covered_types.prepend(pattern_type);
-                    }
+                    has_total_pattern = true;
                 }
-                current_bindings = Some(self.match_bindings_computer.switch_case(
+                self.check_case_label_dominated(
                     ctx,
+                    syms,
                     ctx.tree(pat).pos,
-                    current_bindings.as_ref(),
-                    &self.match_bindings,
-                ));
-                label_current = label_current.tail();
-            }
-            let true_bindings = current_bindings
-                .as_ref()
-                .map(|bindings| bindings.bindings_when_true.clone())
-                .unwrap_or_else(List::nil);
-            let case_env =
-                self.binding_env_with_tree(ctx, syms, &switch_env, Some(case), true_bindings);
-            if let Some(cond_info) = expression_result.clone() {
-                case_env.info.borrow_mut().yield_result = Some(cond_info);
-            }
-            self.attrib_stats(ctx, syms, case_stats.clone(), &case_env);
-            if expression_result.is_some() {
-                let err_type = syms.err_type;
-                let mut collector = YieldCollector {
-                    target: switch_tree,
-                    positions: Vec::new(),
-                    types: Vec::new(),
-                    err_type,
-                };
-                crate::tree::tree_scanner::TreeScannerVisitor::scan(
-                    &mut collector,
-                    ctx,
-                    Some(case),
+                    &covered_types,
+                    pattern_type,
                 );
-                yield_positions.extend(collector.positions);
-                yield_types.extend(collector.types);
+                if primary.unconditional && !ctx.typ(pattern_type).has_tag(TypeTag::ERROR) {
+                    covered_types = covered_types.prepend(pattern_type);
+                }
             }
-            // Java: finally { caseEnv.info.scope.leave(); } addVars(c.stats,
-            // switchEnv.info.scope); (Attr.java:1804-1814): the case scope is
-            // left before the case variables are entered into the switch scope.
-            let case_scope = case_env.info.borrow().scope.expect("case env scope");
-            ctx.scope_leave(case_scope);
-            self.add_vars(
+            current_bindings = Some(self.match_bindings_computer.switch_case(
                 ctx,
-                case_stats.clone(),
-                switch_env.info.borrow().scope.expect("switch env scope"),
+                ctx.tree(pat).pos,
+                current_bindings.as_ref(),
+                &self.match_bindings,
+            ));
+            label_current = label_current.tail();
+        }
+        let true_bindings = current_bindings
+            .as_ref()
+            .map(|bindings| bindings.bindings_when_true.clone())
+            .unwrap_or_else(List::nil);
+        let case_env =
+            self.binding_env_with_tree(ctx, syms, &switch_env, Some(case), true_bindings);
+        if let Some(cond_info) = expression_result.clone() {
+            case_env.info.borrow_mut().yield_result = Some(cond_info);
+        }
+        self.attrib_stats(ctx, syms, case_stats.clone(), &case_env);
+        if expression_result.is_some() {
+            let err_type = syms.err_type;
+            let mut collector = YieldCollector {
+                target: switch_tree,
+                positions: Vec::new(),
+                types: Vec::new(),
+                err_type,
+            };
+            crate::tree::tree_scanner::TreeScannerVisitor::scan(
+                &mut collector,
+                ctx,
+                Some(case),
             );
-            self.statement_pre_flow(ctx, syms, case);
-            let completes_normally = {
-                let flow_rc = self
-                    .flow
-                    .borrow()
-                    .clone()
-                    .expect("AssertionError: flow service must be installed");
-                let make = Rc::clone(&self.make);
-                flow_rc.alive_after(ctx, syms, &case_env, case, &make)
-            };
-            if let TreeKind::Case {
-                completes_normally: slot,
-                ..
-            } = &mut ctx.tree_mut(case).kind
-            {
-                *slot = completes_normally;
-            }
-            prev_bindings = if this_kind == javac_source::tree::case_tree::CaseKind::STATEMENT
-                && completes_normally
-            {
-                current_bindings
-            } else {
-                None
-            };
-            case_current = case_current.tail();
+            yield_positions.extend(collector.positions);
+            yield_types.extend(collector.types);
+        }
+        // Java: finally { caseEnv.info.scope.leave(); } addVars(c.stats,
+        // switchEnv.info.scope); (Attr.java:1804-1814): the case scope is
+        // left before the case variables are entered into the switch scope.
+        let case_scope = case_env.info.borrow().scope.expect("case env scope");
+        ctx.scope_leave(case_scope);
+        self.add_vars(
+            ctx,
+            case_stats.clone(),
+            switch_env.info.borrow().scope.expect("switch env scope"),
+        );
+        self.statement_pre_flow(ctx, syms, case);
+        let completes_normally = {
+            let flow_rc = self
+                .flow
+                .borrow()
+                .clone()
+                .expect("AssertionError: flow service must be installed");
+            let make = Rc::clone(&self.make);
+            flow_rc.alive_after(ctx, syms, &case_env, case, &make)
+        };
+        if let TreeKind::Case {
+            completes_normally: slot,
+            ..
+        } = &mut ctx.tree_mut(case).kind
+        {
+            *slot = completes_normally;
+        }
+        prev_bindings = if this_kind == javac_source::tree::case_tree::CaseKind::STATEMENT
+            && completes_normally
+        {
+            current_bindings
+        } else {
+            None
+        };
         }
         if pattern_switch {
             let chk_rc = Rc::clone(&self.chk);
@@ -10440,15 +10401,13 @@ impl Attr {
     /// switchScope) (Attr.java:1876-1882).
     #[allow(clippy::collapsible_if)]
     fn add_vars(&self, ctx: &mut CompilerContext, stats: List<TreeId>, scope: crate::ids::ScopeId) {
-        let mut current = stats;
-        while current.non_empty() {
-            let stat = *current.head();
-            if ctx.tree(stat).tag == Tag::VARDEF {
-                if let TreeKind::VariableDecl { sym: Some(sym), .. } = &ctx.tree(stat).kind {
-                    ctx.scope_enter(scope, *sym);
-                }
+        let current = stats;
+        for stat in &current {
+        if ctx.tree(stat).tag == Tag::VARDEF {
+            if let TreeKind::VariableDecl { sym: Some(sym), .. } = &ctx.tree(stat).kind {
+                ctx.scope_enter(scope, *sym);
             }
-            current = current.tail();
+        }
         }
     }
 
@@ -10462,16 +10421,14 @@ impl Attr {
         covered_types: &List<TypeId>,
         pattern_type: TypeId,
     ) {
-        let mut current = covered_types.clone();
-        while current.non_empty() {
-            let existing = *current.head();
-            if self.types.is_subtype(ctx, syms, pattern_type, existing) {
-                self.attr_error(
-                    pos,
-                    crate::resources::compiler_properties::errors::pattern_dominated(),
-                );
-            }
-            current = current.tail();
+        let current = covered_types.clone();
+        for existing in &current {
+        if self.types.is_subtype(ctx, syms, pattern_type, existing) {
+            self.attr_error(
+                pos,
+                crate::resources::compiler_properties::errors::pattern_dominated(),
+            );
+        }
         }
     }
 
@@ -10595,21 +10552,17 @@ impl crate::comp::infer::FreeTypeListener for AccessibleTypesListener {
         inference_context: &crate::comp::infer::InferenceContext,
     ) -> Result<(), crate::comp::infer::InferenceException> {
         let mut instantiated: List<TypeId> = List::nil();
-        let mut current = self.ts.clone();
-        while current.non_empty() {
-            let t = *current.head();
-            instantiated = instantiated.append(inference_context.as_inst_type(ctx, syms, types, t));
-            current = current.tail();
+        let current = self.ts.clone();
+        for t in &current {
+        instantiated = instantiated.append(inference_context.as_inst_type(ctx, syms, types, t));
         }
-        let mut accessible = instantiated;
-        while accessible.non_empty() {
-            let t = *accessible.head();
-            if let Some(rs) = &self.rs {
-                crate::comp::with_reentrant_mut(rs.as_ref(), |rs| {
-                    rs.check_accessible_type(ctx, syms, &self.env, t);
-                });
-            }
-            accessible = accessible.tail();
+        let accessible = instantiated;
+        for t in &accessible {
+        if let Some(rs) = &self.rs {
+            crate::comp::with_reentrant_mut(rs.as_ref(), |rs| {
+                rs.check_accessible_type(ctx, syms, &self.env, t);
+            });
+        }
         }
         let _ = self.pos;
         Ok(())
@@ -10772,14 +10725,12 @@ impl Attr {
             });
             inference_context.add_free_type_listener(ctx, syms, &self.types, ts.clone(), listener);
         } else {
-            let mut current = ts.clone();
-            while current.non_empty() {
-                let t = *current.head();
-                if let Some(rs_rc) = self.rs.borrow().clone() {
-                    let rs = rs_rc.borrow();
-                    rs.check_accessible_type(ctx, syms, env, t);
-                }
-                current = current.tail();
+            let current = ts.clone();
+            for t in &current {
+            if let Some(rs_rc) = self.rs.borrow().clone() {
+                let rs = rs_rc.borrow();
+                rs.check_accessible_type(ctx, syms, env, t);
+            }
             }
         }
     }
@@ -10796,84 +10747,72 @@ impl Attr {
         inference_context: &Rc<crate::comp::infer::InferenceContext>,
     ) -> bool {
         let mut non_proper_list: List<TypeId> = List::nil();
-        let mut current = thrown_at_func_type.clone();
-        while current.non_empty() {
-            let e = *current.head();
-            if inference_context.free(ctx, syms, &self.types, e) {
-                non_proper_list = non_proper_list.append(e);
-            }
-            current = current.tail();
+        let current = thrown_at_func_type.clone();
+        for e in &current {
+        if inference_context.free(ctx, syms, &self.types, e) {
+            non_proper_list = non_proper_list.append(e);
+        }
         }
         let mut proper_list: List<TypeId> = List::nil();
-        let mut current = thrown_at_func_type.clone();
-        while current.non_empty() {
-            let e = *current.head();
-            let mut is_non_proper = false;
-            let mut scan = non_proper_list.clone();
-            while scan.non_empty() {
-                if *scan.head() == e {
-                    is_non_proper = true;
-                }
-                scan = scan.tail();
+        let current = thrown_at_func_type.clone();
+        for e in &current {
+        let mut is_non_proper = false;
+        let mut scan = non_proper_list.clone();
+        while scan.non_empty() {
+            if *scan.head() == e {
+                is_non_proper = true;
             }
-            if !is_non_proper {
-                proper_list = proper_list.append(e);
-            }
-            current = current.tail();
+            scan = scan.tail();
+        }
+        if !is_non_proper {
+            proper_list = proper_list.append(e);
+        }
         }
         let mut checked_list: List<TypeId> = List::nil();
-        let mut current = thrown_by_func_expr;
-        while current.non_empty() {
-            let e = *current.head();
-            let chk_rc = Rc::clone(&self.chk);
-            let chk = Rc::clone(&chk_rc);
-            if chk.is_checked_type(ctx, syms, e) {
-                checked_list = checked_list.append(e);
-            }
-            current = current.tail();
+        let current = thrown_by_func_expr;
+        for e in &current {
+        let chk_rc = Rc::clone(&self.chk);
+        let chk = Rc::clone(&chk_rc);
+        if chk.is_checked_type(ctx, syms, e) {
+            checked_list = checked_list.append(e);
+        }
         }
         let mut uncaught: List<TypeId> = List::nil();
-        let mut checked_current = checked_list;
-        while checked_current.non_empty() {
-            let checked = *checked_current.head();
-            let mut is_subtype = false;
-            let mut proper_current = proper_list.clone();
-            while proper_current.non_empty() {
-                let proper = *proper_current.head();
-                if self.types.is_subtype(ctx, syms, checked, proper) {
-                    is_subtype = true;
-                    break;
-                }
-                proper_current = proper_current.tail();
+        let checked_current = checked_list;
+        for checked in &checked_current {
+        let mut is_subtype = false;
+        let mut proper_current = proper_list.clone();
+        while proper_current.non_empty() {
+            let proper = *proper_current.head();
+            if self.types.is_subtype(ctx, syms, checked, proper) {
+                is_subtype = true;
+                break;
             }
-            if !is_subtype {
-                uncaught = uncaught.append(checked);
-            }
-            checked_current = checked_current.tail();
+            proper_current = proper_current.tail();
+        }
+        if !is_subtype {
+            uncaught = uncaught.append(checked);
+        }
         }
         if non_proper_list.is_empty() && !uncaught.is_empty() {
             return false;
         }
         let non_proper_as_undet =
             inference_context.as_undet_vars(ctx, syms, &self.types, non_proper_list.clone());
-        let mut uncaught_current = uncaught;
-        while uncaught_current.non_empty() {
-            let checked_ex = *uncaught_current.head();
-            let mut non_proper_current = non_proper_as_undet.clone();
-            while non_proper_current.non_empty() {
-                let non_proper = *non_proper_current.head();
-                self.types.is_subtype(ctx, syms, checked_ex, non_proper);
-                non_proper_current = non_proper_current.tail();
-            }
-            uncaught_current = uncaught_current.tail();
-        }
-        let mut non_proper_current = non_proper_as_undet;
+        let uncaught_current = uncaught;
+        for checked_ex in &uncaught_current {
+        let mut non_proper_current = non_proper_as_undet.clone();
         while non_proper_current.non_empty() {
-            let t = *non_proper_current.head();
-            if ctx.typ(t).has_tag(TypeTag::UNDETVAR) {
-                undetvar_set_throw(ctx, t);
-            }
+            let non_proper = *non_proper_current.head();
+            self.types.is_subtype(ctx, syms, checked_ex, non_proper);
             non_proper_current = non_proper_current.tail();
+        }
+        }
+        let non_proper_current = non_proper_as_undet;
+        for t in &non_proper_current {
+        if ctx.typ(t).has_tag(TypeTag::UNDETVAR) {
+            undetvar_set_throw(ctx, t);
+        }
         }
         true
     }
@@ -11131,36 +11070,34 @@ impl Attr {
         if param_kind == crate::tree::jc_tree::ParameterKind::IMPLICIT {
             // add param type info in the AST
             let mut actuals = self.types.get_parameter_types_public(ctx, lambda_type);
-            let mut current_params = params.clone();
+            let current_params = params.clone();
             let mut arity_mismatch = false;
-            while current_params.non_empty() {
-                let param = *current_params.head();
-                if actuals.is_empty() {
-                    arity_mismatch = true;
-                }
-                let arg_type = if arity_mismatch {
-                    syms.err_type
-                } else {
-                    *actuals.head()
-                };
-                let implicit = match &ctx.tree(param).kind {
-                    TreeKind::VariableDecl {
-                        vartype: Some(vartype),
-                        ..
-                    } => ctx.tree(*vartype).pos == crate::util::position::NOPOS,
-                    TreeKind::VariableDecl { vartype: None, .. } => true,
-                    _ => false,
-                };
-                if implicit {
-                    self.set_synthetic_variable_type(ctx, syms, param, arg_type);
-                }
-                if let TreeKind::VariableDecl { sym, .. } = &mut ctx.tree_mut(param).kind {
-                    *sym = None;
-                }
-                if !actuals.is_empty() {
-                    actuals = actuals.tail();
-                }
-                current_params = current_params.tail();
+            for param in &current_params {
+            if actuals.is_empty() {
+                arity_mismatch = true;
+            }
+            let arg_type = if arity_mismatch {
+                syms.err_type
+            } else {
+                *actuals.head()
+            };
+            let implicit = match &ctx.tree(param).kind {
+                TreeKind::VariableDecl {
+                    vartype: Some(vartype),
+                    ..
+                } => ctx.tree(*vartype).pos == crate::util::position::NOPOS,
+                TreeKind::VariableDecl { vartype: None, .. } => true,
+                _ => false,
+            };
+            if implicit {
+                self.set_synthetic_variable_type(ctx, syms, param, arg_type);
+            }
+            if let TreeKind::VariableDecl { sym, .. } = &mut ctx.tree_mut(param).kind {
+                *sym = None;
+            }
+            if !actuals.is_empty() {
+                actuals = actuals.tail();
+            }
             }
             self.attrib_stats(ctx, syms, params.clone(), &local_env);
             if arity_mismatch {
@@ -13904,7 +13841,7 @@ impl Attr {
             }
             let prev_lint = {
                 let chk_rc = Rc::clone(&self.chk);
-                let mut chk = chk_rc;
+                let chk = chk_rc;
                 let current = env.info.borrow().lint.clone();
                 match current {
                     Some(current) => chk.set_lint(current),
@@ -13995,7 +13932,7 @@ impl Attr {
             );
             {
                 let chk_rc = Rc::clone(&self.chk);
-                let mut chk = chk_rc;
+                let chk = chk_rc;
                 chk.set_lint(prev_lint);
             }
             let _ = failure.take();
@@ -16185,7 +16122,7 @@ impl Attr {
         }
         {
             let chk_rc = Rc::clone(&self.chk);
-            let mut chk = chk_rc;
+            let chk = chk_rc;
             chk.set_lint(prev_lint);
             chk.set_method(prev_method);
         }
@@ -16784,7 +16721,7 @@ impl Attr {
         }
         {
             let chk_rc = Rc::clone(&self.chk);
-            let mut chk = chk_rc;
+            let chk = chk_rc;
             chk.set_lint(prev_lint);
         }
         let owner = ctx.sym(v).owner;
@@ -18027,12 +17964,10 @@ mod tests {
             _ => List::nil(),
         };
         let mut current = defs;
-        while current.non_empty() {
-            let def = *current.head();
-            if ctx.tree(def).has_tag(Tag::CLASSDEF) {
-                return def;
-            }
-            current = current.tail();
+        for def in &current {
+        if ctx.tree(def).has_tag(Tag::CLASSDEF) {
+            return def;
+        }
         }
         panic!("class declaration not found")
     }
@@ -18059,12 +17994,10 @@ mod tests {
     fn type_trees(ctx: &CompilerContext, class_tree: TreeId) -> Vec<TreeId> {
         let mut result = Vec::new();
         let mut current = class_defs(ctx, class_tree);
-        while current.non_empty() {
-            let def = *current.head();
-            if ctx.tree(def).has_tag(Tag::VARDEF) {
-                result.push(var_decl_type(ctx, def));
-            }
-            current = current.tail();
+        for def in &current {
+        if ctx.tree(def).has_tag(Tag::VARDEF) {
+            result.push(var_decl_type(ctx, def));
+        }
         }
         result
     }
@@ -18093,10 +18026,8 @@ mod tests {
                     preset_type_idents(ctx, syms, names, clazz);
                 }
                 let mut current = arguments;
-                while current.non_empty() {
-                    let argument = *current.head();
-                    preset_type_idents(ctx, syms, names, argument);
-                    current = current.tail();
+                for argument in &current {
+                preset_type_idents(ctx, syms, names, argument);
                 }
             }
             Tag::IDENT => {
@@ -18232,39 +18163,37 @@ mod tests {
             .members()
             .expect("class members scope");
         let mut current = class_defs(&harness.ctx, harness.class_tree);
-        while current.non_empty() {
-            let def = *current.head();
-            if harness.ctx.tree(def).has_tag(Tag::VARDEF) {
-                let pos = harness.ctx.tree(def).pos;
-                let (name, flags_value) = match &harness.ctx.tree(def).kind {
-                    TreeKind::VariableDecl { name, mods, .. } => {
-                        let flags_value = mods
-                            .and_then(|mods| match &harness.ctx.tree(mods).kind {
-                                TreeKind::Modifiers { flags, .. } => Some(*flags),
-                                _ => None,
-                            })
-                            .unwrap_or(0);
-                        (name.clone(), flags_value)
-                    }
-                    _ => panic!("variable decl expected"),
-                };
-                let symbol = harness.ctx.alloc_symbol(crate::code::symbol::Symbol::new(
-                    crate::code::kinds::Kind::VAR,
-                    flags_value,
-                    name,
-                    None,
-                    Some(class_sym),
-                    crate::code::symbol::SymbolKind::VarSymbol {
-                        lazy_const_value: None,
-                        pos,
-                        adr: 0,
-                        data_kind: None,
-                        data: None,
-                    },
-                ));
-                harness.ctx.scope_enter(members, symbol);
-            }
-            current = current.tail();
+        for def in &current {
+        if harness.ctx.tree(def).has_tag(Tag::VARDEF) {
+            let pos = harness.ctx.tree(def).pos;
+            let (name, flags_value) = match &harness.ctx.tree(def).kind {
+                TreeKind::VariableDecl { name, mods, .. } => {
+                    let flags_value = mods
+                        .and_then(|mods| match &harness.ctx.tree(mods).kind {
+                            TreeKind::Modifiers { flags, .. } => Some(*flags),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
+                    (name.clone(), flags_value)
+                }
+                _ => panic!("variable decl expected"),
+            };
+            let symbol = harness.ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+                crate::code::kinds::Kind::VAR,
+                flags_value,
+                name,
+                None,
+                Some(class_sym),
+                crate::code::symbol::SymbolKind::VarSymbol {
+                    lazy_const_value: None,
+                    pos,
+                    adr: 0,
+                    data_kind: None,
+                    data: None,
+                },
+            ));
+            harness.ctx.scope_enter(members, symbol);
+        }
         }
     }
 
@@ -18394,13 +18323,11 @@ class Sample {
         let class_defs = first_class_defs(&harness.ctx, harness.class_tree);
         let mut current = class_defs;
         let mut method = None;
-        while current.non_empty() {
-            let def = *current.head();
-            if harness.ctx.tree(def).has_tag(Tag::METHODDEF) {
-                method = Some(def);
-                break;
-            }
-            current = current.tail();
+        for def in &current {
+        if harness.ctx.tree(def).has_tag(Tag::METHODDEF) {
+            method = Some(def);
+            break;
+        }
         }
         let method = method.expect("method definition");
         let body = method_body(&harness.ctx, method).expect("method body");

@@ -1812,12 +1812,10 @@ impl Types {
             let st = self.subst_visit(ctx, syms, supertype, from, to, attr.as_deref_mut());
             let interfaces = self.interfaces(ctx, syms, t);
             let mut is: List<TypeId> = List::nil();
-            let mut current = interfaces.clone();
-            while current.non_empty() {
-                let interface = *current.head();
-                let substituted = self.subst_visit(ctx, syms, interface, from, to, attr.as_deref_mut());
-                is = is.append(substituted);
-                current = current.tail();
+            let current = interfaces.clone();
+            for interface in &current {
+            let substituted = self.subst_visit(ctx, syms, interface, from, to, attr.as_deref_mut());
+            is = is.append(substituted);
             }
             if st == supertype && list_same(&interfaces, &is) {
                 return t;
@@ -1837,33 +1835,29 @@ impl Types {
         tvars: &List<TypeId>,
     ) -> List<TypeId> {
         let mut tvars1: List<TypeId> = List::nil();
-        let mut current = tvars.clone();
-        while current.non_empty() {
-            let tvar = *current.head();
-            let (bound, lower) = match &ctx.typ(tvar).kind {
-                TypeKindData::TypeVar { bound, lower } => (*bound, *lower),
-                _ => (None, None),
-            };
-            let tsym = ctx.typ(tvar).tsym;
-            let new_tvar = ctx.alloc_type(crate::code::type_::Type::new(
-                TypeTag::TYPEVAR,
-                tsym,
-                TypeKindData::TypeVar { bound, lower },
-            ));
-            tvars1 = tvars1.append(new_tvar);
-            current = current.tail();
+        let current = tvars.clone();
+        for tvar in &current {
+        let (bound, lower) = match &ctx.typ(tvar).kind {
+            TypeKindData::TypeVar { bound, lower } => (*bound, *lower),
+            _ => (None, None),
+        };
+        let tsym = ctx.typ(tvar).tsym;
+        let new_tvar = ctx.alloc_type(crate::code::type_::Type::new(
+            TypeTag::TYPEVAR,
+            tsym,
+            TypeKindData::TypeVar { bound, lower },
+        ));
+        tvars1 = tvars1.append(new_tvar);
         }
         let mut result: List<TypeId> = List::nil();
-        let mut current = tvars1.clone();
-        while current.non_empty() {
-            let tvar = *current.head();
-            let upper = ctx.upper_bound_of(tvar).expect("type var upper bound");
-            let substituted = self.subst_type(ctx, syms, upper, tvars, &tvars1, None);
-            if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(tvar).kind {
-                *bound = Some(substituted);
-            }
-            result = result.append(tvar);
-            current = current.tail();
+        let current = tvars1.clone();
+        for tvar in &current {
+        let upper = ctx.upper_bound_of(tvar).expect("type var upper bound");
+        let substituted = self.subst_type(ctx, syms, upper, tvars, &tvars1, None);
+        if let TypeKindData::TypeVar { bound, .. } = &mut ctx.typ_mut(tvar).kind {
+            *bound = Some(substituted);
+        }
+        result = result.append(tvar);
         }
         result
     }
@@ -1943,53 +1937,47 @@ impl Types {
         }
         let mut new_bounds: Vec<TypeId> = Vec::new();
         let mut changed = false;
-        let mut current = tvars.clone();
-        while current.non_empty() {
-            let tvar = *current.head();
-            let upper = ctx.upper_bound_of(tvar).expect("type var upper bound");
-            let bound = self.subst_type(ctx, syms, upper, from, to, None);
-            if bound != upper {
-                changed = true;
-            }
-            new_bounds.push(bound);
-            current = current.tail();
+        let current = tvars.clone();
+        for tvar in &current {
+        let upper = ctx.upper_bound_of(tvar).expect("type var upper bound");
+        let bound = self.subst_type(ctx, syms, upper, from, to, None);
+        if bound != upper {
+            changed = true;
+        }
+        new_bounds.push(bound);
         }
         if !changed {
             return tvars.clone();
         }
         let mut new_tvars: List<TypeId> = List::nil();
-        let mut current = tvars.clone();
-        while current.non_empty() {
-            let tvar = *current.head();
-            let tsym = ctx.typ(tvar).tsym;
-            let new_tvar = ctx.alloc_type(crate::code::type_::Type::new(
-                TypeTag::TYPEVAR,
-                tsym,
-                TypeKindData::TypeVar {
-                    bound: None,
-                    lower: Some(syms.bot_type),
-                },
-            ));
-            new_tvars = new_tvars.append(new_tvar);
-            current = current.tail();
+        let current = tvars.clone();
+        for tvar in &current {
+        let tsym = ctx.typ(tvar).tsym;
+        let new_tvar = ctx.alloc_type(crate::code::type_::Type::new(
+            TypeTag::TYPEVAR,
+            tsym,
+            TypeKindData::TypeVar {
+                bound: None,
+                lower: Some(syms.bot_type),
+            },
+        ));
+        new_tvars = new_tvars.append(new_tvar);
         }
         let mut substituted_bounds: Vec<TypeId> = Vec::new();
         for bound in &new_bounds {
             let substituted = self.subst_type(ctx, syms, *bound, tvars, &new_tvars, None);
             substituted_bounds.push(substituted);
         }
-        let mut current = new_tvars.clone();
+        let current = new_tvars.clone();
         let mut index = 0;
-        while current.non_empty() {
-            let tvar = *current.head();
-            let bound = substituted_bounds[index];
-            if let TypeKindData::TypeVar { bound: bound_field, .. } =
-                &mut ctx.typ_mut(tvar).kind
-            {
-                *bound_field = Some(bound);
-            }
-            index += 1;
-            current = current.tail();
+        for tvar in &current {
+        let bound = substituted_bounds[index];
+        if let TypeKindData::TypeVar { bound: bound_field, .. } =
+            &mut ctx.typ_mut(tvar).kind
+        {
+            *bound_field = Some(bound);
+        }
+        index += 1;
         }
         new_tvars
     }
@@ -2004,13 +1992,11 @@ impl Types {
         tvs: &List<TypeId>,
         cache: &mut Vec<(TypeId, TypeId)>,
     ) -> bool {
-        let mut current = ts.clone();
-        while current.non_empty() {
-            let t = *current.head();
-            if self.type_list_contains(ctx, syms, tvs, t, cache) {
-                return true;
-            }
-            current = current.tail();
+        let current = ts.clone();
+        for t in &current {
+        if self.type_list_contains(ctx, syms, tvs, t, cache) {
+            return true;
+        }
         }
         false
     }
@@ -2024,13 +2010,11 @@ impl Types {
         elem: TypeId,
         _cache: &mut Vec<(TypeId, TypeId)>,
     ) -> bool {
-        let mut current = ts.clone();
-        while current.non_empty() {
-            let t = *current.head();
-            if self.type_contains(ctx, _syms, t, elem) {
-                return true;
-            }
-            current = current.tail();
+        let current = ts.clone();
+        for t in &current {
+        if self.type_contains(ctx, _syms, t, elem) {
+            return true;
+        }
         }
         false
     }
@@ -2591,28 +2575,26 @@ impl Types {
     ) -> List<TypeId> {
         let captured_name = self.captured_name();
         let mut result: List<TypeId> = List::nil();
-        let mut current = types;
-        while current.non_empty() {
-            let t = *current.head();
-            if ctx.typ(t).has_tag(TypeTag::WILDCARD) {
-                let bound = match &ctx.typ(t).kind {
-                    TypeKindData::WildcardType { type_, .. } => *type_,
-                    _ => None,
-                }
-                .unwrap_or(syms.object_type);
-                let captured = self.new_captured_type_with_symbol(
-                    ctx,
-                    syms,
-                    captured_name.clone(),
-                    bound,
-                    syms.bot_type,
-                    t,
-                );
-                result = result.append(captured);
-            } else {
-                result = result.append(t);
+        let current = types;
+        for t in &current {
+        if ctx.typ(t).has_tag(TypeTag::WILDCARD) {
+            let bound = match &ctx.typ(t).kind {
+                TypeKindData::WildcardType { type_, .. } => *type_,
+                _ => None,
             }
-            current = current.tail();
+            .unwrap_or(syms.object_type);
+            let captured = self.new_captured_type_with_symbol(
+                ctx,
+                syms,
+                captured_name.clone(),
+                bound,
+                syms.bot_type,
+                t,
+            );
+            result = result.append(captured);
+        } else {
+            result = result.append(t);
+        }
         }
         result
     }
@@ -3516,13 +3498,11 @@ impl Types {
         t: TypeId,
         ts: &List<TypeId>,
     ) -> bool {
-        let mut current = ts.clone();
-        while current.non_empty() {
-            let s = *current.head();
-            if self.contains(ctx, syms, t, s) {
-                return true;
-            }
-            current = current.tail();
+        let current = ts.clone();
+        for s in &current {
+        if self.contains(ctx, syms, t, s) {
+            return true;
+        }
         }
         false
     }
@@ -5885,12 +5865,10 @@ impl Types {
         } else {
             cl = self.closure(ctx, syms, st);
         }
-        let mut interfaces = self.interfaces(ctx, syms, t);
-        while interfaces.non_empty() {
-            let interface = *interfaces.head();
-            let interface_closure = self.closure(ctx, syms, interface);
-            cl = self.closure_union(ctx, syms, cl, interface_closure);
-            interfaces = interfaces.tail();
+        let interfaces = self.interfaces(ctx, syms, t);
+        for interface in &interfaces {
+        let interface_closure = self.closure(ctx, syms, interface);
+        cl = self.closure_union(ctx, syms, cl, interface_closure);
         }
         cl
     }
@@ -5906,37 +5884,35 @@ impl Types {
         let mut classes: List<TypeId> = List::nil();
         let mut interfaces: List<TypeId> = List::nil();
         let mut to_skip: Vec<TypeId> = Vec::new();
-        let mut cl = cl;
-        while cl.non_empty() {
-            let current = *cl.head();
-            let mut keep = !to_skip.contains(&current);
-            if keep && ctx.typ(current).has_tag(TypeTag::TYPEVAR) {
-                let mut tail = cl.tail();
-                while tail.non_empty() {
-                    let t = *tail.head();
-                    if self.is_subtype_no_capture(ctx, syms, t, current) {
-                        keep = false;
-                        break;
-                    }
-                    tail = tail.tail();
+        let cl = cl;
+        for current in &cl {
+        let mut keep = !to_skip.contains(&current);
+        if keep && ctx.typ(current).has_tag(TypeTag::TYPEVAR) {
+            let mut tail = cl.tail();
+            while tail.non_empty() {
+                let t = *tail.head();
+                if self.is_subtype_no_capture(ctx, syms, t, current) {
+                    keep = false;
+                    break;
                 }
+                tail = tail.tail();
             }
-            if keep {
-                if self.is_interface(ctx, current) {
-                    interfaces = interfaces.append(current);
-                } else {
-                    classes = classes.append(current);
-                }
-                let mut tail = cl.tail();
-                while tail.non_empty() {
-                    let t = *tail.head();
-                    if self.is_subtype_no_capture(ctx, syms, current, t) {
-                        to_skip.push(t);
-                    }
-                    tail = tail.tail();
-                }
+        }
+        if keep {
+            if self.is_interface(ctx, current) {
+                interfaces = interfaces.append(current);
+            } else {
+                classes = classes.append(current);
             }
-            cl = cl.tail();
+            let mut tail = cl.tail();
+            while tail.non_empty() {
+                let t = *tail.head();
+                if self.is_subtype_no_capture(ctx, syms, current, t) {
+                    to_skip.push(t);
+                }
+                tail = tail.tail();
+            }
+        }
         }
         classes.append_list(&interfaces)
     }
@@ -6004,31 +5980,27 @@ impl Types {
         let mut class_count = 0;
         let mut cvars: Vec<TypeId> = Vec::new();
         let mut lowers: Vec<TypeId> = Vec::new();
-        let mut current = bounds.clone();
-        while current.non_empty() {
-            let bound = *current.head();
-            if !self.is_interface(ctx, bound) {
-                class_count += 1;
-                let lower = cvar_lower_bound(ctx, bound);
-                if bound != lower && !ctx.typ(lower).has_tag(TypeTag::BOT) {
-                    cvars.push(bound);
-                    lowers.push(lower);
-                }
+        let current = bounds.clone();
+        for bound in &current {
+        if !self.is_interface(ctx, bound) {
+            class_count += 1;
+            let lower = cvar_lower_bound(ctx, bound);
+            if bound != lower && !ctx.typ(lower).has_tag(TypeTag::BOT) {
+                cvars.push(bound);
+                lowers.push(lower);
             }
-            current = current.tail();
+        }
         }
         if class_count > 1 {
             if lowers.is_empty() {
                 return self.create_error_type_original(ctx, Some(err_t), syms);
             }
             let mut new_bounds: Vec<TypeId> = Vec::new();
-            let mut current = bounds.clone();
-            while current.non_empty() {
-                let bound = *current.head();
-                if !cvars.contains(&bound) {
-                    new_bounds.push(bound);
-                }
-                current = current.tail();
+            let current = bounds.clone();
+            for bound in &current {
+            if !cvars.contains(&bound) {
+                new_bounds.push(bound);
+            }
             }
             new_bounds.extend(lowers);
             let mut list = List::nil();
@@ -6112,13 +6084,11 @@ impl Types {
             return None;
         }
         let mut open_vars: Vec<TypeId> = Vec::new();
-        let mut params = self.class_allparams(ctx, sym_type);
-        while params.non_empty() {
-            let param = *params.head();
-            if self.type_contains(ctx, syms, res, param) && !self.type_contains(ctx, syms, t, param) {
-                open_vars.push(param);
-            }
-            params = params.tail();
+        let params = self.class_allparams(ctx, sym_type);
+        for param in &params {
+        if self.type_contains(ctx, syms, res, param) && !self.type_contains(ctx, syms, t, param) {
+            open_vars.push(param);
+        }
         }
         if !open_vars.is_empty() {
             if is_raw_type(ctx, t) {
@@ -6161,16 +6131,14 @@ impl Types {
                 let allparams = self.class_allparams(ctx, t);
                 let mut rewritten: List<TypeId> = List::nil();
                 let mut changed = false;
-                let mut current = allparams;
-                while current.non_empty() {
-                    let arg = *current.head();
-                    let bound =
-                        self.rewrite_quantifiers(ctx, syms, arg, high, rewrite_type_vars);
-                    if arg != bound {
-                        changed = true;
-                    }
-                    rewritten = rewritten.append(bound);
-                    current = current.tail();
+                let current = allparams;
+                for arg in &current {
+                let bound =
+                    self.rewrite_quantifiers(ctx, syms, arg, high, rewrite_type_vars);
+                if arg != bound {
+                    changed = true;
+                }
+                rewritten = rewritten.append(bound);
                 }
                 if changed {
                     let tsym = ctx.typ(t).tsym.expect("class type symbol");
@@ -6419,13 +6387,11 @@ fn type_list_contains(
     ts: List<TypeId>,
     elem: TypeId,
 ) -> bool {
-    let mut current = ts;
-    while current.non_empty() {
-        let t = *current.head();
-        if type_equals_ignore_metadata(types, ctx, t, elem) {
-            return true;
-        }
-        current = current.tail();
+    let current = ts;
+    for t in &current {
+    if type_equals_ignore_metadata(types, ctx, t, elem) {
+        return true;
+    }
     }
     false
 }
@@ -6574,17 +6540,15 @@ impl Types {
         erasure_s: TypeId,
     ) -> List<TypeId> {
         let mut cl: List<TypeId> = List::nil();
-        let mut interfaces = self.interfaces(ctx, syms, t);
-        while interfaces.non_empty() {
-            let interface = *interfaces.head();
-            let interface_erasure = self.erasure(ctx, syms, interface);
-            if self.is_subtype(ctx, syms, erasure_s, interface_erasure) {
-                cl = self.closure_insert(ctx, syms, cl, interface);
-            } else {
-                let sub_closure = self.super_closure(ctx, syms, interface, erasure_s);
-                cl = self.closure_union(ctx, syms, cl, sub_closure);
-            }
-            interfaces = interfaces.tail();
+        let interfaces = self.interfaces(ctx, syms, t);
+        for interface in &interfaces {
+        let interface_erasure = self.erasure(ctx, syms, interface);
+        if self.is_subtype(ctx, syms, erasure_s, interface_erasure) {
+            cl = self.closure_insert(ctx, syms, cl, interface);
+        } else {
+            let sub_closure = self.super_closure(ctx, syms, interface, erasure_s);
+            cl = self.closure_union(ctx, syms, cl, sub_closure);
+        }
         }
         cl
     }
@@ -6603,28 +6567,26 @@ impl Types {
         } else {
             List::of(to)
         };
-        let mut current = bounds;
-        while current.non_empty() {
-            let b = *current.head();
-            let b_tsym = ctx.typ(b).tsym.expect("bound symbol");
-            let sub_from = self.as_sub(ctx, syms, from, b_tsym);
-            if is_parameterized_type(ctx, b)
-                && !(self.is_unbounded(ctx, syms, b)
-                    || self.is_subtype(ctx, syms, from, b)
-                    || sub_from
-                        .map(|sub_from| {
-                            self.contains_type_equivalent(
-                                ctx,
-                                syms,
-                                &self.class_allparams(ctx, b),
-                                &self.class_allparams(ctx, sub_from),
-                            )
-                        })
-                        .unwrap_or(false))
-            {
-                return true;
-            }
-            current = current.tail();
+        let current = bounds;
+        for b in &current {
+        let b_tsym = ctx.typ(b).tsym.expect("bound symbol");
+        let sub_from = self.as_sub(ctx, syms, from, b_tsym);
+        if is_parameterized_type(ctx, b)
+            && !(self.is_unbounded(ctx, syms, b)
+                || self.is_subtype(ctx, syms, from, b)
+                || sub_from
+                    .map(|sub_from| {
+                        self.contains_type_equivalent(
+                            ctx,
+                            syms,
+                            &self.class_allparams(ctx, b),
+                            &self.class_allparams(ctx, sub_from),
+                        )
+                    })
+                    .unwrap_or(false))
+        {
+            return true;
+        }
         }
         false
     }
@@ -6658,26 +6620,24 @@ impl Types {
         let from_erasure = self.erasure(ctx, syms, from);
         let common_supers = self.super_closure(ctx, syms, to, from_erasure);
         let mut give_warning = common_supers.is_empty();
-        let mut common_supers = common_supers;
-        while common_supers.non_empty() {
-            let common = *common_supers.head();
-            let common_tsym = ctx.typ(common).tsym.expect("common super symbol");
-            let t1 = self.as_super(ctx, syms, from, common_tsym);
-            let t2 = common;
-            if let Some(t1) = t1 {
-                let t1_args = get_type_arguments_completed(ctx, syms, t1, None);
-                let t2_args = get_type_arguments_completed(ctx, syms, t2, None);
-                if self.disjoint_types(ctx, syms, t1_args, t2_args) {
-                    return false;
-                }
-                give_warning = give_warning
-                    || if reverse {
-                        self.give_warning(ctx, syms, t2, t1)
-                    } else {
-                        self.give_warning(ctx, syms, t1, t2)
-                    };
+        let common_supers = common_supers;
+        for common in &common_supers {
+        let common_tsym = ctx.typ(common).tsym.expect("common super symbol");
+        let t1 = self.as_super(ctx, syms, from, common_tsym);
+        let t2 = common;
+        if let Some(t1) = t1 {
+            let t1_args = get_type_arguments_completed(ctx, syms, t1, None);
+            let t2_args = get_type_arguments_completed(ctx, syms, t2, None);
+            if self.disjoint_types(ctx, syms, t1_args, t2_args) {
+                return false;
             }
-            common_supers = common_supers.tail();
+            give_warning = give_warning
+                || if reverse {
+                    self.give_warning(ctx, syms, t2, t1)
+                } else {
+                    self.give_warning(ctx, syms, t1, t2)
+                };
+        }
         }
         if give_warning {
             warn.warn(crate::code::lint::LintCategory::UNCHECKED);
@@ -7139,15 +7099,13 @@ impl Types {
                 let typarams = get_type_arguments_completed(ctx, syms, t, None);
                 let mut typarams1: List<TypeId> = List::nil();
                 let mut changed = false;
-                let mut current = typarams.clone();
-                while current.non_empty() {
-                    let arg = *current.head();
-                    let mapped = self.map_undet_vars_to_typevars(ctx, syms, arg);
-                    if mapped != arg {
-                        changed = true;
-                    }
-                    typarams1 = typarams1.append(mapped);
-                    current = current.tail();
+                let current = typarams.clone();
+                for arg in &current {
+                let mapped = self.map_undet_vars_to_typevars(ctx, syms, arg);
+                if mapped != arg {
+                    changed = true;
+                }
+                typarams1 = typarams1.append(mapped);
                 }
                 let outer_changed = match (outer, outer1) {
                     (Some(original), Some(mapped)) => original != mapped,
@@ -7342,15 +7300,13 @@ impl Types {
             let prev_bounds = self.undet_var_get_bounds(ctx, uv, &[ib]);
             let mut new_bounds: List<TypeId> = List::nil();
             let mut deps: Vec<TypeId> = Vec::new();
-            let mut current = prev_bounds;
-            while current.non_empty() {
-                let t = *current.head();
-                if !self.contains_any(ctx, syms, t, from) {
-                    new_bounds = new_bounds.append(t);
-                } else {
-                    deps.push(t);
-                }
-                current = current.tail();
+            let current = prev_bounds;
+            for t in &current {
+            if !self.contains_any(ctx, syms, t, from) {
+                new_bounds = new_bounds.append(t);
+            } else {
+                deps.push(t);
+            }
             }
             self.undet_var_set_bounds(ctx, uv, ib, new_bounds);
             for dep in deps {
@@ -7576,15 +7532,13 @@ impl Types {
         t: TypeId,
     ) -> List<TypeId> {
         let mut result: List<TypeId> = List::nil();
-        let mut sup = self.closure(ctx, syms, t);
-        while sup.non_empty() {
-            let sup_t = *sup.head();
-            if ctx.typ(sup_t).has_tag(TypeTag::TYPEVAR) {
-                result = result.append(sup_t);
-            } else {
-                result = result.append(self.erasure(ctx, syms, sup_t));
-            }
-            sup = sup.tail();
+        let sup = self.closure(ctx, syms, t);
+        for sup_t in &sup {
+        if ctx.typ(sup_t).has_tag(TypeTag::TYPEVAR) {
+            result = result.append(sup_t);
+        } else {
+            result = result.append(self.erasure(ctx, syms, sup_t));
+        }
         }
         result
     }
@@ -7723,28 +7677,26 @@ impl Types {
                 let mec = self.closure_min(ctx, syms, cl);
                 // step 3 - for each element G in MEC, compute lci(Inv(G))
                 let mut candidates: List<TypeId> = List::nil();
-                let mut mec_current = mec;
-                while mec_current.non_empty() {
-                    let erased_supertype = *mec_current.head();
-                    let erased_tsym = ctx
-                        .typ(erased_supertype)
-                        .tsym
-                        .expect("erased supertype symbol");
-                    let mut lci: List<TypeId> = List::nil();
-                    if let Some(first) = self.as_super(ctx, syms, ts[start_idx], erased_tsym) {
-                        lci = List::of(first);
-                    }
-                    for t in &ts[start_idx + 1..] {
-                        let super_type = self.as_super(ctx, syms, *t, erased_tsym);
-                        let super_list = super_type.map(List::of).unwrap_or_else(List::nil);
-                        lci = self.intersect(ctx, syms, lci, super_list);
-                    }
-                    let mut lci_current = lci;
-                    while lci_current.non_empty() {
-                        candidates = candidates.append(*lci_current.head());
-                        lci_current = lci_current.tail();
-                    }
-                    mec_current = mec_current.tail();
+                let mec_current = mec;
+                for erased_supertype in &mec_current {
+                let erased_tsym = ctx
+                    .typ(erased_supertype)
+                    .tsym
+                    .expect("erased supertype symbol");
+                let mut lci: List<TypeId> = List::nil();
+                if let Some(first) = self.as_super(ctx, syms, ts[start_idx], erased_tsym) {
+                    lci = List::of(first);
+                }
+                for t in &ts[start_idx + 1..] {
+                    let super_type = self.as_super(ctx, syms, *t, erased_tsym);
+                    let super_list = super_type.map(List::of).unwrap_or_else(List::nil);
+                    lci = self.intersect(ctx, syms, lci, super_list);
+                }
+                let mut lci_current = lci;
+                while lci_current.non_empty() {
+                    candidates = candidates.append(*lci_current.head());
+                    lci_current = lci_current.tail();
+                }
                 }
                 // step 4 - let MEC be { G1, G2... Gn }, then we have that
                 // lub = lci(Inv(G1)) & lci(Inv(G2)) &... & lci(Inv(Gn))
@@ -7964,17 +7916,15 @@ impl Types {
         ts: List<TypeId>,
     ) -> List<TypeId> {
         let mut closure: List<TypeId> = List::nil();
-        let mut current = ts;
-        while current.non_empty() {
-            let t = *current.head();
-            let t_closure = self.closure(ctx, syms, t);
-            let mut c = t_closure;
-            while c.non_empty() {
-                let x = *c.head();
-                closure = self.closure_insert_same_type(ctx, syms, closure, x);
-                c = c.tail();
-            }
-            current = current.tail();
+        let current = ts;
+        for t in &current {
+        let t_closure = self.closure(ctx, syms, t);
+        let mut c = t_closure;
+        while c.non_empty() {
+            let x = *c.head();
+            closure = self.closure_insert_same_type(ctx, syms, closure, x);
+            c = c.tail();
+        }
         }
         self.closure_min(ctx, syms, closure)
     }
@@ -8216,13 +8166,11 @@ impl Types {
         syms: &Symtab,
         ts: &List<TypeId>,
     ) -> bool {
-        let mut current = ts.clone();
-        while current.non_empty() {
-            let t = *current.head();
-            if self.is_derived_raw(ctx, syms, t) {
-                return true;
-            }
-            current = current.tail();
+        let current = ts.clone();
+        for t in &current {
+        if self.is_derived_raw(ctx, syms, t) {
+            return true;
+        }
         }
         false
     }
@@ -8402,12 +8350,10 @@ impl Types {
                 let closure_scope =
                     ctx.alloc_scope(crate::code::scope::Scope::new_compound_scope(Some(tsym)));
                 let interfaces = self.interfaces(ctx, syms, t);
-                let mut current = interfaces;
-                while current.non_empty() {
-                    let iface = *current.head();
-                    let sub = self.members_closure_visit(ctx, syms, iface);
-                    ctx.scope_prepend_sub_scope(closure_scope, sub);
-                    current = current.tail();
+                let current = interfaces;
+                for iface in &current {
+                let sub = self.members_closure_visit(ctx, syms, iface);
+                ctx.scope_prepend_sub_scope(closure_scope, sub);
                 }
                 let super_type = self.supertype(ctx, syms, t, None);
                 let super_scope = self.members_closure_visit(ctx, syms, super_type);
@@ -9774,13 +9720,11 @@ impl Types {
         origin: crate::ids::SymbolId,
     ) -> bool {
         let origin_type = ctx.sym(origin).ty.expect("origin class type");
-        let mut interfaces = self.interfaces(ctx, syms, origin_type);
-        while interfaces.non_empty() {
-            let i = *interfaces.head();
-            if ctx.typ(i).tsym == Some(isym) {
-                return true;
-            }
-            interfaces = interfaces.tail();
+        let interfaces = self.interfaces(ctx, syms, origin_type);
+        for i in &interfaces {
+        if ctx.typ(i).tsym == Some(isym) {
+            return true;
+        }
         }
         false
     }
@@ -9821,18 +9765,14 @@ impl Types {
         match &kind {
             crate::code::type_::TypeKindData::ClassType { .. } => {
                 if self.is_compound(ctx, t) {
-                    let mut current = self.direct_supertypes(ctx, syms, t);
-                    while current.non_empty() {
-                        let sup = *current.head();
-                        self.capture_scan_collect(ctx, syms, sup, seen, result);
-                        current = current.tail();
+                    let current = self.direct_supertypes(ctx, syms, t);
+                    for sup in &current {
+                    self.capture_scan_collect(ctx, syms, sup, seen, result);
                     }
                 } else {
-                    let mut current = crate::code::types::allparams_of(ctx, t);
-                    while current.non_empty() {
-                        let param = *current.head();
-                        self.capture_scan_collect(ctx, syms, param, seen, result);
-                        current = current.tail();
+                    let current = crate::code::types::allparams_of(ctx, t);
+                    for param in &current {
+                    self.capture_scan_collect(ctx, syms, param, seen, result);
                     }
                 }
             }
@@ -9927,17 +9867,15 @@ impl Types {
                 if self.is_compound(ctx, t) {
                     let components = self.direct_supertypes(ctx, syms, t);
                     let mut projected: List<TypeId> = List::nil();
-                    let mut current = components.clone();
+                    let current = components.clone();
                     let mut changed = false;
-                    while current.non_empty() {
-                        let component = *current.head();
-                        let projected_component =
-                            self.projection(ctx, syms, component, vars, pkind, seen);
-                        if projected_component != component {
-                            changed = true;
-                        }
-                        projected = projected.append(projected_component);
-                        current = current.tail();
+                    for component in &current {
+                    let projected_component =
+                        self.projection(ctx, syms, component, vars, pkind, seen);
+                    if projected_component != component {
+                        changed = true;
+                    }
+                    projected = projected.append(projected_component);
                     }
                     if !changed {
                         return t;
@@ -9954,27 +9892,25 @@ impl Types {
                     crate::code::types::get_type_arguments_completed(ctx, syms, formals_type, None);
                 let mut typarams1: List<TypeId> = List::nil();
                 let mut changed = false;
-                let mut current = typarams.clone();
-                while current.non_empty() {
-                    let actual = *current.head();
-                    let declared_bound = if formals.non_empty() {
-                        let formal = *formals.head();
-                        ctx.upper_bound_of(formal).unwrap_or(syms.object_type)
-                    } else {
-                        syms.object_type
-                    };
-                    let t2 = self.map_type_argument(ctx, syms, t, declared_bound, actual, vars, pkind, seen);
-                    if ctx.typ(t2).has_tag(crate::code::type_tag::TypeTag::BOT) {
-                        return syms.bot_type;
-                    }
-                    if t2 != actual {
-                        changed = true;
-                    }
-                    typarams1 = typarams1.append(t2);
-                    if formals.non_empty() {
-                        formals = formals.tail();
-                    }
-                    current = current.tail();
+                let current = typarams.clone();
+                for actual in &current {
+                let declared_bound = if formals.non_empty() {
+                    let formal = *formals.head();
+                    ctx.upper_bound_of(formal).unwrap_or(syms.object_type)
+                } else {
+                    syms.object_type
+                };
+                let t2 = self.map_type_argument(ctx, syms, t, declared_bound, actual, vars, pkind, seen);
+                if ctx.typ(t2).has_tag(crate::code::type_tag::TypeTag::BOT) {
+                    return syms.bot_type;
+                }
+                if t2 != actual {
+                    changed = true;
+                }
+                typarams1 = typarams1.append(t2);
+                if formals.non_empty() {
+                    formals = formals.tail();
+                }
                 }
                 if outer1 == outer && !changed {
                     return t;

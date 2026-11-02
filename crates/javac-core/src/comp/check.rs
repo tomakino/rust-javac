@@ -805,33 +805,31 @@ impl Check {
             return 0;
         };
         let mut specialized = false;
-        let mut current = defs.clone();
-        while current.non_empty() {
-            let def = *current.head();
-            if let crate::tree::jc_tree::TreeKind::VariableDecl { mods, init, .. } =
-                &ctx.tree(def).kind
-            {
-                let enum_flag = mods
-                    .map(|mods| match &ctx.tree(mods).kind {
-                        crate::tree::jc_tree::TreeKind::Modifiers { flags, .. } => {
-                            (flags & crate::code::flags::ENUM as i64) != 0
-                        }
+        let current = defs.clone();
+        for def in &current {
+        if let crate::tree::jc_tree::TreeKind::VariableDecl { mods, init, .. } =
+            &ctx.tree(def).kind
+        {
+            let enum_flag = mods
+                .map(|mods| match &ctx.tree(mods).kind {
+                    crate::tree::jc_tree::TreeKind::Modifiers { flags, .. } => {
+                        (flags & crate::code::flags::ENUM as i64) != 0
+                    }
+                    _ => false,
+                })
+                .unwrap_or(false);
+            if enum_flag {
+                let has_anonymous_class = init
+                    .map(|init| match &ctx.tree(init).kind {
+                        crate::tree::jc_tree::TreeKind::NewClass { def, .. } => def.is_some(),
                         _ => false,
                     })
                     .unwrap_or(false);
-                if enum_flag {
-                    let has_anonymous_class = init
-                        .map(|init| match &ctx.tree(init).kind {
-                            crate::tree::jc_tree::TreeKind::NewClass { def, .. } => def.is_some(),
-                            _ => false,
-                        })
-                        .unwrap_or(false);
-                    if has_anonymous_class {
-                        specialized = true;
-                    }
+                if has_anonymous_class {
+                    specialized = true;
                 }
             }
-            current = current.tail();
+        }
         }
         if specialized {
             // Java: return allowSealed ? SEALED : 0;
@@ -1443,21 +1441,19 @@ impl Check {
         let t = self.check_class_type(ctx, syms, pos, t);
         if no_bounds {
             {
-                let mut args = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
-                while args.non_empty() {
-                    let head = *args.head();
-                    if ctx
-                        .typ(head)
-                        .has_tag(crate::code::type_tag::TypeTag::WILDCARD)
-                    {
-                        let required = self
-                            .diags
-                            .fragment(crate::util::jc_diagnostic::Fragment::from(
-                                crate::resources::compiler_properties::fragments::type_req_exact(),
-                            ));
-                        return self.type_tag_error(ctx, syms, pos, required, FoundArg::Type(t));
-                    }
-                    args = args.tail();
+                let args = crate::code::types::get_type_arguments_completed(ctx, syms, t, None);
+                for head in &args {
+                if ctx
+                    .typ(head)
+                    .has_tag(crate::code::type_tag::TypeTag::WILDCARD)
+                {
+                    let required = self
+                        .diags
+                        .fragment(crate::util::jc_diagnostic::Fragment::from(
+                            crate::resources::compiler_properties::fragments::type_req_exact(),
+                        ));
+                    return self.type_tag_error(ctx, syms, pos, required, FoundArg::Type(t));
+                }
                 }
             }
         }
@@ -5780,12 +5776,10 @@ impl Check {
         let c_ty = ctx.sym(c).ty.expect("class symbol type");
         let interfaces = self.types.interfaces(ctx, syms, c_ty);
         let mut new_interfaces: List<TypeId> = List::nil();
-        let mut current = interfaces;
-        while current.non_empty() {
-            let interface = *current.head();
-            let error = self.types.create_error_type_original(ctx, Some(interface), syms);
-            new_interfaces = new_interfaces.prepend(error);
-            current = current.tail();
+        let current = interfaces;
+        for interface in &current {
+        let error = self.types.create_error_type_original(ctx, Some(interface), syms);
+        new_interfaces = new_interfaces.prepend(error);
         }
         let supertype = self.types.supertype(ctx, syms, c_ty, None);
         let supertype_field_value = if ctx

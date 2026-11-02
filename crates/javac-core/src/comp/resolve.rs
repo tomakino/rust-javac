@@ -599,11 +599,9 @@ impl Resolve {
             }
             TypeTag::CLASS => {
                 let arguments = crate::comp::attr::type_arguments(ctx, t);
-                let mut current = arguments;
-                while current.non_empty() {
-                    let argument = *current.head();
-                    self.check_accessible_type(ctx, syms, env, argument);
-                    current = current.tail();
+                let current = arguments;
+                for argument in &current {
+                self.check_accessible_type(ctx, syms, env, argument);
                 }
                 let tsym = ctx.typ(t).tsym.expect("class type symbol");
                 // Java: Resolve.java:528-534 (AccessibilityChecker.visitClassType):
@@ -643,11 +641,9 @@ impl Resolve {
             }
             TypeTag::METHOD => {
                 let parameter_types = get_parameter_types(ctx, t);
-                let mut current = parameter_types;
-                while current.non_empty() {
-                    let parameter = *current.head();
-                    self.check_accessible_type(ctx, syms, env, parameter);
-                    current = current.tail();
+                let current = parameter_types;
+                for parameter in &current {
+                self.check_accessible_type(ctx, syms, env, parameter);
                 }
                 let return_type = match &ctx.typ(t).kind {
                     TypeKindData::MethodType { restype, .. } => *restype,
@@ -659,11 +655,9 @@ impl Resolve {
                     TypeKindData::MethodType { thrown, .. } => thrown.clone(),
                     _ => List::nil(),
                 };
-                let mut current = thrown_types;
-                while current.non_empty() {
-                    let thrown = *current.head();
-                    self.check_accessible_type(ctx, syms, env, thrown);
-                    current = current.tail();
+                let current = thrown_types;
+                for thrown in &current {
+                self.check_accessible_type(ctx, syms, env, thrown);
                 }
             }
             // SimpleVisitor.visitType (default: no children).
@@ -2733,13 +2727,11 @@ pub(crate) fn type_list_is_erroneous(
     ctx: &crate::compiler_context::CompilerContext,
     types: crate::util::list::List<TypeId>,
 ) -> bool {
-    let mut current = types;
-    while current.non_empty() {
-        let t = *current.head();
-        if ctx.typ(t).has_tag(TypeTag::ERROR) {
-            return true;
-        }
-        current = current.tail();
+    let current = types;
+    for t in &current {
+    if ctx.typ(t).has_tag(TypeTag::ERROR) {
+        return true;
+    }
     }
     false
 }
@@ -3681,11 +3673,9 @@ fn type_args_place(
         return String::new();
     }
     let mut parts = Vec::new();
-    let mut current = typeargs;
-    while current.non_empty() {
-        let t = *current.head();
-        parts.push(type_place_text(ctx, Some(t)));
-        current = current.tail();
+    let current = typeargs;
+    for t in &current {
+    parts.push(type_place_text(ctx, Some(t)));
     }
     parts.join(",")
 }
@@ -3708,11 +3698,9 @@ fn method_arguments_place(
         return String::new();
     }
     let mut parts = Vec::new();
-    let mut current = argtypes;
-    while current.non_empty() {
-        let t = *current.head();
-        parts.push(type_place_text(ctx, Some(t)));
-        current = current.tail();
+    let current = argtypes;
+    for t in &current {
+    parts.push(type_place_text(ctx, Some(t)));
     }
     parts.join(",")
 }
@@ -3877,17 +3865,15 @@ fn module_exports_package(
         crate::code::symbol::SymbolKind::ModuleSymbol { exports, .. } => exports.clone(),
         _ => return false,
     };
-    let mut current = exports;
-    while current.non_empty() {
-        let directive = *current.head();
-        match ctx.directive(directive) {
-            crate::code::directive::Directive::Exports {
-                packge: Some(exported),
-                ..
-            } if *exported == package => return true,
-            _ => {}
-        }
-        current = current.tail();
+    let current = exports;
+    for directive in &current {
+    match ctx.directive(directive) {
+        crate::code::directive::Directive::Exports {
+            packge: Some(exported),
+            ..
+        } if *exported == package => return true,
+        _ => {}
+    }
     }
     false
 }
@@ -8148,33 +8134,31 @@ impl Resolve {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut best_so_far = self.method_not_found;
             let steps = method_resolution_steps();
-            let mut current = steps;
-            while current.non_empty() {
-                let phase = *current.head();
-                if helper.should_stop(ctx, best_so_far, phase) {
-                    break;
-                }
-                let prev_phase = resolve_context.step;
-                let prev_best = best_so_far;
-                resolve_context.step = Some(phase);
-                self.current_resolution_step.set(Some(phase));
-                let sym = helper.lookup(
-                    self,
-                    ctx,
-                    syms,
-                    types,
-                    attr,
-                    chk,
-                    infer,
-                    env,
-                    phase,
-                    resolve_context,
-                );
-                helper.debug(&*self, ctx, syms, pos.clone(), &*resolve_context, sym);
-                best_so_far = phase.merge_results(ctx, best_so_far, sym);
-                env.info.borrow_mut().pending_resolution_phase =
-                    if prev_best == best_so_far { prev_phase } else { Some(phase) };
-                current = current.tail();
+            let current = steps;
+            for phase in &current {
+            if helper.should_stop(ctx, best_so_far, phase) {
+                break;
+            }
+            let prev_phase = resolve_context.step;
+            let prev_best = best_so_far;
+            resolve_context.step = Some(phase);
+            self.current_resolution_step.set(Some(phase));
+            let sym = helper.lookup(
+                self,
+                ctx,
+                syms,
+                types,
+                attr,
+                chk,
+                infer,
+                env,
+                phase,
+                resolve_context,
+            );
+            helper.debug(&*self, ctx, syms, pos.clone(), &*resolve_context, sym);
+            best_so_far = phase.merge_results(ctx, best_so_far, sym);
+            env.info.borrow_mut().pending_resolution_phase =
+                if prev_best == best_so_far { prev_phase } else { Some(phase) };
             }
             self.current_resolution_step.set(resolve_context.step);
             helper.access(
@@ -8328,13 +8312,11 @@ impl Resolve {
             iphase = iphase.map(|phase| phase.update(ctx, s));
             if let Some(phase) = iphase {
                 let interfaces = types.interfaces(ctx, syms, ctx.sym(s).ty.expect("class type"));
-                let mut itype_current = interfaces;
-                while itype_current.non_empty() {
-                    let itype = *itype_current.head();
-                    let closed = types.closure(ctx, syms, itype);
-                    let index = phase.ordinal();
-                    itypes[index] = types.closure_union(ctx, syms, closed, itypes[index].clone());
-                    itype_current = itype_current.tail();
+                let itype_current = interfaces;
+                for itype in &itype_current {
+                let closed = types.closure(ctx, syms, itype);
+                let index = phase.ordinal();
+                itypes[index] = types.closure_union(ctx, syms, closed, itypes[index].clone());
                 }
             }
             // next superclass
@@ -8351,66 +8333,64 @@ impl Resolve {
             self.method_not_found
         };
         for phase2 in InterfaceLookupPhase::values() {
-            let mut itype_current = itypes[phase2.ordinal()].clone();
-            while itype_current.non_empty() {
-                let itype = *itype_current.head();
-                // skip j.l.Object (included by Types.closure())
-                let is_interface = ctx
-                    .typ(itype)
-                    .tsym
-                    .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0)
-                    .unwrap_or(false);
-                if is_interface {
-                    let tsym = ctx.typ(itype).tsym.expect("interface symbol");
-                    let default_ok = phase2 == InterfaceLookupPhase::DEFAULT_OK;
-                    let has_default =
-                        (ctx.sym(tsym).flags_field & crate::code::flags::DEFAULT) != 0;
-                    if !(default_ok && !has_default) {
-                        if let Some(members) = self.member_scope(ctx, syms, tsym) {
-                            best_so_far = self.find_method_in_scope(
+            let itype_current = itypes[phase2.ordinal()].clone();
+            for itype in &itype_current {
+            // skip j.l.Object (included by Types.closure())
+            let is_interface = ctx
+                .typ(itype)
+                .tsym
+                .map(|tsym| (ctx.sym(tsym).flags_field & crate::code::flags::INTERFACE as i64) != 0)
+                .unwrap_or(false);
+            if is_interface {
+                let tsym = ctx.typ(itype).tsym.expect("interface symbol");
+                let default_ok = phase2 == InterfaceLookupPhase::DEFAULT_OK;
+                let has_default =
+                    (ctx.sym(tsym).flags_field & crate::code::flags::DEFAULT) != 0;
+                if !(default_ok && !has_default) {
+                    if let Some(members) = self.member_scope(ctx, syms, tsym) {
+                        best_so_far = self.find_method_in_scope(
+                            ctx,
+                            syms,
+                            types,
+                            attr,
+                            chk,
+                            infer,
+                            env,
+                            site,
+                            name.clone(),
+                            argtypes.clone(),
+                            typeargtypes.clone(),
+                            members,
+                            best_so_far,
+                            allow_boxing,
+                            use_varargs,
+                            true,
+                            // Port adapter: upstream LookupFilter has no
+                            // static flag, but static interface methods are
+                            // not inherited (JLS 8.4.8) and javac's class
+                            // member closure does not expose them here.
+                            // The local interface scope does, so filter
+                            // STATIC at this interface lookup site.
+                            false,
+                            resolve_context,
+                        );
+                        if concrete != best_so_far
+                            && ctx.sym(concrete).kind.is_valid()
+                            && ctx.sym(best_so_far).kind.is_valid()
+                            && types.is_sub_signature(
                                 ctx,
                                 syms,
-                                types,
-                                attr,
-                                chk,
-                                infer,
-                                env,
-                                site,
-                                name.clone(),
-                                argtypes.clone(),
-                                typeargtypes.clone(),
-                                members,
-                                best_so_far,
-                                allow_boxing,
-                                use_varargs,
-                                true,
-                                // Port adapter: upstream LookupFilter has no
-                                // static flag, but static interface methods are
-                                // not inherited (JLS 8.4.8) and javac's class
-                                // member closure does not expose them here.
-                                // The local interface scope does, so filter
-                                // STATIC at this interface lookup site.
-                                false,
-                                resolve_context,
-                            );
-                            if concrete != best_so_far
-                                && ctx.sym(concrete).kind.is_valid()
-                                && ctx.sym(best_so_far).kind.is_valid()
-                                && types.is_sub_signature(
-                                    ctx,
-                                    syms,
-                                    ctx.sym(concrete).ty.expect("concrete type"),
-                                    ctx.sym(best_so_far).ty.expect("best type"),
-                                )
-                            {
-                                // this is a hack - as javac does not do full
-                                // membership checks (CR 6178365)
-                                best_so_far = concrete;
-                            }
+                                ctx.sym(concrete).ty.expect("concrete type"),
+                                ctx.sym(best_so_far).ty.expect("best type"),
+                            )
+                        {
+                            // this is a hack - as javac does not do full
+                            // membership checks (CR 6178365)
+                            best_so_far = concrete;
                         }
                     }
                 }
-                itype_current = itype_current.tail();
+            }
             }
         }
         best_so_far
@@ -10269,64 +10249,60 @@ impl Resolve {
             && types.is_direct_super_interface(ctx, syms, c, encl_class)
         {
             let encl_type = ctx.sym(encl_class).ty.expect("encl class type");
-            let mut pruned = self.prune_interfaces(ctx, syms, types, encl_type);
-            while pruned.non_empty() {
-                let t = *pruned.head();
-                if ctx.typ(t).tsym == Some(c) {
-                    env.info.borrow_mut().default_super_call_site = Some(t);
-                    let super_type = types.as_super(ctx, syms, encl_type, c);
-                    return ctx.alloc_symbol(crate::code::symbol::Symbol::new(
-                        crate::code::kinds::Kind::VAR,
-                        0,
-                        self.names._super.clone(),
-                        super_type,
-                        Some(encl_class),
-                        crate::code::symbol::SymbolKind::VarSymbol {
-                            lazy_const_value: None,
-                            pos: 0,
-                            adr: 0,
-                            data_kind: None,
-                            data: None,
-                        },
-                    ));
-                }
-                pruned = pruned.tail();
+            let pruned = self.prune_interfaces(ctx, syms, types, encl_type);
+            for t in &pruned {
+            if ctx.typ(t).tsym == Some(c) {
+                env.info.borrow_mut().default_super_call_site = Some(t);
+                let super_type = types.as_super(ctx, syms, encl_type, c);
+                return ctx.alloc_symbol(crate::code::symbol::Symbol::new(
+                    crate::code::kinds::Kind::VAR,
+                    0,
+                    self.names._super.clone(),
+                    super_type,
+                    Some(encl_class),
+                    crate::code::symbol::SymbolKind::VarSymbol {
+                        lazy_const_value: None,
+                        pos: 0,
+                        adr: 0,
+                        data_kind: None,
+                        data: None,
+                    },
+                ));
             }
-            let mut supers = types.direct_supertypes(ctx, syms, encl_type);
-            while supers.non_empty() {
-                let i = *supers.head();
-                let i_tsym = ctx.typ(i).tsym.expect("direct super type symbol");
-                if crate::code::symbol::is_sub_class(ctx, syms, types, i_tsym, c) && i_tsym != c {
-                    let redundant = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
-                        crate::resources::compiler_properties::fragments::redundant_supertype(
-                            crate::resources::diagnostic_contract::SymbolArg::placeholder(
-                                ctx.sym(c).name.to_java_string().to_string_lossy().to_string(),
-                            ),
-                            crate::resources::diagnostic_contract::DiagnosticArg::Text(
-                                ctx.typ(i).tsym.map(|tsym| ctx.sym(tsym).name.to_java_string().to_string_lossy().to_string()).unwrap_or_default(),
-                            ),
-                        ),
-                    ));
-                    let info = crate::resources::compiler_properties::errors::illegal_default_super_call(
-                        crate::resources::diagnostic_contract::DiagnosticArg::Text(
+            }
+            let supers = types.direct_supertypes(ctx, syms, encl_type);
+            for i in &supers {
+            let i_tsym = ctx.typ(i).tsym.expect("direct super type symbol");
+            if crate::code::symbol::is_sub_class(ctx, syms, types, i_tsym, c) && i_tsym != c {
+                let redundant = self.diags.fragment(crate::util::jc_diagnostic::Fragment::from(
+                    crate::resources::compiler_properties::fragments::redundant_supertype(
+                        crate::resources::diagnostic_contract::SymbolArg::placeholder(
                             ctx.sym(c).name.to_java_string().to_string_lossy().to_string(),
                         ),
-                        crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
-                            std::rc::Rc::new(redundant),
+                        crate::resources::diagnostic_contract::DiagnosticArg::Text(
+                            ctx.typ(i).tsym.map(|tsym| ctx.sym(tsym).name.to_java_string().to_string_lossy().to_string()).unwrap_or_default(),
                         ),
-                    );
-                    // Java: log.error(pos, Errors.IllegalDefaultSuperCall(...))
-                    // (Resolve.java:3757-3759): the diagnostic keeps the
-                    // position and JCDiagnostic.getIntPosition (preferred) is
-                    // the one used by the formatter.
-                    crate::util::abstract_log::AbstractLog::error_at(
-                        &mut *self.log.borrow_mut(),
-                        pos.as_ref().map(|pos| pos.get_preferred_position()).unwrap_or(0),
-                        crate::util::jc_diagnostic::Error::from(info),
-                    );
-                    return syms.err_symbol;
-                }
-                supers = supers.tail();
+                    ),
+                ));
+                let info = crate::resources::compiler_properties::errors::illegal_default_super_call(
+                    crate::resources::diagnostic_contract::DiagnosticArg::Text(
+                        ctx.sym(c).name.to_java_string().to_string_lossy().to_string(),
+                    ),
+                    crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(
+                        std::rc::Rc::new(redundant),
+                    ),
+                );
+                // Java: log.error(pos, Errors.IllegalDefaultSuperCall(...))
+                // (Resolve.java:3757-3759): the diagnostic keeps the
+                // position and JCDiagnostic.getIntPosition (preferred) is
+                // the one used by the formatter.
+                crate::util::abstract_log::AbstractLog::error_at(
+                    &mut *self.log.borrow_mut(),
+                    pos.as_ref().map(|pos| pos.get_preferred_position()).unwrap_or(0),
+                    crate::util::jc_diagnostic::Error::from(info),
+                );
+                return syms.err_symbol;
+            }
             }
             panic!("AssertionError");
         }
@@ -10366,25 +10342,23 @@ impl Resolve {
         t: TypeId,
     ) -> crate::util::list::List<TypeId> {
         let mut result: crate::util::list::List<TypeId> = crate::util::list::List::nil();
-        let mut interfaces = types.interfaces(ctx, syms, t);
-        while interfaces.non_empty() {
-            let t1 = *interfaces.head();
-            let mut should_add = true;
-            let mut supers = types.direct_supertypes(ctx, syms, t);
-            while supers.non_empty() {
-                let t2 = *supers.head();
-                if t1 != t2
-                    && !ctx.typ(t2).has_tag(crate::code::type_tag::TypeTag::ERROR)
-                    && types.is_subtype_no_capture(ctx, syms, t2, t1)
-                {
-                    should_add = false;
-                }
-                supers = supers.tail();
+        let interfaces = types.interfaces(ctx, syms, t);
+        for t1 in &interfaces {
+        let mut should_add = true;
+        let mut supers = types.direct_supertypes(ctx, syms, t);
+        while supers.non_empty() {
+            let t2 = *supers.head();
+            if t1 != t2
+                && !ctx.typ(t2).has_tag(crate::code::type_tag::TypeTag::ERROR)
+                && types.is_subtype_no_capture(ctx, syms, t2, t1)
+            {
+                should_add = false;
             }
-            if should_add {
-                result = result.append(t1);
-            }
-            interfaces = interfaces.tail();
+            supers = supers.tail();
+        }
+        if should_add {
+            result = result.append(t1);
+        }
         }
         result
     }
@@ -11163,25 +11137,23 @@ mod check_channel_tests {
         // (Resolve.java:390-392). The symbol overload is is_accessible_class_free.
         if ctx.typ(t).is_union() {
             let alternatives = ctx.typ(t).get_alternative_types();
-            let mut current = alternatives;
-            while current.non_empty() {
-                let alternative = *current.head();
-                let tsym = ctx
-                    .typ(alternative)
-                    .tsym
-                    .expect("union alternative symbol");
-                if !is_accessible_class_free(
-                    types,
-                    allow_modules,
-                    ctx,
-                    syms,
-                    env,
-                    tsym,
-                    check_inner,
-                ) {
-                    return false;
-                }
-                current = current.tail();
+            let current = alternatives;
+            for alternative in &current {
+            let tsym = ctx
+                .typ(alternative)
+                .tsym
+                .expect("union alternative symbol");
+            if !is_accessible_class_free(
+                types,
+                allow_modules,
+                ctx,
+                syms,
+                env,
+                tsym,
+                check_inner,
+            ) {
+                return false;
+            }
             }
             return true;
         }
@@ -11211,4 +11183,4 @@ fn contract_arg_to_jcd(
             std::rc::Rc::new(converted)
         }
     }
-}
+}
