@@ -256,7 +256,9 @@ pub enum ScopeData {
 pub struct Scope {
     /// The scope's owner.
     pub owner: Option<SymbolId>,
-    pub data: ScopeData,
+    /// Shared so read-only snapshots (the port's borrow-splitting clones)
+    /// only bump a reference count; mutation uses Rc::make_mut.
+    pub data: Rc<ScopeData>,
 }
 
 /// The initial table length (Java: ScopeImpl.INITIAL_SIZE).
@@ -278,7 +280,7 @@ impl Scope {
     pub fn new_scope_impl(owner: Option<SymbolId>) -> Scope {
         Scope {
             owner,
-            data: ScopeData::ScopeImpl {
+            data: Rc::new(ScopeData::ScopeImpl {
                 shared: 0,
                 next: None,
                 table: Rc::new(RefCell::new(vec![TableSlot::Empty; INITIAL_SIZE])),
@@ -288,14 +290,14 @@ impl Scope {
                 entries: Rc::new(RefCell::new(Vec::new())),
                 listeners: ScopeListenerList::new(),
                 error_scope: false,
-            },
+            }),
         }
     }
 
     /// Constructs an error scope (Java: new ErrorScope(errSymbol)).
     pub fn new_error_scope(owner: Option<SymbolId>) -> Scope {
         let mut scope = Scope::new_scope_impl(owner);
-        if let ScopeData::ScopeImpl { error_scope, .. } = &mut scope.data {
+        if let ScopeData::ScopeImpl { error_scope, .. } = Rc::make_mut(&mut scope.data) {
             *error_scope = true;
         }
         scope
@@ -305,11 +307,11 @@ impl Scope {
     pub fn new_compound_scope(owner: Option<SymbolId>) -> Scope {
         Scope {
             owner,
-            data: ScopeData::CompoundScope {
+            data: Rc::new(ScopeData::CompoundScope {
                 sub_scopes: List::nil(),
                 mark: 0,
                 listeners: ScopeListenerList::new(),
-            },
+            }),
         }
     }
 
@@ -317,11 +319,11 @@ impl Scope {
     pub fn new_import_scope(owner: Option<SymbolId>) -> Scope {
         Scope {
             owner,
-            data: ScopeData::ImportScope {
+            data: Rc::new(ScopeData::ImportScope {
                 sub_scopes: List::nil(),
                 mark: 0,
                 listeners: ScopeListenerList::new(),
-            },
+            }),
         }
     }
 
@@ -329,12 +331,12 @@ impl Scope {
     pub fn new_named_import_scope(owner: Option<SymbolId>) -> Scope {
         Scope {
             owner,
-            data: ScopeData::NamedImportScope {
+            data: Rc::new(ScopeData::NamedImportScope {
                 sub_scopes: List::nil(),
                 mark: 0,
                 listeners: ScopeListenerList::new(),
                 name2_scopes: Rc::new(crate::util::fx_hasher::fx_map_with_capacity(8)),
-            },
+            }),
         }
     }
 
@@ -342,11 +344,11 @@ impl Scope {
     pub fn new_star_import_scope(owner: Option<SymbolId>) -> Scope {
         Scope {
             owner,
-            data: ScopeData::StarImportScope {
+            data: Rc::new(ScopeData::StarImportScope {
                 sub_scopes: List::nil(),
                 mark: 0,
                 listeners: ScopeListenerList::new(),
-            },
+            }),
         }
     }
 
@@ -362,11 +364,11 @@ impl Scope {
         };
         Scope {
             owner,
-            data: ScopeData::SingleEntryScope {
+            data: Rc::new(ScopeData::SingleEntryScope {
                 sym,
                 content,
                 origin,
-            },
+            }),
         }
     }
 
@@ -387,7 +389,7 @@ impl Scope {
     ) -> Scope {
         Scope {
             owner,
-            data: ScopeData::FilterImportScope {
+            data: Rc::new(ScopeData::FilterImportScope {
                 types,
                 origin,
                 filter_name,
@@ -395,7 +397,7 @@ impl Scope {
                 imp,
                 static_import,
                 cf_handler,
-            },
+            }),
         }
     }
 
@@ -411,7 +413,7 @@ impl Scope {
     /// Clones the shared table/entry Rc handles (borrow rule: the caller must
     /// not keep a RefCell borrow across another method call).
     fn table_and_entries(&self) -> (SharedTable, SharedEntries) {
-        let ScopeData::ScopeImpl { table, entries, .. } = &self.data else {
+        let ScopeData::ScopeImpl { table, entries, .. } = &*self.data else {
             panic!("ClassCastException: not a ScopeImpl");
         };
         (Rc::clone(table), Rc::clone(entries))
@@ -439,7 +441,7 @@ impl Scope {
                 nelems,
                 entries,
                 ..
-            } = &self.data
+            } = &*self.data
             else {
                 panic!("ClassCastException: not a ScopeImpl")
             };
@@ -458,7 +460,7 @@ impl Scope {
         let next_id = next.expect("NullPointerException: leave() on an outermost scope");
         let next_table = {
             let next_scope = scopes.get(next_id.index());
-            match &next_scope.data {
+            match &*next_scope.data {
                 ScopeData::ScopeImpl { table, .. } => table.clone(),
                 _ => panic!("ClassCastException: not a ScopeImpl"),
             }
@@ -487,7 +489,7 @@ impl Scope {
         // Java: Assert.check(next.shared > 0); next.shared--; next.nelems = nelems;
         {
             let next_scope = scopes.get_mut(next_id.index());
-            match &mut next_scope.data {
+            match Rc::make_mut(&mut next_scope.data) {
                 ScopeData::ScopeImpl {
                     shared: next_shared,
                     nelems: next_nelems,
@@ -551,7 +553,7 @@ impl Scope {
     pub fn enter(&mut self, self_id: ScopeId, sym: SymbolId, symbols: &Arena<Symbol>) {
         let name = symbol_name(symbols, sym);
         {
-            let ScopeData::ScopeImpl { shared, nelems, .. } = &self.data else {
+            let ScopeData::ScopeImpl { shared, nelems, .. } = &*self.data else {
                 panic!("ClassCastException: not a ScopeImpl");
             };
             assert_eq!(*shared, 0, "shared scope cannot be modified");
@@ -574,7 +576,7 @@ impl Scope {
             };
             let mut entries = entries.borrow_mut();
             let entry_id = EntryId(entries.len() as u32);
-            let elems = match &self.data {
+            let elems = match &*self.data {
                 ScopeData::ScopeImpl { elems, .. } => *elems,
                 _ => crate::util::assert::error(),
             };
@@ -596,7 +598,7 @@ impl Scope {
             nelems,
             listeners,
             ..
-        } = &mut self.data
+        } = Rc::make_mut(&mut self.data)
         else {
             panic!("ClassCastException: not a ScopeImpl");
         };
@@ -692,7 +694,7 @@ impl Scope {
                 remove_count,
                 listeners,
                 ..
-            } = &mut self.data
+            } = Rc::make_mut(&mut self.data)
             else {
                 panic!("ClassCastException: not a ScopeImpl");
             };
@@ -735,7 +737,7 @@ impl Scope {
     pub fn any_match(&self, filter: &dyn Fn(SymbolId) -> bool) -> bool {
         let (_, entries) = self.table_and_entries();
         let entries = entries.borrow();
-        let ScopeData::ScopeImpl { elems, .. } = &self.data else {
+        let ScopeData::ScopeImpl { elems, .. } = &*self.data else {
             panic!("ClassCastException: not a ScopeImpl");
         };
         let mut current = *elems;
@@ -755,7 +757,7 @@ impl Scope {
     pub fn is_empty(&self) -> bool {
         let (_, entries) = self.table_and_entries();
         let entries = entries.borrow();
-        let ScopeData::ScopeImpl { elems, .. } = &self.data else {
+        let ScopeData::ScopeImpl { elems, .. } = &*self.data else {
             panic!("ClassCastException: not a ScopeImpl");
         };
         let mut current = *elems;
@@ -778,18 +780,18 @@ impl Scope {
         let owner = new_owner.or(self.owner);
         let (table, entries, nelems) = {
             let (table, entries) = self.table_and_entries();
-            let ScopeData::ScopeImpl { nelems, .. } = &self.data else {
+            let ScopeData::ScopeImpl { nelems, .. } = &*self.data else {
                 panic!("ClassCastException: not a ScopeImpl");
             };
             (table, entries, *nelems)
         };
-        let ScopeData::ScopeImpl { shared, .. } = &mut self.data else {
+        let ScopeData::ScopeImpl { shared, .. } = Rc::make_mut(&mut self.data) else {
             panic!("ClassCastException: not a ScopeImpl");
         };
         *shared += 1;
         Scope {
             owner,
-            data: ScopeData::ScopeImpl {
+            data: Rc::new(ScopeData::ScopeImpl {
                 shared: 0,
                 next: Some(self_id),
                 table,
@@ -799,7 +801,7 @@ impl Scope {
                 entries,
                 listeners: ScopeListenerList::new(),
                 error_scope: false,
-            },
+            }),
         }
     }
 
@@ -814,7 +816,7 @@ impl Scope {
         let owner = new_owner.or(self.owner);
         let (table, entries, nelems, shared) = {
             let (table, entries) = self.table_and_entries();
-            let ScopeData::ScopeImpl { nelems, shared, .. } = &self.data else {
+            let ScopeData::ScopeImpl { nelems, shared, .. } = &*self.data else {
                 panic!("ClassCastException: not a ScopeImpl");
             };
             (table, entries, *nelems, *shared)
@@ -823,13 +825,13 @@ impl Scope {
             //The nested Scopes might have already added something to the table, so all items
             //that don't originate in this Scope or any of its outer Scopes need to be cleared:
             let mut accept_scopes = vec![self_id];
-            let ScopeData::ScopeImpl { next, .. } = &self.data else {
+            let ScopeData::ScopeImpl { next, .. } = &*self.data else {
                 panic!("ClassCastException: not a ScopeImpl");
             };
             let mut c = *next;
             while let Some(scope_id) = c {
                 accept_scopes.push(scope_id);
-                c = match &scopes.get(scope_id.index()).data {
+                c = match &*scopes.get(scope_id.index()).data {
                     ScopeData::ScopeImpl { next, .. } => *next,
                     _ => None,
                 };
@@ -862,7 +864,7 @@ impl Scope {
             };
             Scope {
                 owner,
-                data: ScopeData::ScopeImpl {
+                data: Rc::new(ScopeData::ScopeImpl {
                     shared: 0,
                     next: Some(self_id),
                     table: Rc::new(RefCell::new(new_table)),
@@ -872,13 +874,13 @@ impl Scope {
                     entries,
                     listeners: ScopeListenerList::new(),
                     error_scope: false,
-                },
+                }),
             }
         } else {
             let new_table = table.borrow().clone();
             Scope {
                 owner: new_owner,
-                data: ScopeData::ScopeImpl {
+                data: Rc::new(ScopeData::ScopeImpl {
                     shared: 0,
                     next: Some(self_id),
                     table: Rc::new(RefCell::new(new_table)),
@@ -888,7 +890,7 @@ impl Scope {
                     entries,
                     listeners: ScopeListenerList::new(),
                     error_scope: false,
-                },
+                }),
             }
         }
     }
@@ -917,7 +919,7 @@ impl Scope {
         }
         // We don't need to update nelems for shared inherited scopes,
         // since that gets handled by leave().
-        let ScopeData::ScopeImpl { nelems, .. } = &mut self.data else {
+        let ScopeData::ScopeImpl { nelems, .. } = Rc::make_mut(&mut self.data) else {
             panic!("ClassCastException: not a ScopeImpl");
         };
         *nelems = n;
@@ -960,10 +962,10 @@ impl Scope {
         ctx: &mut crate::compiler_context::CompilerContext,
         mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Vec<SymbolId> {
-        if !matches!(&self.data, ScopeData::FilterImportScope { .. }) {
+        if !matches!(&*self.data, ScopeData::FilterImportScope { .. }) {
             return self.get_symbols_ctx(self_id, lookup_kind, filter, ctx);
         }
-        match &self.data {
+        match &*self.data {
             ScopeData::ScopeImpl { .. } => {
                 // Java: ScopeImpl.getSymbols iterator (Scope.java:559-620):
                 // walk the elems chain of the current scope, then (RECURSIVE)
@@ -977,11 +979,11 @@ impl Scope {
                         Some(ctx.scope(current_scope))
                     };
                     let (elems, next) = match scope {
-                        None => match &self.data {
+                        None => match &*self.data {
                             ScopeData::ScopeImpl { elems, next, .. } => (*elems, *next),
                             _ => crate::util::assert::error(),
                         },
-                        Some(scope) => match &scope.data {
+                        Some(scope) => match &*scope.data {
                             ScopeData::ScopeImpl { elems, next, .. } => (*elems, *next),
                             _ => break,
                         },
@@ -1110,7 +1112,7 @@ impl Scope {
         ctx: &mut crate::compiler_context::CompilerContext,
         mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Vec<SymbolId> {
-        match &self.data {
+        match &*self.data {
             ScopeData::ScopeImpl { .. } => {
                 let (_, entries) = self.table_and_entries();
                 let entries = entries.borrow();
@@ -1362,18 +1364,18 @@ impl Scope {
         filter: &dyn Fn(&crate::compiler_context::CompilerContext, SymbolId) -> bool,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Vec<SymbolId> {
-        match &self.data {
+        match &*self.data {
             ScopeData::ScopeImpl { .. } => {
                 let mut result = Vec::new();
                 let mut current_scope = self_id;
                 loop {
                     let (elems, next) = if current_scope == self_id {
-                        match &self.data {
+                        match &*self.data {
                             ScopeData::ScopeImpl { elems, next, .. } => (*elems, *next),
                             _ => crate::util::assert::error(),
                         }
                     } else {
-                        match &ctx.scope(current_scope).data {
+                        match &*ctx.scope(current_scope).data {
                             ScopeData::ScopeImpl { elems, next, .. } => (*elems, *next),
                             _ => break,
                         }
@@ -1452,7 +1454,7 @@ impl Scope {
         filter: &dyn Fn(&crate::compiler_context::CompilerContext, SymbolId) -> bool,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Vec<SymbolId> {
-        match &self.data {
+        match &*self.data {
             ScopeData::ScopeImpl { .. } => {
                 let (_, entries) = self.table_and_entries();
                 let entries = entries.borrow();
@@ -1596,7 +1598,7 @@ impl Scope {
         syms: &crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> Option<ScopeId> {
-        match &self.data {
+        match &*self.data {
             ScopeData::ScopeImpl { .. } => {
                 let name = ctx.sym(by_name).name.clone();
                 let (_, entries) = self.table_and_entries();
@@ -1653,7 +1655,7 @@ impl Scope {
         syms: &crate::code::symtab::Symtab,
         ctx: &mut crate::compiler_context::CompilerContext,
     ) -> bool {
-        match &self.data {
+        match &*self.data {
             ScopeData::FilterImportScope { static_import, .. } => *static_import,
             ScopeData::SingleEntryScope { .. } => false,
             ScopeData::ScopeImpl { .. } => false,
@@ -1661,7 +1663,7 @@ impl Scope {
             | ScopeData::CompoundScope { .. }
             | ScopeData::ImportScope { .. }
             | ScopeData::StarImportScope { .. } => {
-                let sub_scopes = match &self.data {
+                let sub_scopes = match &*self.data {
                     ScopeData::CompoundScope { sub_scopes, .. }
                     | ScopeData::ImportScope { sub_scopes, .. }
                     | ScopeData::StarImportScope { sub_scopes, .. } => sub_scopes.clone(),
@@ -1720,8 +1722,13 @@ pub(crate) fn probe_index(
                 let entry = &entries[entry_id.index() as usize];
                 let entry_sym = entry.sym.expect("sentinel entry stored in the table");
                 let entry_name = symbol_name(symbols, entry_sym);
+                // Name equality is table identity + index, and get_index() == h
+                // already established the index: the identity check below is
+                // O(1) and allocation-free. The content comparison remains only
+                // for names from a different table.
                 if entry_name.get_index() == h
-                    && entry_name.to_java_string() == name.to_java_string()
+                    && (entry_name == *name
+                        || entry_name.to_java_string() == name.to_java_string())
                 {
                     return i;
                 }
@@ -2138,7 +2145,7 @@ mod tests {
         for sym in &entries {
             let symbol_name = symbol_name(&symbols, *sym);
             let entry = scope.lookup(&symbol_name, &symbols).expect("entry");
-            let ScopeData::ScopeImpl { entries, .. } = &scope.data else {
+            let ScopeData::ScopeImpl { entries, .. } = &*scope.data else {
                 panic!("expected a ScopeImpl");
             };
             let entries = entries.borrow();
@@ -2150,7 +2157,7 @@ mod tests {
     fn error_scope_flag_is_recorded() {
         let scope = Scope::new_error_scope(None);
         let self_id = scope_id(0);
-        match scope.data {
+        match &*scope.data {
             ScopeData::ScopeImpl { error_scope, .. } => assert!(error_scope),
             _ => panic!("expected an error scope"),
         }
@@ -2175,9 +2182,9 @@ mod tests {
             Some(SymbolId::new(1)),
             Some(origin),
         );
-        match scope.data {
+        match &*scope.data {
             ScopeData::SingleEntryScope { sym, content, .. } => {
-                assert_eq!(sym, Some(SymbolId::new(1)));
+                assert_eq!(*sym, Some(SymbolId::new(1)));
                 assert_eq!(content.length(), 1);
             }
             _ => panic!("expected a single entry scope"),
@@ -2495,7 +2502,7 @@ mod tests {
         };
         assert_eq!(left, Some(outer_id));
         let outer_after = scopes.get(outer_id.index());
-        match &outer_after.data {
+        match &*outer_after.data {
             ScopeData::ScopeImpl { shared, .. } => assert_eq!(*shared, 0),
             _ => panic!("expected ScopeImpl"),
         }
@@ -2628,7 +2635,7 @@ mod tests {
         for sym in &ids {
             scope.enter(self_id, *sym, &symbols);
         }
-        let (table_len, nelems) = match &scope.data {
+        let (table_len, nelems) = match &*scope.data {
             ScopeData::ScopeImpl { table, nelems, .. } => (table.borrow().len(), *nelems),
             _ => panic!("expected a ScopeImpl"),
         };
@@ -2638,7 +2645,7 @@ mod tests {
             let entry = scope
                 .lookup(entry_name, &symbols)
                 .expect("every name remains found");
-            match &scope.data {
+            match &*scope.data {
                 ScopeData::ScopeImpl { entries, .. } => {
                     assert_eq!(entries.borrow()[entry.index() as usize].sym, Some(*sym));
                 }
@@ -2686,7 +2693,7 @@ mod tests {
         scope.enter(self_id, second_sym, &symbols);
         let first_entry = scope.lookup(&first, &symbols).expect("first entry");
         let second_entry = scope.lookup(&second, &symbols).expect("second entry");
-        match &scope.data {
+        match &*scope.data {
             ScopeData::ScopeImpl { entries, .. } => {
                 assert_eq!(
                     entries.borrow()[first_entry.index() as usize].sym,

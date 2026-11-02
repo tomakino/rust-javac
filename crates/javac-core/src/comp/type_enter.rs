@@ -4768,7 +4768,7 @@ mod tests {
         let imported = ctx.scope_import_type(named, origin, origin, symbol);
         assert!(ctx.scope_is_filled(named));
         assert_eq!(ctx.scope_get_mark(named), 1);
-        let data_ok = match &ctx.scope(named).data {
+        let data_ok = match &*ctx.scope(named).data {
             crate::code::scope::ScopeData::NamedImportScope {
                 sub_scopes,
                 name2_scopes,
@@ -4819,7 +4819,7 @@ mod tests {
             Rc::clone(&harness.type_enter.types),
         );
         assert_eq!(ctx.scope_get_mark(star), 1);
-        let count = match &ctx.scope(star).data {
+        let count = match &*ctx.scope(star).data {
             crate::code::scope::ScopeData::StarImportScope { sub_scopes, .. } => {
                 sub_scopes.iter().count()
             }

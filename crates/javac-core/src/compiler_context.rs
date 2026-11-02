@@ -545,7 +545,7 @@ impl CompilerContext {
 
     /// Java: CompoundScope.getMark()
     pub fn scope_get_mark(&self, scope: ScopeId) -> i32 {
-        match &self.scope(scope).data {
+        match &*self.scope(scope).data {
             ScopeData::CompoundScope { mark, .. }
             | ScopeData::ImportScope { mark, .. }
             | ScopeData::NamedImportScope { mark, .. }
@@ -556,7 +556,7 @@ impl CompilerContext {
 
     /// Java: StarImportScope.isFilled() (subScopes.nonEmpty())
     pub fn scope_is_filled(&self, scope: ScopeId) -> bool {
-        match &self.scope(scope).data {
+        match &*self.scope(scope).data {
             ScopeData::CompoundScope { sub_scopes, .. }
             | ScopeData::ImportScope { sub_scopes, .. }
             | ScopeData::NamedImportScope { sub_scopes, .. }
@@ -619,7 +619,7 @@ impl CompilerContext {
     fn named_import_append(&mut self, named_scope: ScopeId, new_scope: ScopeId, name: Name) {
         self.scope_append_sub_scope(named_scope, new_scope);
         if let ScopeData::NamedImportScope { name2_scopes, .. } =
-            &mut self.scope_mut(named_scope).data
+            Rc::make_mut(&mut self.scope_mut(named_scope).data)
         {
             Rc::make_mut(name2_scopes)
                 .entry(name)
@@ -642,7 +642,7 @@ impl CompilerContext {
         types: Rc<crate::code::types::Types>,
     ) {
         // avoid entering the same scope twice
-        let duplicates = match &self.scope(star_scope).data {
+        let duplicates = match &*self.scope(star_scope).data {
             ScopeData::StarImportScope { sub_scopes, .. } => sub_scopes.clone(),
             _ => panic!("ClassCastException: not a StarImportScope"),
         };
@@ -654,7 +654,7 @@ impl CompilerContext {
                 filter: existing_filter,
                 static_import: existing_static,
                 ..
-            } = &self.scope(existing).data
+            } = &*self.scope(existing).data
             {
                 let same_filter = match (&existing_filter, &filter) {
                     (None, None) => true,
@@ -704,7 +704,7 @@ impl CompilerContext {
         syms: &crate::code::symtab::Symtab,
         mut attr: Option<&mut crate::comp::attr::Attr>,
     ) {
-        let (sub_scopes, name2_scopes) = match &self.scope(scope).data {
+        let (sub_scopes, name2_scopes) = match &*self.scope(scope).data {
             ScopeData::ImportScope { sub_scopes, .. } => {
                 (sub_scopes.clone(), None)
             }
@@ -748,7 +748,7 @@ impl CompilerContext {
             }
             None => None,
         };
-        match &mut self.scope_mut(scope).data {
+        match Rc::make_mut(&mut self.scope_mut(scope).data) {
             ScopeData::ImportScope { sub_scopes, .. } => {
                 *sub_scopes = new_sub_scopes;
             }
@@ -789,7 +789,7 @@ impl CompilerContext {
         syms: &crate::code::symtab::Symtab,
         attr: Option<&mut crate::comp::attr::Attr>,
     ) -> ScopeId {
-        let (owner, statically_imported) = match &self.scope(scope).data {
+        let (owner, statically_imported) = match &*self.scope(scope).data {
             ScopeData::FilterImportScope { static_import, .. } => {
                 (self.scope(scope).owner, *static_import)
             }
@@ -1117,7 +1117,7 @@ impl CompilerContext {
                 elems,
                 nelems,
                 ..
-            } = &leaving.data
+            } = &*leaving.data
             else {
                 panic!("ClassCastException: not a ScopeImpl");
             };
@@ -1133,7 +1133,7 @@ impl CompilerContext {
         let next_id = next_id.expect("leave() on a scope without an enclosing scope");
         let same_table = {
             let next_scope = self.scopes.get(next_id.index());
-            match &next_scope.data {
+            match &*next_scope.data {
                 ScopeData::ScopeImpl {
                     table: next_table, ..
                 } => Rc::ptr_eq(&table, next_table),
@@ -1166,7 +1166,7 @@ impl CompilerContext {
                 shared,
                 nelems: next_nelems,
                 ..
-            } = &mut next_scope.data
+            } = Rc::make_mut(&mut next_scope.data)
             else {
                 panic!("ClassCastException: not a ScopeImpl");
             };
@@ -1253,7 +1253,7 @@ impl CompilerContext {
 fn sub_scope_fields_mut(
     scope: &mut Scope,
 ) -> Option<(&mut List<ScopeId>, &mut i32)> {
-    match &mut scope.data {
+    match Rc::make_mut(&mut scope.data) {
         ScopeData::CompoundScope {
             sub_scopes, mark, ..
         }
