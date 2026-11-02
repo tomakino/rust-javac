@@ -2396,11 +2396,18 @@ impl InferenceGraph {
         }
         // merge cyclic nodes
         //
-        // The SCC heads become the new node list; every dependency edge is
-        // remapped from the pre-merge ids to the compacted ids (merged members
-        // map to their root), so the edges never point past the list.
+        // Java: InferenceGraph.initNodes (Infer.java:1880-1914). Upstream keeps
+        // every node in the list while it merges the cyclic components and only
+        // then swaps in the acyclic list of component heads. The port must not
+        // remove a head from the list while later components are still being
+        // merged: notifyUpdate() walks the live nodes, so a head that has
+        // already been taken out of the list would keep stale dependency ids
+        // (the merge of a later component cannot rewrite its edges), which in
+        // turn changes the BestLeafSolver path costs and the solve order.
+        // Take the final snapshot of the heads after all merges have been
+        // applied, then remap the pre-merge ids to the compacted ids.
         let sccs = graph.tarjan_scc();
-        let mut acyclic_nodes: Vec<Option<GraphNode>> = Vec::new();
+        let mut heads: Vec<usize> = Vec::new();
         let mut old_to_new: Vec<Option<usize>> = vec![None; count];
         for scc in &sccs {
             if scc.len() > 1 {
@@ -2412,12 +2419,16 @@ impl InferenceGraph {
                 }
             }
             let head = scc[0];
-            let new_index = acyclic_nodes.len();
+            let new_index = heads.len();
             for n in scc {
                 old_to_new[*n] = Some(new_index);
             }
-            acyclic_nodes.push(graph.nodes[head].take());
+            heads.push(head);
         }
+        let mut acyclic_nodes: Vec<Option<GraphNode>> = heads
+            .iter()
+            .map(|head| graph.nodes[*head].clone())
+            .collect();
         for node in acyclic_nodes.iter_mut().flatten() {
             let mut new_deps: Vec<usize> = Vec::new();
             for dep in &node.deps {
