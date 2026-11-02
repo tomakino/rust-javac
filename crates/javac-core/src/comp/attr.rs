@@ -3910,7 +3910,7 @@ impl Attr {
                 return types.create_error_type_original(ctx, Some(site), syms);
             }
             Err(crate::comp::resolve::MethodCheckFailure::Inapplicable(ex)) => {
-                let diag = ex.get_diagnostic().cloned();
+                let diag = ex.materialize(ctx, self.diags.as_ref());
                 let err_symbol = crate::code::symbol::symbol_new_resolve_error(
                     ctx,
                     Kind::ERR,

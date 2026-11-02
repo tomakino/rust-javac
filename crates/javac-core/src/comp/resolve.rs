@@ -4014,8 +4014,9 @@ pub struct Candidate {
     pub step: MethodResolutionPhase,
     /// Java: final Symbol sym
     pub sym: SymbolId,
-    /// Java: final JCDiagnostic details
-    pub details: Option<crate::util::jc_diagnostic::JCDiagnostic>,
+    /// Java: final JCDiagnostic details (port: may be deferred until the
+    /// candidate is reported).
+    pub details: Option<MethodCheckDiagnostic>,
     /// Java: final Type mtype
     pub mtype: Option<TypeId>,
 }
@@ -4070,7 +4071,7 @@ impl MethodResolutionContext {
     pub fn add_inapplicable_candidate(
         &self,
         sym: SymbolId,
-        details: Option<crate::util::jc_diagnostic::JCDiagnostic>,
+        details: Option<MethodCheckDiagnostic>,
     ) {
         let step = self.step.expect("resolution step");
         self.candidates.borrow_mut().push(Candidate {
@@ -4264,11 +4265,53 @@ pub fn catch_inference_exception<R>(
     }
 }
 
+/// A method-check diagnostic whose rich rendering (type arguments with where
+/// clauses) is delayed until the diagnostic is actually reported. Candidates
+/// discarded during overload resolution never pay for the rendering.
+#[derive(Clone, Debug)]
+pub(crate) struct DeferredMethodCheckDiagnostic {
+    diag: MethodCheckDiag,
+    pos: Option<TreeId>,
+    infer_diag: bool,
+    infer_vars: Vec<TypeId>,
+    details: Option<crate::util::jc_diagnostic::JCDiagnostic>,
+}
+
+/// The JCDiagnostic carried by an InapplicableMethodException, optionally
+/// deferred (port adapter for eager rich formatting).
+#[derive(Clone, Debug)]
+pub(crate) enum MethodCheckDiagnostic {
+    Ready(Option<crate::util::jc_diagnostic::JCDiagnostic>),
+    Deferred(Rc<DeferredMethodCheckDiagnostic>),
+}
+
+impl MethodCheckDiagnostic {
+    pub(crate) fn materialize(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        diags: &Factory,
+    ) -> Option<crate::util::jc_diagnostic::JCDiagnostic> {
+        match self {
+            MethodCheckDiagnostic::Ready(diagnostic) => diagnostic.clone(),
+            MethodCheckDiagnostic::Deferred(deferred) => {
+                Some(render_method_check_diagnostic(ctx, diags, deferred))
+            }
+        }
+    }
+}
+
+/// Wrap a ready-made diagnostic for candidate storage.
+fn ready_candidate_diagnostic(
+    diagnostic: Option<crate::util::jc_diagnostic::JCDiagnostic>,
+) -> Option<MethodCheckDiagnostic> {
+    diagnostic.map(|diagnostic| MethodCheckDiagnostic::Ready(Some(diagnostic)))
+}
+
 /// Java: public static class InapplicableMethodException extends
 /// RuntimeException (Resolve.java:1398-1411)
 #[derive(Clone, Debug)]
 pub struct InapplicableMethodException {
-    diagnostic: Option<crate::util::jc_diagnostic::JCDiagnostic>,
+    diagnostic: MethodCheckDiagnostic,
 }
 
 impl InapplicableMethodException {
@@ -4282,12 +4325,34 @@ impl InapplicableMethodException {
     pub fn new(
         diagnostic: Option<crate::util::jc_diagnostic::JCDiagnostic>,
     ) -> InapplicableMethodException {
-        InapplicableMethodException { diagnostic }
+        InapplicableMethodException {
+            diagnostic: MethodCheckDiagnostic::Ready(diagnostic),
+        }
     }
 
-    /// Java: public JCDiagnostic getDiagnostic()
-    pub fn get_diagnostic(&self) -> Option<&crate::util::jc_diagnostic::JCDiagnostic> {
-        self.diagnostic.as_ref()
+    /// Port adapter: an exception whose rich diagnostic is rendered on demand.
+    pub(crate) fn new_deferred(
+        deferred: DeferredMethodCheckDiagnostic,
+    ) -> InapplicableMethodException {
+        InapplicableMethodException {
+            diagnostic: MethodCheckDiagnostic::Deferred(Rc::new(deferred)),
+        }
+    }
+
+    /// Java: public JCDiagnostic getDiagnostic() -- materializes a deferred
+    /// diagnostic (the renderer needs the compilation context).
+    pub(crate) fn materialize(
+        &self,
+        ctx: &crate::compiler_context::CompilerContext,
+        diags: &Factory,
+    ) -> Option<crate::util::jc_diagnostic::JCDiagnostic> {
+        self.diagnostic.materialize(ctx, diags)
+    }
+
+    /// The ready/deferred diagnostic, for call sites that keep it for later
+    /// reporting instead of rendering it now.
+    pub(crate) fn diagnostic(&self) -> &MethodCheckDiagnostic {
+        &self.diagnostic
     }
 }
 
@@ -4466,7 +4531,7 @@ pub fn abstract_method_check_arguments_acceptable(
     types: &Types,
     attr: &mut crate::comp::attr::Attr,
     chk: &crate::comp::check::Check,
-    diags: &Factory,
+    _diags: &Factory,
     env: &Rc<Env<AttrContext>>,
     deferred_attr_context: Rc<crate::comp::deferred_attr::DeferredAttrContext>,
     argtypes: List<TypeId>,
@@ -4501,15 +4566,13 @@ pub fn abstract_method_check_arguments_acceptable(
         }
         if arg_count != formal_count {
             let diagnostic = report_mc_diagnostic(
-                ctx,
-                diags,
+                &deferred_attr_context.inference_context,
                 None,
                 MethodCheckDiag::ArityMismatch,
-                &deferred_attr_context.inference_context,
                 None,
             );
             return Err(MethodCheckFailure::Inapplicable(
-                InapplicableMethodException::new(Some(diagnostic)),
+                InapplicableMethodException::new_deferred(diagnostic),
             ));
         }
     }
@@ -4541,15 +4604,13 @@ pub fn abstract_method_check_arguments_acceptable(
     }
     if formals_head_is_not_varargs(&formals, varargs_formal) {
         let diagnostic = report_mc_diagnostic(
-            ctx,
-            diags,
+            &deferred_attr_context.inference_context,
             None,
             MethodCheckDiag::ArityMismatch,
-            &deferred_attr_context.inference_context,
             None,
         );
         return Err(MethodCheckFailure::Inapplicable(
-            InapplicableMethodException::new(Some(diagnostic)),
+            InapplicableMethodException::new_deferred(diagnostic),
         ));
     }
     if use_varargs {
@@ -4583,32 +4644,55 @@ pub fn abstract_method_check_arguments_acceptable(
     Ok(())
 }
 
+/// Build a deferred method-check diagnostic; rendering happens only when the
+/// diagnostic is actually reported (render_method_check_diagnostic).
 fn report_mc_diagnostic(
-    ctx: &mut crate::compiler_context::CompilerContext,
-    diags: &Factory,
+    inference_context: &Rc<crate::comp::infer::InferenceContext>,
     pos: Option<TreeId>,
     diag: MethodCheckDiag,
-    inference_context: &Rc<crate::comp::infer::InferenceContext>,
     details: Option<&crate::util::jc_diagnostic::JCDiagnostic>,
-) -> crate::util::jc_diagnostic::JCDiagnostic {
-    use crate::resources::compiler_properties::fragments;
-    use crate::resources::diagnostic_contract::{DiagnosticArg, TypeArg};
+) -> DeferredMethodCheckDiagnostic {
     // Java: reportMC (Resolve.java:824-836): inferContext != emptyContext
     // selects the infer key and prepends inferenceVars() when the keys differ.
     let infer_diag = !Rc::ptr_eq(inference_context, &crate::comp::infer::empty_context());
-    let mut vars: Vec<TypeArg> = Vec::new();
+    let mut infer_vars: Vec<TypeId> = Vec::new();
     if infer_diag {
         let mut current = inference_context.inference_vars();
         while current.non_empty() {
-            vars.push(crate::comp::check::type_arg_with_where(
-                ctx,
-                *current.head(),
-            ));
+            infer_vars.push(*current.head());
             current = current.tail();
         }
     }
-    let details_arg = details.map(|d| DiagnosticArg::JCDiagnostic(Rc::new(d.clone())));
-    let info = match diag {
+    DeferredMethodCheckDiagnostic {
+        diag,
+        pos,
+        infer_diag,
+        infer_vars,
+        details: details.cloned(),
+    }
+}
+
+/// Render a deferred method-check diagnostic (the original eager body of
+/// report_mc_diagnostic; only executed for diagnostics that are reported).
+fn render_method_check_diagnostic(
+    ctx: &crate::compiler_context::CompilerContext,
+    diags: &Factory,
+    deferred: &DeferredMethodCheckDiagnostic,
+) -> crate::util::jc_diagnostic::JCDiagnostic {
+    use crate::resources::compiler_properties::fragments;
+    use crate::resources::diagnostic_contract::{DiagnosticArg, TypeArg};
+    let infer_diag = deferred.infer_diag;
+    let mut vars: Vec<TypeArg> = Vec::new();
+    if infer_diag {
+        for ty in &deferred.infer_vars {
+            vars.push(crate::comp::check::type_arg_with_where(ctx, *ty));
+        }
+    }
+    let details_arg = deferred
+        .details
+        .as_ref()
+        .map(|d| DiagnosticArg::JCDiagnostic(Rc::new(d.clone())));
+    let info = match deferred.diag {
         MethodCheckDiag::ArityMismatch => {
             if infer_diag {
                 fragments::infer_arg_length_mismatch(vars)
@@ -4639,7 +4723,7 @@ fn report_mc_diagnostic(
         }
     };
     let mut diagnostic = diags.fragment(crate::util::jc_diagnostic::Fragment::from(info));
-    if let Some(tree) = pos {
+    if let Some(tree) = deferred.pos {
         diagnostic.set_diagnostic_position(Some(Rc::new(
             crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
         )));
@@ -4897,15 +4981,13 @@ impl MethodResultInfo {
                 ),
             ));
             let diagnostic = report_mc_diagnostic(
-                ctx,
-                diags,
+                self.check_context.inference_context(),
                 pos,
                 self.method_diag,
-                self.check_context.inference_context(),
                 Some(&details),
             );
             return Err(MethodCheckFailure::Inapplicable(
-                InapplicableMethodException::new(Some(diagnostic)),
+                InapplicableMethodException::new_deferred(diagnostic),
             ));
         }
         // Java: super.check(pos, chk.checkNonVoid(pos, capturedType)) — the
@@ -5450,7 +5532,8 @@ impl Resolve {
                         InapplicableMethodException::new(ex.get_diagnostic())
                     }
                 };
-                resolve_context.add_inapplicable_candidate(sym, ex.get_diagnostic().cloned());
+                resolve_context
+                    .add_inapplicable_candidate(sym, Some(ex.diagnostic().clone()));
                 // Currently, an InapplicableMethodException occurs.
                 // If bestSoFar.kind was ABSENT_MTH, return an
                 // InapplicableSymbolError(kind is WRONG_MTH).
@@ -5482,8 +5565,10 @@ impl Resolve {
                                 Some(argtypes.clone()),
                                 typeargtypes.clone(),
                             );
-                            resolve_context
-                                .add_inapplicable_candidate(access_sym, previous_diagnostic);
+                            resolve_context.add_inapplicable_candidate(
+                                access_sym,
+                                ready_candidate_diagnostic(previous_diagnostic),
+                            );
                             return self.new_inapplicable_symbols_error(
                                 ctx,
                                 resolve_context,
@@ -5519,12 +5604,12 @@ impl Resolve {
                     best_so_far = access_error;
                 }
                 Kind::WRONG_MTH => {
-                    resolve_context.add_inapplicable_candidate(sym, cur_diagnostic.clone());
+                    resolve_context.add_inapplicable_candidate(sym, ready_candidate_diagnostic(cur_diagnostic.clone()));
                     best_so_far =
                         self.new_inapplicable_symbols_error(ctx, resolve_context, Kind::WRONG_MTHS);
                 }
                 Kind::WRONG_MTHS => {
-                    resolve_context.add_inapplicable_candidate(sym, cur_diagnostic);
+                    resolve_context.add_inapplicable_candidate(sym, ready_candidate_diagnostic(cur_diagnostic));
                 }
                 Kind::HIDDEN => {
                     let prev = crate::code::symbol::symbol_resolve_error_data(ctx, best_so_far);
@@ -5547,8 +5632,8 @@ impl Resolve {
                             Some(argtypes.clone()),
                             typeargtypes.clone(),
                         );
-                        resolve_context.add_inapplicable_candidate(access_sym, previous_diagnostic);
-                        resolve_context.add_inapplicable_candidate(sym, cur_diagnostic);
+                        resolve_context.add_inapplicable_candidate(access_sym, ready_candidate_diagnostic(previous_diagnostic));
+                        resolve_context.add_inapplicable_candidate(sym, ready_candidate_diagnostic(cur_diagnostic));
                         best_so_far = self.new_inapplicable_symbols_error(
                             ctx,
                             resolve_context,
@@ -6247,7 +6332,8 @@ fn varargs_accessible(
                     Ok(()) => Ok(()),
                     Err(MethodCheckFailure::Inference(exception)) => Err(exception),
                     Err(MethodCheckFailure::Inapplicable(exception)) => {
-                        throw_inapplicable_method_exception(exception.get_diagnostic())
+                        let diagnostic = exception.materialize(ctx, self.diags.as_ref());
+                        throw_inapplicable_method_exception(diagnostic.as_ref())
                     }
                 }
             }
@@ -6463,6 +6549,10 @@ impl Resolve {
         let candidate = resolve_context
             .err_candidate()
             .expect("AssertionError: bestSoFar must be non-null");
+        let details = candidate
+            .details
+            .as_ref()
+            .and_then(|diagnostic| diagnostic.materialize(ctx, self.diags.as_ref()));
         crate::code::symbol::symbol_new_resolve_error(
             ctx,
             kind,
@@ -6471,7 +6561,7 @@ impl Resolve {
             crate::code::symbol::ResolveErrorData::Inapplicable {
                 kind,
                 sym: candidate.sym,
-                details: candidate.details,
+                details,
             },
         )
     }
@@ -6487,14 +6577,18 @@ impl Resolve {
         let candidates: Vec<crate::code::symbol::InapplicableSymbolCandidate> = resolve_context
             .inapplicable_candidates()
             .into_iter()
-            .map(
-                |candidate| crate::code::symbol::InapplicableSymbolCandidate {
+            .map(|candidate| {
+                let details = candidate
+                    .details
+                    .as_ref()
+                    .and_then(|diagnostic| diagnostic.materialize(ctx, self.diags.as_ref()));
+                crate::code::symbol::InapplicableSymbolCandidate {
                     step: candidate.step.ordinal() as u8,
                     sym: candidate.sym,
                     mtype: candidate.mtype,
-                    details: candidate.details,
-                },
-            )
+                    details,
+                }
+            })
             .collect();
         crate::code::symbol::symbol_new_resolve_error(
             ctx,
@@ -7950,12 +8044,11 @@ impl Resolve {
             let sub_diag = if applicable {
                 self.get_verbose_applicable_candidate_diag(ctx, pos, candidate.sym, candidate.mtype)
             } else {
-                self.get_verbose_inapplicable_candidate_diag(
-                    ctx,
-                    pos,
-                    candidate.sym,
-                    candidate.details.clone(),
-                )
+                let details = candidate
+                    .details
+                    .as_ref()
+                    .and_then(|diagnostic| diagnostic.materialize(ctx, self.diags.as_ref()));
+                self.get_verbose_inapplicable_candidate_diag(ctx, pos, candidate.sym, details)
             };
             sub_diags.push(sub_diag);
             if candidate.sym == best_so_far {
@@ -10887,10 +10980,13 @@ mod tests {
             .into(),
         );
         let ex = InapplicableMethodException::new(Some(fragment.clone()));
-        assert_eq!(
-            ex.get_diagnostic().expect("fragment diagnostic").get_type(),
-            crate::util::jc_diagnostic::DiagnosticType::FRAGMENT
-        );
+        match ex.diagnostic() {
+            MethodCheckDiagnostic::Ready(Some(captured)) => assert_eq!(
+                captured.get_type(),
+                crate::util::jc_diagnostic::DiagnosticType::FRAGMENT
+            ),
+            _ => panic!("fragment diagnostic"),
+        }
         let _ = &mut ctx;
     }
     #[test]
@@ -11012,16 +11108,13 @@ mod check_channel_tests {
             throw_inapplicable_method_exception(Some(&diag))
         });
         match result {
-            Err(MethodCheckFailure::Inapplicable(exception)) => {
-                assert_eq!(
-                    exception
-                        .get_diagnostic()
-                        .expect("inapplicable diagnostic")
-                        .get_message(None)
-                        .to_string_lossy(),
+            Err(MethodCheckFailure::Inapplicable(exception)) => match exception.diagnostic() {
+                MethodCheckDiagnostic::Ready(Some(captured)) => assert_eq!(
+                    captured.get_message(None).to_string_lossy(),
                     diag.get_message(None).to_string_lossy()
-                );
-            }
+                ),
+                _ => panic!("inapplicable diagnostic"),
+            },
             _ => panic!("expected the inapplicable failure"),
         }
     }
