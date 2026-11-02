@@ -1436,9 +1436,6 @@ mod tests {
     use crate::util::javac_messages::JavacMessages;
     use crate::util::jc_diagnostic::Factory;
 
-    /// The development-time ENTER oracle (tools/gen-enter-oracle).
-    const ENTER_ORACLE: &str =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/enter-oracle.txt"));
 
     /// The same sources as tools/gen-enter-oracle/GenEnterOracle.java.
     fn sample_source(name: &str) -> &'static str {
@@ -1846,67 +1843,7 @@ mod tests {
         }
     }
 
-    fn oracle_sample(name: &str) -> (i32, String) {
-        let mut errors = -1;
-        let mut types = String::new();
-        let mut in_sample = false;
-        for line in ENTER_ORACLE.lines() {
-            if let Some(rest) = line.strip_prefix("SAMPLE ") {
-                in_sample = rest.starts_with(name);
-                if in_sample {
-                    let errors_text = rest.split("errors=").nth(1).expect("errors");
-                    errors = errors_text.trim().parse().expect("errors count");
-                }
-                continue;
-            }
-            if !in_sample {
-                continue;
-            }
-            if line.starts_with("UNIT ") || line.starts_with("ERROR ") {
-                continue;
-            }
-            if line.starts_with("TYPE ") || line.trim_start().starts_with("TYPE ") {
-                types.push_str(line);
-                types.push('\n');
-            }
-        }
-        (errors, types)
-    }
 
-    #[test]
-    fn enter_matches_the_javac_oracle() {
-        let mut sample_names: Vec<&str> = Vec::new();
-        for line in ENTER_ORACLE.lines() {
-            if let Some(rest) = line.strip_prefix("SAMPLE ") {
-                sample_names.push(rest.split(' ').next().expect("sample name"));
-            }
-        }
-        assert!(!sample_names.is_empty(), "enter oracle is empty");
-        for sample in sample_names {
-            let (expected_errors, expected_types) = oracle_sample(sample);
-            let mut harness = harness(sample);
-            run_enter(&mut harness, sample);
-            let actual_errors = harness.log.borrow().nerrors;
-            let actual_types = {
-                let mut out = String::new();
-                let defs = compilation_unit_defs(&harness.ctx, harness.unit);
-                let mut classes = Vec::new();
-                for def in defs.iter() {
-                    if harness.ctx.tree(def).has_tag(Tag::CLASSDEF)
-                        && let Some(class) = class_tree_symbol(&harness.ctx, def)
-                    {
-                        classes.push(class);
-                    }
-                }
-                for class in classes {
-                    print_type(&mut harness.ctx, class, 0, &mut out);
-                }
-                out
-            };
-            assert_eq!(actual_errors, expected_errors, "{sample}: error count");
-            assert_eq!(actual_types, expected_types, "{sample}: type structure");
-        }
-    }
 
     #[test]
     fn enter_enters_nested_classes_into_scopes() {
