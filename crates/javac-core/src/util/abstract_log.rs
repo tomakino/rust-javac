@@ -44,25 +44,35 @@ pub trait AbstractLog {
     fn diags(&self) -> &Rc<Factory>;
 
     /// Java: protected DiagnosticSource source
-    fn source(&self) -> Option<&Rc<DiagnosticSource>>;
+    fn source(&self) -> Option<Rc<DiagnosticSource>>;
 
     /// Re-assign the source field (the upstream field is protected, so the
     /// accessor is part of the class contract).
-    fn set_source(&mut self, source: Option<Rc<DiagnosticSource>>);
+    fn set_source(&self, source: Option<Rc<DiagnosticSource>>);
 
-    /// Java: protected Map<JavaFileObject, DiagnosticSource> sourceMap
-    fn source_map(&mut self) -> &mut Vec<(Rc<dyn JavaFileObject>, Rc<DiagnosticSource>)>;
+    /// Java: protected Map<JavaFileObject, DiagnosticSource> sourceMap.
+    /// The two operations are separate so implementations only borrow their
+    /// own source-map field for the duration of the lookup/insert.
+    fn source_map_find(
+        &self,
+        file: &Rc<dyn JavaFileObject>,
+    ) -> Option<Rc<DiagnosticSource>>;
+    fn source_map_push(
+        &self,
+        file: Rc<dyn JavaFileObject>,
+        source: Rc<DiagnosticSource>,
+    );
 
     /// Java: protected abstract void report(JCDiagnostic diagnostic)
-    fn report(&mut self, diagnostic: JCDiagnostic);
+    fn report(&self, diagnostic: JCDiagnostic);
 
     /// Java: protected abstract void directError(String key, Object... args)
-    fn direct_error(&mut self, key: &str, args: Vec<String>);
+    fn direct_error(&self, key: &str, args: Vec<String>);
 
     /// Re-assign source, returning previous setting.
     ///
     /// Java: public JavaFileObject useSource(JavaFileObject file)
-    fn use_source(&mut self, file: Option<Rc<dyn JavaFileObject>>) -> Option<Rc<dyn JavaFileObject>> {
+    fn use_source(&self, file: Option<Rc<dyn JavaFileObject>>) -> Option<Rc<dyn JavaFileObject>> {
         let prev = self.source().and_then(|source| source.get_file());
         let source = self.get_source(file);
         self.set_source(Some(source));
@@ -70,24 +80,19 @@ pub trait AbstractLog {
     }
 
     /// Java: protected DiagnosticSource getSource(JavaFileObject file)
-    fn get_source(&mut self, file: Option<Rc<dyn JavaFileObject>>) -> Rc<DiagnosticSource> {
+    fn get_source(&self, file: Option<Rc<dyn JavaFileObject>>) -> Rc<DiagnosticSource> {
         let Some(file) = file else {
             // Java: if (file == null) return DiagnosticSource.NO_SOURCE;
             return Rc::new(DiagnosticSource::no_source());
         };
-        if let Some(existing) = self
-            .source_map()
-            .iter()
-            .find(|(candidate, _)| Rc::ptr_eq(candidate, &file))
-            .map(|(_, source)| Rc::clone(source))
-        {
+        if let Some(existing) = self.source_map_find(&file) {
             return existing;
         }
         // REGISTERED: the upstream passes the Log as DiagnosticSourceLog; the
-        // Rust Log lives inside RefCell and cannot hand out an Rc to itself here,
-        // so the source is created without the log back-reference.
+        // Rust Log is shared through Rc<Log> but cannot hand out an Rc to itself
+        // here, so the source is created without the log back-reference.
         let source = Rc::new(DiagnosticSource::new(Rc::clone(&file), None));
-        self.source_map().push((file, Rc::clone(&source)));
+        self.source_map_push(file, Rc::clone(&source));
         source
     }
 
@@ -95,14 +100,14 @@ pub trait AbstractLog {
     ///
     /// Java: public DiagnosticSource currentSource()
     fn current_source(&self) -> Option<Rc<DiagnosticSource>> {
-        self.source().cloned()
+        self.source()
     }
 
     /// Report an error, unless another error was already reported at same
     /// source position.
     ///
     /// Java: public void error(String key, Object... args)
-    fn error_key_args(&mut self, key: &str, args: Vec<DiagnosticArg>) {
+    fn error_key_args(&self, key: &str, args: Vec<DiagnosticArg>) {
         let error_key = {
             let diags = self.diags();
             diags.error_key(key, args)
@@ -111,10 +116,10 @@ pub trait AbstractLog {
     }
 
     /// Java: public void error(JCDiagnostic.Error errorKey)
-    fn error_key(&mut self, error_key: JCDiagnosticError) {
+    fn error_key(&self, error_key: JCDiagnosticError) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.error(None, source, None, error_key)
         };
         self.report(diagnostic);
@@ -122,13 +127,13 @@ pub trait AbstractLog {
 
     /// Java: public void error(DiagnosticPosition pos, JCDiagnostic.Error errorKey)
     fn error_pos(
-        &mut self,
+        &self,
         pos: Option<Rc<dyn DiagnosticPosition>>,
         error_key: JCDiagnosticError,
     ) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.error(None, source, pos, error_key)
         };
         self.report(diagnostic);
@@ -137,21 +142,21 @@ pub trait AbstractLog {
     /// Java: public void error(DiagnosticFlag flag, DiagnosticPosition pos,
     /// JCDiagnostic.Error errorKey)
     fn error_flag_pos(
-        &mut self,
+        &self,
         flag: DiagnosticFlag,
         pos: Option<Rc<dyn DiagnosticPosition>>,
         error_key: JCDiagnosticError,
     ) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.error(Some(flag), source, pos, error_key)
         };
         self.report(diagnostic);
     }
 
     /// Java: public void error(int pos, String key, Object... args)
-    fn error_at_key(&mut self, pos: i32, key: &str, args: Vec<DiagnosticArg>) {
+    fn error_at_key(&self, pos: i32, key: &str, args: Vec<DiagnosticArg>) {
         let error_key = {
             let diags = self.diags();
             diags.error_key(key, args)
@@ -160,10 +165,10 @@ pub trait AbstractLog {
     }
 
     /// Java: public void error(int pos, JCDiagnostic.Error errorKey)
-    fn error_at(&mut self, pos: i32, error_key: JCDiagnosticError) {
+    fn error_at(&self, pos: i32, error_key: JCDiagnosticError) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.error(None, source, Self::wrap_pos(pos), error_key)
         };
         self.report(diagnostic);
@@ -171,30 +176,30 @@ pub trait AbstractLog {
 
     /// Java: public void error(DiagnosticFlag flag, int pos,
     /// JCDiagnostic.Error errorKey)
-    fn error_flag_at(&mut self, flag: DiagnosticFlag, pos: i32, error_key: JCDiagnosticError) {
+    fn error_flag_at(&self, flag: DiagnosticFlag, pos: i32, error_key: JCDiagnosticError) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.error(Some(flag), source, Self::wrap_pos(pos), error_key)
         };
         self.report(diagnostic);
     }
 
     /// Java: public void warning(JCDiagnostic.Warning warningKey)
-    fn warning_key(&mut self, warning_key: Warning) {
+    fn warning_key(&self, warning_key: Warning) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.warning(None, source, None, warning_key)
         };
         self.report(diagnostic);
     }
 
     /// Java: public void warning(LintCategory lc, JCDiagnostic.Warning warningKey)
-    fn warning_lint_key(&mut self, lc: LintCategory, warning_key: Warning) {
+    fn warning_lint_key(&self, lc: LintCategory, warning_key: Warning) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.warning(Some(lc), source, None, warning_key)
         };
         self.report(diagnostic);
@@ -203,13 +208,13 @@ pub trait AbstractLog {
     /// Java: public void warning(DiagnosticPosition pos,
     /// JCDiagnostic.Warning warningKey)
     fn warning_pos(
-        &mut self,
+        &self,
         pos: Option<Rc<dyn DiagnosticPosition>>,
         warning_key: Warning,
     ) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.warning(None, source, pos, warning_key)
         };
         self.report(diagnostic);
@@ -218,24 +223,24 @@ pub trait AbstractLog {
     /// Java: public void warning(LintCategory lc, DiagnosticPosition pos,
     /// JCDiagnostic.Warning warningKey)
     fn warning_lint_pos(
-        &mut self,
+        &self,
         lc: LintCategory,
         pos: Option<Rc<dyn DiagnosticPosition>>,
         warning_key: Warning,
     ) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.warning(Some(lc), source, pos, warning_key)
         };
         self.report(diagnostic);
     }
 
     /// Java: public void warning(int pos, JCDiagnostic.Warning warningKey)
-    fn warning_at(&mut self, pos: i32, warning_key: Warning) {
+    fn warning_at(&self, pos: i32, warning_key: Warning) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.warning(None, source, Self::wrap_pos(pos), warning_key)
         };
         self.report(diagnostic);
@@ -244,13 +249,13 @@ pub trait AbstractLog {
     /// Java: public void mandatoryWarning(DiagnosticPosition pos,
     /// JCDiagnostic.Warning warningKey)
     fn mandatory_warning_pos(
-        &mut self,
+        &self,
         pos: Option<Rc<dyn DiagnosticPosition>>,
         warning_key: Warning,
     ) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.mandatory_warning(None, source, pos, warning_key)
         };
         self.report(diagnostic);
@@ -259,24 +264,24 @@ pub trait AbstractLog {
     /// Java: public void mandatoryWarning(LintCategory lc,
     /// DiagnosticPosition pos, JCDiagnostic.Warning warningKey)
     fn mandatory_warning_lint_pos(
-        &mut self,
+        &self,
         lc: LintCategory,
         pos: Option<Rc<dyn DiagnosticPosition>>,
         warning_key: Warning,
     ) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.mandatory_warning(Some(lc), source, pos, warning_key)
         };
         self.report(diagnostic);
     }
 
     /// Java: public void note(JCDiagnostic.Note noteKey)
-    fn note_key(&mut self, note_key: Note) {
+    fn note_key(&self, note_key: Note) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.note(source, None, note_key)
         };
         self.report(diagnostic);
@@ -284,23 +289,23 @@ pub trait AbstractLog {
 
     /// Java: public void note(DiagnosticPosition pos, JCDiagnostic.Note noteKey)
     fn note_pos(
-        &mut self,
+        &self,
         pos: Option<Rc<dyn DiagnosticPosition>>,
         note_key: Note,
     ) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.note(source, pos, note_key)
         };
         self.report(diagnostic);
     }
 
     /// Java: public void note(int pos, JCDiagnostic.Note noteKey)
-    fn note_at(&mut self, pos: i32, note_key: Note) {
+    fn note_at(&self, pos: i32, note_key: Note) {
         let diagnostic = {
             let diags = Rc::clone(self.diags());
-            let source = self.source().cloned();
+            let source = self.source();
             diags.note(source, Self::wrap_pos(pos), note_key)
         };
         self.report(diagnostic);
@@ -308,7 +313,7 @@ pub trait AbstractLog {
 
     /// Java: public void note(JavaFileObject file, JCDiagnostic.Note noteKey)
     fn note_file(
-        &mut self,
+        &self,
         file: Option<Rc<dyn JavaFileObject>>,
         note_key: Note,
     ) {
@@ -324,7 +329,7 @@ pub trait AbstractLog {
     /// Java: public void mandatoryNote(final JavaFileObject file,
     /// JCDiagnostic.Note noteKey)
     fn mandatory_note_file(
-        &mut self,
+        &self,
         file: Option<Rc<dyn JavaFileObject>>,
         note_key: Note,
     ) {
@@ -353,6 +358,7 @@ pub trait AbstractLog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
     use crate::util::jc_diagnostic::{DiagnosticType, Factory};
     use crate::util::javac_messages::JavacMessages;
     use javac_tools::error::Error;
@@ -432,10 +438,10 @@ mod tests {
     /// A concrete AbstractLog used to exercise the default methods.
     struct TestLog {
         diags: Rc<Factory>,
-        source: Option<Rc<DiagnosticSource>>,
-        source_map: Vec<(Rc<dyn JavaFileObject>, Rc<DiagnosticSource>)>,
-        reported: Vec<JCDiagnostic>,
-        direct_errors: Vec<String>,
+        source: RefCell<Option<Rc<DiagnosticSource>>>,
+        source_map: RefCell<Vec<(Rc<dyn JavaFileObject>, Rc<DiagnosticSource>)>>,
+        reported: RefCell<Vec<JCDiagnostic>>,
+        direct_errors: RefCell<Vec<String>>,
     }
 
     impl TestLog {
@@ -445,11 +451,19 @@ mod tests {
             ));
             TestLog {
                 diags: Rc::new(Factory::new(messages, "compiler")),
-                source: None,
-                source_map: Vec::new(),
-                reported: Vec::new(),
-                direct_errors: Vec::new(),
+                source: RefCell::new(None),
+                source_map: RefCell::new(Vec::new()),
+                reported: RefCell::new(Vec::new()),
+                direct_errors: RefCell::new(Vec::new()),
             }
+        }
+
+        fn reported(&self) -> std::cell::Ref<'_, Vec<JCDiagnostic>> {
+            self.reported.borrow()
+        }
+
+        fn source_map(&self) -> std::cell::Ref<'_, Vec<(Rc<dyn JavaFileObject>, Rc<DiagnosticSource>)>> {
+            self.source_map.borrow()
         }
     }
 
@@ -458,24 +472,39 @@ mod tests {
             &self.diags
         }
 
-        fn source(&self) -> Option<&Rc<DiagnosticSource>> {
-            self.source.as_ref()
+        fn source(&self) -> Option<Rc<DiagnosticSource>> {
+            self.source.borrow().clone()
         }
 
-        fn set_source(&mut self, source: Option<Rc<DiagnosticSource>>) {
-            self.source = source;
+        fn set_source(&self, source: Option<Rc<DiagnosticSource>>) {
+            *self.source.borrow_mut() = source;
         }
 
-        fn source_map(&mut self) -> &mut Vec<(Rc<dyn JavaFileObject>, Rc<DiagnosticSource>)> {
-            &mut self.source_map
+        fn source_map_find(
+            &self,
+            file: &Rc<dyn JavaFileObject>,
+        ) -> Option<Rc<DiagnosticSource>> {
+            self.source_map
+                .borrow()
+                .iter()
+                .find(|(candidate, _)| Rc::ptr_eq(candidate, file))
+                .map(|(_, source)| Rc::clone(source))
         }
 
-        fn report(&mut self, diagnostic: JCDiagnostic) {
-            self.reported.push(diagnostic);
+        fn source_map_push(
+            &self,
+            file: Rc<dyn JavaFileObject>,
+            source: Rc<DiagnosticSource>,
+        ) {
+            self.source_map.borrow_mut().push((file, source));
         }
 
-        fn direct_error(&mut self, key: &str, _args: Vec<String>) {
-            self.direct_errors.push(key.to_string());
+        fn report(&self, diagnostic: JCDiagnostic) {
+            self.reported.borrow_mut().push(diagnostic);
+        }
+
+        fn direct_error(&self, key: &str, _args: Vec<String>) {
+            self.direct_errors.borrow_mut().push(key.to_string());
         }
     }
 
@@ -499,7 +528,7 @@ mod tests {
         let no_source = log.current_source().expect("source set");
         assert!(no_source.get_file().is_none());
         assert!(!Rc::ptr_eq(&no_source, &first));
-        assert_eq!(log.source_map.len(), 1);
+        assert_eq!(log.source_map().len(), 1);
     }
 
     #[test]
@@ -508,25 +537,25 @@ mod tests {
         let file = Rc::new(TestFileObject) as Rc<dyn JavaFileObject>;
         log.use_source(Some(file));
         log.error_key_args("test.error", vec![Rc::new(crate::util::java_string::JavaString::from("a"))]);
-        assert_eq!(log.reported.len(), 1);
-        assert_eq!(log.reported[0].get_type(), DiagnosticType::ERROR);
-        assert_eq!(log.reported[0].get_code_string(), "compiler.err.test.error");
-        assert!(log.reported[0].is_mandatory());
+        assert_eq!(log.reported().len(), 1);
+        assert_eq!(log.reported()[0].get_type(), DiagnosticType::ERROR);
+        assert_eq!(log.reported()[0].get_code_string(), "compiler.err.test.error");
+        assert!(log.reported()[0].is_mandatory());
 
         log.error_at(5, log.diags.error_key("test.error2", Vec::new()));
-        assert_eq!(log.reported.len(), 2);
+        assert_eq!(log.reported().len(), 2);
         assert_eq!(
-            log.reported[1]
+            log.reported()[1]
                 .get_diagnostic_position()
                 .expect("position")
                 .get_preferred_position(),
             5
         );
-        assert_eq!(log.reported[1].get_int_position(), 5);
+        assert_eq!(log.reported()[1].get_int_position(), 5);
 
         log.error_at(NOPOS, log.diags.error_key("test.error3", Vec::new()));
-        assert!(log.reported[2].get_diagnostic_position().is_none());
-        assert_eq!(log.reported[2].get_int_position(), NOPOS);
+        assert!(log.reported()[2].get_diagnostic_position().is_none());
+        assert_eq!(log.reported()[2].get_int_position(), NOPOS);
     }
 
     #[test]
@@ -539,31 +568,31 @@ mod tests {
             Some(Rc::new(SimpleDiagnosticPosition::new(1))),
             log.diags.error_key("test.syntax", Vec::new()),
         );
-        assert!(log.reported[0].is_flag_set(DiagnosticFlag::SYNTAX));
+        assert!(log.reported()[0].is_flag_set(DiagnosticFlag::SYNTAX));
 
         log.error_flag_at(
             DiagnosticFlag::RESOLVE_ERROR,
             2,
             log.diags.error_key("test.resolve", Vec::new()),
         );
-        assert!(log.reported[1].is_flag_set(DiagnosticFlag::RESOLVE_ERROR));
-        assert!(log.reported[1].is_flag_set(DiagnosticFlag::RECOVERABLE));
+        assert!(log.reported()[1].is_flag_set(DiagnosticFlag::RESOLVE_ERROR));
+        assert!(log.reported()[1].is_flag_set(DiagnosticFlag::RECOVERABLE));
 
         log.warning_at(3, log.diags.warning_key("test.warning", Vec::new()));
-        assert_eq!(log.reported[2].get_type(), DiagnosticType::WARNING);
-        assert_eq!(log.reported[2].get_int_position(), 3);
+        assert_eq!(log.reported()[2].get_type(), DiagnosticType::WARNING);
+        assert_eq!(log.reported()[2].get_int_position(), 3);
 
         let lint = LintCategory::DEPRECATION;
         log.warning_lint_key(lint, log.diags.warning_key("test.lint", Vec::new()));
-        assert_eq!(log.reported[3].get_lint_category(), Some(&lint));
+        assert_eq!(log.reported()[3].get_lint_category(), Some(&lint));
 
         log.mandatory_warning_lint_pos(
             lint,
             Some(Rc::new(SimpleDiagnosticPosition::new(4))),
             log.diags.warning_key("test.mandatory", Vec::new()),
         );
-        assert!(log.reported[4].is_mandatory());
-        assert_eq!(log.reported[4].get_int_position(), 4);
+        assert!(log.reported()[4].is_mandatory());
+        assert_eq!(log.reported()[4].get_int_position(), 4);
     }
 
     #[test]
@@ -572,21 +601,21 @@ mod tests {
         let file = Rc::new(TestFileObject) as Rc<dyn JavaFileObject>;
         log.use_source(Some(Rc::clone(&file)));
         log.note_key(log.diags.note_key("test.note", Vec::new()));
-        assert_eq!(log.reported[0].get_type(), DiagnosticType::NOTE);
-        assert!(!log.reported[0].is_mandatory());
+        assert_eq!(log.reported()[0].get_type(), DiagnosticType::NOTE);
+        assert!(!log.reported()[0].is_mandatory());
 
         log.note_pos(
             Some(Rc::new(SimpleDiagnosticPosition::new(6))),
             log.diags.note_key("test.note2", Vec::new()),
         );
-        assert_eq!(log.reported[1].get_int_position(), 6);
+        assert_eq!(log.reported()[1].get_int_position(), 6);
 
         log.note_at(7, log.diags.note_key("test.note3", Vec::new()));
-        assert_eq!(log.reported[2].get_int_position(), 7);
+        assert_eq!(log.reported()[2].get_int_position(), 7);
 
         log.mandatory_note_file(Some(Rc::clone(&file)), log.diags.note_key("test.note4", Vec::new()));
-        assert!(log.reported[3].is_mandatory());
+        assert!(log.reported()[3].is_mandatory());
         // The source was cached for the file.
-        assert_eq!(log.source_map.len(), 1);
+        assert_eq!(log.source_map().len(), 1);
     }
 }

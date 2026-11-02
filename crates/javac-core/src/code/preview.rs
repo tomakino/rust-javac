@@ -71,7 +71,7 @@ pub struct Preview {
     sources_with_preview_features: std::cell::RefCell<Vec<JavaFileObjectRef>>,
 
     /// Java: private final Log log (None for the service-free adapter constructor).
-    log: Option<Rc<std::cell::RefCell<Log>>>,
+    log: Option<Rc<Log>>,
     /// Java: private final Lint lint (None for the service-free adapter constructor).
     lint: Option<Rc<Lint>>,
     /// Java: private final Source source (None for the service-free adapter constructor).
@@ -79,49 +79,49 @@ pub struct Preview {
     /// Java: private final MandatoryWarningHandler previewHandler (None for the
     /// service-free adapter constructor).
     preview_handler: std::cell::RefCell<
-        Option<MandatoryWarningHandler<Rc<std::cell::RefCell<Log>>>>,
+        Option<MandatoryWarningHandler<Rc<Log>>>,
     >,
 }
 
 /// Adapter: the MandatoryWarningLog implementation over the shared Log cell
 /// (the upstream handler holds a concrete Log).
-impl MandatoryWarningLog for Rc<std::cell::RefCell<Log>> {
-    fn current_source_file(&mut self) -> Option<Rc<dyn JavaFileObject>> {
-        MandatoryWarningLog::current_source_file(&mut *self.borrow_mut())
+impl MandatoryWarningLog for Rc<Log> {
+    fn current_source_file(&self) -> Option<Rc<dyn JavaFileObject>> {
+        MandatoryWarningLog::current_source_file(&**self)
     }
 
     fn nwarnings(&self) -> i32 {
-        self.borrow().nwarnings
+        self.nwarnings.get()
     }
 
     fn max_warnings(&self) -> i32 {
-        self.borrow().max_warnings
+        self.max_warnings.get()
     }
 
     fn mandatory_warning(
-        &mut self,
+        &self,
         lc: Option<crate::code::lint::LintCategory>,
         pos: Option<Rc<dyn DiagnosticPosition>>,
         warning_key: Warning,
     ) {
-        MandatoryWarningLog::mandatory_warning(&mut *self.borrow_mut(), lc, pos, warning_key)
+        MandatoryWarningLog::mandatory_warning(&**self, lc, pos, warning_key)
     }
 
     fn warning(
-        &mut self,
+        &self,
         lc: Option<crate::code::lint::LintCategory>,
         pos: Option<Rc<dyn DiagnosticPosition>>,
         warning_key: Warning,
     ) {
-        MandatoryWarningLog::warning(&mut *self.borrow_mut(), lc, pos, warning_key)
+        MandatoryWarningLog::warning(&**self, lc, pos, warning_key)
     }
 
-    fn mandatory_note(&mut self, file: Option<Rc<dyn JavaFileObject>>, note: crate::util::jc_diagnostic::Note) {
-        MandatoryWarningLog::mandatory_note(&mut *self.borrow_mut(), file, note)
+    fn mandatory_note(&self, file: Option<Rc<dyn JavaFileObject>>, note: crate::util::jc_diagnostic::Note) {
+        MandatoryWarningLog::mandatory_note(&**self, file, note)
     }
 
-    fn note(&mut self, file: Option<Rc<dyn JavaFileObject>>, note: crate::util::jc_diagnostic::Note) {
-        MandatoryWarningLog::note(&mut *self.borrow_mut(), file, note)
+    fn note(&self, file: Option<Rc<dyn JavaFileObject>>, note: crate::util::jc_diagnostic::Note) {
+        MandatoryWarningLog::note(&**self, file, note)
     }
 }
 
@@ -154,7 +154,7 @@ impl Preview {
     pub fn new_with_services(
         enabled: bool,
         force_preview: bool,
-        log: Rc<std::cell::RefCell<Log>>,
+        log: Rc<Log>,
         lint: Rc<Lint>,
         source: Source,
     ) -> Preview {
@@ -179,7 +179,7 @@ impl Preview {
         }
     }
 
-    fn log_service(&self) -> Rc<std::cell::RefCell<Log>> {
+    fn log_service(&self) -> Rc<Log> {
         self.log
             .clone()
             .expect("AssertionError: Preview log service must be installed")
@@ -259,7 +259,7 @@ impl Preview {
         let lint = self.lint_service();
         if !lint.is_suppressed(crate::code::lint::LintCategory::PREVIEW) {
             let log = self.log_service();
-            let current_file = MandatoryWarningLog::current_source_file(&mut *log.borrow_mut());
+            let current_file = MandatoryWarningLog::current_source_file(&*log);
             if let Some(file) = current_file {
                 let mut sources = self.sources_with_preview_features.borrow_mut();
                 sources.push(file);
@@ -299,7 +299,7 @@ impl Preview {
         let lint = self.lint_service();
         if lint.is_enabled(crate::code::lint::LintCategory::PREVIEW) {
             let log = self.log_service();
-            let current_file = MandatoryWarningLog::current_source_file(&mut *log.borrow_mut());
+            let current_file = MandatoryWarningLog::current_source_file(&*log);
             if let Some(file) = current_file {
                 let mut sources = self.sources_with_preview_features.borrow_mut();
                 sources.push(file);
@@ -315,7 +315,7 @@ impl Preview {
             );
             let warning = Warning::from(info);
             MandatoryWarningLog::mandatory_warning(
-                &mut *log.borrow_mut(),
+                &*log,
                 Some(crate::code::lint::LintCategory::PREVIEW),
                 None,
                 warning,
@@ -326,7 +326,7 @@ impl Preview {
     /// Java: public void markUsesPreview(DiagnosticPosition pos).
     pub fn mark_uses_preview(&self, _pos: &dyn DiagnosticPosition) {
         let log = self.log_service();
-        let current_file = MandatoryWarningLog::current_source_file(&mut *log.borrow_mut());
+        let current_file = MandatoryWarningLog::current_source_file(&*log);
         if let Some(file) = current_file {
             let mut sources = self.sources_with_preview_features.borrow_mut();
             sources.push(file);
@@ -442,7 +442,7 @@ impl Preview {
             // Java: log.error(JCDiagnostic.DiagnosticFlag.SOURCE_LEVEL, pos,
             // disabledError(feature)) (Preview.java:247).
             crate::util::abstract_log::AbstractLog::error_flag_at(
-                &mut *log.borrow_mut(),
+                &*log,
                 crate::util::jc_diagnostic::DiagnosticFlag::SOURCE_LEVEL,
                 pos.get_start_position(),
                 error,
@@ -457,7 +457,7 @@ impl Preview {
                 // Java: log.error(JCDiagnostic.DiagnosticFlag.SOURCE_LEVEL, pos,
                 // feature.error(source.name)) (Preview.java:250-251).
                 crate::util::abstract_log::AbstractLog::error_flag_at(
-                    &mut *log.borrow_mut(),
+                    &*log,
                     crate::util::jc_diagnostic::DiagnosticFlag::SOURCE_LEVEL,
                     pos.get_start_position(),
                     error,
@@ -652,7 +652,7 @@ mod tests {
         let file: javac_tools::tools::java_file_manager::JavaFileObjectRef =
             std::rc::Rc::new(TestJavaFileObject);
         crate::util::abstract_log::AbstractLog::use_source(
-            &mut *log.borrow_mut(),
+            &*log,
             Some(std::rc::Rc::clone(&file)),
         );
         let preview = Preview::new_with_services(

@@ -498,7 +498,7 @@ pub trait BaseAnalyzer: FlowVisitor {
 /// Java: public class Flow (comp/Flow.java:217-350)
 pub struct Flow {
     pub names: Rc<Names>,
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     pub syms: Rc<Symtab>,
     pub types: Rc<Types>,
     pub chk: Rc<Check>,
@@ -519,7 +519,7 @@ impl Flow {
     pub fn new(
         _ctx: &mut CompilerContext,
         names: Rc<Names>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         syms: Rc<Symtab>,
         types: Rc<Types>,
         chk: Rc<Check>,
@@ -555,7 +555,7 @@ impl Flow {
             .iter()
             .map(crate::resources::diagnostic_contract::to_jc_diagnostic_arg)
             .collect();
-        let source = self.log.borrow().current_source();
+        let source = self.log.current_source();
         let diagnostic = self.diags.create(
             DiagnosticType::ERROR,
             source,
@@ -563,12 +563,12 @@ impl Flow {
             info.info().code,
             args,
         );
-        self.log.borrow_mut().report(diagnostic);
+        self.log.report(diagnostic);
     }
 
     /// Java: log.error(pos, diags.errorKey(code, args))
     pub fn error_key(&self, pos: i32, code: &'static str, args: Vec<DiagnosticArg>) {
-        let source = self.log.borrow().current_source();
+        let source = self.log.current_source();
         let diagnostic = self.diags.create(
             DiagnosticType::ERROR,
             source,
@@ -576,7 +576,7 @@ impl Flow {
             code,
             args,
         );
-        self.log.borrow_mut().report(diagnostic);
+        self.log.report(diagnostic);
     }
 
     /// Java: log.warning(LintCategory, DiagnosticPosition, Warning)
@@ -611,7 +611,7 @@ impl Flow {
             .iter()
             .map(|arg| Rc::new(javac_strings::JavaString::from(arg.to_text().as_str())) as DiagnosticArg)
             .collect();
-        let source = self.log.borrow().current_source();
+        let source = self.log.current_source();
         let diagnostic = self.diags.create_with_flags(
             DiagnosticType::WARNING,
             lint_category,
@@ -621,7 +621,7 @@ impl Flow {
             info.info().code,
             args,
         );
-        self.log.borrow_mut().report(diagnostic);
+        self.log.report(diagnostic);
     }
 
     /// Java: Lint.augment(tree.sym) — Lint.augment is registered with the
@@ -1560,7 +1560,7 @@ impl<'a> AliveAnalyzer<'a> {
         for exit in &current {
         let tree = exit.tree();
         let is_return = in_method && ctx.tree(tree).has_tag(Tag::RETURN);
-        let has_error = self.flow.log.borrow().has_error_on(Some(Rc::new(
+        let has_error = self.flow.log.has_error_on(Some(Rc::new(
             SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
         )));
         assert!(is_return || has_error, "AssertionError: clearPendingExits (Flow.java:590)");
@@ -2643,7 +2643,7 @@ impl<'a> FlowAnalyzer<'a> {
             }
             _ => {
                 assert!(
-                    self.flow.log.borrow().has_error_on(Some(Rc::new(
+                    self.flow.log.has_error_on(Some(Rc::new(
                         SimpleDiagnosticPosition::new(ctx.tree(exit.tree()).pos),
                     ))),
                     "AssertionError: errorUncaught (Flow.java:1014)"
@@ -2899,7 +2899,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                 let tree_id = exit.tree();
                 assert!(
                     ctx.tree(tree_id).has_tag(Tag::RETURN)
-                        || self.flow.log.borrow().has_error_on(Some(Rc::new(
+                        || self.flow.log.has_error_on(Some(Rc::new(
                             SimpleDiagnosticPosition::new(ctx.tree(tree_id).pos),
                         ))),
                     "AssertionError: visitMethodDef exit (Flow.java:1185)"
@@ -3223,7 +3223,7 @@ impl<'a> FlowVisitor for FlowAnalyzer<'a> {
                     PendingExit::Thrown { tree, .. } => *tree,
                 };
                 let has_return = ctx.tree(exit_tree).has_tag(Tag::RETURN);
-                let has_error = self.flow.log.borrow().has_error_on(Some(Rc::new(
+                let has_error = self.flow.log.has_error_on(Some(Rc::new(
                     crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(exit_tree).pos),
                 ) as Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>));
                 if !(has_return || has_error) {
@@ -4328,7 +4328,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
         self.flow_kind = FlowKind::NORMAL;
         let mut inits_skip = Bits::with_reset(true);
         let mut uninits_skip = Bits::with_reset(true);
-        let prev_errors = self.flow.log.borrow().nerrors;
+        let prev_errors = self.flow.log.nerrors.get();
         loop {
             let mut entry = clone_bits(&self.uninits);
             entry.exclude_from(self.next_adr);
@@ -4341,7 +4341,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
             }
             let mut probe = clone_bits(&entry);
             probe.diff_set(&self.uninits_when_true);
-            if self.flow.log.borrow().nerrors != prev_errors
+            if self.flow.log.nerrors.get() != prev_errors
                 || self.flow_kind.is_final()
                 || probe.next_bit(self.first_adr) == -1
             {
@@ -4370,7 +4370,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
         self.flow_kind = FlowKind::NORMAL;
         let mut inits_skip = Bits::with_reset(true);
         let mut uninits_skip = Bits::with_reset(true);
-        let prev_errors = self.flow.log.borrow().nerrors;
+        let prev_errors = self.flow.log.nerrors.get();
         let mut uninits_entry = clone_bits(&self.uninits);
         uninits_entry.exclude_from(self.next_adr);
         loop {
@@ -4387,7 +4387,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
             self.resolve_continues(ctx, tree);
             let mut probe = clone_bits(&uninits_entry);
             probe.diff_set(&self.uninits);
-            if self.flow.log.borrow().nerrors != prev_errors
+            if self.flow.log.nerrors.get() != prev_errors
                 || self.flow_kind.is_final()
                 || probe.next_bit(self.first_adr) == -1
             {
@@ -4421,7 +4421,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
         self.scan_list(ctx, &init);
         let mut inits_skip = Bits::with_reset(true);
         let mut uninits_skip = Bits::with_reset(true);
-        let prev_errors = self.flow.log.borrow().nerrors;
+        let prev_errors = self.flow.log.nerrors.get();
         loop {
             let mut uninits_entry = clone_bits(&self.uninits);
             uninits_entry.exclude_from(self.next_adr);
@@ -4446,7 +4446,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
             self.scan_list(ctx, &step);
             let mut probe = clone_bits(&uninits_entry);
             probe.diff_set(&self.uninits);
-            if self.flow.log.borrow().nerrors != prev_errors
+            if self.flow.log.nerrors.get() != prev_errors
                 || self.flow_kind.is_final()
                 || probe.next_bit(self.first_adr) == -1
             {
@@ -4483,7 +4483,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
         if let Some(sym) = var_sym(ctx, var) {
             self.let_init(ctx, ctx.tree(tree).pos, sym);
         }
-        let prev_errors = self.flow.log.borrow().nerrors;
+        let prev_errors = self.flow.log.nerrors.get();
         loop {
             let mut uninits_entry = clone_bits(&self.uninits);
             uninits_entry.exclude_from(self.next_adr);
@@ -4491,7 +4491,7 @@ impl<'a> FlowVisitor for AssignAnalyzer<'a> {
             self.resolve_continues(ctx, tree);
             let mut probe = clone_bits(&uninits_entry);
             probe.diff_set(&self.uninits);
-            if self.flow.log.borrow().nerrors != prev_errors
+            if self.flow.log.nerrors.get() != prev_errors
                 || self.flow_kind.is_final()
                 || probe.next_bit(self.first_adr) == -1
             {
@@ -5048,7 +5048,7 @@ impl<'a> AssignAnalyzer<'a> {
         for exit in &current {
         let tree_id = exit.tree();
         let is_return = in_method && ctx.tree(tree_id).has_tag(Tag::RETURN);
-        let has_error = self.flow.log.borrow().has_error_on(Some(Rc::new(
+        let has_error = self.flow.log.has_error_on(Some(Rc::new(
             SimpleDiagnosticPosition::new(ctx.tree(tree_id).pos),
         )));
         assert!(is_return || has_error, "AssertionError: clearPendingExits");
@@ -5485,13 +5485,12 @@ impl Flow {
     ) {
         if !speculative {
             self.log
-                .borrow_mut()
                 .install_diagnostic_handler(DiagnosticHandler::Discard { prev: None });
         }
         *self.make.borrow_mut() = Some(Rc::clone(make));
         LambdaAliveAnalyzer::new(self, syms).analyze_tree(ctx, env, that);
         if !speculative {
-            self.log.borrow_mut().pop_diagnostic_handler();
+            self.log.pop_diagnostic_handler();
         }
         *self.make.borrow_mut() = None;
     }
@@ -5507,7 +5506,6 @@ impl Flow {
         make: &Rc<RefCell<TreeMaker>>,
     ) -> List<TypeId> {
         self.log
-            .borrow_mut()
             .install_diagnostic_handler(DiagnosticHandler::Discard { prev: None });
         *self.make.borrow_mut() = Some(Rc::clone(make));
         let enclosed_class = env
@@ -5517,7 +5515,7 @@ impl Flow {
         AssignAnalyzer::new_lambda(self, syms, scope).analyze_tree(ctx, env, that);
         let mut flow_analyzer = FlowAnalyzer::new_lambda(self, syms);
         flow_analyzer.analyze_tree(ctx, env, that);
-        self.log.borrow_mut().pop_diagnostic_handler();
+        self.log.pop_diagnostic_handler();
         *self.make.borrow_mut() = None;
         flow_analyzer.inferred_thrown_types
     }
@@ -5533,12 +5531,11 @@ impl Flow {
         make: &Rc<RefCell<TreeMaker>>,
     ) -> bool {
         self.log
-            .borrow_mut()
             .install_diagnostic_handler(DiagnosticHandler::Discard { prev: None });
         *self.make.borrow_mut() = Some(Rc::clone(make));
         let mut analyzer = SnippetAliveAnalyzer::new(self, syms);
         analyzer.analyze_tree(ctx, env, that);
-        self.log.borrow_mut().pop_diagnostic_handler();
+        self.log.pop_diagnostic_handler();
         *self.make.borrow_mut() = None;
         analyzer.is_alive()
     }
@@ -5555,12 +5552,11 @@ impl Flow {
         make: &Rc<RefCell<TreeMaker>>,
     ) -> bool {
         self.log
-            .borrow_mut()
             .install_diagnostic_handler(DiagnosticHandler::Discard { prev: None });
         *self.make.borrow_mut() = Some(Rc::clone(make));
         let mut analyzer = SnippetBreakAnalyzer::new(self, syms);
         analyzer.analyze_tree(ctx, env, body);
-        self.log.borrow_mut().pop_diagnostic_handler();
+        self.log.pop_diagnostic_handler();
         *self.make.borrow_mut() = None;
         analyzer.breaks_out()
     }
@@ -5790,7 +5786,7 @@ mod tests {
         });
         let syms_guard = &*syms;
         flow.analyze_tree(&mut ctx, syms_guard, &env, &make);
-        assert_eq!(log.borrow().nerrors, 0);
+        assert_eq!(log.nerrors.get(), 0);
     }
 
 

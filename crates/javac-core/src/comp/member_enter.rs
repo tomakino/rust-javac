@@ -50,7 +50,7 @@ use crate::util::name::Name;
 /// Java: public class MemberEnter (see the file header for the ported subset).
 pub struct MemberEnter {
     pub enter: Rc<Enter>,
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     pub chk: Rc<Check>,
     pub types: Rc<Types>,
     pub deferred_lint_handler: Rc<DeferredLintHandler>,
@@ -70,7 +70,7 @@ impl MemberEnter {
     /// Java: protected MemberEnter(Context context) — injected dependencies.
     pub fn new(
         enter: Rc<Enter>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         chk: Rc<Check>,
         types: Rc<Types>,
         deferred_lint_handler: Rc<DeferredLintHandler>,
@@ -672,7 +672,7 @@ impl MemberEnter {
             && !self.types.is_same_type(ctx, syms, tree_ty, expected)
         {
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 ctx.tree(tree).pos,
                 crate::util::jc_diagnostic::Error::from(error),
             );
@@ -744,7 +744,7 @@ impl MemberEnter {
                     self.check_type(ctx, syms, nameexpr, outer_type, info);
                 }
             } else {
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(tree).pos,
                     crate::util::jc_diagnostic::Error::from(
                         crate::resources::compiler_properties::errors::receiver_parameter_not_applicable_constructor_toplevel_class(),

@@ -78,7 +78,7 @@ const ALL_MODULE_PATH: &str = "ALL-MODULE-PATH";
 
 /// Java: public class Modules extends JCTree.Visitor (Modules.java:133).
 pub struct Modules {
-    log: Rc<RefCell<Log>>,
+    log: Rc<Log>,
     names: Rc<Names>,
     attr: Rc<RefCell<Attr>>,
     chk: Rc<Check>,
@@ -135,7 +135,7 @@ impl Modules {
     ///   - none.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         names: Rc<Names>,
         attr: Rc<RefCell<Attr>>,
         chk: Rc<Check>,
@@ -210,8 +210,8 @@ impl Modules {
         }
     }
 
-    fn log(&self) -> std::cell::RefMut<'_, Log> {
-        self.log.borrow_mut()
+    fn log(&self) -> &Log {
+        &self.log
     }
 
     /// Java: public void addExtraAddModules(String... extras) (Modules.java:221-223).
@@ -278,7 +278,7 @@ impl Modules {
             *self.default_module.borrow_mut() = Some(syms.no_module);
             return true;
         }
-        let start_errors = self.log.borrow().nerrors;
+        let start_errors = self.log.nerrors.get();
         self.depth.set(self.depth.get() + 1);
         let result: Result<(), CompletionFailure> = (|| {
             let mut roots = self.enter_modules(ctx, syms, trees, c);
@@ -294,7 +294,7 @@ impl Modules {
             let chk = Rc::clone(&self.chk);
             chk.completion_error(ctx, crate::util::position::NOPOS, &failure, syms);
         }
-        self.log.borrow().nerrors == start_errors
+        self.log.nerrors.get() == start_errors
     }
 
     /// Returns the completer of the unnamed module after loading the module
@@ -353,11 +353,11 @@ impl Modules {
         let mut modules: Vec<SymbolId> = Vec::new();
         for tree in trees {
             let prev = match compilation_unit_sourcefile(ctx, *tree) {
-                Some(source) => AbstractLog::use_source(&mut *self.log.borrow_mut(), Some(source)),
+                Some(source) => AbstractLog::use_source(&*self.log, Some(source)),
                 None => None,
             };
             self.enter_module(ctx, syms, *tree, c, &mut modules);
-            AbstractLog::use_source(&mut *self.log.borrow_mut(), prev);
+            AbstractLog::use_source(&*self.log, prev);
         }
         modules
     }
@@ -395,7 +395,7 @@ impl Modules {
         if let Some(decl) = module_decl {
             if !is_module_info {
                 let pos = ctx.tree(decl).pos;
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     pos,
                     JCDiagnosticError::from(errors::module_decl_sb_in_module_info_java()),
                 );
@@ -424,7 +424,7 @@ impl Modules {
                         // the same unit during its completion must not report
                         // it again (it still returns without a symbol).
                         if self.in_init_modules.get() {
-                            self.log.borrow_mut().error_at(
+                            self.log.error_at(
                                 ctx.tree(decl).pos,
                                 JCDiagnosticError::from(errors::duplicate_module(
                                     SymbolArg::placeholder(ctx.sym(sym).name.to_java_string().to_string_lossy()),
@@ -445,7 +445,7 @@ impl Modules {
             if self.multi_module_mode || modules.is_empty() {
                 modules.push(sym);
             } else {
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(toplevel).pos,
                     JCDiagnosticError::from(errors::too_many_modules()),
                 );
@@ -469,7 +469,7 @@ impl Modules {
                 _ => Some(toplevel),
             };
             if let Some(tree) = tree {
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(tree).pos,
                     JCDiagnosticError::from(errors::expected_module()),
                 );
@@ -501,7 +501,7 @@ impl Modules {
                 }
                 let sourcefile = compilation_unit_sourcefile(ctx, *tree)
                     .expect("CompilationUnit.sourcefile");
-                let prev = AbstractLog::use_source(&mut *self.log.borrow_mut(), Some(sourcefile.clone()));
+                let prev = AbstractLog::use_source(&*self.log, Some(sourcefile.clone()));
                 let msp_locn = self.get_module_location(ctx, *tree);
                 let patch_locn = if self
                     .file_manager
@@ -533,7 +533,7 @@ impl Modules {
                         if ctx.sym(msym).name.to_java_string()
                             != mspname.to_java_string()
                         {
-                            self.log.borrow_mut().error_at(
+                            self.log.error_at(
                                 ctx.tree(*tree).pos,
                                 JCDiagnosticError::from(errors::file_patched_and_msp(ctx.sym(msym).name.clone(), mspname.clone())),
                             );
@@ -559,7 +559,7 @@ impl Modules {
                             })
                             .unwrap_or(true);
                         if same {
-                            self.log.borrow_mut().error_at(
+                            self.log.error_at(
                                 ctx.tree(*tree).pos,
                                 JCDiagnosticError::from(
                                     errors::module_not_found_on_module_source_path(),
@@ -604,7 +604,7 @@ impl Modules {
                                     }
                                     _ => 0,
                                 };
-                                self.log.borrow_mut().error_at(
+                                self.log.error_at(
                                     pos,
                                     JCDiagnosticError::from(errors::module_name_mismatch(ctx.sym(sym).name.clone(), name.clone())),
                                 );
@@ -619,7 +619,7 @@ impl Modules {
                             if crate::comp::enter::compilation_unit_package_decl(ctx, *tree)
                                 .is_none()
                             {
-                                self.log.borrow_mut().error_at(
+                                self.log.error_at(
                                     ctx.tree(*tree).pos,
                                     JCDiagnosticError::from(
                                         errors::unnamed_pkg_not_allowed_named_modules(),
@@ -674,14 +674,14 @@ impl Modules {
                         set_compilation_unit_module(ctx, *tree, syms.unnamed_module);
                     } else {
                         if tree_info::get_module(ctx, *tree).is_some() {
-                            self.log.borrow_mut().error_at(
+                            self.log.error_at(
                                 ctx.tree(*tree).pos,
                                 JCDiagnosticError::from(
                                     errors::module_not_found_on_module_source_path(),
                                 ),
                             );
                         } else {
-                            self.log.borrow_mut().error_at(
+                            self.log.error_at(
                                 ctx.tree(*tree).pos,
                                 JCDiagnosticError::from(
                                     errors::not_in_module_on_module_source_path(),
@@ -692,14 +692,14 @@ impl Modules {
                     }
                 } else {
                     if tree_info::get_module(ctx, *tree).is_some() {
-                        self.log.borrow_mut().error_at(
+                        self.log.error_at(
                             ctx.tree(*tree).pos,
                             JCDiagnosticError::from(
                                 errors::module_not_found_on_module_source_path(),
                             ),
                         );
                     } else {
-                        self.log.borrow_mut().error_at(
+                        self.log.error_at(
                             ctx.tree(*tree).pos,
                             JCDiagnosticError::from(
                                 errors::not_in_module_on_module_source_path(),
@@ -708,7 +708,7 @@ impl Modules {
                     }
                     set_compilation_unit_module(ctx, *tree, syms.err_module);
                 }
-                AbstractLog::use_source(&mut *self.log.borrow_mut(), prev);
+                AbstractLog::use_source(&*self.log, prev);
             }
             if !patches_automatic_modules {
                 self.check_no_all_module_path();
@@ -913,12 +913,12 @@ impl Modules {
         } else if contains(Some(Rc::new(StandardLocation::CLASS_OUTPUT))) {
             return;
         }
-        let prev = AbstractLog::use_source(&mut *self.log.borrow_mut(), Some(source));
-        self.log.borrow_mut().error_at(
+        let prev = AbstractLog::use_source(&*self.log, Some(source));
+        self.log.error_at(
             ctx.tree(tree).pos,
             JCDiagnosticError::from(errors::file_sb_on_source_or_patch_path_for_module()),
         );
-        AbstractLog::use_source(&mut *self.log.borrow_mut(), prev);
+        AbstractLog::use_source(&*self.log, prev);
     }
 
     /// Java: private String singleModuleOverride(List<JCCompilationUnit> trees)
@@ -947,7 +947,7 @@ impl Modules {
             0 => None,
             1 => Some(overrides[0].clone()),
             _ => {
-                self.log.borrow_mut().error_key(JCDiagnosticError::from(
+                self.log.error_key(JCDiagnosticError::from(
                     errors::too_many_patched_modules(
                         overrides
                             .iter()
@@ -990,7 +990,6 @@ impl Modules {
             && add_mods.split(',').any(|s| s == ALL_MODULE_PATH)
         {
             self.log
-                .borrow_mut()
                 .error_key(JCDiagnosticError::from(errors::addmods_all_module_path_invalid()));
         }
     }
@@ -1041,7 +1040,6 @@ impl Modules {
                             ),
                         ));
                         self.log
-                            .borrow_mut()
                             .warning_lint_key(LintCategory::OPTIONS, warning);
                     }
                 }
@@ -1208,7 +1206,7 @@ impl Modules {
             let warning = JCDiagnosticWarning::from(warnings::incubating_modules(
                 JavaString::from(incubating.join(",").as_str()),
             ));
-            self.log.borrow_mut().warning_key(warning);
+            self.log.warning_key(warning);
         }
         if let Some(version) = &self.module_version_opt {
             let version_name = self.names.from_string(&JavaString::from(version.as_str()));
@@ -1271,7 +1269,7 @@ impl Modules {
                 && (is_primary || base.contains(&current))
                 && self.warned_missing.borrow_mut().insert(current)
             {
-                self.log.borrow_mut().error_key(JCDiagnosticError::from(
+                self.log.error_key(JCDiagnosticError::from(
                     errors::module_not_found(SymbolArg::placeholder(
                         ctx.sym(current).name.to_java_string().to_string_lossy(),
                     )),
@@ -1394,7 +1392,7 @@ impl Modules {
                 let error = JCDiagnosticError::from(errors::add_exports_with_release(
                     SymbolArg::placeholder(ctx.sym(msym).name.to_java_string().to_string_lossy()),
                 ));
-                self.log.borrow_mut().error_key(error);
+                self.log.error_key(error);
                 continue;
             }
             let package = syms.enter_package(
@@ -1457,7 +1455,6 @@ impl Modules {
                     ),
                 ));
                 self.log
-                    .borrow_mut()
                     .warning_lint_key(LintCategory::OPTIONS, warning);
             }
             unknown_modules.insert(msym);
@@ -1498,7 +1495,6 @@ impl Modules {
                         ),
                     ));
                     self.log
-                        .borrow_mut()
                         .warning_lint_key(LintCategory::OPTIONS, warning);
                 }
                 continue;
@@ -1509,7 +1505,7 @@ impl Modules {
                 let error = JCDiagnosticError::from(errors::add_reads_with_release(
                     SymbolArg::placeholder(ctx.sym(msym).name.to_java_string().to_string_lossy()),
                 ));
-                self.log.borrow_mut().error_key(error);
+                self.log.error_key(error);
                 continue;
             }
             for target_name in targets.split([',', ' ']) {
@@ -1541,7 +1537,6 @@ impl Modules {
                                 ),
                             );
                             self.log
-                                .borrow_mut()
                                 .warning_lint_key(LintCategory::OPTIONS, warning);
                         }
                         continue;
@@ -1620,7 +1615,7 @@ impl Modules {
                     .and_then(|t| compilation_unit_sourcefile(ctx, t));
                 let prev = orig_source
                     .as_ref()
-                    .map(|s| AbstractLog::use_source(&mut *self.log.borrow_mut(), Some(s.clone())));
+                    .map(|s| AbstractLog::use_source(&*self.log, Some(s.clone())));
                 let pos = env
                     .as_ref()
                     .and_then(|env| env.tree)
@@ -1636,7 +1631,7 @@ impl Modules {
                             ctx.sym(exports_from).name.to_java_string().to_string_lossy(),
                         ),
                     ));
-                    self.log.borrow_mut().error_at(pos, error);
+                    self.log.error_at(pos, error);
                 } else {
                     let error = JCDiagnosticError::from(errors::package_clash_from_requires(
                         SymbolArg::placeholder(
@@ -1650,10 +1645,10 @@ impl Modules {
                             ctx.sym(exports_from).name.to_java_string().to_string_lossy(),
                         ),
                     ));
-                    self.log.borrow_mut().error_at(pos, error);
+                    self.log.error_at(pos, error);
                 }
                 if let Some(prev) = prev {
-                    AbstractLog::use_source(&mut *self.log.borrow_mut(), prev);
+                    AbstractLog::use_source(&*self.log, prev);
                 }
                 continue;
             }
@@ -1749,16 +1744,16 @@ impl Modules {
                         .and_then(|t| compilation_unit_sourcefile(ctx, t));
                     let prev = source
                         .as_ref()
-                        .map(|s| AbstractLog::use_source(&mut *self.log.borrow_mut(), Some(s.clone())));
+                        .map(|s| AbstractLog::use_source(&*self.log, Some(s.clone())));
                     let pos = env.tree.map(|t| ctx.tree(t).pos).unwrap_or(0);
                     let error = JCDiagnosticError::from(errors::module_not_found(
                         SymbolArg::placeholder(
                             ctx.sym(module).name.to_java_string().to_string_lossy(),
                         ),
                     ));
-                    self.log.borrow_mut().error_at(pos, error);
+                    self.log.error_at(pos, error);
                     if let Some(prev) = prev {
-                        AbstractLog::use_source(&mut *self.log.borrow_mut(), prev);
+                        AbstractLog::use_source(&*self.log, prev);
                     }
                 }
             } else {
@@ -1936,7 +1931,7 @@ impl Modules {
                         ctx.sym(start).name.to_java_string().to_string_lossy(),
                     ),
                 ));
-                self.log.borrow_mut().error_at(pos, error);
+                self.log.error_at(pos, error);
             }
         }
     }
@@ -1996,7 +1991,7 @@ impl Completer for SourceCompleter {
         let modules = Rc::clone(&self.modules);
         let decl = tree_info::get_module(ctx, self.tree).expect("module decl");
         let prev_source = AbstractLog::use_source(
-            &mut *modules.log.borrow_mut(),
+            &*modules.log,
             Some(Rc::clone(&self.sourcefile)),
         );
         let prev_lint = modules
@@ -2012,7 +2007,7 @@ impl Completer for SourceCompleter {
         ctx.sym_mut(sym).flags_field &= !(flags::UNATTRIBUTED as i64);
         modules
             .deferred_lint_handler.set_pos_state(prev_lint);
-        AbstractLog::use_source(&mut *modules.log.borrow_mut(), prev_source);
+        AbstractLog::use_source(&*modules.log, prev_source);
         result
     }
 }
@@ -2219,14 +2214,14 @@ impl<'a> ModuleVisitor<'a> {
             let error = JCDiagnosticError::from(errors::module_not_found(
                 SymbolArg::placeholder(self.ctx.sym(msym).name.to_java_string().to_string_lossy()),
             ));
-            self.modules.log.borrow_mut().error_at(pos, error);
+            self.modules.log.error_at(pos, error);
             self.modules.warned_missing.borrow_mut().insert(msym);
         } else if self.all_requires.contains(&msym) {
             let pos = self.ctx.tree(module_name).pos;
             let error = JCDiagnosticError::from(errors::duplicate_requires(
                 SymbolArg::placeholder(self.ctx.sym(msym).name.to_java_string().to_string_lossy()),
             ));
-            self.modules.log.borrow_mut().error_at(pos, error);
+            self.modules.log.error_at(pos, error);
         } else {
             self.all_requires.insert(msym);
             let mut directive_flags: Vec<RequiresFlag> = Vec::new();
@@ -2234,7 +2229,7 @@ impl<'a> ModuleVisitor<'a> {
                 if msym == self.syms.java_base && self.source_at_least_jdk10() {
                     let error = JCDiagnosticError::from(errors::modifier_not_allowed_here(self.modules.names.transitive.clone()));
                     let pos = self.ctx.tree(tree).pos;
-                    self.modules.log.borrow_mut().error_at(pos, error);
+                    self.modules.log.error_at(pos, error);
                 } else {
                     directive_flags.push(RequiresFlag::TRANSITIVE);
                 }
@@ -2243,7 +2238,7 @@ impl<'a> ModuleVisitor<'a> {
                 if msym == self.syms.java_base && self.source_at_least_jdk10() {
                     let error = JCDiagnosticError::from(errors::mod_not_allowed_here(vec![crate::resources::diagnostic_contract::FlagArg::placeholder("static")]));
                     let pos = self.ctx.tree(tree).pos;
-                    self.modules.log.borrow_mut().error_at(pos, error);
+                    self.modules.log.error_at(pos, error);
                 } else {
                     directive_flags.push(RequiresFlag::STATIC_PHASE);
                 }
@@ -2344,7 +2339,7 @@ impl<'a> ModuleVisitor<'a> {
         if module_flags_read(self.ctx, sym).contains(&ModuleFlags::OPEN) {
             let pos = self.ctx.tree(tree).pos;
             let error = JCDiagnosticError::from(errors::no_opens_unless_strong());
-            self.modules.log.borrow_mut().error_at(pos, error);
+            self.modules.log.error_at(pos, error);
         }
         let opens_for_package = self.all_opens.get(&package).cloned().unwrap_or_default();
         for _d in &opens_for_package {
@@ -2390,7 +2385,7 @@ impl<'a> ModuleVisitor<'a> {
         let error = JCDiagnosticError::from(errors::conflicting_exports(
             SymbolArg::placeholder(self.ctx.sym(package).name.to_java_string().to_string_lossy()),
         ));
-        self.modules.log.borrow_mut().error_at(pos, error);
+        self.modules.log.error_at(pos, error);
     }
 
     fn check_duplicate_exports_to_module(&mut self, name: TreeId, msym: SymbolId, d: DirectiveId) {
@@ -2411,7 +2406,7 @@ impl<'a> ModuleVisitor<'a> {
         let error = JCDiagnosticError::from(errors::conflicting_exports_to_module(
             SymbolArg::placeholder(self.ctx.sym(msym).name.to_java_string().to_string_lossy()),
         ));
-        self.modules.log.borrow_mut().error_at(pos, error);
+        self.modules.log.error_at(pos, error);
     }
 
     fn report_opens_conflict(&mut self, qualid: TreeId, package: SymbolId) {
@@ -2419,7 +2414,7 @@ impl<'a> ModuleVisitor<'a> {
         let error = JCDiagnosticError::from(errors::conflicting_opens(
             SymbolArg::placeholder(self.ctx.sym(package).name.to_java_string().to_string_lossy()),
         ));
-        self.modules.log.borrow_mut().error_at(pos, error);
+        self.modules.log.error_at(pos, error);
     }
 
     fn check_duplicate_opens_to_module(&mut self, name: TreeId, msym: SymbolId, d: DirectiveId) {
@@ -2437,7 +2432,7 @@ impl<'a> ModuleVisitor<'a> {
         let error = JCDiagnosticError::from(errors::conflicting_opens_to_module(
             SymbolArg::placeholder(self.ctx.sym(msym).name.to_java_string().to_string_lossy()),
         ));
-        self.modules.log.borrow_mut().error_at(pos, error);
+        self.modules.log.error_at(pos, error);
     }
 
     fn ensure_java_base(&mut self) {
@@ -2814,7 +2809,7 @@ impl Modules {
         let decl = tree_info::get_module(ctx, toplevel).expect("AssertionError: moduleDecl");
         let source = compilation_unit_sourcefile(ctx, toplevel);
         let prev_source = match source {
-            Some(source) => AbstractLog::use_source(&mut *self.log.borrow_mut(), Some(source)),
+            Some(source) => AbstractLog::use_source(&*self.log, Some(source)),
             None => None,
         };
         let prev_lint = self
@@ -2822,7 +2817,7 @@ impl Modules {
         let mut visitor = UsesProvidesVisitor::new(self, attr, ctx, syms, msym, env.clone());
         visitor.visit_module_def(decl);
         self.deferred_lint_handler.set_pos_state(prev_lint);
-        AbstractLog::use_source(&mut *self.log.borrow_mut(), prev_source);
+        AbstractLog::use_source(&*self.log, prev_source);
         Ok(())
     }
 
@@ -3012,7 +3007,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                     SymbolArg::placeholder(name),
                 ),
             );
-            self.modules.log.borrow_mut().error_at(pos, error);
+            self.modules.log.error_at(pos, error);
         }
         let directives = module_directives(self.ctx, self.msym);
         set_module_directives(self.ctx, self.msym, directives.prepend(directive));
@@ -3086,7 +3081,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                     SymbolArg::placeholder(name),
                 ),
             );
-            self.modules.log.borrow_mut().error_at(pos, error);
+            self.modules.log.error_at(pos, error);
         }
         let mut impls: Vec<SymbolId> = Vec::new();
         for impl_name in impl_names.iter() {
@@ -3128,7 +3123,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                         SymbolArg::placeholder(location.unwrap_or_default()),
                     ),
                 );
-                self.modules.log.borrow_mut().error_at(pos, error);
+                self.modules.log.error_at(pos, error);
             }
             let factory = self.factory_method(impl_sym);
             if let Some(factory) = factory {
@@ -3143,7 +3138,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                             service_implementation_provider_return_must_be_subtype_of_service_interface(
                             ),
                     );
-                    self.modules.log.borrow_mut().error_at(pos, error);
+                    self.modules.log.error_at(pos, error);
                 }
             } else if !self.modules.types.is_subtype(self.ctx, self.syms, it, st) {
                 let pos = self.ctx.tree(impl_name).pos;
@@ -3151,7 +3146,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                     crate::resources::compiler_properties::errors::
                         service_implementation_must_be_subtype_of_service_interface(),
                 );
-                self.modules.log.borrow_mut().error_at(pos, error);
+                self.modules.log.error_at(pos, error);
             } else if (self.ctx.sym(impl_sym).flags_field & (crate::code::flags::ABSTRACT as i64)) != 0 {
                 let pos = self.ctx.tree(impl_name).pos;
                 let name = self
@@ -3165,7 +3160,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                         SymbolArg::placeholder(name),
                     ),
                 );
-                self.modules.log.borrow_mut().error_at(pos, error);
+                self.modules.log.error_at(pos, error);
             } else if is_inner_symbol(self.ctx, impl_sym) {
                 let pos = self.ctx.tree(impl_name).pos;
                 let mut name = self.ctx.sym(impl_sym).name.to_java_string().to_string_lossy();
@@ -3186,7 +3181,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                         SymbolArg::placeholder(name),
                     ),
                 );
-                self.modules.log.borrow_mut().error_at(pos, error);
+                self.modules.log.error_at(pos, error);
             } else {
                 let constructor = self.no_args_constructor(impl_sym);
                 match constructor {
@@ -3204,7 +3199,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                                     SymbolArg::placeholder(name),
                                 ),
                         );
-                        self.modules.log.borrow_mut().error_at(pos, error);
+                        self.modules.log.error_at(pos, error);
                     }
                     Some(constructor) => {
                         if (self.ctx.sym(constructor).flags_field
@@ -3224,7 +3219,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                                         SymbolArg::placeholder(name),
                                     ),
                             );
-                            self.modules.log.borrow_mut().error_at(pos, error);
+                            self.modules.log.error_at(pos, error);
                         }
                     }
                 }
@@ -3256,7 +3251,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                             SymbolArg::placeholder(impl_name),
                         ),
                     );
-                    self.modules.log.borrow_mut().error_at(pos, error);
+                    self.modules.log.error_at(pos, error);
                 }
             }
         }
@@ -3319,7 +3314,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                     SymbolArg::placeholder(name),
                 ),
             );
-            self.modules.log.borrow_mut().error_at(pos, error);
+            self.modules.log.error_at(pos, error);
         } else if self.ctx.typ(st).has_tag(TypeTag::CLASS) {
             let service = self.ctx.typ(st).tsym.expect("AssertionError: uses tsym");
             if self.all_uses.insert(service) {
@@ -3343,7 +3338,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                         SymbolArg::placeholder(name),
                     ),
                 );
-                self.modules.log.borrow_mut().error_at(pos, error);
+                self.modules.log.error_at(pos, error);
             }
         }
     }
@@ -3388,7 +3383,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                                 SymbolArg::placeholder(name),
                             ),
                     );
-                    self.modules.log.borrow_mut().error_at(pos, error);
+                    self.modules.log.error_at(pos, error);
                 }
                 let interface_package = crate::code::symbol::symbol_packge(self.ctx, service)
                     .expect("AssertionError: service package");
@@ -3439,7 +3434,7 @@ impl<'a> UsesProvidesVisitor<'a> {
                                 SymbolArg::placeholder(name),
                             ),
                     );
-                    self.modules.log.borrow_mut().warning_pos(
+                    self.modules.log.warning_pos(
                         Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
                         warning,
                     );

@@ -129,7 +129,7 @@ enum ComparisonKind {
 /// Java: public class Operators (comp/Operators.java:93)
 pub struct Operators {
     pub names: Rc<Names>,
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     pub diags: Rc<Factory>,
     /// Java: public final OperatorSymbol noOpSymbol
     pub no_op_symbol: SymbolId,
@@ -143,7 +143,7 @@ impl Operators {
         ctx: &mut CompilerContext,
         syms: &Symtab,
         names: Rc<Names>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         diags: Rc<Factory>,
     ) -> Operators {
         let no_type = crate::code::symtab::no_type_id(ctx);
@@ -654,7 +654,7 @@ impl Operators {
                     Rc::new(javac_strings::JavaString::from(arg.to_text().as_str())) as DiagnosticArg
                 })
                 .collect();
-            let source = self.log.borrow().current_source();
+            let source = self.log.current_source();
             let diagnostic = self.diags.create(
                 DiagnosticType::ERROR,
                 source,
@@ -662,7 +662,7 @@ impl Operators {
                 info.info().code,
                 diagnostic_args,
             );
-            self.log.borrow_mut().report(diagnostic);
+            self.log.report(diagnostic);
         }
         self.no_op_symbol
     }
@@ -933,7 +933,7 @@ mod tests {
         diags: Rc<Factory>,
         operators: Operators,
         types: Types,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         _names: Rc<Names>,
     }
 

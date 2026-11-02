@@ -125,7 +125,7 @@ pub struct ModuleFinder {
     /// Java: private final JavaFileManager fileManager.
     file_manager: Rc<dyn JavaFileManager>,
     /// Java: private final Log log.
-    log: Rc<RefCell<Log>>,
+    log: Rc<Log>,
     /// Java: private final JCDiagnostic.Factory diags.
     diags: Rc<Factory>,
     /// Java: ModuleLocationIterator moduleLocationIterator.
@@ -154,7 +154,7 @@ impl ModuleFinder {
         names: Rc<Names>,
         class_finder: Rc<ClassFinder>,
         file_manager: Rc<dyn JavaFileManager>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         diags: Rc<Factory>,
     ) -> ModuleFinder {
         ModuleFinder {
@@ -507,7 +507,7 @@ impl ModuleFinder {
                     );
                     let info = errors::duplicate_module_on_path(arg, name.clone());
                     let error = crate::util::jc_diagnostic::Error::from(info);
-                    self.log.borrow_mut().error_key(error);
+                    self.log.error_key(error);
                     continue;
                 }
                 names_in_set.push((name.clone(), Rc::clone(&location)));
@@ -1084,7 +1084,7 @@ mod tests {
         syms: Symtab,
         finder: Rc<ClassFinder>,
         names: Rc<Names>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         diags: Rc<Factory>,
         file_manager: Rc<StubFileManager>,
     }

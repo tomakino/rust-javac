@@ -48,7 +48,7 @@ pub struct JNIWriter {
     /// Access to files (Java: private final JavaFileManager fileManager).
     file_manager: Rc<dyn JavaFileManager>,
     /// Java: private final Log log.
-    log: Rc<RefCell<Log>>,
+    log: Rc<Log>,
     /// Java: Types types (lazyInit JNIWriter.java:120-126).
     types: Rc<Types>,
     /// Switch: verbose output (Java: private boolean verbose).
@@ -76,7 +76,7 @@ impl JNIWriter {
     pub fn new(
         options: &Options,
         file_manager: Rc<dyn JavaFileManager>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         types: Rc<Types>,
     ) -> JNIWriter {
         let verbose = options.is_set_option(crate::main::option::Option::VERBOSE);
@@ -216,7 +216,6 @@ impl JNIWriter {
             let name = out_file.get_name();
             let arg: DiagnosticArg = Rc::new(name);
             self.log
-                .borrow_mut()
                 .print_verbose("wrote.file", vec![arg]);
         }
         Ok(out_file)

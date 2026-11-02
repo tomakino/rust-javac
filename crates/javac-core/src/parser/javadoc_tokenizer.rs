@@ -105,7 +105,7 @@ impl JavadocComment {
     /// int offset).
     pub(crate) fn new(
         cs: CommentStyle,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         buffer: Rc<[u16]>,
         offset: i32,
     ) -> JavadocComment {

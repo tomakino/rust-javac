@@ -1523,11 +1523,11 @@ impl Code {
     pub fn check_limits(
         &self,
         pos: i32,
-        log: &Rc<RefCell<Log>>,
+        log: &Rc<Log>,
     ) -> bool {
         if self.cp > class_file::MAX_CODE {
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *log.borrow_mut(),
+                &*log,
                 pos,
                 Error::from(errors::limit_code()),
             );
@@ -1535,7 +1535,7 @@ impl Code {
         }
         if self.max_locals > class_file::MAX_LOCALS {
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *log.borrow_mut(),
+                &*log,
                 pos,
                 Error::from(errors::limit_locals()),
             );
@@ -1543,7 +1543,7 @@ impl Code {
         }
         if self.max_stack > class_file::MAX_STACK {
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *log.borrow_mut(),
+                &*log,
                 pos,
                 Error::from(errors::limit_stack()),
             );

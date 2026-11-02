@@ -96,7 +96,7 @@ fn is_separator_char(ch: char) -> bool {
 struct LocationCtx<'a> {
     fs_info: &'a CacheFSInfo,
     /// Java: outer Locations.log (for path/option warnings).
-    log: StdOption<&'a Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    log: StdOption<&'a Rc<crate::util::log::Log>>,
     /// Java: outer Locations.pathFactory.
     path_factory: StdOption<&'a Rc<dyn PathFactory>>,
     java_home: &'a FsPath,
@@ -149,7 +149,7 @@ impl<'a> LocationCtx<'a> {
     fn warning(&self, info: crate::resources::diagnostic_contract::WarningInfo) {
         if let Some(log) = self.log {
             use crate::util::mandatory_warning_handler::MandatoryWarningLog;
-            log.borrow_mut().warning(
+            log.warning(
                 Some(crate::code::lint::LintCategory::PATH),
                 None,
                 crate::comp::check::warning_from_info(info),
@@ -167,7 +167,7 @@ impl<'a> LocationCtx<'a> {
                 ),
                 JavaString::from(format!("{error:?}").as_str()),
             );
-            log.borrow_mut()
+            log
                 .error_pos(None, crate::util::jc_diagnostic::Error::from(info));
         }
     }
@@ -636,7 +636,7 @@ impl ModuleTable {
 pub struct Locations {
     /// Java: private Log log; used for path warnings/errors (SearchPath warnings).
     #[allow(dead_code)]
-    log: StdOption<Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    log: StdOption<Rc<crate::util::log::Log>>,
     /// Java: private FSInfo fsInfo;
     fs_info: StdOption<Rc<CacheFSInfo>>,
     /// Java: private boolean warn;
@@ -675,7 +675,7 @@ impl Locations {
     /// Java: void update(Log log, boolean warn, FSInfo fsInfo).
     pub fn update(
         &mut self,
-        log: Rc<std::cell::RefCell<crate::util::log::Log>>,
+        log: Rc<crate::util::log::Log>,
         warn: bool,
         fs_info: Rc<CacheFSInfo>,
     ) {
@@ -1214,7 +1214,7 @@ impl<'a> LocationCtx<'a> {
                     // should-not-get-here branch of PatchModulesLocationHandler.
                     if let Some(log) = &self.log {
                         use crate::util::abstract_log::AbstractLog;
-                        log.borrow_mut().error_pos(
+                        log.error_pos(
                             None,
                             crate::util::jc_diagnostic::Error::from(
                                 crate::resources::compiler_properties::errors::locn_invalid_arg_for_xpatch(
@@ -1959,7 +1959,7 @@ impl<'a> LocationCtx<'a> {
 /// Java: ModulePathLocationHandler.initModuleLocations (Locations.java:1226-1242).
 fn module_path_init_locations(
     fs_info: &CacheFSInfo,
-    log: StdOption<&Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    log: StdOption<&Rc<crate::util::log::Log>>,
     state: &mut ModulePathState,
     parent: &JavaString,
 ) {
@@ -1983,7 +1983,7 @@ fn module_path_init_locations(
 /// Java: ModulePathIterator (Locations.java:1267-1502): one set per search path entry.
 fn module_path_scan_sets(
     fs_info: &CacheFSInfo,
-    log: StdOption<&Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    log: StdOption<&Rc<crate::util::log::Log>>,
     state: &ModulePathState,
     parent: &JavaString,
 ) -> Vec<Vec<Rc<ModuleLocation>>> {
@@ -2000,7 +2000,7 @@ fn module_path_scan_sets(
 /// Java: ModulePathIterator.scanDirectory/scanFile dispatch (Locations.java:1303-1375).
 fn module_path_scan_path(
     fs_info: &CacheFSInfo,
-    log: StdOption<&Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    log: StdOption<&Rc<crate::util::log::Log>>,
     path: &FsPath,
     path_index: usize,
     parent: &JavaString,
@@ -2030,7 +2030,7 @@ fn module_path_scan_path(
 /// Java: ModulePathIterator.scanDirectory (Locations.java:1303-1359).
 fn module_path_scan_directory(
     fs_info: &CacheFSInfo,
-    log: StdOption<&Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    log: StdOption<&Rc<crate::util::log::Log>>,
     path: &FsPath,
     path_index: usize,
     parent: &JavaString,
@@ -2110,7 +2110,7 @@ fn module_path_scan_directory(
 /// Java: ModulePathIterator.inferModuleName (Locations.java:1377-1496).
 fn module_path_infer_module_name(
     fs_info: &CacheFSInfo,
-    log: StdOption<&Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    log: StdOption<&Rc<crate::util::log::Log>>,
     p: &FsPath,
 ) -> StdOption<(String, Vec<FsPath>)> {
     if fs_info.is_directory(p) {
@@ -2267,12 +2267,12 @@ fn module_path_read_module_name_bytes(
 }
 
 fn module_path_error(
-    log: StdOption<&Rc<std::cell::RefCell<crate::util::log::Log>>>,
+    log: StdOption<&Rc<crate::util::log::Log>>,
     info: crate::resources::diagnostic_contract::ErrorInfo,
 ) {
     if let Some(log) = log {
         use crate::util::abstract_log::AbstractLog;
-        log.borrow_mut()
+        log
             .error_pos(None, crate::util::jc_diagnostic::Error::from(info));
     }
 }

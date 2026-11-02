@@ -72,7 +72,7 @@ pub struct JavaTokenizer {
     /// wired yet; the Java default state has no preview flag).
     preview: Option<Rc<Preview>>,
     /// The log to be used for error reporting. Copied from scanner factory.
-    log: Rc<RefCell<Log>>,
+    log: Rc<Log>,
     /// The token factory. Copied from scanner factory.
     tokens: Rc<Tokens>,
     /// The names factory. Copied from scanner factory.
@@ -165,7 +165,7 @@ impl JavaTokenizer {
 
     /// Java: protected void lexError(int pos, JCDiagnostic.Error key).
     pub(crate) fn lex_error(&mut self, pos: i32, key: JCDiagnosticError) {
-        self.log.borrow_mut().error_at(pos, key);
+        self.log.error_at(pos, key);
         self.tk = TokenKind::ERROR;
         self.err_pos = pos;
     }
@@ -173,7 +173,7 @@ impl JavaTokenizer {
     /// Java: protected void lexError(DiagnosticFlag flags, int pos,
     /// JCDiagnostic.Error key).
     pub(crate) fn lex_error_flag(&mut self, flags: DiagnosticFlag, pos: i32, key: JCDiagnosticError) {
-        self.log.borrow_mut().error_flag_at(flags, pos, key);
+        self.log.error_flag_at(flags, pos, key);
         if flags != DiagnosticFlag::SOURCE_LEVEL {
             self.tk = TokenKind::ERROR;
         }
@@ -184,7 +184,7 @@ impl JavaTokenizer {
     /// JCDiagnostic.Warning key).
     pub(crate) fn lex_warning(&mut self, lc: LintCategory, pos: i32, key: JCDiagnosticWarning) {
         let position = Rc::new(SimpleDiagnosticPosition::new(pos));
-        self.log.borrow_mut().warning_lint_pos(lc, Some(position), key);
+        self.log.warning_lint_pos(lc, Some(position), key);
     }
 
     /// Java: protected void put(char ch).
@@ -1078,7 +1078,7 @@ impl BasicComment {
     /// char[] array, int offset).
     pub(crate) fn new(
         cs: CommentStyle,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         buffer: Rc<[u16]>,
         offset: i32,
     ) -> BasicComment {

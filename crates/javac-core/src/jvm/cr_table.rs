@@ -145,7 +145,7 @@ impl CRTable {
         ctx: &mut CompilerContext,
         databuf: &mut ByteBuffer,
         line_map: &dyn LineMap,
-        log: &Rc<std::cell::RefCell<Log>>,
+        log: &Rc<Log>,
     ) -> i32 {
         let mut crt_entries = 0;
         let mut computer = SourceComputer {
@@ -201,7 +201,7 @@ impl CRTable {
         &self,
         pos: i32,
         line_map: &dyn LineMap,
-        log: &Rc<std::cell::RefCell<Log>>,
+        log: &Rc<Log>,
     ) -> i32 {
         let line = line_map.get_line_number(pos);
         let col = line_map.get_column_number(pos);
@@ -214,7 +214,7 @@ impl CRTable {
                 crate::resources::compiler_properties::warnings::position_overflow(line),
             );
             crate::util::abstract_log::AbstractLog::warning_at(
-                &mut *log.borrow_mut(),
+                &*log,
                 pos,
                 warning,
             );

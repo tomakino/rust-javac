@@ -103,7 +103,7 @@ impl GenContext {
 /// The code generation pass.
 pub struct Gen {
     /// The diagnostic log.
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     /// The symbol table.
     pub syms: Rc<Symtab>,
     /// The check service.
@@ -208,7 +208,7 @@ impl Gen {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         ctx: &mut CompilerContext,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         syms: Rc<Symtab>,
         chk: Rc<Check>,
         rs: Rc<crate::comp::resolve::Resolve>,
@@ -500,7 +500,7 @@ impl Gen {
                 let dims = self.types.dimensions(ctx, &*self.syms, t);
                 if dims > class_file::MAX_DIMENSIONS {
                     crate::util::abstract_log::AbstractLog::error_at(
-                        &mut *self.log.borrow_mut(),
+                        &*self.log,
                         pos,
                         Error::from(errors::limit_dimensions()),
                     );
@@ -1068,7 +1068,7 @@ impl Gen {
             return;
         }
         crate::util::abstract_log::AbstractLog::error_at(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             pos,
             Error::from(errors::limit_string()),
         );
@@ -1656,7 +1656,7 @@ impl Gen {
         };
         if params_width + extras > class_file::MAX_PARAMETERS {
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 ctx.tree(tree).pos,
                 Error::from(errors::limit_parameters()),
             );
@@ -1687,7 +1687,7 @@ impl Gen {
                     ),
                 );
                 crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     ctx.tree(body).pos,
                     Error::from(info),
                 );
@@ -1700,7 +1700,6 @@ impl Gen {
                     cls,
                     ctx.tree(body).pos,
                     self.log
-                        .borrow()
                         .current_source_file()
                         .map(|f| f.get_name())
                         .unwrap_or_default()
@@ -3010,7 +3009,7 @@ impl Gen {
             );
         } else {
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 Error::from(errors::limit_code_too_large_for_try_stmt()),
             );
@@ -3351,7 +3350,6 @@ impl Gen {
                 eprintln!(
                     "[GENCOND] file={} pos={} cond_tag={:?} cond_ty={} c={}",
                     self.log
-                        .borrow()
                         .current_source_file()
                         .map(|f| f.get_name().to_string_lossy().to_string())
                         .unwrap_or_default(),
@@ -3572,7 +3570,7 @@ impl Gen {
         let dimensions = self.types.dimensions(ctx, &*syms, ty);
         if dimensions > class_file::MAX_DIMENSIONS {
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 Error::from(errors::limit_dimensions()),
             );
@@ -4336,7 +4334,7 @@ impl Gen {
         let pool_size = self.pool_writer.borrow().size();
         if pool_size > PoolWriter::MAX_ENTRIES {
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 ctx.tree(cdef).pos,
                 Error::from(errors::limit_pool()),
             );

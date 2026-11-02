@@ -47,7 +47,7 @@ use crate::util::names::Names;
 
 /// Java: public class Enter (see the file header for the ported subset).
 pub struct Enter {
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     pub names: Rc<Names>,
     pub diags: Rc<Factory>,
     pub chk: Rc<Check>,
@@ -88,7 +88,7 @@ impl Enter {
     /// the bootstrap (adapter cells).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         names: Rc<Names>,
         diags: Rc<Factory>,
         chk: Rc<Check>,
@@ -406,7 +406,7 @@ impl Enter {
     ) -> Result<(), CompletionFailure> {
         let sourcefile = compilation_unit_sourcefile(ctx, tree)
             .expect("CompilationUnit.sourcefile (upstream non-null)");
-        let prev_source = self.log.borrow_mut().use_source(Some(Rc::clone(&sourcefile)));
+        let prev_source = self.log.use_source(Some(Rc::clone(&sourcefile)));
         let mut add_env = false;
         let is_pkg_info = sourcefile
             .is_name_compatible(&javac_strings::JavaString::from("package-info"), Kind::SOURCE);
@@ -414,7 +414,7 @@ impl Enter {
         if tree_info::is_module_info(ctx, tree) {
             let pd = compilation_unit_package_decl(ctx, tree);
             if let Some(pd) = pd {
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(pd).pos,
                     JCDiagnosticError::from(errors::no_pkg_in_module_info_java()),
                 );
@@ -452,7 +452,7 @@ impl Enter {
                         add_env = true;
                     } else if !annotations.is_empty() {
                         let first = *annotations.head();
-                        self.log.borrow_mut().error_at(
+                        self.log.error_at(
                             ctx.tree(first).pos,
                             JCDiagnosticError::from(
                                 errors::pkg_annotations_sb_in_package_info_java(),
@@ -500,7 +500,7 @@ impl Enter {
                     .name
                     .to_java_string()
                     .to_string_lossy();
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     pos,
                     JCDiagnosticError::from(errors::package_in_other_module(
                         crate::resources::diagnostic_contract::SymbolArg::placeholder(name),
@@ -535,7 +535,7 @@ impl Enter {
                         let warn = JCDiagnosticWarning::from(warnings::pkg_info_already_seen(
                             SymbolArg::placeholder(ctx.sym(packge).name.to_java_string().to_string_lossy()),
                         ));
-                        self.log.borrow_mut().warning_at(pos, warn);
+                        self.log.warning_at(pos, warn);
                     }
                 }
                 self.type_envs.put(packge, package_env);
@@ -585,7 +585,7 @@ impl Enter {
                 self.todo.append(ctx, package_env);
             }
         }
-        self.log.borrow_mut().use_source(prev_source);
+        self.log.use_source(prev_source);
         self.result.set(None);
         Ok(())
     }
@@ -657,7 +657,7 @@ impl Enter {
                 } else {
                     KindName::CLASS
                 };
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(tree).pos,
                     JCDiagnosticError::from(errors::class_public_should_be_in_file(
                         KindNameArg::from(top_element.name()),
@@ -680,7 +680,7 @@ impl Enter {
             let c = syms.enter_class(ctx, module, tree_name.clone(), Some(owner));
             if ctx.sym(c).owner != Some(owner) {
                 if ctx.sym(c).name.to_java_string() != tree_name.to_java_string() {
-                    self.log.borrow_mut().error_at(
+                    self.log.error_at(
                         ctx.tree(tree).pos,
                         JCDiagnosticError::from(errors::same_binary_name(
                             ctx.sym(c).name.clone(),
@@ -859,7 +859,7 @@ impl Enter {
 
     /// Java: protected void duplicateClass(DiagnosticPosition pos, ClassSymbol c)
     fn duplicate_class(&self, ctx: &mut CompilerContext, tree: TreeId, c: SymbolId) {
-        self.log.borrow_mut().error_at(
+        self.log.error_at(
             ctx.tree(tree).pos,
             JCDiagnosticError::from(errors::duplicate_class(class_fullname(ctx, c))),
         );
@@ -1624,7 +1624,7 @@ mod tests {
     struct Harness {
         ctx: CompilerContext,
         unit: TreeId,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         names: Rc<Names>,
         options: Rc<crate::util::options::Options>,
         diags: Rc<Factory>,
@@ -1655,7 +1655,7 @@ mod tests {
             None,
         );
         // Java: the compiler sets the log source before parsing (Log.useSource).
-        log.borrow_mut()
+        log
             .use_source(Some(sourcefile as Rc<dyn JavaFileObject>));
         let mut ctx = CompilerContext::new();
         let mut parser = factory.new_parser(

@@ -146,7 +146,7 @@ impl CheckContext for NestedCheckContext {
 /// context (assignment/return checking).
 pub struct BasicCheckContext {
     /// Java: Check.log
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     /// Java: Check.types
     pub types: Rc<Types>,
     /// Java: infer.emptyContext
@@ -173,7 +173,7 @@ impl CheckContext for BasicCheckContext {
     fn report(&self, _ctx: &mut CompilerContext, pos: i32, details: &JCDiagnostic) {
         // Java: log.error(pos, Errors.ProbFoundReq(details)); keep the nested
         // diagnostic object so its TypeArg where metadata survives.
-        self.log.borrow_mut().error_at(
+        self.log.error_at(
             pos,
             crate::util::jc_diagnostic::Error::from(
                 crate::resources::compiler_properties::errors::prob_found_req(

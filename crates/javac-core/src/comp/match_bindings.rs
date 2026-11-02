@@ -77,13 +77,13 @@ impl MatchBindings {
 /// Java: public class MatchBindingsComputer extends TreeScanner
 /// (MatchBindingsComputer.java:43-235)
 pub struct MatchBindingsComputer {
-    log: Rc<RefCell<Log>>,
+    log: Rc<Log>,
     diags: Rc<Factory>,
 }
 
 impl MatchBindingsComputer {
     /// Java: protected MatchBindingsComputer(Context context)
-    pub fn new(log: Rc<RefCell<Log>>, diags: Rc<Factory>) -> MatchBindingsComputer {
+    pub fn new(log: Rc<Log>, diags: Rc<Factory>) -> MatchBindingsComputer {
         MatchBindingsComputer { log, diags }
     }
 
@@ -369,7 +369,7 @@ impl MatchBindingsComputer {
                 Rc::new(javac_strings::JavaString::from(arg.to_text().as_str())) as DiagnosticArg
             })
             .collect();
-        let source = self.log.borrow().current_source();
+        let source = self.log.current_source();
         // A diagnostic cannot carry a source position without a source (the
         // factory asserts this); test harnesses have no current source.
         let position = source
@@ -382,7 +382,7 @@ impl MatchBindingsComputer {
             info.info().code,
             args,
         );
-        self.log.borrow_mut().report(diagnostic);
+        self.log.report(diagnostic);
     }
 }
 
@@ -399,7 +399,7 @@ mod tests {
     struct Harness {
         ctx: CompilerContext,
         names: Rc<Names>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         computer: MatchBindingsComputer,
     }
 

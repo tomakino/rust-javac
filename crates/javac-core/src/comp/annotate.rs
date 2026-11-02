@@ -459,7 +459,7 @@ impl CheckContext for AnnotationValueContext {
 /// instance fields).
 pub struct AnnotateServices {
     pub names: Rc<Names>,
-    pub log: Rc<std::cell::RefCell<Log>>,
+    pub log: Rc<Log>,
     pub syms: Rc<Symtab>,
     pub types: Rc<crate::code::types::Types>,
     pub chk: Rc<Check>,
@@ -503,7 +503,7 @@ impl Annotate {
     pub fn new(
         ctx: &mut CompilerContext,
         names: Rc<Names>,
-        log: Rc<std::cell::RefCell<Log>>,
+        log: Rc<Log>,
         syms: Rc<Symtab>,
         types: Rc<crate::code::types::Types>,
         chk: Rc<Check>,
@@ -798,7 +798,7 @@ impl Annotate {
         self.validate(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
             let services = &services_validate;
             let source = env_source_file(ctx, &env_validate);
-            let prev = services.log.borrow_mut().use_source(source);
+            let prev = services.log.use_source(source);
             let declaration_tree = {
                 let env_tree = env_validate.tree;
                 match env_tree {
@@ -814,7 +814,7 @@ impl Annotate {
                 s,
                 Some(_attr),
             );
-            services.log.borrow_mut().use_source(prev);
+            services.log.use_source(prev);
             result
         }));
     }
@@ -837,7 +837,7 @@ impl Annotate {
         let env_validate = Rc::clone(&local_env);
         self.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
             let source = env_source_file(ctx, &env);
-            let prev = services.log.borrow_mut().use_source(source);
+            let prev = services.log.use_source(source);
             let prev_pos = services.deferred_lint_handler.immediate();
             let result = if let Some(defer_pos) = defer_pos {
                 let saved = services.deferred_lint_handler.set_pos(Rc::new(
@@ -850,16 +850,16 @@ impl Annotate {
                 services.enter_default_value(ctx, syms, default_value, &env, m, _attr)
             };
             services.deferred_lint_handler.set_pos_state(prev_pos);
-            services.log.borrow_mut().use_source(prev);
+            services.log.use_source(prev);
             result
         }));
         self.validate(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
             let source = env_source_file(ctx, &env_validate);
-            let prev = services_validate.log.borrow_mut().use_source(source);
+            let prev = services_validate.log.use_source(source);
             services_validate
                 .chk
                 .validate_annotation_tree(ctx, syms, default_value, Some(_attr));
-            services_validate.log.borrow_mut().use_source(prev);
+            services_validate.log.use_source(prev);
             Ok(())
         }));
     }
@@ -884,7 +884,7 @@ impl AnnotateServices {
             "AssertionError: annotations pending completion"
         );
         let source = env_source_file(ctx, local_env);
-        let prev = self.log.borrow_mut().use_source(source);
+        let prev = self.log.use_source(source);
         let prev_pos = match defer_pos {
             Some(defer_pos) => self
                 .deferred_lint_handler.set_pos(Rc::new(SimpleDiagnosticPosition::new(defer_pos))),
@@ -898,7 +898,7 @@ impl AnnotateServices {
         let result = (|| -> Result<(), CompletionFailure> {
             if ctx.sym(s).has_annotations() && annotations.non_empty() {
                 let head = *annotations.head();
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(head).pos,
                     crate::resources::compiler_properties::errors::already_annotated(
                         KindNameArg::placeholder(
@@ -917,7 +917,7 @@ impl AnnotateServices {
             self.chk.set_lint(prev_lint);
         }
         self.deferred_lint_handler.set_pos_state(prev_pos);
-        self.log.borrow_mut().use_source(prev);
+        self.log.use_source(prev);
         result
     }
 
@@ -1003,7 +1003,7 @@ impl AnnotateServices {
                     .find(|(tsym, _)| *tsym == annotation_tsym)
                 {
                     if !self.allow_repeated_annos {
-                        self.log.borrow_mut().error_at(
+                        self.log.error_at(
                             ctx.tree(a).pos,
                             Feature::REPEATED_ANNOTATIONS.error(&self.source_name),
                         );
@@ -1199,7 +1199,7 @@ impl AnnotateServices {
         let is_annotation_type = (ctx.sym(tsym).flags_field & flags::ANNOTATION as i64) != 0;
         let mut is_error = is_error;
         if !is_annotation_type && !is_error {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(annotation_type_tree).pos,
                 errors::not_annotation_type(
                     TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, tsym)),
@@ -1283,7 +1283,7 @@ impl AnnotateServices {
     
         attr: &mut crate::comp::attr::Attr,) -> Result<Option<Pair<SymbolId, AttributeId>>, CompletionFailure> {
         if !ctx.tree(name_value_pair).has_tag(Tag::ASSIGN) {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(name_value_pair).pos,
                 errors::annotation_value_must_be_name_value().into(),
             );
@@ -1303,7 +1303,6 @@ impl AnnotateServices {
                     (),
                 );
                 self.log
-                    .borrow_mut()
                     .error_at(ctx.tree(*lhs).pos, info.into());
             }
             let err_type = syms.err_type;
@@ -1315,7 +1314,7 @@ impl AnnotateServices {
             _ => panic!("expected an assignment"),
         };
         if !ctx.tree(lhs).has_tag(Tag::IDENT) {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(name_value_pair).pos,
                 errors::annotation_value_must_be_name_value().into(),
             );
@@ -1364,7 +1363,7 @@ impl AnnotateServices {
         let owner = ctx.sym(method).owner;
         let this_tsym = ctx.typ(this_annotation_type).tsym;
         if owner != this_tsym && !bad_annotation {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(lhs).pos,
                 errors::no_annotation_member(
                     left_name,
@@ -1415,7 +1414,7 @@ impl AnnotateServices {
             _ => None,
         };
         if let Some(failure) = completion_error {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(tree).pos,
                 errors::cant_access(
                     SymbolArg::placeholder(
@@ -1438,7 +1437,7 @@ impl AnnotateServices {
         }
         if ctx.tree(tree).has_tag(Tag::NEWARRAY) {
             if !ctx.typ(expected_element_type).has_tag(TypeTag::ERROR) {
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(tree).pos,
                     errors::annotation_value_not_allowable_type().into(),
                 );
@@ -1452,7 +1451,7 @@ impl AnnotateServices {
                 _ => None,
             };
             if let Some(elemtype) = elemtype {
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(elemtype).pos,
                     errors::new_not_allowed_in_annotation().into(),
                 );
@@ -1474,7 +1473,7 @@ impl AnnotateServices {
             if ctx.tree(tree).has_tag(Tag::ANNOTATION) {
                 return self.attribute_annotation(ctx, syms, tree, expected_element_type, env, attr);
             } else {
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(tree).pos,
                     errors::annotation_value_must_be_annotation().into(),
                 );
@@ -1483,7 +1482,7 @@ impl AnnotateServices {
         }
         if ctx.tree(tree).has_tag(Tag::ANNOTATION) {
             if !ctx.typ(expected_element_type).has_tag(TypeTag::ERROR) {
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(tree).pos,
                     errors::annotation_not_valid_for_type(TypeArg::placeholder(
                         crate::comp::resolve::symbol_display_name(
@@ -1509,7 +1508,7 @@ impl AnnotateServices {
         // entry point is member_enter::init_tree_visitor (the same JLS 15.28 rules).
         let result = crate::comp::member_enter::init_tree_visitor(ctx, tree);
         if !result {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(tree).pos,
                 errors::expression_not_allowable_as_annotation_value().into(),
             );
@@ -1540,7 +1539,7 @@ impl AnnotateServices {
             return self.get_annotation_enum_value(ctx, syms, expected_element_type, tree, env, attr);
         }
         if !ctx.typ(expected_element_type).has_tag(TypeTag::ERROR) {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(tree).pos,
                 errors::annotation_value_not_allowable_type().into(),
             );
@@ -1572,7 +1571,7 @@ impl AnnotateServices {
             .map(|sym| ctx.sym(sym).kind == Kind::VAR && (ctx.sym(sym).flags_field & flags::ENUM as i64) != 0)
             .unwrap_or(false);
         if sym.is_none() || nonstatic_select || !is_enum_constant {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(tree).pos,
                 errors::enum_annotation_must_be_enum_constant().into(),
             );
@@ -1618,7 +1617,7 @@ impl AnnotateServices {
         let class_name = self.names._class.clone();
         let matches_class = tree_info::name(ctx, tree).as_ref().map(|name| name.to_java_string() == class_name.to_java_string()).unwrap_or(false);
         if !matches_class {
-            self.log.borrow_mut().error_at(ctx.tree(tree).pos, errors::annotation_value_must_be_class_literal().into());
+            self.log.error_at(ctx.tree(tree).pos, errors::annotation_value_must_be_class_literal().into());
             let err_type = syms.err_type;
             return Ok(ctx.alloc_attribute(Attribute::new_error(Some(err_type))));
         }
@@ -1647,7 +1646,7 @@ impl AnnotateServices {
             return Ok(ctx.alloc_attribute(Attribute::new_error(Some(original_type_of(ctx, result)))));
         }
         if ctx.typ(result).const_value().is_none() {
-            self.log.borrow_mut().error_at(ctx.tree(tree).pos, errors::attribute_value_must_be_constant().into());
+            self.log.error_at(ctx.tree(tree).pos, errors::attribute_value_must_be_constant().into());
             return Ok(ctx.alloc_attribute(Attribute::new_error(Some(expected_element_type))));
         }
         let tree_type = ctx.tree(tree).ty;
@@ -1694,7 +1693,7 @@ impl AnnotateServices {
             _ => panic!("expected a new array"),
         };
         if let Some(elemtype) = elemtype {
-            self.log.borrow_mut().error_at(ctx.tree(elemtype).pos, errors::new_not_allowed_in_annotation().into());
+            self.log.error_at(ctx.tree(elemtype).pos, errors::new_not_allowed_in_annotation().into());
         }
         let elem_type = {
             self.types.elemtype(ctx, syms, expected_element_type)
@@ -1768,7 +1767,7 @@ impl AnnotateServices {
         }
         let orig_anno_type = orig_anno_type.expect("annotation type");
         if !repeated.is_empty() && target_container_type.is_none() {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 context.pos.get(&first_occurrence).copied().unwrap_or(crate::util::position::NOPOS),
                 errors::duplicate_annotation_invalid_repeated(TypeArg::placeholder(
                     crate::comp::resolve::symbol_display_name(
@@ -1812,7 +1811,7 @@ impl AnnotateServices {
                 chk.validate_annotation_defer_errors(ctx, syms, anno_tree, Some(&mut *attr))?
             };
             if !defer_ok {
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(anno_tree).pos,
                     errors::duplicate_annotation_invalid_repeated(TypeArg::placeholder(
                         crate::comp::resolve::symbol_display_name(
@@ -1852,7 +1851,7 @@ impl AnnotateServices {
                         TypeArg::placeholder(container_name),
                     )
                 };
-                self.log.borrow_mut().error_at(pos, info.into());
+                self.log.error_at(pos, info.into());
             }
             if let AttributeKind::TypeCompound { synthesized, .. } = &mut ctx.attr_mut(at).kind {
                 *synthesized = true;
@@ -1879,7 +1878,7 @@ impl AnnotateServices {
         };
         let suppress = is_record_member && (ctx.sym(on).flags_field & flags::GENERATED_MEMBER as i64) != 0;
         if !applicable && !suppress {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(anno_tree).pos,
                 errors::invalid_repeatable_annotation_not_applicable(
                     TypeArg::placeholder(crate::comp::resolve::symbol_display_name(
@@ -1896,7 +1895,7 @@ impl AnnotateServices {
             chk.validate_annotation_defer_errors(ctx, syms, anno_tree, Some(&mut *attr))?
         };
         if !defer_ok {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(anno_tree).pos,
                 errors::duplicate_annotation_invalid_repeated(TypeArg::placeholder(
                     crate::comp::resolve::symbol_display_name(
@@ -1932,7 +1931,7 @@ impl AnnotateServices {
         let ca = AnnotationTypeMetadata::get_repeatable_shared(&metadata, ctx, syms, Some(&mut *attr))?;
         let Some(ca) = ca else {
             if report_error {
-                self.log.borrow_mut().error_at(pos, errors::duplicate_annotation_missing_container(TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, orig_anno_decl))).into());
+                self.log.error_at(pos, errors::duplicate_annotation_missing_container(TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, orig_anno_decl))).into());
             }
             return Ok(None);
         };
@@ -1956,19 +1955,19 @@ impl AnnotateServices {
             _ => List::nil(),
         };
         if values.is_empty() {
-            self.log.borrow_mut().error_at(pos, errors::invalid_repeatable_annotation(SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, anno_decl))).into());
+            self.log.error_at(pos, errors::invalid_repeatable_annotation(SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, anno_decl))).into());
             return Ok(None);
         }
         let pair = values.head().clone();
         let name = ctx.sym(pair.fst).name.clone();
         if name.to_java_string() != self.names.value.to_java_string() {
-            self.log.borrow_mut().error_at(pos, errors::invalid_repeatable_annotation(SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, anno_decl))).into());
+            self.log.error_at(pos, errors::invalid_repeatable_annotation(SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, anno_decl))).into());
             return Ok(None);
         }
         let class_type = match &ctx.attr(pair.snd).kind {
             AttributeKind::Class { class_type } => *class_type,
             _ => {
-                self.log.borrow_mut().error_at(pos, errors::invalid_repeatable_annotation(SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, anno_decl))).into());
+                self.log.error_at(pos, errors::invalid_repeatable_annotation(SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, anno_decl))).into());
                 return Ok(None);
             }
         };
@@ -2001,15 +2000,15 @@ impl AnnotateServices {
             }
         }
         if fatal_error {
-            self.log.borrow_mut().error_at(pos, errors::invalid_repeatable_annotation_multiple_values(TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, container_tsym)), nr_value_elems).into());
+            self.log.error_at(pos, errors::invalid_repeatable_annotation_multiple_values(TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, container_tsym)), nr_value_elems).into());
             return Ok(None);
         } else if nr_value_elems == 0 {
-            self.log.borrow_mut().error_at(pos, errors::invalid_repeatable_annotation_no_value(DiagnosticArg::from_display(crate::comp::resolve::symbol_display_name(ctx, container_tsym))).into());
+            self.log.error_at(pos, errors::invalid_repeatable_annotation_no_value(DiagnosticArg::from_display(crate::comp::resolve::symbol_display_name(ctx, container_tsym))).into());
             return Ok(None);
         }
         let Some(container_value_symbol) = container_value_symbol else { return Ok(None) };
         if ctx.sym(container_value_symbol).kind != Kind::MTH {
-            self.log.borrow_mut().error_at(pos, errors::invalid_repeatable_annotation_invalid_value(TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, container_tsym))).into());
+            self.log.error_at(pos, errors::invalid_repeatable_annotation_invalid_value(TypeArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, container_tsym))).into());
             fatal_error = true;
         }
         let method_type = ctx.sym(container_value_symbol).ty.expect("container value method type");
@@ -2022,7 +2021,7 @@ impl AnnotateServices {
             self.types.is_same_type(ctx, syms, expected_type, value_ret_type)
         };
         if !(is_array && same) {
-            self.log.borrow_mut().error_at(pos, errors::invalid_repeatable_annotation_value_return(DiagnosticArg::from_display(crate::comp::resolve::symbol_display_name(ctx, container_tsym)), TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, value_ret_type)), TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, expected_type))).into());
+            self.log.error_at(pos, errors::invalid_repeatable_annotation_value_return(DiagnosticArg::from_display(crate::comp::resolve::symbol_display_name(ctx, container_tsym)), TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, value_ret_type)), TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, expected_type))).into());
             fatal_error = true;
         }
         Ok(if fatal_error { None } else { Some(container_value_symbol) })
@@ -2117,7 +2116,7 @@ impl AnnotateServices {
                 let first_pos = context.pos.get(first).copied().unwrap_or(crate::util::position::NOPOS);
                 let first_ty = ctx.attr(*first).ty.expect("manual container type");
                 let first_tsym = ctx.typ(first_ty).tsym.expect("manual container symbol");
-                self.log.borrow_mut().error_at(first_pos, errors::invalid_repeatable_annotation_repeated_and_container_present(SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, first_tsym))).into());
+                self.log.error_at(first_pos, errors::invalid_repeatable_annotation_repeated_and_container_present(SymbolArg::placeholder(crate::comp::resolve::symbol_display_name(ctx, first_tsym))).into());
             }
         }
         Ok(Some(valid_repeated))
@@ -2299,7 +2298,7 @@ impl AnnotateServices {
         is_type_param: bool,
         attr: &mut crate::comp::attr::Attr) {
         let source = env_source_file(ctx, env);
-        let prev = self.log.borrow_mut().use_source(source);
+        let prev = self.log.use_source(source);
         let prev_lint_pos = match defer_pos {
             Some(defer_pos) => Some(self.deferred_lint_handler.set_pos(Rc::new(
                 SimpleDiagnosticPosition::new(defer_pos),
@@ -2310,7 +2309,7 @@ impl AnnotateServices {
         if let Some(prev_lint_pos) = prev_lint_pos {
             self.deferred_lint_handler.set_pos_state(prev_lint_pos);
         }
-        self.log.borrow_mut().use_source(prev);
+        self.log.use_source(prev);
     }
 
 }
@@ -2567,7 +2566,7 @@ impl AnnotateServices {
         let is_annotation_type = (ctx.sym(sym).flags_field & flags::ANNOTATION as i64) != 0;
         assert!(is_annotation_type, "trying to annotation type complete a non-annotation type");
         let source = env_source_file(ctx, env);
-        let prev = self.log.borrow_mut().use_source(source);
+        let prev = self.log.use_source(source);
         let mut visitor = AnnotationTypeVisitor {
             services: self.self_rc(),
             env: Some(Rc::clone(env)),
@@ -2583,7 +2582,7 @@ impl AnnotateServices {
             metadata.set_repeatable(repeatable);
             metadata.set_target(target);
         }
-        self.log.borrow_mut().use_source(prev);
+        self.log.use_source(prev);
         Ok(())
     }
 }
@@ -2717,7 +2716,7 @@ struct UnusedFileManager;
         make: Rc<RefCell<TreeMaker>>,
         syms: Rc<Symtab>,
         types: Rc<Types>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
     }
 
     fn harness() -> AnnotateHarness {
@@ -2927,6 +2926,6 @@ struct UnusedFileManager;
             make.translate_attribute(&mut h.ctx, &&*h.syms, array)
         };
         assert!(h.ctx.tree(array_tree).has_tag(Tag::NEWARRAY));
-        assert_eq!(h.log.borrow().nerrors, 0);
+        assert_eq!(h.log.nerrors.get(), 0);
     }
 }

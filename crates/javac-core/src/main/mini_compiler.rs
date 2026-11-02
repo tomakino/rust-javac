@@ -87,7 +87,7 @@ pub struct MiniCompiler {
     /// The compiler service table.
     pub util_context: UtilContext,
     /// The diagnostic log.
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     /// The name table.
     pub names: Rc<Names>,
     /// The compiler options.
@@ -185,7 +185,7 @@ pub struct MiniCompiler {
 /// file may recursively complete further source files.
 pub struct SourceFileCompleter {
     /// Java: Log log.
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     /// Java: JCDiagnostic.Factory diagFactory.
     pub diags: Rc<Factory>,
     /// Java: DeferredCompletionFailureHandler dcfh.
@@ -220,7 +220,6 @@ impl crate::code::class_finder::SourceFileReader for SourceFileCompleter {
         };
         let prev = self
             .log
-            .borrow_mut()
             .use_source(Some(Rc::clone(&filename)));
         // Java: try { tree = parse(filename, filename.getCharContent(false)); }
         // catch (IOException e) { log.error(Errors.ErrorReadingFile(...));
@@ -256,11 +255,11 @@ impl crate::code::class_finder::SourceFileReader for SourceFileCompleter {
                     ),
                     js(""),
                 );
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     crate::util::position::NOPOS,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
-                self.log.borrow_mut().use_source(prev);
+                self.log.use_source(prev);
                 let diag = self
                     .diags
                     .fragment(Fragment::from(fragments::cant_resolve_modules()));
@@ -285,7 +284,7 @@ impl crate::code::class_finder::SourceFileReader for SourceFileCompleter {
             let diag = self
                 .diags
                 .fragment(Fragment::from(fragments::cant_resolve_modules()));
-            self.log.borrow_mut().use_source(prev);
+            self.log.use_source(prev);
             return Err(CompletionFailure::new(
                 Some(sym),
                 Box::new(move || diag.clone()),
@@ -303,7 +302,7 @@ impl crate::code::class_finder::SourceFileReader for SourceFileCompleter {
             self.enter.complete(ctx, syms, List::of(tree), Some(sym))
         };
         let has_env = self.enter.get_env(sym).is_some();
-        self.log.borrow_mut().use_source(prev);
+        self.log.use_source(prev);
         entered?;
         // A module-info compilation unit has no class body to enter, so no
         // environment is created for it; only real classes must have one.
@@ -386,7 +385,7 @@ impl MiniCompiler {
                 Box::new(crate::util::log::LineSeparatorWriter::new(file))
                     as Box<dyn std::io::Write>,
             ));
-            log.borrow_mut().set_writers(writer);
+            log.set_writers(writer);
         }
         let lint = Lint::instance(&mut util_context);
         let preview = Preview::instance(&mut util_context);
@@ -1282,12 +1281,12 @@ impl MiniCompiler {
                     TreeKind::CompilationUnit { sourcefile, .. } => sourcefile.clone(),
                     _ => None,
                 });
-            let prev_source = self.log.borrow_mut().use_source(sourcefile);
+            let prev_source = self.log.use_source(sourcefile);
             let make = Rc::clone(&self.make);
             let syms_guard = &*self.syms;
             self.flow
                 .analyze_tree(&mut self.ctx, &syms_guard, env, &make);
-            self.log.borrow_mut().use_source(prev_source);
+            self.log.use_source(prev_source);
             // JavaCompiler.flow: compileStates.put(env, CompileState.FLOW)
             // (JavaCompiler.java:1380-1381).
             self.trans_types
@@ -1457,7 +1456,7 @@ impl MiniCompiler {
             .get_char_content(false)
             .map_err(|error| format!("cannot read {}: {error:?}", absolute.display()))?
             .ok_or_else(|| format!("cannot read {}", absolute.display()))?;
-        let prev_source = self.log.borrow_mut().use_source(Some(Rc::clone(&sourcefile)));
+        let prev_source = self.log.use_source(Some(Rc::clone(&sourcefile)));
         let module_info = sourcefile
             .is_name_compatible(&javac_strings::JavaString::from("module-info"), javac_tools::tools::java_file_object::Kind::SOURCE);
         let result = {
@@ -1474,7 +1473,7 @@ impl MiniCompiler {
             );
             parser.parse_compilation_unit(&mut self.ctx)
         };
-        self.log.borrow_mut().use_source(prev_source);
+        self.log.use_source(prev_source);
         // JavaCompiler.parse: tree.sourcefile = filename
         if let TreeKind::CompilationUnit { sourcefile: slot, .. } =
             &mut self.ctx.tree_mut(result).kind
@@ -1531,16 +1530,16 @@ impl MiniCompiler {
                     _ => None,
                 };
                 let prev_source = crate::util::abstract_log::AbstractLog::use_source(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     sourcefile,
                 );
                 crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
                 crate::util::abstract_log::AbstractLog::use_source(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     prev_source,
                 );
             }
@@ -1571,7 +1570,7 @@ impl MiniCompiler {
                     _ => None,
                 })
             });
-        let prev_source = self.log.borrow_mut().use_source(sourcefile);
+        let prev_source = self.log.use_source(sourcefile);
         let make = Rc::clone(&self.make);
         make.borrow_mut().at(crate::util::position::FIRSTPOS);
         let local_make = Rc::new(RefCell::new(
@@ -1585,7 +1584,7 @@ impl MiniCompiler {
                 .borrow_mut()
                 .attrib(&mut self.ctx, &mut syms, env);
         }
-        self.log.borrow_mut().use_source(prev_source);
+        self.log.use_source(prev_source);
         Ok(())
     }
 
@@ -1657,7 +1656,7 @@ impl MiniCompiler {
                     DiagnosticArg::JCDiagnostic(Rc::new(detail)),
                 );
                 crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     crate::util::position::NOPOS,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
@@ -1756,7 +1755,7 @@ impl MiniCompiler {
     /// Java: private boolean unrecoverableError() (JavaCompiler.java:1251-
     /// 1262): a deferred diagnostic that is an error and not RECOVERABLE.
     fn unrecoverable_error(&self) -> bool {
-        self.log.borrow().deferred_diagnostics().iter().any(|diagnostic| {
+        self.log.deferred_diagnostics().iter().any(|diagnostic| {
             diagnostic.get_type() == crate::util::jc_diagnostic::DiagnosticType::ERROR
                 && !diagnostic.is_flag_set(crate::util::jc_diagnostic::DiagnosticFlag::RECOVERABLE)
         })
@@ -1764,22 +1763,22 @@ impl MiniCompiler {
 
     /// Return the number of errors reported so far.
     pub fn error_count(&self) -> i32 {
-        self.log.borrow().nerrors
+        self.log.nerrors.get()
     }
 
     /// Return the number of warnings reported so far.
     pub fn warning_count(&self) -> i32 {
-        self.log.borrow().nwarnings
+        self.log.nwarnings.get()
     }
 
     /// Return the number of errors suppressed by -Xmaxerrs.
     pub fn suppressed_error_count(&self) -> i32 {
-        self.log.borrow().nsuppressederrors
+        self.log.nsuppressederrors.get()
     }
 
     /// Return the number of warnings suppressed by -Xmaxwarns.
     pub fn suppressed_warning_count(&self) -> i32 {
-        self.log.borrow().nsuppressedwarns
+        self.log.nsuppressedwarns.get()
     }
 
     /// Flush the deferred deprecation/removal summaries (Java:
@@ -1805,8 +1804,8 @@ impl MiniCompiler {
 
     /// Return the diagnostic summary of the current compilation.
     fn error_message(&self) -> String {
-        let log = self.log.borrow();
-        format!("compilation failed with {} error(s)", log.nerrors)
+        let log = &*self.log;
+        format!("compilation failed with {} error(s)", log.nerrors.get())
     }
 
     /// Take the classes generated since the previous call.
@@ -1833,7 +1832,7 @@ fn self_set_initial_completer(
 /// service object rather than a compiler method (registered adapter).
 struct MiniPackageNameFinder {
     parser_factory: Rc<crate::parser::parser_factory::ParserFactory>,
-    log: Rc<RefCell<Log>>,
+    log: Rc<Log>,
 }
 
 impl crate::comp::modules::PackageNameFinder for MiniPackageNameFinder {
@@ -1844,10 +1843,9 @@ impl crate::comp::modules::PackageNameFinder for MiniPackageNameFinder {
     ) -> Option<crate::util::name::Name> {
         // Java: DiagnosticHandler dh = new DiscardDiagnosticHandler(log);
         self.log
-            .borrow_mut()
             .install_diagnostic_handler(crate::util::log::DiagnosticHandler::Discard { prev: None });
         // Java: JavaFileObject prevSource = log.useSource(fo);
-        let prev_source = self.log.borrow_mut().use_source(Some(Rc::clone(jfo)));
+        let prev_source = self.log.use_source(Some(Rc::clone(jfo)));
         let result = (|| {
             let content = jfo.get_char_content(false).ok().flatten()?;
             let module_info = jfo
@@ -1861,8 +1859,8 @@ impl crate::comp::modules::PackageNameFinder for MiniPackageNameFinder {
             crate::tree::tree_info::full_name(ctx, pid)
         })();
         // Java: log.popDiagnosticHandler(dh); log.useSource(prevSource);
-        self.log.borrow_mut().pop_diagnostic_handler();
-        self.log.borrow_mut().use_source(prev_source);
+        self.log.pop_diagnostic_handler();
+        self.log.use_source(prev_source);
         result
     }
 }

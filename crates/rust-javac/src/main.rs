@@ -171,11 +171,11 @@ struct CommandLineHelper {
     options: Vec<(String, String)>,
     files: Vec<PathBuf>,
     class_names: Vec<String>,
-    log: Option<Rc<RefCell<Log>>>,
+    log: Option<Rc<Log>>,
 }
 
 impl CommandLineHelper {
-    fn new(log: Option<Rc<RefCell<Log>>>) -> CommandLineHelper {
+    fn new(log: Option<Rc<Log>>) -> CommandLineHelper {
         CommandLineHelper {
             options: Vec::new(),
             files: Vec::new(),
@@ -210,7 +210,7 @@ impl OptionHelper for CommandLineHelper {
         false
     }
 
-    fn get_log(&self) -> Option<Rc<RefCell<Log>>> {
+    fn get_log(&self) -> Option<Rc<Log>> {
         self.log.clone()
     }
 
@@ -795,7 +795,6 @@ fn compile(args: &[String]) -> Result<i32, String> {
                 helper
                     .get_log()
                     .expect("command line log")
-                    .borrow_mut()
                     .set_writers(writer);
             }
             Err(error) => {
@@ -1086,16 +1085,16 @@ fn compile(args: &[String]) -> Result<i32, String> {
     let result = compiler.compile_files(&sources);
     // Java: JavaCompiler.compile calls preview.reportDeferredDiagnostics()
     // after the last round (the preview filename / recompile notes).
-    compiler.log.borrow_mut().report_deferred_diagnostics();
+    compiler.log.report_deferred_diagnostics();
     compiler.preview.report_deferred_diagnostics();
     compiler.report_deferred_mandatory_diagnostics();
     // Java: JavaCompiler.compile emits the compressed-diagnostics note after
     // the deferred diagnostics report (JavaCompiler.java:1719-1721).
-    if compiler.log.borrow().compressed_output {
+    if compiler.log.compressed_output.get() {
         let note = javac_core::util::jc_diagnostic::Note::from(
             javac_core::resources::compiler_properties::notes::compressed_diags(),
         );
-        compiler.log.borrow_mut().emit_mandatory_note(note);
+        compiler.log.emit_mandatory_note(note);
     }
     let messages = Rc::new(JavacMessages::with_locale(
         DEFAULT_BUNDLE_NAME,
@@ -1118,11 +1117,10 @@ fn compile(args: &[String]) -> Result<i32, String> {
         };
         compiler
             .log
-            .borrow()
             .print_raw_lines(&messages.get_localized_string(key, &[errors.to_string()]));
         let suppressed = compiler.suppressed_error_count();
         if suppressed > 0 {
-            compiler.log.borrow().print_raw_lines(&messages.get_localized_string(
+            compiler.log.print_raw_lines(&messages.get_localized_string(
                 "compiler.misc.count.error.recompile",
                 &[errors.to_string(), (errors + suppressed).to_string()],
             ));
@@ -1137,11 +1135,10 @@ fn compile(args: &[String]) -> Result<i32, String> {
         };
         compiler
             .log
-            .borrow()
             .print_raw_lines(&messages.get_localized_string(key, &[warnings.to_string()]));
         let suppressed = compiler.suppressed_warning_count();
         if suppressed > 0 {
-            compiler.log.borrow().print_raw_lines(&messages.get_localized_string(
+            compiler.log.print_raw_lines(&messages.get_localized_string(
                 "compiler.misc.count.warn.recompile",
                 &[warnings.to_string(), (warnings + suppressed).to_string()],
             ));

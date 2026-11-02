@@ -76,8 +76,8 @@ struct DeprecatedWarning {
     loc_text: String,
     loc_qualified_text: String,
     lint: Rc<crate::code::lint::Lint>,
-    deprecation_handler: Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
-    removal_handler: Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
+    deprecation_handler: Rc<RefCell<MandatoryWarningHandler<Rc<Log>>>>,
+    removal_handler: Rc<RefCell<MandatoryWarningHandler<Rc<Log>>>>,
     position: Rc<dyn crate::util::jc_diagnostic::DiagnosticPosition>,
 }
 
@@ -148,7 +148,7 @@ impl DeprecatedWarning {
 
 pub struct Check {
     pub names: Rc<Names>,
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     pub diags: Rc<Factory>,
     /// Java: private final boolean allowRecords;
     pub allow_records: bool,
@@ -198,13 +198,13 @@ pub struct Check {
     pub enter: RefCell<Option<Rc<Enter>>>,
     /// Java: MandatoryWarningHandler deprecationHandler (Check.java:177).
     pub deprecation_handler:
-        Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
+        Rc<RefCell<MandatoryWarningHandler<Rc<Log>>>>,
     /// Java: MandatoryWarningHandler removalHandler (Check.java:181).
-    pub removal_handler: Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
+    pub removal_handler: Rc<RefCell<MandatoryWarningHandler<Rc<Log>>>>,
     /// Java: MandatoryWarningHandler uncheckedHandler (Check.java:184).
-    pub unchecked_handler: Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
+    pub unchecked_handler: Rc<RefCell<MandatoryWarningHandler<Rc<Log>>>>,
     /// Java: MandatoryWarningHandler sunApiHandler (Check.java:187).
-    pub sun_api_handler: Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
+    pub sun_api_handler: Rc<RefCell<MandatoryWarningHandler<Rc<Log>>>>,
     /// Java: private final Preview preview (Check.java:99; installed by the
     /// wiring because the ported Preview is created after Check).
     pub preview: Rc<RefCell<Option<Rc<Preview>>>>,
@@ -300,7 +300,7 @@ impl Check {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         names: Rc<Names>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         diags: Rc<Factory>,
         source: crate::code::source::Source,
         synthetic_name_char: char,
@@ -591,7 +591,6 @@ impl Check {
 
     fn report_error(&self, pos: i32, info: ErrorInfo) {
         self.log
-            .borrow_mut()
             .error_at(pos, self.error_info(info));
     }
 
@@ -1643,7 +1642,6 @@ impl Check {
             // speculative diagnostic handler installed; this error is not
             // speculative (Java reports it immediately from Attr.check).
             self.log
-                .borrow_mut()
                 .error_at_default(pos, self.error_info(errors::void_not_allowed_here()));
             self.types.create_error_type_original(ctx, Some(t), syms)
         } else {
@@ -1712,7 +1710,7 @@ impl Check {
             && elsepart.is_none()
             && self.lint.borrow().is_enabled(LintCategory::EMPTY)
         {
-            self.log.borrow_mut().warning(
+            self.log.warning(
                 Some(LintCategory::EMPTY),
                 Some(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(thenpart).pos))),
                 warning_from_info(warnings::empty_if()),
@@ -1877,7 +1875,7 @@ impl Check {
                         ));
                     let warning =
                         crate::util::jc_diagnostic::Warning::from(redundant_cast.clone());
-                    log.borrow_mut().warning_lint_pos(
+                    log.warning_lint_pos(
                         crate::code::lint::LintCategory::CAST,
                         position,
                         warning,
@@ -1902,9 +1900,9 @@ impl Check {
 }
 
 /// Java: void warnDivZero(DiagnosticPosition pos) (Check.java:288-291)
-fn warn_div_zero(log: &Rc<RefCell<Log>>, lint: &Rc<Lint>, pos: i32) {
+fn warn_div_zero(log: &Rc<Log>, lint: &Rc<Lint>, pos: i32) {
     if lint.is_enabled(LintCategory::DIVZERO) {
-        log.borrow_mut().warning(
+        log.warning(
             Some(LintCategory::DIVZERO),
             Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
             warning_from_info(warnings::div_zero()),
@@ -2078,7 +2076,7 @@ impl Check {
             });
             if !applies_to_records {
                 // Java: log.error(a.pos(), Errors.AnnotationTypeNotApplicable);
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(a).pos,
                     crate::util::jc_diagnostic::Error::from(
                         crate::resources::compiler_properties::errors::annotation_type_not_applicable(),
@@ -2518,10 +2516,9 @@ impl Check {
         attr: Option<&mut crate::comp::attr::Attr>,
     ) -> Result<bool, CompletionFailure> {
         self.log
-            .borrow_mut()
             .install_diagnostic_handler(crate::util::log::DiagnosticHandler::Discard { prev: None });
         let result = self.validate_annotation_values(ctx, syms, a, attr);
-        self.log.borrow_mut().pop_diagnostic_handler();
+        self.log.pop_diagnostic_handler();
         result
     }
 
@@ -3196,7 +3193,7 @@ impl Check {
                             ),
                         ),
                     );
-                    self.log.borrow_mut().warning(
+                    self.log.warning(
                         None,
                         Some(Rc::new(SimpleDiagnosticPosition::new(last_tree))),
                         warning,
@@ -3257,7 +3254,7 @@ impl Check {
     pub fn early_ref_error(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        log: &std::rc::Rc<std::cell::RefCell<crate::util::log::Log>>,
+        log: &std::rc::Rc<crate::util::log::Log>,
         pos: i32,
         sym: SymbolId,
     ) {
@@ -3267,7 +3264,7 @@ impl Check {
             ),
         );
         crate::util::abstract_log::AbstractLog::error_at(
-            &mut *log.borrow_mut(),
+            &*log,
             pos,
             crate::util::jc_diagnostic::Error::from(info),
         );
@@ -3335,14 +3332,14 @@ impl Check {
     pub fn warn_static(
         &self,
         ctx: &mut crate::compiler_context::CompilerContext,
-        log: &std::rc::Rc<std::cell::RefCell<crate::util::log::Log>>,
+        log: &std::rc::Rc<crate::util::log::Log>,
         pos: i32,
         warning: crate::resources::diagnostic_contract::WarningInfo,
     ) {
         if self.lint.borrow().is_enabled(crate::code::lint::LintCategory::STATIC) {
             let warning = crate::util::jc_diagnostic::Warning::from(warning);
             crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
-                &mut *log.borrow_mut(),
+                &*log,
                 Some(crate::code::lint::LintCategory::STATIC),
                 Some(std::rc::Rc::new(
                     crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
@@ -3385,7 +3382,7 @@ impl Check {
                 crate::resources::compiler_properties::fragments::local_cant_infer_null(),
             ));
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(
                     crate::resources::compiler_properties::errors::cant_infer_local_var_type(
@@ -3402,7 +3399,7 @@ impl Check {
                 crate::resources::compiler_properties::fragments::local_cant_infer_void(),
             ));
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(
                     crate::resources::compiler_properties::errors::cant_infer_local_var_type(
@@ -3483,7 +3480,7 @@ impl Check {
                         || (was_null_pattern && (!is_type_pattern || was_non_empty_fall_through)) {
                         let info = crate::resources::compiler_properties::errors::flows_through_to_pattern();
                         crate::util::abstract_log::AbstractLog::error_at(
-                            &mut *self.log.borrow_mut(),
+                            &*self.log,
                             ctx.tree(pat).pos,
                             crate::util::jc_diagnostic::Error::from(info),
                         );
@@ -3513,7 +3510,7 @@ impl Check {
     ) {
         let info = crate::resources::compiler_properties::errors::flows_through_from_pattern();
         crate::util::abstract_log::AbstractLog::error_at(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             ctx.tree(pat).pos,
             crate::util::jc_diagnostic::Error::from(info),
         );
@@ -3775,7 +3772,7 @@ impl Check {
                 DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -3795,7 +3792,7 @@ impl Check {
                 self.as_flag_set_arg(other_flags & ((flags::FINAL as i64) | (flags::STATIC as i64))),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -3829,7 +3826,7 @@ impl Check {
                 access,
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -3886,7 +3883,7 @@ impl Check {
                 TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, otres)),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -3936,7 +3933,7 @@ impl Check {
                 TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, head)),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -3985,7 +3982,7 @@ impl Check {
             let warning = crate::util::jc_diagnostic::Warning::from(warning);
             // Java: log.warning(pos, key) — the warning has no lint category
             // even though it is gated by -Xlint:overrides.
-            self.log.borrow_mut().warning_pos(
+            self.log.warning_pos(
                 Some(std::rc::Rc::new(
                     crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
                 )),
@@ -4003,7 +4000,7 @@ impl Check {
             );
             let warning = crate::util::jc_diagnostic::Warning::from(warning);
             crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 None,
                 Some(std::rc::Rc::new(
                     crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
@@ -4214,7 +4211,7 @@ impl Check {
                     ),
                 );
                 crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
@@ -4222,7 +4219,7 @@ impl Check {
             } else if flags_value & (crate::code::flags::ENUM as i64) != 0 {
                 let info = crate::resources::compiler_properties::errors::enum_cant_be_instantiated();
                 crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
@@ -4240,7 +4237,7 @@ impl Check {
             if !self.types.is_reifiable(ctx, syms, elemtype) {
                 let info = crate::resources::compiler_properties::errors::generic_array_creation();
                 crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
@@ -4319,7 +4316,7 @@ impl Check {
         );
         let warning = crate::util::jc_diagnostic::Warning::from(warning);
         crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             Some(crate::code::lint::LintCategory::RAW),
             Some(std::rc::Rc::new(
                 crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
@@ -4389,7 +4386,7 @@ impl Check {
                     let warning = crate::resources::compiler_properties::warnings::access_to_member_from_serializable_lambda(sym_arg);
                     let warning = crate::util::jc_diagnostic::Warning::from(warning);
                     crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
-                        &mut *self.log.borrow_mut(),
+                        &*self.log,
                         Some(crate::code::lint::LintCategory::SERIAL),
                         Some(std::rc::Rc::new(
                             crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
@@ -4401,7 +4398,7 @@ impl Check {
                 let warning = crate::resources::compiler_properties::warnings::access_to_member_from_serializable_element(sym_arg);
                 let warning = crate::util::jc_diagnostic::Warning::from(warning);
                 crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     None,
                     Some(std::rc::Rc::new(
                         crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(ctx.tree(tree).pos),
@@ -4581,7 +4578,7 @@ impl Check {
                                     ),
                                 );
                                 crate::util::abstract_log::AbstractLog::error_at(
-                                    &mut *self.log.borrow_mut(),
+                                    &*self.log,
                                     ctx.tree(arg).pos,
                                     crate::util::jc_diagnostic::Error::from(info),
                                 );
@@ -4618,7 +4615,7 @@ impl Check {
                         if self.types.is_raw_type_public(ctx, enclosing) {
                             let info = crate::resources::compiler_properties::errors::improperly_formed_type_inner_raw_param();
                             crate::util::abstract_log::AbstractLog::error_at(
-                                &mut *self.log.borrow_mut(),
+                                &*self.log,
                                 ctx.tree(tree).pos,
                                 crate::util::jc_diagnostic::Error::from(info),
                             );
@@ -4668,7 +4665,7 @@ impl Check {
                     {
                         let info = crate::resources::compiler_properties::errors::improperly_formed_type_param_missing();
                         crate::util::abstract_log::AbstractLog::error_at(
-                            &mut *self.log.borrow_mut(),
+                            &*self.log,
                             ctx.tree(tree).pos,
                             crate::util::jc_diagnostic::Error::from(info),
                         );
@@ -4684,7 +4681,7 @@ impl Check {
                     if ctx.typ(tree_ty).has_tag(crate::code::type_tag::TypeTag::VOID) {
                         let info = crate::resources::compiler_properties::errors::void_not_allowed_here();
                         crate::util::abstract_log::AbstractLog::error_at(
-                            &mut *self.log.borrow_mut(),
+                            &*self.log,
                             ctx.tree(tree).pos,
                             crate::util::jc_diagnostic::Error::from(info),
                         );
@@ -4729,7 +4726,7 @@ impl Check {
         if is_static && selected_parameterized {
             let info = crate::resources::compiler_properties::errors::cant_select_static_class_from_param_type();
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 ctx.tree(tree).pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -4793,7 +4790,7 @@ impl Check {
                         ),
                     );
                     crate::util::abstract_log::AbstractLog::error_at(
-                        &mut *self.log.borrow_mut(),
+                        &*self.log,
                         pos,
                         crate::util::jc_diagnostic::Error::from(info),
                     );
@@ -5455,7 +5452,7 @@ impl Check {
                     ),
                 );
                 crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
@@ -5589,7 +5586,7 @@ impl Check {
                 ),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -5696,7 +5693,7 @@ impl Check {
             }),
         );
         crate::util::abstract_log::AbstractLog::error_at(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             pos,
             crate::util::jc_diagnostic::Error::from(info),
         );
@@ -5785,7 +5782,7 @@ impl Check {
                 ),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -5922,7 +5919,7 @@ impl Check {
                 let pos = crate::tree::tree_info::diagnostic_position_for(ctx, ctor, tree);
                 let info = crate::resources::compiler_properties::errors::recursive_ctor_invocation();
                 crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
@@ -5978,7 +5975,7 @@ impl Check {
                 crate::resources::compiler_properties::warnings::missing_deprecated_annotation(),
             );
             crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 Some(crate::code::lint::LintCategory::DEP_ANN),
                 Some(std::rc::Rc::new(
                     crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
@@ -5997,7 +5994,7 @@ impl Check {
                     ),
                 );
                 crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     Some(crate::code::lint::LintCategory::DEPRECATION),
                     Some(std::rc::Rc::new(
                         crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
@@ -6114,7 +6111,7 @@ impl Check {
                 ),
             );
             crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 Some(crate::code::lint::LintCategory::OVERRIDES),
                 Some(std::rc::Rc::new(
                     crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
@@ -6201,7 +6198,7 @@ impl Check {
                 });
             let info = crate::resources::compiler_properties::errors::bad_functional_intf_anno1(details);
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -6301,7 +6298,7 @@ impl Check {
                     ),
                 );
                 crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
@@ -6334,7 +6331,7 @@ impl Check {
                 ),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -6381,7 +6378,7 @@ impl Check {
                 crate::util::java_string::JavaString::from(retention_name(contained_retention)),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -6413,7 +6410,7 @@ impl Check {
                 ),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -6445,7 +6442,7 @@ impl Check {
                 ),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -6497,7 +6494,7 @@ impl Check {
                 ),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -6558,7 +6555,7 @@ impl Check {
                         ),
                     );
                     crate::util::abstract_log::AbstractLog::error_at(
-                        &mut *self.log.borrow_mut(),
+                        &*self.log,
                         pos,
                         crate::util::jc_diagnostic::Error::from(info),
                     );
@@ -6731,7 +6728,7 @@ impl Check {
                                         crate::comp::check::type_arg_with_rich_where(ctx, sup),
                                     );
                                     crate::util::abstract_log::AbstractLog::error_at(
-                                        &mut *self.log.borrow_mut(),
+                                        &*self.log,
                                         pos,
                                         crate::util::jc_diagnostic::Error::from(info),
                                     );
@@ -6965,7 +6962,7 @@ impl Check {
                                 crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, t2)),
                                 crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(details)),
                             );
-                            crate::util::abstract_log::AbstractLog::error_at(&mut *self.log.borrow_mut(), pos, crate::util::jc_diagnostic::Error::from(info));
+                            crate::util::abstract_log::AbstractLog::error_at(&*self.log, pos, crate::util::jc_diagnostic::Error::from(info));
                             return Some(s2);
                         }
                     } else if self.check_name_clash(ctx, syms, site_tsym, s1, s2)
@@ -7000,7 +6997,7 @@ impl Check {
                                 None => String::new(),
                             }),
                         );
-                        crate::util::abstract_log::AbstractLog::error_at(&mut *self.log.borrow_mut(), pos, crate::util::jc_diagnostic::Error::from(info));
+                        crate::util::abstract_log::AbstractLog::error_at(&*self.log, pos, crate::util::jc_diagnostic::Error::from(info));
                         return Some(s2);
                     }
                 }
@@ -7177,7 +7174,7 @@ impl Check {
                             crate::resources::diagnostic_contract::TypeArg::placeholder(crate::comp::attr::type_display_of(ctx, loc2_ty)),
                             crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(diag_key)),
                         );
-                        crate::util::abstract_log::AbstractLog::error_at(&mut *self.log.borrow_mut(), pos, crate::util::jc_diagnostic::Error::from(info));
+                        crate::util::abstract_log::AbstractLog::error_at(&*self.log, pos, crate::util::jc_diagnostic::Error::from(info));
                         break;
                     }
                 }
@@ -7642,7 +7639,7 @@ impl<'a> LeaksChecker<'a> {
 
     fn emit_warning(&self, pos: i32, warning: crate::util::jc_diagnostic::Warning) {
         crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
-            &mut *self.chk.log.borrow_mut(),
+            &*self.chk.log,
             Some(crate::code::lint::LintCategory::EXPORTS),
             Some(std::rc::Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos))),
             warning,
@@ -7782,7 +7779,7 @@ impl Check {
                 ),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 ctx.tree(a).pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -7951,7 +7948,7 @@ impl Check {
                 ),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 ctx.tree(clazz).pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -7975,7 +7972,7 @@ impl Check {
                 crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 ctx.tree(clazz).pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -8002,7 +7999,7 @@ impl Check {
                     crate::resources::diagnostic_contract::DiagnosticArg::JCDiagnostic(std::rc::Rc::new(fragment)),
                 );
                 crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     ctx.tree(clazz).pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
@@ -8330,7 +8327,6 @@ impl Check {
                 )),
             );
             self.log
-                .borrow_mut()
                 .error_at(pos, crate::util::jc_diagnostic::Error::from(message));
             return false;
         }
@@ -8341,7 +8337,6 @@ impl Check {
                 )),
             );
             self.log
-                .borrow_mut()
                 .error_at(pos, crate::util::jc_diagnostic::Error::from(message));
             return false;
         }
@@ -8361,7 +8356,6 @@ impl Check {
                 )),
             );
             self.log
-                .borrow_mut()
                 .error_at(pos, crate::util::jc_diagnostic::Error::from(message));
             return false;
         }
@@ -8441,7 +8435,6 @@ impl Check {
                 ),
             );
             self.log
-                .borrow_mut()
                 .error_at(ctx.tree(imp).pos, crate::util::jc_diagnostic::Error::from(message));
         }
         }
@@ -8590,7 +8583,6 @@ impl Check {
                 )),
             );
             self.log
-                .borrow_mut()
                 .error_at(ctx.tree(imp).pos, crate::util::jc_diagnostic::Error::from(message));
         }
         }
@@ -8730,7 +8722,7 @@ impl Check {
                 false,
             )
         {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(tree).pos,
                 crate::util::jc_diagnostic::Error::from(
                     crate::resources::compiler_properties::errors::enum_no_finalize(),
@@ -8814,7 +8806,6 @@ impl Check {
                 )
             };
             self.log
-                .borrow_mut()
                 .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
         }
     }
@@ -8916,7 +8907,6 @@ impl Check {
                     ),
                 );
                 self.log
-                    .borrow_mut()
                     .error_at(ctx.tree(tree).pos, crate::util::jc_diagnostic::Error::from(info));
             } else {
                 let fragment =
@@ -8933,7 +8923,6 @@ impl Check {
                     ),
                 );
                 self.log
-                    .borrow_mut()
                     .error_at(ctx.tree(tree).pos, crate::util::jc_diagnostic::Error::from(info));
             }
         } else if has_trust_me
@@ -9025,7 +9014,7 @@ impl Check {
 
     fn warn_unsafe_vararg(&self, pos: i32, warning: crate::resources::diagnostic_contract::WarningInfo) {
         if self.lint.borrow().is_enabled(crate::code::lint::LintCategory::VARARGS) {
-            self.log.borrow_mut().warning(
+            self.log.warning(
                 Some(crate::code::lint::LintCategory::VARARGS),
                 Some(std::rc::Rc::new(
                     crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
@@ -9253,7 +9242,6 @@ impl Check {
                         )
                     };
                     self.log
-                        .borrow_mut()
                         .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
                     return;
                 }
@@ -9408,7 +9396,6 @@ impl Check {
                     crate::resources::diagnostic_contract::SymbolArg::placeholder(owner2),
                 );
                 self.log
-                    .borrow_mut()
                     .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
                 return;
             }
@@ -9596,7 +9583,7 @@ impl Check {
                 crate::resources::diagnostic_contract::SymbolArg::placeholder(m2_display),
                 crate::resources::diagnostic_contract::SymbolArg::placeholder(owner2),
             );
-            self.log.borrow_mut().warning(
+            self.log.warning(
                 Some(crate::code::lint::LintCategory::OVERLOADS),
                 Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
                 warning_from_info(warning),
@@ -9742,7 +9729,7 @@ impl Check {
                 return;
             }
         }
-        self.log.borrow_mut().error_at(
+        self.log.error_at(
             pos,
             crate::util::jc_diagnostic::Error::from(
                 crate::resources::compiler_properties::errors::invalid_annotation_member_type(),
@@ -9810,7 +9797,6 @@ impl Check {
                             ),
                         );
                         self.log
-                            .borrow_mut()
                             .error_at(pos, crate::util::jc_diagnostic::Error::from(info));
                     }
                 }
@@ -9857,7 +9843,7 @@ impl Check {
         its: &mut std::collections::HashSet<TypeId>,
     ) {
         if its.contains(&it) {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 pos,
                 crate::util::jc_diagnostic::Error::from(
                     crate::resources::compiler_properties::errors::repeated_interface(),
@@ -9937,13 +9923,13 @@ impl CycleChecker<'_> {
                     _ => None,
                 };
                 let prev = crate::util::abstract_log::AbstractLog::use_source(
-                    &mut *self.check.log.borrow_mut(),
+                    &*self.check.log,
                     sourcefile,
                 );
                 let env_tree = class_env.encl_class.expect("class env tree");
                 crate::tree::jc_tree::accept(ctx, env_tree, self);
                 crate::util::abstract_log::AbstractLog::use_source(
-                    &mut *self.check.log.borrow_mut(),
+                    &*self.check.log,
                     prev,
                 );
             } else {
@@ -10224,7 +10210,7 @@ impl Check {
                             mod_display.clone(),
                         ),
                     );
-                    log.borrow_mut().warning(
+                    log.warning(
                         Some(crate::code::lint::LintCategory::MISSING_EXPLICIT_CTOR),
                         Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
                         warning_from_info(info),
@@ -10262,7 +10248,7 @@ impl Check {
                         .to_string()
                 })
                 .unwrap_or_default();
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(tree).pos,
                 crate::util::jc_diagnostic::Error::from(
                     crate::resources::compiler_properties::errors::import_requires_canonical(
@@ -10572,7 +10558,7 @@ impl Check {
                 Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos));
             self.deferred_lint_handler.report(Box::new(move || {
                 if lint.is_enabled(crate::code::lint::LintCategory::MODULE) {
-                    log.borrow_mut().warning_lint_pos(
+                    log.warning_lint_pos(
                         crate::code::lint::LintCategory::MODULE,
                         Some(Rc::clone(&position)),
                         warning.clone(),
@@ -10793,7 +10779,7 @@ impl Check {
                 Rc::new(SimpleDiagnosticPosition::new(pos));
             self.deferred_lint_handler.report(Box::new(move || {
                     AbstractLog::mandatory_warning_pos(
-                        &mut *log.borrow_mut(),
+                        &*log,
                         Some(position.clone()),
                         warning.clone(),
                     );
@@ -10910,7 +10896,7 @@ impl Check {
                     DiagnosticArg::from_display(c_sourcefile.get_name().to_string_lossy()),
                 ),
             );
-            self.log.borrow_mut().warning(
+            self.log.warning(
                 None,
                 Some(Rc::new(SimpleDiagnosticPosition::new(pos))),
                 warning,
@@ -10938,7 +10924,7 @@ impl Check {
         // enclosing declaration position installed by the caller.
         self.deferred_lint_handler.report(Box::new(move || {
                 if lint.is_enabled(LintCategory::STRICTFP) {
-                    log.borrow_mut().warning(
+                    log.warning(
                         Some(LintCategory::STRICTFP),
                         Some(position.clone()),
                         warning_from_info(warnings::strictfp()),
@@ -11025,7 +11011,7 @@ impl Check {
             if (flags_field & crate::code::flags::PREVIEW_REFLECTIVE) == 0 {
                 if !preview.is_enabled() {
                     let sym_name = ctx.sym(s).name.to_java_string().to_string_lossy();
-                    self.log.borrow_mut().error_at(
+                    self.log.error_at(
                         pos,
                         crate::util::jc_diagnostic::Error::from(
                             crate::resources::compiler_properties::errors::is_preview(
@@ -11128,7 +11114,7 @@ impl Check {
                     // Java: log.warning(pos, Warnings.PackageEmptyOrNotFound)
                     // (Check.java:4273); the lint switch above is the only
                     // category gate, the message carries no [opens] prefix.
-                    log.borrow_mut().warning_pos(Some(Rc::clone(&position)), warning.clone());
+                    log.warning_pos(Some(Rc::clone(&position)), warning.clone());
                 }
             }));
         }
@@ -11158,7 +11144,7 @@ impl Check {
                 if is_transitive
                     && lint.is_enabled(LintCategory::REQUIRES_TRANSITIVE_AUTOMATIC)
                 {
-                    log.borrow_mut().warning_lint_pos(
+                    log.warning_lint_pos(
                         LintCategory::REQUIRES_TRANSITIVE_AUTOMATIC,
                         Some(Rc::clone(&position)),
                         crate::util::jc_diagnostic::Warning::from(
@@ -11167,7 +11153,7 @@ impl Check {
                         ),
                     );
                 } else if lint.is_enabled(LintCategory::REQUIRES_AUTOMATIC) {
-                    log.borrow_mut().warning_lint_pos(
+                    log.warning_lint_pos(
                         LintCategory::REQUIRES_AUTOMATIC,
                         Some(Rc::clone(&position)),
                         crate::util::jc_diagnostic::Warning::from(
@@ -11276,7 +11262,7 @@ impl Check {
                     crate::resources::compiler_properties::warnings::
                         poor_choice_for_module_name(component),
                 );
-                self.log.borrow_mut().warning_lint_pos(
+                self.log.warning_lint_pos(
                     LintCategory::MODULE,
                     Some(Rc::new(
                         crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),
@@ -11348,15 +11334,14 @@ mod diagnostics_tests {
             .expect("source path");
         compiler
             .log
-            .borrow_mut()
             .install_diagnostic_handler(crate::util::log::DiagnosticHandler::Deferred {
                 prev: None,
                 deferred: std::collections::VecDeque::new(),
                 filter: None,
             });
         let _ = compiler.compile_files(&files);
-        let diagnostics = compiler.log.borrow_mut().take_deferred_diagnostics();
-        compiler.log.borrow_mut().pop_diagnostic_handler();
+        let diagnostics = compiler.log.take_deferred_diagnostics();
+        compiler.log.pop_diagnostic_handler();
         (compiler, diagnostics)
     }
 
@@ -11448,7 +11433,7 @@ mod diagnostics_tests {
         let symbol = ctx.typ(object_type).tsym.expect("object symbol");
         ctx.sym_mut(symbol).flags_field |= crate::code::flags::PROPRIETARY
             | crate::code::flags::NOT_IN_PROFILE;
-        log.borrow_mut().install_diagnostic_handler(
+        log.install_diagnostic_handler(
             crate::util::log::DiagnosticHandler::Deferred {
                 prev: None,
                 deferred: std::collections::VecDeque::new(),
@@ -11457,8 +11442,8 @@ mod diagnostics_tests {
         );
         check.check_sun_api(&ctx, -1, symbol);
         check.check_profile(&ctx, -1, symbol);
-        let diagnostics = log.borrow_mut().take_deferred_diagnostics();
-        log.borrow_mut().pop_diagnostic_handler();
+        let diagnostics = log.take_deferred_diagnostics();
+        log.pop_diagnostic_handler();
         let codes: Vec<String> = diagnostics
             .iter()
             .map(|diagnostic| diagnostic.get_code_string().to_string())

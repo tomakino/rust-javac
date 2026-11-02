@@ -11,7 +11,7 @@
 //!     (interior mutability is white-listed for the log streams, registered
 //!     section 9); the Java println line separator is modelled as '\n' (the same
 //!     platform-independent decision as Pretty, registered);
-//!   - Log is stored as Rc<RefCell<Log>> in the Context (the Java class is a
+//!   - Log is stored as Rc<Log> in the Context (the Java class is a
 //!     mutable shared object with a context key); Log::instance returns it and
 //!     registers the Options listener (the Java constructor registers it);
 //!   - the DiagnosticHandler class hierarchy maps to the closed DiagnosticHandler
@@ -28,7 +28,7 @@
 //!     renders the arguments through java_value_to_string (supported set:
 //!     String/JavaString, i32/i64, bool, Name, Option, Target, Source,
 //!     JavaFileObject, JCDiagnostic; unknown values hit the assembly assertion);
-//!   - the Context keys: logKey -> Context::<RefCell<Log>>, outKey/errKey ->
+//!   - the Context keys: logKey -> Context::<Log>, outKey/errKey ->
 //!     Context::<LogOutput> (a WriterHandle newtype because Context keys are type
 //!     based), DiagnosticListener -> Context::<LogDiagnosticListener>;
 //!   - REGISTERED dependency: Main.javacBundleName (main/Main is not ported),
@@ -39,7 +39,7 @@
 //!   - System.in prompt: the upstream interactive loop is ported literally
 //!     (a/A -> std::process::exit(-1), r/R -> return, x/X -> panic "user abort").
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::rc::{Rc, Weak};
@@ -236,7 +236,7 @@ impl DiagnosticHandler {
     }
 
     /// Handle a diagnostic (Java: public abstract void report(JCDiagnostic)).
-    fn report(&mut self, log: &mut Log, diag: JCDiagnostic) {
+    fn report(&mut self, log: &Log, diag: JCDiagnostic) {
         match self {
             DiagnosticHandler::Default => log.default_report(diag),
             DiagnosticHandler::Discard { .. } => {}
@@ -266,56 +266,57 @@ impl DiagnosticHandler {
 pub struct Log {
     // AbstractLog state (the upstream inherited fields).
     diags: Rc<Factory>,
-    source: Option<Rc<DiagnosticSource>>,
-    source_map: Vec<(Rc<dyn JavaFileObject>, Rc<DiagnosticSource>)>,
+    source: RefCell<Option<Rc<DiagnosticSource>>>,
+    source_map: RefCell<Vec<(Rc<dyn JavaFileObject>, Rc<DiagnosticSource>)>>,
 
-    // Log state.
-    writers: HashMap<WriterKind, WriterHandle>,
+    // Log state.  Every field that is written after Log is shared has its own
+    // Cell/RefCell; there is no outer RefCell<Log>.
+    writers: RefCell<HashMap<WriterKind, WriterHandle>>,
     /// The maximum number of errors that are reported.
-    pub(crate) max_errors: i32,
+    pub(crate) max_errors: Cell<i32>,
     /// The maximum number of warnings that are reported.
-    pub(crate) max_warnings: i32,
+    pub(crate) max_warnings: Cell<i32>,
     /// Switch: prompt user on each error.
-    pub prompt_on_error: bool,
+    pub prompt_on_error: Cell<bool>,
     /// Switch: emit warning messages.
-    pub emit_warnings: bool,
+    pub emit_warnings: Cell<bool>,
     /// Switch: suppress note messages.
-    pub suppress_notes: bool,
+    pub suppress_notes: Cell<bool>,
     /// Print stack trace on errors?
-    pub dump_on_error: bool,
+    pub dump_on_error: Cell<bool>,
     /// Diagnostic listener, if provided through the programmatic interface.
     diag_listener: Option<Rc<dyn DiagnosticListener<Rc<dyn JavaFileObject>>>>,
     /// Formatter for diagnostics.
-    diag_formatter: Rc<dyn DiagnosticFormatter<JCDiagnostic>>,
+    diag_formatter: RefCell<Rc<dyn DiagnosticFormatter<JCDiagnostic>>>,
     /// Keys for expected diagnostics.
-    pub expect_diag_keys: Option<HashSet<String>>,
+    pub expect_diag_keys: RefCell<Option<HashSet<String>>>,
     /// Set to true if a compressed diagnostic is reported.
-    pub compressed_output: bool,
+    pub compressed_output: Cell<bool>,
     /// JavacMessages object used for localization.
     messages: Rc<JavacMessages>,
     /// Handler for initial dispatch of diagnostics.
-    diagnostic_handler: DiagnosticHandler,
+    diagnostic_handler: RefCell<DiagnosticHandler>,
 
     /// The number of errors encountered so far.
-    pub nerrors: i32,
+    pub nerrors: Cell<i32>,
     /// The number of warnings encountered so far.
-    pub nwarnings: i32,
+    pub nwarnings: Cell<i32>,
     /// The number of errors encountered after MaxErrors was reached.
-    pub nsuppressederrors: i32,
+    pub nsuppressederrors: Cell<i32>,
     /// The number of warnings encountered after MaxWarnings was reached.
-    pub nsuppressedwarns: i32,
+    pub nsuppressedwarns: Cell<i32>,
     /// A set of all errors generated so far (Pair<JavaFileObject,Integer>).
-    recorded: Vec<(Rc<dyn JavaFileObject>, i32)>,
+    recorded: RefCell<Vec<(Rc<dyn JavaFileObject>, i32)>>,
     /// A set of "not-supported-in-source-X" errors produced so far
     /// (Pair<JavaFileObject,List<String>>).
-    recorded_source_level_errors: Vec<(Rc<dyn JavaFileObject>, Vec<String>)>,
+    recorded_source_level_errors: RefCell<Vec<(Rc<dyn JavaFileObject>, Vec<String>)>>,
 }
 
 impl Log {
     /// Emit a mandatory note through the AbstractLog handler (Java:
     /// log.mandatoryNote); used by the compiler driver for the
     /// compressed-diagnostics note.
-    pub fn emit_mandatory_note(&mut self, note: Note) {
+    pub fn emit_mandatory_note(&self, note: Note) {
         AbstractLog::mandatory_note_file(self, None, note);
     }
 
@@ -323,12 +324,12 @@ impl Log {
     /// installed speculative/deferred handler. Java reports void-argument
     /// errors while the surrounding method call is still being resolved.
     pub fn error_at_default(
-        &mut self,
+        &self,
         pos: i32,
         error_key: crate::util::jc_diagnostic::Error,
     ) {
         let diagnostic = {
-            let source = self.source.clone();
+            let source = self.source.borrow().clone();
             let diags = Rc::clone(&self.diags);
             diags.error(None, source, Self::wrap_pos(pos), error_key)
         };
@@ -342,18 +343,18 @@ impl Log {
     /// the Log reference; Rust needs the Rc first, so instance() creates the
     /// Rc, stores it in the Context and then registers the listener (the name
     /// allocation pattern is the same as JCDiagnostic.Factory.instance).
-    pub fn instance(context: &mut Context) -> Rc<RefCell<Log>> {
-        if let Some(instance) = context.get::<RefCell<Log>>() {
+    pub fn instance(context: &mut Context) -> Rc<Log> {
+        if let Some(instance) = context.get::<Log>() {
             return instance;
         }
-        let log = Rc::new(RefCell::new(Log::new_default(context)));
-        context.put::<RefCell<Log>>(Rc::clone(&log));
+        let log = Rc::new(Log::new_default(context));
+        context.put::<Log>(Rc::clone(&log));
         let options = Options::instance(context);
-        let weak: Weak<RefCell<Log>> = Rc::downgrade(&log);
+        let weak: Weak<Log> = Rc::downgrade(&log);
         let listener_options = Rc::clone(&options);
         options.add_listener(Box::new(move || {
             if let Some(log) = weak.upgrade() {
-                log.borrow_mut().init_options(&listener_options);
+                log.init_options(&listener_options);
             }
         }));
         log
@@ -363,8 +364,8 @@ impl Log {
     ///
     /// Java: public static void preRegister(Context context, PrintWriter w)
     pub fn pre_register(context: &mut Context, writer: WriterHandle) {
-        context.put_factory::<RefCell<Log>>(move |context| {
-            Rc::new(RefCell::new(Log::new_with_writer(context, Rc::clone(&writer))))
+        context.put_factory::<Log>(move |context| {
+            Rc::new(Log::new_with_writer(context, Rc::clone(&writer)))
         });
     }
 
@@ -443,47 +444,58 @@ impl Log {
         // REGISTERED: messages.add(Main.javacBundleName); main/Main is not
         // ported, so the javac resources are not added here.
         let options = Options::instance(context);
-        let mut log = Log {
+        let log = Log {
             diags,
-            source: None,
-            source_map: Vec::new(),
-            writers,
-            max_errors: 100,
-            max_warnings: 100,
-            prompt_on_error: false,
-            emit_warnings: true,
-            suppress_notes: false,
-            dump_on_error: false,
+            source: RefCell::new(None),
+            source_map: RefCell::new(Vec::new()),
+            writers: RefCell::new(writers),
+            max_errors: Cell::new(100),
+            max_warnings: Cell::new(100),
+            prompt_on_error: Cell::new(false),
+            emit_warnings: Cell::new(true),
+            suppress_notes: Cell::new(false),
+            dump_on_error: Cell::new(false),
             diag_listener,
-            diag_formatter: Rc::new(BasicDiagnosticFormatter::new(Rc::clone(&messages))),
-            expect_diag_keys: None,
-            compressed_output: false,
+            diag_formatter: RefCell::new(Rc::new(BasicDiagnosticFormatter::new(Rc::clone(
+                &messages,
+            )))),
+            expect_diag_keys: RefCell::new(None),
+            compressed_output: Cell::new(false),
             messages,
-            diagnostic_handler: DiagnosticHandler::Default,
-            nerrors: 0,
-            nwarnings: 0,
-            nsuppressederrors: 0,
-            nsuppressedwarns: 0,
-            recorded: Vec::new(),
-            recorded_source_level_errors: Vec::new(),
+            diagnostic_handler: RefCell::new(DiagnosticHandler::Default),
+            nerrors: Cell::new(0),
+            nwarnings: Cell::new(0),
+            nsuppressederrors: Cell::new(0),
+            nsuppressedwarns: Cell::new(0),
+            recorded: RefCell::new(Vec::new()),
+            recorded_source_level_errors: RefCell::new(Vec::new()),
         };
         log.init_options(&options);
         log
     }
 
     /// Java: private void initOptions(Options options)
-    fn init_options(&mut self, options: &Options) {
+    fn init_options(&self, options: &Options) {
         // Java: options.isSet(DOE) / isSet(PROMPT).
-        self.dump_on_error = options.is_set_option(MainOption::DOE);
-        self.prompt_on_error = options.is_set_option(MainOption::PROMPT);
-        self.emit_warnings = options.is_unset_choice(MainOption::XLINT_CUSTOM, "none");
-        self.suppress_notes = options.is_set("suppressNotes");
-        self.max_errors = get_int_option(options, MainOption::XMAXERRS, self.get_default_max_errors());
-        self.max_warnings =
-            get_int_option(options, MainOption::XMAXWARNS, self.get_default_max_warnings());
+        self.dump_on_error.set(options.is_set_option(MainOption::DOE));
+        self.prompt_on_error
+            .set(options.is_set_option(MainOption::PROMPT));
+        self.emit_warnings
+            .set(options.is_unset_choice(MainOption::XLINT_CUSTOM, "none"));
+        self.suppress_notes.set(options.is_set("suppressNotes"));
+        self.max_errors.set(get_int_option(
+            options,
+            MainOption::XMAXERRS,
+            self.get_default_max_errors(),
+        ));
+        self.max_warnings.set(get_int_option(
+            options,
+            MainOption::XMAXWARNS,
+            self.get_default_max_warnings(),
+        ));
 
         let raw_diagnostics = options.is_set("rawDiagnostics");
-        self.diag_formatter = if raw_diagnostics {
+        *self.diag_formatter.borrow_mut() = if raw_diagnostics {
             Rc::new(RawDiagnosticFormatter::new_with_options(options))
         } else {
             Rc::new(BasicDiagnosticFormatter::new_with_options(
@@ -493,7 +505,7 @@ impl Log {
         };
 
         if let Some(expect_keys) = options.get("expectKeys") {
-            self.expect_diag_keys = Some(
+            *self.expect_diag_keys.borrow_mut() = Some(
                 expect_keys
                     .split(',')
                     .map(str::trim)
@@ -520,47 +532,50 @@ impl Log {
     }
 
     /// Java: public void setEndPosTable(JavaFileObject name, EndPosTable t)
-    pub fn set_end_pos_table(&mut self, name: Rc<dyn JavaFileObject>, end_pos_table: Rc<RefCell<dyn EndPosTable>>) {
+    pub fn set_end_pos_table(&self, name: Rc<dyn JavaFileObject>, end_pos_table: Rc<RefCell<dyn EndPosTable>>) {
         let source = self.get_source(Some(name));
         source.set_end_pos_table(end_pos_table);
     }
 
     /// Java: public DiagnosticSource currentSource()
     pub fn current_source(&self) -> Option<Rc<DiagnosticSource>> {
-        self.source.clone()
+        self.source.borrow().clone()
     }
 
     /// Return current sourcefile.
     ///
     /// Java: public JavaFileObject currentSourceFile()
     pub fn current_source_file(&self) -> Option<Rc<dyn JavaFileObject>> {
-        self.source.as_ref().and_then(|source| source.get_file())
+        self.source
+            .borrow()
+            .as_ref()
+            .and_then(|source| source.get_file())
     }
 
     /// Get the current diagnostic formatter.
     pub fn get_diagnostic_formatter(&self) -> Rc<dyn DiagnosticFormatter<JCDiagnostic>> {
-        Rc::clone(&self.diag_formatter)
+        Rc::clone(&self.diag_formatter.borrow())
     }
 
     /// Set the current diagnostic formatter.
-    pub fn set_diagnostic_formatter(&mut self, diag_formatter: Rc<dyn DiagnosticFormatter<JCDiagnostic>>) {
-        self.diag_formatter = diag_formatter;
+    pub fn set_diagnostic_formatter(&self, diag_formatter: Rc<dyn DiagnosticFormatter<JCDiagnostic>>) {
+        *self.diag_formatter.borrow_mut() = diag_formatter;
     }
 
     /// Java: public PrintWriter getWriter(WriterKind kind)
     pub fn get_writer(&self, kind: WriterKind) -> WriterHandle {
-        Rc::clone(self.writers.get(&kind).expect("writer"))
+        Rc::clone(self.writers.borrow().get(&kind).expect("writer"))
     }
 
     /// Java: public void setWriter(WriterKind kind, PrintWriter pw)
-    pub fn set_writer(&mut self, kind: WriterKind, pw: WriterHandle) {
-        self.writers.insert(kind, pw);
+    pub fn set_writer(&self, kind: WriterKind, pw: WriterHandle) {
+        self.writers.borrow_mut().insert(kind, pw);
     }
 
     /// Java: public void setWriters(PrintWriter pw)
-    pub fn set_writers(&mut self, pw: WriterHandle) {
+    pub fn set_writers(&self, pw: WriterHandle) {
         for kind in WriterKind::values() {
-            self.writers.insert(kind, Rc::clone(&pw));
+            self.writers.borrow_mut().insert(kind, Rc::clone(&pw));
         }
     }
 
@@ -569,10 +584,12 @@ impl Log {
     /// the Java handlers install themselves in their
     /// constructors; Rust cannot move self out of a constructor, so the caller
     /// installs the handler explicitly (registered section 9).
-    pub fn install_diagnostic_handler(&mut self, mut handler: DiagnosticHandler) {
-        let prev = std::mem::replace(&mut self.diagnostic_handler, DiagnosticHandler::Default);
+    pub fn install_diagnostic_handler(&self, mut handler: DiagnosticHandler) {
+        let prev = self
+            .diagnostic_handler
+            .replace(DiagnosticHandler::Default);
         handler.set_prev(Some(Box::new(prev)));
-        self.diagnostic_handler = handler;
+        *self.diagnostic_handler.borrow_mut() = handler;
     }
 
     /// Replace the current diagnostic handler with the handler that was current
@@ -583,16 +600,18 @@ impl Log {
     /// the Java identity check on h has no Rust form because the
     /// closed enum is stored by value; the ported method restores the prev
     /// handler and panics if only the default handler is installed (registered).
-    pub fn pop_diagnostic_handler(&mut self) {
-        let mut handler =
-            std::mem::replace(&mut self.diagnostic_handler, DiagnosticHandler::Default);
+    pub fn pop_diagnostic_handler(&self) {
+        let mut handler = self
+            .diagnostic_handler
+            .replace(DiagnosticHandler::Default);
         let prev = handler.take_prev();
-        self.diagnostic_handler = prev.map(|handler| *handler).unwrap_or(DiagnosticHandler::Default);
+        *self.diagnostic_handler.borrow_mut() =
+            prev.map(|handler| *handler).unwrap_or(DiagnosticHandler::Default);
     }
 
     /// Report all deferred diagnostics of the current DeferredDiagnosticHandler
     /// (Java: DeferredDiagnosticHandler.reportDeferredDiagnostics()).
-    pub fn report_deferred_diagnostics(&mut self) {
+    pub fn report_deferred_diagnostics(&self) {
         self.report_deferred_diagnostics_with(&|_| true);
     }
 
@@ -600,7 +619,7 @@ impl Log {
     /// diagnostics currently deferred by the installed handler (empty when
     /// the handler is not a deferred handler).
     pub fn deferred_diagnostics(&self) -> Vec<JCDiagnostic> {
-        match &self.diagnostic_handler {
+        match &*self.diagnostic_handler.borrow() {
             DiagnosticHandler::Deferred { deferred, .. } => deferred.iter().cloned().collect(),
             _ => Vec::new(),
         }
@@ -608,8 +627,10 @@ impl Log {
     /// Report selected deferred diagnostics.
     ///
     /// Java: DeferredDiagnosticHandler.reportDeferredDiagnostics(Predicate)
-    pub fn report_deferred_diagnostics_with(&mut self, accepter: &dyn Fn(&JCDiagnostic) -> bool) {
-        let handler = std::mem::replace(&mut self.diagnostic_handler, DiagnosticHandler::Default);
+    pub fn report_deferred_diagnostics_with(&self, accepter: &dyn Fn(&JCDiagnostic) -> bool) {
+        let handler = self
+            .diagnostic_handler
+            .replace(DiagnosticHandler::Default);
         match handler {
             DiagnosticHandler::Deferred { mut prev, deferred, .. } => {
                 for diagnostic in deferred {
@@ -619,18 +640,20 @@ impl Log {
                         prev_handler.report(self, diagnostic);
                     }
                 }
-                self.diagnostic_handler =
+                *self.diagnostic_handler.borrow_mut() =
                     prev.map(|handler| *handler).unwrap_or(DiagnosticHandler::Default);
             }
-            other => self.diagnostic_handler = other,
+            other => *self.diagnostic_handler.borrow_mut() = other,
         }
     }
 
     /// The Java DeferredDiagnosticHandler.getDiagnostics() accessor
     /// (the ported form returns a copy of the deferred queue).
-    pub fn take_deferred_diagnostics(&mut self) -> Vec<JCDiagnostic> {
+    pub fn take_deferred_diagnostics(&self) -> Vec<JCDiagnostic> {
         let mut result = Vec::new();
-        if let DiagnosticHandler::Deferred { deferred, .. } = &mut self.diagnostic_handler {
+        if let DiagnosticHandler::Deferred { deferred, .. } =
+            &mut *self.diagnostic_handler.borrow_mut()
+        {
             result.extend(deferred.drain(..));
         }
         result
@@ -640,7 +663,7 @@ impl Log {
     ///
     /// Java: public void flush()
     pub fn flush(&self) {
-        for writer in self.writers.values() {
+        for writer in self.writers.borrow().values() {
             writer.borrow_mut().flush().expect("flush failed");
         }
     }
@@ -657,18 +680,19 @@ impl Log {
     /// and pos.
     ///
     /// Java: protected boolean shouldReport(JavaFileObject file, int pos)
-    fn should_report(&mut self, file: Option<Rc<dyn JavaFileObject>>, pos: i32) -> bool {
+    fn should_report(&self, file: Option<Rc<dyn JavaFileObject>>, pos: i32) -> bool {
         let Some(file) = file else {
             return true;
         };
         let should_report = !self
             .recorded
+            .borrow()
             .iter()
             .any(|(recorded_file, recorded_pos)| {
                 Rc::ptr_eq(recorded_file, &file) && *recorded_pos == pos
             });
         if should_report {
-            self.recorded.push((file, pos));
+            self.recorded.borrow_mut().push((file, pos));
         }
         should_report
     }
@@ -676,7 +700,7 @@ impl Log {
     /// Returns true if a diagnostics needs to be reported.
     ///
     /// Java: private boolean shouldReport(JCDiagnostic d)
-    fn should_report_diagnostic(&mut self, diag: &JCDiagnostic) -> bool {
+    fn should_report_diagnostic(&self, diag: &JCDiagnostic) -> bool {
         let Some(file) = diag.get_source() else {
             return true;
         };
@@ -689,12 +713,15 @@ impl Log {
         let code = code_of(diag);
         let should_report = !self
             .recorded_source_level_errors
+            .borrow()
             .iter()
             .any(|(recorded_file, recorded_code)| {
                 Rc::ptr_eq(recorded_file, &file) && *recorded_code == code
             });
         if should_report {
-            self.recorded_source_level_errors.push((file, code));
+            self.recorded_source_level_errors
+                .borrow_mut()
+                .push((file, code));
         }
         should_report
     }
@@ -703,9 +730,14 @@ impl Log {
     ///
     /// Java: public boolean hasErrorOn(DiagnosticPosition pos)
     pub fn has_error_on(&self, pos: Option<Rc<dyn DiagnosticPosition>>) -> bool {
-        let file = self.source.as_ref().and_then(|source| source.get_file());
+        let file = self
+            .source
+            .borrow()
+            .as_ref()
+            .and_then(|source| source.get_file());
+        let recorded = self.recorded.borrow();
         match (file, pos) {
-            (Some(file), Some(pos)) => self.recorded.iter().any(|(recorded_file, recorded_pos)| {
+            (Some(file), Some(pos)) => recorded.iter().any(|(recorded_file, recorded_pos)| {
                 Rc::ptr_eq(recorded_file, &file) && *recorded_pos == pos.get_preferred_position()
             }),
             _ => false,
@@ -716,7 +748,7 @@ impl Log {
     ///
     /// Java: public void prompt()
     pub fn prompt(&self) {
-        if !self.prompt_on_error {
+        if !self.prompt_on_error.get() {
             return;
         }
         eprintln!("{}", self.localize_key("resume.abort", Vec::new()));
@@ -736,18 +768,20 @@ impl Log {
 
     /// Print the faulty source code line and point to the error.
     fn print_err_line(&self, pos: i32, writer: &WriterHandle) {
-        let line = self
-            .source
-            .as_ref()
-            .and_then(|source| source.get_line(pos));
+        let line = {
+            let source = self.source.borrow();
+            source.as_ref().and_then(|source| source.get_line(pos))
+        };
         let Some(line) = line else {
             return;
         };
-        let col = self
-            .source
-            .as_ref()
-            .expect("source")
-            .get_column_number(pos, false);
+        let col = {
+            let source = self.source.borrow();
+            source
+                .as_ref()
+                .expect("source")
+                .get_column_number(pos, false)
+        };
         Log::print_raw_lines_to(writer, &line.to_string_lossy());
         for i in 0..col - 1 {
             let ch = line.char_at(i as usize);
@@ -848,45 +882,53 @@ impl Log {
     ///
     /// Java: public void strictWarning(DiagnosticPosition pos, String key,
     /// Object... args)
-    pub fn strict_warning(&mut self, pos: Option<Rc<dyn DiagnosticPosition>>, key: &str, args: Vec<DiagnosticArg>) {
+    pub fn strict_warning(&self, pos: Option<Rc<dyn DiagnosticPosition>>, key: &str, args: Vec<DiagnosticArg>) {
         let warning_key = self.diags.warning_key(key, args);
-        let diagnostic = self.diags.warning(None, self.source.clone(), pos, warning_key);
+        let source = self.source.borrow().clone();
+        let diagnostic = self.diags.warning(None, source, pos, warning_key);
         self.write_diagnostic(&diagnostic);
-        self.nwarnings += 1;
+        self.nwarnings.set(self.nwarnings.get() + 1);
     }
 
     /// Primary method to report a diagnostic.
     ///
     /// Java: public void report(JCDiagnostic diagnostic)
-    pub fn report(&mut self, diagnostic: JCDiagnostic) {
-        let mut handler =
-            std::mem::replace(&mut self.diagnostic_handler, DiagnosticHandler::Default);
+    pub fn report(&self, diagnostic: JCDiagnostic) {
+        let mut handler = self
+            .diagnostic_handler
+            .replace(DiagnosticHandler::Default);
         handler.report(self, diagnostic);
-        self.diagnostic_handler = handler;
+        *self.diagnostic_handler.borrow_mut() = handler;
     }
 
     /// Common diagnostic handling (the body of the private
     /// DefaultDiagnosticHandler.report).
-    fn default_report(&mut self, diagnostic: JCDiagnostic) {
-        if let Some(expect_diag_keys) = &mut self.expect_diag_keys {
-            expect_diag_keys.remove(&diagnostic.get_code_string());
+    fn default_report(&self, diagnostic: JCDiagnostic) {
+        {
+            let mut expect_diag_keys = self.expect_diag_keys.borrow_mut();
+            if let Some(expect_diag_keys) = expect_diag_keys.as_mut() {
+                expect_diag_keys.remove(&diagnostic.get_code_string());
+            }
         }
         match diagnostic.get_type() {
             DiagnosticType::FRAGMENT => {
                 panic!("IllegalArgumentException: fragment diagnostic");
             }
             DiagnosticType::NOTE => {
-                if (self.emit_warnings || diagnostic.is_mandatory()) && !self.suppress_notes {
+                if (self.emit_warnings.get() || diagnostic.is_mandatory())
+                    && !self.suppress_notes.get()
+                {
                     self.write_diagnostic(&diagnostic);
                 }
             }
             DiagnosticType::WARNING => {
-                if self.emit_warnings || diagnostic.is_mandatory() {
-                    if self.nwarnings < self.max_warnings {
+                if self.emit_warnings.get() || diagnostic.is_mandatory() {
+                    if self.nwarnings.get() < self.max_warnings.get() {
                         self.write_diagnostic(&diagnostic);
-                        self.nwarnings += 1;
+                        self.nwarnings.set(self.nwarnings.get() + 1);
                     } else {
-                        self.nsuppressedwarns += 1;
+                        self.nsuppressedwarns
+                            .set(self.nsuppressedwarns.get() + 1);
                     }
                 }
             }
@@ -894,40 +936,41 @@ impl Log {
                 if diagnostic.is_flag_set(DiagnosticFlag::API)
                     || self.should_report_diagnostic(&diagnostic)
                 {
-                    if self.nerrors < self.max_errors {
+                    if self.nerrors.get() < self.max_errors.get() {
                         self.write_diagnostic(&diagnostic);
-                        self.nerrors += 1;
+                        self.nerrors.set(self.nerrors.get() + 1);
                     } else {
-                        self.nsuppressederrors += 1;
+                        self.nsuppressederrors
+                            .set(self.nsuppressederrors.get() + 1);
                     }
                 }
             }
         }
         if diagnostic.is_flag_set(DiagnosticFlag::COMPRESSED) {
-            self.compressed_output = true;
+            self.compressed_output.set(true);
         }
     }
 
     /// Write out a diagnostic.
     ///
     /// Java: protected void writeDiagnostic(JCDiagnostic diag)
-    fn write_diagnostic(&mut self, diag: &JCDiagnostic) {
-        if let Some(listener) = &self.diag_listener {
+    fn write_diagnostic(&self, diag: &JCDiagnostic) {
+        if let Some(listener) = self.diag_listener.clone() {
             let diagnostic: Rc<dyn Diagnostic<Rc<dyn JavaFileObject>>> = Rc::new(diag.clone());
             listener.report(diagnostic);
             return;
         }
         let writer = self.get_writer_for_diagnostic_type(diag.get_type());
         let locale = self.messages.get_current_locale().clone();
-        let text = self.diag_formatter.format(diag, Some(&locale));
+        let text = self.diag_formatter.borrow().format(diag, Some(&locale));
         Log::print_raw_lines_to(&writer, &text);
-        if self.prompt_on_error {
+        if self.prompt_on_error.get() {
             match diag.get_type() {
                 DiagnosticType::ERROR | DiagnosticType::WARNING => self.prompt(),
                 _ => {}
             }
         }
-        if self.dump_on_error {
+        if self.dump_on_error.get() {
             // Java: new RuntimeException().printStackTrace(writer);
             let backtrace = std::backtrace::Backtrace::force_capture().to_string();
             Log::print_raw_lines_to(&writer, &backtrace);
@@ -979,7 +1022,8 @@ impl Log {
     /// Java: private void printRawDiag(PrintWriter pw, String prefix, int pos,
     /// String msg)
     fn print_raw_diag(&self, writer: &WriterHandle, prefix: &str, pos: i32, msg: &str) {
-        match (&self.source, pos) {
+        let source = self.source.borrow().clone();
+        match (source.as_ref(), pos) {
             (None, _) | (_, NOPOS) => {
                 Log::print_raw_lines_to(writer, &format!("{prefix}{msg}"));
             }
@@ -1000,15 +1044,16 @@ impl Log {
     /// report an error.
     ///
     /// Java: public void rawError(int pos, String msg)
-    pub fn raw_error(&mut self, pos: i32, msg: &str) {
+    pub fn raw_error(&self, pos: i32, msg: &str) {
         let file = self.current_source_file();
-        if self.nerrors < self.max_errors && self.should_report(file, pos) {
+        if self.nerrors.get() < self.max_errors.get() && self.should_report(file, pos) {
             let writer = self.get_writer(WriterKind::ERROR);
             self.print_raw_diag(&writer, "error: ", pos, msg);
             self.prompt();
-            self.nerrors += 1;
+            self.nerrors.set(self.nerrors.get() + 1);
         } else {
-            self.nsuppressederrors += 1;
+            self.nsuppressederrors
+                .set(self.nsuppressederrors.get() + 1);
         }
         self.get_writer(WriterKind::ERROR)
             .borrow_mut()
@@ -1019,17 +1064,18 @@ impl Log {
     /// report a warning.
     ///
     /// Java: public void rawWarning(int pos, String msg)
-    pub fn raw_warning(&mut self, pos: i32, msg: &str) {
+    pub fn raw_warning(&self, pos: i32, msg: &str) {
         let writer = self.get_writer(WriterKind::ERROR);
-        if self.emit_warnings {
-            if self.nwarnings < self.max_warnings {
+        if self.emit_warnings.get() {
+            if self.nwarnings.get() < self.max_warnings.get() {
                 self.print_raw_diag(&writer, "warning: ", pos, msg);
             } else {
-                self.nsuppressedwarns += 1;
+                self.nsuppressedwarns
+                    .set(self.nsuppressedwarns.get() + 1);
             }
         }
         self.prompt();
-        self.nwarnings += 1;
+        self.nwarnings.set(self.nwarnings.get() + 1);
         writer.borrow_mut().flush().expect("flush failed");
     }
 }
@@ -1117,42 +1163,87 @@ impl AbstractLog for Log {
         &self.diags
     }
 
-    fn source(&self) -> Option<&Rc<DiagnosticSource>> {
-        self.source.as_ref()
+    fn source(&self) -> Option<Rc<DiagnosticSource>> {
+        self.source.borrow().clone()
     }
 
-    fn set_source(&mut self, source: Option<Rc<DiagnosticSource>>) {
-        self.source = source;
+    fn set_source(&self, source: Option<Rc<DiagnosticSource>>) {
+        *self.source.borrow_mut() = source;
     }
 
-    fn source_map(&mut self) -> &mut Vec<(Rc<dyn JavaFileObject>, Rc<DiagnosticSource>)> {
-        &mut self.source_map
+    fn source_map_find(
+        &self,
+        file: &Rc<dyn JavaFileObject>,
+    ) -> Option<Rc<DiagnosticSource>> {
+        self.source_map
+            .borrow()
+            .iter()
+            .find(|(candidate, _)| Rc::ptr_eq(candidate, file))
+            .map(|(_, source)| Rc::clone(source))
     }
 
-    fn report(&mut self, diagnostic: JCDiagnostic) {
+    fn source_map_push(&self, file: Rc<dyn JavaFileObject>, source: Rc<DiagnosticSource>) {
+        self.source_map.borrow_mut().push((file, source));
+    }
+
+    fn report(&self, diagnostic: JCDiagnostic) {
         Log::report(self, diagnostic);
     }
 
-    fn direct_error(&mut self, key: &str, args: Vec<String>) {
+    fn direct_error(&self, key: &str, args: Vec<String>) {
         self.direct_error_impl(key, args);
     }
 }
 
+
+impl AbstractLog for Rc<Log> {
+    fn diags(&self) -> &Rc<Factory> {
+        AbstractLog::diags(&**self)
+    }
+
+    fn source(&self) -> Option<Rc<DiagnosticSource>> {
+        AbstractLog::source(&**self)
+    }
+
+    fn set_source(&self, source: Option<Rc<DiagnosticSource>>) {
+        AbstractLog::set_source(&**self, source);
+    }
+
+    fn source_map_find(
+        &self,
+        file: &Rc<dyn JavaFileObject>,
+    ) -> Option<Rc<DiagnosticSource>> {
+        AbstractLog::source_map_find(&**self, file)
+    }
+
+    fn source_map_push(&self, file: Rc<dyn JavaFileObject>, source: Rc<DiagnosticSource>) {
+        AbstractLog::source_map_push(&**self, file, source);
+    }
+
+    fn report(&self, diagnostic: JCDiagnostic) {
+        AbstractLog::report(&**self, diagnostic);
+    }
+
+    fn direct_error(&self, key: &str, args: Vec<String>) {
+        AbstractLog::direct_error(&**self, key, args);
+    }
+}
+
 impl MandatoryWarningLog for Log {
-    fn current_source_file(&mut self) -> Option<Rc<dyn JavaFileObject>> {
+    fn current_source_file(&self) -> Option<Rc<dyn JavaFileObject>> {
         Log::current_source_file(self)
     }
 
     fn nwarnings(&self) -> i32 {
-        self.nwarnings
+        self.nwarnings.get()
     }
 
     fn max_warnings(&self) -> i32 {
-        self.max_warnings
+        self.max_warnings.get()
     }
 
     fn mandatory_warning(
-        &mut self,
+        &self,
         lc: Option<LintCategory>,
         pos: Option<Rc<dyn DiagnosticPosition>>,
         warning_key: Warning,
@@ -1164,7 +1255,7 @@ impl MandatoryWarningLog for Log {
     }
 
     fn warning(
-        &mut self,
+        &self,
         lc: Option<LintCategory>,
         pos: Option<Rc<dyn DiagnosticPosition>>,
         warning_key: Warning,
@@ -1175,11 +1266,11 @@ impl MandatoryWarningLog for Log {
         }
     }
 
-    fn mandatory_note(&mut self, file: Option<Rc<dyn JavaFileObject>>, note: Note) {
+    fn mandatory_note(&self, file: Option<Rc<dyn JavaFileObject>>, note: Note) {
         AbstractLog::mandatory_note_file(self, file, note);
     }
 
-    fn note(&mut self, file: Option<Rc<dyn JavaFileObject>>, note: Note) {
+    fn note(&self, file: Option<Rc<dyn JavaFileObject>>, note: Note) {
         AbstractLog::note_file(self, file, note);
     }
 }
@@ -1338,8 +1429,8 @@ mod tests {
         log.report(warning);
         let note = factory.note(None, None, factory.note_key("test", Vec::new()));
         log.report(note);
-        assert_eq!(log.nerrors, 1);
-        assert_eq!(log.nwarnings, 1);
+        assert_eq!(log.nerrors.get(), 1);
+        assert_eq!(log.nwarnings.get(), 1);
         let text = sink.text();
         assert!(text.contains("compiler.err.test"), "text = {text}");
         assert!(text.contains("compiler.warn.test"), "text = {text}");
@@ -1351,21 +1442,21 @@ mod tests {
         let mut sink = TestSink::new();
         let factory = factory(&mut sink);
         let mut log = sink.log();
-        log.max_errors = 1;
-        log.max_warnings = 1;
+        log.max_errors.set(1);
+        log.max_warnings.set(1);
         for _ in 0..2 {
             let error = factory.error(None, None, None, factory.error_key("e", Vec::new()));
             log.report(error);
         }
-        assert_eq!(log.nerrors, 1);
-        assert_eq!(log.nsuppressederrors, 1);
+        assert_eq!(log.nerrors.get(), 1);
+        assert_eq!(log.nsuppressederrors.get(), 1);
         for _ in 0..2 {
             let warning =
                 factory.warning(None, None, None, factory.warning_key("w", Vec::new()));
             log.report(warning);
         }
-        assert_eq!(log.nwarnings, 1);
-        assert_eq!(log.nsuppressedwarns, 1);
+        assert_eq!(log.nwarnings.get(), 1);
+        assert_eq!(log.nsuppressedwarns.get(), 1);
     }
 
     #[test]
@@ -1373,11 +1464,11 @@ mod tests {
         let mut sink = TestSink::new();
         let factory = factory(&mut sink);
         let mut log = sink.log();
-        log.emit_warnings = false;
+        log.emit_warnings.set(false);
         let warning = factory.warning(None, None, None, factory.warning_key("w", Vec::new()));
         log.report(warning);
-        assert_eq!(log.nwarnings, 0);
-        log.suppress_notes = true;
+        assert_eq!(log.nwarnings.get(), 0);
+        log.suppress_notes.set(true);
         let note = factory.note(None, None, factory.note_key("n", Vec::new()));
         log.report(note);
         assert!(sink.text().is_empty(), "text = {}", sink.text());
@@ -1443,9 +1534,9 @@ mod tests {
         let mut sink = TestSink::new();
         let mut log = sink.log();
         log.raw_error(NOPOS, "boom");
-        assert_eq!(log.nerrors, 1);
+        assert_eq!(log.nerrors.get(), 1);
         log.raw_warning(NOPOS, "careful");
-        assert_eq!(log.nwarnings, 1);
+        assert_eq!(log.nwarnings.get(), 1);
         let text = sink.text();
         assert!(text.contains("error: boom"), "text = {text}");
         assert!(text.contains("warning: careful"), "text = {text}");
@@ -1461,7 +1552,7 @@ mod tests {
         assert!(log.current_source_file().is_some());
         let error = factory.error(
             None,
-            log.source().cloned(),
+            log.source(),
             position(32),
             factory.error_key("test", Vec::new()),
         );
@@ -1495,11 +1586,11 @@ mod tests {
         let mut sink = TestSink::new();
         let factory = factory(&mut sink);
         let mut log = sink.log();
-        log.expect_diag_keys = Some(HashSet::from(["compiler.err.test".to_string()]));
+        *log.expect_diag_keys.borrow_mut() = Some(HashSet::from(["compiler.err.test".to_string()]));
         let error = factory.error(None, None, None, factory.error_key("test", Vec::new()));
         log.report(error);
-        assert!(log.expect_diag_keys.as_ref().expect("keys").is_empty());
-        log.compressed_output = false;
+        assert!(log.expect_diag_keys.borrow().as_ref().expect("keys").is_empty());
+        log.compressed_output.set(false);
         let error = factory.error(
             Some(DiagnosticFlag::COMPRESSED),
             None,
@@ -1507,7 +1598,7 @@ mod tests {
             factory.error_key("compressed", Vec::new()),
         );
         log.report(error);
-        assert!(log.compressed_output);
+        assert!(log.compressed_output.get());
     }
 
     #[test]
@@ -1534,7 +1625,7 @@ mod tests {
         let mut sink = TestSink::new();
         let mut log = sink.log();
         AbstractLog::error_key_args(&mut log, "test", vec![Rc::new(JavaString::from("x"))]);
-        assert_eq!(log.nerrors, 1);
+        assert_eq!(log.nerrors.get(), 1);
         let text = sink.text();
         assert!(text.contains("compiler.err.test"), "text = {text}");
     }
@@ -1564,6 +1655,6 @@ mod tests {
             text.contains("Note: Recompile with -Xlint:deprecation for details."),
             "text = {text}"
         );
-        assert_eq!(handler.log().nwarnings, 0);
+        assert_eq!(handler.log().nwarnings.get(), 0);
     }
 }

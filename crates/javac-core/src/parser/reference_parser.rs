@@ -109,14 +109,14 @@ impl ReferenceParser {
         sig: &JavaString,
     ) -> Result<Reference, ParseException> {
         let log = Rc::clone(&self.fac.log);
-        log.borrow_mut().install_diagnostic_handler(DiagnosticHandler::Deferred {
+        log.install_diagnostic_handler(DiagnosticHandler::Deferred {
             prev: None,
             deferred: VecDeque::new(),
             filter: None,
         });
         let result = self.parse_inner(ctx, sig);
-        let has_deferred = !log.borrow_mut().take_deferred_diagnostics().is_empty();
-        log.borrow_mut().pop_diagnostic_handler();
+        let has_deferred = !log.take_deferred_diagnostics().is_empty();
+        log.pop_diagnostic_handler();
         match result {
             Ok(reference) if !has_deferred => Ok(reference),
             Ok(_) => Err(ParseException::new("dc.ref.syntax.error")),

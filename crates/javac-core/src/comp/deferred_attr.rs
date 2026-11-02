@@ -2254,7 +2254,7 @@ pub struct DeferredAttrService {
     /// Java: final Infer infer
     pub infer: Rc<crate::comp::infer::Infer>,
     /// Java: final Log log
-    pub log: Rc<RefCell<crate::util::log::Log>>,
+    pub log: Rc<crate::util::log::Log>,
     /// Java: final TreeMaker make
     pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
     /// Java: final Types types
@@ -2315,7 +2315,7 @@ impl DeferredAttrService {
         diags: Rc<crate::util::jc_diagnostic::Factory>,
         enter: Rc<crate::comp::enter::Enter>,
         infer: Rc<crate::comp::infer::Infer>,
-        log: Rc<RefCell<crate::util::log::Log>>,
+        log: Rc<crate::util::log::Log>,
         make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
         types: Rc<Types>,
         syms: Rc<Symtab>,
@@ -2525,10 +2525,9 @@ impl DeferredAttrService {
         let prev_queues = annotate_rc.as_ref().map(|annotate| {
             annotate.set_queues(crate::comp::annotate::AnnotateQueues::new())
         });
-        let nwarnings = self.log.borrow().nwarnings;
-        self.log.borrow_mut().nwarnings = 0;
+        let nwarnings = self.log.nwarnings.get();
+        self.log.nwarnings.set(0);
         self.log
-            .borrow_mut()
             .install_diagnostic_handler(deferred_diagnostic_handler);
         let result = attr.attrib_tree(ctx, syms, tree, &speculative_env, result_info.clone());
         if let Some(annotate) = &annotate_rc {
@@ -2536,13 +2535,13 @@ impl DeferredAttrService {
         }
         self.dcfh.set_handler(ctx, prev_cf_handler);
         {
-            let mut log = self.log.borrow_mut();
-            log.nwarnings += nwarnings;
+            let mut log = &*self.log;
+            log.nwarnings.set(log.nwarnings.get() + nwarnings);
         }
         if let Some(toplevel) = env.toplevel {
             self.enter.unenter(ctx, syms, toplevel, tree);
         }
-        self.log.borrow_mut().pop_diagnostic_handler();
+        self.log.pop_diagnostic_handler();
         match result {
             Ok(_) => Ok(tree),
             Err(failure) => Err(DeferredAttrFailure::from(failure)),
@@ -2858,7 +2857,7 @@ impl DeferredAttrService {
                     is_potentially_value_compatible && !can_complete_normally;
                 if !is_value_compatible && !is_void_compatible {
                     crate::util::abstract_log::AbstractLog::error_at(
-                        &mut *self.log.borrow_mut(),
+                        &*self.log,
                         ctx.tree(body).pos,
                         crate::util::jc_diagnostic::Error::from(
                             crate::resources::compiler_properties::errors::
@@ -2875,7 +2874,7 @@ impl DeferredAttrService {
                         ),
                     ));
                     let int_pos = ctx.tree(tree).pos;
-                    let source = self.log.borrow().current_source();
+                    let source = self.log.current_source();
                     // Java: the details diagnostic carries the lambda position
                     // (used by the final incompatible-types report).
                     let diag = self.diags.create(
@@ -3017,11 +3016,11 @@ impl DeferredAttrService {
                 // makes the driver print the "Some messages have been
                 // simplified" note (JavaCompiler.java:1719-1721).
                 crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *attr.log.borrow_mut(),
+                    &*attr.log,
                     ctx.tree(tree).pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
-                attr.log.borrow_mut().compressed_output = true;
+                attr.log.compressed_output.set(true);
             }
             _ => {}
         }

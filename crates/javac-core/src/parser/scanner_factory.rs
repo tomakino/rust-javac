@@ -36,7 +36,7 @@ use crate::util::names::Names;
 /// A factory for creating scanners (Java: public class ScannerFactory).
 #[derive(Clone)]
 pub struct ScannerFactory {
-    pub(crate) log: Rc<RefCell<Log>>,
+    pub(crate) log: Rc<Log>,
     pub(crate) names: Rc<Names>,
     pub(crate) source: Source,
     /// Java: final Preview preview. Rust: Preview.instance is ported;

@@ -79,7 +79,7 @@ pub struct BaseFileManager {
     ///
     /// Set by setContext/init_services (implemented).
     #[allow(dead_code)]
-    pub log: StdOption<Rc<RefCell<crate::util::log::Log>>>,
+    pub log: StdOption<Rc<crate::util::log::Log>>,
 
     /// Java: protected Charset charset; (None = platform default, like a null charset).
     ///
@@ -173,7 +173,7 @@ impl BaseFileManager {
     /// Shared body of setContext for the injected-service constructor (JavacFileManager::new).
     pub(crate) fn init_services(
         &mut self,
-        log: Rc<std::cell::RefCell<crate::util::log::Log>>,
+        log: Rc<crate::util::log::Log>,
         options: Rc<Options>,
         fs_info: Rc<CacheFSInfo>,
     ) {
@@ -437,7 +437,7 @@ impl BaseFileManager {
             Ok(decoder) => decoder,
             Err(error) => {
                 if let Some(log) = &self.log {
-                    log.borrow_mut().error_pos(None, error);
+                    log.error_pos(None, error);
                 }
                 // Java: return CharBuffer.allocate(1).flip() (the empty buffer).
                 return JavaString::from("");
@@ -477,7 +477,7 @@ impl BaseFileManager {
                     .map(|charset| charset.name())
                     .unwrap_or_else(|| encoding_name.clone());
                 if let Some(log) = &self.log {
-                    log.borrow_mut().error_at(
+                    log.error_at(
                         dest.limit() as i32,
                         crate::util::jc_diagnostic::Error::from(
                             crate::resources::compiler_properties::errors::illegal_char_for_encoding(
@@ -669,7 +669,7 @@ impl BaseFileManagerApi for BaseFileManager {
         let source: Rc<dyn javac_tools::tools::java_file_object::JavaFileObject> =
             Rc::new(file.clone());
         use crate::util::abstract_log::AbstractLog;
-        log.borrow_mut().use_source(Some(source))
+        log.use_source(Some(source))
     }
 
     fn restore_source(
@@ -678,7 +678,7 @@ impl BaseFileManagerApi for BaseFileManager {
     ) {
         if let Some(log) = &self.log {
             use crate::util::abstract_log::AbstractLog;
-            log.borrow_mut().use_source(previous);
+            log.use_source(previous);
         }
     }
 }
@@ -1014,7 +1014,7 @@ mod tests {
 /// handleOption(Option, String).
 struct BaseFileManagerOptionHelper {
     options: StdOption<Rc<Options>>,
-    log: StdOption<Rc<RefCell<crate::util::log::Log>>>,
+    log: StdOption<Rc<crate::util::log::Log>>,
     applied: Vec<(JavacOption, String)>,
 }
 
@@ -1040,7 +1040,7 @@ impl crate::main::option_helper::OptionHelper for BaseFileManagerOptionHelper {
         true
     }
 
-    fn get_log(&self) -> StdOption<Rc<RefCell<crate::util::log::Log>>> {
+    fn get_log(&self) -> StdOption<Rc<crate::util::log::Log>> {
         self.log.clone()
     }
 

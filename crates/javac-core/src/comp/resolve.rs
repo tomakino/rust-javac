@@ -179,7 +179,7 @@ pub struct Resolve {
     /// Java: "private final Names names" (the ported dependency set).
     pub names: Rc<Names>,
     /// Java: "private final Log log".
-    pub log: Rc<std::cell::RefCell<Log>>,
+    pub log: Rc<Log>,
     /// Java: "private final Types types".
     pub types: Rc<Types>,
     /// Java: "private final JCDiagnostic.Factory diags".
@@ -226,7 +226,7 @@ impl Resolve {
     pub fn new(
         ctx: &mut crate::compiler_context::CompilerContext,
         names: Rc<Names>,
-        log: Rc<std::cell::RefCell<Log>>,
+        log: Rc<Log>,
         types: Rc<Types>,
         diags: Rc<Factory>,
         source: Source,
@@ -1015,7 +1015,7 @@ impl Resolve {
                 );
                 let info = info.info();
                 let args = crate::util::jc_diagnostic::contract_args_to_args(&info.args);
-                let source = self.log.borrow().current_source();
+                let source = self.log.current_source();
                 let mut diagnostic = self.diags.create(dkind, source, pos, info.code, args);
                 diagnostic.set_flag(crate::util::jc_diagnostic::DiagnosticFlag::NON_DEFERRABLE);
                 Some(diagnostic)
@@ -1203,13 +1203,13 @@ impl Resolve {
                             .unwrap_or_default();
                     if found_args.is_empty() {
                         let no_args =
-                            self.log.borrow().localize_key("no.args", Vec::new());
+                            self.log.localize_key("no.args", Vec::new());
                         found_args.push(
                             crate::resources::diagnostic_contract::TypeArg::placeholder(no_args),
                         );
                     }
                     let kind_display =
-                        self.log.borrow().localize_key(kind_name.name(), Vec::new());
+                        self.log.localize_key(kind_name.name(), Vec::new());
                     let info = errors::cant_apply_symbols(
                         crate::resources::diagnostic_contract::SymbolKindArg::placeholder(
                             kind_display,
@@ -1327,7 +1327,7 @@ impl Resolve {
         use crate::resources::diagnostic_contract::{DiagnosticArg, KindNameArg, SymbolArg};
         use crate::util::jc_diagnostic::Fragment;
         let kind_name = crate::code::kinds::kind_name(ctx.sym(sym), ctx);
-        let kind_display = self.log.borrow().localize_key(kind_name.name(), Vec::new());
+        let kind_display = self.log.localize_key(kind_name.name(), Vec::new());
         let location = ctx
             .sym(sym)
             .owner
@@ -1395,7 +1395,7 @@ impl Resolve {
             };
             let mut simple = self.diags.create(
                 dkind,
-                self.log.borrow().current_source(),
+                self.log.current_source(),
                 detail_pos,
                 "prob.found.req",
                 vec![std::rc::Rc::new(details.clone())],
@@ -1435,7 +1435,7 @@ impl Resolve {
                     .or_else(|| pos.clone());
                 let mut simple = self.diags.create(
                     dkind,
-                    self.log.borrow().current_source(),
+                    self.log.current_source(),
                     cause_pos,
                     "prob.found.req",
                     vec![std::rc::Rc::new(cause)],
@@ -1483,7 +1483,6 @@ impl Resolve {
         let info = errors::cant_apply_symbol(
             SymbolKindArg::placeholder(
                 self.log
-                    .borrow()
                     .localize_key(crate::code::kinds::kind_name(ctx.sym(ws), ctx).name(), Vec::new()),
             ),
             diagnostic_name,
@@ -1491,7 +1490,6 @@ impl Resolve {
             found_args,
             SymbolKindArg::placeholder(
                 self.log
-                    .borrow()
                     .localize_key(crate::code::kinds::kind_name(ctx.sym(ws_owner), ctx).name(), Vec::new()),
             ),
             TypeArg::placeholder(
@@ -1523,7 +1521,7 @@ impl Resolve {
             .iter()
             .map(contract_arg_to_jcd)
             .collect();
-        let source = self.log.borrow().current_source();
+        let source = self.log.current_source();
         self.diags
             .create(dkind, source, pos, info.info().code, args)
     }
@@ -1674,7 +1672,7 @@ impl Resolve {
                     as crate::util::jc_diagnostic::DiagnosticArg
             })
             .collect();
-        let source = self.log.borrow().current_source();
+        let source = self.log.current_source();
         self.diags.create(dkind, source, pos, key, args)
     }
 
@@ -3278,7 +3276,7 @@ impl Resolve {
                         crate::resources::compiler_properties::warnings::illegal_ref_to_restricted_type(
                             self.names.r#yield.clone(),
                         );
-                    self.log.borrow_mut().warning(
+                    self.log.warning(
                         None,
                         Some(pos),
                         crate::comp::check::warning_from_info(info),
@@ -3637,7 +3635,7 @@ impl Resolve {
             diagnostic.set_flag(crate::util::jc_diagnostic::DiagnosticFlag::RESOLVE_ERROR);
             // Java: log.report(d)
             let log = std::rc::Rc::clone(&self.log);
-            log.borrow_mut().report(diagnostic);
+            log.report(diagnostic);
         }
     }
 
@@ -6221,7 +6219,7 @@ impl MethodCheck for ResolveMethodCheck {
                 &deferred_attr_context.inference_context,
                 elt,
                 &self.diags,
-                chk.log.borrow().current_source(),
+                chk.log.current_source(),
             )?;
         }
         Ok(())
@@ -7868,7 +7866,7 @@ impl Resolve {
             javac_strings::JavaString::from(reference_display.as_str()),
             most_specific_pos,
         );
-        let source = self.log.borrow().current_source();
+        let source = self.log.current_source();
         let main = self.diags.note(
             source,
             Some(Rc::new(crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(
@@ -7881,7 +7879,6 @@ impl Resolve {
             crate::util::list::List::from_iterable(sub_diags),
         );
         self.log
-            .borrow_mut()
             .report(multiline.as_diagnostic().clone());
     }
     /// Reports the verbose resolution note for a method lookup result.
@@ -7998,14 +7995,13 @@ impl Resolve {
                 DiagnosticArg::from_display(targs_display),
             )
         };
-        let source = self.log.borrow().current_source();
+        let source = self.log.current_source();
         let main = self.diags.note(source, dpos, Note::from(note));
         let multiline = MultilineDiagnostic::new(
             &main,
             crate::util::list::List::from_iterable(sub_diags),
         );
         self.log
-            .borrow_mut()
             .report(multiline.as_diagnostic().clone());
     }
 
@@ -10276,7 +10272,7 @@ impl Resolve {
                 // position and JCDiagnostic.getIntPosition (preferred) is
                 // the one used by the formatter.
                 crate::util::abstract_log::AbstractLog::error_at(
-                    &mut *self.log.borrow_mut(),
+                    &*self.log,
                     pos.as_ref().map(|pos| pos.get_preferred_position()).unwrap_or(0),
                     crate::util::jc_diagnostic::Error::from(info),
                 );
@@ -10293,7 +10289,7 @@ impl Resolve {
         // Java: log.error(pos, Errors.NotEnclClass(c)) (Resolve.java:3765);
         // the formatter uses the preferred position (JCDiagnostic.getIntPosition).
         crate::util::abstract_log::AbstractLog::error_at(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             pos.as_ref().map(|pos| pos.get_preferred_position()).unwrap_or(0),
             crate::util::jc_diagnostic::Error::from(info),
         );
@@ -10424,7 +10420,7 @@ impl Resolve {
                 crate::resources::diagnostic_contract::SymbolArg::placeholder(member_name),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos.as_ref().map(|pos| pos.get_start_position()).unwrap_or(0),
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -10487,7 +10483,7 @@ impl Resolve {
                 crate::resources::diagnostic_contract::DiagnosticArg::from_display("this"),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos.as_ref().map(|pos| pos.get_start_position()).unwrap_or(0),
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -10536,7 +10532,7 @@ impl Resolve {
                 ),
             );
             crate::util::abstract_log::AbstractLog::error_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 pos.as_ref().map(|pos| pos.get_start_position()).unwrap_or(0),
                 crate::util::jc_diagnostic::Error::from(info),
             );

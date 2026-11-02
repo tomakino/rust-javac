@@ -35,7 +35,7 @@ pub trait OptionHelper {
     fn handle_file_manager_option(&mut self, option: Option, value: &str) -> bool;
 
     /// Java: public abstract Log getLog().
-    fn get_log(&self) -> StdOption<Rc<RefCell<Log>>>;
+    fn get_log(&self) -> StdOption<Rc<Log>>;
 
     /// Java: public abstract String getOwnName().
     fn get_own_name(&self) -> String;
@@ -51,7 +51,7 @@ pub trait OptionHelper {
     fn new_invalid_value_exception(&self, error: ErrorInfo) -> InvalidValueException {
         let error = crate::util::jc_diagnostic::Error::from(error);
         let message = match self.get_log() {
-            Some(log) => log.borrow().localize_info(error.info()),
+            Some(log) => log.localize_info(error.info()),
             None => String::new(),
         };
         InvalidValueException::new(message)
@@ -60,12 +60,12 @@ pub trait OptionHelper {
 
 /// Java: public static class OptionHelper.GrumpyHelper.
 pub struct GrumpyHelper {
-    log: StdOption<Rc<RefCell<Log>>>,
+    log: StdOption<Rc<Log>>,
 }
 
 impl GrumpyHelper {
     /// Java: public GrumpyHelper(Log log).
-    pub fn new(log: StdOption<Rc<RefCell<Log>>>) -> GrumpyHelper {
+    pub fn new(log: StdOption<Rc<Log>>) -> GrumpyHelper {
         GrumpyHelper { log }
     }
 }
@@ -92,7 +92,7 @@ impl OptionHelper for GrumpyHelper {
     }
 
     // Java: public Log getLog() { return log; }
-    fn get_log(&self) -> StdOption<Rc<RefCell<Log>>> {
+    fn get_log(&self) -> StdOption<Rc<Log>> {
         self.log.clone()
     }
 

@@ -40,7 +40,7 @@ pub struct TransTypes {
     /// Java: private Names names
     pub names: Rc<Names>,
     /// Java: private Log log
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     /// Java: private Symtab syms
     pub syms: Rc<Symtab>,
     /// Java: private TreeMaker make
@@ -93,7 +93,7 @@ impl TransTypes {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         names: Rc<Names>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         syms: Rc<Symtab>,
         make: Rc<RefCell<TreeMaker>>,
         enter: Rc<crate::comp::enter::Enter>,

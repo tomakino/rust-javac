@@ -124,7 +124,7 @@ pub struct ClassReader {
     /// Java: public final Profile profile
     pub profile: Rc<Profile>,
     /// Java: final Log log
-    log: Rc<RefCell<Log>>,
+    log: Rc<Log>,
     /// Java: final Names names
     names: Rc<Names>,
     /// Java: JCDiagnostic.Factory diagFactory
@@ -258,7 +258,7 @@ impl ClassReader {
     /// Annotate/fileManager/Lint are not ported yet (S3 wiring, registered).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         names: Rc<Names>,
         diag_factory: Rc<Factory>,
         dcfh: Rc<DeferredCompletionFailureHandler>,
@@ -1375,7 +1375,6 @@ impl ClassReader {
                     max_major,
                 );
                 self.log
-                    .borrow_mut()
                     .warning(None, None, warning_from_info(info));
             } else {
                 // Java: badClassFile("wrong.version", major, minor, maxMajor, maxMinor);
@@ -1397,7 +1396,7 @@ impl ClassReader {
                 let error = self
                     .preview
                     .disabled_error_classfile(&*file, self.major_version);
-                AbstractLog::error_key(&mut *self.log.borrow_mut(), error);
+                AbstractLog::error_key(&*self.log, error);
             } else {
                 // Java: ClassReader.java:2942 preview.warnPreview(c.classfile, majorVersion);
                 let file = self
@@ -2615,7 +2614,7 @@ impl ClassReader {
                     move |ctx: &mut CompilerContext,
                           syms: &crate::code::symtab::Symtab,
                           _attr: &mut crate::comp::attr::Attr| {
-                        let prev_source = services.log.borrow_mut().use_source(class_file.clone());
+                        let prev_source = services.log.use_source(class_file.clone());
                         let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                             let mut reader_guard = reader_handle.as_ref().map(|rc| rc.borrow_mut());
                             let types = Rc::clone(&services.types);
@@ -2659,7 +2658,7 @@ impl ClassReader {
                             }
                             Ok(())
                         })();
-                        services.log.borrow_mut().use_source(prev_source);
+                        services.log.use_source(prev_source);
                         result
                     },
                 ));
@@ -2690,7 +2689,7 @@ impl ClassReader {
                 let attach_type_annotations = self.add_type_annotations_to_symbol;
                 let lint_classfile = self.lint_classfile;
                 annotate.normal(Box::new(move |ctx: &mut CompilerContext, syms: &crate::code::symtab::Symtab, _attr: &mut crate::comp::attr::Attr| {
-                    let prev_source = services.log.borrow_mut().use_source(class_file.clone());
+                    let prev_source = services.log.use_source(class_file.clone());
                     let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                         let mut reader_guard =
                             reader_handle.as_ref().map(|rc| rc.borrow_mut());
@@ -2772,14 +2771,13 @@ impl ClassReader {
                                     );
                                     services
                                         .log
-                                        .borrow_mut()
                                         .error_key(crate::util::jc_diagnostic::Error::from(info));
                                 }
                             }
                         }
                         Ok(())
                     })();
-                    services.log.borrow_mut().use_source(prev_source);
+                    services.log.use_source(prev_source);
                     result
                 }));
             }
@@ -2857,7 +2855,7 @@ impl ClassReader {
                     move |ctx: &mut CompilerContext,
                           syms: &crate::code::symtab::Symtab,
                           _attr: &mut crate::comp::attr::Attr| {
-                        let prev_source = services.log.borrow_mut().use_source(class_file.clone());
+                        let prev_source = services.log.use_source(class_file.clone());
                         let result = (|| -> Result<(), crate::code::symbol::CompletionFailure> {
                             let mut reader_guard = reader_handle.as_ref().map(|rc| rc.borrow_mut());
                             let types = Rc::clone(&services.types);
@@ -2892,7 +2890,7 @@ impl ClassReader {
                             }
                             Ok(())
                         })();
-                        services.log.borrow_mut().use_source(prev_source);
+                        services.log.use_source(prev_source);
                         result
                     },
                 ));
@@ -3186,7 +3184,7 @@ impl ClassReader {
             let version_major = def.version.major();
             let version_minor = def.version.minor();
             let current_file = self.current_class_file.clone();
-            let prev = AbstractLog::use_source(&mut *self.log.borrow_mut(), current_file);
+            let prev = AbstractLog::use_source(&*self.log, current_file);
             let info = warnings::future_attr(
                 name.clone(),
                 version_major,
@@ -3194,12 +3192,12 @@ impl ClassReader {
                 self.major_version,
                 self.minor_version,
             );
-            self.log.borrow_mut().warning(
+            self.log.warning(
                 Some(crate::code::lint::LintCategory::CLASSFILE),
                 None,
                 warning_from_info(info),
             );
-            AbstractLog::use_source(&mut *self.log.borrow_mut(), prev);
+            AbstractLog::use_source(&*self.log, prev);
             self.warned_attrs.insert(name);
         }
         false
@@ -5249,7 +5247,7 @@ fn deproxy_value(
 /// currentClassFile from its enclosing ClassReader; the ported deproxy
 /// functions receive that state explicitly.
 struct DeproxyContext {
-    log: Rc<RefCell<Log>>,
+    log: Rc<Log>,
     lint_classfile: bool,
     current_file: Option<Rc<dyn JavaFileObject>>,
 }
@@ -5296,19 +5294,19 @@ fn find_access_method(
     {
         {
             let prev =
-                AbstractLog::use_source(&mut *deprox.log.borrow_mut(), deprox.current_file.clone());
+                AbstractLog::use_source(&*deprox.log, deprox.current_file.clone());
             let info = warnings::annotation_method_not_found(
                 crate::resources::diagnostic_contract::TypeArg::placeholder(
                     crate::code::printer::visit_type(ctx, container),
                 ),
                 name.clone(),
             );
-            deprox.log.borrow_mut().warning(
+            deprox.log.warning(
                 Some(crate::code::lint::LintCategory::CLASSFILE),
                 None,
                 warning_from_info(info),
             );
-            AbstractLog::use_source(&mut *deprox.log.borrow_mut(), prev);
+            AbstractLog::use_source(&*deprox.log, prev);
         }
     }
     let bot_type = syms.bot_type;
@@ -5441,7 +5439,6 @@ fn find_enum_constant(
         let info = warnings::unknown_enum_constant(file_arg, enum_sym, enumerator.clone());
         deprox
             .log
-            .borrow_mut()
             .warning(None, None, warning_from_info(info));
     }
     let bot_type = syms.bot_type;
@@ -7367,7 +7364,7 @@ mod tests {
     fn d5_reader(
         lint_option: Option<&str>,
     ) -> (
-        std::rc::Rc<std::cell::RefCell<Log>>,
+        std::rc::Rc<Log>,
         CompilerContext,
         Symtab,
         ClassReader,
@@ -7460,7 +7457,7 @@ mod tests {
     #[test]
     fn class_reader_reports_annotation_method_not_found() {
         let (log, mut ctx, syms, mut reader, names) = d5_reader(Some("Xlint:all"));
-        log.borrow_mut().install_diagnostic_handler(
+        log.install_diagnostic_handler(
             crate::util::log::DiagnosticHandler::Deferred {
                 prev: None,
                 deferred: std::collections::VecDeque::new(),
@@ -7495,7 +7492,7 @@ mod tests {
             Some(&deprox),
         )
         .expect("deproxy fixture annotation");
-        let diagnostics = log.borrow_mut().take_deferred_diagnostics();
+        let diagnostics = log.take_deferred_diagnostics();
         let warning = diagnostics
             .iter()
             .find(|diagnostic| {
@@ -7537,7 +7534,7 @@ mod tests {
     #[test]
     fn class_reader_reports_unknown_enum_constant() {
         let (log, mut ctx, syms, mut reader, names) = d5_reader(None);
-        log.borrow_mut().install_diagnostic_handler(
+        log.install_diagnostic_handler(
             crate::util::log::DiagnosticHandler::Deferred {
                 prev: None,
                 deferred: std::collections::VecDeque::new(),
@@ -7573,7 +7570,7 @@ mod tests {
             Some(&deprox),
         )
         .expect("deproxy fixture annotation");
-        let diagnostics = log.borrow_mut().take_deferred_diagnostics();
+        let diagnostics = log.take_deferred_diagnostics();
         let warning = diagnostics
             .iter()
             .find(|diagnostic| {

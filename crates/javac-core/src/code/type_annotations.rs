@@ -38,7 +38,7 @@ pub struct TypeAnnotations {
     /// Java: final Names names
     pub names: Rc<Names>,
     /// Java: final Log log
-    pub log: Rc<std::cell::RefCell<Log>>,
+    pub log: Rc<Log>,
     /// Java: final Check chk
     pub chk: Rc<crate::comp::check::Check>,
     /// Java: final Attr attr (used by validateTypeAnnotationsSignatures).
@@ -69,7 +69,7 @@ impl TypeAnnotations {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         names: Rc<Names>,
-        log: Rc<std::cell::RefCell<Log>>,
+        log: Rc<Log>,
         chk: Rc<crate::comp::check::Check>,
         attr: Rc<std::cell::RefCell<crate::comp::attr::Attr>>,
         annotate: Rc<crate::comp::annotate::Annotate>,
@@ -374,7 +374,7 @@ impl TypeAnnotations {
                     _ => None,
                 };
                 let prev = crate::util::abstract_log::AbstractLog::use_source(
-                    &mut *ta.log.borrow_mut(),
+                    &*ta.log,
                     sourcefile,
                 );
                 let mut positions = TypeAnnotationPositions::new_with_attr(&ta, syms, true, attr);
@@ -386,7 +386,7 @@ impl TypeAnnotations {
                 drop(syms);
                 let result: Result<(), crate::code::symbol::CompletionFailure> = Ok(());
                 crate::util::abstract_log::AbstractLog::use_source(
-                    &mut *ta.log.borrow_mut(),
+                    &*ta.log,
                     prev,
                 );
                 result
@@ -428,14 +428,14 @@ impl TypeAnnotations {
                     _ => None,
                 };
                 let prev = crate::util::abstract_log::AbstractLog::use_source(
-                    &mut *ta.log.borrow_mut(),
+                    &*ta.log,
                     sourcefile,
                 );
                 {
                     attr.validate_type_annotations(ctx, syms, tree, true);
                 }
                 crate::util::abstract_log::AbstractLog::use_source(
-                    &mut *ta.log.borrow_mut(),
+                    &*ta.log,
                     prev,
                 );
                 Ok(())
@@ -1429,7 +1429,7 @@ impl<'a, 'b> TypeAnnotationPositions<'a, 'b> {
                         crate::resources::compiler_properties::errors::cant_type_annotate_scoping(args)
                     };
                     crate::util::abstract_log::AbstractLog::error_at(
-                        &mut *self.type_annotations.log.borrow_mut(),
+                        &*self.type_annotations.log,
                         ctx.tree(typetree).pos,
                         crate::util::jc_diagnostic::Error::from(info),
                     );

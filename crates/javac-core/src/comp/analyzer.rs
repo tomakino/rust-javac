@@ -337,7 +337,7 @@ pub struct Analyzer {
     /// Java: final Types types
     pub types: Rc<Types>,
     /// Java: final Log log
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     /// Java: final TreeMaker make
     pub make: Rc<RefCell<TreeMaker>>,
     /// Java: final Symtab (injected, ADR 0001)
@@ -380,7 +380,7 @@ impl Analyzer {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         types: Rc<Types>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         make: Rc<RefCell<TreeMaker>>,
         syms: Rc<crate::code::symtab::Symtab>,
         attr: Rc<RefCell<Option<Rc<RefCell<Attr>>>>>,
@@ -646,7 +646,7 @@ impl Analyzer {
                 _ => None,
             };
             crate::util::abstract_log::AbstractLog::use_source(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 sourcefile,
             )
         };
@@ -718,7 +718,7 @@ impl Analyzer {
             self.process(ctx, syms, kind, old_tree, replacement, has_errors);
         }
         crate::util::abstract_log::AbstractLog::use_source(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             prev_source,
         );
     }
@@ -1079,7 +1079,7 @@ impl Analyzer {
     ) {
         let warning = crate::util::jc_diagnostic::Warning::from(warning);
         crate::util::mandatory_warning_handler::MandatoryWarningLog::warning(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             None,
             Some(Rc::new(
                 crate::util::jc_diagnostic::SimpleDiagnosticPosition::new(pos),

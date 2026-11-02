@@ -231,7 +231,7 @@ pub struct JavacParser {
     #[allow(non_snake_case)]
     F: TreeMaker,
     /// The log to be used for error diagnostics.
-    log: Rc<RefCell<Log>>,
+    log: Rc<Log>,
     /// The Source language setting.
     source: Source,
     /// The Preview language setting (None: Preview.instance is not wired yet).
@@ -491,8 +491,8 @@ impl JavacParser {
     ) -> Option<Rc<std::cell::RefCell<dyn DocCommentTable>>> {
         if keep_doc_comments {
             let names = fac.names.clone();
-            let diags = fac.log.borrow().diags().clone();
-            let diag_source = fac.log.borrow().current_source();
+            let diags = fac.log.diags().clone();
+            let diag_source = fac.log.current_source();
             let doc_tree_maker = Rc::new(std::cell::RefCell::new(
                 crate::tree::doc_tree_maker::DocTreeMaker::new(diags),
             ));
@@ -709,7 +709,6 @@ impl JavacParser {
             };
             let position = Rc::new(SimpleDiagnosticPosition::new(preferred));
             self.log
-                .borrow_mut()
                 .error_flag_pos(DiagnosticFlag::SYNTAX, Some(position), key);
         }
         self.S.set_err_pos(preferred);
@@ -838,7 +837,7 @@ impl JavacParser {
             }
             TokenKind::ASSERT => {
                 let pos = self.token.pos;
-                self.log.borrow_mut().error_flag_at(
+                self.log.error_flag_at(
                     DiagnosticFlag::SYNTAX,
                     pos,
                     JCDiagnosticError::from(errors::assert_as_identifier()),
@@ -848,7 +847,7 @@ impl JavacParser {
             }
             TokenKind::ENUM => {
                 let pos = self.token.pos;
-                self.log.borrow_mut().error_flag_at(
+                self.log.error_flag_at(
                     DiagnosticFlag::SYNTAX,
                     pos,
                     JCDiagnosticError::from(errors::enum_as_identifier()),
@@ -864,7 +863,7 @@ impl JavacParser {
                     name
                 } else {
                     let pos = self.token.pos;
-                    self.log.borrow_mut().error_flag_at(
+                    self.log.error_flag_at(
                         DiagnosticFlag::SYNTAX,
                         pos,
                         JCDiagnosticError::from(errors::this_as_identifier()),
@@ -877,9 +876,9 @@ impl JavacParser {
                 let pos = self.token.pos;
                 if Feature::UNDERSCORE_IDENTIFIER.allowed_in_source(self.source) {
                     let key = JCDiagnosticWarning::from(warnings::underscore_as_identifier());
-                    self.log.borrow_mut().warning_at(pos, key);
+                    self.log.warning_at(pos, key);
                 } else {
-                    self.log.borrow_mut().error_flag_at(
+                    self.log.error_flag_at(
                         DiagnosticFlag::SYNTAX,
                         pos,
                         JCDiagnosticError::from(errors::underscore_as_identifier()),
@@ -948,7 +947,7 @@ impl JavacParser {
                     }
                     Err(_) => {
                         let key = JCDiagnosticError::from(errors::int_number_too_large(string));
-                        self.log.borrow_mut().error_flag_at(
+                        self.log.error_flag_at(
                             DiagnosticFlag::SYNTAX,
                             self.token.pos,
                             key,
@@ -968,7 +967,7 @@ impl JavacParser {
                     }
                     Err(_) => {
                         let key = JCDiagnosticError::from(errors::int_number_too_large(string));
-                        self.log.borrow_mut().error_flag_at(
+                        self.log.error_flag_at(
                             DiagnosticFlag::SYNTAX,
                             self.token.pos,
                             key,
@@ -992,14 +991,14 @@ impl JavacParser {
                 };
                 if n == 0.0f32 && !Self::is_zero(&proper) {
                     let key = JCDiagnosticError::from(errors::fp_number_too_small());
-                    self.log.borrow_mut().error_flag_at(
+                    self.log.error_flag_at(
                         DiagnosticFlag::SYNTAX,
                         self.token.pos,
                         key,
                     );
                 } else if n == f32::INFINITY {
                     let key = JCDiagnosticError::from(errors::fp_number_too_large());
-                    self.log.borrow_mut().error_flag_at(
+                    self.log.error_flag_at(
                         DiagnosticFlag::SYNTAX,
                         self.token.pos,
                         key,
@@ -1028,14 +1027,14 @@ impl JavacParser {
                 };
                 if n == 0.0f64 && !Self::is_zero(&proper) {
                     let key = JCDiagnosticError::from(errors::fp_number_too_small());
-                    self.log.borrow_mut().error_flag_at(
+                    self.log.error_flag_at(
                         DiagnosticFlag::SYNTAX,
                         self.token.pos,
                         key,
                     );
                 } else if n == f64::INFINITY {
                     let key = JCDiagnosticError::from(errors::fp_number_too_large());
-                    self.log.borrow_mut().error_flag_at(
+                    self.log.error_flag_at(
                         DiagnosticFlag::SYNTAX,
                         self.token.pos,
                         key,
@@ -1138,11 +1137,10 @@ impl JavacParser {
             Some(preview) => {
                 if preview.is_preview(feature) && !preview.is_enabled() {
                     let error = preview.disabled_error(feature);
-                    self.log.borrow_mut().error_at(pos, error);
+                    self.log.error_at(pos, error);
                 } else if !feature.allowed_in_source(self.source) {
                     let error = feature.error(self.source.name());
                     self.log
-                        .borrow_mut()
                         .error_flag_at(DiagnosticFlag::SOURCE_LEVEL, pos, error);
                 } else if preview.is_preview(feature) {
                     preview.warn_preview(pos, feature);
@@ -1152,7 +1150,6 @@ impl JavacParser {
                 if !feature.allowed_in_source(self.source) {
                     let error = feature.error(self.source.name());
                     self.log
-                        .borrow_mut()
                         .error_flag_at(DiagnosticFlag::SOURCE_LEVEL, pos, error);
                 }
             }
@@ -1446,7 +1443,6 @@ impl JavacParser {
                 let tpos = self.token.pos;
                 let key = JCDiagnosticError::from(errors::repeated_modifier());
                 self.log
-                    .borrow_mut()
                     .error_flag_at(DiagnosticFlag::SYNTAX, tpos, key);
             }
             let last_pos = self.token.pos;
@@ -1811,7 +1807,7 @@ impl JavacParser {
                     name.clone(),
                     crate::resources::diagnostic_contract::SourceArg::placeholder(Source::JDK10.name()),
                 ));
-                self.log.borrow_mut().warning_at(pos, key);
+                self.log.warning_at(pos, key);
             }
         }
         if is(&self.names.r#yield) {
@@ -1823,7 +1819,7 @@ impl JavacParser {
                     name.clone(),
                     crate::resources::diagnostic_contract::SourceArg::placeholder(Source::JDK14.name()),
                 ));
-                self.log.borrow_mut().warning_at(pos, key);
+                self.log.warning_at(pos, key);
             }
         }
         if is(&self.names.record) {
@@ -1837,7 +1833,7 @@ impl JavacParser {
                         crate::resources::diagnostic_contract::SourceArg::placeholder(Source::JDK14.name()),
                     ),
                 );
-                self.log.borrow_mut().warning_at(pos, key);
+                self.log.warning_at(pos, key);
             }
         }
         if is(&self.names.sealed) {
@@ -1851,7 +1847,7 @@ impl JavacParser {
                         crate::resources::diagnostic_contract::SourceArg::placeholder("JDK15"),
                     ),
                 );
-                self.log.borrow_mut().warning_at(pos, key);
+                self.log.warning_at(pos, key);
             }
         }
         if is(&self.names.permits) {
@@ -1865,7 +1861,7 @@ impl JavacParser {
                         crate::resources::diagnostic_contract::SourceArg::placeholder("JDK15"),
                     ),
                 );
-                self.log.borrow_mut().warning_at(pos, key);
+                self.log.warning_at(pos, key);
             }
         }
         None
@@ -1999,7 +1995,6 @@ impl JavacParser {
             if self.is_invalid_unqualified_method_identifier(t_pos, &t_name) {
                 let key = JCDiagnosticError::from(errors::invalid_yield());
                 self.log
-                    .borrow_mut()
                     .error_flag_at(DiagnosticFlag::SYNTAX, t_pos, key);
                 // Rust: upstream F.Erroneous(...) uses the TreeMaker's
                 // current position; the Rust factory requires an explicit at(pos)
@@ -2017,7 +2012,7 @@ impl JavacParser {
                 return true;
             }
             let key = JCDiagnosticWarning::from(warnings::invalid_yield());
-            self.log.borrow_mut().warning_at(pos, key);
+            self.log.warning_at(pos, key);
         }
         false
     }
@@ -2950,7 +2945,7 @@ impl JavacParser {
                             let key = JCDiagnosticError::from(
                                 errors::no_annotations_on_dot_class(),
                             );
-                            self.log.borrow_mut().error_at(err_pos, key);
+                            self.log.error_at(err_pos, key);
                             return expr;
                         }
                         _ => {
@@ -3474,7 +3469,6 @@ impl JavacParser {
                             ))
                         };
                     self.log
-                        .borrow_mut()
                         .error_flag_at(DiagnosticFlag::SYNTAX, param_pos, key);
                 }
                 // Java: LambdaClassifier.addParameter(param)
@@ -3506,10 +3500,9 @@ impl JavacParser {
             }
             if let Some(fragment) = diag_fragment {
                 let key = JCDiagnosticError::from(errors::invalid_lambda_parameter_declaration(
-                    fragment_diagnostic_arg(&self.log.borrow(), fragment),
+                    fragment_diagnostic_arg(&*self.log, fragment),
                 ));
                 self.log
-                    .borrow_mut()
                     .error_flag_at(DiagnosticFlag::SYNTAX, pos, key);
             }
             // Java: for (JCVariableDecl param : params) { if (param.vartype != null
@@ -4198,7 +4191,6 @@ impl JavacParser {
         };
         if let Some(error) = error {
             self.log
-                .borrow_mut()
                 .error_flag_at(DiagnosticFlag::SYNTAX, ctx.tree(first).pos, error);
             let block = self.F.at(ctx.tree(first).pos).block(ctx, 0, stats);
             let block = self.to_p(block);
@@ -4259,7 +4251,7 @@ impl JavacParser {
                 if !self.allow_records {
                     let pos_err = self.token.pos;
                     let key = JCDiagnosticError::from(errors::local_enum());
-                    self.log.borrow_mut().error_at(pos_err, key);
+                    self.log.error_at(pos_err, key);
                 }
                 let dc = self.token.comment(CommentStyle::JAVADOC);
                 let mods = self.modifiers_opt(ctx);
@@ -4282,7 +4274,7 @@ impl JavacParser {
                         let key = JCDiagnosticError::from(
                             errors::sealed_or_non_sealed_local_classes_not_allowed(),
                         );
-                        self.log.borrow_mut().error_at(err_pos, key);
+                        self.log.error_at(err_pos, key);
                         self.next_token();
                         self.next_token();
                         self.next_token();
@@ -4297,7 +4289,7 @@ impl JavacParser {
                         let key = JCDiagnosticError::from(
                             errors::sealed_or_non_sealed_local_classes_not_allowed(),
                         );
-                        self.log.borrow_mut().error_at(err_pos, key);
+                        self.log.error_at(err_pos, key);
                         self.next_token();
                         let mods = self.modifiers_opt(ctx);
                         let dc = self.token.comment(CommentStyle::JAVADOC);
@@ -4517,7 +4509,6 @@ impl JavacParser {
         if (self.last_mode & TYPE) != 0 && self.token.kind == TokenKind::COLON {
             let key = JCDiagnosticError::from(errors::bad_initializer(JavaString::from("for-loop")));
             self.log
-                .borrow_mut()
                 .error_flag_at(DiagnosticFlag::SYNTAX, pos, key);
             let mods = self.modifiers_opt(ctx);
             let err_name = self.names.error.clone();
@@ -4645,7 +4636,7 @@ impl JavacParser {
                 if resources.is_empty() {
                     if finalizer.is_none() && catchers.is_empty() {
                         let p = pos;
-                        let _ = self.log.borrow_mut().error_flag_at(
+                        let _ = self.log.error_flag_at(
                             DiagnosticFlag::SYNTAX,
                             p,
                             JCDiagnosticError::from(errors::try_without_catch_finally_or_resource_decls()),
@@ -4927,7 +4918,7 @@ impl JavacParser {
                         let key = JCDiagnosticError::from(
                             errors::switch_case_unexpected_statement(),
                         );
-                        self.log.borrow_mut().error_at(stmt_pos, key);
+                        self.log.error_at(stmt_pos, key);
                     }
                     stats = List::of(statement);
                     body = Some(statement);
@@ -4974,7 +4965,7 @@ impl JavacParser {
                         let key = JCDiagnosticError::from(
                             errors::switch_case_unexpected_statement(),
                         );
-                        self.log.borrow_mut().error_at(stmt_pos, key);
+                        self.log.error_at(stmt_pos, key);
                     }
                     stats = List::of(statement);
                     body = Some(statement);
@@ -5185,7 +5176,7 @@ impl JavacParser {
         if ctx.tree(t).tag != Tag::IDENT && ctx.tree(t).tag != Tag::SELECT {
             let pos = ctx.tree(t).pos;
             let key = JCDiagnosticError::from(errors::try_with_resources_expr_needs_var());
-            self.log.borrow_mut().error_at(pos, key);
+            self.log.error_at(pos, key);
         }
         t
     }
@@ -5213,9 +5204,9 @@ impl JavacParser {
                 // Java: Errors.InvalidPermitsClause(Fragments.ClassIsNotSealed(classOrInterface)).
                 let class_fragment = fragments::class_is_not_sealed(JavaString::from(class_or_interface));
                 let key = JCDiagnosticError::from(errors::invalid_permits_clause(
-                    fragment_diagnostic_arg(&self.log.borrow(), class_fragment),
+                    fragment_diagnostic_arg(&*self.log, class_fragment),
                 ));
-                self.log.borrow_mut().error_at(self.token.pos, key);
+                self.log.error_at(self.token.pos, key);
             }
             self.next_token();
             return self.qualident_list(ctx, false);
@@ -5442,7 +5433,6 @@ impl JavacParser {
                 let err_pos = self.token.pos;
                 let key = JCDiagnosticError::from(errors::initializer_not_allowed());
                 self.log
-                    .borrow_mut()
                     .error_flag_at(DiagnosticFlag::SYNTAX, err_pos, key);
             } else if is_record && (mods_flags & Flags::STATIC) == 0 {
                 let err_pos = self.token.pos;
@@ -5450,7 +5440,6 @@ impl JavacParser {
                     errors::instance_initializer_not_allowed_in_records(),
                 );
                 self.log
-                    .borrow_mut()
                     .error_flag_at(DiagnosticFlag::SYNTAX, err_pos, key);
             }
             return vec![self.block_at(ctx, pos, mods_flags)];
@@ -5501,7 +5490,6 @@ impl JavacParser {
             if is_interface || tk.name().to_java_string() != class_name.to_java_string() {
                 let key = JCDiagnosticError::from(errors::invalid_meth_decl_ret_type_req());
                 self.log
-                    .borrow_mut()
                     .error_flag_at(DiagnosticFlag::SYNTAX, pos, key);
             } else if !annos_after_params.is_empty() {
                 let head = *annos_after_params.head();
@@ -5533,20 +5521,19 @@ impl JavacParser {
             // Fragments.Compact, className,
             // Fragments.ThrowsClauseNotAllowedForCanonicalConstructor(Fragments.Compact)));
             let compact_arg =
-                fragment_diagnostic_arg(&self.log.borrow(), fragments::compact());
+                fragment_diagnostic_arg(&*self.log, fragments::compact());
             let detail_arg = fragment_diagnostic_arg(
-                &self.log.borrow(),
+                &*self.log,
                 fragments::throws_clause_not_allowed_for_canonical_constructor(compact_arg),
             );
             let outer_compact =
-                fragment_diagnostic_arg(&self.log.borrow(), fragments::compact());
+                fragment_diagnostic_arg(&*self.log, fragments::compact());
             let key = JCDiagnosticError::from(errors::invalid_canonical_constructor_in_record(
                 outer_compact,
                 class_name.clone(),
                 detail_arg,
             ));
             self.log
-                .borrow_mut()
                 .error_flag_at(DiagnosticFlag::SYNTAX, self.token.pos, key);
             self.skip(false, true, false, false);
             let init_name = self.names.init.clone();
@@ -5792,7 +5779,6 @@ impl JavacParser {
                     let err_pos = ctx.tree(last_param).pos;
                     let key = JCDiagnosticError::from(errors::varargs_must_be_last());
                     self.log
-                        .borrow_mut()
                         .error_flag_at(DiagnosticFlag::SYNTAX, err_pos, key);
                 }
                 self.next_token();
@@ -5838,7 +5824,7 @@ impl JavacParser {
             if mods_flags != 0 {
                 let err_pos = ctx.tree(mods).pos;
                 let key = JCDiagnosticError::from(errors::record_cant_declare_field_modifiers());
-                self.log.borrow_mut().error_at(err_pos, key);
+                self.log.error_at(err_pos, key);
             }
             if let TreeKind::Modifiers { flags, .. } = &mut ctx.tree_mut(mods).kind {
                 *flags |= Flags::RECORD | Flags::FINAL | Flags::PRIVATE | Flags::GENERATED_MEMBER;
@@ -5893,7 +5879,7 @@ impl JavacParser {
         let name: Name;
         if lambda_parameter && self.token.kind == TokenKind::UNDERSCORE {
             let key = JCDiagnosticError::from(errors::underscore_as_identifier_in_lambda());
-            self.log.borrow_mut().error_at(pos, key);
+            self.log.error_at(pos, key);
             name = self.token.name().clone();
             self.next_token();
         } else {
@@ -5924,11 +5910,11 @@ impl JavacParser {
                         if self.allow_this_ident {
                             if (mods_flags & Flags::VARARGS) != 0 {
                                 let key = JCDiagnosticError::from(errors::varargs_and_receiver());
-                                self.log.borrow_mut().error_at(self.token.pos, key);
+                                self.log.error_at(self.token.pos, key);
                             }
                             if self.token.kind == TokenKind::LBRACKET {
                                 let key = JCDiagnosticError::from(errors::array_and_receiver());
-                                self.log.borrow_mut().error_at(self.token.pos, key);
+                                self.log.error_at(self.token.pos, key);
                             }
                             let wrong_receiver = ctx.tree(pn).has_tag(Tag::SELECT)
                                 && match &ctx.tree(pn).kind {
@@ -5939,7 +5925,7 @@ impl JavacParser {
                                 };
                             if wrong_receiver {
                                 let key = JCDiagnosticError::from(errors::wrong_receiver());
-                                self.log.borrow_mut().error_at(self.token.pos, key);
+                                self.log.error_at(self.token.pos, key);
                             }
                         }
                         let vd = self.F.at(pos).receiver_var_def(ctx, mods, pn, type_);
@@ -5957,11 +5943,11 @@ impl JavacParser {
         };
         if (mods_flags & Flags::VARARGS) != 0 && self.token.kind == TokenKind::LBRACKET {
             let key = JCDiagnosticError::from(errors::varargs_and_old_array_syntax());
-            self.log.borrow_mut().error_at(self.token.pos, key);
+            self.log.error_at(self.token.pos, key);
         }
         if record_component && self.token.kind == TokenKind::LBRACKET {
             let key = JCDiagnosticError::from(errors::record_component_and_old_array_syntax());
-            self.log.borrow_mut().error_at(self.token.pos, key);
+            self.log.error_at(self.token.pos, key);
         }
         // Adapter: type is Some in every current call site; the
         // null type of implicit lambda parameters is parsed by the lambda.
@@ -6180,7 +6166,6 @@ impl JavacParser {
                                 let p = self.token.pos;
                                 let key = JCDiagnosticError::from(errors::repeated_modifier());
                                 self.log
-                                    .borrow_mut()
                                     .error_flag_at(DiagnosticFlag::SYNTAX, p, key);
                             }
                             is_static_phase = true;
@@ -6235,7 +6220,6 @@ impl JavacParser {
                         with_text.as_str(),
                     )));
                     self.log
-                        .borrow_mut()
                         .error_flag_at(DiagnosticFlag::SYNTAX, p, key);
                     self.skip(false, false, false, false);
                 }
@@ -6617,7 +6601,7 @@ impl JavacParser {
         if !tree_info::is_expression_statement(ctx, t) {
             let pos = ctx.tree(t).pos;
             let ret = self.F.at(pos).erroneous(ctx, List::of(t));
-            self.log.borrow_mut().error_flag_at(
+            self.log.error_flag_at(
                 DiagnosticFlag::SYNTAX,
                 pos,
                 JCDiagnosticError::from(errors::not_stmt()),

@@ -33,7 +33,7 @@ use crate::util::options::Options;
 /// A factory for creating parsers (Java: public class ParserFactory).
 #[derive(Clone)]
 pub struct ParserFactory {
-    pub(crate) log: Rc<std::cell::RefCell<Log>>,
+    pub(crate) log: Rc<Log>,
     /// Upstream ParserFactory.tokens; wired from the ScannerFactory in new().
     #[allow(dead_code)]
     pub(crate) tokens: Rc<crate::parser::tokens::Tokens>,

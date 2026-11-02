@@ -50,7 +50,7 @@ pub struct Lower {
     /// The name table.
     pub names: Rc<Names>,
     /// The diagnostic log.
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     /// The symbol table.
     pub syms: Rc<Symtab>,
     /// The resolver.
@@ -164,7 +164,7 @@ impl Lower {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         names: Rc<Names>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         syms: Rc<Symtab>,
         rs: Rc<Resolve>,
         operators: Rc<RefCell<Option<Rc<Operators>>>>,
@@ -1635,7 +1635,7 @@ impl Lower {
             ),
         );
         crate::util::abstract_log::AbstractLog::error_at(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             pos.get_preferred_position(),
             crate::util::jc_diagnostic::Error::from(info),
         );
@@ -2581,7 +2581,7 @@ impl Lower {
             .to_string_lossy()
             .to_string();
         let diags = {
-            let log = self.log.borrow();
+            let log = &*self.log;
             Rc::clone(crate::util::abstract_log::AbstractLog::diags(&*log))
         };
         let detail = diags.fragment(crate::util::jc_diagnostic::Fragment::from(
@@ -2599,16 +2599,16 @@ impl Lower {
             _ => None,
         };
         let prev_source = crate::util::abstract_log::AbstractLog::use_source(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             sourcefile,
         );
         crate::util::abstract_log::AbstractLog::error_at(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             ctx.tree(tree).pos,
             crate::util::jc_diagnostic::Error::from(info),
         );
         crate::util::abstract_log::AbstractLog::use_source(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             prev_source,
         );
     }
@@ -4982,7 +4982,7 @@ impl Lower {
                             ),
                         );
                         crate::util::abstract_log::AbstractLog::error_at(
-                            &mut *self.log.borrow_mut(),
+                            &*self.log,
                             ctx.tree(tree).pos,
                             crate::util::jc_diagnostic::Error::from(info),
                         );

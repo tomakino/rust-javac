@@ -180,7 +180,7 @@ pub enum TranslationContextKind {
 pub struct LambdaToMethod {
     pub attr: Rc<RefCell<Attr>>,
     pub diags: Rc<crate::util::jc_diagnostic::Factory>,
-    pub log: Rc<RefCell<crate::util::log::Log>>,
+    pub log: Rc<crate::util::log::Log>,
     pub lower: Rc<RefCell<Lower>>,
     pub names: Rc<Names>,
     pub syms: Rc<Symtab>,
@@ -236,7 +236,7 @@ impl LambdaToMethod {
     pub fn new(
         attr: Rc<RefCell<Attr>>,
         diags: Rc<crate::util::jc_diagnostic::Factory>,
-        log: Rc<RefCell<crate::util::log::Log>>,
+        log: Rc<crate::util::log::Log>,
         lower: Rc<RefCell<Lower>>,
         names: Rc<Names>,
         syms: Rc<Symtab>,
@@ -574,16 +574,16 @@ impl LambdaToMethod {
                 _ => None,
             });
             let prev_source = crate::util::abstract_log::AbstractLog::use_source(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 sourcefile,
             );
             crate::util::abstract_log::AbstractLog::note_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 ctx.tree(tree).pos,
                 note,
             );
             crate::util::abstract_log::AbstractLog::use_source(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 prev_source,
             );
         }
@@ -662,16 +662,16 @@ impl LambdaToMethod {
                 _ => None,
             });
             let prev_source = crate::util::abstract_log::AbstractLog::use_source(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 sourcefile,
             );
             crate::util::abstract_log::AbstractLog::note_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 ctx.tree(tree).pos,
                 note,
             );
             crate::util::abstract_log::AbstractLog::use_source(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 prev_source,
             );
         }
@@ -804,16 +804,16 @@ impl LambdaToMethod {
                 _ => None,
             });
             let prev_source = crate::util::abstract_log::AbstractLog::use_source(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 sourcefile,
             );
             crate::util::abstract_log::AbstractLog::note_at(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 ctx.tree(tree).pos,
                 note,
             );
             crate::util::abstract_log::AbstractLog::use_source(
-                &mut *self.log.borrow_mut(),
+                &*self.log,
                 prev_source,
             );
         }
@@ -967,7 +967,7 @@ pub struct LambdaAnalyzerPreprocessor {
     pub types: Rc<Types>,
     pub attr: Rc<RefCell<Attr>>,
     pub lower: Rc<RefCell<Lower>>,
-    pub log: Rc<RefCell<crate::util::log::Log>>,
+    pub log: Rc<crate::util::log::Log>,
     pub trans_types: Rc<RefCell<TransTypes>>,
     pub make: Rc<RefCell<TreeMaker>>,
     pub diags: Rc<crate::util::jc_diagnostic::Factory>,
@@ -1066,7 +1066,7 @@ impl LambdaAnalyzerPreprocessor {
         types: Rc<Types>,
         attr: Rc<RefCell<Attr>>,
         lower: Rc<RefCell<Lower>>,
-        log: Rc<RefCell<crate::util::log::Log>>,
+        log: Rc<crate::util::log::Log>,
         trans_types: Rc<RefCell<TransTypes>>,
         make: Rc<RefCell<TreeMaker>>,
         diags: Rc<crate::util::jc_diagnostic::Factory>,
@@ -1315,16 +1315,16 @@ impl LambdaAnalyzerPreprocessor {
             _ => None,
         });
         let prev_source = crate::util::abstract_log::AbstractLog::use_source(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             sourcefile,
         );
         crate::util::abstract_log::AbstractLog::note_at(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             ctx.tree(tree).pos,
             note,
         );
         crate::util::abstract_log::AbstractLog::use_source(
-            &mut *self.log.borrow_mut(),
+            &*self.log,
             prev_source,
         );
     }

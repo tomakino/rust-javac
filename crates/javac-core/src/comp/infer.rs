@@ -487,7 +487,7 @@ pub struct Infer {
     pub any_poly: TypeId,
     /// Diagnostic services used by the deferred-instantiation verbose note
     /// (installed by the compiler driver).
-    pub log: std::cell::RefCell<Option<Rc<RefCell<crate::util::log::Log>>>>,
+    pub log: std::cell::RefCell<Option<Rc<crate::util::log::Log>>>,
     /// Java: Resolve.verboseResolutionMode (the DEFERRED_INST members).
     pub verbose_resolution_mode:
         std::cell::RefCell<Vec<crate::comp::resolve::VerboseResolutionMode>>,
@@ -520,7 +520,7 @@ impl Infer {
     /// Install the diagnostic services used by deferred-instantiation notes.
     pub fn install_diagnostics(
         &self,
-        log: Rc<RefCell<crate::util::log::Log>>,
+        log: Rc<crate::util::log::Log>,
         verbose_resolution_mode: Vec<crate::comp::resolve::VerboseResolutionMode>,
     ) {
         *self.log.borrow_mut() = Some(log);
@@ -2062,7 +2062,7 @@ impl Infer {
             );
             if let Some(env_tree) = env.tree {
                 crate::util::abstract_log::AbstractLog::note_at(
-                    &mut *log.borrow_mut(),
+                    &*log,
                     ctx.tree(env_tree).pos,
                     note,
                 );

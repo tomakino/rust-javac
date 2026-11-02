@@ -11,7 +11,7 @@
 //! * the Java char[] buffer becomes Rc<[u16]> (shared with the
 //!   JavadocTokenizer position-tracking readers; no borrow lifetime);
 //! * the ScannerFactory constructor parameter is narrowed to the log it is used
-//!   for (Rc<RefCell<Log>>), registered as a mapping difference;
+//!   for (Rc<Log>), registered as a mapping difference;
 //! * the Java protected methods stay pub(crate) (parser-internal API);
 //! * the nested PositionTrackingReader subclass becomes the optional tracking
 //!   state of the same struct (next() updates the column, offsetPosition() uses
@@ -48,7 +48,7 @@ pub struct UnicodeReader {
     /// true if the last character was derived from an unicode escape sequence.
     was_unicode_escape: bool,
     /// Log for error reporting.
-    log: Rc<RefCell<Log>>,
+    log: Rc<Log>,
     /// Position-tracking state (Java: the nested PositionTrackingReader subclass).
     tracking: Option<Tracking>,
 }
@@ -84,7 +84,7 @@ pub(crate) fn to_code_point(high: u16, low: u16) -> i32 {
 
 impl UnicodeReader {
     /// Java: protected UnicodeReader(ScannerFactory sf, char[] array, int length).
-    pub(crate) fn new(log: Rc<RefCell<Log>>, buffer: Rc<[u16]>, length: i32) -> UnicodeReader {
+    pub(crate) fn new(log: Rc<Log>, buffer: Rc<[u16]>, length: i32) -> UnicodeReader {
         let mut reader = UnicodeReader {
             buffer,
             length,
@@ -103,7 +103,7 @@ impl UnicodeReader {
 
     /// Java: protected PositionTrackingReader(ScannerFactory sf, char[] array, int offset).
     pub(crate) fn new_position_tracking(
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         buffer: Rc<[u16]>,
         offset: i32,
     ) -> UnicodeReader {
@@ -242,7 +242,7 @@ impl UnicodeReader {
             self.character = code as u16;
             UnicodeEscapeResult::ValidEscape
         } else {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 index,
                 JCDiagnosticError::from(errors::illegal_unicode_esc()),
             );
@@ -455,7 +455,7 @@ impl UnicodeReader {
             .filter(|digit| *digit < digit_radix)
             .unwrap_or(-1);
         if result >= 0 && !self.is_ascii() {
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 self.position(),
                 JCDiagnosticError::from(errors::illegal_nonascii_digit()),
             );
@@ -505,14 +505,14 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    fn log() -> Rc<RefCell<Log>> {
+    fn log() -> Rc<Log> {
         let mut context = Context::new();
         let log = Log::instance(&mut context);
         let dummy = Rc::new(SimpleJavaFileObject::new(
             URI::create(&JavaString::from("file:///Dummy.java")),
             Kind::SOURCE,
         ));
-        log.borrow_mut().use_source(Some(dummy));
+        log.use_source(Some(dummy));
         log
     }
 

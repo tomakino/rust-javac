@@ -1287,7 +1287,7 @@ mod tests {
 
         fn get_log(
             &self,
-        ) -> std::option::Option<std::rc::Rc<std::cell::RefCell<crate::util::log::Log>>> {
+        ) -> std::option::Option<std::rc::Rc<crate::util::log::Log>> {
             None
         }
 

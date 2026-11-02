@@ -11678,7 +11678,7 @@ mod tests {
         CompilerContext,
         Rc<Symtab>,
         Types,
-        Rc<std::cell::RefCell<crate::util::log::Log>>,
+        Rc<crate::util::log::Log>,
         Rc<crate::util::jc_diagnostic::Factory>,
         Rc<crate::code::lint::Lint>,
         Rc<crate::code::deferred_lint_handler::DeferredLintHandler>,
@@ -11829,7 +11829,7 @@ mod tests {
 
     fn check_for_tests(
         names: &Rc<Names>,
-        log: &Rc<std::cell::RefCell<crate::util::log::Log>>,
+        log: &Rc<crate::util::log::Log>,
         diags: &Rc<crate::util::jc_diagnostic::Factory>,
         types: &Types,
         lint: &Rc<crate::code::lint::Lint>,

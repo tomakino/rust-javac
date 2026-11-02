@@ -64,7 +64,7 @@ pub struct TypeEnter {
     pub names: Rc<Names>,
     pub enter: Rc<Enter>,
     pub member_enter: Rc<MemberEnter>,
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     pub chk: Rc<Check>,
     pub types: Rc<Types>,
     /// The shared symbol table (needed by the import-scope queries;
@@ -270,7 +270,7 @@ impl Phase {
         let sym = class_tree_symbol(ctx, tree).expect("class symbol");
         self.queue.borrow_mut().push(Rc::clone(&env));
         let sourcefile = compilation_unit_sourcefile(ctx, toplevel(&env));
-        let prev_source = ty.log.borrow_mut().use_source(sourcefile);
+        let prev_source = ty.log.use_source(sourcefile);
         // Java: deferredLintHandler.setPos(tree.pos()) — the tree is the
         // DiagnosticPosition identity (JCTree.pos() returns the tree itself), so
         // the deferred queue must be keyed by the tree, not by a bare numeric
@@ -285,7 +285,7 @@ impl Phase {
         }
         ty.dependencies.borrow_mut().pop();
         ty.deferred_lint_handler.set_pos_state(prev_lint);
-        ty.log.borrow_mut().use_source(prev_source);
+        ty.log.use_source(prev_source);
     }
 }
 
@@ -297,7 +297,7 @@ impl TypeEnter {
         names: Rc<Names>,
         enter: Rc<Enter>,
         member_enter: Rc<MemberEnter>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         chk: Rc<Check>,
         types: Rc<Types>,
         syms: Rc<crate::code::symtab::Symtab>,
@@ -492,7 +492,7 @@ impl TypeEnter {
         attr: &mut crate::comp::attr::Attr,
     ) {
         let sourcefile = compilation_unit_sourcefile(ctx, toplevel);
-        let prev = self.log.borrow_mut().use_source(sourcefile);
+        let prev = self.log.use_source(sourcefile);
         // Java: resolve.run() (the completeClass.resolveImports closure)
         if let Some(env) = resolve {
             self.resolve_imports(ctx, syms, toplevel, env, attr);
@@ -507,7 +507,7 @@ impl TypeEnter {
         if let Some(scope) = compilation_unit_star_import_scope(ctx, toplevel) {
             ctx.scope_finalize(scope, &types, syms, Some(&mut *attr));
         }
-        self.log.borrow_mut().use_source(prev);
+        self.log.use_source(prev);
     }
 
     /// Java: public void complete(Symbol sym) throws CompletionFailure — the
@@ -743,7 +743,7 @@ impl TypeEnter {
             let tree = env.encl_class.expect("class tree");
             queue.push(Rc::clone(&env));
             let sourcefile = compilation_unit_sourcefile(ctx, toplevel(&env));
-            let prev_source = self.log.borrow_mut().use_source(sourcefile);
+            let prev_source = self.log.use_source(sourcefile);
             let prev_lint = self
                 .deferred_lint_handler.set_pos(Rc::new(SimpleDiagnosticPosition::new(ctx.tree(tree).pos)));
             let sym = class_tree_symbol(ctx, tree).expect("class symbol");
@@ -759,7 +759,7 @@ impl TypeEnter {
             }
             self.dependencies.borrow_mut().pop();
             self.deferred_lint_handler.set_pos_state(prev_lint);
-            self.log.borrow_mut().use_source(prev_source);
+            self.log.use_source(prev_source);
         }
         queue
     }
@@ -983,7 +983,7 @@ impl TypeEnter {
                             && syms.get_class(pack_modle, &p_fullname).is_some()
                         {
                             let name = p_fullname.to_java_string().to_string_lossy();
-                            self.log.borrow_mut().error_at(
+                            self.log.error_at(
                                 ctx.tree(package_decl).pos,
                                 crate::util::jc_diagnostic::Error::from(
                                     crate::resources::compiler_properties::errors::
@@ -1208,7 +1208,7 @@ impl TypeEnter {
         if ctx.sym(tsym).kind != Kind::TYP {
             // Java: log.error(DiagnosticFlag.RECOVERABLE, imp.pos(),
             // Errors.StaticImpOnlyClassesAndInterfaces);
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(tree).pos,
                 crate::util::jc_diagnostic::Error::from(
                     crate::resources::compiler_properties::errors::static_imp_only_classes_and_interfaces(),
@@ -1762,7 +1762,7 @@ impl TypeEnter {
                         "Record",
                     )),
                 );
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(tree).pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
@@ -2072,7 +2072,7 @@ impl TypeEnter {
                         ctx.sym(sym).name.to_java_string().to_string_lossy().to_string(),
                     ),
                 );
-                self.log.borrow_mut().error_at(
+                self.log.error_at(
                     ctx.tree(tree).pos,
                     crate::util::jc_diagnostic::Error::from(info),
                 );
@@ -2261,7 +2261,7 @@ impl TypeEnter {
                     record_name.clone(),
                 ),
             );
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(first_field).pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );
@@ -2281,7 +2281,7 @@ impl TypeEnter {
                     field_name.to_java_string().to_string_lossy().to_string(),
                 ),
             );
-            self.log.borrow_mut().error_at(
+            self.log.error_at(
                 ctx.tree(field).pos,
                 crate::util::jc_diagnostic::Error::from(info),
             );

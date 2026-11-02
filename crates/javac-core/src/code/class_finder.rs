@@ -97,7 +97,7 @@ pub struct ClassFinder {
     /// Java: protected boolean userPathsFirst;
     pub user_paths_first: bool,
     /// Java: final Log log;
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     /// Java: final Names names;
     pub names: Rc<Names>,
     /// Java: final Name completionFailureName;
@@ -154,7 +154,7 @@ impl ClassFinder {
         reader: Rc<RefCell<ClassReader>>,
         file_manager: Rc<dyn JavaFileManager>,
         names: Rc<Names>,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         diag_factory: Rc<Factory>,
         dcfh: Rc<DeferredCompletionFailureHandler>,
         profile: Rc<Profile>,
@@ -407,7 +407,7 @@ impl ClassFinder {
         let prev_name = fullname.clone();
         *self.current_class_file.borrow_mut() = Some(Rc::clone(&classfile));
         if self.verbose {
-            self.log.borrow().print_verbose(
+            self.log.print_verbose(
                 "loading",
                 vec![crate::util::jc_diagnostic::diagnostic_arg(
                     classfile.get_name().to_string_lossy(),

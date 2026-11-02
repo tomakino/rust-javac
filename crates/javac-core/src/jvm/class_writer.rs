@@ -73,7 +73,7 @@ const FLAG_NAMES: [&str; 12] = [
 /// The class file writer.
 pub struct ClassWriter {
     /// The diagnostic log.
-    pub log: Rc<RefCell<Log>>,
+    pub log: Rc<Log>,
     /// The name table.
     pub names: Rc<Names>,
     /// The symbol table.
@@ -143,7 +143,7 @@ impl ClassWriter {
     ///   - none.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         names: Rc<Names>,
         syms: Rc<crate::code::symtab::Symtab>,
         types: Rc<Types>,

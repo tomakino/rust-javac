@@ -718,7 +718,7 @@ impl JavacFileManager {
     pub fn new(
         charset: StdOption<Charset>,
         java_home: FsPath,
-        log: Rc<RefCell<Log>>,
+        log: Rc<Log>,
         options: Rc<Options>,
         fs_info: Rc<CacheFSInfo>,
     ) -> Rc<JavacFileManager> {
