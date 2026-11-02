@@ -621,7 +621,10 @@ impl CompilerContext {
         if let ScopeData::NamedImportScope { name2_scopes, .. } =
             &mut self.scope_mut(named_scope).data
         {
-            name2_scopes.entry(name).or_default().push(new_scope);
+            Rc::make_mut(name2_scopes)
+                .entry(name)
+                .or_default()
+                .push(new_scope);
         }
     }
 
@@ -709,7 +712,7 @@ impl CompilerContext {
                 sub_scopes,
                 name2_scopes,
                 ..
-            } => (sub_scopes.clone(), Some(name2_scopes.clone())),
+            } => (sub_scopes.clone(), Some(Rc::clone(name2_scopes))),
             ScopeData::StarImportScope { sub_scopes, .. } => {
                 (sub_scopes.clone(), None)
             }
@@ -729,9 +732,9 @@ impl CompilerContext {
         let named_updated = match name2_scopes {
             Some(name2_scopes) => {
                 let mut updated = crate::util::fx_hasher::FxNameMap::default();
-                for (name, scopes) in name2_scopes {
+                for (name, scopes) in name2_scopes.iter() {
                     let mut remapped = Vec::new();
-                    for candidate in scopes {
+                    for candidate in scopes.iter().copied() {
                         remapped.push(self.finalize_single_scope(
                             candidate,
                             types,
@@ -739,7 +742,7 @@ impl CompilerContext {
                             attr.as_deref_mut(),
                         ));
                     }
-                    updated.insert(name, remapped);
+                    updated.insert(name.clone(), remapped);
                 }
                 Some(updated)
             }
@@ -755,7 +758,7 @@ impl CompilerContext {
                 ..
             } => {
                 *sub_scopes = new_sub_scopes;
-                *name2_scopes = named_updated.expect("NamedImportScope name index");
+                *name2_scopes = Rc::new(named_updated.expect("NamedImportScope name index"));
             }
             ScopeData::StarImportScope { sub_scopes, .. } => {
                 *sub_scopes = new_sub_scopes;

@@ -60,19 +60,25 @@ pub trait ScopeListener {
 /// is kept in check.
 #[derive(Clone)]
 pub struct ScopeListenerList {
-    listeners: Vec<Weak<dyn ScopeListener>>,
+    /// Shared between snapshots: cloning a scope (the port's read-only
+    /// snapshot for borrow-splitting) used to deep-copy this list, which
+    /// dominated Scope::clone. Writes go through Rc::make_mut, so a clone
+    /// only copies when it actually adds a listener.
+    listeners: Rc<RefCell<Vec<Weak<dyn ScopeListener>>>>,
 }
 
 impl ScopeListenerList {
     pub fn new() -> ScopeListenerList {
         ScopeListenerList {
-            listeners: Vec::new(),
+            listeners: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
     /// Java: void add(ScopeListener sl) (the upstream prepends).
     pub fn add(&mut self, listener: Weak<dyn ScopeListener>) {
-        self.listeners.insert(0, listener);
+        Rc::make_mut(&mut self.listeners)
+            .borrow_mut()
+            .insert(0, listener);
     }
 
     pub fn symbol_added(&mut self, sym: Option<SymbolId>, scope: ScopeId) {
@@ -84,8 +90,14 @@ impl ScopeListenerList {
     }
 
     fn walk_references(&mut self, sym: Option<SymbolId>, scope: ScopeId, is_remove: bool) {
+        // Take the list out before notifying so a listener can re-enter the
+        // scope machinery without hitting the RefCell borrow.
+        let current = {
+            let mut guard = self.listeners.borrow_mut();
+            std::mem::take(&mut *guard)
+        };
         let mut new_listeners = Vec::new();
-        for weak in std::mem::take(&mut self.listeners) {
+        for weak in current {
             if let Some(listener) = weak.upgrade() {
                 if is_remove {
                     listener.symbol_removed(sym, scope);
@@ -95,7 +107,7 @@ impl ScopeListenerList {
                 new_listeners.push(weak);
             }
         }
-        self.listeners = new_listeners;
+        *self.listeners.borrow_mut() = new_listeners;
     }
 }
 
@@ -203,7 +215,7 @@ pub enum ScopeData {
         sub_scopes: List<ScopeId>,
         mark: i32,
         listeners: ScopeListenerList,
-        name2_scopes: crate::util::fx_hasher::FxNameMap<Vec<ScopeId>>,
+        name2_scopes: Rc<crate::util::fx_hasher::FxNameMap<Vec<ScopeId>>>,
     },
     /// Java: public static class StarImportScope
     StarImportScope {
@@ -321,7 +333,7 @@ impl Scope {
                 sub_scopes: List::nil(),
                 mark: 0,
                 listeners: ScopeListenerList::new(),
-                name2_scopes: crate::util::fx_hasher::fx_map_with_capacity(8),
+                name2_scopes: Rc::new(crate::util::fx_hasher::fx_map_with_capacity(8)),
             },
         }
     }
