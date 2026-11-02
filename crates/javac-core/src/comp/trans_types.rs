@@ -1920,10 +1920,19 @@ impl TreeVisitor for TransTypes {
 
     /// Java: public void visitSelect(JCFieldAccess tree) (TransTypes.java).
     fn visit_select(&mut self, ctx: &mut CompilerContext, tree: TreeId) {
-        let (selected, sym) = match &ctx.tree(tree).kind {
-            TreeKind::FieldAccess { selected, sym, .. } => (*selected, *sym),
+        let (selected, sym, name) = match &ctx.tree(tree).kind {
+            TreeKind::FieldAccess {
+                selected,
+                sym,
+                name,
+            } => (*selected, *sym, name.clone()),
             _ => panic!("field access expected"),
         };
+        // Java: TransTypes.visitSelect only translates the qualifier and
+        // erases the selection type; a synthetic this/super qualifier is
+        // never coerced (there is no field access to widen).
+        let is_self_select =
+            name == self.names._this || name == self.names._super;
         // A bare qualifier that resolves to a synthetic member of the
         // enclosing type (notably super) carries no tree type of its own;
         // the qualifier type is the type that owns the symbol.
@@ -1961,6 +1970,13 @@ impl TreeVisitor for TransTypes {
             }
         };
         if ctx.typ(tree_ty).const_value().is_some() {
+            self.result = Some(tree);
+        } else if is_self_select {
+            let erased = self.erasure(ctx, tree_ty);
+            if let TreeKind::FieldAccess { selected: slot, .. } = &mut ctx.tree_mut(tree).kind {
+                *slot = translated;
+            }
+            ctx.tree_mut(tree).ty = Some(erased);
             self.result = Some(tree);
         } else if sym.map(|sym| ctx.sym(sym).kind == Kind::VAR).unwrap_or(false) {
             let sym = sym.expect("field symbol");
