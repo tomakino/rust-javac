@@ -103,11 +103,27 @@ Source comments reference the id; the full record stays here.
 
 ### P2 progress
 
-- P2 has converged twelve types so far: MemberEnter, Warner, TypeEnvs, Enter,
+- P2 has converged thirteen types so far: MemberEnter, Warner, TypeEnvs, Enter,
   FileQueue, Todo, ModuleFinder, DeferredLintHandler, SpeculativeCache,
-  AnnotationTypeMetadata, Items, and ArgumentTypeData. `Rc<RefCell<` dropped
-  from 530 to 425 occurrences (about -20%); library tests stay at 746 and the
-  L2 gate (Gson/Guava/OkHttp byte parity) passed after the Items change.
+  AnnotationTypeMetadata, Items, ArgumentTypeData and ClassWriter.
+  `Rc<RefCell<` dropped from 530 to 424 occurrences. The L2 gate
+  (Gson/Guava/OkHttp byte parity) passes.
+- The unsafe `with_reentrant_mut` helper (a second `&mut T` fabricated while an
+  outer `RefMut` was live) was removed; its only caller invokes a `&self`
+  method through a shared borrow.
+- `ClassWriter` converged through the three-step pattern: buffers, hooks and
+  flags made interiorly mutable; the `StackMapTableWriter` trait converted to
+  `&self`; then all 44 writer methods took `&self` and the type is shared as
+  `Rc<ClassWriter>`.
+- `Resolve` is the next low-risk target: it has no `&mut self` methods (all
+  state is already in `Cell`/`RefCell` fields), so `Rc<RefCell<Resolve>>` is
+  vestigial. The type appears in six field sites -- `flow.rs` (`rs`),
+  `lambda_to_method.rs` (`rs`), `lower.rs` (`rs`), `trans_patterns.rs`
+  (`rs`), `trans_types.rs` (`resolve`) and `mini_compiler.rs`
+  (`resolve`) -- plus `Resolve::instance`'s return type. `Attr.rs` stores it
+  as `Rc<RefCell<Option<Rc<RefCell<Resolve>>>>>` (the outer RefCell makes the
+  service installable), which becomes `Rc<RefCell<Option<Rc<Resolve>>>>`; the
+  two shapes must not be mixed in one bulk replacement.
 - Two integration shapes need interface-first work rather than bulk
   replacement:
   - `Warner` is now interiorly mutable and shared as `Rc<Warner>`; callers
