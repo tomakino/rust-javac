@@ -523,15 +523,14 @@ impl<'a> AugmentVisitor<'a> {
                 let suppress_warnings_tsym = self.ctx.typ(self.syms.suppress_warnings_type).tsym;
                 if compound_tsym == suppress_warnings_tsym {
                     let values = values.clone();
-                    let mut index = 0;
-                    while index < values.length() {
-                        let pair = values.get(index);
+                    // Iterate instead of length()/get(index): both are O(n) per
+                    // step, which made this loop O(n^2).
+                    for pair in values.iter() {
                         let method = self.ctx.sym(pair.fst);
                         if method.name.to_string() == "value" {
                             let value = self.ctx.attr(pair.snd);
                             self.walk(value);
                         }
-                        index += 1;
                     }
                 }
             }

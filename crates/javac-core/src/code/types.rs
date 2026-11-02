@@ -2181,13 +2181,19 @@ impl Types {
         from: &List<TypeId>,
         to: &List<TypeId>,
     ) -> (List<TypeId>, List<TypeId>) {
+        // Track the remaining lengths instead of recomputing length() (O(n))
+        // on every step, which made the alignment O(n^2).
+        let mut from_remaining = from.length();
+        let mut to_remaining = to.length();
         let mut from = from.clone();
         let mut to = to.clone();
-        while from.length() > to.length() {
+        while from_remaining > to_remaining {
             from = from.tail();
+            from_remaining -= 1;
         }
-        while from.length() < to.length() {
+        while from_remaining < to_remaining {
             to = to.tail();
+            to_remaining -= 1;
         }
         (from, to)
     }
@@ -5879,7 +5885,7 @@ impl Types {
             d.set(v + 1);
             v
         });
-        if depth < 60 && std::env::var_os("DSH_DEBUG_RECURSION").is_some() {
+        if depth < 60 && crate::util::debug_flags::debug_enabled("DSH_DEBUG_RECURSION") {
             let name = ctx
                 .typ(t)
                 .tsym
@@ -7563,7 +7569,7 @@ impl Types {
             d.set(v + 1);
             v
         });
-        if depth < 60 && std::env::var_os("DSH_DEBUG_RECURSION").is_some() {
+        if depth < 60 && crate::util::debug_flags::debug_enabled("DSH_DEBUG_RECURSION") {
             let names: Vec<String> = ts
                 .iter()
                 .map(|t| {

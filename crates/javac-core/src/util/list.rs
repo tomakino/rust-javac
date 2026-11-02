@@ -50,9 +50,12 @@ impl<A> ListNode<A> {
     /// borrowing through the cell.
     #[inline]
     fn tail(&self) -> Option<Rc<ListNode<A>>> {
-        let tail = self.tail.replace(None);
-        self.tail.set(tail.clone());
-        tail
+        // SAFETY: single-threaded list construction. The cell is only written
+        // through `set_tail` while a list is being built; this read clones the
+        // handle instead of moving it out, and no `&mut` to the cell exists
+        // during the call. The former `replace`/`set` pair performed two cell
+        // writes on every traversal step.
+        unsafe { (*self.tail.as_ptr()).clone() }
     }
 
     /// Replaces this node's tail, splicing a chain while a list is built.
@@ -801,6 +804,48 @@ mod tests {
                 empty.set_tail(List::of(1))
             }))
             .is_err()
+        );
+    }
+
+
+    #[test]
+    fn length_matches_walk_on_shared_and_spliced_lists() {
+        let mut l = List::nil();
+        for i in 0..1000 {
+            l = l.prepend(i);
+        }
+        assert_eq!(l.length(), 1000);
+        assert_eq!(l.tail().length(), 999);
+        let mut buf = ListBuffer::new();
+        for i in 0..500 {
+            buf.append(i);
+        }
+        let built = buf.to_list();
+        assert_eq!(built.length(), 500);
+        let spliced = List::of(0).append_list(&built);
+        assert_eq!(spliced.length(), 501);
+    }
+
+    #[test]
+    fn tail_walk_stays_fast_on_long_lists() {
+        let mut l = List::nil();
+        for i in 0..10_000 {
+            l = l.prepend(i);
+        }
+        let start = std::time::Instant::now();
+        let mut total = 0usize;
+        for _ in 0..1_000 {
+            let mut cur = l.clone();
+            while cur.non_empty() {
+                total += 1;
+                cur = cur.tail();
+            }
+        }
+        let elapsed = start.elapsed();
+        assert_eq!(total, 10_000 * 1_000);
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "tail walk took {elapsed:?}"
         );
     }
 

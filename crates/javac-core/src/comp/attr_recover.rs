@@ -283,8 +283,11 @@ impl AttrRecover {
                         .unwrap_or_else(List::nil);
                 let pt = todo.result_info.pt.expect("resultInfo.pt");
                 let mut pats = self.types.get_parameter_types_public(ctx, pt);
-                while pats.length() < args_trees.length() {
+                let args_len = args_trees.length();
+                let mut pats_len = pats.length();
+                while pats_len < args_len {
                     pats = pats.append(syms.err_type);
+                    pats_len += 1;
                 }
                 let ret = self.types.get_return_type_public(ctx, pt);
                 let new_result = ResultInfo::new_with_mode(
