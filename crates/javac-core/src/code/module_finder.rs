@@ -913,6 +913,7 @@ fn read_source_identifier(chars: &[char], i: usize) -> (String, usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use javac_tools::tools::java_file_manager::Location;
 
     use std::cell::RefCell;
     use std::rc::Rc;
