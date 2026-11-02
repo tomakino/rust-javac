@@ -369,12 +369,13 @@ impl Enter {
         syms: &Symtab,
         trees: List<TreeId>,
         env: Option<Rc<Env<AttrContext>>>,
+        mut attr: Option<&mut crate::comp::attr::Attr>,
     ) -> List<TypeId> {
         let mut ts = List::nil();
         let mut list = trees;
         while list.non_empty() {
             let tree = *list.head();
-            if let Some(ty) = self.class_enter(ctx, syms, tree, env.clone(), None) {
+            if let Some(ty) = self.class_enter(ctx, syms, tree, env.clone(), attr.as_deref_mut()) {
                 ts = ts.append(ty);
             }
             list = list.tail();
@@ -421,7 +422,7 @@ impl Enter {
             }
             set_compilation_unit_package(ctx, tree, syms.root_package);
             let top_env = self.top_level_env(ctx, tree);
-            self.class_enter_list(ctx, syms, compilation_unit_defs(ctx, tree), Some(top_env));
+            self.class_enter_list(ctx, syms, compilation_unit_defs(ctx, tree), Some(top_env), None);
             // Java: tree.modle.usesProvidesCompleter =
             // modules.getUsesProvidesCompleter() (Enter.java:324).
             if let Some(modules) = self.modules.borrow().clone() {
@@ -579,7 +580,7 @@ impl Enter {
                     *slot = Some(Rc::clone(&sourcefile));
                 }
             }
-            self.class_enter_list(ctx, syms, compilation_unit_defs(ctx, tree), Some(top_env.clone()));
+            self.class_enter_list(ctx, syms, compilation_unit_defs(ctx, tree), Some(top_env.clone()), None);
             if add_env {
                 let package_env = package_env.clone().expect("package env");
                 self.todo.append(ctx, package_env);
@@ -816,6 +817,7 @@ impl Enter {
             syms,
             class_tree_typarams(ctx, tree),
             Some(Rc::clone(&local_env)),
+            None,
         );
         if let crate::code::type_::TypeKindData::ClassType { typarams_field, allparams_field, .. } =
             &mut ctx.typ_mut(class_ty).kind
@@ -839,7 +841,7 @@ impl Enter {
             }
         }
         // Recursively enter all member classes.
-        self.class_enter_list(ctx, syms, class_tree_defs(ctx, tree), Some(local_env));
+        self.class_enter_list(ctx, syms, class_tree_defs(ctx, tree), Some(local_env), None);
         self.result.set(ctx.sym(class).ty);
         Ok(())
     }
@@ -983,7 +985,7 @@ impl Enter {
         }
         let result: Result<(), CompletionFailure> = {
             // enter all classes, and construct uncompleted list
-            let _ = self.class_enter_list(ctx, syms, trees.clone(), None);
+            let _ = self.class_enter_list(ctx, syms, trees.clone(), None, None);
             if completion_enabled {
                 // Java: while (uncompleted.nonEmpty()) { ... }
                 loop {

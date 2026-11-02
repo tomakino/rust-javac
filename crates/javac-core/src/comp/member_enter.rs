@@ -107,6 +107,7 @@ impl MemberEnter {
             syms,
             typarams.clone(),
             Some(Rc::clone(env)),
+            Some(attr),
         );
         self.attrib_type_variables(ctx, syms, typarams, env, attr);
 
