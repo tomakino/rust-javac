@@ -189,7 +189,7 @@ pub struct LambdaToMethod {
     pub make: Rc<RefCell<TreeMaker>>,
     pub types: Rc<Types>,
     pub trans_types: Rc<RefCell<TransTypes>>,
-    pub enter: Rc<RefCell<Enter>>,
+    pub enter: Rc<Enter>,
     pub attr_env: Option<Rc<Env<AttrContext>>>,
     pub analyzer: LambdaAnalyzerPreprocessor,
     pub context_map: Rc<RefCell<HashMap<TreeId, TranslationContext>>>,
@@ -245,7 +245,7 @@ impl LambdaToMethod {
         make: Rc<RefCell<TreeMaker>>,
         types: Rc<Types>,
         trans_types: Rc<RefCell<TransTypes>>,
-        enter: Rc<RefCell<Enter>>,
+        enter: Rc<Enter>,
         dump_lambda_to_method_stats: bool,
         force_serializable: bool,
         debug_lines_or_vars: bool,
@@ -2573,8 +2573,7 @@ impl LambdaAnalyzerPreprocessor {
             .expect("functional interface class");
         let bridges = {
             let trans_types = self.trans_types.borrow();
-            let enter_rc = Rc::clone(&trans_types.enter);
-            let enter = enter_rc.borrow();
+            let enter = Rc::clone(&trans_types.enter);
             let chk2 = Rc::clone(&trans_types.chk);
             self.types
                 .functional_interface_bridges(ctx, &mut syms, &diags, &chk2, &enter, csym)

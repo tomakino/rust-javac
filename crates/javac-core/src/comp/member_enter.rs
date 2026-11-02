@@ -49,7 +49,7 @@ use crate::util::name::Name;
 
 /// Java: public class MemberEnter (see the file header for the ported subset).
 pub struct MemberEnter {
-    pub enter: Rc<RefCell<Enter>>,
+    pub enter: Rc<Enter>,
     pub log: Rc<RefCell<Log>>,
     pub chk: Rc<Check>,
     pub types: Rc<Types>,
@@ -69,7 +69,7 @@ pub struct MemberEnter {
 impl MemberEnter {
     /// Java: protected MemberEnter(Context context) — injected dependencies.
     pub fn new(
-        enter: Rc<RefCell<Enter>>,
+        enter: Rc<Enter>,
         log: Rc<RefCell<Log>>,
         chk: Rc<Check>,
         types: Rc<Types>,
@@ -106,7 +106,7 @@ impl MemberEnter {
         attr: &mut crate::comp::attr::Attr,
     ) -> TypeId {
         // Enter and attribute type parameters.
-        let tvars = self.enter.borrow().class_enter_list(
+        let tvars = self.enter.class_enter_list(
             ctx,
             syms,
             typarams.clone(),
@@ -297,7 +297,7 @@ impl MemberEnter {
         attr: &mut crate::comp::attr::Attr,
     ) -> Result<(), CompletionFailure> {
         let env = self.env.borrow().clone().expect("env");
-        let encl_scope = self.enter.borrow().enter_scope(ctx, &env);
+        let encl_scope = self.enter.enter_scope(ctx, &env);
         let owner = ctx.scope(encl_scope).owner.expect("enclosing scope owner");
         let name = method_decl_name(ctx, tree);
         let m = ctx.alloc_symbol(Symbol::new(
@@ -555,7 +555,7 @@ impl MemberEnter {
             let varargs_type = self.types.make_varargs(ctx, ty);
             set_tree_type(ctx, vartype, varargs_type);
         }
-        let encl_scope = self.enter.borrow().enter_scope(ctx, &env);
+        let encl_scope = self.enter.enter_scope(ctx, &env);
         let vartype = if is_implicitly_typed(ctx, tree) {
             if ctx.sym(owner).kind == Kind::MTH {
                 crate::code::symtab::no_type_id(ctx)

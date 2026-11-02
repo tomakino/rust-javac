@@ -125,7 +125,7 @@ pub struct MiniCompiler {
     /// The check service.
     pub chk: Rc<Check>,
     /// The enter pass.
-    pub enter: Rc<RefCell<Enter>>,
+    pub enter: Rc<Enter>,
     /// The member enter pass.
     pub member_enter: Rc<MemberEnter>,
     /// The type enter pass.
@@ -193,7 +193,7 @@ pub struct SourceFileCompleter {
     /// Java: ParserFactory parserFactory.
     pub parser_factory: Rc<crate::parser::parser_factory::ParserFactory>,
     /// Java: Enter enter.
-    pub enter: Rc<RefCell<Enter>>,
+    pub enter: Rc<Enter>,
     /// Java: Modules modules.
     pub modules: Rc<Modules>,
     /// Java: boolean lineDebugInfo (Gen.lineDebugInfo).
@@ -300,11 +300,9 @@ impl crate::code::class_finder::SourceFileReader for SourceFileCompleter {
         let entered = if is_module_info {
             Ok(())
         } else {
-            self.enter
-                .borrow()
-                .complete(ctx, syms, List::of(tree), Some(sym))
+            self.enter.complete(ctx, syms, List::of(tree), Some(sym))
         };
-        let has_env = self.enter.borrow().get_env(sym).is_some();
+        let has_env = self.enter.get_env(sym).is_some();
         self.log.borrow_mut().use_source(prev);
         entered?;
         // A module-info compilation unit has no class body to enter, so no
@@ -548,7 +546,7 @@ impl MiniCompiler {
             .set_file_manager(Rc::clone(&file_manager) as Rc<dyn JavaFileManager>);
         chk.set_profile(Rc::clone(&profile));
         let type_envs = Rc::new(TypeEnvs::new());
-        let enter = Rc::new(RefCell::new(Enter::new(
+        let enter = Rc::new(Enter::new(
             Rc::clone(&log),
             Rc::clone(&names),
             Rc::clone(&diags),
@@ -559,7 +557,7 @@ impl MiniCompiler {
             &options,
             Rc::clone(&todo),
             Rc::clone(&type_envs)
-        )));
+        ));
         let member_enter = Rc::new(MemberEnter::new(
             Rc::clone(&enter),
             Rc::clone(&log),
@@ -587,7 +585,7 @@ impl MiniCompiler {
             Rc::clone(&todo),
         )));
         type_enter.borrow().set_self_ref(Rc::downgrade(&type_enter));
-        *enter.borrow().type_enter.borrow_mut() = Some(Rc::clone(&type_enter));
+        *enter.type_enter.borrow_mut() = Some(Rc::clone(&type_enter));
         // Java: Enter constructor builds predefClassDef from
         // Symtab.predefClass (Enter.java:130-134).
         {
@@ -611,7 +609,7 @@ impl MiniCompiler {
             if let TreeKind::ClassDecl { sym, .. } = &mut ctx.tree_mut(def).kind {
                 *sym = Some(predef);
             }
-            enter.borrow_mut().set_predef_class(def);
+            enter.set_predef_class(def);
         }
         let infer = Infer::new(
             &mut ctx,
@@ -674,7 +672,7 @@ impl MiniCompiler {
             .borrow()
             .clone()
             .expect("annotate service installed");
-        *enter.borrow().annotate.borrow_mut() = Some(Rc::clone(&annotate));
+        *enter.annotate.borrow_mut() = Some(Rc::clone(&annotate));
         util_context.put::<Annotate>(Rc::clone(&annotate));
         let type_annotations = Rc::new(TypeAnnotations::new(
             Rc::clone(&names),
@@ -842,7 +840,7 @@ impl MiniCompiler {
         // Java: Enter constructor obtains Modules.instance(context)
         // (Enter.java:129) and Attr uses it for visitModuleDef; both are
         // installed after construction to break the initialization cycle.
-        enter.borrow_mut().set_modules(Rc::clone(&modules));
+        enter.set_modules(Rc::clone(&modules));
         attr.borrow_mut().set_modules(Rc::clone(&modules));
         // Java: Symtab constructor binds moduleCompleter from
         // Modules.instance(context).getCompleter() (Symtab.java:519); the
@@ -1185,7 +1183,6 @@ impl MiniCompiler {
             let mut syms = syms_rc.borrow_mut();
             if let Err(failure) = self
                 .enter
-                .borrow()
                 .main(&mut self.ctx, &mut syms, root_list.clone())
             {
                 self.chk.completion_error(

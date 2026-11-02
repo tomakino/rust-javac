@@ -452,7 +452,7 @@ pub struct AnnotateServices {
     pub attr: Rc<std::cell::RefCell<Attr>>,
     pub cfolder: Rc<ConstFold>,
     pub deferred_lint_handler: Rc<std::cell::RefCell<DeferredLintHandler>>,
-    pub enter: Rc<std::cell::RefCell<Enter>>,
+    pub enter: Rc<Enter>,
     pub lint: Rc<Lint>,
     pub resolve: Rc<std::cell::RefCell<Resolve>>,
     pub make: Rc<std::cell::RefCell<TreeMaker>>,
@@ -496,7 +496,7 @@ impl Annotate {
         attr: Rc<std::cell::RefCell<Attr>>,
         cfolder: Rc<ConstFold>,
         deferred_lint_handler: Rc<std::cell::RefCell<DeferredLintHandler>>,
-        enter: Rc<std::cell::RefCell<Enter>>,
+        enter: Rc<Enter>,
         lint: Rc<Lint>,
         resolve: Rc<std::cell::RefCell<Resolve>>,
         make: Rc<std::cell::RefCell<TreeMaker>>,
@@ -2763,7 +2763,7 @@ struct UnusedFileManager;
         let dependencies: Rc<RefCell<dyn Dependencies>> = Rc::new(RefCell::new(DummyDependencies));
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let todo = crate::comp::todo::Todo::instance(&mut context);
-        let enter = Rc::new(RefCell::new(Enter::new(
+        let enter = Rc::new(Enter::new(
             Rc::clone(&log),
             Rc::clone(&names),
             Rc::clone(&diags),
@@ -2774,7 +2774,7 @@ struct UnusedFileManager;
             &options,
             Rc::clone(&todo),
             Rc::clone(&type_envs)
-        )));
+        ));
         let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
         let member_enter = Rc::new(MemberEnter::new(
             Rc::clone(&enter),

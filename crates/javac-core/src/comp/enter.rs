@@ -58,7 +58,7 @@ pub struct Enter {
     pub type_envs: Rc<TypeEnvs>,
     /// Java: private JCClassDecl predefClassDef; set by set_predef_class
     /// (bootstrap adapter for TreeMaker's private factory methods).
-    pub predef_class_def: Option<TreeId>,
+    pub predef_class_def: RefCell<Option<TreeId>>,
     /// Java: ListBuffer<ClassSymbol> uncompleted (interior mutability).
     pub uncompleted: RefCell<Option<Vec<SymbolId>>>,
     /// Java: ListBuffer<JCCompilationUnit> unfinishedModules (interior
@@ -109,7 +109,7 @@ impl Enter {
             file_manager,
             pkginfo_opt: crate::main::option::PkgInfo::get(options),
             type_envs,
-            predef_class_def: None,
+            predef_class_def: RefCell::new(None),
             uncompleted: RefCell::new(None),
             unfinished_modules: RefCell::new(Vec::new()),
             env: RefCell::new(None),
@@ -132,7 +132,7 @@ impl Enter {
     ///
     /// # Panics
     ///   - none.
-    pub fn set_modules(&mut self, modules: Rc<crate::comp::modules::Modules>) {
+    pub fn set_modules(&self, modules: Rc<crate::comp::modules::Modules>) {
         *self.modules.borrow_mut() = Some(modules);
     }
 
@@ -149,8 +149,8 @@ impl Enter {
     ///
     /// # Panics
     ///   - none.
-    pub fn set_predef_class(&mut self, tree: TreeId) {
-        self.predef_class_def = Some(tree);
+    pub fn set_predef_class(&self, tree: TreeId) {
+        *self.predef_class_def.borrow_mut() = Some(tree);
     }
 
     /// Java: public Env<AttrContext> getEnv(TypeSymbol sym)
@@ -239,7 +239,7 @@ impl Enter {
             outer: None,
             tree: Some(tree),
             toplevel: Some(tree),
-            encl_class: self.predef_class_def,
+            encl_class: *self.predef_class_def.borrow(),
             encl_method: None,
             info: Rc::new(RefCell::new(info)),
             base_clause: false,
@@ -257,7 +257,7 @@ impl Enter {
             outer: None,
             tree: Some(tree),
             toplevel: Some(tree),
-            encl_class: self.predef_class_def,
+            encl_class: *self.predef_class_def.borrow(),
             encl_method: None,
             info: Rc::new(RefCell::new(info)),
             base_clause: false,
@@ -293,7 +293,7 @@ impl Enter {
             outer: Some(Rc::clone(env)),
             tree: Some(tree),
             toplevel: env.toplevel,
-            encl_class: self.predef_class_def,
+            encl_class: *self.predef_class_def.borrow(),
             encl_method: None,
             info: Rc::new(RefCell::new(info)),
             base_clause: env.base_clause,

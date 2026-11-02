@@ -2267,7 +2267,7 @@ pub struct DeferredAttrService {
     /// Java: final JCDiagnostic.Factory diags
     pub diags: Rc<crate::util::jc_diagnostic::Factory>,
     /// Java: final Enter enter
-    pub enter: Rc<RefCell<crate::comp::enter::Enter>>,
+    pub enter: Rc<crate::comp::enter::Enter>,
     /// Java: final Infer infer
     pub infer: Rc<crate::comp::infer::Infer>,
     /// Java: final Log log
@@ -2330,7 +2330,7 @@ impl DeferredAttrService {
         ctx: &mut CompilerContext,
         annotate: Rc<RefCell<Option<Rc<crate::comp::annotate::Annotate>>>>,
         diags: Rc<crate::util::jc_diagnostic::Factory>,
-        enter: Rc<RefCell<crate::comp::enter::Enter>>,
+        enter: Rc<crate::comp::enter::Enter>,
         infer: Rc<crate::comp::infer::Infer>,
         log: Rc<RefCell<crate::util::log::Log>>,
         make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
@@ -2557,7 +2557,7 @@ impl DeferredAttrService {
             log.nwarnings += nwarnings;
         }
         if let Some(toplevel) = env.toplevel {
-            self.enter.borrow_mut().unenter(ctx, syms, toplevel, tree);
+            self.enter.unenter(ctx, syms, toplevel, tree);
         }
         self.log.borrow_mut().pop_diagnostic_handler();
         match result {

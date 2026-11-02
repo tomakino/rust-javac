@@ -46,7 +46,7 @@ pub struct TransTypes {
     /// Java: private TreeMaker make
     pub make: Rc<RefCell<TreeMaker>>,
     /// Java: private Enter enter
-    pub enter: Rc<RefCell<crate::comp::enter::Enter>>,
+    pub enter: Rc<crate::comp::enter::Enter>,
     /// Java: private Types types
     pub types: Rc<Types>,
     /// Java: private Annotate annotate
@@ -96,7 +96,7 @@ impl TransTypes {
         log: Rc<RefCell<Log>>,
         syms: Rc<RefCell<Symtab>>,
         make: Rc<RefCell<TreeMaker>>,
-        enter: Rc<RefCell<crate::comp::enter::Enter>>,
+        enter: Rc<crate::comp::enter::Enter>,
         types: Rc<Types>,
         annotate: Rc<Annotate>,
         attr: Rc<RefCell<Attr>>,
@@ -868,7 +868,7 @@ impl TransTypes {
         {
             self.translate_class(ctx, st_tsym);
         }
-        let my_env = self.enter.borrow().get_env(c);
+        let my_env = self.enter.get_env(c);
         let Some(my_env) = my_env else {
             return;
         };

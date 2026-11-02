@@ -62,7 +62,7 @@ use crate::util::names::Names;
 /// Java: public class TypeEnter implements Completer
 pub struct TypeEnter {
     pub names: Rc<Names>,
-    pub enter: Rc<RefCell<Enter>>,
+    pub enter: Rc<Enter>,
     pub member_enter: Rc<MemberEnter>,
     pub log: Rc<RefCell<Log>>,
     pub chk: Rc<Check>,
@@ -295,7 +295,7 @@ impl TypeEnter {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         names: Rc<Names>,
-        enter: Rc<RefCell<Enter>>,
+        enter: Rc<Enter>,
         member_enter: Rc<MemberEnter>,
         log: Rc<RefCell<Log>>,
         chk: Rc<Check>,
@@ -393,7 +393,7 @@ impl TypeEnter {
             .map(|scope| ctx.scope_is_filled(scope))
             .unwrap_or(false);
         if !filled {
-            let top_env = self.enter.borrow().get_top_level_env(ctx, tree);
+            let top_env = self.enter.get_top_level_env(ctx, tree);
             {
                 let attr_rc = self
                     .attr
@@ -791,7 +791,7 @@ impl TypeEnter {
         // If sym is a toplevel-class, make sure any import clauses in its
         // source file have been seen.
         if ctx.sym(owner).kind == Kind::PCK {
-            let top = self.enter.borrow().get_top_level_env(ctx, toplevel(env));
+            let top = self.enter.get_top_level_env(ctx, toplevel(env));
             self.resolve_imports(ctx, syms, toplevel(env), &top, attr);
             self.todo.borrow_mut().append(ctx, Rc::clone(env));
         }
@@ -1948,7 +1948,7 @@ impl TypeEnter {
             if ctx.sym(sup_class).kind != crate::code::kinds::Kind::TYP {
                 continue;
             }
-            let sup_env = self.enter.borrow().get_env(sup_class);
+            let sup_env = self.enter.get_env(sup_class);
             if ctx.sym(sup_class).is_sealed()
                 && !class_is_permitted_explicit(ctx, sup_class)
                 && sup_env
@@ -4591,7 +4591,7 @@ mod tests {
         let manager: Rc<dyn JavaFileManager> = Rc::new(UnusedFileManager);
         let todo = crate::comp::todo::Todo::instance(&mut context);
         let type_envs = Rc::new(TypeEnvs::new());
-        let enter = Rc::new(RefCell::new(Enter::new(
+        let enter = Rc::new(Enter::new(
             Rc::clone(&log),
             Rc::clone(&names),
             Rc::clone(&diags),
@@ -4602,7 +4602,7 @@ mod tests {
             &options,
             Rc::clone(&todo),
             Rc::clone(&type_envs)
-        )));
+        ));
         let annotate_cell: Rc<RefCell<Option<Rc<Annotate>>>> = Rc::new(RefCell::new(None));
         let member_enter = Rc::new(MemberEnter::new(
             Rc::clone(&enter),

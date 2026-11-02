@@ -348,7 +348,7 @@ pub struct Attr {
     pub member_enter: Rc<MemberEnter>,
     pub type_enter: Rc<RefCell<TypeEnter>>,
     pub make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
-    pub enter: Rc<RefCell<Enter>>,
+    pub enter: Rc<Enter>,
     pub types: Rc<Types>,
     pub diags: Rc<Factory>,
     pub deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
@@ -485,7 +485,7 @@ impl Attr {
         member_enter: Rc<MemberEnter>,
         type_enter: Rc<RefCell<TypeEnter>>,
         make: Rc<RefCell<crate::tree::tree_maker::TreeMaker>>,
-        enter: Rc<RefCell<Enter>>,
+        enter: Rc<Enter>,
         types: Rc<Types>,
         diags: Rc<Factory>,
         deferred_lint_handler: Rc<RefCell<DeferredLintHandler>>,
@@ -1488,7 +1488,7 @@ impl Attr {
             *slot = sourcefile;
         }
         ctx.sym_mut(owner_class).flags_field |= crate::code::flags::UNATTRIBUTED as i64;
-        let class_env = self.enter.borrow().class_env(ctx, class_def, &env);
+        let class_env = self.enter.class_env(ctx, class_def, &env);
         self.type_envs.put(owner_class, class_env);
         self.attrib_class(ctx, syms, owner_class);
         owntype
@@ -3055,7 +3055,7 @@ impl Attr {
         tree: TreeId,
         top_level: TreeId,
     ) -> SymbolId {
-        let local_env = self.enter.borrow().get_top_level_env(ctx, top_level);
+        let local_env = self.enter.get_top_level_env(ctx, top_level);
         // Java: localEnv.enclClass = make.ClassDef(make.Modifiers(0),
         // syms.errSymbol.name, null, null, null, null);
         // localEnv.enclClass.sym = syms.errSymbol;
@@ -15636,9 +15636,7 @@ impl Attr {
         }
         if matches_val_mth {
             let enter = Rc::clone(&self.enter);
-            enter
-                .borrow_mut()
-                .class_enter(ctx, syms, tree, Some(Rc::clone(&env)), Some(self));
+            enter.class_enter(ctx, syms, tree, Some(Rc::clone(&env)), Some(self));
         } else {
             // If this class declaration is part of a class level annotation,
             // as in @MyAnno(new Object() {}) class MyClass {}, enter it in
@@ -15649,9 +15647,7 @@ impl Attr {
                 .unwrap_or(false);
             if env_tree_is_new_class && crate::tree::tree_info::is_in_annotation(ctx, &env, tree) {
                 let enter = Rc::clone(&self.enter);
-                enter
-                    .borrow_mut()
-                    .class_enter(ctx, syms, tree, Some(Rc::clone(&env)), Some(self));
+                enter.class_enter(ctx, syms, tree, Some(Rc::clone(&env)), Some(self));
             }
         }
         let class_symbol = match &ctx.tree(tree).kind {
@@ -17816,7 +17812,7 @@ mod tests {
         let preview = Preview::instance(&mut context);
         chk.set_preview(Rc::clone(&preview));
         let todo = crate::comp::todo::Todo::instance(&mut context);
-        let enter = Rc::new(RefCell::new(Enter::new(
+        let enter = Rc::new(Enter::new(
             Rc::clone(&log),
             Rc::clone(&names),
             Rc::clone(&diags),
@@ -17827,7 +17823,7 @@ mod tests {
             &options,
             Rc::clone(&todo),
             Rc::clone(&type_envs),
-        )));
+        ));
         let member_enter = Rc::new(MemberEnter::new(
             Rc::clone(&enter),
             Rc::clone(&log),
@@ -17881,12 +17877,10 @@ mod tests {
             &options,
             Rc::clone(&preview),
         );
-        enter
-            .borrow_mut()
-            .main(&mut ctx, &syms.borrow_mut(), List::of(unit));
+        enter.main(&mut ctx, &syms.borrow_mut(), List::of(unit));
         let class_tree = class_tree_in(&ctx, unit);
         let class_sym = class_tree_symbol(&ctx, class_tree).expect("class symbol");
-        let top = enter.borrow().get_top_level_env(&mut ctx, unit);
+        let top = enter.get_top_level_env(&mut ctx, unit);
         let members_scope = match &ctx.sym(class_sym).kind_data {
             crate::code::symbol::SymbolKind::ClassSymbol { members_field, .. } => *members_field,
             _ => None,

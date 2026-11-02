@@ -195,7 +195,7 @@ pub struct Check {
     pub private_safe_varargs: bool,
     /// Java: private final Enter enter (Check.java:116) — injected at wiring
     /// time to avoid the Check/Enter construction cycle.
-    pub enter: RefCell<Option<Rc<RefCell<Enter>>>>,
+    pub enter: RefCell<Option<Rc<Enter>>>,
     /// Java: MandatoryWarningHandler deprecationHandler (Check.java:177).
     pub deprecation_handler:
         Rc<RefCell<MandatoryWarningHandler<Rc<RefCell<Log>>>>>,
@@ -5750,10 +5750,8 @@ impl Check {
         // was detected in the supertype chain.
         let recorded_pos = self.class_decl_positions.borrow().get(&c).copied();
         let class_pos = recorded_pos.or_else(|| {
-            self.enter
-                .borrow()
-                .as_ref()
-                .and_then(|enter| enter.borrow().get_env(c))
+            self.enter.borrow().as_ref()
+                .and_then(|enter| enter.get_env(c))
                 .and_then(|env| env.encl_class)
                 .map(|tree| ctx.tree(tree).pos)
         });
@@ -10000,7 +9998,7 @@ impl Check {
     ///
     /// # Panics
     ///   - none.
-    pub fn set_enter(&self, enter: Rc<RefCell<Enter>>) {
+    pub fn set_enter(&self, enter: Rc<Enter>) {
         *self.enter.borrow_mut() = Some(enter);
     }
 
@@ -10090,7 +10088,7 @@ impl CycleChecker<'_> {
         };
         if ctx.sym(sym).kind == crate::code::kinds::Kind::TYP {
             let enter = self.check.enter.borrow().clone();
-            let class_env = enter.as_ref().and_then(|enter| enter.borrow().get_env(sym));
+            let class_env = enter.as_ref().and_then(|enter| enter.get_env(sym));
             if let Some(class_env) = class_env {
                 let Some(toplevel) = class_env.toplevel else {
                     self.partial_check = true;
@@ -11135,7 +11133,7 @@ impl Check {
                 .enter
                 .borrow()
                 .as_ref()
-                .and_then(|enter| enter.borrow().get_env(s))
+                .and_then(|enter| enter.get_env(s))
                 .and_then(|env| env.encl_class);
             if let Some(tree) = tree
                 && let crate::tree::jc_tree::TreeKind::ClassDecl { mods, .. } = &ctx.tree(tree).kind
